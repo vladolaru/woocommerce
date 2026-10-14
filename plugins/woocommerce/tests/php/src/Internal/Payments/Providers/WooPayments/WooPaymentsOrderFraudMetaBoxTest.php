@@ -5,7 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderFraudMetaBox;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -38,18 +37,10 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register the meta box hook only when the built-in WooPayments owns the runtime.
+	 * @testdox Should register the meta box hook.
 	 */
-	public function test_registers_meta_box_hook_only_when_builtin_owns_runtime(): void {
-		$extension_owned = $this->create_meta_box( false );
-		$extension_owned->register();
-
-		$this->assertFalse(
-			has_action( 'add_meta_boxes', array( $extension_owned, 'handle_add_meta_boxes' ) ),
-			'Plugin-owned runtime should not register native order meta boxes.'
-		);
-
-		$builtin_owned = $this->create_meta_box( true );
+	public function test_registers_meta_box_hook(): void {
+		$builtin_owned = $this->create_meta_box();
 		$builtin_owned->register();
 
 		$this->assertSame(
@@ -63,7 +54,7 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 	 * @testdox Should add the Fraud and Risk meta box to HPOS and legacy order screens.
 	 */
 	public function test_adds_meta_box_to_hpos_and_legacy_order_screens(): void {
-		$meta_box = $this->create_meta_box( true );
+		$meta_box = $this->create_meta_box();
 
 		$meta_box->handle_add_meta_boxes();
 
@@ -351,7 +342,7 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 	 * @testdox Should render no output when the provided order cannot be resolved.
 	 */
 	public function test_renders_no_output_when_order_cannot_be_resolved(): void {
-		$meta_box = $this->create_meta_box( true );
+		$meta_box = $this->create_meta_box();
 
 		ob_start();
 		$meta_box->render_meta_box( 'not-an-order' );
@@ -492,13 +483,12 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the System Under Test.
 	 *
-	 * @param bool $builtin_register Whether the built-in WooPayments owns the runtime.
 	 * @return object
 	 */
-	private function create_meta_box( bool $builtin_register ) {
+	private function create_meta_box() {
 
 		$meta_box = new WooPaymentsOrderFraudMetaBox();
-		$meta_box->init( new StaticWooPaymentsRuntimeArbiter( $builtin_register ), wc_get_container()->get( WooPaymentsOrderNoteService::class ) );
+		$meta_box->init( wc_get_container()->get( WooPaymentsOrderNoteService::class ) );
 
 		$this->meta_boxes[] = $meta_box;
 
@@ -536,7 +526,7 @@ class WooPaymentsOrderFraudMetaBoxTest extends WC_Unit_Test_Case {
 	 * @return string
 	 */
 	private function render_meta_box( WC_Order $order ): string {
-		$meta_box = $this->create_meta_box( true );
+		$meta_box = $this->create_meta_box();
 
 		ob_start();
 		$meta_box->render_meta_box( $order );

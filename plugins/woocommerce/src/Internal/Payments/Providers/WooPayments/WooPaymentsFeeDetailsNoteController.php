@@ -42,13 +42,6 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	public const ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION = 'wcpay_add_fee_breakdown_to_order_notes';
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
@@ -114,13 +107,11 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	 * @param WooPaymentsPersistenceVocabulary  $vocabulary          WooPayments persistence vocabulary.
 	 * @param WooPaymentsActionSchedulerService $action_scheduler    Action scheduler service.
 	 * @param WooPaymentsAccountService         $account_service     Account service.
-	 * @param WooPaymentsRuntimeArbiter         $arbiter             Runtime owner arbiter.
 	 * @param WooPaymentsApiClient              $api_client          WooPayments API client.
 	 * @param WooPaymentsOrderDataService       $order_data_service  WooPayments order data service.
 	 * @param WooPaymentsLogger                 $logger              WooPayments logger.
 	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, OrderPaymentNotes $order_payment_notes, WooPaymentsPersistenceVocabulary $vocabulary, WooPaymentsActionSchedulerService $action_scheduler, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsLogger $logger ): void {
-		$this->arbiter             = $arbiter;
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, OrderPaymentNotes $order_payment_notes, WooPaymentsPersistenceVocabulary $vocabulary, WooPaymentsActionSchedulerService $action_scheduler, WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsLogger $logger ): void {
 		$this->api_client          = $api_client;
 		$this->order_data_service  = $order_data_service;
 		$this->logger              = $logger;
@@ -132,13 +123,9 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register the job's handler while the built-in WooPayments owns the store.
+	 * Register the job's handler.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		add_action( self::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION, array( $this, 'handle_wcpay_add_fee_breakdown_to_order_notes' ), 10, 3 );
 	}
 

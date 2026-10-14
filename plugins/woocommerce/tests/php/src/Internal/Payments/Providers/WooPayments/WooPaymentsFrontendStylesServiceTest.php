@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use WC_Unit_Test_Case;
 
@@ -53,17 +52,10 @@ class WooPaymentsFrontendStylesServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register shared style invalidation hooks only for the native owner.
+	 * @testdox Should register shared style invalidation hooks.
 	 */
-	public function test_registers_style_invalidation_hooks_only_for_native_owner(): void {
-		$inactive = $this->create_service( false );
-		$inactive->register();
-
-		foreach ( $this->get_style_change_hooks() as $hook ) {
-			$this->assertFalse( has_action( $hook, array( $inactive, 'handle_style_change' ) ) );
-		}
-
-		$active = $this->create_service( true );
+	public function test_registers_style_invalidation_hooks(): void {
+		$active = $this->create_service();
 		$active->register();
 
 		foreach ( $this->get_style_change_hooks() as $hook ) {
@@ -98,7 +90,7 @@ class WooPaymentsFrontendStylesServiceTest extends WC_Unit_Test_Case {
 			10,
 			3
 		);
-		$service = $this->create_service( true );
+		$service = $this->create_service();
 		$service->register();
 		$first = $service->get_styles_cache_version();
 
@@ -109,20 +101,12 @@ class WooPaymentsFrontendStylesServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a styles service with a runtime-owner result.
+	 * Create a styles service.
 	 *
-	 * @param bool $native_register Whether native owns the runtime.
 	 * @return WooPaymentsFrontendStylesService
 	 */
-	private function create_service( bool $native_register ): WooPaymentsFrontendStylesService {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
-
-		$service = new WooPaymentsFrontendStylesService();
-		$service->init( $arbiter );
+	private function create_service(): WooPaymentsFrontendStylesService {
+		$service          = new WooPaymentsFrontendStylesService();
 		$this->services[] = $service;
 
 		return $service;

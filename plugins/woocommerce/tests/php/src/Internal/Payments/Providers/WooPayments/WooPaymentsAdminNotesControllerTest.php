@@ -12,7 +12,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthRemediationNote;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetHttpsForCheckoutNote;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetUpLinkNote;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
 
 /**
@@ -47,7 +46,7 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_option_home', array( $this, 'get_http_home_url' ) );
 		delete_option( 'woocommerce_force_ssl_checkout' );
 
-		$this->sut = $this->create_sut( true );
+		$this->sut = $this->create_sut();
 	}
 
 	/**
@@ -57,17 +56,6 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 		$this->sut->register();
 
 		$this->assertSame( 10, has_action( 'admin_init', array( $this->sut, 'add_woo_admin_notes' ) ) );
-	}
-
-	/**
-	 * @testdox Registers no note hook on a plugin-owned store.
-	 */
-	public function test_registers_no_hook_on_plugin_owned_store(): void {
-		$sut = $this->create_sut( false );
-
-		$sut->register();
-
-		$this->assertFalse( has_action( 'admin_init', array( $sut, 'add_woo_admin_notes' ) ), 'A plugin-owned store must never get native notes.' );
 	}
 
 	/**
@@ -139,7 +127,7 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Adds the Link note with the client's name, copy and action when card is enabled without Link.
 	 */
 	public function test_adds_link_note_when_card_is_enabled_without_link(): void {
-		$sut = $this->create_sut( true, $this->get_link_account_data(), array( 'card' ) );
+		$sut = $this->create_sut( $this->get_link_account_data(), array( 'card' ) );
 
 		$sut->add_woo_admin_notes();
 
@@ -162,7 +150,7 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_adds_link_note_when_enabled_link_does_not_support_store_currency(): void {
 		update_option( 'woocommerce_currency', 'EUR' );
-		$sut = $this->create_sut( true, $this->get_link_account_data(), array( 'card', 'link' ) );
+		$sut = $this->create_sut( $this->get_link_account_data(), array( 'card', 'link' ) );
 
 		$sut->add_woo_admin_notes();
 
@@ -184,7 +172,7 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 				static fn( array $ids ): array => array_values( array_diff( $ids, array( 'link' ) ) )
 			);
 		}
-		$sut = $this->create_sut( true, $account_data, $enabled_ids );
+		$sut = $this->create_sut( $account_data, $enabled_ids );
 
 		$sut->add_woo_admin_notes();
 
@@ -335,7 +323,7 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 		$canceled_auth_remediation_note = $this->createMock( WooPaymentsCanceledAuthRemediationNote::class );
 		$canceled_auth_remediation_note->expects( $this->once() )->method( 'possibly_add_note' );
 		$sut = new WooPaymentsAdminNotesController();
-		$sut->init( new StaticWooPaymentsRuntimeArbiter( true ), new WooPaymentsSetHttpsForCheckoutNote(), $link_note, $canceled_auth_remediation_note );
+		$sut->init( new WooPaymentsSetHttpsForCheckoutNote(), $link_note, $canceled_auth_remediation_note );
 
 		$sut->add_woo_admin_notes();
 
@@ -357,12 +345,11 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 		$logger    = RecordingWcLogger::install();
 		$link_note = $this->createMock( WooPaymentsSetUpLinkNote::class );
 		$link_note->method( 'possibly_add_note' )->willThrowException( new \RuntimeException( 'platform text' ) );
-		$remediation_service = new WooPaymentsCanceledAuthorizationFeeRemediationService();
-		$remediation_service->init( new StaticWooPaymentsRuntimeArbiter( true ) );
+		$remediation_service            = new WooPaymentsCanceledAuthorizationFeeRemediationService();
 		$canceled_auth_remediation_note = new WooPaymentsCanceledAuthRemediationNote();
 		$canceled_auth_remediation_note->init( $remediation_service );
 		$sut = new WooPaymentsAdminNotesController();
-		$sut->init( new StaticWooPaymentsRuntimeArbiter( true ), new WooPaymentsSetHttpsForCheckoutNote(), $link_note, $canceled_auth_remediation_note );
+		$sut->init( new WooPaymentsSetHttpsForCheckoutNote(), $link_note, $canceled_auth_remediation_note );
 
 		$sut->add_woo_admin_notes();
 
@@ -372,12 +359,11 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the controller.
 	 *
-	 * @param bool                $native_owns_runtime Whether native owns the payments runtime.
-	 * @param array<string,mixed> $account_data        Cached account data.
-	 * @param string[]            $enabled_ids         Enabled payment method IDs.
+	 * @param array<string,mixed> $account_data Cached account data.
+	 * @param string[]            $enabled_ids  Enabled payment method IDs.
 	 * @return WooPaymentsAdminNotesController
 	 */
-	private function create_sut( bool $native_owns_runtime, array $account_data = array(), array $enabled_ids = array( 'card' ) ): WooPaymentsAdminNotesController {
+	private function create_sut( array $account_data = array(), array $enabled_ids = array( 'card' ) ): WooPaymentsAdminNotesController {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data', 'get_gateway_setting', 'get_account_country' ) )
@@ -391,13 +377,12 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 		$link_note = new WooPaymentsSetUpLinkNote();
 		$link_note->init( $account_service, new WooPaymentsPaymentMethodRegistry() );
 
-		$remediation_service = new WooPaymentsCanceledAuthorizationFeeRemediationService();
-		$remediation_service->init( new StaticWooPaymentsRuntimeArbiter( $native_owns_runtime ) );
+		$remediation_service            = new WooPaymentsCanceledAuthorizationFeeRemediationService();
 		$canceled_auth_remediation_note = new WooPaymentsCanceledAuthRemediationNote();
 		$canceled_auth_remediation_note->init( $remediation_service );
 
 		$sut = new WooPaymentsAdminNotesController();
-		$sut->init( new StaticWooPaymentsRuntimeArbiter( $native_owns_runtime ), new WooPaymentsSetHttpsForCheckoutNote(), $link_note, $canceled_auth_remediation_note );
+		$sut->init( new WooPaymentsSetHttpsForCheckoutNote(), $link_note, $canceled_auth_remediation_note );
 
 		return $sut;
 	}

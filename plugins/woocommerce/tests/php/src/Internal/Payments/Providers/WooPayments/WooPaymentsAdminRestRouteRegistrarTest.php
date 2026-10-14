@@ -129,14 +129,8 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 	 * @return WooPaymentsPaymentDetailsRestController
 	 */
 	private function create_payment_details_controller(): WooPaymentsPaymentDetailsRestController {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
-
 		$controller = new WooPaymentsPaymentDetailsRestController();
-		$controller->init( $arbiter, new WooPaymentsApiClient(), new WooPaymentsMoneyMovementOrderService() );
+		$controller->init( new WooPaymentsApiClient(), new WooPaymentsMoneyMovementOrderService() );
 
 		return $controller;
 	}

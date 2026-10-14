@@ -48,13 +48,6 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 	const NEW_ORDER_TRACKING_COMPLETE_META_KEY = '_new_order_tracking_complete';
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Action Scheduler service.
 	 *
 	 * @var WooPaymentsActionSchedulerService
@@ -87,20 +80,17 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter         $arbiter         Runtime owner arbiter.
 	 * @param WooPaymentsActionSchedulerService $scheduler       Action Scheduler service.
 	 * @param WooPaymentsApiClient              $api_client      WooPayments API client.
 	 * @param WooPaymentsAccountService         $account_service WooPayments account service.
 	 * @param WooPaymentsFraudService           $fraud_service   WooPayments fraud service.
 	 */
 	final public function init(
-		WooPaymentsRuntimeArbiter $arbiter,
 		WooPaymentsActionSchedulerService $scheduler,
 		WooPaymentsApiClient $api_client,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsFraudService $fraud_service
 	): void {
-		$this->arbiter         = $arbiter;
 		$this->scheduler       = $scheduler;
 		$this->api_client      = $api_client;
 		$this->account_service = $account_service;
@@ -108,13 +98,9 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register the order tracking handlers while the built-in WooPayments owns payments.
+	 * Register the order tracking handlers.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		add_action( 'woocommerce_update_order', array( $this, 'handle_woocommerce_update_order' ), 10, 2 );
 		add_action( self::TRACK_NEW_ORDER_ACTION, array( $this, 'handle_wcpay_track_new_order' ), 10, 1 );
 		add_action( self::TRACK_UPDATE_ORDER_ACTION, array( $this, 'handle_wcpay_track_update_order' ), 10, 1 );

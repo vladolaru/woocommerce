@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Webhooks;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -63,31 +62,15 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		$this->remove_rest_hook();
-		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		$this->reset_legacy_proxy_mocks();
 		wc_get_container()->reset_all_replacements();
 		parent::tearDown();
 	}
 
 	/**
-	 * @testdox The webhook route is not registered when the WooPayments extension owns the runtime.
-	 */
-	public function test_registers_no_route_when_extension_owns_runtime(): void {
-		$this->fake_plugin( true );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-
-		$this->sut->register();
-
-		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
-	}
-
-	/**
 	 * @testdox The controller registers POST /wc/v3/payments/webhook when the built-in WooPayments owns the runtime.
 	 */
 	public function test_registers_wc_v3_payments_webhook_when_builtin_owns_runtime(): void {
-		$this->fake_plugin( false );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-
 		$this->sut->register();
 		// The controller registers routes on the REST API initialization hook in production.
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
@@ -641,7 +624,6 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$logger     = RecordingWcLogger::install();
 		$controller = new WooPaymentsWebhookRestController();
 		$controller->init(
-			wc_get_container()->get( WooPaymentsRuntimeArbiter::class ),
 			wc_get_container()->get( WooPaymentsEventIngestor::class ),
 			wc_get_container()->get( WooPaymentsWebhookReliabilityService::class )
 		);
@@ -730,37 +712,6 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * Control every WooPayments-plugin detection signal in a single mock registration.
-	 *
-	 * @param bool $active Whether the WooPayments plugin should appear active.
-	 */
-	private function fake_plugin( bool $active ): void {
-		$entry = WooPaymentsRuntimeArbiter::PLUGIN_FILE;
-		$this->register_legacy_proxy_function_mocks(
-			array(
-				'get_option'      => function ( $name, $default_value = false ) use ( $active, $entry ) {
-					if ( 'active_plugins' === $name ) {
-						return $active ? array( $entry ) : array();
-					}
-					return get_option( $name, $default_value );
-				},
-				'get_site_option' => function ( $name, $default_value = false ) {
-					if ( 'active_sitewide_plugins' === $name ) {
-						return array();
-					}
-					return get_site_option( $name, $default_value );
-				},
-				'class_exists'    => function ( $class_name, $autoload = true ) use ( $active ) {
-					if ( 'WC_Payments' === ltrim( (string) $class_name, '\\' ) ) {
-						return $active;
-					}
-					return class_exists( $class_name, $autoload );
-				},
-			)
-		);
-	}
-
-	/**
 	 * Create a controller with a supplied ingestor.
 	 *
 	 * @param WooPaymentsEventIngestor $ingestor Ingestor test double.
@@ -776,14 +727,13 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 		$reliability_service       = new WooPaymentsWebhookReliabilityService();
 		$this->reliability_service = $reliability_service;
 		$reliability_service->init(
-			wc_get_container()->get( WooPaymentsRuntimeArbiter::class ),
 			$this->scheduler,
 			new StaticFailedEventsApiClient(),
 			$ingestor
 		);
 
 		$controller = new WooPaymentsWebhookRestController();
-		$controller->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), $ingestor, $reliability_service );
+		$controller->init( $ingestor, $reliability_service );
 
 		return $controller;
 	}

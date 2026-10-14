@@ -21,7 +21,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -47,34 +46,12 @@ defined( 'ABSPATH' ) || exit;
 class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 
 	/**
-	 * Runtime ownership arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
-	 * Initialize the class instance.
-	 *
-	 * @internal
-	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter Runtime ownership arbiter.
-	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter ): void {
-		$this->arbiter = $arbiter;
-	}
-
-	/**
-	 * Attach the renewal hooks on `plugins_loaded` priority 11 when the built-in WooPayments owns payments.
+	 * Attach the renewal hooks on `plugins_loaded` priority 11.
 	 *
 	 * That is when the client detects Subscriptions and attaches (client 11.1.0 `woocommerce-payments.php:214`), after
 	 * Subscriptions has loaded and before WooCommerce builds its emails.
 	 */
 	public function register(): void {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( did_action( 'plugins_loaded' ) ) {
 			$this->handle_plugins_loaded();
 			return;

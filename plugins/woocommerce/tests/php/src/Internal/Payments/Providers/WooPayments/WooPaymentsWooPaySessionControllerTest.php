@@ -5,7 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Connection\Rest_Authentication;
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
@@ -92,7 +91,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_registers_woopay_route_and_ajax_hooks_when_native_owns_runtime_and_woopay_is_enabled(): void {
 		$service   = new RecordingWooPaySessionService();
-		$this->sut = $this->create_controller( true, true, $service );
+		$this->sut = $this->create_controller( true, $service );
 
 		$this->sut->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
@@ -116,7 +115,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Should register WooPay frontend hooks when native owns runtime and WooPay is enabled.
 	 */
 	public function test_registers_woopay_frontend_hooks_when_native_owns_runtime_and_woopay_is_enabled(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 
 		$this->sut->register();
 
@@ -134,7 +133,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	public function test_registers_woopay_hooks_on_init_when_registered_while_plugins_load(): void {
 		global $wp_actions;
 		$service   = new RecordingWooPaySessionService();
-		$this->sut = $this->create_controller( true, false, $service );
+		$this->sut = $this->create_controller( false, $service );
 		remove_all_actions( 'init' );
 		unset( $wp_actions['init'] );
 
@@ -154,7 +153,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_button_filter_does_not_disable_controller_registration(): void {
 		$service   = $this->create_real_enabled_session_service();
-		$this->sut = $this->create_controller( true, true, $service );
+		$this->sut = $this->create_controller( true, $service );
 		add_filter( 'wcpay_woopay_enabled', '__return_false' );
 
 		$this->sut->register();
@@ -164,33 +163,11 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register no hooks when native does not own runtime.
-	 */
-	public function test_registers_no_hooks_when_native_does_not_own_runtime(): void {
-		$service   = new RecordingWooPaySessionService();
-		$this->sut = $this->create_controller( false, true, $service );
-
-		$this->sut->register();
-
-		$this->assertFalse( has_filter( 'determine_current_user', array( $service, 'determine_current_user_for_woopay' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_order_payment_status_changed', array( $service, 'woopay_order_payment_status_changed' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_store_api_checkout_order_processed', array( $service, 'catch_woopay_checkout_errors' ) ) );
-		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
-		foreach ( $this->get_expected_ajax_hooks() as $hook => $method ) {
-			$this->assertFalse( has_action( $hook, array( $this->sut, $method ) ) );
-		}
-		foreach ( $this->get_expected_frontend_hooks() as $hook => $method ) {
-			$this->assertFalse( has_action( $hook, array( $this->sut, $method ) ) );
-		}
-		$this->assertFalse( has_filter( 'wcpay_metadata_from_order', array( $this->sut, 'maybe_add_woopay_user_metadata' ) ) );
-	}
-
-	/**
 	 * @testdox Should keep the inbound identity hooks and the session route registered when WooPay is disabled.
 	 */
 	public function test_keeps_identity_hooks_and_session_route_when_platform_checkout_is_disabled(): void {
 		$service   = new RecordingWooPaySessionService();
-		$this->sut = $this->create_controller( true, false, $service );
+		$this->sut = $this->create_controller( false, $service );
 
 		$this->sut->register();
 
@@ -220,7 +197,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service                            = new RecordingWooPaySessionService();
 		$service->woopay_enabled            = true;
 		$service->should_show_woopay_button = true;
-		$this->sut                          = $this->create_controller( true, true, $service );
+		$this->sut                          = $this->create_controller( true, $service );
 		$term_id                            = self::factory()->category->create( array( 'name' => 'Empty archive' ) );
 		// A product shortcode page whose post ID is the category's term ID (import_id asks wp_insert_post() for that ID).
 		$page_id = wp_insert_post(
@@ -247,7 +224,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service                            = new RecordingWooPaySessionService();
 		$service->woopay_enabled            = true;
 		$service->should_show_woopay_button = false;
-		$this->sut                          = $this->create_controller( true, true, $service );
+		$this->sut                          = $this->create_controller( true, $service );
 
 		$this->set_checkout_shortcode_page();
 		// The source URL is the page permalink core's Blocks settings use, not wc_get_checkout_url() and its filter.
@@ -282,7 +259,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
 		$service->direct_checkout_enabled             = true;
-		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->sut                                    = $this->create_controller( true, $service );
 		add_filter( 'woocommerce_is_cart', '__return_true' );
 
 		$this->sut->enqueue_frontend_assets();
@@ -309,7 +286,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
 		$service->direct_checkout_enabled             = true;
-		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->sut                                    = $this->create_controller( true, $service );
 		$page_id                                      = self::factory()->post->create(
 			array(
 				'post_type'    => 'page',
@@ -345,7 +322,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
 		$service->direct_checkout_enabled             = true;
-		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->sut                                    = $this->create_controller( true, $service );
 		$page_id                                      = self::factory()->post->create(
 			array(
 				'post_type'    => 'page',
@@ -376,7 +353,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
 		$service->direct_checkout_enabled             = true;
-		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->sut                                    = $this->create_controller( true, $service );
 		$this->sut->register();
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
@@ -397,7 +374,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
 		$service->direct_checkout_enabled             = true;
-		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->sut                                    = $this->create_controller( true, $service );
 		$this->sut->register();
 		if ( ! wp_script_is( 'wc-cart-fragments', 'registered' ) ) {
 			wp_register_script( 'wc-cart-fragments', 'https://example.com/cart-fragments.js', array(), '1.0', true );
@@ -429,7 +406,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		);
 		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
 		$this->make_base_gateway_available();
-		$this->sut = $this->create_controller( true, true, $this->create_real_enabled_session_service( false ) );
+		$this->sut = $this->create_controller( true, $this->create_real_enabled_session_service( false ) );
 		$this->sut->register();
 		if ( ! wp_script_is( 'wc-cart-fragments', 'registered' ) ) {
 			wp_register_script( 'wc-cart-fragments', 'https://example.com/cart-fragments.js', array(), '1.0', true );
@@ -459,7 +436,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service->should_load_woopay_save_user_assets = false;
 		$service->direct_checkout_enabled             = true;
 		$service->guest_rule_passes                   = false;
-		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->sut                                    = $this->create_controller( true, $service );
 		$this->sut->register();
 		if ( ! wp_script_is( 'wc-cart-fragments', 'registered' ) ) {
 			wp_register_script( 'wc-cart-fragments', 'https://example.com/cart-fragments.js', array(), '1.0', true );
@@ -487,7 +464,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service->should_load_woopay_save_user_assets = false;
 		$service->direct_checkout_enabled             = true;
 		$service->guest_rule_passes                   = false;
-		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->sut                                    = $this->create_controller( true, $service );
 		$this->set_current_product();
 		if ( ! wp_script_is( 'wc-cart-fragments', 'registered' ) ) {
 			wp_register_script( 'wc-cart-fragments', 'https://example.com/cart-fragments.js', array(), '1.0', true );
@@ -513,7 +490,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
 		$service->direct_checkout_enabled             = false;
-		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->sut                                    = $this->create_controller( true, $service );
 		$this->sut->register();
 		if ( ! wp_script_is( 'wc-cart-fragments', 'registered' ) ) {
 			wp_register_script( 'wc-cart-fragments', 'https://example.com/cart-fragments.js', array(), '1.0', true );
@@ -537,7 +514,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
 		$service->direct_checkout_enabled             = true;
-		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->sut                                    = $this->create_controller( true, $service );
 		$this->sut->register();
 		$this->set_checkout_shortcode_page();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
@@ -564,7 +541,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
 		$service->direct_checkout_enabled             = true;
-		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->sut                                    = $this->create_controller( true, $service );
 		$this->sut->register();
 		$this->reset_frontend_surface_state();
 		update_option( 'woocommerce_checkout_page_id', $this->set_current_page_with_content( '<!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->' ) );
@@ -591,7 +568,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
 		$service->direct_checkout_enabled             = true;
-		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->sut                                    = $this->create_controller( true, $service );
 		$this->sut->register();
 		$this->set_checkout_shortcode_page();
 		if ( ! wp_script_is( 'wc-cart-fragments', 'registered' ) ) {
@@ -619,7 +596,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
 		$service->direct_checkout_enabled             = true;
-		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->sut                                    = $this->create_controller( true, $service );
 		$page_id                                      = self::factory()->post->create(
 			array(
 				'post_type'    => 'page',
@@ -652,7 +629,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
 		$service->direct_checkout_enabled             = true;
-		$this->sut                                    = $this->create_controller( true, true, $service );
+		$this->sut                                    = $this->create_controller( true, $service );
 
 		$this->sut->enqueue_frontend_assets();
 
@@ -664,13 +641,13 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Should move the classic billing email into a contact section only while WooPay is enabled.
 	 */
 	public function test_register_relocates_classic_email_field_only_when_woopay_is_enabled(): void {
-		$this->sut = $this->create_controller( true, false );
+		$this->sut = $this->create_controller( false );
 		$this->sut->register();
 
 		$this->assertFalse( has_action( 'woocommerce_checkout_billing', array( $this->sut, 'woopay_fields_before_billing_details' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_form_field_email', array( $this->sut, 'filter_woocommerce_form_field_woopay_email' ) ) );
 
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->sut->register();
 
 		$this->assertSame( -50, has_action( 'woocommerce_checkout_billing', array( $this->sut, 'woopay_fields_before_billing_details' ) ) );
@@ -681,7 +658,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Should render the WooPay contact section with the billing email field.
 	 */
 	public function test_woopay_fields_before_billing_details_renders_contact_section(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->set_checkout_shortcode_page();
 
 		ob_start();
@@ -701,7 +678,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Should hide the core billing email on checkout while leaving the WooPay one and other pages alone.
 	 */
 	public function test_filter_woocommerce_form_field_woopay_email_hides_core_field_on_checkout(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$field     = '<p class="form-row"><input type="email" name="billing_email" /></p>';
 
 		$this->set_checkout_shortcode_page();
@@ -724,7 +701,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @preserveGlobalState disabled
 	 */
 	public function test_filter_woocommerce_form_field_woopay_email_keeps_core_field_off_checkout(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$field     = '<p class="form-row"><input type="email" name="billing_email" /></p>';
 
 		$this->assertSame( $field, $this->sut->filter_woocommerce_form_field_woopay_email( $field, 'billing_email', array( 'class' => array( 'form-row-wide' ) ), '' ) );
@@ -734,7 +711,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Should require a phone number when the shopper asks to save their details in WooPay.
 	 */
 	public function test_maybe_show_woopay_phone_number_error_requires_phone_when_saving_user(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->sut->register();
 
 		$this->assertSame( 10, has_action( 'woocommerce_checkout_process', array( $this->sut, 'maybe_show_woopay_phone_number_error' ) ) );
@@ -784,7 +761,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Should give only the WooPay placeholder for the shared wrapper on checkout.
 	 */
 	public function test_express_checkout_button_html_is_the_placeholder_on_checkout(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->set_checkout_shortcode_page();
 
 		$output = $this->sut->get_express_checkout_button_html();
@@ -798,7 +775,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Should give no WooPay placeholder when WooPay is disabled.
 	 */
 	public function test_express_checkout_button_html_is_empty_when_woopay_is_disabled(): void {
-		$this->sut = $this->create_controller( true, false );
+		$this->sut = $this->create_controller( false );
 		$this->set_checkout_shortcode_page();
 
 		$this->assertSame( '', $this->sut->get_express_checkout_button_html() );
@@ -808,7 +785,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Should give a product-context WooPay placeholder on product pages.
 	 */
 	public function test_express_checkout_button_html_on_product_page(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->set_current_product();
 
 		$this->assertStringContainsString( 'data-product_page="1"', $this->sut->get_express_checkout_button_html() );
@@ -818,7 +795,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Should render product-context WooPay on product_page shortcode pages.
 	 */
 	public function test_express_checkout_button_html_supports_product_page_shortcode(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$product   = \WC_Helper_Product::create_simple_product( true );
 		$product->set_sku( 'woopay-controller-shortcode' );
 		$product->save();
@@ -837,7 +814,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->make_base_gateway_available();
 		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
 		$service   = $this->create_real_enabled_session_service();
-		$this->sut = $this->create_controller( true, true, $service );
+		$this->sut = $this->create_controller( true, $service );
 		$this->set_checkout_shortcode_page();
 		$enabled_filter_calls = 0;
 		add_filter(
@@ -864,7 +841,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$owner_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		$order    = \WC_Helper_Order::create_order( $owner_id );
 		wp_set_current_user( $owner_id );
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->set_order_pay_page( $order->get_id(), $order->get_order_key() );
 
 		$this->sut->enqueue_frontend_assets();
@@ -884,7 +861,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_order_pay_config_gives_a_guest_only_their_own_email(): void {
 		$order     = \WC_Helper_Order::create_order( 0 );
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->set_order_pay_page( $order->get_id(), $order->get_order_key() );
 
 		$this->sut->enqueue_frontend_assets();
@@ -910,7 +887,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_order_pay_config_gives_a_guest_their_email_only_on_an_uncached_page( bool $do_not_cache, string $expected ): void {
 		$order     = \WC_Helper_Order::create_order( 0 );
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->set_order_pay_page( $order->get_id(), $order->get_order_key() );
 		$session_customer = WC()->session->get( 'customer' );
 		WC()->session->set( 'customer', array( 'email' => 'guest@example.com' ) );
@@ -944,7 +921,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$owner_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		$order    = \WC_Helper_Order::create_order( $owner_id );
 		wp_set_current_user( "another customer's order" === $scenario ? self::factory()->user->create( array( 'role' => 'customer' ) ) : $owner_id );
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->set_order_pay_page( $order->get_id(), 'wrong key' === $scenario ? 'wc_order_not_the_key' : $order->get_order_key() );
 		if ( 'no key' === $scenario ) {
 			unset( $_GET['key'] );
@@ -990,7 +967,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		if ( '' !== $active_currency ) {
 			add_filter( 'woocommerce_currency', static fn() => $active_currency, 900 );
 		}
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->set_order_pay_page( $order->get_id(), $order->get_order_key() );
 
 		$this->sut->enqueue_frontend_assets();
@@ -1039,7 +1016,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		wp_set_current_user( $owner_id );
 		add_filter( 'woocommerce_currency', static fn() => $currency, 900 );
 		add_filter( 'wc_get_price_decimals', static fn() => $decimals, 900 );
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->set_order_pay_page( $order->get_id(), $order->get_order_key() );
 
 		$this->sut->enqueue_frontend_assets();
@@ -1082,7 +1059,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 			},
 			900
 		);
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->set_order_pay_page( $order->get_id(), $order->get_order_key() );
 
 		$this->sut->enqueue_frontend_assets();
@@ -1104,7 +1081,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$owner_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		$order    = \WC_Helper_Order::create_order( $owner_id );
 		wp_set_current_user( $owner_id );
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->set_order_pay_page( $order->get_id(), $order->get_order_key(), '[woocommerce_checkout] [product_page id="' . $product->get_id() . '"]' );
 
 		$html = $this->sut->get_express_checkout_button_html();
@@ -1127,7 +1104,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$owner_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		$order    = \WC_Helper_Order::create_order( $owner_id );
 		wp_set_current_user( $owner_id );
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->set_order_pay_page( $order->get_id(), $order->get_order_key(), '<!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->' );
 
 		$this->assertStringContainsString( 'id="wcpay-woopay-button"', $this->sut->get_express_checkout_button_html() );
@@ -1153,7 +1130,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$owner_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		$order    = \WC_Helper_Order::create_order( $owner_id );
 		wp_set_current_user( $owner_id );
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->set_order_pay_page( $order->get_id(), $order->get_order_key(), $page_content );
 		$_GET['change_payment_method'] = (string) $order->get_id();
 
@@ -1166,7 +1143,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Should require WooPay user agent and a signed request.
 	 */
 	public function test_woopay_rest_route_requires_woopay_user_agent_and_signed_request(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->sut->register_routes();
 
 		$missing_agent = new WP_REST_Request( 'GET', '/payments/woopay/session' );
@@ -1190,7 +1167,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox The signed-request filter is strengthen-only and cannot grant access to an unsigned request.
 	 */
 	public function test_check_permission_filter_cannot_grant_access_to_unsigned_request(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 
 		// Real blog-token check is false in tests; a filter returning true must not grant access.
 		add_filter( 'wcpay_woopay_is_signed_with_blog_token', '__return_true' );
@@ -1209,7 +1186,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox A signed request is allowed when no filter restricts it.
 	 */
 	public function test_check_permission_allows_signed_request_without_filter(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->force_real_blog_token_signed();
 
 		$request = new WP_REST_Request( 'GET', '/payments/woopay/session' );
@@ -1223,7 +1200,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox The signed-request filter can still restrict access to a signed request.
 	 */
 	public function test_check_permission_filter_can_restrict_signed_request(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->force_real_blog_token_signed();
 
 		// The real check is true, but a filter returning false must still deny access.
@@ -1243,7 +1220,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Should preserve the one-argument shape of the signed-request filter.
 	 */
 	public function test_check_permission_preserves_signed_request_filter_arg_shape(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->force_real_blog_token_signed();
 		$captured_args = null;
 
@@ -1280,7 +1257,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	public function test_get_session_logs_and_returns_error_when_assembly_throws( bool $logging_enabled ): void {
 		$service                 = new ThrowingWooPaySessionService();
 		$service->woopay_enabled = true;
-		$this->sut               = $this->create_controller( true, true, $service );
+		$this->sut               = $this->create_controller( true, $service );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => $logging_enabled ? 'yes' : 'no' ) );
 
 		$logged = array();
@@ -1324,7 +1301,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_rest_session_route_returns_session_data_for_signed_woopay_request(): void {
 		$service   = new RecordingWooPaySessionService();
-		$this->sut = $this->create_controller( true, true, $service );
+		$this->sut = $this->create_controller( true, $service );
 		$this->sut->register_routes();
 		$this->force_real_blog_token_signed();
 
@@ -1344,7 +1321,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_builds_ajax_response_payloads(): void {
 		$service   = new RecordingWooPaySessionService();
-		$this->sut = $this->create_controller( true, true, $service );
+		$this->sut = $this->create_controller( true, $service );
 		$this->sut->register();
 
 		$this->assertSame( array( 'result' => 'success' ), $this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_init_woopay', 'wcpay_init_woopay_nonce', array( 'email' => 'shopper@example.com' ) ) );
@@ -1366,7 +1343,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_appearance_writes_store_the_posted_appearance(): void {
 		$service   = new RecordingWooPaySessionService();
-		$this->sut = $this->create_controller( true, true, $service );
+		$this->sut = $this->create_controller( true, $service );
 		$this->sut->register();
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 
@@ -1405,7 +1382,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	public function test_ajax_handler_guard_refuses_the_request( string $label, string $hook, string $role, ?string $nonce_action, array $post, $expected_body, ?int $expected_status ): void {
 		unset( $label );
 		$service   = new RecordingWooPaySessionService();
-		$this->sut = $this->create_controller( true, true, $service );
+		$this->sut = $this->create_controller( true, $service );
 		$this->sut->register();
 		wp_set_current_user( self::factory()->user->create( array( 'role' => $role ) ) );
 		$nonce    = null === $nonce_action ? 'not-a-valid-nonce' : wp_create_nonce( $nonce_action );
@@ -1473,7 +1450,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_signature_ajax_handler_returns_success_envelope(): void {
 		$service   = new RecordingWooPaySessionService();
-		$this->sut = $this->create_controller( true, true, $service );
+		$this->sut = $this->create_controller( true, $service );
 		$_POST     = array( // phpcs:ignore WordPress.Security.NonceVerification.Missing
 			'_ajax_nonce' => wp_create_nonce( 'woopay_signature_nonce' ),
 		);
@@ -1489,7 +1466,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Should require the WooPay button nonce before rendering frontend error notices.
 	 */
 	public function test_show_error_notice_ajax_handler_requires_woopay_button_nonce(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$_POST     = array( // phpcs:ignore WordPress.Security.NonceVerification.Missing
 			'message' => 'WooPay is unavailable.',
 		);
@@ -1526,7 +1503,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	public function test_appearance_write_needs_global_theme_support( string $label, string $hook, string $nonce_action ): void {
 		unset( $label );
 		$service   = new RecordingWooPaySessionService();
-		$this->sut = $this->create_controller( true, true, $service );
+		$this->sut = $this->create_controller( true, $service );
 		$this->sut->register();
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 
@@ -1565,7 +1542,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	public function test_shopper_appearance_response_reports_when_appearance_slot_is_filled(): void {
 		$service                    = new RecordingWooPaySessionService();
 		$service->appearance_stored = false;
-		$this->sut                  = $this->create_controller( true, true, $service );
+		$this->sut                  = $this->create_controller( true, $service );
 		$this->sut->register();
 		$this->post_appearance_request( 'woopay_session_nonce' );
 
@@ -1594,7 +1571,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		}
 		$this->assertGreaterThan( 0, $variation_id );
 
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$_POST     = array( // phpcs:ignore WordPress.Security.NonceVerification.Missing
 			'security'            => wp_create_nonce( 'wcpay-add-to-cart' ),
 			'product_id'          => (string) $product->get_id(),
@@ -1667,7 +1644,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 
 		try {
 			$product   = \WC_Helper_Product::create_simple_product();
-			$this->sut = $this->create_controller( true, true );
+			$this->sut = $this->create_controller( true );
 			$_POST     = array( // phpcs:ignore WordPress.Security.NonceVerification.Missing
 				'security'   => wp_create_nonce( 'wcpay-add-to-cart' ),
 				'product_id' => (string) $product->get_id(),
@@ -1695,25 +1672,18 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Create the System Under Test.
 	 *
-	 * @param bool                                 $native_register Whether native should register hooks.
-	 * @param bool                                 $woopay_enabled  Whether WooPay should be enabled.
-	 * @param WooPaymentsWooPaySessionService|null $service         Optional service double.
+	 * @param bool                                 $woopay_enabled Whether WooPay should be enabled.
+	 * @param WooPaymentsWooPaySessionService|null $service        Optional service double.
 	 * @return WooPaymentsWooPaySessionController
 	 */
-	private function create_controller( bool $native_register, bool $woopay_enabled, ?WooPaymentsWooPaySessionService $service = null ): WooPaymentsWooPaySessionController {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
-
+	private function create_controller( bool $woopay_enabled, ?WooPaymentsWooPaySessionService $service = null ): WooPaymentsWooPaySessionController {
 		$service = $service ?? new RecordingWooPaySessionService();
 		if ( $service instanceof RecordingWooPaySessionService ) {
 			$service->woopay_enabled = $woopay_enabled;
 		}
 
 		$controller = new WooPaymentsWooPaySessionController();
-		$controller->init( $arbiter, $service );
+		$controller->init( $service );
 
 		return $controller;
 	}

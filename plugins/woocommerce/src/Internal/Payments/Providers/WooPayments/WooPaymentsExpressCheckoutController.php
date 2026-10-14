@@ -23,13 +23,6 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	private const CLASSIC_EXPRESS_CHECKOUT_STYLE_HANDLE = 'wc-woopayments-express-checkout';
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Express checkout service.
 	 *
 	 * @var WooPaymentsExpressCheckoutService
@@ -62,13 +55,11 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter          $arbiter                  Runtime owner arbiter.
 	 * @param WooPaymentsExpressCheckoutService  $express_checkout_service Express checkout service.
 	 * @param WooPaymentsFraudPreventionService  $fraud_prevention_service Fraud prevention service.
 	 * @param WooPaymentsWooPaySessionController $woopay_controller        WooPay controller.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsExpressCheckoutService $express_checkout_service, WooPaymentsFraudPreventionService $fraud_prevention_service, WooPaymentsWooPaySessionController $woopay_controller ): void {
-		$this->arbiter                  = $arbiter;
+	final public function init( WooPaymentsExpressCheckoutService $express_checkout_service, WooPaymentsFraudPreventionService $fraud_prevention_service, WooPaymentsWooPaySessionController $woopay_controller ): void {
 		$this->express_checkout_service = $express_checkout_service;
 		$this->fraud_prevention_service = $fraud_prevention_service;
 		$this->woopay_controller        = $woopay_controller;
@@ -78,10 +69,6 @@ class WooPaymentsExpressCheckoutController implements RegisterHooksInterface {
 	 * Register express checkout frontend hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		foreach ( $this->get_frontend_hooks() as $hook => list( $callback, $priority ) ) {
 			if ( false === has_action( $hook, $callback ) ) {
 				add_action( $hook, $callback, $priority );

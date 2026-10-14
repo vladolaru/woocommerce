@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -77,7 +76,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$page = $this->create_page( true, $tracker );
+		$page = $this->create_page( $tracker );
 		$page->register();
 		$page->register();
 		$this->registered_pages[] = $page;
@@ -123,8 +122,6 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		};
 		add_filter( 'wcpay_tracks_event_properties', $count_recorder );
 		add_filter( 'pre_http_request', $count_http );
-		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
-		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments', 'get_cached_account_data', 'get_gateway_setting' ) )
@@ -133,8 +130,8 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_cached_account_data' )->willReturn( array( 'platform_checkout_eligible' => true ) );
 		$account_service->method( 'get_gateway_setting' )->willReturn( 'yes' );
 		$tracker = new WooPaymentsFrontendTrackingController();
-		$tracker->init( $arbiter, $account_service );
-		$page  = $this->create_page( true, $tracker );
+		$tracker->init( $account_service );
+		$page  = $this->create_page( $tracker );
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
@@ -173,7 +170,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register the order-success hook only when the built-in WooPayments owns the runtime: $_dataName.
+	 * @testdox Should register the order-success hook: $_dataName.
 	 *
 	 * Priorities follow client 11.1.0 (class-wc-payments-order-success-page.php:30): the known-shopper exception and the
 	 * order-received text filters run at 11 so they apply after the store's own customizations.
@@ -182,14 +179,10 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string $hook     Hook name.
 	 * @param string $callback Page method registered on the hook.
-	 * @param int    $priority Expected priority when the built-in WooPayments owns the runtime.
+	 * @param int    $priority Expected priority.
 	 */
-	public function test_registers_order_success_hooks_only_when_builtin_owns_runtime( string $hook, string $callback, int $priority ): void {
-		$extension_owned = $this->create_page( false );
-		$builtin_owned   = $this->create_page( true );
-
-		$extension_owned->register();
-		$this->assertFalse( has_filter( $hook, array( $extension_owned, $callback ) ) );
+	public function test_registers_order_success_hooks( string $hook, string $callback, int $priority ): void {
+		$builtin_owned = $this->create_page();
 
 		$builtin_owned->register();
 		$this->registered_pages[] = $builtin_owned;
@@ -226,7 +219,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @param string $payment_method Order payment method.
 	 */
 	public function test_enqueues_order_success_assets_on_order_received_page( string $payment_method ): void {
-		$page = $this->create_page( true );
+		$page = $this->create_page();
 		$this->create_thankyou_order( 'processing', $payment_method );
 		add_filter( 'woocommerce_is_order_received_page', '__return_true' );
 
@@ -252,7 +245,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @param bool   $key_matches    Whether the request carries the order key.
 	 */
 	public function test_skips_order_success_assets_for_orders_not_shown_as_woopayments_orders( string $payment_method, bool $key_matches ): void {
-		$page = $this->create_page( true );
+		$page = $this->create_page();
 		$this->create_thankyou_order( 'processing', $payment_method );
 		if ( ! $key_matches ) {
 			$_GET['key'] = 'wc_order_mismatch';
@@ -278,7 +271,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @param bool $expect_enqueued Whether the assets should be enqueued.
 	 */
 	public function test_enqueues_order_success_assets_on_view_order_page_for_the_order_owner( bool $is_owner, bool $expect_enqueued ): void {
-		$page        = $this->create_page( true );
+		$page        = $this->create_page();
 		$customer_id = $this->factory->user->create( array( 'role' => 'customer' ) );
 		$order       = wc_create_order( array( 'customer_id' => $customer_id ) );
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
@@ -309,7 +302,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @param bool $pass_order_object Whether the hook passes the order object instead of its id.
 	 */
 	public function test_renders_multibanco_voucher_instructions_for_on_hold_multibanco_orders( bool $pass_order_object ): void {
-		$page  = $this->create_page( true );
+		$page  = $this->create_page();
 		$order = $this->create_multibanco_order();
 
 		ob_start();
@@ -349,7 +342,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @testdox Should not render Multibanco instructions for non-Multibanco orders.
 	 */
 	public function test_does_not_render_multibanco_instructions_for_non_multibanco_orders(): void {
-		$page  = $this->create_page( true );
+		$page  = $this->create_page();
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
@@ -371,7 +364,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @param string $format Email format.
 	 */
 	public function test_on_hold_email_carries_multibanco_payment_instructions( string $format ): void {
-		$page = $this->create_page( true );
+		$page = $this->create_page();
 		$page->register();
 		$this->registered_pages[] = $page;
 		$order                    = $this->create_multibanco_order();
@@ -398,7 +391,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @param string $payment_method Order payment method.
 	 */
 	public function test_emails_add_no_multibanco_instructions_outside_multibanco_on_hold_email( string $email_class, string $payment_method ): void {
-		$page = $this->create_page( true );
+		$page = $this->create_page();
 		$page->register();
 		$this->registered_pages[] = $page;
 		$order                    = $this->create_multibanco_order();
@@ -419,7 +412,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @param string $format Email format.
 	 */
 	public function test_on_hold_email_adds_no_multibanco_instructions_without_a_voucher( string $format ): void {
-		$page = $this->create_page( true );
+		$page = $this->create_page();
 		$page->register();
 		$this->registered_pages[] = $page;
 		$order                    = wc_create_order();
@@ -451,7 +444,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @param string      $expected_alt       Expected `alt` attribute (the registry's own title).
 	 */
 	public function test_filters_lpm_payment_method_title_on_order_received_page( string $method_id, string $icon_fragment, ?string $dark_icon_fragment, string $expected_alt ): void {
-		$page = $this->create_page( true );
+		$page = $this->create_page();
 		if ( 'multibanco' === $method_id ) {
 			$order = $this->create_multibanco_order();
 		} else {
@@ -492,7 +485,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @testdox Should render express-wallet titles without applying LPM logo filters.
 	 */
 	public function test_filters_express_payment_method_title_without_lpm_logo_filters(): void {
-		$page  = $this->create_page( true );
+		$page  = $this->create_page();
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
@@ -526,7 +519,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @testdox Should render card brand and last four on the order-received page.
 	 */
 	public function test_filters_card_payment_method_title_on_order_received_page(): void {
-		$page  = $this->create_page( true );
+		$page  = $this->create_page();
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
@@ -549,7 +542,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @testdox Should preserve the stored title away from the order-received page.
 	 */
 	public function test_preserves_payment_method_title_away_from_order_received_page(): void {
-		$page  = $this->create_page( true );
+		$page  = $this->create_page();
 		$order = $this->create_multibanco_order();
 
 		$this->assertSame( 'Stored title', $page->filter_payment_method_title( 'Stored title', $order ) );
@@ -565,7 +558,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @param string $expected Expected thank-you text.
 	 */
 	public function test_thankyou_text_gains_duplicate_prevention_notice_only_with_its_flag( string $method, string $flag, string $expected ): void {
-		$page = $this->create_page( true );
+		$page = $this->create_page();
 
 		if ( '' !== $flag ) {
 			$_GET[ $flag ] = 'yes';
@@ -605,7 +598,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @testdox Should waive order-received email verification for the exact session-paid intent.
 	 */
 	public function test_skips_email_verification_for_matching_session_paid_intent(): void {
-		$page  = $this->create_page( true );
+		$page  = $this->create_page();
 		$order = $this->create_thankyou_order( 'processing', WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_mock' );
 		WC()->session->set( WooPaymentsOrderSuccessPage::PAID_INTENT_ID_SESSION_KEY, 'pi_mock' );
 		$page->register();
@@ -629,7 +622,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @param string $session_intent_id Session PaymentIntent ID.
 	 */
 	public function test_keeps_email_verification_requirement_without_exact_paid_intent_match( $required, string $context, bool $pass_order, string $payment_method, string $order_intent_id, bool $has_session, string $session_intent_id ): void {
-		$page             = $this->create_page( true );
+		$page             = $this->create_page();
 		$order            = $this->create_thankyou_order( 'processing', $payment_method, $order_intent_id );
 		$original_session = WC()->session;
 
@@ -672,7 +665,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @testdox Should replace the order-received copy for a failed WooPayments order and hide the block status description.
 	 */
 	public function test_replaces_order_received_text_for_failed_orders(): void {
-		$page  = $this->create_page( true );
+		$page  = $this->create_page();
 		$order = $this->create_thankyou_order( 'failed', WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 
 		$text = $page->replace_order_received_text_for_failed_orders( 'Thank you.' );
@@ -696,7 +689,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 				'last_payment_error' => array( 'code' => 'payment_intent_authentication_failure' ),
 			)
 		);
-		$page       = $this->create_page( true, null, $api_client );
+		$page       = $this->create_page( null, $api_client );
 		$this->create_thankyou_order( 'pending', WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
 
 		$this->assertStringContainsString( 'Unfortunately, your order has failed.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ) );
@@ -707,7 +700,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 */
 	public function test_keeps_order_received_text_when_redirect_intent_is_pending(): void {
 		$api_client = $this->create_api_client_mock( array( 'status' => 'processing' ) );
-		$page       = $this->create_page( true, null, $api_client );
+		$page       = $this->create_page( null, $api_client );
 		$this->create_thankyou_order( 'pending', WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
 
 		$this->assertSame( 'Thank you.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ) );
@@ -727,7 +720,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 			->getMock();
 		$api_client->method( 'is_available' )->willReturn( true );
 		$api_client->expects( $this->never() )->method( 'get_payment_intention' );
-		$page = $this->create_page( true, null, $api_client );
+		$page = $this->create_page( null, $api_client );
 
 		$this->create_thankyou_order( 'pending', WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pi_card' );
 		$this->assertSame( 'Thank you.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ), 'A pending card order is not a redirect return.' );
@@ -753,7 +746,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 			->getMock();
 		$api_client->method( 'is_available' )->willReturn( true );
 		$api_client->method( 'get_payment_intention' )->willThrowException( new WooPaymentsApiException( 'Nope.', 'wcpay_error', 500 ) );
-		$page = $this->create_page( true, null, $api_client );
+		$page = $this->create_page( null, $api_client );
 		$this->create_thankyou_order( 'pending', WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'wechat_pay', 'pi_wechat' );
 
 		$this->assertSame( 'Thank you.', $page->replace_order_received_text_for_failed_orders( 'Thank you.' ) );
@@ -767,7 +760,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * so core's "Please log in" wall (class-wc-shortcode-checkout.php:319-329) does not hide the order.
 	 */
 	public function test_woopay_order_of_a_customer_skips_the_log_in_wall_on_the_thank_you_page(): void {
-		$page = $this->create_page( true );
+		$page = $this->create_page();
 		$page->register();
 		$this->registered_pages[] = $page;
 		$order                    = $this->create_woopay_customer_order();
@@ -794,7 +787,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	 * @param int  $age_seconds  Seconds since the order was created.
 	 */
 	public function test_keeps_known_shopper_verification_outside_fresh_woopay_orders( bool $is_woopay, bool $key_matches, int $age_seconds ): void {
-		$page = $this->create_page( true );
+		$page = $this->create_page();
 		$page->register();
 		$this->registered_pages[] = $page;
 		$order                    = $this->create_woopay_customer_order( $is_woopay );
@@ -909,17 +902,11 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an order-success page controller.
 	 *
-	 * @param bool                                       $builtin_register Whether the built-in WooPayments owns the runtime.
-	 * @param WooPaymentsFrontendTrackingController|null $tracker          Optional tracking controller.
-	 * @param WooPaymentsApiClient|null                  $api_client       Optional API client.
+	 * @param WooPaymentsFrontendTrackingController|null $tracker    Optional tracking controller.
+	 * @param WooPaymentsApiClient|null                  $api_client Optional API client.
 	 * @return WooPaymentsOrderSuccessPage
 	 */
-	private function create_page( bool $builtin_register, ?WooPaymentsFrontendTrackingController $tracker = null, ?WooPaymentsApiClient $api_client = null ): WooPaymentsOrderSuccessPage {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_register );
+	private function create_page( ?WooPaymentsFrontendTrackingController $tracker = null, ?WooPaymentsApiClient $api_client = null ): WooPaymentsOrderSuccessPage {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_account_country' ) )
@@ -932,7 +919,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 			 */
 			protected function wait_before_intent_recheck(): void {}
 		};
-		$page->init( $arbiter, new WooPaymentsPaymentMethodRegistry(), $account_service, $tracker, $api_client );
+		$page->init( new WooPaymentsPaymentMethodRegistry(), $account_service, $tracker, $api_client );
 
 		return $page;
 	}

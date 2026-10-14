@@ -12,7 +12,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSellingLocationsFraudSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
 use WP_REST_Request;
 
@@ -68,7 +67,6 @@ class WooPaymentsSellingLocationsFraudSyncTest extends WC_Unit_Test_Case {
 		$this->use_settings_service( $account_api_client );
 
 		$this->sut = new WooPaymentsSellingLocationsFraudSync();
-		$this->sut->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$this->sut->register();
 	}
 

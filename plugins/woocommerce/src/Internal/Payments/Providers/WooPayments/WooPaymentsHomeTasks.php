@@ -24,13 +24,6 @@ defined( 'ABSPATH' ) || exit;
 class WooPaymentsHomeTasks implements RegisterHooksInterface {
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * WooPayments account service.
 	 *
 	 * @var WooPaymentsAccountService
@@ -49,12 +42,10 @@ class WooPaymentsHomeTasks implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter        $arbiter              Runtime owner arbiter.
 	 * @param WooPaymentsAccountService        $account_service      WooPayments account service.
 	 * @param WooPaymentsAdminMenuBadgeService $dispute_data_service Service that owns the cached dispute data.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsAccountService $account_service, WooPaymentsAdminMenuBadgeService $dispute_data_service ): void {
-		$this->arbiter              = $arbiter;
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsAdminMenuBadgeService $dispute_data_service ): void {
 		$this->account_service      = $account_service;
 		$this->dispute_data_service = $dispute_data_service;
 	}
@@ -63,10 +54,6 @@ class WooPaymentsHomeTasks implements RegisterHooksInterface {
 	 * Register the task hook.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		// WC admin builds the task lists at init priority 4 (`Features::load_features()`).
 		if ( false === has_action( 'init', array( $this, 'add_tasks' ) ) ) {
 			add_action( 'init', array( $this, 'add_tasks' ) );

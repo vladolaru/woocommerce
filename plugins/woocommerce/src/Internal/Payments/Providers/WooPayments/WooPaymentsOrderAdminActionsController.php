@@ -24,13 +24,6 @@ use WC_Order;
 class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Shared payment processing service.
 	 *
 	 * @var PaymentProcessingService
@@ -56,26 +49,20 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter           $arbiter                     Runtime owner arbiter.
 	 * @param PaymentProcessingService            $processing_service          Shared payment processing service.
 	 * @param WooPaymentsProvider                 $provider                    WooPayments provider.
 	 * @param WooPaymentsFeeDetailsNoteController $fee_details_note_controller Fee details note controller.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, PaymentProcessingService $processing_service, WooPaymentsProvider $provider, WooPaymentsFeeDetailsNoteController $fee_details_note_controller ): void {
-		$this->arbiter                     = $arbiter;
+	final public function init( PaymentProcessingService $processing_service, WooPaymentsProvider $provider, WooPaymentsFeeDetailsNoteController $fee_details_note_controller ): void {
 		$this->processing_service          = $processing_service;
 		$this->provider                    = $provider;
 		$this->fee_details_note_controller = $fee_details_note_controller;
 	}
 
 	/**
-	 * Register the order screen and status hooks while the built-in WooPayments owns payments.
+	 * Register the order screen and status hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		add_filter( 'woocommerce_order_actions', array( $this, 'handle_woocommerce_order_actions' ) );
 		add_action( 'woocommerce_order_action_capture_charge', array( $this, 'handle_woocommerce_order_action_capture_charge' ) );
 		add_action( 'woocommerce_order_action_cancel_authorization', array( $this, 'handle_woocommerce_order_action_cancel_authorization' ) );

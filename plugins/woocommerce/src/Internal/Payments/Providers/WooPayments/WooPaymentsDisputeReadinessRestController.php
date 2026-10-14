@@ -28,13 +28,6 @@ class WooPaymentsDisputeReadinessRestController implements RegisterHooksInterfac
 	private const FEATURE_OPTION = '_wcpay_feature_dispute_readiness_overview';
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Dispute readiness service.
 	 *
 	 * @var WooPaymentsDisputeReadinessService
@@ -46,11 +39,9 @@ class WooPaymentsDisputeReadinessRestController implements RegisterHooksInterfac
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter          $arbiter Runtime owner arbiter.
 	 * @param WooPaymentsDisputeReadinessService $service Dispute readiness service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsDisputeReadinessService $service ): void {
-		$this->arbiter = $arbiter;
+	final public function init( WooPaymentsDisputeReadinessService $service ): void {
 		$this->service = $service;
 	}
 
@@ -58,10 +49,6 @@ class WooPaymentsDisputeReadinessRestController implements RegisterHooksInterfac
 	 * Register REST hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_action( 'rest_api_init', array( $this, 'register_routes' ) ) ) {
 			add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 		}

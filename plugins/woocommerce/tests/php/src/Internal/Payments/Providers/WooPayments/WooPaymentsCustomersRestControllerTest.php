@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
@@ -46,7 +45,7 @@ class WooPaymentsCustomersRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->customer_service = $this->create_customer_service();
 		$this->account_service  = $this->create_account_service();
-		$this->sut              = $this->create_controller( true );
+		$this->sut              = $this->create_controller();
 
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 	}
@@ -71,16 +70,6 @@ class WooPaymentsCustomersRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertArrayHasKey( '/wc/v3/payments/customers/(?P<customer_id>\w+)/payment_methods', $routes );
 		$this->assertRouteHasMethod( $routes['/wc/v3/payments/customers/(?P<customer_id>\w+)/payment_methods'], WP_REST_Server::READABLE );
-	}
-
-	/**
-	 * @testdox Customer payment methods route is not registered when native does not own runtime.
-	 */
-	public function test_registers_no_route_when_native_does_not_own_runtime(): void {
-		$this->sut = $this->create_controller( false );
-		$this->sut->register();
-
-		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
 	}
 
 	/**
@@ -281,18 +270,11 @@ class WooPaymentsCustomersRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Create a native customers REST controller.
 	 *
-	 * @param bool $native_register Whether native should own route registration.
 	 * @return WooPaymentsCustomersRestController
 	 */
-	private function create_controller( bool $native_register ): WooPaymentsCustomersRestController {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
-
+	private function create_controller(): WooPaymentsCustomersRestController {
 		$controller = new WooPaymentsCustomersRestController();
-		$controller->init( $arbiter, $this->customer_service, $this->account_service );
+		$controller->init( $this->customer_service, $this->account_service );
 
 		return $controller;
 	}

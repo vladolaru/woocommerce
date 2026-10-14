@@ -15,7 +15,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
@@ -1200,7 +1199,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Load the Stripe Billing module with WooCommerce Subscriptions active and native owning payments, its hook callbacks
+	 * Load the Stripe Billing module with WooCommerce Subscriptions active, its hook callbacks
 	 * resolving this test's subscription service.
 	 */
 	private function register_stripe_billing_module(): void {
@@ -1211,14 +1210,7 @@ class StripeBillingSubscriptionServiceTest extends WC_Unit_Test_Case {
 		);
 		wc_get_container()->replace( StripeBillingSubscriptionService::class, $this->sut );
 
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
-
 		$module = new WooPaymentsStripeBillingModule();
-		$module->init( $arbiter );
 		$module->register();
 	}
 

@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDepositsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDepositsRestController;
@@ -38,7 +37,7 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 		parent::setUp();
 
 		$this->api_client = new RecordingDepositsApiClient();
-		$this->sut        = $this->create_controller( true );
+		$this->sut        = $this->create_controller();
 
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 	}
@@ -69,16 +68,6 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 				$this->assertRouteHasMethod( $routes[ $route ], $method );
 			}
 		}
-	}
-
-	/**
-	 * @testdox Deposits routes are not registered when native does not own runtime.
-	 */
-	public function test_registers_no_routes_when_native_does_not_own_runtime(): void {
-		$this->sut = $this->create_controller( false );
-		$this->sut->register();
-
-		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
 	}
 
 	/**
@@ -586,18 +575,11 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Create a native deposits REST controller.
 	 *
-	 * @param bool $native_register Whether native should own route registration.
 	 * @return WooPaymentsDepositsRestController
 	 */
-	private function create_controller( bool $native_register ): WooPaymentsDepositsRestController {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
-
+	private function create_controller(): WooPaymentsDepositsRestController {
 		$controller = new WooPaymentsDepositsRestController();
-		$controller->init( $arbiter, $this->api_client );
+		$controller->init( $this->api_client );
 
 		return $controller;
 	}

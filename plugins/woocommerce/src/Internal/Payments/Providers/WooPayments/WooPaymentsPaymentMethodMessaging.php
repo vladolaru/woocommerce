@@ -33,13 +33,6 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	private const BNPL_CAPABILITY = 'buy_now_pay_later';
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * WooPayments account service.
 	 *
 	 * @var WooPaymentsAccountService
@@ -86,20 +79,17 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter             $arbiter                 Runtime owner arbiter.
 	 * @param WooPaymentsAccountService             $account_service         WooPayments account service.
 	 * @param WooPaymentsPaymentMethodRegistry      $payment_method_registry WooPayments payment method registry.
 	 * @param WooPaymentsOrderDataService           $order_data_service      WooPayments order data service.
 	 * @param WooPaymentsFrontendStylesService|null $frontend_styles_service Optional shared frontend styles service.
 	 */
 	final public function init(
-		WooPaymentsRuntimeArbiter $arbiter,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsPaymentMethodRegistry $payment_method_registry,
 		WooPaymentsOrderDataService $order_data_service,
 		?WooPaymentsFrontendStylesService $frontend_styles_service = null
 	): void {
-		$this->arbiter                 = $arbiter;
 		$this->account_service         = $account_service;
 		$this->payment_method_registry = $payment_method_registry;
 		$this->order_data_service      = $order_data_service;
@@ -110,10 +100,6 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	 * Register BNPL payment method messaging hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_action( 'woocommerce_single_product_summary', array( $this, 'render_site_messaging' ) ) ) {
 			add_action( 'woocommerce_single_product_summary', array( $this, 'render_site_messaging' ) );
 		}

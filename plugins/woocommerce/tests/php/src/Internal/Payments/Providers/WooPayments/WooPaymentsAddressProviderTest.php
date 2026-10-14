@@ -9,7 +9,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAddressProvider;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\StoreApi\Utilities\JsonWebToken;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
 use WP_Error;
 
@@ -42,23 +41,18 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register the WooPayments address provider only when native owns the runtime and the account is eligible.
+	 * @testdox Should register the WooPayments address provider when the account is eligible.
 	 */
-	public function test_registers_provider_only_when_native_owns_runtime_and_account_is_eligible(): void {
-		$plugin_provider = $this->create_provider( false, true, true, false, false );
-		$plugin_provider->register();
-
-		$this->assertFalse( has_filter( 'woocommerce_address_providers', array( $plugin_provider, 'add_address_provider' ) ) );
-
-		$native_provider = $this->create_provider( true, true, true, false, false );
-		$native_provider->register();
+	public function test_registers_provider_when_the_account_is_eligible(): void {
+		$provider = $this->create_provider( true, true, false, false );
+		$provider->register();
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test assertion for registered address-provider callbacks.
 		$providers = apply_filters( 'woocommerce_address_providers', array() );
 
-		$this->assertSame( 10, has_filter( 'woocommerce_address_providers', array( $native_provider, 'add_address_provider' ) ) );
+		$this->assertSame( 10, has_filter( 'woocommerce_address_providers', array( $provider, 'add_address_provider' ) ) );
 		$this->assertCount( 1, $providers );
-		$this->assertSame( $native_provider, $providers[0] );
+		$this->assertSame( $provider, $providers[0] );
 		$this->assertSame( 'woocommerce_payments', $providers[0]->id );
 		$this->assertSame( 'WooCommerce Payments', $providers[0]->name );
 	}
@@ -79,7 +73,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 
 		add_filter( 'gettext_woocommerce', $translation_filter, 10, 2 );
 		try {
-			$provider = $this->create_provider( true, true, true, false, false );
+			$provider = $this->create_provider( true, true, false, false );
 
 			$this->assertSame( 0, $translation_calls, 'Constructing eager DI services must not load translations before init.' );
 
@@ -105,7 +99,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 	 * @param string $message              Assertion message.
 	 */
 	public function test_does_not_add_provider_when_gateway_disabled_or_account_restricted( bool $gateway_enabled, bool $account_rejected, bool $account_under_review, string $message ): void {
-		$provider = $this->create_provider( true, $gateway_enabled, true, $account_rejected, $account_under_review );
+		$provider = $this->create_provider( $gateway_enabled, true, $account_rejected, $account_under_review );
 		$provider->register();
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test assertion for registered address-provider callbacks.
@@ -136,7 +130,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		$provider = $this->create_provider( true, true, true, false, false, $api_client );
+		$provider = $this->create_provider( true, true, false, false, $api_client );
 
 		$this->assertSame( 'address.jwt.token', $provider->get_address_service_jwt() );
 		$this->assertSame( 1, $api_client->request_count );
@@ -157,7 +151,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 				throw WooPaymentsAddressProviderTest::make_provider_error();
 			}
 		};
-		$provider   = $this->create_provider( true, true, true, false, false, $api_client );
+		$provider   = $this->create_provider( true, true, false, false, $api_client );
 		$logger     = RecordingWcLogger::install();
 
 		$provider->get_address_service_jwt();
@@ -276,7 +270,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_address_autocomplete_jwt', $preserved_jwt );
 
 		$provider = new WooPaymentsAddressProvider();
-		$provider->init( new StaticWooPaymentsRuntimeArbiter( true ), $token_api_client, $account_service );
+		$provider->init( $token_api_client, $account_service );
 		$this->providers[] = $provider;
 
 		$result     = $provider->get_jwt();
@@ -318,7 +312,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		$provider = $this->create_provider( true, true, false, false, false, $api_client );
+		$provider = $this->create_provider( true, false, false, false, $api_client );
 		$result   = $provider->get_address_service_jwt();
 
 		$this->assertInstanceOf( WP_Error::class, $result );
@@ -343,7 +337,6 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the System Under Test.
 	 *
-	 * @param bool                      $native_register      Whether native should register.
 	 * @param bool                      $gateway_enabled      Whether the gateway is enabled.
 	 * @param bool                      $has_account          Whether the account is connected.
 	 * @param bool                      $account_rejected     Whether the account is rejected.
@@ -352,7 +345,6 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsAddressProvider
 	 */
 	private function create_provider(
-		bool $native_register,
 		bool $gateway_enabled,
 		bool $has_account,
 		bool $account_rejected,
@@ -385,7 +377,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 		}
 
 		$provider = new WooPaymentsAddressProvider();
-		$provider->init( new StaticWooPaymentsRuntimeArbiter( $native_register ), $api_client, $account_service );
+		$provider->init( $api_client, $account_service );
 
 		$this->providers[] = $provider;
 

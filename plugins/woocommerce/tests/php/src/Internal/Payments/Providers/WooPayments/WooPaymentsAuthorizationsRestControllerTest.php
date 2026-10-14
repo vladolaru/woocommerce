@@ -48,10 +48,10 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox Authorization routes register only when native owns runtime.
+	 * @testdox Authorization routes register.
 	 */
-	public function test_authorization_routes_register_only_when_native_owns_runtime(): void {
-		$controller = $this->create_authorizations_controller( true );
+	public function test_authorization_routes_register(): void {
+		$controller = $this->create_authorizations_controller();
 		$controller->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );
@@ -62,11 +62,6 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 		$this->assertArrayHasKey( '/wc/v3/payments/authorizations/(?P<payment_intent_id>\\w+)', $routes );
 		$this->assertArrayHasKey( '/wc/v3/payments/orders/(?P<order_id>\\w+)/capture_authorization', $routes );
 		$this->assertArrayHasKey( '/wc/v3/payments/orders/(?P<order_id>\\w+)/cancel_authorization', $routes );
-
-		$controller = $this->create_authorizations_controller( false );
-		$controller->register();
-
-		$this->assertFalse( has_action( 'rest_api_init', array( $controller, 'register_routes' ) ) );
 	}
 
 	/**
@@ -126,7 +121,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			}
 		};
 
-		$this->create_authorizations_controller( true, $processing_service )->register_routes();
+		$this->create_authorizations_controller( $processing_service )->register_routes();
 
 		wp_set_current_user( 0 );
 		$anonymous_request = new WP_REST_Request( $method, $path );
@@ -169,7 +164,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	 * @testdox Authorizations list preserves reference query names and the legacy request filter.
 	 */
 	public function test_authorizations_list_preserves_filter_contract(): void {
-		$this->create_authorizations_controller( true )->register_routes();
+		$this->create_authorizations_controller()->register_routes();
 		$observed_request = null;
 
 		add_filter(
@@ -226,7 +221,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	 * @testdox Authorization detail and summary routes proxy the compatible API methods.
 	 */
 	public function test_authorization_detail_and_summary_routes_proxy_api_methods(): void {
-		$this->create_authorizations_controller( true )->register_routes();
+		$this->create_authorizations_controller()->register_routes();
 
 		$this->api_client->response = array(
 			'payment_intent_id' => 'pi_auth',
@@ -257,7 +252,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	 * Client 11.1.0 sends the summary request with no query and no list filter (class-wc-rest-payments-authorizations-controller.php:88-92).
 	 */
 	public function test_authorizations_summary_ignores_the_list_filters(): void {
-		$this->create_authorizations_controller( true )->register_routes();
+		$this->create_authorizations_controller()->register_routes();
 		$list_filter_calls = 0;
 		add_filter(
 			'wcpay_list_authorizations_request',
@@ -322,7 +317,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 		};
 		$logger             = RecordingWcLogger::install();
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
-		$this->create_authorizations_controller( true, $processing_service )->register_routes();
+		$this->create_authorizations_controller( $processing_service )->register_routes();
 		$order = $this->create_authorized_order( 'pi_auth' );
 		// The intent fields the client checks before acting: metadata.order_id and an authorized status (class-wc-rest-payments-orders-controller.php:389-401).
 		$this->api_client->response = array(
@@ -360,7 +355,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
 		};
 		$logger             = RecordingWcLogger::install();
-		$this->create_authorizations_controller( true, $processing_service )->register_routes();
+		$this->create_authorizations_controller( $processing_service )->register_routes();
 		$order = $this->create_authorized_order( 'pi_auth' );
 		// The intent fields the client checks before acting: metadata.order_id and an authorized status (class-wc-rest-payments-orders-controller.php:389-401).
 		$this->api_client->response = array(
@@ -389,7 +384,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 		$holder     = $store->claim( $order, $vocabulary, 'pi_other', 'payment status update' );
 		$this->assertNotNull( $holder );
 		$controller = new WooPaymentsAuthorizationsRestController();
-		$controller->init( $this->create_arbiter( true ), $this->api_client, wc_get_container()->get( PaymentProcessingService::class ), wc_get_container()->get( WooPaymentsProvider::class ) );
+		$controller->init( $this->api_client, wc_get_container()->get( PaymentProcessingService::class ), wc_get_container()->get( WooPaymentsProvider::class ) );
 		$controller->register_routes();
 		// The intent fields the client checks before acting: metadata.order_id and an authorized status (class-wc-rest-payments-orders-controller.php:389-401).
 		$this->api_client->response = array(
@@ -422,7 +417,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	public function test_failed_intent_read_answers_the_generic_error( string $action, string $message ): void {
 		$logger = RecordingWcLogger::install();
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
-		$this->create_authorizations_controller( true )->register_routes();
+		$this->create_authorizations_controller()->register_routes();
 		$order                       = $this->create_authorized_order( 'pi_auth' );
 		$this->api_client->exception = new WooPaymentsApiException( 'No such payment_intent.', 'resource_missing', 404 );
 
@@ -448,7 +443,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	 * @param int    $expected_status Expected answer status.
 	 */
 	public function test_authorization_detail_answers_a_4xx_or_5xx_status( string $code, int $platform_status, int $expected_status ): void {
-		$this->create_authorizations_controller( true )->register_routes();
+		$this->create_authorizations_controller()->register_routes();
 		$this->api_client->exception = new WooPaymentsApiException( 'Platform failure.', $code, $platform_status );
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/authorizations/pi_1' ) );
@@ -469,7 +464,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	 * @param bool   $as_object Whether the callback returns an object of another class.
 	 */
 	public function test_list_filter_returning_no_request_fails_the_request( string $hook, bool $as_object ): void {
-		$this->create_authorizations_controller( true )->register_routes();
+		$this->create_authorizations_controller()->register_routes();
 		add_filter(
 			$hook,
 			static function () use ( $as_object ) {
@@ -547,7 +542,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 				return new PaymentOutcome( PaymentOutcome::STATUS_FAILED, 'pi_auth', '', '', '', $this->data );
 			}
 		};
-		$this->create_authorizations_controller( true, $processing_service )->register_routes();
+		$this->create_authorizations_controller( $processing_service )->register_routes();
 		$order = $this->create_authorized_order( 'pi_auth' );
 		// The intent fields the client checks before acting: metadata.order_id and an authorized status (class-wc-rest-payments-orders-controller.php:389-401).
 		$this->api_client->response = array(
@@ -745,7 +740,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			}
 		};
 
-		$this->create_authorizations_controller( true, $processing_service )->register_routes();
+		$this->create_authorizations_controller( $processing_service )->register_routes();
 
 		$no_intent_response = $this->server->dispatch( new WP_REST_Request( 'POST', '/wc/v3/payments/orders/999999/capture_authorization' ) );
 
@@ -823,7 +818,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			}
 		};
 
-		$this->create_authorizations_controller( true, $processing_service )->register_routes();
+		$this->create_authorizations_controller( $processing_service )->register_routes();
 		$order = $this->create_authorized_order( 'pi_auth' );
 		wc_create_refund(
 			array(
@@ -886,7 +881,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			}
 		};
 
-		$this->create_authorizations_controller( true, $processing_service )->register_routes();
+		$this->create_authorizations_controller( $processing_service )->register_routes();
 		$order = $this->create_authorized_order( 'pi_auth' );
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/cancel_authorization' ) );
@@ -922,7 +917,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			}
 		};
 
-		$this->create_authorizations_controller( true, $processing_service )->register_routes();
+		$this->create_authorizations_controller( $processing_service )->register_routes();
 		$order                      = $this->create_authorized_order( 'pi_auth' );
 		$this->api_client->response = array(
 			'id'       => 'pi_auth',
@@ -989,7 +984,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			}
 		};
 
-		$this->create_authorizations_controller( true, $processing_service )->register_routes();
+		$this->create_authorizations_controller( $processing_service )->register_routes();
 		$order = $this->create_authorized_order( 'pi_Y' );
 		// The live pi_X passes both client checks: metadata.order_id is the order (orders controller :393-396 for capture,
 		// :632-635 for cancel) and the status is requires_capture (is_authorized() at :400, the status list at :639).
@@ -1054,7 +1049,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			}
 		};
 
-		$this->create_authorizations_controller( true, $processing_service )->register_routes();
+		$this->create_authorizations_controller( $processing_service )->register_routes();
 		$order                      = $this->create_authorized_order( 'pi_auth' );
 		$this->api_client->response = array(
 			'id'       => 'pi_auth',
@@ -1125,7 +1120,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			}
 		};
 
-		$this->create_authorizations_controller( true, $processing_service )->register_routes();
+		$this->create_authorizations_controller( $processing_service )->register_routes();
 		$order                      = $this->create_authorized_order( 'pi_auth' );
 		$this->api_client->response = array(
 			'id'       => 'pi_auth',
@@ -1217,7 +1212,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			}
 		};
 
-		$this->create_authorizations_controller( true, $processing_service )->register_routes();
+		$this->create_authorizations_controller( $processing_service )->register_routes();
 		$order = $this->create_authorized_order( 'pi_partial' );
 		// The intent fields the client checks before acting: metadata.order_id and an authorized status (class-wc-rest-payments-orders-controller.php:389-401).
 		$this->api_client->response = array(
@@ -1246,13 +1241,12 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	/**
 	 * Create an authorizations controller.
 	 *
-	 * @param bool                          $native_register    Whether native should own routes.
 	 * @param PaymentProcessingService|null $processing_service Optional payment processing service.
 	 * @return WooPaymentsAuthorizationsRestController
 	 */
-	private function create_authorizations_controller( bool $native_register, ?PaymentProcessingService $processing_service = null ): WooPaymentsAuthorizationsRestController {
+	private function create_authorizations_controller( ?PaymentProcessingService $processing_service = null ): WooPaymentsAuthorizationsRestController {
 		$controller = new WooPaymentsAuthorizationsRestController();
-		$controller->init( $this->create_arbiter( $native_register ), $this->api_client, $processing_service ?? new PaymentProcessingService(), new WooPaymentsProvider() );
+		$controller->init( $this->api_client, $processing_service ?? new PaymentProcessingService(), new WooPaymentsProvider() );
 
 		return $controller;
 	}

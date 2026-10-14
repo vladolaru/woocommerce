@@ -115,10 +115,6 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	 * Register WooPay order-status webhook compatibility hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_filter( 'woocommerce_valid_webhook_resources', array( $this, 'add_resource' ) ) ) {
 			add_filter( 'woocommerce_valid_webhook_resources', array( $this, 'add_resource' ) );
 		}

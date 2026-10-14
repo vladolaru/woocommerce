@@ -46,13 +46,6 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	private const LOCK_RETRY_WAIT_MICROSECONDS = 500000;
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Native WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
@@ -92,15 +85,13 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter   $arbiter            Runtime owner arbiter.
 	 * @param WooPaymentsApiClient        $api_client         Native WooPayments API client.
 	 * @param WooPaymentsAccountService   $account_service    WooPayments account service.
 	 * @param WooPaymentsCustomerService  $customer_service   WooPayments customer service.
 	 * @param WooPaymentsOrderDataService $order_data_service WooPayments order data service.
 	 * @param WooPaymentsOrderNoteService $note_service       WooPayments order note service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, WooPaymentsCustomerService $customer_service, WooPaymentsOrderDataService $order_data_service, WooPaymentsOrderNoteService $note_service ): void {
-		$this->arbiter            = $arbiter;
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, WooPaymentsCustomerService $customer_service, WooPaymentsOrderDataService $order_data_service, WooPaymentsOrderNoteService $note_service ): void {
 		$this->api_client         = $api_client;
 		$this->account_service    = $account_service;
 		$this->customer_service   = $customer_service;
@@ -112,10 +103,6 @@ class WooPaymentsMobileRestController implements RegisterHooksInterface {
 	 * Register REST hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_action( 'rest_api_init', array( $this, 'register_routes' ) ) ) {
 			add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 		}

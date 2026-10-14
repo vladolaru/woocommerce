@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeReadinessRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputeReadinessService;
 use WC_REST_Unit_Test_Case;
@@ -37,7 +36,7 @@ class WooPaymentsDisputeReadinessRestControllerTest extends WC_REST_Unit_Test_Ca
 
 		delete_option( '_wcpay_feature_dispute_readiness_overview' );
 		$this->service = $this->create_service();
-		$this->sut     = $this->create_controller( true );
+		$this->sut     = $this->create_controller();
 
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 	}
@@ -69,16 +68,6 @@ class WooPaymentsDisputeReadinessRestControllerTest extends WC_REST_Unit_Test_Ca
 		$this->assertRouteHasMethod( $routes['/wc/v3/payments/dispute-readiness'], WP_REST_Server::READABLE );
 		$this->assertRouteHasMethod( $routes['/wc/v3/payments/dispute-readiness/dismiss'], WP_REST_Server::CREATABLE );
 		$this->assertRouteHasMethod( $routes['/wc/v3/payments/dispute-readiness/statement-descriptor/confirm'], WP_REST_Server::CREATABLE );
-	}
-
-	/**
-	 * @testdox Dispute readiness routes are not registered when native does not own runtime.
-	 */
-	public function test_registers_no_routes_when_native_does_not_own_runtime(): void {
-		$this->sut = $this->create_controller( false );
-		$this->sut->register();
-
-		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
 	}
 
 	/**
@@ -196,18 +185,11 @@ class WooPaymentsDisputeReadinessRestControllerTest extends WC_REST_Unit_Test_Ca
 	/**
 	 * Create a native dispute readiness REST controller.
 	 *
-	 * @param bool $native_register Whether native should own route registration.
 	 * @return WooPaymentsDisputeReadinessRestController
 	 */
-	private function create_controller( bool $native_register ): WooPaymentsDisputeReadinessRestController {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
-
+	private function create_controller(): WooPaymentsDisputeReadinessRestController {
 		$controller = new WooPaymentsDisputeReadinessRestController();
-		$controller->init( $arbiter, $this->service );
+		$controller->init( $this->service );
 
 		return $controller;
 	}

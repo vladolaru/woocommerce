@@ -13,7 +13,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -82,13 +81,6 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	private const FAILED_EVENT_TRANSIENT_TTL_SECONDS = DAY_IN_SECONDS;
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Action Scheduler service.
 	 *
 	 * @var WooPaymentsActionSchedulerService
@@ -114,18 +106,15 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter         $arbiter        Runtime owner arbiter.
 	 * @param WooPaymentsActionSchedulerService $scheduler      Action Scheduler service.
 	 * @param WooPaymentsApiClient              $api_client     WooPayments API client.
 	 * @param WooPaymentsEventIngestor          $event_ingestor Event ingestor.
 	 */
 	final public function init(
-		WooPaymentsRuntimeArbiter $arbiter,
 		WooPaymentsActionSchedulerService $scheduler,
 		WooPaymentsApiClient $api_client,
 		WooPaymentsEventIngestor $event_ingestor
 	): void {
-		$this->arbiter        = $arbiter;
 		$this->scheduler      = $scheduler;
 		$this->api_client     = $api_client;
 		$this->event_ingestor = $event_ingestor;
@@ -135,10 +124,6 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	 * Register the account refresh listener that starts a fetch, and the fetch and processing actions.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		add_action( 'woocommerce_payments_account_refreshed', array( $this, 'maybe_schedule_fetch_events' ), 10, 1 );
 		add_action( self::WEBHOOK_FETCH_EVENTS_ACTION, array( $this, 'fetch_events_and_schedule_processing_jobs' ) );
 		add_action( self::WEBHOOK_PROCESS_EVENT_ACTION, array( $this, 'process_event' ), 10, 1 );

@@ -5,7 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderStatusChangeController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderStatusChangeConfirmation;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -51,29 +50,10 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register or enqueue anything when the built-in WooPayments does not own payments.
-	 */
-	public function test_does_nothing_when_builtin_does_not_own_the_runtime(): void {
-		$this->sut = $this->create_controller( false );
-		$this->set_current_order( $this->create_order() );
-		$this->set_order_edit_screen( 'shop_order' );
-
-		$this->sut->register();
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Re-firing WordPress' hook to prove the controller never joins it.
-		do_action( 'admin_enqueue_scripts' );
-
-		$this->assertFalse(
-			has_action( 'admin_enqueue_scripts', array( $this->sut, 'handle_admin_enqueue_scripts' ) ),
-			'A plugin-owned runtime should not register the native confirmation script hook.'
-		);
-		$this->assertFalse( wp_script_is( self::SCRIPT_HANDLE, 'enqueued' ) );
-	}
-
-	/**
 	 * @testdox Should register the admin enqueue hook once when the built-in WooPayments owns payments.
 	 */
 	public function test_registers_the_admin_enqueue_hook_once(): void {
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 
 		$this->sut->register();
 		$this->sut->register();
@@ -96,7 +76,7 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:174,277-282`.
 	 */
 	public function test_prints_the_payment_details_mount_point_only_for_woopayments_orders(): void {
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 
 		ob_start();
 		$this->sut->render_payment_details_container( $this->create_order() );
@@ -121,7 +101,7 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:183,1329-1363`.
 	 */
 	public function test_prints_the_transaction_fee_row_after_the_order_total(): void {
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->sut->register();
 
 		$order = $this->create_order();
@@ -147,7 +127,7 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 	 * @param string $fee           Stored transaction fee.
 	 */
 	public function test_hides_the_transaction_fee_row( string $intent_status, string $fee ): void {
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->sut->register();
 
 		$order = $this->create_order();
@@ -166,7 +146,7 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:182,1304-1322`.
 	 */
 	public function test_prints_the_woopay_payment_method_name_for_woopay_orders(): void {
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->sut->register();
 
 		$order = $this->create_order();
@@ -189,7 +169,7 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should do nothing outside the order edit screens.
 	 */
 	public function test_does_nothing_outside_the_order_edit_screens(): void {
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->set_current_order( $this->create_order() );
 		set_current_screen( 'dashboard' );
 
@@ -203,7 +183,7 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should do nothing when no order is being edited.
 	 */
 	public function test_does_nothing_when_no_order_is_being_edited(): void {
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->set_order_edit_screen( 'shop_order' );
 
 		$this->sut->handle_admin_enqueue_scripts();
@@ -216,7 +196,7 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should do nothing for an order paid with another gateway.
 	 */
 	public function test_does_nothing_for_a_non_woopayments_order(): void {
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->set_current_order( $this->create_order( 'bacs' ) );
 		$this->set_order_edit_screen( 'shop_order' );
 
@@ -230,7 +210,7 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should do nothing when the confirmation script bundle has not been built.
 	 */
 	public function test_does_nothing_when_the_script_bundle_is_not_built(): void {
-		$this->sut = $this->create_controller( true, false );
+		$this->sut = $this->create_controller( false );
 		$this->set_current_order( $this->create_order() );
 		$this->set_order_edit_screen( 'shop_order' );
 
@@ -257,7 +237,7 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 		$order->set_status( 'processing' );
 		$order->save();
 
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->set_current_order( $order );
 		$this->set_order_edit_screen( $screen_ids[ $screen_index ] );
 
@@ -339,7 +319,7 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 		$order->set_status( 'processing' );
 		$order->save();
 
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->set_current_order( $order );
 		$this->set_order_edit_screen( $this->get_order_edit_screen_ids()[0] );
 
@@ -400,14 +380,12 @@ class WooPaymentsOrderStatusChangeControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the System Under Test.
 	 *
-	 * @param bool $builtin_register Whether the built-in WooPayments owns the runtime.
-	 * @param bool $asset_available  Whether the script bundle is built.
+	 * @param bool $asset_available Whether the script bundle is built.
 	 * @return WooPaymentsOrderStatusChangeController
 	 */
-	private function create_controller( bool $builtin_register, bool $asset_available = true ): WooPaymentsOrderStatusChangeController {
+	private function create_controller( bool $asset_available = true ): WooPaymentsOrderStatusChangeController {
 		$controller = new WooPaymentsOrderStatusChangeController();
 		$controller->init(
-			new StaticWooPaymentsRuntimeArbiter( $builtin_register ),
 			wc_get_container()->get( WooPaymentsOrderStatusChangeConfirmation::class )
 		);
 

@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use InvalidArgumentException;
 use Throwable;
@@ -23,13 +22,6 @@ use WP_REST_Server;
  * @internal
  */
 class WooPaymentsWebhookRestController implements RegisterHooksInterface {
-
-	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * Event ingestor.
@@ -50,12 +42,10 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter            $arbiter             Runtime owner arbiter.
 	 * @param WooPaymentsEventIngestor             $event_ingestor      Event ingestor.
 	 * @param WooPaymentsWebhookReliabilityService $reliability_service Webhook reliability service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsEventIngestor $event_ingestor, WooPaymentsWebhookReliabilityService $reliability_service ): void {
-		$this->arbiter             = $arbiter;
+	final public function init( WooPaymentsEventIngestor $event_ingestor, WooPaymentsWebhookReliabilityService $reliability_service ): void {
 		$this->event_ingestor      = $event_ingestor;
 		$this->reliability_service = $reliability_service;
 	}
@@ -64,10 +54,6 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 	 * Register REST hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_action( 'rest_api_init', array( $this, 'register_routes' ) ) ) {
 			add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 		}

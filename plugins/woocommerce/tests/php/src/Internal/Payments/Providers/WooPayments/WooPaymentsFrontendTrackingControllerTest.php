@@ -5,7 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
@@ -40,7 +39,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register platform Tracks AJAX hooks when native owns runtime.
 	 */
 	public function test_registers_platform_tracks_ajax_hooks_when_native_owns_runtime(): void {
-		$sut = $this->create_controller( true );
+		$sut = $this->create_controller();
 
 		$sut->register();
 
@@ -51,45 +50,20 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register platform Tracks AJAX or checkout funnel hooks when native runtime is inactive.
-	 */
-	public function test_does_not_register_ajax_hooks_when_native_runtime_is_inactive(): void {
-		$sut = $this->create_controller( false );
-
-		$sut->register();
-
-		$this->assertFalse( has_action( 'wp_ajax_platform_tracks', array( $sut, 'handle_tracks' ) ) );
-		$this->assertFalse( has_action( 'wp_ajax_nopriv_platform_tracks', array( $sut, 'handle_tracks' ) ) );
-		$this->assertFalse( has_action( 'wp_ajax_get_identity', array( $sut, 'handle_tracks_identity' ) ) );
-		$this->assertFalse( has_action( 'wp_ajax_nopriv_get_identity', array( $sut, 'handle_tracks_identity' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_after_checkout_form', array( $sut, 'record_classic_checkout_page_view' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $sut, 'record_blocks_checkout_page_view' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_checkout_order_processed', array( $sut, 'record_checkout_order_placed' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_store_api_checkout_order_processed', array( $sut, 'record_checkout_order_placed' ) ) );
-		foreach ( array( 'woocommerce_after_cart', 'woocommerce_blocks_enqueue_cart_block_scripts_after', 'woocommerce_after_single_product', 'before_woocommerce_pay_form', 'woocommerce_payments_save_user_in_woopay' ) as $hook ) {
-			$this->assertFalse( has_action( $hook, array( $sut, 'record_shopper_funnel_event' ) ), $hook );
-		}
-	}
-
-	/**
-	 * The shopper recorder's REST route (the Tracks event source scheme the owner approved on 2026-10-07), registered
-	 * only while native owns the runtime; the platform_tracks AJAX action stays as an alias for pages and scripts that
-	 * still post there.
+	 * The shopper recorder's REST route (the Tracks event source scheme the owner approved on 2026-10-07); the
+	 * platform_tracks AJAX action stays as an alias for pages and scripts that still post there.
 	 *
-	 * @testdox Should register the shopper Tracks REST route only while native owns the runtime.
+	 * @testdox Should register the shopper Tracks REST route.
 	 */
-	public function test_registers_the_tracks_rest_route_only_when_native_owns_the_runtime(): void {
-		$native = $this->create_controller( true );
-		$native->register();
-		$plugin = $this->create_controller( false );
-		$plugin->register();
+	public function test_registers_the_tracks_rest_route(): void {
+		$controller = $this->create_controller();
+		$controller->register();
 
 		try {
-			$this->assertSame( 10, has_action( 'rest_api_init', array( $native, 'register_rest_routes' ) ) );
-			$this->assertFalse( has_action( 'rest_api_init', array( $plugin, 'register_rest_routes' ) ) );
+			$this->assertSame( 10, has_action( 'rest_api_init', array( $controller, 'register_rest_routes' ) ) );
 			$this->assertArrayHasKey( '/wc/v3/payments/tracks', $this->get_rest_routes_after_init() );
 		} finally {
-			remove_action( 'rest_api_init', array( $native, 'register_rest_routes' ) );
+			remove_action( 'rest_api_init', array( $controller, 'register_rest_routes' ) );
 		}
 	}
 
@@ -99,7 +73,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	public function test_rest_route_records_declared_events_only(): void {
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		update_option( 'woocommerce_allow_tracking', 'yes' );
-		$sut = $this->create_controller( true );
+		$sut = $this->create_controller();
 		add_action( 'rest_api_init', array( $sut, 'register_rest_routes' ) );
 		$this->get_rest_routes_after_init();
 		remove_action( 'rest_api_init', array( $sut, 'register_rest_routes' ) );
@@ -143,7 +117,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should reject platform Tracks requests with invalid nonces.
 	 */
 	public function test_tracks_response_rejects_invalid_nonce(): void {
-		$sut = $this->create_controller( true );
+		$sut = $this->create_controller();
 
 		$response = $sut->get_tracks_response(
 			array(
@@ -161,7 +135,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should require a platform Tracks event name.
 	 */
 	public function test_tracks_response_requires_event_name(): void {
-		$sut = $this->create_controller( true );
+		$sut = $this->create_controller();
 
 		$response = $sut->get_tracks_response(
 			array(
@@ -214,7 +188,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 			10,
 			3
 		);
-		$sut = $this->create_controller( true, $this->create_account_service( true ) );
+		$sut = $this->create_controller( $this->create_account_service( true ) );
 
 		$response = $sut->get_tracks_response(
 			array(
@@ -277,7 +251,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		$_SERVER['HTTP_USER_AGENT'] = 'Shopper browser';
 
 		try {
-			$response = $this->create_controller( true, $this->create_account_service( true ) )->get_tracks_response(
+			$response = $this->create_controller( $this->create_account_service( true ) )->get_tracks_response(
 				array(
 					'tracksNonce'     => wp_create_nonce( 'platform_tracks_nonce' ),
 					'tracksEventName' => 'pay_for_order_page_view',
@@ -330,7 +304,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 			3
 		);
 
-		$response = $this->create_controller( true, $this->create_account_service( true ) )->get_tracks_response(
+		$response = $this->create_controller( $this->create_account_service( true ) )->get_tracks_response(
 			array(
 				'tracksNonce'     => wp_create_nonce( 'platform_tracks_nonce' ),
 				'tracksEventName' => 'pay_for_order_page_view',
@@ -382,7 +356,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 			3
 		);
 
-		$response = $this->create_controller( true, $this->create_account_service( true ) )->get_tracks_response(
+		$response = $this->create_controller( $this->create_account_service( true ) )->get_tracks_response(
 			array(
 				'tracksNonce'     => wp_create_nonce( 'platform_tracks_nonce' ),
 				'tracksEventName' => 'woopay_button_click',
@@ -410,7 +384,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 				return new \WP_Error( 'blocked', 'blocked' );
 			}
 		);
-		$sut = $this->create_controller( true );
+		$sut = $this->create_controller();
 
 		$result = $sut->record_user_event( 'woopay_registered', array( 'source' => 'checkout' ) );
 
@@ -430,7 +404,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	public function test_queue_user_event_is_a_no_op_when_store_tracking_is_off(): void {
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		update_option( 'woocommerce_allow_tracking', 'no' );
-		$sut = $this->create_controller( true );
+		$sut = $this->create_controller();
 
 		$sut->queue_user_event( 'product_page_view', array( 'theme_type' => 'short_code' ) );
 		$sut->enqueue_frontend_events_script();
@@ -448,7 +422,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	public function test_tracking_is_off_while_the_gateway_is_disabled(): void {
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		update_option( 'woocommerce_allow_tracking', 'yes' );
-		$sut = $this->create_controller( true, $this->create_account_service( true, false ) );
+		$sut = $this->create_controller( $this->create_account_service( true, false ) );
 
 		$sut->queue_user_event( 'order_success_page_view', array( 'theme_type' => 'blocks' ) );
 
@@ -473,7 +447,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
 		$account_service->method( 'get_cached_account_data' )->willReturn( array( 'platform_checkout_eligible' => true ) );
 		$account_service->method( 'get_gateway_setting' )->willReturn( 'no' );
-		$sut = $this->create_controller( true, $account_service );
+		$sut = $this->create_controller( $account_service );
 
 		$sut->queue_user_event( 'cart_page_view', array( 'theme_type' => 'blocks' ) );
 
@@ -498,7 +472,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
 		$account_service->method( 'get_cached_account_data' )->willReturn( array( 'platform_checkout_eligible' => true ) );
 		$account_service->method( 'get_gateway_setting' )->willReturn( 'no' );
-		$sut          = $this->create_controller( true, $account_service );
+		$sut          = $this->create_controller( $account_service );
 		$direct_calls = 0;
 
 		$sut->track_proceed_to_checkout_clicks(
@@ -520,7 +494,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	public function test_proceed_to_checkout_tracking_loads_the_footer_script_on_its_own(): void {
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		update_option( 'woocommerce_allow_tracking', 'yes' );
-		$sut = $this->create_controller( true );
+		$sut = $this->create_controller();
 
 		try {
 			$sut->track_proceed_to_checkout_clicks( '__return_true' );
@@ -553,7 +527,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 		$_COOKIE['tk_opt-out'] = 'yes';
-		$sut                   = $this->create_controller( true );
+		$sut                   = $this->create_controller();
 
 		$sut->queue_user_event( 'product_page_view', array( 'theme_type' => 'short_code' ) );
 
@@ -569,7 +543,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		update_user_meta( $user_id, 'jetpack_tracks_anon_id', 'jetpack:anon-id' );
 		wp_set_current_user( $user_id );
 
-		$sut = $this->create_controller( true );
+		$sut = $this->create_controller();
 
 		$response = $sut->get_tracks_identity_response();
 
@@ -591,7 +565,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 
-		$recorded = $this->record_through_tracks_response( $this->create_controller( true ), 'free_text_event', array() );
+		$recorded = $this->record_through_tracks_response( $this->create_controller(), 'free_text_event', array() );
 
 		$this->assertSame( 400, $recorded['response']['status_code'] );
 		$this->assertSame( array(), $recorded['events'] );
@@ -605,16 +579,16 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 
 		$button   = $this->record_through_tracks_response(
-			$this->create_controller( true ),
+			$this->create_controller(),
 			'woopay_button_click',
 			array(
 				'source' => 'checkout',
 				'email'  => 'shopper@example.com',
 			)
 		);
-		$save     = $this->record_through_tracks_response( $this->create_controller( true ), 'checkout_save_my_info_click', array( 'status' => 'maybe' ) );
+		$save     = $this->record_through_tracks_response( $this->create_controller(), 'checkout_save_my_info_click', array( 'status' => 'maybe' ) );
 		$checkout = $this->record_through_tracks_response(
-			$this->create_controller( true ),
+			$this->create_controller(),
 			'checkout_page_view',
 			array(
 				'theme_type'     => 'blocks',
@@ -640,9 +614,9 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 		$account_service = $this->create_account_service( true, true, false );
 
-		$page_view = $this->record_through_tracks_response( $this->create_controller( true, $account_service ), 'cart_page_view', array( 'theme_type' => 'blocks' ) );
+		$page_view = $this->record_through_tracks_response( $this->create_controller( $account_service ), 'cart_page_view', array( 'theme_type' => 'blocks' ) );
 		$woopay    = $this->record_through_tracks_response(
-			$this->create_controller( true, $account_service ),
+			$this->create_controller( $account_service ),
 			'woopay_button_click',
 			array(
 				'source'            => 'checkout',
@@ -671,7 +645,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 
-		$recorded = $this->record_through_tracks_response( $this->create_controller( true ), $sent_name, array( 'woopay_direct_checkout' => false ) );
+		$recorded = $this->record_through_tracks_response( $this->create_controller(), $sent_name, array( 'woopay_direct_checkout' => false ) );
 
 		$this->assertSame( 'wcpay_proceed_to_checkout_button_click', $recorded['events'][0]->_en ?? null );
 	}
@@ -743,7 +717,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$sut->init( $this->create_arbiter( true ), $this->create_account_service( true ) );
+		$sut->init( $this->create_account_service( true ) );
 		wc_get_container()->replace( WooPaymentsWooPaySessionService::class, $this->create_woopay_session_service( true ) );
 
 		try {
@@ -805,7 +779,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 				return true;
 			}
 		);
-		$sut->init( $this->create_arbiter( true ), $this->create_account_service( true ) );
+		$sut->init( $this->create_account_service( true ) );
 		wc_get_container()->replace( WooPaymentsWooPaySessionService::class, $this->create_woopay_session_service( true, true ) );
 
 		try {
@@ -855,7 +829,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		add_filter( 'wcpay_tracks_event_properties', $count_recorder );
 		add_filter( 'pre_http_request', $count_http );
 
-		$tracker = $this->create_controller( true );
+		$tracker = $this->create_controller();
 		wc_get_container()->replace( WooPaymentsWooPaySessionService::class, $this->create_woopay_session_service( false ) );
 
 		try {
@@ -939,7 +913,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		wp_set_current_user( 0 );
 
-		$tracker = $this->create_controller( true );
+		$tracker = $this->create_controller();
 		$woopay  = $this->getMockBuilder( WooPaymentsWooPaySessionService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_woopay_direct_checkout_enabled', 'get_woopay_frontend_config' ) )
@@ -994,7 +968,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$sut->init( $this->create_arbiter( true ), $this->create_account_service( true ) );
+		$sut->init( $this->create_account_service( true ) );
 		wc_get_container()->replace( WooPaymentsWooPaySessionService::class, $this->create_woopay_session_service( false ) );
 
 		$classic_order = wc_create_order();
@@ -1281,7 +1255,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		wp_set_current_user( 0 );
 
-		return $this->create_controller( true, $account_service );
+		return $this->create_controller( $account_service );
 	}
 
 	/**
@@ -1346,7 +1320,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 			);
 		}
 		wp_set_current_user( 0 );
-		$sut = $this->create_controller( true, $this->create_account_service_on_platform( $this->get_partially_onboarded_account(), $error_code ) );
+		$sut = $this->create_controller( $this->create_account_service_on_platform( $this->get_partially_onboarded_account(), $error_code ) );
 		wc_get_container()->replace( WooPaymentsWooPaySessionService::class, $this->create_woopay_session_service( false ) );
 		$order = wc_create_order();
 		$order->set_payment_method( 'woocommerce_payments' );
@@ -1531,28 +1505,14 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the controller under test.
 	 *
-	 * @param bool                           $native_register Whether native runtime owns WooPayments.
 	 * @param WooPaymentsAccountService|null $account_service Account service double.
 	 * @return WooPaymentsFrontendTrackingController
 	 */
-	private function create_controller( bool $native_register, ?WooPaymentsAccountService $account_service = null ): WooPaymentsFrontendTrackingController {
+	private function create_controller( ?WooPaymentsAccountService $account_service = null ): WooPaymentsFrontendTrackingController {
 		$sut = new WooPaymentsFrontendTrackingController();
-		$sut->init( $this->create_arbiter( $native_register ), $account_service ?? $this->create_account_service( true ) );
+		$sut->init( $account_service ?? $this->create_account_service( true ) );
 
 		return $sut;
-	}
-
-	/**
-	 * Create a runtime owner arbiter double.
-	 *
-	 * @param bool $native_register Whether native runtime owns WooPayments.
-	 * @return WooPaymentsRuntimeArbiter
-	 */
-	private function create_arbiter( bool $native_register ): WooPaymentsRuntimeArbiter {
-		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
-
-		return $arbiter;
 	}
 
 	/**

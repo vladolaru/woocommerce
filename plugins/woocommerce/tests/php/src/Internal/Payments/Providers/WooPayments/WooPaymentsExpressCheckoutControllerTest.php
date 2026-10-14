@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
@@ -62,15 +61,14 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @dataProvider provider_runtime_ownership_hook_registration
-	 * @testdox Should register the frontend hooks at their placement priorities only when the built-in WooPayments owns the runtime ($_dataName).
+	 * @testdox Should register the frontend hooks at their placement priorities ($_dataName).
 	 *
-	 * @param bool                    $builtin_owner             Whether the built-in WooPayments owns the runtime.
 	 * @param bool                    $payment_request_on        Whether payment request is available.
 	 * @param array<string,int|false> $expected_priorities       Expected has_action() result per frontend hook.
 	 * @param int|false               $expected_tracks_priority  Expected has_filter() result for the Tracks properties filter.
 	 */
-	public function test_registers_frontend_hooks_only_when_builtin_owns_runtime( bool $builtin_owner, bool $payment_request_on, array $expected_priorities, $expected_tracks_priority ): void {
-		$this->sut = $this->create_controller( $builtin_owner, $payment_request_on );
+	public function test_registers_frontend_hooks( bool $payment_request_on, array $expected_priorities, $expected_tracks_priority ): void {
+		$this->sut = $this->create_controller( $payment_request_on );
 
 		$this->sut->register();
 
@@ -81,9 +79,9 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Runtime ownership and payment request states. Registration does not wait on payment request settings.
+	 * Payment request states. Registration does not wait on payment request settings.
 	 *
-	 * @return array<string,array{bool,bool,array<string,int|false>,int|false}>
+	 * @return array<string,array{bool,array<string,int|false>,int|false}>
 	 */
 	public function provider_runtime_ownership_hook_registration(): array {
 		$priorities = array_map(
@@ -94,9 +92,8 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		);
 
 		return array(
-			'owner, payment request on'  => array( true, true, $priorities, 10 ),
-			'owner, payment request off' => array( true, false, $priorities, 10 ),
-			'not owner'                  => array( false, true, array_fill_keys( array_keys( $priorities ), false ), false ),
+			'owner, payment request on'  => array( true, $priorities, 10 ),
+			'owner, payment request off' => array( false, $priorities, 10 ),
 		);
 	}
 
@@ -104,7 +101,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should enqueue separate express checkout assets and localize ECE params on checkout.
 	 */
 	public function test_enqueue_frontend_assets_loads_separate_express_checkout_bundle(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->set_checkout_shortcode_page();
 
 		$this->sut->enqueue_frontend_assets();
@@ -124,7 +121,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should enqueue express checkout assets on custom checkout shortcode pages.
 	 */
 	public function test_enqueue_frontend_assets_loads_on_checkout_shortcode_page(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$page_id   = self::factory()->post->create(
 			array(
 				'post_type'    => 'page',
@@ -152,7 +149,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * @preserveGlobalState disabled
 	 */
 	public function test_enqueue_frontend_assets_skips_an_archive_whose_term_id_matches_a_checkout_page(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$term_id   = self::factory()->category->create( array( 'name' => 'Empty archive' ) );
 		// A checkout page whose post ID is the category's term ID (import_id asks wp_insert_post() for that ID).
 		$page_id = wp_insert_post(
@@ -177,7 +174,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_enqueue_frontend_assets_loads_on_order_pay_page(): void {
 		$service   = new RecordingExpressCheckoutService();
-		$this->sut = $this->create_controller( true, true, $service );
+		$this->sut = $this->create_controller( true, $service );
 		$this->set_checkout_shortcode_page();
 		$this->set_order_pay_query_var( 123 );
 
@@ -196,7 +193,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_enqueue_frontend_assets_loads_on_product_page(): void {
 		$service   = new RecordingExpressCheckoutService();
-		$this->sut = $this->create_controller( true, true, $service );
+		$this->sut = $this->create_controller( true, $service );
 		$this->set_current_product();
 
 		$this->sut->enqueue_frontend_assets();
@@ -215,7 +212,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not enqueue classic ECE assets on checkout block pages.
 	 */
 	public function test_enqueue_frontend_assets_skips_checkout_block_pages(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$page_id   = self::factory()->post->create(
 			array(
 				'post_type'    => 'page',
@@ -239,7 +236,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should render the WooPay button, then the ECE container, then one OR separator in one wrapper on checkout.
 	 */
 	public function test_display_express_checkout_buttons_renders_woopay_and_ece_in_one_wrapper(): void {
-		$this->sut = $this->create_controller( true, true, null, '<div id="wcpay-woopay-button"></div>' );
+		$this->sut = $this->create_controller( true, null, '<div id="wcpay-woopay-button"></div>' );
 		$this->set_checkout_shortcode_page();
 
 		ob_start();
@@ -258,7 +255,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should start the OR separator hidden when no WooPay button shows, for the wallet to reveal.
 	 */
 	public function test_display_express_checkout_buttons_starts_separator_hidden_without_woopay(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 		$this->set_checkout_shortcode_page();
 
 		ob_start();
@@ -274,7 +271,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should render the WooPay button and its separator when the Express Checkout Element is off.
 	 */
 	public function test_display_express_checkout_buttons_renders_woopay_alone_when_ece_is_off(): void {
-		$this->sut = $this->create_controller( true, false, null, '<div id="wcpay-woopay-button"></div>' );
+		$this->sut = $this->create_controller( false, null, '<div id="wcpay-woopay-button"></div>' );
 		$this->set_checkout_shortcode_page();
 
 		ob_start();
@@ -291,7 +288,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_display_express_checkout_buttons_renders_on_order_pay_page(): void {
 		$service   = new RecordingExpressCheckoutService();
-		$this->sut = $this->create_controller( true, true, $service );
+		$this->sut = $this->create_controller( true, $service );
 		$this->set_checkout_shortcode_page();
 		$this->set_order_pay_query_var( 123 );
 
@@ -312,7 +309,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_display_express_checkout_buttons_renders_on_product_page(): void {
 		$service   = new RecordingExpressCheckoutService();
-		$this->sut = $this->create_controller( true, true, $service );
+		$this->sut = $this->create_controller( true, $service );
 		$this->set_current_product();
 
 		ob_start();
@@ -353,7 +350,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		$this->set_current_page_with_content( $content );
 		unset( $GLOBALS['product'] );
 
-		$this->sut = $this->create_controller( true, true, $this->create_real_service() );
+		$this->sut = $this->create_controller( true, $this->create_real_service() );
 		$this->sut->enqueue_frontend_assets();
 
 		$localized_data = wp_scripts()->get_data( 'wc-woopayments-express-checkout', 'data' );
@@ -373,7 +370,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should render no ECE container or assets when payment request is disabled.
 	 */
 	public function test_display_express_checkout_buttons_renders_nothing_when_payment_request_is_disabled(): void {
-		$this->sut = $this->create_controller( true, false );
+		$this->sut = $this->create_controller( false );
 		$this->set_checkout_shortcode_page();
 
 		$this->sut->enqueue_frontend_assets();
@@ -390,7 +387,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should mark Apple Pay and Google Pay load/click events as all-store Tracks events.
 	 */
 	public function test_add_tracking_event_properties_marks_platform_wallet_events_as_all_store_events(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 
 		$this->assertSame(
 			array( 'record_event_data' => array( 'track_on_all_stores' => true ) ),
@@ -411,7 +408,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * @param bool   $allow_host  Whether the target host is explicitly allowed.
 	 */
 	public function test_handle_express_checkout_redirect_stashes_valid_targets_once( string $target, bool $allow_host ): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 
 		$my_account_page_id = $this->factory()->post->create( array( 'post_type' => 'page' ) );
 		update_option( 'woocommerce_myaccount_page_id', $my_account_page_id );
@@ -491,7 +488,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * @param string $rejected_target Target that must never reach the cookie.
 	 */
 	public function test_handle_express_checkout_redirect_does_not_persist_rejected_target( $query_value, string $rejected_target ): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 
 		$my_account_page_id = $this->factory()->post->create( array( 'post_type' => 'page' ) );
 		update_option( 'woocommerce_myaccount_page_id', $my_account_page_id );
@@ -547,7 +544,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not redirect on an invalid nonce.
 	 */
 	public function test_handle_express_checkout_redirect_ignores_invalid_nonce(): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 
 		$_GET['wcpay_express_checkout_redirect_url'] = rawurlencode( home_url( '/checkout/' ) );
 		$_GET['_wpnonce']                            = 'invalid';
@@ -576,7 +573,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * @param string $filter     Core redirect filter to reach the controller through after register(), or '' to call it directly.
 	 */
 	public function test_consume_login_redirect_url_preserves_valid_cookie_and_clears_it_once( string $target, bool $allow_host, string $filter ): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 
 		$_COOKIE['wcpay_express_checkout_redirect_url'] = $target;
 		$cookie_values                                  = array();
@@ -645,7 +642,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	 * @param array<int,string> $expected_cookie_values Expected target-cookie writes.
 	 */
 	public function test_consume_login_redirect_url_returns_the_fallback_for_an_absent_or_invalid_cookie( bool $has_cookie, $cookie_value, $fallback, array $expected_cookie_values ): void {
-		$this->sut = $this->create_controller( true, true );
+		$this->sut = $this->create_controller( true );
 
 		if ( $has_cookie ) {
 			$_COOKIE['wcpay_express_checkout_redirect_url'] = $cookie_value;
@@ -693,19 +690,12 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the System Under Test.
 	 *
-	 * @param bool                                   $builtin_register   Whether the built-in WooPayments owns the runtime.
 	 * @param bool                                   $payment_request_on Whether payment request should be available.
 	 * @param WooPaymentsExpressCheckoutService|null $service            Optional service double.
 	 * @param string                                 $woopay_button      WooPay placeholder markup the WooPay controller returns.
 	 * @return WooPaymentsExpressCheckoutController
 	 */
-	private function create_controller( bool $builtin_register, bool $payment_request_on, ?WooPaymentsExpressCheckoutService $service = null, string $woopay_button = '' ): WooPaymentsExpressCheckoutController {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_register );
-
+	private function create_controller( bool $payment_request_on, ?WooPaymentsExpressCheckoutService $service = null, string $woopay_button = '' ): WooPaymentsExpressCheckoutController {
 		$service = $service ?? new RecordingExpressCheckoutService();
 		if ( $service instanceof RecordingExpressCheckoutService ) {
 			$service->should_show_payment_request_button = $payment_request_on;
@@ -715,7 +705,7 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 		$woopay_controller->method( 'get_express_checkout_button_html' )->willReturn( $woopay_button );
 
 		$controller = new WooPaymentsExpressCheckoutController();
-		$controller->init( $arbiter, $service, $this->createStub( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService::class ), $woopay_controller );
+		$controller->init( $service, $this->createStub( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudPreventionService::class ), $woopay_controller );
 
 		return $controller;
 	}

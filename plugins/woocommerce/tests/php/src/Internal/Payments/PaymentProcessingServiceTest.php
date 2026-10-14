@@ -185,13 +185,8 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $outcome->get_redirect_url() );
 		$redirect = $order->get_checkout_order_received_url();
 
-		$arbiter = $this->getMockBuilder( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 		$tokenized_cart_controller = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenizedCartSessionController();
-		$tokenized_cart_controller->init( $arbiter, new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutAddressNormalizer() );
+		$tokenized_cart_controller->init( new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutAddressNormalizer() );
 		$tokenized_cart_controller->register();
 
 		// Parse the `order-received` id and `key` from the redirect URL itself (not `get_order_key()`),
@@ -5484,7 +5479,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			}
 		};
 		$token_service   = new WooPaymentsTokenService();
-		$token_service->init( $details_service, new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
+		$token_service->init( $details_service, wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_account_country', 'get_mode' ) )
@@ -5769,7 +5764,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$customer_service->method( 'get_or_create_customer_id_for_subscription_payment_method_change' )->willReturn( 'cus_timeout' );
 		if ( $real_customers ) {
 			$customer_service = new WooPaymentsCustomerService();
-			$customer_service->init( $api_client, $account_service, new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService(), new StaticWooPaymentsRuntimeArbiter( true ) );
+			$customer_service->init( $api_client, $account_service, new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService() );
 			$this->customers_over_transport = $customer_service;
 		}
 		$ambiguity_service = new \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsChargeAmbiguityService();

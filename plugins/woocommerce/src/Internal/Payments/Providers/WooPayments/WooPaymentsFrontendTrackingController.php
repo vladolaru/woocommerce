@@ -175,13 +175,6 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	private ?array $proceed_to_checkout = null;
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * WooPayments account service.
 	 *
 	 * @var WooPaymentsAccountService
@@ -200,11 +193,9 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter         Runtime owner arbiter.
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsAccountService $account_service ): void {
-		$this->arbiter         = $arbiter;
+	final public function init( WooPaymentsAccountService $account_service ): void {
 		$this->account_service = $account_service;
 	}
 
@@ -212,10 +203,6 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * Register the shopper Tracks AJAX actions, REST route and checkout funnel hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		foreach ( $this->get_ajax_hooks() as $hook => $callback ) {
 			if ( false === has_action( $hook, $callback ) ) {
 				add_action( $hook, $callback );

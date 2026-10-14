@@ -41,13 +41,6 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	private const MULTIBANCO_URL_META_KEY       = '_wcpay_multibanco_url';
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Payment-method definition registry.
 	 *
 	 * @var WooPaymentsPaymentMethodRegistry
@@ -117,14 +110,12 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter                  $arbiter                 Runtime owner arbiter.
 	 * @param WooPaymentsPaymentMethodRegistry           $payment_method_registry Payment-method definition registry.
 	 * @param WooPaymentsAccountService                  $account_service              WooPayments account service.
 	 * @param WooPaymentsFrontendTrackingController|null $frontend_tracking_controller Optional frontend tracking controller.
 	 * @param WooPaymentsApiClient|null                  $api_client                   Optional API client for the redirect-method intent re-check.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsAccountService $account_service, ?WooPaymentsFrontendTrackingController $frontend_tracking_controller = null, ?WooPaymentsApiClient $api_client = null ): void {
-		$this->arbiter                      = $arbiter;
+	final public function init( WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsAccountService $account_service, ?WooPaymentsFrontendTrackingController $frontend_tracking_controller = null, ?WooPaymentsApiClient $api_client = null ): void {
 		$this->payment_method_registry      = $payment_method_registry;
 		$this->account_service              = $account_service;
 		$this->frontend_tracking_controller = $frontend_tracking_controller;
@@ -135,10 +126,6 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 	 * Register order-success hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_action( 'woocommerce_before_thankyou', array( $this, 'register_payment_method_title_override' ) ) ) {
 			add_action( 'woocommerce_before_thankyou', array( $this, 'register_payment_method_title_override' ) );
 		}

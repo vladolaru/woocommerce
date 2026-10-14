@@ -5,7 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Payment_Tokens;
 use WC_Unit_Test_Case;
 
@@ -38,7 +37,6 @@ class WooPaymentsTokenClassMapControllerTest extends WC_Unit_Test_Case {
 		);
 		$sut      = new WooPaymentsTokenClassMapController();
 
-		$sut->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$sut->register();
 
 		$token = WC_Payment_Tokens::get( $token_id );
@@ -55,24 +53,10 @@ class WooPaymentsTokenClassMapControllerTest extends WC_Unit_Test_Case {
 	public function test_maps_woopayments_extension_token_class_names_to_token_classes(): void {
 		$sut = new WooPaymentsTokenClassMapController();
 
-		$sut->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$sut->register();
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the token class map filter directly.
 		$this->assertSame( WooPaymentsSepaToken::class, apply_filters( 'woocommerce_payment_token_class', 'WC_Payment_Token_WCPay_SEPA', 'legacy-sepa' ) );
-	}
-
-	/**
-	 * @testdox Should not register token class mapping when the built-in WooPayments does not own the runtime.
-	 */
-	public function test_does_not_register_mapping_when_builtin_does_not_own_runtime(): void {
-		$sut = new WooPaymentsTokenClassMapController();
-
-		$sut->init( new StaticWooPaymentsRuntimeArbiter( false ) );
-		$sut->register();
-
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test asserts the controller does not register this class-map filter.
-		$this->assertSame( 'WC_Payment_Token_wcpay_sepa', apply_filters( 'woocommerce_payment_token_class', 'WC_Payment_Token_wcpay_sepa', 'wcpay_sepa' ) );
 	}
 
 	/**

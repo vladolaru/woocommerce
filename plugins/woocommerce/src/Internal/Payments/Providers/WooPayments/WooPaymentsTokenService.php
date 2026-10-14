@@ -85,13 +85,6 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	private WooPaymentsPaymentMethodDetailsService $payment_method_details_service;
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
@@ -128,15 +121,13 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * (`class-wc-payments-token-service.php:49-52`): a dependency that cannot be built fails this service's resolution.
 	 *
 	 * @param WooPaymentsPaymentMethodDetailsService $payment_method_details_service Payment method details service.
-	 * @param WooPaymentsRuntimeArbiter              $arbiter                        Runtime owner arbiter.
 	 * @param WooPaymentsApiClient                   $api_client                     WooPayments API client.
 	 * @param WooPaymentsCustomerService             $customer_service               Customer service.
 	 * @param WooPaymentsAccountService              $account_service                Account service.
 	 * @param WooPaymentsOrderDataService            $order_data_service             Order data service.
 	 */
-	final public function init( WooPaymentsPaymentMethodDetailsService $payment_method_details_service, WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsCustomerService $customer_service, WooPaymentsAccountService $account_service, WooPaymentsOrderDataService $order_data_service ): void {
+	final public function init( WooPaymentsPaymentMethodDetailsService $payment_method_details_service, WooPaymentsApiClient $api_client, WooPaymentsCustomerService $customer_service, WooPaymentsAccountService $account_service, WooPaymentsOrderDataService $order_data_service ): void {
 		$this->payment_method_details_service = $payment_method_details_service;
-		$this->arbiter                        = $arbiter;
 		$this->api_client                     = $api_client;
 		$this->customer_service               = $customer_service;
 		$this->account_service                = $account_service;
@@ -157,10 +148,6 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * @return void
 	 */
 	private function register_hooks(): void {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_action( 'woocommerce_payment_token_deleted', array( $this, 'handle_woocommerce_payment_token_deleted' ) ) ) {
 			add_action( 'woocommerce_payment_token_deleted', array( $this, 'handle_woocommerce_payment_token_deleted' ), 10, 2 );
 		}

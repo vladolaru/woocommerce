@@ -5,7 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use ActionScheduler_Store;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Helper_Order;
 use WC_Order;
 use WC_Order_Refund;
@@ -29,7 +28,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 	public function setUp(): void {
 		parent::setUp();
 		$this->cleanup_state();
-		$this->sut = $this->create_service( true );
+		$this->sut = $this->create_service();
 	}
 
 	/**
@@ -50,19 +49,6 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 		$this->assertSame( 10, has_action( WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK, array( $this->sut, 'process_batch' ) ) );
 		$this->assertSame( 10, has_action( WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK, array( $this->sut, 'process_batch_dry_run' ) ) );
 		$this->assertSame( 10, has_action( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK, array( $this->sut, 'check_and_cache_affected_orders' ) ) );
-	}
-
-	/**
-	 * @testdox Remediation hooks are not registered while the WooPayments extension owns the runtime.
-	 */
-	public function test_registers_no_actions_when_extension_owns_runtime(): void {
-		$service = $this->create_service( false );
-
-		$service->register();
-
-		$this->assertFalse( has_action( WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK, array( $service, 'process_batch' ) ) );
-		$this->assertFalse( has_action( WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK, array( $service, 'process_batch_dry_run' ) ) );
-		$this->assertFalse( has_action( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK, array( $service, 'check_and_cache_affected_orders' ) ) );
 	}
 
 	/**
@@ -197,7 +183,6 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 				return false;
 			}
 		};
-		$service->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$this->create_order_fixture( array( 'status' => 'cancelled' ) );
 
 		$result = $service->ensure_scheduled();
@@ -222,7 +207,6 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 				return false;
 			}
 		};
-		$service->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$this->create_order_fixture( array( 'status' => 'cancelled' ) );
 
 		$this->assertFalse( $service->can_schedule_cutover_remediation() );
@@ -496,14 +480,10 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 	/**
 	 * Create a remediation service.
 	 *
-	 * @param bool $builtin Whether the built-in WooPayments owns the runtime.
 	 * @return WooPaymentsCanceledAuthorizationFeeRemediationService
 	 */
-	private function create_service( bool $builtin ): WooPaymentsCanceledAuthorizationFeeRemediationService {
-		$service = new WooPaymentsCanceledAuthorizationFeeRemediationService();
-		$service->init( new StaticWooPaymentsRuntimeArbiter( $builtin ) );
-
-		return $service;
+	private function create_service(): WooPaymentsCanceledAuthorizationFeeRemediationService {
+		return new WooPaymentsCanceledAuthorizationFeeRemediationService();
 	}
 
 	/**

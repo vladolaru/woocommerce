@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -48,7 +47,7 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 		parent::setUp();
 
 		$this->api_client = new RecordingDocumentsApiClient();
-		$this->sut        = $this->create_controller( true, true, false );
+		$this->sut        = $this->create_controller( true, false );
 
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 	}
@@ -127,21 +126,10 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Documents routes are not registered when native runtime is inactive.
-	 */
-	public function test_registers_no_routes_when_native_does_not_own_runtime(): void {
-		$this->sut = $this->create_controller( false, true, false );
-
-		$this->sut->register();
-
-		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'maybe_register_routes' ) ) );
-	}
-
-	/**
 	 * @testdox Documents routes are not registered when the account is not document eligible.
 	 */
 	public function test_registers_no_routes_when_documents_are_disabled(): void {
-		$this->sut = $this->create_controller( true, false, false );
+		$this->sut = $this->create_controller( false, false );
 
 		$this->sut->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
@@ -658,18 +646,11 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Create a native Documents REST controller.
 	 *
-	 * @param bool $native_register        Whether native should own route registration.
 	 * @param bool $documents_enabled      Whether Documents are enabled for the account.
 	 * @param bool $test_mode              Whether WooPayments should run in test mode.
 	 * @return WooPaymentsDocumentsRestController
 	 */
-	private function create_controller( bool $native_register, bool $documents_enabled, bool $test_mode ): WooPaymentsDocumentsRestController {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
-
+	private function create_controller( bool $documents_enabled, bool $test_mode ): WooPaymentsDocumentsRestController {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_test_mode_enabled', 'is_documents_enabled' ) )
@@ -678,7 +659,7 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
 
 		$controller = new WooPaymentsDocumentsRestController();
-		$controller->init( $arbiter, $this->api_client, $account_service );
+		$controller->init( $this->api_client, $account_service );
 
 		return $controller;
 	}
@@ -690,14 +671,8 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @return WooPaymentsDocumentsRestController
 	 */
 	private function create_controller_with_account_service( WooPaymentsAccountService $account_service ): WooPaymentsDocumentsRestController {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
-
 		$controller = new WooPaymentsDocumentsRestController();
-		$controller->init( $arbiter, $this->api_client, $account_service );
+		$controller->init( $this->api_client, $account_service );
 
 		return $controller;
 	}

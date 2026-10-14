@@ -8,7 +8,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -45,17 +44,12 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Registration should hook created-customer promotion only when the built-in WooPayments owns the runtime.
+	 * @testdox Registration should hook created-customer promotion.
 	 */
-	public function test_register_hooks_created_customer_promotion_only_for_builtin_runtime(): void {
+	public function test_register_hooks_created_customer_promotion(): void {
 		$builtin_sut = $this->create_sut( false, $this->create_customer_api_client( array() ) );
 		$builtin_sut->register();
 		$this->assertNotFalse( has_action( 'woocommerce_created_customer', array( $builtin_sut, 'handle_woocommerce_created_customer' ) ) );
-
-		$extension_sut = new WooPaymentsCustomerService();
-		$extension_sut->init( $this->create_customer_api_client( array() ), $this->create_account_service_stub( false ), new WooPaymentsSessionService(), new StaticWooPaymentsRuntimeArbiter( false ) );
-		$extension_sut->register();
-		$this->assertFalse( has_action( 'woocommerce_created_customer', array( $extension_sut, 'handle_woocommerce_created_customer' ) ), 'The promotion hook must not register while the standalone plugin owns the runtime.' );
 	}
 
 	/**
@@ -627,7 +621,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$sut = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->onlyMethods( array( 'migrate_and_get_customer_id' ) )
 			->getMock();
-		$sut->init( $api_client, $account_service, new WooPaymentsSessionService(), new StaticWooPaymentsRuntimeArbiter( false ) );
+		$sut->init( $api_client, $account_service, new WooPaymentsSessionService() );
 
 		// The fast-path read misses; the re-read after losing the lock finds the
 		// ID that the winning concurrent request just persisted.
@@ -665,7 +659,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$sut = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->onlyMethods( array( 'migrate_and_get_customer_id' ) )
 			->getMock();
-		$sut->init( $api_client, $account_service, new WooPaymentsSessionService(), new StaticWooPaymentsRuntimeArbiter( false ) );
+		$sut->init( $api_client, $account_service, new WooPaymentsSessionService() );
 		$sut->method( 'migrate_and_get_customer_id' )->willReturnOnConsecutiveCalls( null, 'cus_existing' );
 
 		wp_cache_add( 'wcpay_customer_create_' . $user_id, 1, 'woopayments', 10 );
@@ -697,7 +691,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$sut = $this->getMockBuilder( WooPaymentsCustomerService::class )
 			->onlyMethods( array( 'migrate_and_get_customer_id' ) )
 			->getMock();
-		$sut->init( $api_client, $account_service, new WooPaymentsSessionService(), new StaticWooPaymentsRuntimeArbiter( false ) );
+		$sut->init( $api_client, $account_service, new WooPaymentsSessionService() );
 
 		// Both the fast-path read and the re-read after losing the lock miss: the
 		// lock holder has not persisted the ID yet, so this request must create.
@@ -904,7 +898,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_account_is_live' )->willReturn( $account_is_live );
 
 		$sut = new WooPaymentsCustomerService();
-		$sut->init( $api_client, $account_service, new WooPaymentsSessionService(), new StaticWooPaymentsRuntimeArbiter( true ) );
+		$sut->init( $api_client, $account_service, new WooPaymentsSessionService() );
 
 		return $sut;
 	}

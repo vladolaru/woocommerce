@@ -9,7 +9,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPay
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
 
 /**
@@ -60,37 +59,27 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox WooPay extension sync hooks are registered only when native owns runtime.
+	 * @testdox WooPay extension sync hooks are registered.
 	 */
-	public function test_registers_hooks_only_when_native_owns_runtime(): void {
-		$native_sync = $this->create_sync( true );
+	public function test_registers_hooks(): void {
+		$sync = $this->create_sync();
 
-		$native_sync->register();
+		$sync->register();
 
-		$this->assertFalse( has_action( 'init', array( $native_sync, 'schedule' ) ) );
-		$this->assertSame( 10, has_action( 'action_scheduler_ensure_recurring_actions', array( $native_sync, 'schedule' ) ) );
-		$this->assertSame( 10, has_action( 'validate_woopay_compatibility', array( $native_sync, 'update_compatibility_and_maybe_show_incompatibility_warning' ) ) );
-		$this->assertSame( 10, has_action( 'activated_plugin', array( $native_sync, 'show_warning_when_incompatible_extension_is_enabled' ) ) );
-		$this->assertSame( 10, has_action( 'deactivated_plugin', array( $native_sync, 'hide_warning_when_incompatible_extension_is_disabled' ) ) );
+		$this->assertFalse( has_action( 'init', array( $sync, 'schedule' ) ) );
+		$this->assertSame( 10, has_action( 'action_scheduler_ensure_recurring_actions', array( $sync, 'schedule' ) ) );
+		$this->assertSame( 10, has_action( 'validate_woopay_compatibility', array( $sync, 'update_compatibility_and_maybe_show_incompatibility_warning' ) ) );
+		$this->assertSame( 10, has_action( 'activated_plugin', array( $sync, 'show_warning_when_incompatible_extension_is_enabled' ) ) );
+		$this->assertSame( 10, has_action( 'deactivated_plugin', array( $sync, 'hide_warning_when_incompatible_extension_is_disabled' ) ) );
 		// Native never fires the plugin's update hook (no plugin version), so nothing listens to it.
-		$this->assertFalse( has_action( 'woocommerce_woocommerce_payments_updated', array( $native_sync, 'remove_legacy_schedule_action_name_on_update' ) ) );
-
-		$plugin_sync = $this->create_sync( false );
-		$plugin_sync->register();
-
-		$this->assertFalse( has_action( 'init', array( $plugin_sync, 'schedule' ) ) );
-		$this->assertFalse( has_action( 'action_scheduler_ensure_recurring_actions', array( $plugin_sync, 'schedule' ) ) );
-		$this->assertFalse( has_action( 'validate_woopay_compatibility', array( $plugin_sync, 'update_compatibility_and_maybe_show_incompatibility_warning' ) ) );
-		$this->assertFalse( has_action( 'activated_plugin', array( $plugin_sync, 'show_warning_when_incompatible_extension_is_enabled' ) ) );
-		$this->assertFalse( has_action( 'deactivated_plugin', array( $plugin_sync, 'hide_warning_when_incompatible_extension_is_disabled' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_woocommerce_payments_updated', array( $plugin_sync, 'remove_legacy_schedule_action_name_on_update' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_woocommerce_payments_updated', array( $sync, 'remove_legacy_schedule_action_name_on_update' ) ) );
 	}
 
 	/**
 	 * @testdox WooPay compatibility validation is scheduled as a preserved recurring Action Scheduler hook.
 	 */
 	public function test_schedule_creates_recurring_compatibility_action(): void {
-		$sync = $this->create_sync( true );
+		$sync = $this->create_sync();
 
 		$sync->schedule();
 		$sync->schedule();
@@ -105,7 +94,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 	 * alone cannot. The request is read where Action Scheduler receives it and nothing is stored.
 	 */
 	public function test_schedule_asks_for_a_unique_daily_compatibility_action(): void {
-		$sync     = $this->create_sync( true );
+		$sync     = $this->create_sync();
 		$requests = array();
 		$capture  = static function ( $pre, $timestamp, $interval, $hook, $args, $group, $priority, $unique ) use ( &$requests ) {
 			unset( $pre, $timestamp, $priority );
@@ -144,7 +133,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 	 * @testdox WooPay compatibility validation is scheduled once through the recurring-actions hook.
 	 */
 	public function test_recurring_action_ensure_hook_schedules_one_compatibility_action(): void {
-		$sync = $this->create_sync( true );
+		$sync = $this->create_sync();
 
 		$sync->register();
 		/**
@@ -167,7 +156,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 	 * @testdox Legacy incompatible-extension cron hook is cleared on WooPayments updates.
 	 */
 	public function test_remove_legacy_schedule_action_name_on_update_clears_wp_cron_hook(): void {
-		$sync = $this->create_sync( true );
+		$sync = $this->create_sync();
 
 		wp_schedule_event( time(), 'daily', 'validate_incompatible_extensions' );
 		$this->assertNotFalse( wp_next_scheduled( 'validate_incompatible_extensions' ) );
@@ -192,7 +181,6 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 		update_option( 'woopay_enabled_adapted_extensions', array( 'stale-extension' ) );
 
 		$sync = $this->create_sync(
-			true,
 			array(
 				'incompatible_extensions' => array( 'bad-extension' ),
 				'adapted_extensions'      => array( 'woocommerce-points-and-rewards', 'woocommerce-gift-cards' ),
@@ -219,7 +207,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 			->getMock();
 		$api_client->method( 'get_woopay_compatibility' )->willThrowException( self::make_provider_error() );
 		$sync = new WooPaymentsWooPayExtensionSync();
-		$sync->init( new StaticWooPaymentsRuntimeArbiter( true ), $api_client, wc_get_container()->get( WooPaymentsActionSchedulerService::class ) );
+		$sync->init( $api_client, wc_get_container()->get( WooPaymentsActionSchedulerService::class ) );
 		$logger = RecordingWcLogger::install();
 
 		$sync->update_compatibility_and_maybe_show_incompatibility_warning();
@@ -237,7 +225,6 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 		update_option( 'woopay_invalid_extension_found', true );
 
 		$sync = $this->create_sync(
-			true,
 			array(
 				'incompatible_extensions' => array( 'bad-extension' ),
 				'adapted_extensions'      => array(),
@@ -264,7 +251,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$sync = $this->create_sync( true );
+		$sync = $this->create_sync();
 
 		$sync->show_warning_when_incompatible_extension_is_enabled( 'bad-extension/bad-extension.php' );
 
@@ -280,11 +267,10 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a sync instance.
 	 *
-	 * @param bool                $native_register Whether native should register.
-	 * @param array<string,mixed> $compatibility   Compatibility response, with the keys client 11.1.0 reads (includes/woopay/class-woopay-scheduler.php:82-87).
+	 * @param array<string,mixed> $compatibility Compatibility response, with the keys client 11.1.0 reads (includes/woopay/class-woopay-scheduler.php:82-87).
 	 * @return WooPaymentsWooPayExtensionSync
 	 */
-	private function create_sync( bool $native_register, array $compatibility = array() ): WooPaymentsWooPayExtensionSync {
+	private function create_sync( array $compatibility = array() ): WooPaymentsWooPayExtensionSync {
 		$this->assertTrue( class_exists( WooPaymentsWooPayExtensionSync::class ), 'WooPaymentsWooPayExtensionSync should exist.' );
 
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
@@ -295,7 +281,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 			->willReturn( $compatibility );
 
 		$sync = new WooPaymentsWooPayExtensionSync();
-		$sync->init( new StaticWooPaymentsRuntimeArbiter( $native_register ), $api_client, wc_get_container()->get( WooPaymentsActionSchedulerService::class ) );
+		$sync->init( $api_client, wc_get_container()->get( WooPaymentsActionSchedulerService::class ) );
 
 		$this->syncs[] = $sync;
 

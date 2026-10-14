@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountSessionRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEmbeddedAccountSessionService;
@@ -48,7 +47,7 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 
 		$this->service         = $this->create_service();
 		$this->account_service = $this->create_account_service();
-		$this->sut             = $this->create_controller( true );
+		$this->sut             = $this->create_controller();
 
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 	}
@@ -76,16 +75,6 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 		$this->assertRouteHasMethod( $routes['/wc/v3/payments/accounts'], WP_REST_Server::READABLE );
 		$this->assertArrayHasKey( '/wc/v3/payments/accounts/session', $routes );
 		$this->assertRouteHasMethod( $routes['/wc/v3/payments/accounts/session'], WP_REST_Server::READABLE );
-	}
-
-	/**
-	 * @testdox Account session route is not registered when native does not own runtime.
-	 */
-	public function test_registers_no_route_when_native_does_not_own_runtime(): void {
-		$this->sut = $this->create_controller( false );
-		$this->sut->register();
-
-		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
 	}
 
 	/**
@@ -270,18 +259,11 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 	/**
 	 * Create a native account-session REST controller.
 	 *
-	 * @param bool $native_register Whether native should own route registration.
 	 * @return WooPaymentsAccountSessionRestController
 	 */
-	private function create_controller( bool $native_register ): WooPaymentsAccountSessionRestController {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
-
+	private function create_controller(): WooPaymentsAccountSessionRestController {
 		$controller = new WooPaymentsAccountSessionRestController();
-		$controller->init( $arbiter, $this->service, $this->account_service );
+		$controller->init( $this->service, $this->account_service );
 
 		return $controller;
 	}

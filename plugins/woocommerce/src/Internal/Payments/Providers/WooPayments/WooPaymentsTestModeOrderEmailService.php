@@ -35,31 +35,9 @@ class WooPaymentsTestModeOrderEmailService implements RegisterHooksInterface {
 	);
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
-	 * Initialize the class instance.
-	 *
-	 * @internal
-	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter Runtime owner arbiter.
-	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter ): void {
-		$this->arbiter = $arbiter;
-	}
-
-	/**
 	 * Register test-mode order email filters.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		foreach ( self::ORDER_EMAIL_IDS as $email_id ) {
 			$subject_hook = "woocommerce_email_subject_{$email_id}";
 			$heading_hook = "woocommerce_email_heading_{$email_id}";

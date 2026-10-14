@@ -93,13 +93,6 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	private WooPaymentsOrderDataService $order_data_service;
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter|null
-	 */
-	private ?WooPaymentsRuntimeArbiter $arbiter = null;
-
-	/**
 	 * Intent confirmation service, which applies the attached intent's payment lifecycle event.
 	 *
 	 * @var WooPaymentsIntentConfirmationService|null
@@ -123,20 +116,17 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 * @param WooPaymentsApiClient                      $api_client                  WooPayments API client.
 	 * @param OrderPaymentLifecycleService              $lifecycle_service           Order payment lifecycle service.
 	 * @param WooPaymentsOrderDataService               $order_data_service          WooPayments order data service.
-	 * @param WooPaymentsRuntimeArbiter|null            $arbiter                     Optional runtime owner arbiter.
 	 * @param WooPaymentsIntentConfirmationService|null $intent_confirmation_service Optional intent confirmation service.
 	 */
 	final public function init(
 		WooPaymentsApiClient $api_client,
 		OrderPaymentLifecycleService $lifecycle_service,
 		WooPaymentsOrderDataService $order_data_service,
-		?WooPaymentsRuntimeArbiter $arbiter = null,
 		?WooPaymentsIntentConfirmationService $intent_confirmation_service = null
 	): void {
 		$this->api_client                  = $api_client;
 		$this->lifecycle_service           = $lifecycle_service;
 		$this->order_data_service          = $order_data_service;
-		$this->arbiter                     = $arbiter;
 		$this->intent_confirmation_service = $intent_confirmation_service;
 	}
 
@@ -146,10 +136,6 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 * @internal
 	 */
 	public function register() {
-		if ( ! $this->get_runtime_arbiter()->is_builtin_owner() ) {
-			return;
-		}
-
 		add_action( 'woocommerce_payment_complete', array( $this, 'handle_woocommerce_payment_complete' ) );
 		// Priority 21 runs right after core's wc_clear_cart_after_payment(), as in client 11.1.0 (src/Internal/Service/DuplicatePaymentPreventionService.php:66-69).
 		add_action( 'template_redirect', array( $this, 'clear_session_processing_order_after_landing_order_received_page' ), 21 );
@@ -653,19 +639,6 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		$value = $session->get( self::SESSION_KEY_PROCESSING_ORDER );
 
 		return null === $value ? null : absint( $value );
-	}
-
-	/**
-	 * Get the runtime owner arbiter.
-	 *
-	 * @return WooPaymentsRuntimeArbiter
-	 */
-	private function get_runtime_arbiter(): WooPaymentsRuntimeArbiter {
-		if ( ! $this->arbiter instanceof WooPaymentsRuntimeArbiter ) {
-			$this->arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
-		}
-
-		return $this->arbiter;
 	}
 
 	/**

@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTosRestController;
@@ -85,7 +84,7 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox ToS routes are registered under wc/v3 when native owns runtime.
 	 */
 	public function test_registers_routes_when_native_owns_runtime(): void {
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->sut->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );
@@ -101,20 +100,10 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox ToS routes are not registered when native does not own runtime.
-	 */
-	public function test_registers_no_routes_when_native_does_not_own_runtime(): void {
-		$this->sut = $this->create_controller( false );
-		$this->sut->register();
-
-		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
-	}
-
-	/**
 	 * @testdox ToS route requires manage_woocommerce before changing gateway state.
 	 */
 	public function test_tos_route_requires_manage_woocommerce(): void {
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->sut->register_routes();
 		wp_set_current_user( 0 );
 
@@ -130,7 +119,7 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox ToS route returns bad_request when accept is missing.
 	 */
 	public function test_tos_route_rejects_missing_accept(): void {
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->sut->register_routes();
 
 		$response = $this->server->dispatch( $this->create_tos_request( array() ) );
@@ -145,7 +134,7 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_tos_route_rejects_null_accept_without_disabling_the_gateway(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->sut->register_routes();
 
 		$response = $this->server->dispatch( $this->create_tos_request( array( 'accept' => null ) ) );
@@ -159,7 +148,7 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox ToS route records acceptance, enables the gateway, and refreshes account data.
 	 */
 	public function test_tos_route_accepts_terms(): void {
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->sut->register_routes();
 
 		$response = $this->server->dispatch( $this->create_tos_request( array( 'accept' => true ) ) );
@@ -183,7 +172,7 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox A platform error recording the agreement is logged with its status and code, never its message.
 	 */
 	public function test_tos_agreement_failure_log_leaves_out_platform_text(): void {
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->sut->register_routes();
 		self::enable_woopayments_debug_logging();
 		$this->api_client->throw_on_agreement = true;
@@ -208,7 +197,7 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_tos_accept_failure_answers_error_and_keeps_the_gateway_enabled( string $failing_step ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'no' ) );
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->sut->register_routes();
 		if ( 'record the agreement' === $failing_step ) {
 			$this->api_client->throw_on_agreement = true;
@@ -243,7 +232,7 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 				'manual_capture' => 'yes',
 			)
 		);
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->sut->register_routes();
 
 		$response = $this->server->dispatch( $this->create_tos_request( array( 'accept' => false ) ) );
@@ -259,7 +248,7 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Reactivate route enables the gateway after a ToS decline.
 	 */
 	public function test_reactivate_route_enables_gateway(): void {
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->sut->register_routes();
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'POST', '/wc/v3/payments/tos/reactivate' ) );
@@ -274,7 +263,7 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_stripe_track_connected_route_deletes_tracking_option(): void {
 		update_option( '_wcpay_onboarding_stripe_connected', array( 'tracked' => true ) );
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->sut->register_routes();
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'POST', '/wc/v3/payments/tos/stripe_track_connected' ) );
@@ -287,20 +276,13 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Create a ToS REST controller.
 	 *
-	 * @param bool $native_register Whether native should own route registration.
 	 * @return WooPaymentsTosRestController
 	 */
-	private function create_controller( bool $native_register ): WooPaymentsTosRestController {
+	private function create_controller(): WooPaymentsTosRestController {
 		$this->assertTrue( class_exists( WooPaymentsTosRestController::class ), 'WooPaymentsTosRestController should exist.' );
 
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
-
 		$controller = new WooPaymentsTosRestController();
-		$controller->init( $arbiter, $this->api_client, $this->account_service );
+		$controller->init( $this->api_client, $this->account_service );
 
 		return $controller;
 	}

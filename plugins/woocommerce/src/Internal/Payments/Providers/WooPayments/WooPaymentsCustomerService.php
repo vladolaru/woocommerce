@@ -64,13 +64,6 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	private WooPaymentsSessionService $session_service;
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Orders whose payer's customer is refreshed at shutdown, with that payer, by order ID.
 	 *
 	 * @var array<int,array{order:WC_Order,user_id:int|null}>
@@ -85,13 +78,11 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 * @param WooPaymentsApiClient      $api_client      WooPayments API client.
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 * @param WooPaymentsSessionService $session_service WooPayments session service.
-	 * @param WooPaymentsRuntimeArbiter $arbiter         Runtime owner arbiter.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, WooPaymentsSessionService $session_service, WooPaymentsRuntimeArbiter $arbiter ): void {
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service, WooPaymentsSessionService $session_service ): void {
 		$this->api_client      = $api_client;
 		$this->account_service = $account_service;
 		$this->session_service = $session_service;
-		$this->arbiter         = $arbiter;
 	}
 
 	/**
@@ -102,10 +93,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function register() {
-		if (
-			$this->arbiter->is_builtin_owner()
-			&& false === has_action( 'woocommerce_created_customer', array( $this, 'handle_woocommerce_created_customer' ) )
-		) {
+		if ( false === has_action( 'woocommerce_created_customer', array( $this, 'handle_woocommerce_created_customer' ) ) ) {
 			add_action( 'woocommerce_created_customer', array( $this, 'handle_woocommerce_created_customer' ) );
 		}
 	}

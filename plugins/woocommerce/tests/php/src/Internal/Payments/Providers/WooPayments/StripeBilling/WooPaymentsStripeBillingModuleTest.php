@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
@@ -43,18 +42,17 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	 * @param string $label         Case label.
 	 * @param bool   $subscriptions Whether WooCommerce Subscriptions is active.
 	 * @param string $toggle        Stripe Billing toggle value.
-	 * @param bool   $builtin_owner Whether the built-in WooPayments owns payments (otherwise the extension does).
 	 * @param bool   $loaded        Whether the module loads.
 	 * @param bool   $enabled       Whether Stripe Billing is enabled.
 	 */
-	public function test_module_load_state( string $label, bool $subscriptions, string $toggle, bool $builtin_owner, bool $loaded, bool $enabled ): void {
+	public function test_module_load_state( string $label, bool $subscriptions, string $toggle, bool $loaded, bool $enabled ): void {
 		unset( $label );
 		if ( $subscriptions ) {
 			$this->load_subscriptions();
 		}
 		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
 
-		$sut = $this->register_module( $builtin_owner );
+		$sut = $this->register_module();
 
 		$this->assertSame( $loaded, $sut->is_loaded() );
 		$this->assertSame( $enabled, $sut->is_stripe_billing_enabled() );
@@ -66,14 +64,13 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	/**
 	 * Store states for the module's load condition.
 	 *
-	 * @return array<string,array{0:string,1:bool,2:string,3:bool,4:bool,5:bool}>
+	 * @return array<string,array{0:string,1:bool,2:string,3:bool,4:bool}>
 	 */
 	public function provider_module_load_states(): array {
 		return array(
-			'no Subscriptions, toggle on' => array( 'no WooCommerce Subscriptions and the toggle on', false, '1', true, false, false ),
-			'Subscriptions, toggle off'   => array( 'WooCommerce Subscriptions and the toggle off', true, '0', true, true, false ),
-			'Subscriptions, toggle on'    => array( 'WooCommerce Subscriptions and the toggle on', true, '1', true, true, true ),
-			'extension owns payments'     => array( 'the WooPayments extension owning payments', true, '1', false, false, false ),
+			'no Subscriptions, toggle on' => array( 'no WooCommerce Subscriptions and the toggle on', false, '1', false, false ),
+			'Subscriptions, toggle off'   => array( 'WooCommerce Subscriptions and the toggle off', true, '0', true, false ),
+			'Subscriptions, toggle on'    => array( 'WooCommerce Subscriptions and the toggle on', true, '1', true, true ),
 		);
 	}
 
@@ -83,7 +80,7 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	public function test_duplicating_a_product_leaves_out_its_stripe_ids_and_hashes(): void {
 		$this->load_subscriptions();
 		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, '0' );
-		$this->register_module( true );
+		$this->register_module();
 
 		$stripe_meta = array(
 			'_wcpay_product_hash'          => '157edb40778acb45ff5dce71451e7ff1',
@@ -120,7 +117,7 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 		if ( $loaded ) {
 			$this->load_subscriptions();
 		}
-		$sut             = $this->register_module( true );
+		$sut             = $this->register_module();
 		list( , $order ) = $this->create_stripe_billed_subscription_and_renewal();
 
 		$this->assertSame( $loaded, $sut->is_stripe_billed_order( $order ) );
@@ -145,7 +142,7 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 			$this->load_subscriptions();
 		}
 		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, '0' );
-		$this->register_module( true );
+		$this->register_module();
 		list( $subscription, $order ) = $this->create_stripe_billed_subscription_and_renewal();
 		$subscription->update_meta_data( '_wcpay_subscription_id', $wcpay_subscription_id );
 		$subscription->save();
@@ -169,7 +166,7 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 		$this->load_subscriptions();
 		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
 		set_transient( 'WCPAY_SUBSCRIPTION_MINIMUM_RECURRING_AMOUNTS_USD', 100 );
-		$this->register_module( true );
+		$this->register_module();
 
 		$this->assertSame( $expected, apply_filters( 'woocommerce_subscriptions_minimum_processable_recurring_amount', false, 'USD' ) );
 	}
@@ -185,7 +182,7 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	public function test_runs_the_update_payment_method_flow_only_while_the_toggle_is_on( string $toggle, string $expected ): void {
 		$this->load_subscriptions();
 		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
-		$this->register_module( true );
+		$this->register_module();
 		list( $subscription, $order ) = $this->create_stripe_billed_subscription_and_renewal();
 		$subscription->set_status( 'on-hold' );
 		$subscription->update_meta_data( '_wcpay_pending_invoice_id', 'in_1UM1Y0BzWlxcwgpPefRU4SSy' );
@@ -210,7 +207,7 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	public function test_answers_scheduled_payments_only_for_woopayments_subscriptions( string $toggle ): void {
 		$this->load_subscriptions();
 		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
-		$this->register_module( true );
+		$this->register_module();
 		WooCommerceSubscriptionsDoubles::load();
 		$other_gateway = new SubscriptionDouble();
 		$other_gateway->set_payment_method( 'asaas-credit-card' );
@@ -243,7 +240,7 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 		if ( $has_stripe_billed ) {
 			$this->create_stripe_billed_subscription_and_renewal();
 		}
-		$this->register_module( true );
+		$this->register_module();
 		// A fresh server fires rest_api_init, so only this test's module serves the route.
 		$GLOBALS['wp_rest_server'] = null;
 		rest_get_server();
@@ -267,7 +264,7 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 		WooCommerceSubscriptionsDoubles::load_background_repairer();
 		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $enabled ? '0' : '1' );
 		$this->create_stripe_billed_subscription_and_renewal();
-		$sut = $this->register_module( true );
+		$sut = $this->register_module();
 
 		$sut->set_stripe_billing_enabled( $enabled );
 
@@ -298,7 +295,7 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 		WooCommerceSubscriptionsDoubles::load();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::DUPLICATE_SITE ] = $is_staging;
 		update_option( 'woocommerce_default_country', $country );
-		$this->register_module( true );
+		$this->register_module();
 
 		$settings = apply_filters( 'woocommerce_admin_shared_settings', array( 'woopaymentsSettings' => array( 'isSubscriptionsActive' => true ) ) );
 
@@ -333,7 +330,7 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 		list( $subscription )                                       = $this->create_stripe_billed_subscription_and_renewal();
 		$subscription->set_status( $subscription_status );
 		$subscription->save();
-		$this->register_module( true );
+		$this->register_module();
 		wp_set_current_user( self::factory()->user->create( array( 'role' => $role ) ) );
 		set_current_screen( $screen );
 
@@ -367,20 +364,12 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Build and register the module with the given ownership decision.
+	 * Build and register the module.
 	 *
-	 * @param bool $builtin_owns Whether the built-in WooPayments owns payments.
 	 * @return WooPaymentsStripeBillingModule
 	 */
-	private function register_module( bool $builtin_owns ): WooPaymentsStripeBillingModule {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_owns );
-
+	private function register_module(): WooPaymentsStripeBillingModule {
 		$sut = new WooPaymentsStripeBillingModule();
-		$sut->init( $arbiter );
 		$sut->register();
 
 		return $sut;

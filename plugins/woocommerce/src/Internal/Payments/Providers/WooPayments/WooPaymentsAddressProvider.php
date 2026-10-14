@@ -33,13 +33,6 @@ class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider imple
 	private const LEGACY_ADDRESS_AUTOCOMPLETE_JWT_OPTION = 'wcpay_address_autocomplete_jwt';
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
@@ -73,12 +66,10 @@ class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider imple
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter         Runtime owner arbiter.
 	 * @param WooPaymentsApiClient      $api_client      WooPayments API client.
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
-		$this->arbiter         = $arbiter;
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
 		$this->api_client      = $api_client;
 		$this->account_service = $account_service;
 	}
@@ -87,10 +78,6 @@ class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider imple
 	 * Register address provider hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_filter( 'woocommerce_address_providers', array( $this, 'add_address_provider' ) ) ) {
 			add_filter( 'woocommerce_address_providers', array( $this, 'add_address_provider' ) );
 		}

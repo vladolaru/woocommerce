@@ -61,13 +61,6 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	);
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Express checkout address normalizer.
 	 *
 	 * @var WooPaymentsExpressCheckoutAddressNormalizer
@@ -86,11 +79,9 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter                   $arbiter            Runtime owner arbiter.
 	 * @param WooPaymentsExpressCheckoutAddressNormalizer $address_normalizer Express checkout address normalizer.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsExpressCheckoutAddressNormalizer $address_normalizer ): void {
-		$this->arbiter            = $arbiter;
+	final public function init( WooPaymentsExpressCheckoutAddressNormalizer $address_normalizer ): void {
 		$this->address_normalizer = $address_normalizer;
 	}
 
@@ -98,10 +89,6 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 * Register tokenized cart session hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_filter( 'woocommerce_session_handler', array( $this, 'handle_woocommerce_session_handler' ) ) ) {
 			add_filter( 'woocommerce_session_handler', array( $this, 'handle_woocommerce_session_handler' ), 20 );
 		}

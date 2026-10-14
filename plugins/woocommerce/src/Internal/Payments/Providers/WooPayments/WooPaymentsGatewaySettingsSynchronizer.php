@@ -172,10 +172,6 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	 * The classic toggle and the payment gateways REST route write the option directly, without `persist()`.
 	 */
 	public function register(): void {
-		if ( null === $this->runtime_arbiter || ! $this->runtime_arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		add_action( 'add_option_' . self::SETTINGS_OPTION, array( $this, 'handle_settings_added' ), 10, 2 );
 		add_action( 'update_option_' . self::SETTINGS_OPTION, array( $this, 'handle_settings_updated' ), 10, 2 );
 	}

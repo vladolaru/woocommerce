@@ -5,7 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Admin\Features\OnboardingTasks\TaskList;
 use Automattic\WooCommerce\Admin\Features\OnboardingTasks\TaskLists;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDisputesTask;
@@ -206,16 +205,12 @@ class WooPaymentsUpdateBusinessDetailsTaskTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The Home task hook registers only while native owns the runtime and adds the task to the extended list.
+	 * @testdox The Home task hook registers and adds the task to the extended list.
 	 */
 	public function test_registrar_adds_the_task_to_the_extended_list(): void {
 		$account_service = $this->create_account_service( $this->account( 'restricted', array( 'has_overdue_requirements' => true ) ) );
 
-		$dormant = $this->create_registrar( false, $account_service );
-		$dormant->register();
-		$this->assertFalse( has_action( 'init', array( $dormant, 'add_tasks' ) ) );
-
-		$sut = $this->create_registrar( true, $account_service );
+		$sut = $this->create_registrar( $account_service );
 		$sut->register();
 		$this->assertNotFalse( has_action( 'init', array( $sut, 'add_tasks' ) ) );
 		remove_action( 'init', array( $sut, 'add_tasks' ) );
@@ -276,19 +271,12 @@ class WooPaymentsUpdateBusinessDetailsTaskTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the Home task registrar.
 	 *
-	 * @param bool                      $native_register Whether native owns the runtime.
 	 * @param WooPaymentsAccountService $account_service Account service.
 	 * @return WooPaymentsHomeTasks
 	 */
-	private function create_registrar( bool $native_register, WooPaymentsAccountService $account_service ): WooPaymentsHomeTasks {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
-
+	private function create_registrar( WooPaymentsAccountService $account_service ): WooPaymentsHomeTasks {
 		$registrar = new WooPaymentsHomeTasks();
-		$registrar->init( $arbiter, $account_service, $this->createMock( WooPaymentsAdminMenuBadgeService::class ) );
+		$registrar->init( $account_service, $this->createMock( WooPaymentsAdminMenuBadgeService::class ) );
 
 		return $registrar;
 	}

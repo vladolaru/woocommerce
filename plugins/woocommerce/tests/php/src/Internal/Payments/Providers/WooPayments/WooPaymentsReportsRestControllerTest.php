@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMoneyMovementOrderService;
@@ -61,23 +60,19 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Reports routes are registered when native owns runtime.
 	 */
 	public function test_registers_routes_when_native_owns_runtime(): void {
-		$controller = $this->create_controller( true, true );
+		$controller = $this->create_controller( true );
 		$controller->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );
 
 		$this->assertExpectedRoutesRegistered();
-
-		$controller = $this->create_controller( false, true );
-		$controller->register();
-		$this->assertFalse( has_action( 'rest_api_init', array( $controller, 'register_routes' ) ) );
 	}
 
 	/**
 	 * @testdox Reports route shells are registered before the account Reports area is available.
 	 */
 	public function test_registers_routes_when_reports_area_is_unavailable(): void {
-		$controller = $this->create_controller( true, false );
+		$controller = $this->create_controller( false );
 		$controller->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );
@@ -89,7 +84,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Reports routes require manage_woocommerce before calling the platform API.
 	 */
 	public function test_routes_require_manage_woocommerce(): void {
-		$this->create_controller( true, true )->register_routes();
+		$this->create_controller( true )->register_routes();
 		wp_set_current_user( 0 );
 
 		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/reports/balance' );
@@ -111,14 +106,14 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Reports routes deny disabled Reports and missing accounts before calling the platform API.
 	 */
 	public function test_routes_require_enabled_reports_and_an_account_before_calling_the_platform_api(): void {
-		$this->create_controller( true, false, true )->register_routes();
+		$this->create_controller( false, true )->register_routes();
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/reports/fees' ) );
 
 		$this->assertSame( 403, $response->get_status() );
 		$this->assertSame( array(), $this->api_client->last_call );
 
-		$this->create_controller( true, true, false )->register_routes();
+		$this->create_controller( true, false )->register_routes();
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/reports/fees' ) );
 
 		$this->assertSame( 403, $response->get_status() );
@@ -129,7 +124,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Balance report forwards date range and lowercase currency to the reporting endpoint.
 	 */
 	public function test_balance_report_forwards_sanitized_query(): void {
-		$this->create_controller( true, true )->register_routes();
+		$this->create_controller( true )->register_routes();
 		$this->api_client->response = array(
 			'currency'                         => 'usd',
 			'starting_balance'                 => array(
@@ -176,7 +171,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Balance report rejects invalid currency before calling the platform API.
 	 */
 	public function test_balance_report_rejects_invalid_currency(): void {
-		$this->create_controller( true, true )->register_routes();
+		$this->create_controller( true )->register_routes();
 
 		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/reports/balance' );
 		$request->set_query_params(
@@ -205,7 +200,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @param array<string,mixed> $query Query.
 	 */
 	public function test_report_collections_reject_malformed_input( string $route, array $query ): void {
-		$this->create_controller( true, true )->register_routes();
+		$this->create_controller( true )->register_routes();
 
 		$request = new WP_REST_Request( 'GET', $route );
 		$request->set_query_params( $query );
@@ -220,7 +215,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox The Fees routes accept the dates the admin UI sends: day boundaries as UTC "Y-m-d H:i:s", like the client's formatDateValue().
 	 */
 	public function test_fees_routes_accept_the_admin_ui_dates(): void {
-		$this->create_controller( true, true )->register_routes();
+		$this->create_controller( true )->register_routes();
 
 		foreach ( array( '/wc/v3/payments/reports/fees', '/wc/v3/payments/reports/fees/summary' ) as $route ) {
 			$request = new WP_REST_Request( 'GET', $route );
@@ -257,7 +252,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Fees list maps Reports filters to transaction filters and strips customer data from rows.
 	 */
 	public function test_fees_list_maps_filters_and_strips_customer_data(): void {
-		$this->create_controller( true, true )->register_routes();
+		$this->create_controller( true )->register_routes();
 		add_filter(
 			'wcpay_list_transactions_request',
 			static function ( WooPaymentsTransactionsListRequest $request ): WooPaymentsTransactionsListRequest {
@@ -341,7 +336,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Fees list defaults to fee-bearing transaction types and maps payout search to deposit ID.
 	 */
 	public function test_fees_list_defaults_types_and_maps_payout_search(): void {
-		$this->create_controller( true, true )->register_routes();
+		$this->create_controller( true )->register_routes();
 
 		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/reports/fees' );
 		$request->set_query_params(
@@ -376,7 +371,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_fees_routes_map_order_search_tokens_to_charge_ids(): void {
 		$order = $this->create_order_with_charge( 'ch_reports_order' );
-		$this->create_controller( true, true )->register_routes();
+		$this->create_controller( true )->register_routes();
 
 		$list_request = new WP_REST_Request( 'GET', '/wc/v3/payments/reports/fees' );
 		$list_request->set_query_params(
@@ -413,7 +408,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Fees summary and export routes proxy the existing transactions summary and export APIs.
 	 */
 	public function test_fees_summary_and_export_routes_proxy_transactions_apis(): void {
-		$this->create_controller( true, true )->register_routes();
+		$this->create_controller( true )->register_routes();
 
 		$summary_request = new WP_REST_Request( 'GET', '/wc/v3/payments/reports/fees/summary' );
 		$summary_request->set_query_params(
@@ -473,7 +468,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Transaction report routes proxy transaction rows with customer context.
 	 */
 	public function test_transaction_report_routes_proxy_transaction_rows(): void {
-		$this->create_controller( true, true )->register_routes();
+		$this->create_controller( true )->register_routes();
 		$filter_calls = 0;
 		add_filter(
 			'wcpay_list_transactions_request',
@@ -561,7 +556,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Authorization report routes proxy authorization rows and detail lookup.
 	 */
 	public function test_authorization_report_routes_proxy_authorization_rows(): void {
-		$this->create_controller( true, true )->register_routes();
+		$this->create_controller( true )->register_routes();
 		$this->api_client->response = array(
 			'data' => array(
 				array(
@@ -628,7 +623,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Reports routes preserve platform exception status codes.
 	 */
 	public function test_reports_routes_preserve_platform_exception_status(): void {
-		$this->create_controller( true, true )->register_routes();
+		$this->create_controller( true )->register_routes();
 		$this->api_client->exception = new WooPaymentsApiException( 'Provider unavailable.', 'wcpay_provider_unavailable', 503 );
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/reports/fees' ) );
@@ -651,7 +646,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @param bool   $as_object Whether the callback returns an object of another class.
 	 */
 	public function test_list_filter_returning_no_request_fails_the_request( string $path, string $hook, bool $as_object ): void {
-		$this->create_controller( true, true )->register_routes();
+		$this->create_controller( true )->register_routes();
 		add_filter(
 			$hook,
 			static function () use ( $as_object ) {
@@ -669,18 +664,11 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Create a native Reports REST controller.
 	 *
-	 * @param bool $native_register Whether native should own route registration.
 	 * @param bool $reports_enabled Whether Reports are enabled.
 	 * @param bool $has_account Whether an account exists.
 	 * @return WooPaymentsReportsRestController
 	 */
-	private function create_controller( bool $native_register, bool $reports_enabled, bool $has_account = true ): WooPaymentsReportsRestController {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
-
+	private function create_controller( bool $reports_enabled, bool $has_account = true ): WooPaymentsReportsRestController {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'has_account', 'is_reports_enabled' ) )
@@ -693,7 +681,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 		}
 
 		$controller = new WooPaymentsReportsRestController();
-		$controller->init( $arbiter, $this->api_client, $account_service, $this->create_order_service() );
+		$controller->init( $this->api_client, $account_service, $this->create_order_service() );
 
 		return $controller;
 	}

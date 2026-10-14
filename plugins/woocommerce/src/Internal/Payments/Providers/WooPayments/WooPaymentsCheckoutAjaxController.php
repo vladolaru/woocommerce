@@ -94,10 +94,6 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * Register AJAX hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_action( 'wp_ajax_update_order_status', array( $this, 'handle_update_order_status' ) ) ) {
 			add_action( 'wp_ajax_update_order_status', array( $this, 'handle_update_order_status' ) );
 		}

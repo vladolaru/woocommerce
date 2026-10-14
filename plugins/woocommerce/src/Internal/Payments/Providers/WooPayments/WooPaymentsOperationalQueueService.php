@@ -178,13 +178,6 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	private const INSTANT_DEPOSIT_REMINDER_DELAY = 90 * DAY_IN_SECONDS;
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Action Scheduler service.
 	 *
 	 * @var WooPaymentsActionSchedulerService
@@ -217,20 +210,17 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter         $arbiter            Runtime owner arbiter.
 	 * @param WooPaymentsActionSchedulerService $scheduler          Action Scheduler service.
 	 * @param WooPaymentsApiClient              $api_client         WooPayments API client.
 	 * @param WooPaymentsAccountService         $account_service    WooPayments account service.
 	 * @param WooPaymentsSettingsService|null   $settings_service   Optional WooPayments settings service.
 	 */
 	final public function init(
-		WooPaymentsRuntimeArbiter $arbiter,
 		WooPaymentsActionSchedulerService $scheduler,
 		WooPaymentsApiClient $api_client,
 		WooPaymentsAccountService $account_service,
 		?WooPaymentsSettingsService $settings_service = null
 	): void {
-		$this->arbiter          = $arbiter;
 		$this->scheduler        = $scheduler;
 		$this->api_client       = $api_client;
 		$this->account_service  = $account_service;
@@ -251,13 +241,9 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register the account and store job handlers while the built-in WooPayments owns payments.
+	 * Register the account and store job handlers.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		add_action( self::STORE_SETUP_SYNC_ACTION, array( $this, 'handle_wcpay_store_setup_sync' ) );
 		add_action( self::UPDATE_COMPATIBILITY_DATA_ACTION, array( $this, 'handle_wcpay_update_compatibility_data' ), 10, 0 );
 		add_action( 'woocommerce_payments_account_refreshed', array( $this, 'schedule_compatibility_data_update' ) );

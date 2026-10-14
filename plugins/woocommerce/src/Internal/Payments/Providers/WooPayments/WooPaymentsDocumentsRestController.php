@@ -56,13 +56,6 @@ class WooPaymentsDocumentsRestController implements RegisterHooksInterface {
 	private ?WP_REST_Response $raw_document_response = null;
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Native WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
@@ -81,12 +74,10 @@ class WooPaymentsDocumentsRestController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter         Runtime owner arbiter.
 	 * @param WooPaymentsApiClient      $api_client      Native WooPayments API client.
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
-		$this->arbiter         = $arbiter;
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
 		$this->api_client      = $api_client;
 		$this->account_service = $account_service;
 	}
@@ -98,10 +89,6 @@ class WooPaymentsDocumentsRestController implements RegisterHooksInterface {
 	 * runs while plugins load.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_action( 'rest_api_init', array( $this, 'maybe_register_routes' ) ) ) {
 			add_action( 'rest_api_init', array( $this, 'maybe_register_routes' ) );
 		}

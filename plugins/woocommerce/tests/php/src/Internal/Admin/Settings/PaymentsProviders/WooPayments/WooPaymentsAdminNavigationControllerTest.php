@@ -122,19 +122,6 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register the WooPayments navigation hook when native runtime does not own payments.
-	 */
-	public function test_does_not_register_admin_menu_hook_when_native_runtime_does_not_own_payments(): void {
-		$sut = $this->create_controller( false );
-
-		$sut->register();
-
-		$this->assertFalse( has_action( 'admin_menu', array( $sut, 'add_menu_items' ) ) );
-		$this->assertFalse( has_action( 'admin_init', array( $sut, 'redirect_legacy_payment_paths' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_admin_shared_settings', array( $sut, 'preload_shared_settings' ) ) );
-	}
-
-	/**
 	 * @testdox Should preload the Reports feature flag for native WooPayments routes on the Payments settings page.
 	 */
 	public function test_preloads_reports_feature_flag_on_payments_settings_request(): void {
@@ -2350,17 +2337,6 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register the onboarding redirect when native runtime does not own payments.
-	 */
-	public function test_does_not_register_onboarding_redirect_when_native_runtime_does_not_own_payments(): void {
-		$sut = $this->create_controller( false );
-
-		$sut->register();
-
-		$this->assertFalse( has_action( 'admin_init', array( $sut, 'maybe_redirect_to_onboarding' ) ) );
-	}
-
-	/**
 	 * @testdox Should redirect native WooPayments admin pages to onboarding when there is no account.
 	 * @dataProvider provider_onboarding_redirect_paths
 	 *
@@ -2919,12 +2895,6 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsApplePayDomainService
 	 */
 	private function create_apple_pay_domain_service( bool $live_account ): WooPaymentsApplePayDomainService {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
-
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'has_live_account', 'is_payment_request_method_enabled' ) )
@@ -2934,7 +2904,6 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 
 		$service = new WooPaymentsApplePayDomainService();
 		$service->init(
-			$arbiter,
 			$this->createMock( WooPaymentsApiClient::class ),
 			$account_service,
 			$this->createMock( WooPaymentsActionSchedulerService::class )

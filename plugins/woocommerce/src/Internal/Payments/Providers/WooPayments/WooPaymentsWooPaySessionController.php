@@ -29,13 +29,6 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	private const CLASSIC_WOOPAY_STYLE_HANDLE = 'wc-woopayments-woopay';
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * WooPay session service.
 	 *
 	 * @var WooPaymentsWooPaySessionService
@@ -61,11 +54,9 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter       $arbiter         Runtime owner arbiter.
 	 * @param WooPaymentsWooPaySessionService $session_service WooPay session service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsWooPaySessionService $session_service ): void {
-		$this->arbiter         = $arbiter;
+	final public function init( WooPaymentsWooPaySessionService $session_service ): void {
 		$this->session_service = $session_service;
 	}
 
@@ -73,10 +64,6 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 * Register WooPay REST and AJAX hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		// Inbound WooPay identity hooks stay registered regardless of the enabled/eligibility
 		// snapshot — the plugin registers them unconditionally and every WooPay-specific check
 		// runs per request inside the callbacks themselves.

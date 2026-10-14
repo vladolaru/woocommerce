@@ -240,10 +240,6 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 * Register admin navigation hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_action( 'admin_menu', array( $this, 'add_menu_items' ) ) ) {
 			add_action( 'admin_menu', array( $this, 'add_menu_items' ), self::MENU_HOOK_PRIORITY );
 		}

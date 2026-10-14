@@ -54,7 +54,6 @@ use Automattic\WooCommerce\Internal\DataStores\Orders\DataSynchronizer;
 use Automattic\WooCommerce\RestApi\UnitTests\Helpers\OrderHelper;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingProvider;
 use Automattic\WooCommerce\Utilities\OrderUtil;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Order;
@@ -4691,7 +4690,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$fraud_service   = new WooPaymentsFraudService();
 		$fraud_service->init( $account_service, $this->createMock( WooPaymentsCustomerService::class ), $this->createMock( WooPaymentsSessionService::class ), $this->createMock( WooPaymentsApiClient::class ) );
 		$tracking = new WooPaymentsFraudOrderTrackingService();
-		$tracking->init( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler, $this->createMock( WooPaymentsApiClient::class ), $account_service, $fraud_service );
+		$tracking->init( $scheduler, $this->createMock( WooPaymentsApiClient::class ), $account_service, $fraud_service );
 		add_action( 'woocommerce_update_order', array( $tracking, 'handle_woocommerce_update_order' ), 10, 2 );
 
 		wc_get_container()->get( PaymentProcessingService::class )->process_checkout_outcome(
@@ -10405,7 +10404,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function create_real_customer_service( WooPaymentsApiClient $api_client ): WooPaymentsCustomerService {
 		$service = new WooPaymentsCustomerService();
-		$service->init( $api_client, $this->create_account_service( false ), new WooPaymentsSessionService(), new StaticWooPaymentsRuntimeArbiter( true ) );
+		$service->init( $api_client, $this->create_account_service( false ), new WooPaymentsSessionService() );
 
 		return $service;
 	}
@@ -10657,7 +10656,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		};
 
 		$token_service = new WooPaymentsTokenService();
-		$token_service->init( $details_service, new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
+		$token_service->init( $details_service, wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
 
 		return $token_service;
 	}
@@ -10775,7 +10774,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function register_token_class_map(): void {
 		$controller = new WooPaymentsTokenClassMapController();
-		$controller->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$controller->register();
 	}
 

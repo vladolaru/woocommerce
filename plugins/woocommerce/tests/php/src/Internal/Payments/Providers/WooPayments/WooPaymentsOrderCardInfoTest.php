@@ -253,18 +253,6 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Nothing is registered while the WooPayments extension owns the runtime.
-	 */
-	public function test_card_info_provider_registers_nothing_when_the_extension_owns_the_runtime(): void {
-		$card_info = new WooPaymentsOrderCardInfo();
-		$card_info->init( new StaticWooPaymentsRuntimeArbiter( false ), wc_get_container()->get( WooPaymentsPaymentMethodDetailsService::class ) );
-
-		$card_info->register();
-
-		$this->assertFalse( has_filter( 'wc_order_payment_card_info', array( $card_info, 'handle_order_payment_card_info' ) ) );
-	}
-
-	/**
 	 * Build a native API client double that records the payment methods it is asked for.
 	 *
 	 * @param array<string,mixed> $details Details to return.
@@ -322,7 +310,7 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 		// The PaymentInfo fallback asks the container's service.
 		wc_get_container()->replace( WooPaymentsPaymentMethodDetailsService::class, $service );
 		$card_info = new WooPaymentsOrderCardInfo();
-		$card_info->init( new StaticWooPaymentsRuntimeArbiter( true ), $service );
+		$card_info->init( $service );
 		$card_info->register();
 	}
 

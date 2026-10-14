@@ -1357,7 +1357,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 			new StaticWooPaymentsRuntimeArbiter( true )
 		);
 		$token_service = new WooPaymentsTokenService();
-		$token_service->init( $details_service, new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
+		$token_service->init( $details_service, wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
 
 		return $token_service;
 	}
@@ -1563,7 +1563,6 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 				$this->calls[] = array( __FUNCTION__, $subscription->get_id() );
 			}
 		};
-		$controller->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 		wc_get_container()->replace( WooPaymentsSubscriptionsController::class, $controller );
 
 		return $controller;
@@ -1756,7 +1755,6 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$token_service = new WooPaymentsTokenService();
 		$token_service->init(
 			$container->get( WooPaymentsPaymentMethodDetailsService::class ),
-			new StaticWooPaymentsRuntimeArbiter( false ),
 			$container->get( WooPaymentsApiClient::class ),
 			$container->get( WooPaymentsCustomerService::class ),
 			$container->get( WooPaymentsAccountService::class ),
@@ -1897,14 +1895,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		WooCommerceSubscriptionsDoubles::load();
 		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
 
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
-
 		$module = new WooPaymentsStripeBillingModule();
-		$module->init( $arbiter );
 		$module->register();
 		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
 

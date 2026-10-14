@@ -20,7 +20,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenizedCartSessionController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Payment_Token_CC;
 use WC_Unit_Test_Case;
 
@@ -106,34 +105,32 @@ class WooPaymentsForeignHookValuesTest extends WC_Unit_Test_Case {
 	 * @param string $hook Filter name.
 	 */
 	private function register_woopayments_callback( string $hook ): void {
-		$arbiter   = new StaticWooPaymentsRuntimeArbiter( true );
 		$container = wc_get_container();
 
 		switch ( $hook ) {
 			case 'woocommerce_payment_token_class':
 				$controller = new WooPaymentsTokenClassMapController();
-				$controller->init( $arbiter );
 				$controller->register();
 				break;
 			case 'woocommerce_get_customer_payment_tokens':
 			case 'woocommerce_payment_methods_list_item':
 				$token_service = new WooPaymentsTokenService();
-				$token_service->init( $container->get( WooPaymentsPaymentMethodDetailsService::class ), $arbiter, $container->get( WooPaymentsApiClient::class ), $container->get( WooPaymentsCustomerService::class ), $container->get( WooPaymentsAccountService::class ), $container->get( WooPaymentsOrderDataService::class ) );
+				$token_service->init( $container->get( WooPaymentsPaymentMethodDetailsService::class ), $container->get( WooPaymentsApiClient::class ), $container->get( WooPaymentsCustomerService::class ), $container->get( WooPaymentsAccountService::class ), $container->get( WooPaymentsOrderDataService::class ) );
 				$token_service->register();
 				break;
 			case 'woocommerce_address_providers':
 				$provider = new WooPaymentsAddressProvider();
-				$provider->init( $arbiter, $container->get( WooPaymentsApiClient::class ), $container->get( WooPaymentsAccountService::class ) );
+				$provider->init( $container->get( WooPaymentsApiClient::class ), $container->get( WooPaymentsAccountService::class ) );
 				$provider->register();
 				break;
 			case 'woocommerce_session_handler':
 				$controller = new WooPaymentsTokenizedCartSessionController();
-				$controller->init( $arbiter, $container->get( WooPaymentsExpressCheckoutAddressNormalizer::class ) );
+				$controller->init( $container->get( WooPaymentsExpressCheckoutAddressNormalizer::class ) );
 				$controller->register();
 				break;
 			case 'woocommerce_order_actions':
 				$controller = new WooPaymentsOrderAdminActionsController();
-				$controller->init( $arbiter, $container->get( PaymentProcessingService::class ), $container->get( WooPaymentsProvider::class ), $container->get( WooPaymentsFeeDetailsNoteController::class ) );
+				$controller->init( $container->get( PaymentProcessingService::class ), $container->get( WooPaymentsProvider::class ), $container->get( WooPaymentsFeeDetailsNoteController::class ) );
 				$controller->register();
 				break;
 			case 'wp_privacy_personal_data_erasers':

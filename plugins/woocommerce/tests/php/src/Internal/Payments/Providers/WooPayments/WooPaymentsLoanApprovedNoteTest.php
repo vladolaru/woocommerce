@@ -8,7 +8,6 @@ use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLoanApprovedNote;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
 
@@ -43,7 +42,7 @@ class WooPaymentsLoanApprovedNoteTest extends WC_Unit_Test_Case {
 
 		$this->delete_notes();
 		$this->api_client = $this->createMock( WooPaymentsApiClient::class );
-		$this->sut        = $this->create_sut( true );
+		$this->sut        = $this->create_sut();
 	}
 
 	/**
@@ -53,17 +52,6 @@ class WooPaymentsLoanApprovedNoteTest extends WC_Unit_Test_Case {
 		$this->sut->register();
 
 		$this->assertSame( 10, has_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'handle_loan_approved_inbox_note' ) ) );
-	}
-
-	/**
-	 * @testdox Registers no hook on a plugin-owned store.
-	 */
-	public function test_registers_no_hook_on_plugin_owned_store(): void {
-		$sut = $this->create_sut( false );
-
-		$sut->register();
-
-		$this->assertFalse( has_action( 'woocommerce_payments_account_refreshed', array( $sut, 'handle_loan_approved_inbox_note' ) ), 'A plugin-owned store must never get native notes.' );
 	}
 
 	/**
@@ -195,7 +183,7 @@ class WooPaymentsLoanApprovedNoteTest extends WC_Unit_Test_Case {
 		$api_client = $this->createMock( WooPaymentsApiClient::class );
 		$api_client->expects( $this->never() )->method( 'get_capital_active_loan_summary' );
 		$sut = new WooPaymentsLoanApprovedNote();
-		$sut->init( new StaticWooPaymentsRuntimeArbiter( true ), $api_client );
+		$sut->init( $api_client );
 
 		$sut->handle_loan_approved_inbox_note( array() );
 
@@ -243,12 +231,11 @@ class WooPaymentsLoanApprovedNoteTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the note provider.
 	 *
-	 * @param bool $native_owns_runtime Whether native owns the payments runtime.
 	 * @return WooPaymentsLoanApprovedNote
 	 */
-	private function create_sut( bool $native_owns_runtime ): WooPaymentsLoanApprovedNote {
+	private function create_sut(): WooPaymentsLoanApprovedNote {
 		$sut = new WooPaymentsLoanApprovedNote();
-		$sut->init( new StaticWooPaymentsRuntimeArbiter( $native_owns_runtime ), $this->api_client );
+		$sut->init( $this->api_client );
 
 		return $sut;
 	}

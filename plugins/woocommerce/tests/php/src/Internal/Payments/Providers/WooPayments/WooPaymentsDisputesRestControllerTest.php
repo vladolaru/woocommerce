@@ -61,7 +61,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @param string $path   Route path.
 	 */
 	public function test_dispute_routes_require_manage_woocommerce( string $method, string $path ): void {
-		$this->create_disputes_controller( true )->register_routes();
+		$this->create_disputes_controller()->register_routes();
 
 		wp_set_current_user( 0 );
 		$anonymous_response = $this->server->dispatch( new WP_REST_Request( $method, $path ) );
@@ -96,7 +96,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Disputes list maps reference REST filters to platform filter names.
 	 */
 	public function test_disputes_list_maps_reference_filters(): void {
-		$this->create_disputes_controller( true )->register_routes();
+		$this->create_disputes_controller()->register_routes();
 		add_filter(
 			'wcpay_list_disputes_request',
 			static function ( WooPaymentsDisputesListRequest $request ): WooPaymentsDisputesListRequest {
@@ -156,7 +156,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 				),
 			),
 		);
-		$this->create_disputes_controller( true )->register_routes();
+		$this->create_disputes_controller()->register_routes();
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/disputes' ) );
 		$data     = $response->get_data();
@@ -170,7 +170,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Disputes summary and export map reference REST filters to platform filter names.
 	 */
 	public function test_disputes_summary_and_export_map_reference_filters(): void {
-		$this->create_disputes_controller( true )->register_routes();
+		$this->create_disputes_controller()->register_routes();
 
 		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/disputes/summary' );
 		$request->set_query_params(
@@ -219,7 +219,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * Client 11.1.0 builds both from get_disputes_filters() alone (class-wc-rest-payments-disputes-controller.php:124-127, :174-205).
 	 */
 	public function test_disputes_summary_and_export_send_only_filters(): void {
-		$this->create_disputes_controller( true )->register_routes();
+		$this->create_disputes_controller()->register_routes();
 		$list_filter_calls = 0;
 		add_filter(
 			'wcpay_list_disputes_request',
@@ -254,7 +254,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Dispute update and close forward preserved payloads.
 	 */
 	public function test_dispute_update_and_close_forward_payloads(): void {
-		$this->create_disputes_controller( true )->register_routes();
+		$this->create_disputes_controller()->register_routes();
 		$order = $this->create_order_with_charge( 'ch_dispute', 'pi_dispute' );
 
 		$this->api_client->response = array(
@@ -356,7 +356,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Dispute close deletes stale dispute caches after the platform accepts the close.
 	 */
 	public function test_dispute_close_deletes_stale_dispute_caches_after_platform_success(): void {
-		$this->create_disputes_controller( true )->register_routes();
+		$this->create_disputes_controller()->register_routes();
 		update_option( 'wcpay_dispute_status_counts_cache', array( 'data' => array( 'needs_response' => 1 ) ) );
 		update_option( 'wcpay_test_dispute_status_counts_cache', array( 'data' => array( 'warning_needs_response' => 1 ) ) );
 		update_option( 'wcpay_active_dispute_cache', array( 'id' => 'dp_test' ) );
@@ -379,7 +379,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * Client 11.1.0 clears them after the update request returns, as it does for close (class-wc-payments-api-client.php:722-724).
 	 */
 	public function test_dispute_update_deletes_stale_dispute_caches_after_platform_success(): void {
-		$this->create_disputes_controller( true )->register_routes();
+		$this->create_disputes_controller()->register_routes();
 		update_option( 'wcpay_dispute_status_counts_cache', array( 'data' => array( 'needs_response' => 1 ) ) );
 		update_option( 'wcpay_active_dispute_cache', array( 'id' => 'dp_test' ) );
 		// A pass-through sentinel for the updated dispute the platform returns; the test reads only the caches.
@@ -401,7 +401,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Dispute close keeps dispute caches when the platform close fails.
 	 */
 	public function test_dispute_close_keeps_stale_dispute_caches_when_platform_fails(): void {
-		$this->create_disputes_controller( true )->register_routes();
+		$this->create_disputes_controller()->register_routes();
 		update_option( 'wcpay_dispute_status_counts_cache', array( 'data' => array( 'needs_response' => 1 ) ) );
 		$this->api_client->exception = new WooPaymentsApiException( 'Close failed.', 'close_failed', 400 );
 
@@ -418,7 +418,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Dispute update forwards draft evidence clearing fields unchanged.
 	 */
 	public function test_dispute_update_forwards_draft_evidence_clearing_fields(): void {
-		$this->create_disputes_controller( true )->register_routes();
+		$this->create_disputes_controller()->register_routes();
 
 		$this->api_client->response = array(
 			'id' => 'dp_test',
@@ -473,7 +473,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 				),
 			),
 		);
-		$this->create_disputes_controller( true )->register_routes();
+		$this->create_disputes_controller()->register_routes();
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/disputes/dp_detail' ) );
 		$data     = $response->get_data();
@@ -488,7 +488,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Dispute update logs a safe audit trail on success.
 	 */
 	public function test_dispute_update_logs_success_audit_trail(): void {
-		$this->create_disputes_controller( true )->register_routes();
+		$this->create_disputes_controller()->register_routes();
 		$logger = $this->create_recording_logger();
 		add_filter(
 			'woocommerce_logging_class',
@@ -538,7 +538,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 				return $dispute;
 			}
 		};
-		$this->create_disputes_controller( true, $order_service )->register_routes();
+		$this->create_disputes_controller( $order_service )->register_routes();
 		$logger = $this->create_recording_logger();
 		add_filter(
 			'woocommerce_logging_class',
@@ -567,7 +567,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Dispute close logs safe upstream failure context.
 	 */
 	public function test_dispute_close_logs_failure_audit_trail(): void {
-		$this->create_disputes_controller( true )->register_routes();
+		$this->create_disputes_controller()->register_routes();
 		$logger = $this->create_recording_logger();
 		add_filter(
 			'woocommerce_logging_class',
@@ -601,7 +601,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @param string $expected Logged api_code.
 	 */
 	public function test_dispute_update_failure_logs_only_a_listed_code( string $code, string $expected ): void {
-		$this->create_disputes_controller( true )->register_routes();
+		$this->create_disputes_controller()->register_routes();
 		$logger = $this->create_recording_logger();
 		add_filter(
 			'woocommerce_logging_class',
@@ -635,7 +635,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @param int    $expected_status Expected answer status.
 	 */
 	public function test_api_exceptions_answer_a_4xx_or_5xx_status( string $code, int $platform_status, int $expected_status ): void {
-		$this->create_disputes_controller( true )->register_routes();
+		$this->create_disputes_controller()->register_routes();
 		$this->api_client->exception = new WooPaymentsApiException( 'Platform failure.', $code, $platform_status );
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/disputes/dp_missing' ) );
@@ -656,7 +656,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @param bool   $as_object Whether the callback returns an object of another class.
 	 */
 	public function test_list_filter_returning_no_request_fails_the_request( string $hook, bool $as_object ): void {
-		$this->create_disputes_controller( true )->register_routes();
+		$this->create_disputes_controller()->register_routes();
 		add_filter(
 			$hook,
 			static function () use ( $as_object ) {
@@ -674,13 +674,12 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Create a disputes controller.
 	 *
-	 * @param bool                                      $native_register Whether native should own routes.
-	 * @param WooPaymentsMoneyMovementOrderService|null $order_service   Optional order service.
+	 * @param WooPaymentsMoneyMovementOrderService|null $order_service Optional order service.
 	 * @return WooPaymentsDisputesRestController
 	 */
-	private function create_disputes_controller( bool $native_register, ?WooPaymentsMoneyMovementOrderService $order_service = null ): WooPaymentsDisputesRestController {
+	private function create_disputes_controller( ?WooPaymentsMoneyMovementOrderService $order_service = null ): WooPaymentsDisputesRestController {
 		$controller = new WooPaymentsDisputesRestController();
-		$controller->init( $this->create_arbiter( $native_register ), $this->api_client, $order_service ?? $this->create_order_service(), new WooPaymentsDisputeCacheService() );
+		$controller->init( $this->api_client, $order_service ?? $this->create_order_service(), new WooPaymentsDisputeCacheService() );
 
 		return $controller;
 	}

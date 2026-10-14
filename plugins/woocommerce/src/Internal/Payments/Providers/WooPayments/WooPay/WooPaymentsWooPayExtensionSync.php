@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
@@ -72,13 +71,6 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 	private const AVAILABLE_COUNTRIES_OPTION_NAME = 'woocommerce_woocommerce_payments_woopay_available_countries';
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
@@ -97,12 +89,10 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter         $arbiter          Runtime owner arbiter.
 	 * @param WooPaymentsApiClient              $api_client       WooPayments API client.
 	 * @param WooPaymentsActionSchedulerService $action_scheduler WooPayments Action Scheduler service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsActionSchedulerService $action_scheduler ): void {
-		$this->arbiter          = $arbiter;
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsActionSchedulerService $action_scheduler ): void {
 		$this->api_client       = $api_client;
 		$this->action_scheduler = $action_scheduler;
 	}
@@ -111,10 +101,6 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 	 * Register WooPay extension compatibility sync hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_action( 'action_scheduler_ensure_recurring_actions', array( $this, 'schedule' ) ) ) {
 			add_action( 'action_scheduler_ensure_recurring_actions', array( $this, 'schedule' ) );
 		}

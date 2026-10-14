@@ -17,7 +17,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\CapturedEventFeeNotes;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -229,18 +228,15 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The job's handler is registered while the built-in WooPayments owns the store, and not otherwise.
+	 * @testdox The job's handler is registered.
 	 */
-	public function test_registers_the_job_handler_only_for_the_builtin_owner(): void {
+	public function test_registers_the_job_handler(): void {
 		$owner             = $this->create_controller( $this->createMock( WooPaymentsApiClient::class ) );
-		$not_owner         = $this->create_controller( $this->createMock( WooPaymentsApiClient::class ), false );
-		$this->hook_owners = array( $owner, $not_owner );
+		$this->hook_owners = array( $owner );
 
 		$owner->register();
-		$not_owner->register();
 
 		$this->assertSame( 10, has_action( 'wcpay_add_fee_breakdown_to_order_notes', array( $owner, 'handle_wcpay_add_fee_breakdown_to_order_notes' ) ) );
-		$this->assertFalse( has_action( 'wcpay_add_fee_breakdown_to_order_notes', array( $not_owner, 'handle_wcpay_add_fee_breakdown_to_order_notes' ) ) );
 	}
 
 	/**
@@ -423,11 +419,10 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Build a controller over a given platform API client.
 	 *
-	 * @param WooPaymentsApiClient $api_client    Platform API client.
-	 * @param bool                 $builtin_owner Whether the built-in WooPayments owns the store.
+	 * @param WooPaymentsApiClient $api_client Platform API client.
 	 * @return WooPaymentsFeeDetailsNoteController
 	 */
-	private function create_controller( WooPaymentsApiClient $api_client, bool $builtin_owner = true ): WooPaymentsFeeDetailsNoteController {
+	private function create_controller( WooPaymentsApiClient $api_client ): WooPaymentsFeeDetailsNoteController {
 		$container  = wc_get_container();
 		$controller = new WooPaymentsFeeDetailsNoteController();
 		$controller->init(
@@ -436,7 +431,6 @@ class WooPaymentsFeeDetailsNoteControllerTest extends WC_Unit_Test_Case {
 			new WooPaymentsPersistenceVocabulary(),
 			$container->get( WooPaymentsActionSchedulerService::class ),
 			$container->get( WooPaymentsAccountService::class ),
-			new StaticWooPaymentsRuntimeArbiter( $builtin_owner ),
 			$api_client,
 			$container->get( WooPaymentsOrderDataService::class ),
 			$container->get( WooPaymentsLogger::class )

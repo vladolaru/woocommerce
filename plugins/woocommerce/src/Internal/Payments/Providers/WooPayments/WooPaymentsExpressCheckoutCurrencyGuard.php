@@ -27,31 +27,9 @@ class WooPaymentsExpressCheckoutCurrencyGuard implements RegisterHooksInterface 
 	private const MISMATCH_ERROR_CODE = 'wcpay_express_checkout_currency_mismatch';
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
-	 * Initialize the class instance.
-	 *
-	 * @internal
-	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter Runtime owner arbiter.
-	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter ): void {
-		$this->arbiter = $arbiter;
-	}
-
-	/**
 	 * Register hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_action( 'woocommerce_store_api_checkout_update_order_from_request', array( $this, 'assert_currency_matches_element' ) ) ) {
 			add_action( 'woocommerce_store_api_checkout_update_order_from_request', array( $this, 'assert_currency_matches_element' ), 10, 2 );
 		}

@@ -28,13 +28,6 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 	private const FRAUD_OUTCOME_MAX_PAGE_SIZE = 100;
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Native WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
@@ -53,12 +46,10 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter            $arbiter       Runtime owner arbiter.
 	 * @param WooPaymentsApiClient                 $api_client    Native WooPayments API client.
 	 * @param WooPaymentsMoneyMovementOrderService $order_service Local order context service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsMoneyMovementOrderService $order_service ): void {
-		$this->arbiter       = $arbiter;
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsMoneyMovementOrderService $order_service ): void {
 		$this->api_client    = $api_client;
 		$this->order_service = $order_service;
 	}
@@ -67,10 +58,6 @@ class WooPaymentsTransactionsRestController implements RegisterHooksInterface {
 	 * Register REST hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_action( 'rest_api_init', array( $this, 'register_routes' ) ) ) {
 			add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 		}

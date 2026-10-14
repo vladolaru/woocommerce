@@ -58,7 +58,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTo
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingPaymentProcessingService;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Payment_Token;
 
 /**
@@ -7712,14 +7711,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		WooCommerceSubscriptionsDoubles::load();
 		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
 
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
-
 		$module = new WooPaymentsStripeBillingModule();
-		$module->init( $arbiter );
 		$module->register();
 		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
 
@@ -7768,7 +7760,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$token_service = new WooPaymentsTokenService();
 		$token_service->init(
 			$container->get( WooPaymentsPaymentMethodDetailsService::class ),
-			new StaticWooPaymentsRuntimeArbiter( false ),
 			$container->get( WooPaymentsApiClient::class ),
 			$container->get( WooPaymentsCustomerService::class ),
 			$container->get( WooPaymentsAccountService::class ),

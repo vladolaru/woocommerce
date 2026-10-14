@@ -51,7 +51,7 @@ class WooPaymentsMoneyMovementArrayQueryContractTest extends WC_REST_Unit_Test_C
 	 */
 	public function test_transactions_array_filters_reach_the_platform(): void {
 		$controller = new WooPaymentsTransactionsRestController();
-		$controller->init( $this->create_arbiter( true ), $this->api_client, $this->create_order_service() );
+		$controller->init( $this->api_client, $this->create_order_service() );
 		$controller->register_routes();
 
 		$this->dispatch_fixture_request( 'transactions' );
@@ -66,7 +66,7 @@ class WooPaymentsMoneyMovementArrayQueryContractTest extends WC_REST_Unit_Test_C
 	 */
 	public function test_fraud_outcome_array_filters_reach_the_platform(): void {
 		$controller = new WooPaymentsTransactionsRestController();
-		$controller->init( $this->create_arbiter( true ), $this->api_client, $this->create_order_service() );
+		$controller->init( $this->api_client, $this->create_order_service() );
 		$controller->register_routes();
 
 		$this->dispatch_fixture_request( 'fraud_outcomes' );
@@ -80,7 +80,7 @@ class WooPaymentsMoneyMovementArrayQueryContractTest extends WC_REST_Unit_Test_C
 	 */
 	public function test_dispute_array_filters_reach_the_platform(): void {
 		$controller = new WooPaymentsDisputesRestController();
-		$controller->init( $this->create_arbiter( true ), $this->api_client, $this->create_order_service(), new WooPaymentsDisputeCacheService() );
+		$controller->init( $this->api_client, $this->create_order_service(), new WooPaymentsDisputeCacheService() );
 		$controller->register_routes();
 
 		$this->dispatch_fixture_request( 'disputes' );

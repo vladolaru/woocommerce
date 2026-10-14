@@ -35,13 +35,6 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 	);
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Payment method details service.
 	 *
 	 * @var WooPaymentsPaymentMethodDetailsService
@@ -53,22 +46,16 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter              $arbiter                        Runtime owner arbiter.
 	 * @param WooPaymentsPaymentMethodDetailsService $payment_method_details_service Payment method details service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsPaymentMethodDetailsService $payment_method_details_service ): void {
-		$this->arbiter                        = $arbiter;
+	final public function init( WooPaymentsPaymentMethodDetailsService $payment_method_details_service ): void {
 		$this->payment_method_details_service = $payment_method_details_service;
 	}
 
 	/**
-	 * Register the card info filter while the built-in WooPayments owns payments.
+	 * Register the card info filter.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_filter( 'wc_order_payment_card_info', array( $this, 'handle_order_payment_card_info' ) ) ) {
 			add_filter( 'wc_order_payment_card_info', array( $this, 'handle_order_payment_card_info' ), 10, 2 );
 		}

@@ -109,10 +109,6 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 	 * Register the redirect-return callback.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_action( 'wp', array( $this, 'handle_wp' ) ) ) {
 			add_action( 'wp', array( $this, 'handle_wp' ) );
 		}

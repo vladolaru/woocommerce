@@ -55,10 +55,6 @@ class WooPaymentsGatewayListController implements RegisterHooksInterface {
 	 * Register the gateway list hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_action( 'woocommerce_admin_field_payment_gateways', array( $this, 'handle_woocommerce_admin_field_payment_gateways' ) ) ) {
 			add_action(
 				'woocommerce_admin_field_payment_gateways',

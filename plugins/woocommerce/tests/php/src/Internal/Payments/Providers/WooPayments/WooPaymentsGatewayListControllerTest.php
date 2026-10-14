@@ -65,18 +65,15 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should hide the settings display hook behind native ownership and attach it before other listeners.
+	 * @testdox Should attach the settings display hook before other listeners.
 	 */
-	public function test_registers_the_settings_display_hook_only_when_native_owns_payments(): void {
-		$sut   = $this->create_controller( true );
-		$other = $this->create_controller( false );
+	public function test_registers_the_settings_display_hook(): void {
+		$sut = $this->create_controller( true );
 
 		$sut->register();
 		$sut->register();
-		$other->register();
 
 		$this->assertSame( 5, has_action( 'woocommerce_admin_field_payment_gateways', array( $sut, 'handle_woocommerce_admin_field_payment_gateways' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_admin_field_payment_gateways', array( $other, 'handle_woocommerce_admin_field_payment_gateways' ) ) );
 	}
 
 	/**
@@ -263,19 +260,15 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should attach the gateway order filters at the client's priorities only when native owns payments.
+	 * @testdox Should attach the gateway order filters at priorities 2 and 3.
 	 */
-	public function test_registers_the_gateway_order_filters_only_when_native_owns_payments(): void {
-		$sut   = $this->create_controller( true );
-		$other = $this->create_controller( false );
+	public function test_registers_the_gateway_order_filters(): void {
+		$sut = $this->create_controller( true );
 
 		$sut->register();
-		$other->register();
 
 		$this->assertSame( 2, has_filter( 'option_woocommerce_gateway_order', array( $sut, 'handle_gateway_order_option' ) ) );
 		$this->assertSame( 3, has_filter( 'default_option_woocommerce_gateway_order', array( $sut, 'handle_gateway_order_option' ) ) );
-		$this->assertFalse( has_filter( 'option_woocommerce_gateway_order', array( $other, 'handle_gateway_order_option' ) ) );
-		$this->assertFalse( has_filter( 'default_option_woocommerce_gateway_order', array( $other, 'handle_gateway_order_option' ) ) );
 	}
 
 	/**

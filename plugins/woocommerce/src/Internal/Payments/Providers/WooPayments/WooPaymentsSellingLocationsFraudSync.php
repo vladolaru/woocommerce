@@ -34,13 +34,6 @@ class WooPaymentsSellingLocationsFraudSync implements RegisterHooksInterface {
 	);
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Settings service, resolved only when a refresh runs so admin, REST and WP-CLI requests that change no selling location never build it.
 	 *
 	 * @var WooPaymentsSettingsService|null
@@ -48,24 +41,9 @@ class WooPaymentsSellingLocationsFraudSync implements RegisterHooksInterface {
 	private ?WooPaymentsSettingsService $settings_service = null;
 
 	/**
-	 * Initialize the class instance.
-	 *
-	 * @internal
-	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter Runtime owner arbiter.
-	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter ): void {
-		$this->arbiter = $arbiter;
-	}
-
-	/**
 	 * Register the selling-location option hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		foreach ( self::SELLING_LOCATION_OPTIONS as $option ) {
 			add_action( 'add_option_' . $option, array( $this, 'schedule_refresh' ), 10, 0 );
 			add_action( 'update_option_' . $option, array( $this, 'schedule_refresh' ), 10, 0 );

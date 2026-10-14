@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -17,7 +16,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Helper_Order;
 use WC_REST_Unit_Test_Case;
 use WP_Error;
@@ -67,7 +65,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->api_client            = new RecordingTerminalApiClient();
 		$this->gateway_settings      = array();
 		$this->account_refresh_calls = 0;
-		$this->sut                   = $this->create_controller( true );
+		$this->sut                   = $this->create_controller();
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 		delete_transient( 'wcpay_store_terminal_readers' );
 		delete_transient( 'wcpay_store_terminal_locations' );
@@ -104,16 +102,6 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 				$this->assertRouteHasMethod( $routes[ $route ], $method );
 			}
 		}
-	}
-
-	/**
-	 * @testdox Mobile and IPP routes are not registered when native does not own runtime.
-	 */
-	public function test_registers_no_routes_when_native_does_not_own_runtime(): void {
-		$this->sut = $this->create_controller( false );
-		$this->sut->register();
-
-		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
 	}
 
 	/**
@@ -1209,7 +1197,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * Plugin 11.1.0 stores `Order_Mode::PRODUCTION` (`prod`), not the account mode `live` (class-order-mode.php:21).
 	 */
 	public function test_capture_terminal_payment_on_live_account_stores_prod_order_mode(): void {
-		$this->sut                                    = $this->create_controller( true, false );
+		$this->sut                                    = $this->create_controller( false );
 		$order                                        = $this->create_order( 12.34, 'USD' );
 		$this->api_client->payment_intention_response = array(
 			'id'       => 'pi_terminal_live',
@@ -2646,24 +2634,17 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 			}
 		};
 
-		return $this->create_controller( true, true, $controller );
+		return $this->create_controller( true, $controller );
 	}
 
 	/**
 	 * Create a native mobile REST controller.
 	 *
-	 * @param bool                                 $native_register Whether native should own route registration.
-	 * @param bool                                 $test_mode       Whether the account runs in test mode.
-	 * @param WooPaymentsMobileRestController|null $controller      Controller instance to initialize, a new one when null.
+	 * @param bool                                 $test_mode  Whether the account runs in test mode.
+	 * @param WooPaymentsMobileRestController|null $controller Controller instance to initialize, a new one when null.
 	 * @return WooPaymentsMobileRestController
 	 */
-	private function create_controller( bool $native_register, bool $test_mode = true, ?WooPaymentsMobileRestController $controller = null ): WooPaymentsMobileRestController {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
-
+	private function create_controller( bool $test_mode = true, ?WooPaymentsMobileRestController $controller = null ): WooPaymentsMobileRestController {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_test_mode_enabled', 'get_mode', 'get_gateway_setting', 'refresh_account_data' ) )
@@ -2684,10 +2665,10 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		);
 
 		$customer_service = new WooPaymentsCustomerService();
-		$customer_service->init( $this->api_client, $account_service, new WooPaymentsSessionService(), new StaticWooPaymentsRuntimeArbiter( false ) );
+		$customer_service->init( $this->api_client, $account_service, new WooPaymentsSessionService() );
 
 		$controller = $controller ?? new WooPaymentsMobileRestController();
-		$controller->init( $arbiter, $this->api_client, $account_service, $customer_service, new WooPaymentsOrderDataService(), wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService::class ) );
+		$controller->init( $this->api_client, $account_service, $customer_service, new WooPaymentsOrderDataService(), wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService::class ) );
 
 		return $controller;
 	}

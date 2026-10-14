@@ -10,7 +10,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheI
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistrarInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
@@ -22,7 +21,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIp
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPmPromotionsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Data_Store;
 use WC_Order;
@@ -90,7 +88,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Operational queue hooks are registered when the built-in WooPayments owns the runtime.
 	 */
 	public function test_registers_preserved_operational_hooks_when_builtin_owns_runtime(): void {
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
+		$service = $this->create_service();
 
 		$service->register();
 
@@ -112,23 +110,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Operational queue hooks are not registered when the WooPayments extension owns the runtime.
-	 */
-	public function test_registers_no_operational_hooks_when_extension_owns_runtime(): void {
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( false ) );
-
-		$service->register();
-
-		$this->assertFalse( has_action( 'wcpay_store_setup_sync', array( $service, 'handle_wcpay_store_setup_sync' ) ) );
-		$this->assertFalse( has_action( 'wcpay_update_compatibility_data', array( $service, 'handle_wcpay_update_compatibility_data' ) ) );
-		$this->assertFalse( has_action( 'wcpay_instant_deposit_reminder', array( $service, 'handle_wcpay_instant_deposit_reminder' ) ) );
-		$this->assertFalse( has_action( 'wcpay_post_kyc_activation_email_send', array( $service, 'handle_wcpay_post_kyc_activation_email_send' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_email_classes', array( $service, 'add_post_kyc_activation_email' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_email_classes', array( $service, 'add_ipp_receipt_email' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_order_status_changed', array( $service, 'handle_woocommerce_order_status_changed' ) ) );
-	}
-
-	/**
 	 * @testdox A live WooPayments paid-status transition records the sale and invalidates cached post-KYC eligibility.
 	 * @testWith ["woocommerce_payments"]
 	 *           ["woocommerce_payments_ideal"]
@@ -136,7 +117,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @param string $payment_method WooPayments gateway ID stored on the order.
 	 */
 	public function test_live_woopayments_order_status_transition_invalidates_post_kyc_eligibility( string $payment_method ): void {
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
+		$service = $this->create_service();
 		$service->register();
 		$order = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
@@ -162,7 +143,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @param string $new_status     Paid status the order moves to.
 	 */
 	public function test_paid_order_status_transition_invalidates_one_and_done_cache( string $payment_method, string $mode, string $cached_value, string $new_status ): void {
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
+		$service = $this->create_service();
 		$order   = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$order->set_payment_method( $payment_method );
@@ -197,7 +178,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A paid transition skips order mode metadata when no eligibility cache remains after a live sale.
 	 */
 	public function test_paid_order_status_transition_without_eligibility_cache_skips_mode_meta(): void {
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
+		$service = $this->create_service();
 		$order   = $this->createMock( WC_Order::class );
 		$order->method( 'get_payment_method' )->willReturn( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->expects( $this->never() )->method( 'get_meta' );
@@ -213,7 +194,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @testdox An alternate-gateway paid transition invalidates cached eligibility without reading order mode metadata.
 	 */
 	public function test_alternate_gateway_order_status_transition_invalidates_cache_without_mode_meta(): void {
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
+		$service = $this->create_service();
 		$order   = $this->createMock( WC_Order::class );
 		$order->expects( $this->once() )->method( 'get_payment_method' )->willReturn( 'cod' );
 		$order->expects( $this->never() )->method( 'get_meta' );
@@ -228,7 +209,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A test WooPayments transition leaves cached one-and-done eligibility unchanged.
 	 */
 	public function test_test_order_status_transition_preserves_one_and_done_cache(): void {
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
+		$service = $this->create_service();
 		$order   = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
@@ -252,7 +233,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @param bool   $valid_order    Whether the hook receives a WC_Order.
 	 */
 	public function test_ineligible_order_status_transitions_preserve_post_kyc_eligibility( string $payment_method, string $mode, string $new_status, bool $valid_order ): void {
-		$service  = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
+		$service  = $this->create_service();
 		$order    = new \stdClass();
 		$order_id = 123;
 		if ( $valid_order ) {
@@ -292,7 +273,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Referrer CTA handler records the event and redirects for an allowlisted stage without requiring a nonce.
 	 */
 	public function test_referrer_cta_records_event_with_allowlisted_stage(): void {
-		$service  = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
+		$service  = $this->create_service();
 		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
 		wp_set_current_user( $admin_id );
 
@@ -328,7 +309,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @param string $stage The referrer stage in the CTA link.
 	 */
 	public function test_referrer_cta_skips_recording( string $role, string $stage ): void {
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
+		$service = $this->create_service();
 		wp_set_current_user( self::factory()->user->create( array( 'role' => $role ) ) );
 
 		$_GET['wcpay_referrer']       = 'post_kyc_email';
@@ -419,7 +400,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $account_service )->handle_wcpay_store_setup_sync();
+		$this->create_service( new RecordingActionSchedulerService(), $api_client, $account_service )->handle_wcpay_store_setup_sync();
 	}
 
 	/**
@@ -440,7 +421,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
 		update_option( WooPaymentsStripeBillingModule::TOGGLE_OPTION, $toggle );
 		$module = new WooPaymentsStripeBillingModule();
-		$module->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$module->register();
 		wc_get_container()->replace( WooPaymentsStripeBillingModule::class, $module );
 
@@ -454,7 +434,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client )->handle_wcpay_store_setup_sync();
+		$this->create_service( new RecordingActionSchedulerService(), $api_client )->handle_wcpay_store_setup_sync();
 
 		$this->assertCount( 1, $snapshots );
 		$this->assertSame( $expected, $snapshots[0]['stripe_billing_enabled'] );
@@ -762,7 +742,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $account_service, $settings_service )->handle_wcpay_store_setup_sync();
+		$this->create_service( new RecordingActionSchedulerService(), $api_client, $account_service, $settings_service )->handle_wcpay_store_setup_sync();
 
 		$this->assertCount( 1, $snapshots, 'The store setup sync sends one snapshot.' );
 
@@ -825,7 +805,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	public function test_site_language_change_updates_the_account_locale( string $old_language, string $new_language, array $account_data, array $expected_updates ): void {
 		update_option( 'WPLANG', $old_language );
 		$updates = array();
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $this->create_account_update_recorder( $updates ), $this->create_account_service( $account_data ) );
+		$service = $this->create_service( new RecordingActionSchedulerService(), $this->create_account_update_recorder( $updates ), $this->create_account_service( $account_data ) );
 		$service->register();
 
 		update_option( 'WPLANG', $new_language );
@@ -860,7 +840,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	public function test_store_launch_resends_the_business_url_only_when_the_store_goes_live( string $old_value, string $new_value, array $account_data, array $expected_updates ): void {
 		update_option( 'woocommerce_coming_soon', $old_value );
 		$updates = array();
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $this->create_account_update_recorder( $updates ), $this->create_account_service( $account_data ) );
+		$service = $this->create_service( new RecordingActionSchedulerService(), $this->create_account_update_recorder( $updates ), $this->create_account_service( $account_data ) );
 		$service->register();
 
 		update_option( 'woocommerce_coming_soon', $new_value );
@@ -960,7 +940,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 				'store_currencies' => array( 'default' => $default_currency ),
 			)
 		);
-		$service         = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), null, $account_service );
+		$service         = $this->create_service( new RecordingActionSchedulerService(), null, $account_service );
 		$service->register();
 
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', $method ) ) );
@@ -1037,7 +1017,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		);
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
 
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), null, $this->create_account_service( array( 'account_id' => 'acct_native_test' ) ) );
+		$service = $this->create_service( new RecordingActionSchedulerService(), null, $this->create_account_service( array( 'account_id' => 'acct_native_test' ) ) );
 		$service->register();
 
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ) ) );
@@ -1052,7 +1032,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'no' ) );
 		set_transient( 'wcpay_test_to_live_eligible', '1', 100 );
 		set_transient( 'wcpay_post_kyc_activation_eligible', '1', 100 );
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
+		$service = $this->create_service();
 		$service->register();
 
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
@@ -1073,7 +1053,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	public function test_test_mode_bookkeeping_preserves_enable_date_without_a_flip(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		update_option( 'wcpay_test_mode_enabled_date', 1234567890, false );
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
+		$service = $this->create_service();
 		$service->register();
 
 		update_option(
@@ -1091,7 +1071,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Recurring store setup sync is scheduled once in the WooPayments group.
 	 */
 	public function test_schedule_recurring_actions_schedules_store_setup_sync_once(): void {
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
+		$service = $this->create_service();
 
 		$service->schedule_recurring_actions();
 		$service->schedule_recurring_actions();
@@ -1115,7 +1095,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		$api_client = $this->create_api_client( array( 'is_available', 'send_store_setup' ) );
 		$api_client->method( 'is_available' )->willReturn( true );
 		$api_client->expects( $this->once() )->method( 'send_store_setup' );
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new WooPaymentsActionSchedulerService(), $api_client );
+		$service = $this->create_service( new WooPaymentsActionSchedulerService(), $api_client );
 		$service->register();
 		$service->schedule_recurring_actions();
 
@@ -1151,7 +1131,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_schedule_compatibility_data_update_schedules_delayed_job(): void {
 		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
+		$service   = $this->create_service( $scheduler );
 		$before    = time();
 
 		$service->schedule_compatibility_data_update();
@@ -1189,7 +1169,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			)
 			->willReturn( array( 'result' => 'success' ) );
 
-		$this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client )->handle_wcpay_update_compatibility_data();
+		$this->create_service( new RecordingActionSchedulerService(), $api_client )->handle_wcpay_update_compatibility_data();
 	}
 
 	/**
@@ -1215,7 +1195,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			$api_client->method( 'is_available' )->willReturn( true );
 		}
 		$api_client->method( end( $methods[ $job ] ) )->willThrowException( self::make_provider_error() );
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), $api_client, $this->create_account_service( self::get_account_with_business_url() ) );
+		$service = $this->create_service( new RecordingActionSchedulerService(), $api_client, $this->create_account_service( self::get_account_with_business_url() ) );
 		$logger  = RecordingWcLogger::install();
 
 		switch ( $job ) {
@@ -1243,7 +1223,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_instant_deposit_eligibility_refresh_creates_note_and_reminder(): void {
 		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
+		$service   = $this->create_service( $scheduler );
 
 		$service->handle_wcpay_instant_deposits_inbox_note(
 			array(
@@ -1264,7 +1244,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_instant_deposit_eligibility_refresh_skips_ineligible_accounts(): void {
 		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
+		$service   = $this->create_service( $scheduler );
 
 		$service->handle_wcpay_instant_deposits_inbox_note(
 			array(
@@ -1288,7 +1268,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			),
 			false
 		);
-		$service         = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler, null, $account_service );
+		$service         = $this->create_service( $scheduler, null, $account_service );
 
 		$service->handle_wcpay_instant_deposit_reminder();
 
@@ -1302,7 +1282,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_post_kyc_completion_schedules_staged_activation_emails(): void {
 		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
+		$service   = $this->create_service( $scheduler );
 		$kyc_date  = time();
 
 		$service->handle_add_option_wcpay_kyc_completion_date( 'wcpay_kyc_completion_date', $kyc_date );
@@ -1325,7 +1305,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * under the literal 'woocommerce-payments', not the scheduler service's 'woocommerce_payments'.
 	 */
 	public function test_post_kyc_completion_schedules_emails_under_the_hyphenated_group(): void {
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new WooPaymentsActionSchedulerService() );
+		$service = $this->create_service( new WooPaymentsActionSchedulerService() );
 
 		$service->handle_add_option_wcpay_kyc_completion_date( 'wcpay_kyc_completion_date', time() );
 
@@ -1370,7 +1350,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_post_kyc_completion_does_not_schedule_when_the_gate_is_claimed( callable $claim_gate ): void {
 		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
+		$service   = $this->create_service( $scheduler );
 		$claim_gate();
 
 		$service->handle_add_option_wcpay_kyc_completion_date( 'wcpay_kyc_completion_date', time() );
@@ -1411,7 +1391,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_account_refresh_records_post_kyc_completion_and_schedules_staged_emails(): void {
 		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
+		$service   = $this->create_service( $scheduler );
 		$service->register();
 		update_option( 'wcpay_kyc_submitted_date', time() - HOUR_IN_SECONDS, false );
 
@@ -1450,7 +1430,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_account_refresh_does_not_overwrite_existing_post_kyc_completion_date(): void {
 		$scheduler         = new RecordingActionSchedulerService();
-		$service           = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), $scheduler );
+		$service           = $this->create_service( $scheduler );
 		$existing_kyc_date = time() - YEAR_IN_SECONDS;
 
 		update_option( 'wcpay_kyc_completion_date', $existing_kyc_date, false );
@@ -1471,7 +1451,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Post-KYC activation email registration preserves the WooPayments email settings key.
 	 */
 	public function test_post_kyc_activation_email_registration_preserves_settings_key(): void {
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
+		$service = $this->create_service();
 		$emails  = $service->add_post_kyc_activation_email( array() );
 
 		$this->assertArrayHasKey( 'WC_Payments_Email_Post_Kyc_Activation', $emails );
@@ -1485,7 +1465,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @testdox IPP receipt email registration preserves the WooPayments email settings key and template paths.
 	 */
 	public function test_ipp_receipt_email_registration_preserves_settings_key_and_template_paths(): void {
-		$service = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ) );
+		$service = $this->create_service();
 		$emails  = $service->add_ipp_receipt_email( array() );
 
 		$this->assertArrayHasKey( 'WC_Payments_Email_IPP_Receipt', $emails );
@@ -1525,7 +1505,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			true,
 			false
 		);
-		$service         = $this->create_service( new StaticWooPaymentsRuntimeArbiter( true ), new RecordingActionSchedulerService(), null, $account_service );
+		$service         = $this->create_service( new RecordingActionSchedulerService(), null, $account_service );
 		$service->register();
 		$this->reset_mailer_emails();
 
@@ -1579,7 +1559,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an operational queue service.
 	 *
-	 * @param WooPaymentsRuntimeArbiter              $arbiter            Runtime arbiter.
 	 * @param WooPaymentsActionSchedulerService|null $scheduler          Scheduler service.
 	 * @param WooPaymentsApiClient|null              $api_client         API client.
 	 * @param WooPaymentsAccountService|null         $account_service    Account service.
@@ -1587,7 +1566,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsOperationalQueueService
 	 */
 	private function create_service(
-		WooPaymentsRuntimeArbiter $arbiter,
 		?WooPaymentsActionSchedulerService $scheduler = null,
 		?WooPaymentsApiClient $api_client = null,
 		?WooPaymentsAccountService $account_service = null,
@@ -1595,7 +1573,6 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	): WooPaymentsOperationalQueueService {
 		$service = new WooPaymentsOperationalQueueService();
 		$service->init(
-			$arbiter,
 			$scheduler ?? new RecordingActionSchedulerService(),
 			$api_client ?? $this->create_api_client( array() ),
 			$account_service ?? $this->create_account_service(),

@@ -65,13 +65,6 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	private const TYPE_TERMINAL_PAYMENT = 'terminal_payment';
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Order-note service used for fraud-rule labels.
 	 *
 	 * @var WooPaymentsOrderNoteService
@@ -83,11 +76,9 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter   $arbiter      Runtime owner arbiter.
 	 * @param WooPaymentsOrderNoteService $note_service Order-note service used for fraud-rule labels.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsOrderNoteService $note_service ): void {
-		$this->arbiter      = $arbiter;
+	final public function init( WooPaymentsOrderNoteService $note_service ): void {
 		$this->note_service = $note_service;
 	}
 
@@ -95,10 +86,6 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	 * Register order meta box hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_action( 'add_meta_boxes', array( $this, 'handle_add_meta_boxes' ) ) ) {
 			add_action( 'add_meta_boxes', array( $this, 'handle_add_meta_boxes' ) );
 		}

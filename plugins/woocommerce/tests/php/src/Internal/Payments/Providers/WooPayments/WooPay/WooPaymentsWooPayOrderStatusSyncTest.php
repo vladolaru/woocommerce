@@ -88,9 +88,9 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox WooPay order-status hooks are registered only when native owns runtime.
+	 * @testdox WooPay order-status hooks are registered.
 	 */
-	public function test_registers_hooks_only_when_native_owns_runtime(): void {
+	public function test_registers_hooks(): void {
 		$native_sync = $this->create_sync( true );
 
 		$native_sync->register();
@@ -104,18 +104,6 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_action( 'woocommerce_payments_account_refreshed', array( $native_sync, 'reconcile_webhook' ) ) );
 		$this->assertSame( 10, has_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $native_sync, 'handle_settings_update' ) ) );
 		$this->assertFalse( has_action( 'wcpay_store_setup_sync', array( $native_sync, 'reconcile_webhook' ) ), 'Client 11.1.0 does not touch the webhook on the store setup sync.' );
-
-		$plugin_sync = $this->create_sync( false );
-		$plugin_sync->register();
-
-		$this->assertFalse( has_filter( 'woocommerce_valid_webhook_resources', array( $plugin_sync, 'add_resource' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_valid_webhook_events', array( $plugin_sync, 'add_event' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_webhook_topic_hooks', array( $plugin_sync, 'add_topics' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_webhook_payload', array( $plugin_sync, 'create_payload' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_order_status_changed', array( $plugin_sync, 'send_webhook' ) ) );
-		$this->assertFalse( has_action( 'admin_init', array( $plugin_sync, 'maybe_create_woopay_order_webhook' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_payments_account_refreshed', array( $plugin_sync, 'reconcile_webhook' ) ) );
-		$this->assertFalse( has_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $plugin_sync, 'handle_settings_update' ) ) );
 	}
 
 	/**
@@ -555,7 +543,6 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	public function test_plugin_owned_runtime_does_not_touch_webhooks(): void {
 		$plugin_webhook = $this->create_plugin_webhook();
 		$sync           = $this->create_sync( false, false );
-		$sync->register();
 
 		$sync->maybe_create_woopay_order_webhook();
 		$sync->reconcile_webhook();

@@ -13,7 +13,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
@@ -76,7 +75,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Register should wire each order workflow hook once when the built-in WooPayments owns the runtime.
 	 */
 	public function test_registers_order_workflow_hooks_idempotently_for_builtin_runtime(): void {
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 
 		$this->sut->register();
 		$this->sut->register();
@@ -89,25 +88,10 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Register should wire no order workflow hooks when the WooPayments extension owns the runtime.
-	 */
-	public function test_registers_nothing_when_builtin_does_not_own_runtime(): void {
-		$this->sut = $this->create_controller( false );
-
-		$this->sut->register();
-
-		$this->assertFalse( has_filter( 'woocommerce_order_actions', array( $this->sut, 'handle_woocommerce_order_actions' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_order_action_capture_charge', array( $this->sut, 'handle_woocommerce_order_action_capture_charge' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_order_action_cancel_authorization', array( $this->sut, 'handle_woocommerce_order_action_cancel_authorization' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_order_status_completed', array( $this->sut, 'handle_woocommerce_order_status_completed' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_order_status_cancelled', array( $this->sut, 'handle_woocommerce_order_status_cancelled' ) ) );
-	}
-
-	/**
 	 * @testdox Register should add the admin gateway title filter on admin requests only, as client 11.1.0 acts only there.
 	 */
 	public function test_registers_the_gateway_title_filter_in_admin_only(): void {
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->sut->register();
 		$this->assertFalse( has_filter( 'woocommerce_gateway_title', array( $this->sut, 'handle_woocommerce_gateway_title' ) ) );
 
@@ -134,7 +118,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * @param string $expected     Expected gateway title.
 	 */
 	public function test_admin_gateway_title_shows_the_wallet_order_title( string $method_title, string $expected ): void {
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		set_current_screen( 'woocommerce_page_wc-orders' );
 		$this->sut->register();
 		global $theorder;
@@ -148,7 +132,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox In admin without $theorder, the order comes from the global post, as client 11.1.0's get_current_order().
 	 */
 	public function test_admin_gateway_title_reads_the_order_from_the_global_post(): void {
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		set_current_screen( 'edit-shop_order' );
 		$order = $this->create_order_with_payment_method_title( 'Google Pay (WooPayments)' );
 		global $post;
@@ -161,7 +145,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox The gateway title stays as it is for other gateways and outside admin.
 	 */
 	public function test_gateway_title_unchanged_for_other_gateways_and_outside_admin(): void {
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		global $theorder;
 		$theorder = $this->create_order_with_payment_method_title( 'Apple Pay (WooPayments)' );
 
@@ -179,7 +163,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 * not check the order's gateway, so this is a corrective departure.
 	 */
 	public function test_admin_gateway_title_ignores_another_gateways_wallet_order(): void {
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		set_current_screen( 'woocommerce_page_wc-orders' );
 		global $theorder;
 		$theorder = $this->create_order_with_payment_method_title( 'Apple Pay (Stripe)', 'stripe' );
@@ -200,7 +184,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_admin_gateway_title_ignores_a_malformed_method_title( string $label, $method_title ): void {
 		unset( $label );
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		set_current_screen( 'woocommerce_page_wc-orders' );
 		global $theorder;
 		$theorder = $this->create_order_with_payment_method_title( 'Apple Pay (WooPayments)' );
@@ -252,7 +236,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	public function test_adds_actions_for_eligible_woopayments_gateway_orders( string $gateway_id ): void {
 		global $theorder;
 		$theorder  = $this->create_authorized_order( $gateway_id );
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 
 		$actions = $this->sut->handle_woocommerce_order_actions( array( 'email_order_details' => 'Email order details' ) );
 
@@ -289,7 +273,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	public function test_preserves_actions_for_ineligible_orders( string $gateway_id, string $intent_status, string $order_status ): void {
 		global $theorder;
 		$theorder  = $this->create_authorized_order( $gateway_id, $intent_status, $order_status );
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$existing  = array( 'email_order_details' => 'Email order details' );
 
 		$this->assertSame( $existing, $this->sut->handle_woocommerce_order_actions( $existing ) );
@@ -314,7 +298,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	public function test_preserves_actions_when_global_order_is_invalid(): void {
 		global $theorder;
 		$theorder  = new \stdClass();
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$existing  = array( 'email_order_details' => 'Email order details' );
 
 		$this->assertSame( $existing, $this->sut->handle_woocommerce_order_actions( $existing ) );
@@ -349,7 +333,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 					return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_status_capture' );
 				}
 			);
-		$this->sut = $this->create_controller( true, $processing_service );
+		$this->sut = $this->create_controller( $processing_service );
 		$this->sut->register();
 
 		$this->fire_order_hook( $hook, $order );
@@ -409,7 +393,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 					return new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, 'pi_cancel' );
 				}
 			);
-		$this->sut = $this->create_controller( true, $processing_service );
+		$this->sut = $this->create_controller( $processing_service );
 		$this->sut->register();
 
 		$this->fire_order_hook( $hook, $order );
@@ -487,7 +471,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			public function apply_post_lifecycle_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): void {
 			}
 		};
-		$this->sut          = $this->create_controller( true, wc_get_container()->get( PaymentProcessingService::class ), $provider );
+		$this->sut          = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$this->sut->register();
 		$status_hook_count = did_action( 'woocommerce_order_status_cancelled' );
 		// phpcs:disable WordPress.Security.NonceVerification.Missing -- Simulates the nonce-verified order meta box save.
@@ -532,7 +516,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$processing_service = $this->createMock( PaymentProcessingService::class );
 		$processing_service->expects( $this->never() )->method( 'capture' );
 		$processing_service->expects( $this->never() )->method( 'cancel' );
-		$this->sut = $this->create_controller( true, $processing_service );
+		$this->sut = $this->create_controller( $processing_service );
 		$this->sut->register();
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce status hook.
@@ -558,7 +542,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 				array( PaymentOutcome::DATA_NOTE => 'Shared capture failure note.' )
 			)
 		);
-		$this->sut = $this->create_controller( true, wc_get_container()->get( PaymentProcessingService::class ), $provider );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$this->sut->register();
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce order action hook.
@@ -577,7 +561,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	public function test_automatic_cancel_failure_preserves_status_and_adds_generic_note(): void {
 		$order     = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'requires_capture', 'cancelled' );
 		$provider  = $this->create_fixed_outcome_provider( new PaymentOutcome( PaymentOutcome::STATUS_FAILED, 'pi_authorized' ) );
-		$this->sut = $this->create_controller( true, wc_get_container()->get( PaymentProcessingService::class ), $provider );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$this->sut->register();
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce status hook.
@@ -603,7 +587,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$processing_service->expects( $this->once() )
 			->method( 'capture' )
 			->willThrowException( new RuntimeException( 'Simulated capture exception.' ) );
-		$this->sut = $this->create_controller( true, $processing_service );
+		$this->sut = $this->create_controller( $processing_service );
 		$this->sut->register();
 
 		$this->fire_order_hook( $hook, $order );
@@ -667,7 +651,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		);
 
 		$provider  = $this->create_provider_over_fake_transport( $http_client );
-		$this->sut = $this->create_controller( true, wc_get_container()->get( PaymentProcessingService::class ), $provider );
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $provider );
 		$this->sut->register();
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the public WooCommerce order action hook.
@@ -727,21 +711,13 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the controller with explicit dependencies.
 	 *
-	 * @param bool                          $builtin_owner      Whether the built-in WooPayments owns the runtime.
 	 * @param PaymentProcessingService|null $processing_service Processing service override.
 	 * @param WooPaymentsProvider|null      $provider           Provider override.
 	 * @return WooPaymentsOrderAdminActionsController
 	 */
-	private function create_controller( bool $builtin_owner, ?PaymentProcessingService $processing_service = null, ?WooPaymentsProvider $provider = null ): WooPaymentsOrderAdminActionsController {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_owner );
-
+	private function create_controller( ?PaymentProcessingService $processing_service = null, ?WooPaymentsProvider $provider = null ): WooPaymentsOrderAdminActionsController {
 		$controller = new WooPaymentsOrderAdminActionsController();
 		$controller->init(
-			$arbiter,
 			$processing_service ?? $this->createMock( PaymentProcessingService::class ),
 			$provider ?? new WooPaymentsProvider(),
 			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )

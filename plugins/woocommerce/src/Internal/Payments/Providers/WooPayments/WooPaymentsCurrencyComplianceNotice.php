@@ -18,13 +18,6 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 class WooPaymentsCurrencyComplianceNotice implements RegisterHooksInterface {
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Account service.
 	 *
 	 * @var WooPaymentsAccountService
@@ -36,11 +29,9 @@ class WooPaymentsCurrencyComplianceNotice implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter         Runtime owner arbiter.
 	 * @param WooPaymentsAccountService $account_service Account service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsAccountService $account_service ): void {
-		$this->arbiter         = $arbiter;
+	final public function init( WooPaymentsAccountService $account_service ): void {
 		$this->account_service = $account_service;
 	}
 
@@ -48,10 +39,6 @@ class WooPaymentsCurrencyComplianceNotice implements RegisterHooksInterface {
 	 * Register currency compliance notice hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		add_action( 'admin_notices', array( $this, 'display_not_supported_currency_notice' ), 9999 );
 		add_action( 'admin_notices', array( $this, 'display_isk_decimal_notice' ) );
 	}

@@ -35,13 +35,6 @@ class WooPaymentsExpressCheckoutStoreApiExtension implements RegisterHooksInterf
 	private const TOKENIZED_CART_NONCE_HEADER = 'HTTP_X_WOOPAYMENTS_TOKENIZED_CART_NONCE';
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Express checkout service.
 	 *
 	 * @var WooPaymentsExpressCheckoutService
@@ -53,11 +46,9 @@ class WooPaymentsExpressCheckoutStoreApiExtension implements RegisterHooksInterf
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter         $arbiter                  Runtime owner arbiter.
 	 * @param WooPaymentsExpressCheckoutService $express_checkout_service Express checkout service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsExpressCheckoutService $express_checkout_service ): void {
-		$this->arbiter                  = $arbiter;
+	final public function init( WooPaymentsExpressCheckoutService $express_checkout_service ): void {
 		$this->express_checkout_service = $express_checkout_service;
 	}
 
@@ -65,10 +56,6 @@ class WooPaymentsExpressCheckoutStoreApiExtension implements RegisterHooksInterf
 	 * Register Store API extension hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_action( 'woocommerce_blocks_loaded', array( $this, 'register_store_api_extension' ) ) ) {
 			add_action( 'woocommerce_blocks_loaded', array( $this, 'register_store_api_extension' ) );
 		}

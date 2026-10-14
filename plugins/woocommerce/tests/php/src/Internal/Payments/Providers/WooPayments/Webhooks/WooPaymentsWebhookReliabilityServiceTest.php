@@ -5,7 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 
 use ActionScheduler;
 use ActionScheduler_Store;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -59,7 +58,6 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		$this->remove_reliability_hooks();
 		$this->unschedule_reliability_actions();
-		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		$this->reset_legacy_proxy_mocks();
 		wc_get_container()->reset_all_replacements();
 		foreach ( array( 'evt_1', 'evt_process', 'evt_backlog_1', 'evt_backlog_2', 'evt_backlog_3', 'evt_backlog_4', 'evt_backlog_5' ) as $event_id ) {
@@ -70,34 +68,14 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The preserved reliability hooks are registered only when the built-in WooPayments owns the runtime (extension active: $extension_active).
-	 *
-	 * @dataProvider provider_runtime_owner_hook_registration
-	 *
-	 * @param bool      $extension_active Whether the WooPayments extension is active.
-	 * @param int|false $expected         Priority each hook is registered at, or false when it is not.
+	 * @testdox Registers the account refresh listener and the two scheduled webhook actions.
 	 */
-	public function test_registers_preserved_actions_only_when_builtin_owns_runtime( bool $extension_active, $expected ): void {
-		$this->fake_plugin( $extension_active );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-
+	public function test_registers_the_reliability_hooks(): void {
 		$this->sut->register();
 
-		$this->assertSame( $expected, has_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'maybe_schedule_fetch_events' ) ) );
-		$this->assertSame( $expected, has_action( 'wcpay_webhook_fetch_events', array( $this->sut, 'fetch_events_and_schedule_processing_jobs' ) ) );
-		$this->assertSame( $expected, has_action( 'wcpay_webhook_process_event', array( $this->sut, 'process_event' ) ) );
-	}
-
-	/**
-	 * Runtime owners and the hook priority they leave.
-	 *
-	 * @return array<string,array{0:bool,1:int|false}>
-	 */
-	public function provider_runtime_owner_hook_registration(): array {
-		return array(
-			'extension owns the runtime' => array( true, false ),
-			'built-in owns the runtime'  => array( false, 10 ),
-		);
+		$this->assertSame( 10, has_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'maybe_schedule_fetch_events' ) ) );
+		$this->assertSame( 10, has_action( 'wcpay_webhook_fetch_events', array( $this->sut, 'fetch_events_and_schedule_processing_jobs' ) ) );
+		$this->assertSame( 10, has_action( 'wcpay_webhook_process_event', array( $this->sut, 'process_event' ) ) );
 	}
 
 	/**
@@ -1065,37 +1043,6 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Control every WooPayments-plugin detection signal in a single mock registration.
-	 *
-	 * @param bool $active Whether the WooPayments plugin should appear active.
-	 */
-	private function fake_plugin( bool $active ): void {
-		$entry = WooPaymentsRuntimeArbiter::PLUGIN_FILE;
-		$this->register_legacy_proxy_function_mocks(
-			array(
-				'get_option'      => function ( $name, $default_value = false ) use ( $active, $entry ) {
-					if ( 'active_plugins' === $name ) {
-						return $active ? array( $entry ) : array();
-					}
-					return get_option( $name, $default_value );
-				},
-				'get_site_option' => function ( $name, $default_value = false ) {
-					if ( 'active_sitewide_plugins' === $name ) {
-						return array();
-					}
-					return get_site_option( $name, $default_value );
-				},
-				'class_exists'    => function ( $class_name, $autoload = true ) use ( $active ) {
-					if ( 'WC_Payments' === ltrim( (string) $class_name, '\\' ) ) {
-						return $active;
-					}
-					return class_exists( $class_name, $autoload );
-				},
-			)
-		);
-	}
-
-	/**
 	 * Create a reliability service with supplied collaborators.
 	 *
 	 * @param WooPaymentsActionSchedulerService $scheduler  Scheduler service.
@@ -1109,7 +1056,7 @@ class WooPaymentsWebhookReliabilityServiceTest extends WC_Unit_Test_Case {
 		WooPaymentsEventIngestor $ingestor
 	): WooPaymentsWebhookReliabilityService {
 		$service = new WooPaymentsWebhookReliabilityService();
-		$service->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), $scheduler, $api_client, $ingestor );
+		$service->init( $scheduler, $api_client, $ingestor );
 
 		return $service;
 	}

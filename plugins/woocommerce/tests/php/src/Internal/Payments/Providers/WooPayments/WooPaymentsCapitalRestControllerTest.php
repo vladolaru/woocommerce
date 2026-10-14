@@ -73,17 +73,6 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Capital routes are not registered when native does not own runtime.
-	 */
-	public function test_registers_no_routes_when_native_does_not_own_runtime(): void {
-		$this->sut = $this->create_controller( false );
-		$this->sut->register();
-
-		$this->assertFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
-		$this->assertFalse( has_action( 'admin_init', array( $this->sut, 'redirect_loan_offer_request' ) ) );
-	}
-
-	/**
 	 * @testdox Capital routes require manage_woocommerce before calling the platform API.
 	 */
 	public function test_routes_require_manage_woocommerce(): void {

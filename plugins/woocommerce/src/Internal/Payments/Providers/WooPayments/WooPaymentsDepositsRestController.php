@@ -44,13 +44,6 @@ class WooPaymentsDepositsRestController implements RegisterHooksInterface {
 	);
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Native WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
@@ -62,11 +55,9 @@ class WooPaymentsDepositsRestController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter    Runtime owner arbiter.
-	 * @param WooPaymentsApiClient      $api_client Native WooPayments API client.
+	 * @param WooPaymentsApiClient $api_client Native WooPayments API client.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client ): void {
-		$this->arbiter    = $arbiter;
+	final public function init( WooPaymentsApiClient $api_client ): void {
 		$this->api_client = $api_client;
 	}
 
@@ -74,10 +65,6 @@ class WooPaymentsDepositsRestController implements RegisterHooksInterface {
 	 * Register REST hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_action( 'rest_api_init', array( $this, 'register_routes' ) ) ) {
 			add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 		}

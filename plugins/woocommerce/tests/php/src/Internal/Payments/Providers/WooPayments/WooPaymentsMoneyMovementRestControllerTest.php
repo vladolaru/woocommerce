@@ -67,10 +67,10 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox Transactions routes register only when native owns runtime.
+	 * @testdox Transactions routes register.
 	 */
-	public function test_transactions_routes_register_only_when_native_owns_runtime(): void {
-		$controller = $this->create_transactions_controller( true );
+	public function test_transactions_routes_register(): void {
+		$controller = $this->create_transactions_controller();
 		$controller->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );
@@ -81,18 +81,13 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->assertArrayHasKey( '/wc/v3/payments/transactions/search', $routes );
 		$this->assertArrayHasKey( '/wc/v3/payments/fraud_outcomes/(?P<id>\\w+)/latest', $routes );
 		$this->assertArrayHasKey( '/wc/v3/payments/transactions/(?P<transaction_id>\\w+)', $routes );
-
-		$controller = $this->create_transactions_controller( false );
-		$controller->register();
-
-		$this->assertFalse( has_action( 'rest_api_init', array( $controller, 'register_routes' ) ) );
 	}
 
 	/**
-	 * @testdox Payment detail routes register only when native owns runtime.
+	 * @testdox Payment detail routes register.
 	 */
-	public function test_payment_detail_routes_register_only_when_native_owns_runtime(): void {
-		$controller = $this->create_payment_details_controller( true );
+	public function test_payment_detail_routes_register(): void {
+		$controller = $this->create_payment_details_controller();
 		$controller->register();
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		do_action( 'rest_api_init' );
@@ -104,11 +99,6 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->assertArrayHasKey( '/wc/v3/payments/payment_intents/(?P<payment_intent_id>\\w+)', $routes );
 		$this->assertArrayHasKey( '/wc/v3/payments/timeline/(?P<intention_id>\\w+)', $routes );
 		$this->assertArrayHasKey( '/wc/v3/payments/refund', $routes );
-
-		$controller = $this->create_payment_details_controller( false );
-		$controller->register();
-
-		$this->assertFalse( has_action( 'rest_api_init', array( $controller, 'register_routes' ) ) );
 	}
 
 	/**
@@ -121,7 +111,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 			'id'                  => 'ch_test',
 			'balance_transaction' => array( 'id' => 'txn_test' ),
 		);
-		$this->create_payment_details_controller( true )->register_routes();
+		$this->create_payment_details_controller()->register_routes();
 
 		$request  = new WP_REST_Request( 'GET', '/wc/v3/payments/charges/ch_test' );
 		$response = $this->server->dispatch( $request );
@@ -139,7 +129,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 */
 	public function test_payment_detail_charge_from_order_route_requires_manage_woocommerce(): void {
 		$order = $this->create_order_for_generated_charge();
-		$this->create_payment_details_controller( true )->register_routes();
+		$this->create_payment_details_controller()->register_routes();
 		wp_set_current_user( 0 );
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/charges/order/' . $order->get_id() ) );
@@ -153,7 +143,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 */
 	public function test_payment_detail_charge_from_order_route_generates_charge_from_order(): void {
 		$order = $this->create_order_for_generated_charge();
-		$this->create_payment_details_controller( true )->register_routes();
+		$this->create_payment_details_controller()->register_routes();
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/charges/order/' . $order->get_id() ) );
 		$data     = $response->get_data();
@@ -193,7 +183,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * @testdox Payment detail charge-from-order route returns the plugin-compatible missing-order error.
 	 */
 	public function test_payment_detail_charge_from_order_route_rejects_missing_order(): void {
-		$this->create_payment_details_controller( true )->register_routes();
+		$this->create_payment_details_controller()->register_routes();
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/charges/order/999999' ) );
 		$data     = $response->get_data();
@@ -221,7 +211,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 				),
 			),
 		);
-		$this->create_payment_details_controller( true )->register_routes();
+		$this->create_payment_details_controller()->register_routes();
 
 		$request  = new WP_REST_Request( 'GET', '/wc/v3/payments/payment_intents/pi_test' );
 		$response = $this->server->dispatch( $request );
@@ -259,7 +249,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 				),
 			),
 		);
-		$this->create_payment_details_controller( true )->register_routes();
+		$this->create_payment_details_controller()->register_routes();
 
 		$this->api_client->response = $charge;
 		$charge_data                = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/charges/ch_test' ) )->get_data();
@@ -307,7 +297,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 				),
 			),
 		);
-		$this->create_payment_details_controller( true )->register_routes();
+		$this->create_payment_details_controller()->register_routes();
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/payment_intents/pi_fx' ) );
 		$data     = $response->get_data();
@@ -329,7 +319,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 */
 	public function test_payment_detail_create_intent_route_requires_manage_woocommerce(): void {
 		$order = $this->create_order_for_generated_charge();
-		$this->create_payment_details_controller( true )->register_routes();
+		$this->create_payment_details_controller()->register_routes();
 		wp_set_current_user( 0 );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/payment_intents' );
@@ -358,7 +348,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 			'amount'  => 1234,
 			'charges' => array( 'data' => array() ),
 		);
-		$this->create_payment_details_controller( true )->register_routes();
+		$this->create_payment_details_controller()->register_routes();
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/payment_intents' );
 		$request->set_body_params(
@@ -402,7 +392,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->api_client->exception = new WooPaymentsApiException( 'Your card was declined.', 'card_declined', 402 );
 		$logger                      = RecordingWcLogger::install();
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
-		$this->create_payment_details_controller( true )->register_routes();
+		$this->create_payment_details_controller()->register_routes();
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/payment_intents' );
 		$request->set_body_params(
@@ -431,7 +421,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->api_client->response = json_decode( (string) file_get_contents( $fixtures . 'platform-eur-charge.json' ), true )['entries'][0]['response']['body'];
 		$expected                   = json_decode( (string) file_get_contents( $fixtures . 'payment-intent-rest-response.json' ), true )['client_projection'];
 		// phpcs:enable WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
-		$this->create_payment_details_controller( true )->register_routes();
+		$this->create_payment_details_controller()->register_routes();
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/payment_intents' );
 		$request->set_body_params(
@@ -451,7 +441,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * @testdox Payment detail create-intent route preserves the plugin-compatible missing-order error shape.
 	 */
 	public function test_payment_detail_create_intent_route_rejects_missing_order(): void {
-		$this->create_payment_details_controller( true )->register_routes();
+		$this->create_payment_details_controller()->register_routes();
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/payment_intents' );
 		$request->set_body_params(
@@ -482,7 +472,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 				),
 			),
 		);
-		$this->create_payment_details_controller( true )->register_routes();
+		$this->create_payment_details_controller()->register_routes();
 
 		$request  = new WP_REST_Request( 'GET', '/wc/v3/payments/timeline/pi_test' );
 		$response = $this->server->dispatch( $request );
@@ -534,7 +524,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 				),
 			),
 		);
-		$this->create_payment_details_controller( true )->register_routes();
+		$this->create_payment_details_controller()->register_routes();
 
 		$request  = new WP_REST_Request( 'GET', '/wc/v3/payments/timeline/pi_review' );
 		$response = $this->server->dispatch( $request );
@@ -578,9 +568,9 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	public function test_admin_routes_answer_platform_failures_with_a_4xx_or_5xx( string $controller, string $path, string $code, int $platform_status, int $expected_status, string $expected_code ): void {
 		$this->api_client->exception = new WooPaymentsApiException( 'Platform failure.', $code, $platform_status );
 		if ( 'transactions' === $controller ) {
-			$this->create_transactions_controller( true )->register_routes();
+			$this->create_transactions_controller()->register_routes();
 		} else {
-			$this->create_payment_details_controller( true )->register_routes();
+			$this->create_payment_details_controller()->register_routes();
 		}
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', $path ) );
@@ -595,7 +585,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	public function test_payment_detail_refund_route_creates_order_backed_refund(): void {
 		$gateway = $this->register_refund_gateway( true );
 		$order   = $this->create_refundable_order_with_charge( '50.00', 'ch_order' );
-		$this->create_payment_details_controller( true )->register_routes();
+		$this->create_payment_details_controller()->register_routes();
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/refund' );
 		$request->set_body_params(
@@ -637,7 +627,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	public function test_payment_detail_refund_route_rejects_charge_order_mismatch(): void {
 		$this->register_refund_gateway( true );
 		$order = $this->create_refundable_order_with_charge( '50.00', 'ch_order' );
-		$this->create_payment_details_controller( true )->register_routes();
+		$this->create_payment_details_controller()->register_routes();
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/refund' );
 		$request->set_body_params(
@@ -663,7 +653,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	public function test_payment_detail_refund_route_rejects_invalid_amounts(): void {
 		$this->register_refund_gateway( true );
 		$order = $this->create_refundable_order_with_charge( '50.00', 'ch_order' );
-		$this->create_payment_details_controller( true )->register_routes();
+		$this->create_payment_details_controller()->register_routes();
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/refund' );
 		$request->set_body_params(
@@ -702,7 +692,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	public function test_payment_detail_refund_route_returns_gateway_failure(): void {
 		$this->register_refund_gateway( new \WP_Error( 'gateway_failed', 'Gateway failed.' ) );
 		$order = $this->create_refundable_order_with_charge( '50.00', 'ch_order' );
-		$this->create_payment_details_controller( true )->register_routes();
+		$this->create_payment_details_controller()->register_routes();
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/refund' );
 		$request->set_body_params(
@@ -726,7 +716,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * @testdox Transactions list preserves reference query names and the legacy request filter.
 	 */
 	public function test_transactions_list_preserves_filter_contract(): void {
-		$this->create_transactions_controller( true )->register_routes();
+		$this->create_transactions_controller()->register_routes();
 
 		add_filter(
 			'wcpay_list_transactions_request',
@@ -790,7 +780,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 				),
 			),
 		);
-		$this->create_transactions_controller( true )->register_routes();
+		$this->create_transactions_controller()->register_routes();
 
 		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/transactions' );
 		$request->set_query_params(
@@ -813,7 +803,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * @testdox Transactions list and summary expose the same provider-owned row and totals to the admin client.
 	 */
 	public function test_transactions_list_and_summary_preserve_rows_and_totals(): void {
-		$this->create_transactions_controller( true )->register_routes();
+		$this->create_transactions_controller()->register_routes();
 		$this->api_client->response = array(
 			'data'        => array(
 				array(
@@ -849,7 +839,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * @testdox Transactions summary and export use the preserved list filter normalization.
 	 */
 	public function test_transactions_summary_and_export_normalize_reference_filters(): void {
-		$this->create_transactions_controller( true )->register_routes();
+		$this->create_transactions_controller()->register_routes();
 
 		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/transactions/summary' );
 		$request->set_query_params(
@@ -902,7 +892,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 */
 	public function test_transactions_summary_and_export_send_only_filters(): void {
 		$order = $this->create_order_with_charge( 'ch_order', 'pi_order' );
-		$this->create_transactions_controller( true )->register_routes();
+		$this->create_transactions_controller()->register_routes();
 		$list_filter_calls = 0;
 		add_filter(
 			'wcpay_list_transactions_request',
@@ -952,7 +942,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * @param bool   $as_object Whether the callback returns an object of another class.
 	 */
 	public function test_list_filter_returning_no_request_fails_the_request( string $path, string $hook, bool $as_object ): void {
-		$this->create_transactions_controller( true )->register_routes();
+		$this->create_transactions_controller()->register_routes();
 		add_filter(
 			$hook,
 			static function () use ( $as_object ) {
@@ -981,7 +971,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 */
 	public function test_transaction_dates_shift_by_the_merchant_time_zone(): void {
 		update_option( 'timezone_string', 'America/Chicago' );
-		$this->create_transactions_controller( true )->register_routes();
+		$this->create_transactions_controller()->register_routes();
 		$query = array(
 			'date_after'    => '2026-06-18 10:00:00',
 			'date_between'  => array( '2026-06-18 10:00:00', '2026-06-19 10:00:00' ),
@@ -1012,7 +1002,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * @testdox Transactions routes require manage_woocommerce before API calls.
 	 */
 	public function test_transactions_routes_require_manage_woocommerce(): void {
-		$this->create_transactions_controller( true )->register_routes();
+		$this->create_transactions_controller()->register_routes();
 		wp_set_current_user( 0 );
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/transactions' ) );
@@ -1025,7 +1015,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * @testdox Latest fraud outcome route requires manage_woocommerce before API calls.
 	 */
 	public function test_latest_fraud_outcome_route_requires_manage_woocommerce(): void {
-		$this->create_transactions_controller( true )->register_routes();
+		$this->create_transactions_controller()->register_routes();
 		wp_set_current_user( 0 );
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/fraud_outcomes/pi_test/latest' ) );
@@ -1043,7 +1033,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 			'payment_intent_id' => 'pi_test',
 			'outcome'           => 'review',
 		);
-		$this->create_transactions_controller( true )->register_routes();
+		$this->create_transactions_controller()->register_routes();
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/fraud_outcomes/pi_test/latest' ) );
 
@@ -1057,7 +1047,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * @testdox Fraud outcome routes reject requests without a valid status.
 	 */
 	public function test_fraud_outcome_routes_reject_missing_status(): void {
-		$this->create_transactions_controller( true )->register_routes();
+		$this->create_transactions_controller()->register_routes();
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/transactions/fraud-outcomes' ) );
 
@@ -1082,7 +1072,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 				'created'           => 123,
 			),
 		);
-		$this->create_transactions_controller( true )->register_routes();
+		$this->create_transactions_controller()->register_routes();
 
 		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/transactions/fraud-outcomes' );
 		$request->set_query_params( array( 'status' => 'review' ) );
@@ -1133,7 +1123,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * @testdox Fraud outcome routes preserve legacy request hooks and cap page size.
 	 */
 	public function test_fraud_outcome_routes_preserve_legacy_request_hooks_and_cap_page_size(): void {
-		$this->create_transactions_controller( true )->register_routes();
+		$this->create_transactions_controller()->register_routes();
 		$hooks_seen = array();
 		$hooks      = array(
 			'wcpay_list_fraud_outcome_transactions_request'                  => '/wc/v3/payments/transactions/fraud-outcomes',
@@ -1177,7 +1167,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * (class-list-fraud-outcome-transactions.php:40-45).
 	 */
 	public function test_fraud_outcome_request_carries_its_hook_and_refuses_unknown_status(): void {
-		$this->create_transactions_controller( true )->register_routes();
+		$this->create_transactions_controller()->register_routes();
 		$filtered = null;
 		add_filter(
 			'wcpay_list_fraud_outcome_transactions_request',
@@ -1226,7 +1216,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 				return array();
 			}
 		};
-		$this->create_transactions_controller( true, $order_service )->register_routes();
+		$this->create_transactions_controller( $order_service )->register_routes();
 		$logger = $this->create_recording_logger();
 		add_filter(
 			'woocommerce_logging_class',
@@ -1253,13 +1243,12 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	/**
 	 * Create a transactions controller.
 	 *
-	 * @param bool                                      $native_register Whether native should own routes.
-	 * @param WooPaymentsMoneyMovementOrderService|null $order_service   Optional order service.
+	 * @param WooPaymentsMoneyMovementOrderService|null $order_service Optional order service.
 	 * @return WooPaymentsTransactionsRestController
 	 */
-	private function create_transactions_controller( bool $native_register, ?WooPaymentsMoneyMovementOrderService $order_service = null ): WooPaymentsTransactionsRestController {
+	private function create_transactions_controller( ?WooPaymentsMoneyMovementOrderService $order_service = null ): WooPaymentsTransactionsRestController {
 		$controller = new WooPaymentsTransactionsRestController();
-		$controller->init( $this->create_arbiter( $native_register ), $this->api_client, $order_service ?? $this->create_order_service() );
+		$controller->init( $this->api_client, $order_service ?? $this->create_order_service() );
 
 		return $controller;
 	}
@@ -1267,12 +1256,11 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	/**
 	 * Create a payment details controller.
 	 *
-	 * @param bool $native_register Whether native should own routes.
 	 * @return WooPaymentsPaymentDetailsRestController
 	 */
-	private function create_payment_details_controller( bool $native_register ): WooPaymentsPaymentDetailsRestController {
+	private function create_payment_details_controller(): WooPaymentsPaymentDetailsRestController {
 		$controller = new WooPaymentsPaymentDetailsRestController();
-		$controller->init( $this->create_arbiter( $native_register ), $this->api_client, $this->create_order_service() );
+		$controller->init( $this->api_client, $this->create_order_service() );
 
 		return $controller;
 	}

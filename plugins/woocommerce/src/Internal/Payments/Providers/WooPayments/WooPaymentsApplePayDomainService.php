@@ -51,13 +51,6 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	private const APPLE_PAY_STATUSES = array( 'active', 'inactive' );
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Native WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
@@ -104,20 +97,17 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter                  $arbiter         Runtime owner arbiter.
 	 * @param WooPaymentsApiClient                       $api_client      Native WooPayments API client.
 	 * @param WooPaymentsAccountService                  $account_service Native WooPayments account service.
 	 * @param WooPaymentsActionSchedulerService          $scheduler                   Action Scheduler wrapper.
 	 * @param WooPaymentsFrontendTrackingController|null $frontend_tracking_controller Optional frontend tracking controller.
 	 */
 	final public function init(
-		WooPaymentsRuntimeArbiter $arbiter,
 		WooPaymentsApiClient $api_client,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsActionSchedulerService $scheduler,
 		?WooPaymentsFrontendTrackingController $frontend_tracking_controller = null
 	): void {
-		$this->arbiter                      = $arbiter;
 		$this->api_client                   = $api_client;
 		$this->account_service              = $account_service;
 		$this->scheduler                    = $scheduler;
@@ -128,10 +118,6 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	 * Register Apple Pay domain verification hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		add_action( 'admin_init', array( $this, 'verify_domain_on_domain_name_change' ) );
 		add_action( 'woocommerce_woocommerce_payments_admin_notices', array( $this, 'display_error_notice' ) );
 		add_action( 'add_option_' . self::APPLE_PAY_SETTINGS_OPTION, array( $this, 'verify_domain_on_new_apple_pay_settings' ), 10, 2 );

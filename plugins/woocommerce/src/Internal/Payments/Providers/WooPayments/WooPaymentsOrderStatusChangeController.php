@@ -56,13 +56,6 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	private const PAYMENT_DETAILS_CONTAINER_ID = 'woocommerce-woopayments-order-payment-details';
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Status-change confirmation.
 	 *
 	 * @var WooPaymentsOrderStatusChangeConfirmation
@@ -88,11 +81,9 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter                $arbiter      Runtime owner arbiter.
 	 * @param WooPaymentsOrderStatusChangeConfirmation $confirmation Status-change confirmation.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsOrderStatusChangeConfirmation $confirmation ): void {
-		$this->arbiter      = $arbiter;
+	final public function init( WooPaymentsOrderStatusChangeConfirmation $confirmation ): void {
 		$this->confirmation = $confirmation;
 	}
 
@@ -122,10 +113,6 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	 * Register order-edit screen hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_action( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) ) ) {
 			add_action( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) );
 		}

@@ -22,31 +22,9 @@ class WooPaymentsFrontendStylesService implements RegisterHooksInterface {
 	private const STYLES_CACHE_SCHEMA_VERSION = 'appearance-extractor-v4';
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
-	 * Initialize the class instance.
-	 *
-	 * @internal
-	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter Runtime owner arbiter.
-	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter ): void {
-		$this->arbiter = $arbiter;
-	}
-
-	/**
 	 * Register shared frontend style lifecycle hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		foreach ( $this->get_style_change_hooks() as $hook ) {
 			if ( false === has_action( $hook, array( $this, 'handle_style_change' ) ) ) {
 				add_action( $hook, array( $this, 'handle_style_change' ) );

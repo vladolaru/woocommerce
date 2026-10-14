@@ -148,7 +148,7 @@ class WooPaymentsRuntimeArbiter {
 	/**
 	 * Tell whether the built-in WooPayments owns payments on this site.
 	 *
-	 * Every built-in WooPayments registration that changes the site checks it first.
+	 * The setup tier registers built-in WooPayments classes only while it owns the store.
 	 *
 	 * @since 11.0.0
 	 *

@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMoneyMovementOrderService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use WC_Order;
@@ -15,22 +14,6 @@ use WC_Order;
  * remaining transactions/payment-details coverage in {@see WooPaymentsMoneyMovementRestControllerTest}.
  */
 trait WooPaymentsMoneyMovementControllerTestTrait {
-
-	/**
-	 * Create a runtime arbiter stub.
-	 *
-	 * @param bool $native_register Whether native should own routes.
-	 * @return WooPaymentsRuntimeArbiter
-	 */
-	private function create_arbiter( bool $native_register ): WooPaymentsRuntimeArbiter {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
-
-		return $arbiter;
-	}
 
 	/**
 	 * Create an order enrichment service.

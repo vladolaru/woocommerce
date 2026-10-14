@@ -24,13 +24,6 @@ class WooPaymentsCustomersRestController implements RegisterHooksInterface {
 	private const NAMESPACE = 'wc/v3';
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * WooPayments customer service.
 	 *
 	 * @var WooPaymentsCustomerService
@@ -49,12 +42,10 @@ class WooPaymentsCustomersRestController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter  $arbiter          Runtime owner arbiter.
 	 * @param WooPaymentsCustomerService $customer_service WooPayments customer service.
 	 * @param WooPaymentsAccountService  $account_service  WooPayments account service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsCustomerService $customer_service, WooPaymentsAccountService $account_service ): void {
-		$this->arbiter          = $arbiter;
+	final public function init( WooPaymentsCustomerService $customer_service, WooPaymentsAccountService $account_service ): void {
 		$this->customer_service = $customer_service;
 		$this->account_service  = $account_service;
 	}
@@ -63,10 +54,6 @@ class WooPaymentsCustomersRestController implements RegisterHooksInterface {
 	 * Register REST hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_action( 'rest_api_init', array( $this, 'register_routes' ) ) ) {
 			add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 		}

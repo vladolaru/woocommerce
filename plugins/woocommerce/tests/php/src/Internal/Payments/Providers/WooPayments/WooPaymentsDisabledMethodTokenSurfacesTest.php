@@ -15,7 +15,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\StoreApi\Utilities\PaymentUtils;
-use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Order;
 use WC_Payment_Token_CC;
 use WC_Payment_Tokens;
@@ -84,7 +83,6 @@ class WooPaymentsDisabledMethodTokenSurfacesTest extends WC_Unit_Test_Case {
 
 		$this->register_gateways();
 		$controller = new WooPaymentsTokenClassMapController();
-		$controller->init( new StaticWooPaymentsRuntimeArbiter( true ) );
 		$controller->register();
 
 		$this->user_id    = $this->factory()->user->create( array( 'role' => 'customer' ) );
@@ -253,7 +251,7 @@ class WooPaymentsDisabledMethodTokenSurfacesTest extends WC_Unit_Test_Case {
 		);
 
 		$service = new WooPaymentsTokenService();
-		$service->init( $this->createMock( WooPaymentsPaymentMethodDetailsService::class ), new StaticWooPaymentsRuntimeArbiter( true ), wc_get_container()->get( WooPaymentsApiClient::class ), $customer_service, $account_service, wc_get_container()->get( WooPaymentsOrderDataService::class ) );
+		$service->init( $this->createMock( WooPaymentsPaymentMethodDetailsService::class ), wc_get_container()->get( WooPaymentsApiClient::class ), $customer_service, $account_service, wc_get_container()->get( WooPaymentsOrderDataService::class ) );
 		$service->register();
 		$this->services[] = $service;
 

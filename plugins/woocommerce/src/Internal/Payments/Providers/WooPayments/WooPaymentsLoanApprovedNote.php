@@ -36,13 +36,6 @@ class WooPaymentsLoanApprovedNote implements RegisterHooksInterface {
 	public const NOTE_NAME = 'wc-payments-notes-loan-approved';
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
@@ -54,11 +47,9 @@ class WooPaymentsLoanApprovedNote implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter    Runtime owner arbiter.
-	 * @param WooPaymentsApiClient      $api_client WooPayments API client.
+	 * @param WooPaymentsApiClient $api_client WooPayments API client.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client ): void {
-		$this->arbiter    = $arbiter;
+	final public function init( WooPaymentsApiClient $api_client ): void {
 		$this->api_client = $api_client;
 	}
 
@@ -66,10 +57,6 @@ class WooPaymentsLoanApprovedNote implements RegisterHooksInterface {
 	 * Register the account refresh hook.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		add_action( 'woocommerce_payments_account_refreshed', array( $this, 'handle_loan_approved_inbox_note' ) );
 	}
 

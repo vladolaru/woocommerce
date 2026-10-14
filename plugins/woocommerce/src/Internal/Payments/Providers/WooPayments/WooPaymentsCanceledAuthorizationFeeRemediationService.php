@@ -149,31 +149,9 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	const CANCELED_INTENT_STATUS = 'canceled';
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
-	 * Initialize the class instance.
-	 *
-	 * @internal
-	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter Runtime owner arbiter.
-	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter ): void {
-		$this->arbiter = $arbiter;
-	}
-
-	/**
-	 * Register the batch, dry-run and check handlers while the built-in WooPayments owns payments.
+	 * Register the batch, dry-run and check handlers.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		add_action( self::ACTION_HOOK, array( $this, 'process_batch' ) );
 		add_action( self::DRY_RUN_ACTION_HOOK, array( $this, 'process_batch_dry_run' ) );
 		add_action( self::CHECK_AFFECTED_ORDERS_HOOK, array( $this, 'check_and_cache_affected_orders' ) );

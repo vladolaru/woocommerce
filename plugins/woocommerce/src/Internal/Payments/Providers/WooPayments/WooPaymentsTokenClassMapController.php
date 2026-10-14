@@ -34,31 +34,9 @@ class WooPaymentsTokenClassMapController implements RegisterHooksInterface {
 	);
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
-	 * Initialize the class instance.
-	 *
-	 * @internal
-	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter Runtime owner arbiter.
-	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter ): void {
-		$this->arbiter = $arbiter;
-	}
-
-	/**
 	 * Register token-class mapping hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		if ( false === has_filter( 'woocommerce_payment_token_class', array( $this, 'handle_woocommerce_payment_token_class' ) ) ) {
 			add_filter( 'woocommerce_payment_token_class', array( $this, 'handle_woocommerce_payment_token_class' ), 10, 2 );
 		}

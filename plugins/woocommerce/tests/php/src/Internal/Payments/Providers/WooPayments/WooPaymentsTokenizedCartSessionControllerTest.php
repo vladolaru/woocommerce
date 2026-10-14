@@ -4,7 +4,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutAddressNormalizer;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenizedCartSessionController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenizedCartSessionHandler;
 use Automattic\WooCommerce\StoreApi\Utilities\JsonWebToken;
@@ -75,10 +74,10 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register tokenized cart session hooks only when the built-in WooPayments owns payments.
+	 * @testdox Should register tokenized cart session hooks.
 	 */
-	public function test_registers_session_handler_filter_only_for_builtin_runtime(): void {
-		$this->sut = $this->create_controller( true );
+	public function test_registers_session_handler_filter(): void {
+		$this->sut = $this->create_controller();
 		$this->sut->register();
 
 		$this->assertSame( 20, has_filter( 'woocommerce_session_handler', array( $this->sut, 'handle_woocommerce_session_handler' ) ) );
@@ -86,12 +85,6 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 
 		remove_filter( 'woocommerce_session_handler', array( $this->sut, 'handle_woocommerce_session_handler' ), 20 );
 		remove_filter( 'rest_pre_dispatch', array( $this->sut, 'maybe_reject_invalid_tokenized_cart_session' ), 10 );
-
-		$this->sut = $this->create_controller( false );
-		$this->sut->register();
-
-		$this->assertFalse( has_filter( 'woocommerce_session_handler', array( $this->sut, 'handle_woocommerce_session_handler' ) ) );
-		$this->assertFalse( has_filter( 'rest_pre_dispatch', array( $this->sut, 'maybe_reject_invalid_tokenized_cart_session' ) ) );
 	}
 
 	/**
@@ -103,7 +96,7 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	public function test_uses_tokenized_handler_for_store_api_request_with_valid_session_nonce( string $set_request ): void {
 		$this->{$set_request}();
 		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION_NONCE'] = wp_create_nonce( 'woopayments_tokenized_cart_session_nonce' );
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 
 		$this->assertSame( WooPaymentsTokenizedCartSessionHandler::class, $this->sut->handle_woocommerce_session_handler( 'WC_Session_Handler' ) );
 		$this->assertNotFalse( has_filter( 'woocommerce_persistent_cart_enabled', array( $this->sut, 'disable_persistent_cart' ) ) );
@@ -128,7 +121,7 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_keeps_default_handler_without_session_nonce(): void {
 		$this->set_store_api_request();
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 
 		$this->assertSame( 'WC_Session_Handler', $this->sut->handle_woocommerce_session_handler( 'WC_Session_Handler' ) );
 	}
@@ -142,7 +135,7 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	public function test_keeps_default_handler_for_a_page_whose_query_string_holds_the_store_api_path(): void {
 		$_SERVER['REQUEST_URI']                                     = '/some-page/?redirect_to=/wp-json/wc/store/v1/cart';
 		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION_NONCE'] = wp_create_nonce( 'woopayments_tokenized_cart_session_nonce' );
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 
 		$this->assertSame( 'WC_Session_Handler', $this->sut->handle_woocommerce_session_handler( 'WC_Session_Handler' ) );
 		$this->assertFalse( has_filter( 'woocommerce_persistent_cart_enabled', array( $this->sut, 'disable_persistent_cart' ) ) );
@@ -155,7 +148,7 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 		$this->set_store_api_request();
 		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION_NONCE'] = wp_create_nonce( 'woopayments_tokenized_cart_session_nonce' );
 		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION']       = 'not-a-valid-token';
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->sut->register();
 
 		$this->assertSame( WooPaymentsTokenizedCartSessionHandler::class, $this->sut->handle_woocommerce_session_handler( 'WC_Session_Handler' ) );
@@ -172,7 +165,7 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_pre_dispatch_leaves_non_tokenized_requests_untouched(): void {
 		$this->set_store_api_request();
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 
 		$result = $this->sut->maybe_reject_invalid_tokenized_cart_session( null, null, new WP_REST_Request( 'GET', '/wc/store/v1/cart' ) );
 
@@ -185,7 +178,7 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	public function test_rejects_tokenized_markers_without_session_nonce(): void {
 		$this->set_store_api_request();
 		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION'] = 'token-without-valid-nonce';
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 
 		$result = $this->sut->maybe_reject_invalid_tokenized_cart_session( null, null, new WP_REST_Request( 'POST', '/wc/store/v1/cart/add-item' ) );
 
@@ -199,7 +192,7 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	public function test_pre_dispatch_leaves_other_rest_requests_untouched(): void {
 		$_SERVER['REQUEST_URI']                               = '/wp-json/wc/v3/orders';
 		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION'] = 'token-without-valid-nonce';
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 
 		$this->assertNull( $this->sut->maybe_reject_invalid_tokenized_cart_session( null, null, new WP_REST_Request( 'GET', '/wc/v3/orders' ) ) );
 	}
@@ -211,7 +204,7 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 		$this->set_store_api_request();
 		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART_SESSION_NONCE'] = 'expired-session-nonce';
 		$_SERVER['HTTP_X_WOOPAYMENTS_TOKENIZED_CART']               = 'true';
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 
 		$result = $this->sut->maybe_reject_invalid_tokenized_cart_session( null, null, new WP_REST_Request( 'POST', '/wc/store/v1/checkout' ) );
 
@@ -224,7 +217,7 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_normalizes_generic_tokenized_checkout_hong_kong_addresses_without_product_session(): void {
 		$this->set_store_api_request();
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$request   = $this->create_generic_tokenized_store_api_request( 'POST', '/wc/store/v1/checkout', wp_create_nonce( 'woopayments_tokenized_cart_nonce' ) );
 		$request->set_param(
 			'billing_address',
@@ -248,7 +241,7 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_normalizes_tokenized_checkout_address_lines_before_store_api_validation(): void {
 		$this->set_store_api_request();
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$request   = $this->create_tokenized_store_api_request( 'POST', '/wc/store/v1/checkout' );
 		$request->set_param(
 			'billing_address',
@@ -273,7 +266,7 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	public function test_preserves_cart_clear_after_payment_for_tokenized_order_received_redirect(): void {
 		$_SERVER['REQUEST_URI'] = '/checkout/order-received/123/?woopayments-custom-session=1';
 
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->sut->register();
 
 		$this->assertSame( 10, has_filter( 'woocommerce_should_clear_cart_after_payment', array( $this->sut, 'preserve_cart_after_tokenized_payment' ) ) );
@@ -299,7 +292,7 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 		WC()->session->set( 'chosen_shipping_methods', array( 'flat_rate:1' ) );
 		WC()->session->set( 'shipping_for_package_0', array( 'package_hash' => 'package-hash' ) );
 
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 		$this->sut->save_old_cart_data_for_restore();
 
 		WC()->cart->empty_cart( false );
@@ -330,7 +323,7 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		$this->sut = $this->create_controller( true );
+		$this->sut = $this->create_controller();
 
 		$response = $this->sut->handle_store_api_response( new WP_REST_Response( array() ), null, new WP_REST_Request( 'GET', '/wc/store/v1/cart' ) );
 		$headers  = $response->get_headers();
@@ -344,18 +337,11 @@ class WooPaymentsTokenizedCartSessionControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the System Under Test.
 	 *
-	 * @param bool $builtin_register Whether the built-in WooPayments owns the runtime.
 	 * @return WooPaymentsTokenizedCartSessionController
 	 */
-	private function create_controller( bool $builtin_register ): WooPaymentsTokenizedCartSessionController {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_register );
-
+	private function create_controller(): WooPaymentsTokenizedCartSessionController {
 		$controller = new WooPaymentsTokenizedCartSessionController();
-		$controller->init( $arbiter, new WooPaymentsExpressCheckoutAddressNormalizer() );
+		$controller->init( new WooPaymentsExpressCheckoutAddressNormalizer() );
 
 		return $controller;
 	}

@@ -21,13 +21,6 @@ use Throwable;
 class WooPaymentsAdminNotesController implements RegisterHooksInterface {
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Secure checkout note.
 	 *
 	 * @var WooPaymentsSetHttpsForCheckoutNote
@@ -53,18 +46,15 @@ class WooPaymentsAdminNotesController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter              $arbiter                        Runtime owner arbiter.
 	 * @param WooPaymentsSetHttpsForCheckoutNote     $https_note                     Secure checkout note.
 	 * @param WooPaymentsSetUpLinkNote               $link_note                      Link by Stripe note.
 	 * @param WooPaymentsCanceledAuthRemediationNote $canceled_auth_remediation_note Canceled-authorization fee remediation note.
 	 */
 	final public function init(
-		WooPaymentsRuntimeArbiter $arbiter,
 		WooPaymentsSetHttpsForCheckoutNote $https_note,
 		WooPaymentsSetUpLinkNote $link_note,
 		WooPaymentsCanceledAuthRemediationNote $canceled_auth_remediation_note
 	): void {
-		$this->arbiter                        = $arbiter;
 		$this->https_note                     = $https_note;
 		$this->link_note                      = $link_note;
 		$this->canceled_auth_remediation_note = $canceled_auth_remediation_note;
@@ -74,10 +64,6 @@ class WooPaymentsAdminNotesController implements RegisterHooksInterface {
 	 * Register the admin note hook.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		add_action( 'admin_init', array( $this, 'add_woo_admin_notes' ) );
 	}
 

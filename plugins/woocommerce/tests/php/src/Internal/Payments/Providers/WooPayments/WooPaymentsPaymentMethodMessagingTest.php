@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
@@ -82,7 +81,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	 * @preserveGlobalState disabled
 	 */
 	public function test_get_cart_total_ajax_recalculates_stale_cart_totals(): void {
-		$controller = $this->create_controller( true, true, array( 'card', 'affirm' ), array( 'affirm_payments' => 'active' ) );
+		$controller = $this->create_controller( true, array( 'card', 'affirm' ), array( 'affirm_payments' => 'active' ) );
 		$product    = \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '10' ) );
 
 		WC()->cart->empty_cart();
@@ -117,15 +116,11 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register all BNPL messaging hooks when native owns runtime without reading eligibility.
+	 * @testdox Should register all BNPL messaging hooks without reading eligibility.
 	 */
-	public function test_registers_bnpl_messaging_hooks_when_native_owns_runtime_without_reading_eligibility(): void {
-		$plugin_owned = $this->create_controller( false, true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
-		$plugin_owned->register();
-		$this->assert_hooks_not_registered( $plugin_owned );
-
+	public function test_registers_bnpl_messaging_hooks_without_reading_eligibility(): void {
 		$account_service = $this->create_account_service( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ), 0 );
-		$active_bnpl     = $this->create_controller( true, true, array( 'affirm' ), array( 'affirm_payments' => 'active' ), $account_service );
+		$active_bnpl     = $this->create_controller( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ), $account_service );
 		$active_bnpl->register();
 		$this->registered_controllers[] = $active_bnpl;
 
@@ -147,7 +142,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_read_eligibility_on_unsupported_shopper_surface(): void {
 		$account_service = $this->create_account_service( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ), 0 );
-		$controller      = $this->create_controller( true, true, array( 'affirm' ), array( 'affirm_payments' => 'active' ), $account_service );
+		$controller      = $this->create_controller( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ), $account_service );
 
 		ob_start();
 		$controller->render_site_messaging();
@@ -163,7 +158,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		$product = \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '50.00' ) );
 		$this->set_current_product( $product );
 
-		$controller = $this->create_controller( true, false, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
+		$controller = $this->create_controller( false, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
 
 		ob_start();
 		$controller->render_site_messaging();
@@ -180,7 +175,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	 * @testdox Should not process the cart-total AJAX callback for ineligible messaging.
 	 */
 	public function test_does_not_process_cart_total_ajax_for_ineligible_messaging(): void {
-		$controller  = $this->create_controller( true, false, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
+		$controller  = $this->create_controller( false, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
 		$die_handler = static function () {
 			return static function () {
 				throw new \Exception( 'ajax-die' );
@@ -208,7 +203,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	 * @testdox Should not process the BNPL availability AJAX callback for ineligible messaging.
 	 */
 	public function test_does_not_process_bnpl_availability_ajax_for_ineligible_messaging(): void {
-		$controller  = $this->create_controller( true, false, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
+		$controller  = $this->create_controller( false, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
 		$die_handler = static function () {
 			return static function () {
 				throw new \Exception( 'ajax-die' );
@@ -240,7 +235,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		$this->set_current_product( $product );
 
 		$account_service = $this->create_account_service( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ), 1 );
-		$controller      = $this->create_controller( true, true, array( 'affirm' ), array( 'affirm_payments' => 'active' ), $account_service );
+		$controller      = $this->create_controller( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ), $account_service );
 
 		ob_start();
 		$controller->render_site_messaging();
@@ -268,7 +263,6 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		$this->set_current_product( $product );
 
 		$controller = $this->create_controller(
-			true,
 			true,
 			array( 'card', 'affirm', 'afterpay_clearpay', 'klarna', 'ideal' ),
 			array(
@@ -331,7 +325,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		update_option( 'woocommerce_currency', 'USD' );
 
-		$controller = $this->create_controller( true, true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
+		$controller = $this->create_controller( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
 		$controller->register();
 		$this->registered_controllers[] = $controller;
 
@@ -384,7 +378,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		} elseif ( 'cart' === $surface ) {
 			add_filter( 'woocommerce_is_cart', '__return_true' );
 		}
-		$controller = $this->create_controller( true, true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
+		$controller = $this->create_controller( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
 		$controller->register();
 		$this->registered_controllers[] = $controller;
 
@@ -408,7 +402,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		$product = \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '50.00' ) );
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_PRODUCT_IDS ] = $is_subscription ? array( $product->get_id() ) : array();
 		$this->set_current_product( $product );
-		$controller = $this->create_controller( true, true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
+		$controller = $this->create_controller( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
 
 		unset( $GLOBALS['product'] );
 		$controller->enqueue_site_messaging_style();
@@ -435,7 +429,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		WooCommerceSubscriptionsDoubles::load_cart();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = $cart_contains_subscription;
 		add_filter( 'woocommerce_is_cart', '__return_true' );
-		$controller = $this->create_controller( true, true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
+		$controller = $this->create_controller( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
 
 		ob_start();
 		$controller->render_site_messaging();
@@ -449,7 +443,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	 * @testdox Should report BNPL availability from native amount limits.
 	 */
 	public function test_reports_bnpl_availability_from_native_amount_limits(): void {
-		$controller = $this->create_controller( true, true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
+		$controller = $this->create_controller( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
 
 		$this->assertSame(
 			array(
@@ -483,7 +477,6 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a BNPL messaging controller.
 	 *
-	 * @param bool                           $native_register        Whether native should own runtime.
 	 * @param bool                           $gateway_enabled        Whether the gateway setting is enabled.
 	 * @param array<int,string>              $enabled_payment_methods Enabled payment method IDs.
 	 * @param array<string,string>           $capabilities           Capability statuses keyed by Stripe capability ID.
@@ -491,18 +484,11 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsPaymentMethodMessaging
 	 */
 	private function create_controller(
-		bool $native_register,
 		bool $gateway_enabled,
 		array $enabled_payment_methods,
 		array $capabilities,
 		?WooPaymentsAccountService $account_service = null
 	): WooPaymentsPaymentMethodMessaging {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
-
 		$account_service = $account_service ?? $this->create_account_service( $gateway_enabled, $enabled_payment_methods, $capabilities );
 
 		$frontend_styles_service = $this->getMockBuilder( WooPaymentsFrontendStylesService::class )
@@ -511,7 +497,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		$frontend_styles_service->method( 'get_styles_cache_version' )->willReturn( 'shared-styles-token' );
 
 		$controller = new WooPaymentsPaymentMethodMessaging();
-		$controller->init( $arbiter, $account_service, new WooPaymentsPaymentMethodRegistry(), new WooPaymentsOrderDataService(), $frontend_styles_service );
+		$controller->init( $account_service, new WooPaymentsPaymentMethodRegistry(), new WooPaymentsOrderDataService(), $frontend_styles_service );
 
 		return $controller;
 	}
@@ -565,17 +551,6 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_publishable_key' )->willReturn( 'pk_test_123' );
 
 		return $account_service;
-	}
-
-	/**
-	 * Assert that none of the expected hooks were registered.
-	 *
-	 * @param WooPaymentsPaymentMethodMessaging $controller Messaging controller.
-	 */
-	private function assert_hooks_not_registered( WooPaymentsPaymentMethodMessaging $controller ): void {
-		foreach ( $this->get_expected_hooks() as $hook => $method ) {
-			$this->assertFalse( has_action( $hook, array( $controller, $method ) ), "{$hook} should not be registered." );
-		}
 	}
 
 	/**

@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -41,13 +40,6 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	public const BUNDLED_SUBSCRIPTIONS_FLAG_OPTION = '_wcpay_feature_subscriptions';
 
 	/**
-	 * Runtime ownership arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Whether WooCommerce Subscriptions was active when the module decided to load.
 	 *
 	 * @var bool
@@ -62,25 +54,9 @@ class WooPaymentsStripeBillingModule implements RegisterHooksInterface {
 	private ?StripeBillingMigrator $migrator = null;
 
 	/**
-	 * Initialize the class instance.
-	 *
-	 * @internal
-	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter Runtime ownership arbiter.
-	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter ): void {
-		$this->arbiter = $arbiter;
-	}
-
-	/**
-	 * Decide on `plugins_loaded` priority 11 when the built-in WooPayments owns payments, after WooCommerce
-	 * Subscriptions has loaded.
+	 * Decide on `plugins_loaded` priority 11, after WooCommerce Subscriptions has loaded.
 	 */
 	public function register(): void {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 
 		if ( did_action( 'plugins_loaded' ) ) {
