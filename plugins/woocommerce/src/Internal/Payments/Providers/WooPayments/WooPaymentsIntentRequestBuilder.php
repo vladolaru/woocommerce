@@ -138,7 +138,7 @@ class WooPaymentsIntentRequestBuilder {
 		$subscription_payment = $is_renewal ? 'renewal' : ( $is_recurring ? 'initial' : 'no' );
 		$payment_method_types = $this->payment_method_types_for_request( $context, (string) $order->get_currency() );
 		$request_data         = array(
-			'amount'               => $this->order_data_service->prepare_amount( (float) $order->get_total(), (string) $order->get_currency() ),
+			'amount'               => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), (string) $order->get_currency() ),
 			'capture_method'       => ! $is_scheduled_renewal && 'yes' === $this->account_service->get_gateway_setting( 'manual_capture', 'no' ) ? 'manual' : 'automatic',
 			'currency'             => strtolower( (string) $order->get_currency() ),
 			'customer'             => $customer_id,

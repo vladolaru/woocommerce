@@ -47,13 +47,6 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
 
 	/**
-	 * WooPayments order data service.
-	 *
-	 * @var WooPaymentsOrderDataService
-	 */
-	private WooPaymentsOrderDataService $order_data_service;
-
-	/**
 	 * Shared frontend styles service.
 	 *
 	 * @var WooPaymentsFrontendStylesService|null
@@ -81,18 +74,15 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	 *
 	 * @param WooPaymentsAccountService             $account_service         WooPayments account service.
 	 * @param WooPaymentsPaymentMethodRegistry      $payment_method_registry WooPayments payment method registry.
-	 * @param WooPaymentsOrderDataService           $order_data_service      WooPayments order data service.
 	 * @param WooPaymentsFrontendStylesService|null $frontend_styles_service Optional shared frontend styles service.
 	 */
 	final public function init(
 		WooPaymentsAccountService $account_service,
 		WooPaymentsPaymentMethodRegistry $payment_method_registry,
-		WooPaymentsOrderDataService $order_data_service,
 		?WooPaymentsFrontendStylesService $frontend_styles_service = null
 	): void {
 		$this->account_service         = $account_service;
 		$this->payment_method_registry = $payment_method_registry;
-		$this->order_data_service      = $order_data_service;
 		$this->frontend_styles_service = $frontend_styles_service;
 	}
 
@@ -437,7 +427,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	private function get_product_variations( WC_Product $product, string $currency ): array {
 		$product_variations = array(
 			'base_product' => array(
-				'amount'   => $this->order_data_service->prepare_amount( $this->get_product_price( $product ), $currency ),
+				'amount'   => WooPaymentsCurrencyUtils::amount_to_minor_units( $this->get_product_price( $product ), $currency ),
 				'currency' => $currency,
 			),
 		);
@@ -452,7 +442,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			$variation = wc_get_product( $variation_id );
 			if ( $variation instanceof WC_Product ) {
 				$product_variations[ (string) $variation_id ] = array(
-					'amount'   => $this->order_data_service->prepare_amount( $this->get_product_price( $variation ), $currency ),
+					'amount'   => WooPaymentsCurrencyUtils::amount_to_minor_units( $this->get_product_price( $variation ), $currency ),
 					'currency' => $currency,
 				);
 			}
@@ -626,6 +616,6 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			return 0;
 		}
 
-		return $this->order_data_service->prepare_amount( (float) WC()->cart->get_total( 'edit' ), get_woocommerce_currency() );
+		return WooPaymentsCurrencyUtils::amount_to_minor_units( (float) WC()->cart->get_total( 'edit' ), get_woocommerce_currency() );
 	}
 }

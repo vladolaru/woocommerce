@@ -110,19 +110,6 @@ class WooPaymentsOrderDataService {
 	}
 
 	/**
-	 * Convert a decimal amount into provider minor units.
-	 *
-	 * @since 11.0.0
-	 *
-	 * @param float  $amount   Decimal amount.
-	 * @param string $currency Currency code.
-	 * @return int
-	 */
-	public function prepare_amount( float $amount, string $currency ): int {
-		return WooPaymentsCurrencyUtils::amount_to_minor_units( $amount, $currency );
-	}
-
-	/**
 	 * Get settlement exchange-rate meta from a completed provider charge.
 	 *
 	 * @since 11.0.0

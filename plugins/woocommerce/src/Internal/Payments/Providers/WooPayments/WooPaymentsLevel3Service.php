@@ -38,23 +38,14 @@ class WooPaymentsLevel3Service {
 	private WooPaymentsAccountService $account_service;
 
 	/**
-	 * Order data service.
-	 *
-	 * @var WooPaymentsOrderDataService
-	 */
-	private WooPaymentsOrderDataService $order_data_service;
-
-	/**
 	 * Initialize the service.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsAccountService   $account_service    Account service.
-	 * @param WooPaymentsOrderDataService $order_data_service Order data service.
+	 * @param WooPaymentsAccountService $account_service Account service.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsOrderDataService $order_data_service ): void {
-		$this->account_service    = $account_service;
-		$this->order_data_service = $order_data_service;
+	final public function init( WooPaymentsAccountService $account_service ): void {
+		$this->account_service = $account_service;
 	}
 
 	/**
@@ -83,7 +74,7 @@ class WooPaymentsLevel3Service {
 		$level3_data = array(
 			'merchant_reference' => (string) $order->get_id(),
 			'customer_reference' => (string) $order->get_id(),
-			'shipping_amount'    => $this->order_data_service->prepare_amount( (float) $order->get_shipping_total() + (float) $order->get_shipping_tax(), $currency ),
+			'shipping_amount'    => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_shipping_total() + (float) $order->get_shipping_tax(), $currency ),
 			'line_items'         => $items_to_send,
 		);
 
@@ -163,13 +154,13 @@ class WooPaymentsLevel3Service {
 		// zero on the money path. Client 11.1.0 divides by the quantity
 		// unguarded (src/Internal/Service/Level3Service.php:154-157).
 		$quantity   = max( 1, (int) ceil( (float) $item->get_quantity() ) );
-		$tax_amount = $this->order_data_service->prepare_amount( (float) $item->get_total_tax(), $currency );
+		$tax_amount = WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $item->get_total_tax(), $currency );
 		if ( $subtotal >= 0 ) {
-			$unit_cost       = $this->order_data_service->prepare_amount( $subtotal / $quantity, $currency );
-			$discount_amount = $this->order_data_service->prepare_amount( $subtotal - (float) $item->get_total(), $currency );
+			$unit_cost       = WooPaymentsCurrencyUtils::amount_to_minor_units( $subtotal / $quantity, $currency );
+			$discount_amount = WooPaymentsCurrencyUtils::amount_to_minor_units( $subtotal - (float) $item->get_total(), $currency );
 		} else {
 			// Products can carry a negative price — represent it as a free item with a discount.
-			$discount_amount = abs( $this->order_data_service->prepare_amount( $subtotal / $quantity, $currency ) );
+			$discount_amount = abs( WooPaymentsCurrencyUtils::amount_to_minor_units( $subtotal / $quantity, $currency ) );
 			$unit_cost       = 0;
 		}
 
@@ -193,7 +184,7 @@ class WooPaymentsLevel3Service {
 		// decimals is 3.33, but 3.33*3 is 9.99); re-add the difference so the
 		// line items still sum to the charged amount.
 		if ( $subtotal > 0 ) {
-			$prepared_subtotal = $this->order_data_service->prepare_amount( $subtotal, $currency );
+			$prepared_subtotal = WooPaymentsCurrencyUtils::amount_to_minor_units( $subtotal, $currency );
 			$difference        = $prepared_subtotal - ( $unit_cost * $quantity );
 			if ( $difference > 0 ) {
 				$line_items[] = (object) array(

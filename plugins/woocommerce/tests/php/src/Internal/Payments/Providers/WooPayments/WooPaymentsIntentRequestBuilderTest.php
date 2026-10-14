@@ -479,7 +479,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_account_country' )->willReturn( 'US' );
 
 		$level3_service = new WooPaymentsLevel3Service();
-		$level3_service->init( $account_service, new WooPaymentsOrderDataService() );
+		$level3_service->init( $account_service );
 
 		$request_builder = new WooPaymentsIntentRequestBuilder();
 		$request_builder->init(

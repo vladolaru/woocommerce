@@ -418,7 +418,7 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 			$payment_methods = $this->get_terminal_intent_payment_methods( $request );
 			$capture_method  = $this->get_terminal_intent_capture_method( $request );
 			$request_data    = array(
-				'amount'               => $this->order_data_service->prepare_amount( (float) $order->get_total(), $currency ),
+				'amount'               => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), $currency ),
 				'currency'             => $currency,
 				'description'          => WooPaymentsIntentRequestBuilder::intent_description( (string) $order->get_order_number() ),
 				'metadata'             => array_merge(
@@ -615,7 +615,7 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 					? $intent
 					: $this->api_client->capture_intention(
 						$intent_id,
-						$this->order_data_service->prepare_amount( (float) $order->get_total(), (string) $order->get_currency() ),
+						WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), (string) $order->get_currency() ),
 						// Order-derived metadata first; the intent's own metadata wins, mirroring the plugin's mobile-app priority.
 						array_merge( WooPaymentsIntentRequestBuilder::capture_metadata_from_order( $order ), $this->get_intent_metadata( $intent ) )
 					);

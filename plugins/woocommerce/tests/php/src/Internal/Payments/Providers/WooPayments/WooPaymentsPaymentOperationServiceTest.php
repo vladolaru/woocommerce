@@ -279,6 +279,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	public function provider_cached_platform_minimums(): array {
 		return array(
 			'a failure before the API call' => array( 100, PaymentOutcome::STATUS_FAILED, 'amount_too_small', 'The selected payment method requires a total amount of at least $1.00.', 0 ),
+			'one cent below the minimum'    => array( 51, PaymentOutcome::STATUS_FAILED, 'amount_too_small', 'The selected payment method requires a total amount of at least $0.51.', 0 ),
 			'a charge that reaches the API' => array( 50, PaymentOutcome::STATUS_COMPLETED, null, null, 1 ),
 		);
 	}
@@ -5201,8 +5202,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$guard = new WooPaymentsDuplicatePaymentPreventionService();
 		$guard->init(
 			$api_client,
-			$guard_lifecycle ?? wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new WooPaymentsOrderDataService()
+			$guard_lifecycle ?? wc_get_container()->get( OrderPaymentLifecycleService::class )
 		);
 
 		$gateway = new WooPaymentsGateway();
@@ -10384,7 +10384,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			$customer_service,
 			$request_builder,
 			$account_service,
-			$order_data_service,
 			wc_get_container()->get( WooPaymentsOrderNoteService::class ),
 			$settings_service,
 			$ambiguity_service,

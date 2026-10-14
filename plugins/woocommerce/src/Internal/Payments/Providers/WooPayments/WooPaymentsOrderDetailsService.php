@@ -135,7 +135,7 @@ class WooPaymentsOrderDetailsService {
 	 */
 	public function build_charge_response_from_order( WC_Order $order ): array {
 		$currency      = $order->get_currency();
-		$amount        = $this->order_data_service->prepare_amount( (float) $order->get_total(), $currency );
+		$amount        = WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), $currency );
 		$date_created  = $order->get_date_created();
 		$intent_id     = (string) $order->get_meta( '_intent_id', true );
 		$intent_status = (string) $order->get_meta( '_intent_status', true );
@@ -189,7 +189,7 @@ class WooPaymentsOrderDetailsService {
 	 */
 	public function build_create_payment_intent_request_from_order( WC_Order $order, string $customer_id, string $payment_method, bool $manual_capture ): array {
 		return array(
-			'amount'               => $this->order_data_service->prepare_amount( (float) $order->get_total(), (string) $order->get_currency() ),
+			'amount'               => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), (string) $order->get_currency() ),
 			'capture_method'       => $manual_capture ? 'manual' : 'automatic',
 			'currency'             => strtolower( (string) $order->get_currency() ),
 			'customer'             => $customer_id,

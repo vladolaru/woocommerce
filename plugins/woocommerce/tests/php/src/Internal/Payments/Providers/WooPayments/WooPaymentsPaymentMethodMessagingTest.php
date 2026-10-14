@@ -6,7 +6,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodMessaging;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Product;
@@ -319,6 +318,42 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should localize each variation's amount in minor units for a variable product.
+	 */
+	public function test_localizes_variation_amounts_in_minor_units(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_currency', 'USD' );
+		$product = new \WC_Product_Variable();
+		$product->set_name( 'Variable product' );
+		$product->save();
+		$variation = new \WC_Product_Variation();
+		$variation->set_parent_id( $product->get_id() );
+		$variation->set_regular_price( '12.34' );
+		$variation->save();
+		\WC_Product_Variable::sync( $product->get_id() );
+		$this->set_current_product( wc_get_product( $product->get_id() ) );
+
+		$controller = $this->create_controller( true, array( 'card', 'affirm' ), array( 'affirm_payments' => 'active' ) );
+		ob_start();
+		$controller->render_site_messaging();
+		ob_end_clean();
+
+		$this->assertSame(
+			array(
+				'base_product'                => array(
+					'amount'   => 1234,
+					'currency' => 'USD',
+				),
+				(string) $variation->get_id() => array(
+					'amount'   => 1234,
+					'currency' => 'USD',
+				),
+			),
+			$this->get_localized_script_data()['productVariations']
+		);
+	}
+
+	/**
 	 * @testdox Should enqueue the Blocks cart BNPL plugin on the cart-block surface.
 	 */
 	public function test_enqueues_blocks_cart_bnpl_plugin_on_cart_block_surface(): void {
@@ -497,7 +532,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		$frontend_styles_service->method( 'get_styles_cache_version' )->willReturn( 'shared-styles-token' );
 
 		$controller = new WooPaymentsPaymentMethodMessaging();
-		$controller->init( $account_service, new WooPaymentsPaymentMethodRegistry(), new WooPaymentsOrderDataService(), $frontend_styles_service );
+		$controller->init( $account_service, new WooPaymentsPaymentMethodRegistry(), $frontend_styles_service );
 
 		return $controller;
 	}

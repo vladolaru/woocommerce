@@ -5,7 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use WC_Helper_Product;
 use WC_Order_Item_Fee;
 use WC_Unit_Test_Case;
@@ -62,6 +61,7 @@ class WooPaymentsLevel3ServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 2, $line_item->quantity );
 		$this->assertSame( 1000, $line_item->unit_cost );
 		$this->assertSame( 0, $line_item->discount_amount );
+		$this->assertSame( 0, $line_item->tax_amount );
 	}
 
 	/**
@@ -174,7 +174,7 @@ class WooPaymentsLevel3ServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_account_country' )->willReturn( $country );
 
 		$sut = new WooPaymentsLevel3Service();
-		$sut->init( $account_service, new WooPaymentsOrderDataService() );
+		$sut->init( $account_service );
 
 		return $sut;
 	}

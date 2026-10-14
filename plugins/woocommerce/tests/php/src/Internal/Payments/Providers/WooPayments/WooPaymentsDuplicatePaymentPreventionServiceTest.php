@@ -11,7 +11,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentConfirmationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use WC_Order;
@@ -869,7 +868,6 @@ class WooPaymentsDuplicatePaymentPreventionServiceTest extends WC_Unit_Test_Case
 		$service->init(
 			$api_client ?? $this->createStub( WooPaymentsApiClient::class ),
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new WooPaymentsOrderDataService(),
 			$this->create_intent_confirmation_service( $fee_details_note_controller )
 		);
 

@@ -6830,8 +6830,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$service = new WooPaymentsDuplicatePaymentPreventionService( $session );
 		$service->init(
 			$api_client ?? $this->createStub( WooPaymentsApiClient::class ),
-			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			new WooPaymentsOrderDataService()
+			wc_get_container()->get( OrderPaymentLifecycleService::class )
 		);
 
 		return $service;

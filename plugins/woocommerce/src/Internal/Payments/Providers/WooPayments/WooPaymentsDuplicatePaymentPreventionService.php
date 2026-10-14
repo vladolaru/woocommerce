@@ -86,13 +86,6 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	private OrderPaymentLifecycleService $lifecycle_service;
 
 	/**
-	 * WooPayments order data service.
-	 *
-	 * @var WooPaymentsOrderDataService
-	 */
-	private WooPaymentsOrderDataService $order_data_service;
-
-	/**
 	 * Intent confirmation service, which applies the attached intent's payment lifecycle event.
 	 *
 	 * @var WooPaymentsIntentConfirmationService|null
@@ -115,18 +108,15 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 *
 	 * @param WooPaymentsApiClient                      $api_client                  WooPayments API client.
 	 * @param OrderPaymentLifecycleService              $lifecycle_service           Order payment lifecycle service.
-	 * @param WooPaymentsOrderDataService               $order_data_service          WooPayments order data service.
 	 * @param WooPaymentsIntentConfirmationService|null $intent_confirmation_service Optional intent confirmation service.
 	 */
 	final public function init(
 		WooPaymentsApiClient $api_client,
 		OrderPaymentLifecycleService $lifecycle_service,
-		WooPaymentsOrderDataService $order_data_service,
 		?WooPaymentsIntentConfirmationService $intent_confirmation_service = null
 	): void {
 		$this->api_client                  = $api_client;
 		$this->lifecycle_service           = $lifecycle_service;
-		$this->order_data_service          = $order_data_service;
 		$this->intent_confirmation_service = $intent_confirmation_service;
 	}
 
@@ -590,7 +580,7 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	 */
 	public function get_amount_mismatch_error( array $intent, WC_Order $order, bool $compare_currency = false ): ?WP_Error {
 		$charged_amount       = isset( $intent['amount'] ) && is_numeric( $intent['amount'] ) ? (int) $intent['amount'] : 0;
-		$order_total_in_cents = $this->get_order_data_service()->prepare_amount( (float) $order->get_total(), (string) $order->get_currency() );
+		$order_total_in_cents = WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), (string) $order->get_currency() );
 		$charged_currency     = (string) $order->get_currency();
 		$intent_currency      = isset( $intent['currency'] ) && is_string( $intent['currency'] ) ? strtoupper( $intent['currency'] ) : '';
 		if ( $compare_currency && strtoupper( $charged_currency ) !== $intent_currency ) {
@@ -678,19 +668,6 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		}
 
 		return $this->intent_confirmation_service;
-	}
-
-	/**
-	 * Get the WooPayments order data service.
-	 *
-	 * @return WooPaymentsOrderDataService
-	 */
-	private function get_order_data_service(): WooPaymentsOrderDataService {
-		if ( ! isset( $this->order_data_service ) ) {
-			$this->order_data_service = wc_get_container()->get( WooPaymentsOrderDataService::class );
-		}
-
-		return $this->order_data_service;
 	}
 
 	/**

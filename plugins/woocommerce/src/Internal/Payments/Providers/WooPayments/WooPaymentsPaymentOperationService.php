@@ -105,13 +105,6 @@ class WooPaymentsPaymentOperationService {
 	private WooPaymentsAccountService $account_service;
 
 	/**
-	 * WooPayments order data service.
-	 *
-	 * @var WooPaymentsOrderDataService
-	 */
-	private WooPaymentsOrderDataService $order_data_service;
-
-	/**
 	 * WooPayments order note service.
 	 *
 	 * @var WooPaymentsOrderNoteService
@@ -165,7 +158,6 @@ class WooPaymentsPaymentOperationService {
 	 * @param WooPaymentsCustomerService        $customer_service         Customer service.
 	 * @param WooPaymentsIntentRequestBuilder   $request_builder          Request builder.
 	 * @param WooPaymentsAccountService         $account_service          Account service.
-	 * @param WooPaymentsOrderDataService       $order_data_service       Order data service.
 	 * @param WooPaymentsOrderNoteService       $note_service             Order note service.
 	 * @param WooPaymentsSettingsService        $settings_service         Settings service.
 	 * @param WooPaymentsChargeAmbiguityService $ambiguity_service        Charge ambiguity service.
@@ -178,7 +170,6 @@ class WooPaymentsPaymentOperationService {
 		WooPaymentsCustomerService $customer_service,
 		WooPaymentsIntentRequestBuilder $request_builder,
 		WooPaymentsAccountService $account_service,
-		WooPaymentsOrderDataService $order_data_service,
 		WooPaymentsOrderNoteService $note_service,
 		WooPaymentsSettingsService $settings_service,
 		WooPaymentsChargeAmbiguityService $ambiguity_service,
@@ -186,14 +177,13 @@ class WooPaymentsPaymentOperationService {
 		WooPaymentsLogger $logger,
 		WooPaymentsLevel3Service $level3_service
 	): void {
-		$this->api_client         = $api_client;
-		$this->customer_service   = $customer_service;
-		$this->request_builder    = $request_builder;
-		$this->account_service    = $account_service;
-		$this->order_data_service = $order_data_service;
-		$this->note_service       = $note_service;
-		$this->settings_service   = $settings_service;
-		$this->ambiguity_service  = $ambiguity_service;
+		$this->api_client        = $api_client;
+		$this->customer_service  = $customer_service;
+		$this->request_builder   = $request_builder;
+		$this->account_service   = $account_service;
+		$this->note_service      = $note_service;
+		$this->settings_service  = $settings_service;
+		$this->ambiguity_service = $ambiguity_service;
 
 		$this->refund_ambiguity_service = $refund_ambiguity_service;
 		$this->logger                   = $logger;
@@ -280,7 +270,7 @@ class WooPaymentsPaymentOperationService {
 				$payment_data = $context->get_payment_data();
 				$request      = array(
 					'charge' => $charge_id,
-					'amount' => $this->order_data_service->prepare_amount( (float) ( $payment_data['amount'] ?? 0.0 ), (string) $order->get_currency() ),
+					'amount' => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) ( $payment_data['amount'] ?? 0.0 ), (string) $order->get_currency() ),
 					'reason' => (string) ( $payment_data['reason'] ?? '' ),
 					'source' => 'woocommerce_core',
 				);
@@ -457,11 +447,11 @@ class WooPaymentsPaymentOperationService {
 		if ( $this->api_client->is_available() ) {
 			$intent_id = $this->get_order_intent_id( $order );
 			if ( '' !== $intent_id ) {
-				$amount_to_capture = $this->order_data_service->prepare_amount( $context->get_amount() ?? (float) $order->get_total(), (string) $order->get_currency() );
+				$amount_to_capture = WooPaymentsCurrencyUtils::amount_to_minor_units( $context->get_amount() ?? (float) $order->get_total(), (string) $order->get_currency() );
 				// Client 11.1.0 always captures the order total (`class-wc-payment-gateway-wcpay.php:3966, 3981`) and sends the
 				// order's Level 3 data with it (:3984-3986), so it never meets a partial capture. The order's line items add up to
 				// the order total only, so a partial capture here goes without Level 3 data.
-				$is_order_total = $this->order_data_service->prepare_amount( (float) $order->get_total(), (string) $order->get_currency() ) === $amount_to_capture;
+				$is_order_total = WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), (string) $order->get_currency() ) === $amount_to_capture;
 				try {
 					$result  = $this->api_client->capture_intention(
 						$intent_id,
@@ -1364,7 +1354,7 @@ class WooPaymentsPaymentOperationService {
 			return;
 		}
 
-		$converted_amount = $this->order_data_service->prepare_amount( (float) $order->get_total(), $currency );
+		$converted_amount = WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), $currency );
 		if ( $minimum_amount <= $converted_amount ) {
 			return;
 		}
