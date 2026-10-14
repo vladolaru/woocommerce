@@ -475,7 +475,7 @@ class WooPaymentsOverviewService {
 	 * @return array{has_active_loan:bool,loans:string[]}
 	 */
 	private function get_account_loans_projection( array $account_data ): array {
-		$account_loans = $account_data['capital'] ?? $account_data['account_loans'] ?? $account_data['accountLoans'] ?? array();
+		$account_loans = $account_data['capital'] ?? array();
 		$account_loans = is_array( $account_loans ) ? $account_loans : array();
 		$loans         = array();
 
@@ -487,8 +487,7 @@ class WooPaymentsOverviewService {
 		}
 
 		return array(
-			'has_active_loan' => $this->is_truthy( $account_loans['has_active_loan'] ?? false )
-				|| $this->is_truthy( $account_loans['hasActiveLoan'] ?? false ),
+			'has_active_loan' => $this->is_truthy( $account_loans['has_active_loan'] ?? false ),
 			'loans'           => $loans,
 		);
 	}
