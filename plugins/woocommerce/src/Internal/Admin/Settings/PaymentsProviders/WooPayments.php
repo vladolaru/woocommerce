@@ -4,6 +4,7 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 
 use Automattic\Jetpack\Connection\Manager as WPCOM_Connection_Manager;
+use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
 use Automattic\WooCommerce\Admin\PluginsHelper;
 use Automattic\WooCommerce\Admin\WCAdminHelper;
 use Automattic\WooCommerce\Enums\OrderInternalStatus;
@@ -709,6 +710,8 @@ class WooPayments extends PaymentGateway {
 	/**
 	 * Get the list of supported country codes for WooPayments.
 	 *
+	 * Without the WooPayments extension, as on a store the built-in WooPayments owns, this is core's list.
+	 *
 	 * @return array|null The list of supported countries as ISO 3166-1 alpha-2 country codes.
 	 *                    The country codes are normalized in uppercase.
 	 *                    If the list cannot be retrieved, null is returned.
@@ -720,6 +723,9 @@ class WooPayments extends PaymentGateway {
 			if ( is_array( $supported_countries ) ) {
 				return array_unique( array_map( 'strtoupper', array_keys( $supported_countries ) ) );
 			}
+
+			// WooPayments is not installed and active, use core's list of supported countries.
+			return DefaultPaymentGateways::get_wcpay_countries();
 		} catch ( Throwable $e ) {
 			// This is not a critical error, so we just ignore it.
 			// Log so we can investigate.

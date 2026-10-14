@@ -681,6 +681,29 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * A store the built-in WooPayments owns has no extension list; client 11.1.0 stores answer from
+	 * includes/class-wc-payments-utils.php:263-305, which leaves out Brazil and India.
+	 *
+	 * @testdox Without the WooPayments extension, onboarding in $country is supported: $expected.
+	 * @testWith ["US", true]
+	 *           ["ro", true]
+	 *           ["BR", false]
+	 *           ["IN", false]
+	 *
+	 * @param string $country  Business location.
+	 * @param bool   $expected Whether onboarding is supported.
+	 */
+	public function test_is_onboarding_supported_without_the_extension_uses_core_country_list( string $country, bool $expected ): void {
+		$this->mockable_proxy->register_function_mocks(
+			array(
+				'class_exists' => static fn( $class_name ) => 'WC_Payments_Utils' !== ltrim( $class_name, '\\' ) && \class_exists( $class_name ),
+			)
+		);
+
+		$this->assertSame( $expected, $this->sut->is_onboarding_supported( new WooPaymentsGateway(), $country ) );
+	}
+
+	/**
 	 * Test is_onboarding_supported returns true when no country code provided.
 	 */
 	public function test_is_onboarding_supported_without_country_code() {
