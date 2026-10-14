@@ -4,6 +4,8 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments;
 
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
@@ -117,6 +119,13 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	private ?WooPaymentsRuntimeArbiter $runtime_arbiter = null;
 
 	/**
+	 * WooPayments API client, for the settings file routes.
+	 *
+	 * @var WooPaymentsApiClient|null
+	 */
+	private ?WooPaymentsApiClient $api_client = null;
+
+	/**
 	 * Get the WooCommerce REST API namespace for the class.
 	 *
 	 * @return string
@@ -209,10 +218,11 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @param WooPaymentsAccountService|null        $account_service       Optional native WooPayments account service.
 	 * @param WooPaymentsAdminNoticeService|null    $admin_notice_service  Optional current-user settings notice service.
 	 * @param WooPaymentsApplePayDomainService|null $apple_pay_domain_service Optional Apple Pay domain service.
+	 * @param WooPaymentsApiClient|null             $api_client            Optional WooPayments API client.
 	 *
 	 * @internal
 	 */
-	final public function init( WooPaymentsService $woopayments, ?WooPaymentsSettingsService $settings_service = null, ?WooPaymentsRuntimeArbiter $runtime_arbiter = null, ?WooPaymentsPmPromotionsService $pm_promotions_service = null, ?WooPaymentsOverviewService $overview_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsAdminNoticeService $admin_notice_service = null, ?WooPaymentsApplePayDomainService $apple_pay_domain_service = null ): void {
+	final public function init( WooPaymentsService $woopayments, ?WooPaymentsSettingsService $settings_service = null, ?WooPaymentsRuntimeArbiter $runtime_arbiter = null, ?WooPaymentsPmPromotionsService $pm_promotions_service = null, ?WooPaymentsOverviewService $overview_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsAdminNoticeService $admin_notice_service = null, ?WooPaymentsApplePayDomainService $apple_pay_domain_service = null, ?WooPaymentsApiClient $api_client = null ): void {
 		$this->woopayments           = $woopayments;
 		$this->settings_service      = $settings_service;
 		$this->runtime_arbiter       = $runtime_arbiter;
@@ -222,6 +232,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 		$this->admin_notice_service  = $admin_notice_service;
 
 		$this->apple_pay_domain_service = $apple_pay_domain_service;
+		$this->api_client               = $api_client;
 	}
 
 	/**
@@ -1033,12 +1044,11 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @return WP_Error|WP_REST_Response The response or error.
 	 */
 	protected function upload_native_settings_file( WP_REST_Request $request ) {
-		$result = $this->get_settings_service()->upload_file( $request );
-		if ( is_wp_error( $result ) ) {
-			return $result;
+		try {
+			return rest_ensure_response( $this->get_api_client()->upload_file( $request ) );
+		} catch ( WooPaymentsApiException $exception ) {
+			return $exception->to_wp_error();
 		}
-
-		return rest_ensure_response( $result );
 	}
 
 	/**
@@ -1049,15 +1059,11 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @return WP_Error|WP_REST_Response The response or error.
 	 */
 	protected function get_native_settings_file_details( WP_REST_Request $request ) {
-		$result = $this->get_settings_service()->get_file(
-			(string) $request->get_param( 'file_id' ),
-			(bool) $request->get_param( 'as_account' )
-		);
-		if ( is_wp_error( $result ) ) {
-			return $result;
+		try {
+			return rest_ensure_response( $this->get_api_client()->get_file( (string) $request->get_param( 'file_id' ), (bool) $request->get_param( 'as_account' ) ) );
+		} catch ( WooPaymentsApiException $exception ) {
+			return $exception->to_wp_error();
 		}
-
-		return rest_ensure_response( $result );
 	}
 
 	/**
@@ -1068,15 +1074,11 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @return WP_Error|WP_REST_Response The response or error.
 	 */
 	protected function get_native_settings_file_contents( WP_REST_Request $request ) {
-		$result = $this->get_settings_service()->get_file_contents(
-			(string) $request->get_param( 'file_id' ),
-			(bool) $request->get_param( 'as_account' )
-		);
-		if ( is_wp_error( $result ) ) {
-			return $result;
+		try {
+			return rest_ensure_response( $this->get_api_client()->get_file_contents( (string) $request->get_param( 'file_id' ), (bool) $request->get_param( 'as_account' ) ) );
+		} catch ( WooPaymentsApiException $exception ) {
+			return $exception->to_wp_error();
 		}
-
-		return rest_ensure_response( $result );
 	}
 
 	/**
@@ -1092,9 +1094,10 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 		$purpose    = $this->get_cached_file_purpose( $file_id, $as_account );
 
 		if ( '' === $purpose ) {
-			$file = $this->get_settings_service()->get_file( $file_id, $as_account );
-			if ( is_wp_error( $file ) ) {
-				return $this->get_file_error_response( $file );
+			try {
+				$file = $this->get_api_client()->get_file( $file_id, $as_account );
+			} catch ( WooPaymentsApiException $exception ) {
+				return $this->get_file_error_response( $exception->to_wp_error() );
 			}
 
 			$purpose = isset( $file['purpose'] ) && is_scalar( $file['purpose'] ) ? (string) $file['purpose'] : '';
@@ -1116,9 +1119,10 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 			}
 		}
 
-		$contents = $this->get_settings_service()->get_file_contents( $file_id, $as_account );
-		if ( is_wp_error( $contents ) ) {
-			return $this->get_file_error_response( $contents );
+		try {
+			$contents = $this->get_api_client()->get_file_contents( $file_id, $as_account );
+		} catch ( WooPaymentsApiException $exception ) {
+			return $this->get_file_error_response( $exception->to_wp_error() );
 		}
 
 		$file_content = isset( $contents['file_content'] ) && is_scalar( $contents['file_content'] ) ? (string) $contents['file_content'] : '';
@@ -1218,6 +1222,19 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 			$error->get_error_message(),
 			array( 'status' => $status )
 		);
+	}
+
+	/**
+	 * Get the WooPayments API client.
+	 *
+	 * @return WooPaymentsApiClient
+	 */
+	private function get_api_client(): WooPaymentsApiClient {
+		if ( ! $this->api_client instanceof WooPaymentsApiClient ) {
+			$this->api_client = wc_get_container()->get( WooPaymentsApiClient::class );
+		}
+
+		return $this->api_client;
 	}
 
 	/**

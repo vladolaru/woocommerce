@@ -3053,34 +3053,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should delegate file upload to the native API client.
-	 */
-	public function test_upload_file_delegates_to_native_api_client(): void {
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/file' );
-		$request->set_param( 'purpose', 'business_logo' );
-
-		$result = $this->sut->upload_file( $request );
-
-		$this->assertSame( array( 'id' => 'file_test_logo' ), $result );
-		$this->assertSame( $request, $this->api_client->last_upload_request );
-	}
-
-	/**
-	 * @testdox Should delegate file details and contents to the native API client.
-	 */
-	public function test_get_file_details_and_contents_delegate_to_native_api_client(): void {
-		$file     = $this->sut->get_file( 'file_test_logo', false );
-		$contents = $this->sut->get_file_contents( 'file_test_logo', false );
-
-		$this->assertSame( $this->api_client->file_response, $file );
-		$this->assertSame( 'file_test_logo', $this->api_client->last_file_id );
-		$this->assertFalse( $this->api_client->last_file_as_account );
-		$this->assertSame( $this->api_client->file_contents_response, $contents );
-		$this->assertSame( 'file_test_logo', $this->api_client->last_file_contents_id );
-		$this->assertFalse( $this->api_client->last_file_contents_as_account );
-	}
-
-	/**
 	 * Create a native account service for a connected store whose account fetches fail, so reads serve the seeded cache.
 	 *
 	 * @return WooPaymentsAccountService

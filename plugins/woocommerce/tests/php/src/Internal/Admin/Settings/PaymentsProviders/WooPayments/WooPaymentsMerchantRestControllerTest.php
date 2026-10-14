@@ -6,6 +6,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Admin\Settings\PaymentsProviders
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsMerchantRestController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsOverviewService;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
@@ -68,6 +70,11 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	private $mock_account_service;
 
 	/**
+	 * @var MockObject|WooPaymentsApiClient
+	 */
+	private $mock_api_client;
+
+	/**
 	 * The ID of the store admin user.
 	 *
 	 * @var int
@@ -120,8 +127,13 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 			->method( 'get_account_country' )
 			->willReturnCallback( fn() => $this->account_country );
 
+		$this->mock_api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'upload_file', 'get_file', 'get_file_contents' ) )
+			->getMock();
+
 		$this->sut = new WooPaymentsMerchantRestController();
-		$this->sut->init( $this->mock_woopayments_service, $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service );
+		$this->sut->init( $this->mock_woopayments_service, $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, null, null, $this->mock_api_client );
 		$this->server = $this->create_rest_server_with_routes(
 			array(
 				function () {
@@ -1606,10 +1618,10 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should delegate native WooPayments settings file uploads.
+	 * @testdox Should upload WooPayments settings files through the API client.
 	 */
-	public function test_upload_native_settings_file_delegates_to_settings_service(): void {
-		$this->mock_settings_service
+	public function test_upload_settings_file_calls_the_api_client(): void {
+		$this->mock_api_client
 			->expects( $this->once() )
 			->method( 'upload_file' )
 			->with( $this->isInstanceOf( WP_REST_Request::class ) )
@@ -1623,10 +1635,10 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should delegate native WooPayments settings file detail and content routes.
+	 * @testdox Should read WooPayments settings file details and contents through the API client.
 	 */
-	public function test_get_native_settings_file_detail_and_content_routes_delegate_to_settings_service(): void {
-		$this->mock_settings_service
+	public function test_settings_file_detail_and_content_routes_call_the_api_client(): void {
+		$this->mock_api_client
 			->expects( $this->once() )
 			->method( 'get_file' )
 			->with( 'file_test_logo', false )
@@ -1636,7 +1648,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 					'purpose' => 'business_logo',
 				)
 			);
-		$this->mock_settings_service
+		$this->mock_api_client
 			->expects( $this->once() )
 			->method( 'get_file_contents' )
 			->with( 'file_test_logo', true )
@@ -1661,6 +1673,48 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A platform failure "$code" with status $platform_status on $method $path answers $expected_status.
+	 * @dataProvider file_route_failure_provider
+	 *
+	 * @param string $method          HTTP method.
+	 * @param string $path            Route path.
+	 * @param string $api_method      API client method the route calls.
+	 * @param string $code            Platform error code.
+	 * @param int    $platform_status Platform HTTP status.
+	 * @param int    $expected_status Expected route status.
+	 */
+	public function test_settings_file_routes_answer_platform_failures_with_a_4xx_or_5xx( string $method, string $path, string $api_method, string $code, int $platform_status, int $expected_status ): void {
+		$this->mock_api_client
+			->expects( $this->once() )
+			->method( $api_method )
+			->willThrowException( new WooPaymentsApiException( 'Platform failure.', $code, $platform_status ) );
+
+		$response = $this->server->dispatch( new WP_REST_Request( $method, $path ) );
+
+		$this->assertSame( $expected_status, $response->get_status() );
+		$this->assertSame( $code, $response->get_data()['code'] );
+		$this->assertSame( 'Platform failure.', $response->get_data()['message'] );
+	}
+
+	/**
+	 * Provide file route failures. Like the other admin routes, the routes keep a 400-599 status and answer 500 for any
+	 * other, as an unreadable 200 answer (WooPaymentsApiClient's wcpay_unparseable_or_null_body) or an upload whose body
+	 * could not be encoded (status 0). With the status passed through, the logo upload read those as a success.
+	 *
+	 * @return array<string,array{string,string,string,string,int,int}>
+	 */
+	public function file_route_failure_provider(): array {
+		return array(
+			'details, missing file'         => array( 'GET', '/wc/v3/payments/file/file_missing/details', 'get_file', 'resource_missing', 404, 404 ),
+			'details, unreadable answer'    => array( 'GET', '/wc/v3/payments/file/file_test_logo/details', 'get_file', 'wcpay_unparseable_or_null_body', 200, 500 ),
+			'content, unreadable answer'    => array( 'GET', '/wc/v3/payments/file/file_test_logo/content', 'get_file_contents', 'wcpay_unparseable_or_null_body', 200, 500 ),
+			'upload, unreadable answer'     => array( 'POST', '/wc/v3/payments/file', 'upload_file', 'wcpay_evidence_file_upload_error', 200, 500 ),
+			'upload, unencodable body'      => array( 'POST', '/wc/v3/payments/file', 'upload_file', 'wcpay_evidence_file_upload_error', 0, 500 ),
+			'upload, platform server error' => array( 'POST', '/wc/v3/payments/file', 'upload_file', 'wcpay_evidence_file_upload_error', 502, 502 ),
+		);
+	}
+
+	/**
 	 * @testdox Should serve public WooPayments business logo files without payment manager permissions.
 	 */
 	public function test_get_native_public_settings_file_serves_public_logo_without_permissions(): void {
@@ -1671,7 +1725,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 		);
 		add_filter( 'user_has_cap', $filter_callback );
 
-		$this->mock_settings_service
+		$this->mock_api_client
 			->expects( $this->once() )
 			->method( 'get_file' )
 			->with( 'file_test_logo', false )
@@ -1681,7 +1735,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 					'purpose' => 'business_logo',
 				)
 			);
-		$this->mock_settings_service
+		$this->mock_api_client
 			->expects( $this->once() )
 			->method( 'get_file_contents' )
 			->with( 'file_test_logo', false )
@@ -1707,18 +1761,12 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should normalize missing public WooPayments files to a not found response.
 	 */
 	public function test_get_native_public_settings_file_normalizes_missing_file_errors(): void {
-		$this->mock_settings_service
+		$this->mock_api_client
 			->expects( $this->once() )
 			->method( 'get_file' )
 			->with( 'file_missing', false )
-			->willReturn(
-				new WP_Error(
-					'resource_missing',
-					'No such file.',
-					array( 'status' => WP_Http::INTERNAL_SERVER_ERROR )
-				)
-			);
-		$this->mock_settings_service
+			->willThrowException( new WooPaymentsApiException( 'No such file.', 'resource_missing', WP_Http::INTERNAL_SERVER_ERROR ) );
+		$this->mock_api_client
 			->expects( $this->never() )
 			->method( 'get_file_contents' );
 
@@ -1733,7 +1781,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should normalize public WooPayments file content errors to an internal error response.
 	 */
 	public function test_get_native_public_settings_file_normalizes_content_errors(): void {
-		$this->mock_settings_service
+		$this->mock_api_client
 			->expects( $this->once() )
 			->method( 'get_file' )
 			->with( 'file_test_logo', false )
@@ -1743,17 +1791,11 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 					'purpose' => 'business_logo',
 				)
 			);
-		$this->mock_settings_service
+		$this->mock_api_client
 			->expects( $this->once() )
 			->method( 'get_file_contents' )
 			->with( 'file_test_logo', false )
-			->willReturn(
-				new WP_Error(
-					'provider_timeout',
-					'Unable to retrieve file contents.',
-					array( 'status' => WP_Http::BAD_GATEWAY )
-				)
-			);
+			->willThrowException( new WooPaymentsApiException( 'Unable to retrieve file contents.', 'provider_timeout', WP_Http::BAD_GATEWAY ) );
 
 		$request  = new WP_REST_Request( 'GET', '/wc/v3/payments/file/file_test_logo' );
 		$response = $this->server->dispatch( $request );
@@ -1773,7 +1815,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 		);
 		add_filter( 'user_has_cap', $filter_callback );
 
-		$this->mock_settings_service
+		$this->mock_api_client
 			->expects( $this->once() )
 			->method( 'get_file' )
 			->with( 'file_private', false )
@@ -1783,7 +1825,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 					'purpose' => 'dispute_evidence',
 				)
 			);
-		$this->mock_settings_service
+		$this->mock_api_client
 			->expects( $this->never() )
 			->method( 'get_file_contents' );
 
@@ -1811,7 +1853,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 		delete_transient( 'wcpay_file_purpose_file_reclassified_0' );
 
 		// The provider has reclassified this file from public to private since it was last served.
-		$this->mock_settings_service
+		$this->mock_api_client
 			->expects( $this->once() )
 			->method( 'get_file' )
 			->with( 'file_reclassified', false )
@@ -1821,7 +1863,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 					'purpose' => 'dispute_evidence',
 				)
 			);
-		$this->mock_settings_service
+		$this->mock_api_client
 			->expects( $this->never() )
 			->method( 'get_file_contents' );
 
@@ -1848,7 +1890,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register the public file REST serve filter at most once across repeated dispatches.
 	 */
 	public function test_get_native_public_settings_file_registers_serve_filter_once(): void {
-		$this->mock_settings_service
+		$this->mock_api_client
 			->method( 'get_file' )
 			->with( 'file_test_logo', false )
 			->willReturn(
@@ -1857,7 +1899,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 					'purpose' => 'business_logo',
 				)
 			);
-		$this->mock_settings_service
+		$this->mock_api_client
 			->method( 'get_file_contents' )
 			->with( 'file_test_logo', false )
 			->willReturn(

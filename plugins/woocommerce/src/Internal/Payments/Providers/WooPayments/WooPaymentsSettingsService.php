@@ -13,7 +13,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Throwable;
 use WP_Error;
-use WP_REST_Request;
 
 /**
  * Provides the native WooPayments settings contract consumed by the hoisted settings store.
@@ -746,51 +745,6 @@ class WooPaymentsSettingsService {
 		update_option( $option_name, $value );
 
 		return true;
-	}
-
-	/**
-	 * Upload a file through the native API client.
-	 *
-	 * @param WP_REST_Request $request Request object.
-	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
-	 * @return array<string,mixed>|WP_Error
-	 */
-	public function upload_file( WP_REST_Request $request ) {
-		try {
-			return $this->api_client->upload_file( $request );
-		} catch ( WooPaymentsApiException $e ) {
-			return $this->api_exception_to_wp_error( $e );
-		}
-	}
-
-	/**
-	 * Get provider file details.
-	 *
-	 * @param string $file_id    Provider file ID.
-	 * @param bool   $as_account Whether to fetch the file as the connected account.
-	 * @return array<string,mixed>|WP_Error
-	 */
-	public function get_file( string $file_id, bool $as_account = false ) {
-		try {
-			return $this->api_client->get_file( $file_id, $as_account );
-		} catch ( WooPaymentsApiException $e ) {
-			return $this->api_exception_to_wp_error( $e );
-		}
-	}
-
-	/**
-	 * Get provider file contents.
-	 *
-	 * @param string $file_id    Provider file ID.
-	 * @param bool   $as_account Whether to fetch the file as the connected account.
-	 * @return array<string,mixed>|WP_Error
-	 */
-	public function get_file_contents( string $file_id, bool $as_account = false ) {
-		try {
-			return $this->api_client->get_file_contents( $file_id, $as_account );
-		} catch ( WooPaymentsApiException $e ) {
-			return $this->api_exception_to_wp_error( $e );
-		}
 	}
 
 	/**
