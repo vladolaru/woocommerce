@@ -160,9 +160,6 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			array(
 				WooPaymentsAccountService::class,
 				WooPaymentsWebhookReliabilityService::class,
-			),
-			array_slice( $connected_rest_controllers, 0, 1 ),
-			array(
 				WooPaymentsCustomerService::class,
 				WooPaymentsOrderAdminActionsController::class,
 				WooPaymentsWooPayOrderStatusSync::class,
@@ -171,7 +168,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 				WooPaymentsWooPayExtensionSync::class,
 				WooPaymentsApplePayDomainService::class,
 			),
-			array_slice( $connected_rest_controllers, 1 ),
+			$connected_rest_controllers,
 			array(
 				WooPaymentsFraudOrderTrackingService::class,
 				WooPaymentsOperationalQueueService::class,
