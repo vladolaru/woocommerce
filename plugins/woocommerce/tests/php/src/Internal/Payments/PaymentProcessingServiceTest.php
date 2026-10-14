@@ -1192,6 +1192,57 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A callback that throws while a subscription's payment-method change is sent keeps the subscription's status; a checkout order fails: $_dataName.
+	 *
+	 * An extension's wcpay_metadata_from_order callback runs while the SetupIntent request is built, so its exception
+	 * escapes the charge before anything is sent. Client 11.1.0 catches any exception there and skips update_status() on a
+	 * payment-method change (includes/class-wc-payment-gateway-wcpay.php:1272, :1326-1328).
+	 *
+	 * @testWith ["payment-method change", true, "on-hold"]
+	 *           ["checkout", false, "failed"]
+	 *
+	 * @param string $label           Which request it is.
+	 * @param bool   $is_change       Whether the request changes a subscription's payment method.
+	 * @param string $expected_status Order status after the failure.
+	 */
+	public function test_throwing_callback_keeps_the_status_of_a_subscription_being_changed( string $label, bool $is_change, string $expected_status ): void {
+		unset( $label );
+		$order = $this->create_woopayments_order( '0.00' );
+		$order->set_status( 'on-hold' );
+		$order->save();
+		$http_client = new FakeWooPaymentsHttpClient();
+		add_filter(
+			'wcpay_metadata_from_order',
+			static function () {
+				throw new \Exception( 'An extension failed.' );
+			}
+		);
+
+		$outcome = $this->sut->process_checkout_outcome(
+			PaymentOperationContext::for_checkout(
+				$order,
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
+				'pm_card_visa',
+				array(
+					'payment_token'       => 'new',
+					'save_payment_method' => true,
+				),
+				$is_change ? array(
+					WooPaymentsIntentRequestBuilder::PROVIDER_DATA_RECURRING_PAYMENT => true,
+					WooPaymentsIntentRequestBuilder::PROVIDER_DATA_SUBSCRIPTION_PAYMENT_METHOD_CHANGE => true,
+				) : array()
+			),
+			$this->timeout_transport_provider( $http_client )
+		);
+		$order   = wc_get_order( $order->get_id() );
+
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
+		$this->assertSame( array(), $http_client->requests, 'The callback throws before the request is sent.' );
+		$this->assertSame( $expected_status, $order->get_status() );
+	}
+
+	/**
 	 * @testdox A payment sends the payer's own customer, never one left on the order, and refreshes nothing before it: $_dataName.
 	 *
 	 * Client 11.1.0 resolves the customer from the order's user at checkout, order-pay and payment-method change
