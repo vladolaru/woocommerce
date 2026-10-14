@@ -437,15 +437,16 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Clears the WP-Cron events the WooPayments extension leaves behind with no handler: $_dataName.
+	 * @testdox Clears the WooPayments extension's WP-Cron events only when nothing handles them: $_dataName.
 	 *
 	 * @dataProvider extension_cron_residue_provider
 	 *
 	 * @param string[] $hooks       The extension's cron hooks.
 	 * @param string   $schedule    The schedule the extension registered for them.
 	 * @param string   $change_name The change normalization reports.
+	 * @param bool     $handled     Whether a handler is registered for the hooks, as a Sync that still runs registers one.
 	 */
-	public function test_run_clears_the_extension_cron_residue( array $hooks, string $schedule, string $change_name ): void {
+	public function test_run_clears_only_the_extension_cron_events_nothing_handles( array $hooks, string $schedule, string $change_name, bool $handled ): void {
 		$this->seed_legacy_options();
 		// The extension registered its schedule while it was active; after deactivation nothing registers it.
 		$add_schedule = static function ( array $schedules ) use ( $schedule ): array {
@@ -458,29 +459,37 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 		add_filter( 'cron_schedules', $add_schedule ); // phpcs:ignore WordPress.WP.CronInterval.ChangeDetected -- Recreates the extension's schedule for the fixture.
 		foreach ( $hooks as $hook ) {
 			wp_schedule_event( time(), $schedule, $hook );
+			if ( $handled ) {
+				add_action( $hook, '__return_null' );
+			}
 		}
 		remove_filter( 'cron_schedules', $add_schedule );
 
 		$summary = $this->create_runner()->run();
 
-		$this->assertContains( $change_name, $summary['changes'] );
+		$this->assertSame( ! $handled, in_array( $change_name, $summary['changes'], true ) );
 		foreach ( $hooks as $hook ) {
-			$this->assertFalse( wp_next_scheduled( $hook ), "The extension's $hook event must be cleared." );
+			$scheduled = false !== wp_next_scheduled( $hook );
+			$this->assertSame( $handled, $scheduled, $handled ? "The handled $hook event must be kept." : "The orphaned $hook event must be cleared." );
 		}
 	}
 
 	/**
-	 * The extension's cron events, the schedule they ran on and the change normalization reports for them.
+	 * The extension's cron events, the schedule they ran on, the change normalization reports for them and whether a
+	 * handler is registered.
 	 *
-	 * @return array<string, array{0: string[], 1: string, 2: string}>
+	 * @return array<string, array{0: string[], 1: string, 2: string, 3: bool}>
 	 */
 	public function extension_cron_residue_provider(): array {
 		return array(
 			// Client 11.1.0 includes/woopay/class-woopay-scheduler.php:63-68 schedules it daily; :51, :57-59 clear it.
-			'WooPay compatibility check' => array( array( 'validate_woopay_compatibility' ), 'daily', 'legacy_woopay_compatibility_cron' ),
+			'WooPay compatibility check'   => array( array( 'validate_woopay_compatibility' ), 'daily', 'legacy_woopay_compatibility_cron', false ),
 			// Client 11.1.0 bundles jetpack-sync 4.24.1: vendor/automattic/jetpack-sync/src/class-actions.php:81 names the
 			// schedule, :672 registers it (300 seconds), :1033-1050 and :1067-1085 schedule both hooks on it.
-			'Jetpack Sync'               => array( array( 'jetpack_sync_cron', 'jetpack_sync_full_cron' ), 'jetpack_sync_interval', 'retired_jetpack_sync_cron' ),
+			'Jetpack Sync with no handler' => array( array( 'jetpack_sync_cron', 'jetpack_sync_full_cron' ), 'jetpack_sync_interval', 'retired_jetpack_sync_cron', false ),
+			// A Sync that still runs in the request (the extension's before deactivation, Jetpack's) has added its handlers
+			// (jetpack-sync class-actions.php:1067-1071), as on the cutover job's finalization run.
+			'Jetpack Sync that still runs' => array( array( 'jetpack_sync_cron', 'jetpack_sync_full_cron' ), 'jetpack_sync_interval', 'retired_jetpack_sync_cron', true ),
 		);
 	}
 
