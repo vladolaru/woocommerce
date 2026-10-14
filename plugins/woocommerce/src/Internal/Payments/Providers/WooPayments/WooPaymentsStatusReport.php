@@ -857,6 +857,9 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	/**
 	 * Get locations where an express checkout method is enabled.
 	 *
+	 * A location setting never saved reads as its form default, every method, as client 11.1.0 reads it
+	 * (`includes/class-wc-payments-status.php:66-78`).
+	 *
 	 * @param string $method_id Method ID.
 	 * @return string[]
 	 */
@@ -864,7 +867,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		$locations = array();
 
 		foreach ( array( 'product', 'cart', 'checkout' ) as $location ) {
-			$setting = $this->get_account_service()->get_gateway_setting( 'express_checkout_' . $location . '_methods', array() );
+			$setting = $this->get_account_service()->get_gateway_setting( 'express_checkout_' . $location . '_methods' );
 			$methods = $this->sanitize_string_list( is_array( $setting ) ? $setting : array() );
 			if ( in_array( $method_id, $methods, true ) ) {
 				$locations[] = $location;

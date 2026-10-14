@@ -653,6 +653,31 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The status report lists every express location for location settings never saved ($row).
+	 *
+	 * A missing location setting reads as its form default, all three locations, as client 11.1.0
+	 * `includes/class-wc-payments-status.php:66-78` reads it (`includes/class-wc-payment-gateway-wcpay.php:510-540`).
+	 *
+	 * @testWith ["WooPay"]
+	 *           ["Apple Pay / Google Pay"]
+	 *
+	 * @param string $row Status report row.
+	 */
+	public function test_status_report_lists_every_express_location_for_settings_never_saved( string $row ): void {
+		$drop_locations = static function ( $settings ) {
+			unset( $settings['express_checkout_product_methods'], $settings['express_checkout_cart_methods'], $settings['express_checkout_checkout_methods'] );
+
+			return $settings;
+		};
+		add_filter( 'option_woocommerce_woocommerce_payments_settings', $drop_locations );
+
+		$html = $this->render_report_for_connected_store( array( 'platform_checkout_eligible' => true ) );
+
+		remove_filter( 'option_woocommerce_woocommerce_payments_settings', $drop_locations );
+		$this->assertSame( 'Enabled (product,cart,checkout)', $this->get_status_tables( $html )['WooPayments'][ $row ] );
+	}
+
+	/**
 	 * @testdox The status report names the advanced fraud filters in force, as the client does.
 	 *
 	 * Client 11.1.0 `includes/class-wc-payments-status.php:554-594`.
