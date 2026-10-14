@@ -242,17 +242,6 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
-	 * Get the connected WooPay merchant ID.
-	 *
-	 * @return string
-	 *
-	 * @since 11.0.0
-	 */
-	public function get_woopay_merchant_id(): string {
-		return $this->get_store_blog_id();
-	}
-
-	/**
 	 * Resolve the current user for WooPay-originated Store API requests.
 	 *
 	 * Mirrors the WooPayments plugin's WooPay_Session::determine_current_user_for_woopay():
@@ -266,7 +255,7 @@ class WooPaymentsWooPaySessionService {
 	 * @since 11.0.0
 	 */
 	public function determine_current_user_for_woopay( $user ) {
-		if ( ! $this->is_request_from_woopay() || ! $this->is_store_api_request() ) {
+		if ( ! $this->is_request_from_woopay() || ! WooPaymentsStoreApiRequestUtils::is_store_api_request() ) {
 			return $user;
 		}
 
@@ -391,7 +380,7 @@ class WooPaymentsWooPaySessionService {
 			return;
 		}
 
-		if ( ! $this->is_request_from_woopay() || ! $this->is_store_api_request() ) {
+		if ( ! $this->is_request_from_woopay() || ! WooPaymentsStoreApiRequestUtils::is_store_api_request() ) {
 			return;
 		}
 
@@ -445,7 +434,7 @@ class WooPaymentsWooPaySessionService {
 	 * @return mixed The advocate ID, false when a WooPay order carries none.
 	 */
 	public function automatewoo_refer_a_friend_referral_from_parameter( $advocate_id ) {
-		if ( ! $this->is_request_from_woopay() || ! $this->is_store_api_request() || ! $this->is_woopay_enabled() ) {
+		if ( ! $this->is_request_from_woopay() || ! WooPaymentsStoreApiRequestUtils::is_store_api_request() || ! $this->is_woopay_enabled() ) {
 			return $advocate_id;
 		}
 
@@ -476,7 +465,7 @@ class WooPaymentsWooPaySessionService {
 	public function woopay_trial_subscriptions_handler( $needs_payment, $order, $_unused_valid_order_statuses = array() ) {
 		unset( $_unused_valid_order_statuses );
 
-		if ( ! $this->is_request_from_woopay() || ! $this->is_store_api_request() || ! $this->is_woopay_enabled() ) {
+		if ( ! $this->is_request_from_woopay() || ! WooPaymentsStoreApiRequestUtils::is_store_api_request() || ! $this->is_woopay_enabled() ) {
 			return $needs_payment;
 		}
 
@@ -499,7 +488,7 @@ class WooPaymentsWooPaySessionService {
 	 * @since 11.2.0
 	 */
 	public function refresh_woopay_browser_session_cache(): void {
-		if ( ! $this->is_request_from_woopay() || ! $this->is_store_api_request() || ! $this->is_woopay_enabled() ) {
+		if ( ! $this->is_request_from_woopay() || ! WooPaymentsStoreApiRequestUtils::is_store_api_request() || ! $this->is_woopay_enabled() ) {
 			return;
 		}
 
@@ -737,15 +726,6 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
-	 * Tell whether the current request targets a Store API route the WooPay chain handles.
-	 *
-	 * @return bool
-	 */
-	private function is_store_api_request(): bool {
-		return WooPaymentsStoreApiRequestUtils::is_store_api_request();
-	}
-
-	/**
 	 * Get the validated Cart-Token payload from the current request.
 	 *
 	 * @return array<string,mixed>|null
@@ -827,18 +807,6 @@ class WooPaymentsWooPaySessionService {
 				$this->get_font_rules_from_request( $request )
 			)
 		);
-	}
-
-	/**
-	 * Get session data for the WooPay REST callback.
-	 *
-	 * @param string|null          $email           Shopper email.
-	 * @param WP_REST_Request|null $woopay_request  WooPay REST request.
-	 * @phpstan-param WP_REST_Request<array<string,mixed>>|null $woopay_request
-	 * @return array<string,mixed>
-	 */
-	public function get_session_data( ?string $email = null, ?WP_REST_Request $woopay_request = null ): array {
-		return $this->get_init_session_request( $email, null, $woopay_request );
 	}
 
 	/**
@@ -1072,7 +1040,7 @@ class WooPaymentsWooPaySessionService {
 	 * @param array<string,mixed> $request Request data.
 	 */
 	public function set_woopay_phone_session_data( array $request ): void {
-		$session = $this->get_wc_session();
+		$session = WooPaymentsSessionService::get_wc_session();
 		if ( null === $session ) {
 			return;
 		}
@@ -1107,7 +1075,7 @@ class WooPaymentsWooPaySessionService {
 	 * Clear WooPay session data.
 	 */
 	public function clear_woopay_session_data(): void {
-		$session = $this->get_wc_session();
+		$session = WooPaymentsSessionService::get_wc_session();
 		if ( null !== $session ) {
 			$session->set( self::WOOPAY_SESSION_KEY, null );
 		}
@@ -1119,7 +1087,7 @@ class WooPaymentsWooPaySessionService {
 	 * @return mixed
 	 */
 	public function get_woopay_session_data() {
-		$session = $this->get_wc_session();
+		$session = WooPaymentsSessionService::get_wc_session();
 
 		return null === $session ? null : $session->get( self::WOOPAY_SESSION_KEY );
 	}
@@ -1166,7 +1134,7 @@ class WooPaymentsWooPaySessionService {
 			'woopayHost'                        => $this->get_woopay_url(),
 			'testMode'                          => $this->get_account_service()->is_test_mode_enabled(),
 			'wcpayVersionNumber'                => WooPaymentsClientVersion::VERSION,
-			'woopayMerchantId'                  => $this->get_woopay_merchant_id(),
+			'woopayMerchantId'                  => $this->get_store_blog_id(),
 			'initWooPayNonce'                   => wp_create_nonce( 'wcpay_init_woopay_nonce' ),
 			'woopaySessionNonce'                => wp_create_nonce( 'woopay_session_nonce' ),
 			'woopaySignatureNonce'              => wp_create_nonce( 'woopay_signature_nonce' ),
@@ -1227,7 +1195,7 @@ class WooPaymentsWooPaySessionService {
 			'woopayHost'                    => $this->get_woopay_url(),
 			'testMode'                      => $this->get_account_service()->is_test_mode_enabled(),
 			'woopaySessionNonce'            => wp_create_nonce( 'woopay_session_nonce' ),
-			'woopayMerchantId'              => $this->get_woopay_merchant_id(),
+			'woopayMerchantId'              => $this->get_store_blog_id(),
 			'isWooPayDirectCheckoutEnabled' => $this->is_woopay_direct_checkout_enabled(),
 			'platformTrackerNonce'          => wp_create_nonce( 'platform_tracks_nonce' ),
 			'ajaxUrl'                       => admin_url( 'admin-ajax.php' ),
@@ -1366,7 +1334,7 @@ class WooPaymentsWooPaySessionService {
 	 * @return array<string,mixed>
 	 */
 	public function maybe_add_woopay_user_metadata( array $metadata, \WC_Order $order ): array {
-		$should_save_woopay_user = $this->get_woopay_save_user_flag();
+		$should_save_woopay_user = $this->should_save_user_in_woopay();
 		$woopay_phone            = $this->get_woopay_phone();
 
 		if ( ! $should_save_woopay_user || '' === $woopay_phone ) {
@@ -1661,7 +1629,7 @@ class WooPaymentsWooPaySessionService {
 	 * @return mixed The order ID, unchanged, or a WP_Error that WC_Checkout::process_checkout() shows as the checkout error.
 	 */
 	public function maybe_use_store_api_draft_order_id( $order_id ) {
-		$session = $this->get_wc_session();
+		$session = WooPaymentsSessionService::get_wc_session();
 		if ( ! Constants::is_true( 'WOOCOMMERCE_CHECKOUT' ) || ! empty( $order_id ) || null === $session || absint( $session->get( 'order_awaiting_payment' ) ) > 0 ) {
 			return $order_id;
 		}
@@ -2184,15 +2152,6 @@ class WooPaymentsWooPaySessionService {
 	 * @since 11.0.0
 	 */
 	public function should_save_user_in_woopay(): bool {
-		return $this->get_woopay_save_user_flag();
-	}
-
-	/**
-	 * Tell whether the shopper opted to save their details in WooPay.
-	 *
-	 * @return bool
-	 */
-	private function get_woopay_save_user_flag(): bool {
 		$value = $this->get_posted_or_session_value( 'save_user_in_woopay', false );
 
 		return filter_var( $value, FILTER_VALIDATE_BOOLEAN );
@@ -2340,7 +2299,7 @@ class WooPaymentsWooPaySessionService {
 	 * @return string
 	 */
 	private function get_store_api_token(): string {
-		$session = $this->get_wc_session();
+		$session = WooPaymentsSessionService::get_wc_session();
 		if ( null === $session || ! class_exists( CartTokenUtils::class ) ) {
 			return '';
 		}
@@ -2650,19 +2609,6 @@ class WooPaymentsWooPaySessionService {
 		}
 
 		return is_array( $font_rules ) ? $this->sanitize_woopay_font_rules( $font_rules ) : array();
-	}
-
-	/**
-	 * Get WooCommerce session when available.
-	 *
-	 * @return \WC_Session|null
-	 */
-	private function get_wc_session(): ?\WC_Session {
-		if ( ! function_exists( 'WC' ) || ! WC() || ! WC()->session instanceof \WC_Session ) {
-			return null;
-		}
-
-		return WC()->session;
 	}
 
 	/**

@@ -301,7 +301,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			$email = $request->get_param( 'email' );
 
 			return new WP_REST_Response(
-				$this->session_service->get_session_data( is_scalar( $email ) ? sanitize_email( (string) $email ) : null, $request ),
+				$this->session_service->get_init_session_request( is_scalar( $email ) ? sanitize_email( (string) $email ) : null, null, $request ),
 				200
 			);
 		} catch ( Throwable $exception ) {
@@ -320,7 +320,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			wp_send_json( array( 'result' => 'failure' ), 403 );
 		}
 
-		wp_send_json( $this->get_init_woopay_response( wp_unslash( $_POST ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		wp_send_json( $this->session_service->init_woopay_session( wp_unslash( $_POST ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
 	}
 
 	/**
@@ -331,7 +331,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			wp_send_json( array( 'result' => 'failure' ), 403 );
 		}
 
-		wp_send_json( $this->get_encrypted_session_response( wp_unslash( $_POST ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		wp_send_json( $this->session_service->get_encrypted_session_data( wp_unslash( $_POST ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
 	}
 
 	/**
@@ -342,7 +342,14 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			wp_send_json( array( 'result' => 'failure' ), 403 );
 		}
 
-		wp_send_json( $this->get_phone_session_response( wp_unslash( $_POST ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$request = wp_unslash( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		if ( ! empty( $request['empty'] ) ) {
+			$this->session_service->clear_woopay_session_data();
+		} else {
+			$this->session_service->set_woopay_phone_session_data( $request );
+		}
+
+		wp_send_json( array( 'result' => 'success' ) );
 	}
 
 	/**
@@ -353,7 +360,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			wp_send_json_error( array( 'result' => 'failure' ), 403 );
 		}
 
-		wp_send_json_success( $this->get_signature_response( wp_unslash( $_POST ) ), 200 ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		wp_send_json_success( array( 'signature' => $this->session_service->get_woopay_request_signature() ), 200 );
 	}
 
 	/**
@@ -364,7 +371,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			wp_send_json( array( 'result' => 'failure' ), 403 );
 		}
 
-		wp_send_json( $this->get_minimum_session_response( wp_unslash( $_POST ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		wp_send_json( $this->session_service->get_encrypted_minimum_session_data() );
 	}
 
 	/**
@@ -675,66 +682,6 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		}
 
 		return $this->session_service->maybe_add_woopay_user_metadata( $metadata, $order );
-	}
-
-	/**
-	 * Build the WooPay init response.
-	 *
-	 * @param array<string,mixed> $request Request data.
-	 * @return array<string,mixed>
-	 */
-	public function get_init_woopay_response( array $request ): array {
-		return $this->session_service->init_woopay_session( $request );
-	}
-
-	/**
-	 * Build the encrypted WooPay session response.
-	 *
-	 * @param array<string,mixed> $request Request data.
-	 * @return array<string,mixed>
-	 */
-	public function get_encrypted_session_response( array $request ): array {
-		return $this->session_service->get_encrypted_session_data( $request );
-	}
-
-	/**
-	 * Build the phone-session response.
-	 *
-	 * @param array<string,mixed> $request Request data.
-	 * @return array<string,string>
-	 */
-	public function get_phone_session_response( array $request ): array {
-		if ( ! empty( $request['empty'] ) ) {
-			$this->session_service->clear_woopay_session_data();
-		} else {
-			$this->session_service->set_woopay_phone_session_data( $request );
-		}
-
-		return array( 'result' => 'success' );
-	}
-
-	/**
-	 * Build the WooPay signature response.
-	 *
-	 * @param array<string,mixed> $request Request data.
-	 * @return array<string,string>
-	 */
-	public function get_signature_response( array $request ): array {
-		unset( $request );
-
-		return array( 'signature' => $this->session_service->get_woopay_request_signature() );
-	}
-
-	/**
-	 * Build the encrypted minimum session response.
-	 *
-	 * @param array<string,mixed> $request Request data.
-	 * @return array<string,mixed>
-	 */
-	public function get_minimum_session_response( array $request ): array {
-		unset( $request );
-
-		return $this->session_service->get_encrypted_minimum_session_data();
 	}
 
 	/**

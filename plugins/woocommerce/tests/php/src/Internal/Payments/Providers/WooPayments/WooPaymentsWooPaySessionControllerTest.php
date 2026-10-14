@@ -1336,6 +1336,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( array( 'session' => 'native' ), $response->get_data() );
 		$this->assertSame( 'shopper@example.com', $service->last_session_email );
+		$this->assertSame( $request, $service->last_session_request, 'The session data is built for the WooPay request, whose Cart-Token it reads.' );
 	}
 
 	/**
@@ -1344,12 +1345,19 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	public function test_builds_ajax_response_payloads(): void {
 		$service   = new RecordingWooPaySessionService();
 		$this->sut = $this->create_controller( true, true, $service );
+		$this->sut->register();
 
-		$this->assertSame( array( 'result' => 'success' ), $this->sut->get_init_woopay_response( array( 'email' => 'shopper@example.com' ) ) );
-		$this->assertSame( array( 'encrypted' => 'session' ), $this->sut->get_encrypted_session_response( array( 'email' => 'shopper@example.com' ) ) );
-		$this->assertSame( array( 'result' => 'success' ), $this->sut->get_phone_session_response( array( 'phone_number' => '+15555550123' ) ) );
-		$this->assertSame( array( 'signature' => 'signed' ), $this->sut->get_signature_response( array() ) );
-		$this->assertSame( array( 'encrypted' => 'minimum' ), $this->sut->get_minimum_session_response( array() ) );
+		$this->assertSame( array( 'result' => 'success' ), $this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_init_woopay', 'wcpay_init_woopay_nonce', array( 'email' => 'shopper@example.com' ) ) );
+		$this->assertSame( array( 'encrypted' => 'session' ), $this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_get_woopay_session', 'woopay_session_nonce', array( 'email' => 'shopper@example.com' ) ) );
+		$this->assertSame( array( 'result' => 'success' ), $this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_set_woopay_phone_number', 'woopay_session_nonce', array( 'phone_number' => '+15555550123' ) ) );
+		$this->assertSame(
+			array(
+				'success' => true,
+				'data'    => array( 'signature' => 'signed' ),
+			),
+			$this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_get_woopay_signature', 'woopay_signature_nonce', array() )
+		);
+		$this->assertSame( array( 'encrypted' => 'minimum' ), $this->dispatch_ajax_hook_with_nonce( 'wc_ajax_wcpay_get_woopay_minimum_session_data', 'woopay_session_nonce', array() ) );
 		$this->assertSame( '+15555550123', $service->last_phone_request['phone_number'] );
 	}
 
@@ -2001,6 +2009,21 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 			'status' => $status,
 			'body'   => null !== $decoded ? $decoded : ( '' !== $body ? $body : $message ),
 		);
+	}
+
+	/**
+	 * Post the fields with a valid nonce for the action, fire the AJAX hook and return the decoded body.
+	 *
+	 * @param string              $hook         AJAX hook name.
+	 * @param string              $nonce_action Nonce action the handler checks.
+	 * @param array<string,mixed> $post         Other posted fields.
+	 * @return mixed
+	 */
+	private function dispatch_ajax_hook_with_nonce( string $hook, string $nonce_action, array $post ) {
+		$_POST    = array_merge( $post, array( '_ajax_nonce' => wp_create_nonce( $nonce_action ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$_REQUEST = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+
+		return $this->dispatch_ajax_hook( $hook )['body'];
 	}
 
 	/**

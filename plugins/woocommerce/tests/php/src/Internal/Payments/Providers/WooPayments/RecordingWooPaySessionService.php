@@ -62,6 +62,13 @@ class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
 	public string $last_session_email = '';
 
 	/**
+	 * Last WooPay REST request the session data was built for.
+	 *
+	 * @var WP_REST_Request|null
+	 */
+	public ?WP_REST_Request $last_session_request = null;
+
+	/**
 	 * Last phone request.
 	 *
 	 * @var array<string,mixed>
@@ -223,15 +230,31 @@ class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
 	}
 
 	/**
-	 * Get session data.
+	 * Build the WooPay init-session request body.
 	 *
-	 * @param string|null          $email          Shopper email.
-	 * @param WP_REST_Request|null $woopay_request WooPay REST request.
+	 * @param string|null                     $email          Shopper email.
+	 * @param string|null                     $user_session   WooPay user session.
+	 * @param WP_REST_Request|null            $woopay_request WooPay REST request.
+	 * @param int|null                        $order_id       Pay-for-order order ID.
+	 * @param string|null                     $key            Pay-for-order key.
+	 * @param string|null                     $billing_email  Pay-for-order billing email.
+	 * @param array<string,mixed>|null        $appearance     WooPay appearance payload.
+	 * @param array<int,array<string,string>> $font_rules     WooPay font rules.
 	 * @return array<string,string>
 	 */
-	public function get_session_data( ?string $email = null, ?WP_REST_Request $woopay_request = null ): array {
-		unset( $woopay_request );
-		$this->last_session_email = (string) $email;
+	public function get_init_session_request(
+		?string $email = null,
+		?string $user_session = null,
+		?WP_REST_Request $woopay_request = null,
+		?int $order_id = null,
+		?string $key = null,
+		?string $billing_email = null,
+		?array $appearance = null,
+		array $font_rules = array()
+	): array {
+		unset( $user_session, $order_id, $key, $billing_email, $appearance, $font_rules );
+		$this->last_session_email   = (string) $email;
+		$this->last_session_request = $woopay_request;
 
 		return array( 'session' => 'native' );
 	}

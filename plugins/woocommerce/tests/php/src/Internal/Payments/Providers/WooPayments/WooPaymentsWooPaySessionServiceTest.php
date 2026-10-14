@@ -1122,7 +1122,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$request->set_header( 'Cart-Token', 'cart-token-123' );
 
 		$sut     = $this->create_service();
-		$result  = $sut->get_session_data( 'shopper@example.com', $request );
+		$result  = $sut->get_init_session_request( 'shopper@example.com', null, $request );
 		$preload = $result['preloaded_requests'];
 
 		$this->assertSame( 'cart-token-123', $seen_headers['/wc/store/v1/cart'] );
