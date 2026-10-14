@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
 use RuntimeException;
+use WP_Error;
 
 /**
  * A platform or transport failure of a WooPayments request, with its error code, HTTP status and whether the
@@ -189,5 +190,25 @@ class WooPaymentsApiException extends RuntimeException {
 		}
 
 		return 500 <= $this->get_http_code() || 'idempotency_key_in_use' === $this->get_error_code();
+	}
+
+	/**
+	 * Convert the failure to the REST error the WooPayments admin routes answer: the error code and message, with the HTTP
+	 * status when it is 400-599 and 500 otherwise. The mobile routes, and routes whose extension controller chooses its own
+	 * answer, convert at the route.
+	 *
+	 * @return WP_Error
+	 *
+	 * @since 11.2.0
+	 */
+	public function to_wp_error(): WP_Error {
+		$http_code = $this->get_http_code();
+		$status    = $http_code >= 400 && $http_code <= 599 ? $http_code : 500;
+
+		return new WP_Error(
+			'' !== $this->get_error_code() ? $this->get_error_code() : 'wcpay_api_error',
+			$this->getMessage(),
+			array( 'status' => $status )
+		);
 	}
 }

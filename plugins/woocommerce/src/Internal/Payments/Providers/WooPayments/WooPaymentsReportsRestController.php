@@ -131,7 +131,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 				)
 			);
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -146,7 +146,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 		try {
 			return new WP_REST_Response( $this->prepare_fees_rows( $this->extract_response_rows( $this->api_client->get_transactions( $this->get_filtered_fees_list_params( $request ) ) ) ) );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -165,7 +165,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 
 			return new WP_REST_Response( $this->api_client->get_transactions_summary( $filters, $deposit_id ) );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -191,7 +191,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 				)
 			);
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -206,7 +206,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 		try {
 			return new WP_REST_Response( $this->api_client->get_transactions_export_url( (string) $request->get_param( 'export_id' ) ) );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -225,7 +225,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 				)
 			);
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -252,7 +252,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 
 			return new WP_REST_Response( $rows[0] ?? array() );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -271,7 +271,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 				)
 			);
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -297,7 +297,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 
 			return new WP_REST_Response( $rows[0] ?? array() );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -890,22 +890,5 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 		$value = $this->get_scalar_param( $request, $name );
 
 		return '' === $value ? null : $value;
-	}
-
-	/**
-	 * Convert an API exception to a REST error.
-	 *
-	 * @param WooPaymentsApiException $exception API exception.
-	 * @return WP_Error
-	 */
-	private function api_exception_to_wp_error( WooPaymentsApiException $exception ): WP_Error {
-		$http_code = $exception->get_http_code();
-		$status    = $http_code >= 400 && $http_code <= 599 ? $http_code : 500;
-
-		return new WP_Error(
-			'' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_api_error',
-			$exception->getMessage(),
-			array( 'status' => $status )
-		);
 	}
 }

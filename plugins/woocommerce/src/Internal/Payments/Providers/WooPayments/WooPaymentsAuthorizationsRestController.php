@@ -104,7 +104,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 		try {
 			return new WP_REST_Response( $this->api_client->get_authorizations( $this->get_filtered_list_params( $request ), false ) );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -122,7 +122,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 			// The client asks for the store-wide totals: no query and no list filter (class-wc-rest-payments-authorizations-controller.php:88-92).
 			return new WP_REST_Response( $this->api_client->get_authorizations_summary() );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -137,7 +137,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 		try {
 			return new WP_REST_Response( $this->api_client->get_authorization( (string) $request->get_param( 'payment_intent_id' ) ) );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -527,23 +527,6 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 				'extra_details' => $extra_details,
 				'error_type'    => $error_type,
 			)
-		);
-	}
-
-	/**
-	 * Convert an API exception to a REST error.
-	 *
-	 * @param WooPaymentsApiException $exception API exception.
-	 * @return WP_Error
-	 */
-	private function api_exception_to_wp_error( WooPaymentsApiException $exception ): WP_Error {
-		$http_code = $exception->get_http_code();
-		$status    = $http_code >= 400 && $http_code <= 599 ? $http_code : 500;
-
-		return new WP_Error(
-			'' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_api_error',
-			$exception->getMessage(),
-			array( 'status' => $status )
 		);
 	}
 }

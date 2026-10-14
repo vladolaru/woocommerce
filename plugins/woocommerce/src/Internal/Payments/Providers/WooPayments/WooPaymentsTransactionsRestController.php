@@ -104,7 +104,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 				)
 			);
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -124,7 +124,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 				)
 			);
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -143,7 +143,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 				)
 			);
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -158,7 +158,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 		try {
 			return new WP_REST_Response( $this->api_client->get_transactions_search_autocomplete( (string) $request->get_param( 'search_term' ) ) );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -180,7 +180,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 				)
 			);
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -199,7 +199,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 
 			return new WP_REST_Response( $this->order_service->summarize_fraud_outcome_transactions( $transactions ) );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -218,7 +218,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 
 			return new WP_REST_Response( $this->order_service->get_fraud_outcome_transactions_search_autocomplete( $transactions, $search_term ) );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -239,7 +239,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 				)
 			);
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -254,7 +254,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 		try {
 			return new WP_REST_Response( $this->api_client->get_latest_fraud_outcome( (string) $request->get_param( 'id' ) ) );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -276,7 +276,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 				)
 			);
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -291,7 +291,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 		try {
 			return new WP_REST_Response( $this->api_client->get_transactions_export_url( (string) $request->get_param( 'export_id' ) ) );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -445,22 +445,5 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 		$value = $request->get_param( $name );
 
 		return null === $value ? null : (string) $value;
-	}
-
-	/**
-	 * Convert an API exception to a REST error.
-	 *
-	 * @param WooPaymentsApiException $exception API exception.
-	 * @return WP_Error
-	 */
-	private function api_exception_to_wp_error( WooPaymentsApiException $exception ): WP_Error {
-		$http_code = $exception->get_http_code();
-		$status    = $http_code >= 400 && $http_code <= 599 ? $http_code : 500;
-
-		return new WP_Error(
-			'' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_api_error',
-			$exception->getMessage(),
-			array( 'status' => $status )
-		);
 	}
 }

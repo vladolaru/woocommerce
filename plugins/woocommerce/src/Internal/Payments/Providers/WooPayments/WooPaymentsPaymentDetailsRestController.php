@@ -161,7 +161,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 				)
 			);
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -216,7 +216,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 
 			return new WP_REST_Response( $this->add_manual_fraud_outcome_entry( $timeline, $intention_id ) );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -828,23 +828,6 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			'wcpay_refund_invalid_amount',
 			__( 'The refund amount is not valid.', 'woocommerce' ),
 			array( 'status' => 400 )
-		);
-	}
-
-	/**
-	 * Convert an API exception to a REST error.
-	 *
-	 * @param WooPaymentsApiException $exception API exception.
-	 * @return WP_Error
-	 */
-	private function api_exception_to_wp_error( WooPaymentsApiException $exception ): WP_Error {
-		$http_code = $exception->get_http_code();
-		$status    = $http_code >= 400 && $http_code <= 599 ? $http_code : 500;
-
-		return new WP_Error(
-			'' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_api_error',
-			$exception->getMessage(),
-			array( 'status' => $status )
 		);
 	}
 }

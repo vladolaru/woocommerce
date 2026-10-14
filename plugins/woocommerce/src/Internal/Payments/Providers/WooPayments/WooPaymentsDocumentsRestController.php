@@ -159,7 +159,7 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 		try {
 			return new WP_REST_Response( $this->api_client->get_documents( $this->get_allowed_params( $request, self::LIST_QUERY_PARAMS ) ) );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -174,7 +174,7 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 		try {
 			return new WP_REST_Response( $this->api_client->get_documents_summary( $this->get_allowed_params( $request, self::SUMMARY_QUERY_PARAMS ) ) );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -278,7 +278,7 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 		try {
 			return new WP_REST_Response( $this->api_client->validate_vat( sanitize_text_field( (string) $request->get_param( 'vat_number' ) ) ) );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -299,7 +299,7 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 				)
 			);
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -379,23 +379,6 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 				'document_id' => $document_id,
 				'mode'        => $this->account_service->is_test_mode_enabled() ? 'test' : 'live',
 			)
-		);
-	}
-
-	/**
-	 * Convert an API exception to a REST error.
-	 *
-	 * @param WooPaymentsApiException $exception API exception.
-	 * @return WP_Error
-	 */
-	private function api_exception_to_wp_error( WooPaymentsApiException $exception ): WP_Error {
-		$http_code = $exception->get_http_code();
-		$status    = $http_code >= 400 && $http_code <= 599 ? $http_code : 500;
-
-		return new WP_Error(
-			'' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_api_error',
-			$exception->getMessage(),
-			array( 'status' => $status )
 		);
 	}
 }

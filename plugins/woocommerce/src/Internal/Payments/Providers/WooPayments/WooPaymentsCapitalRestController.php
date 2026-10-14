@@ -92,7 +92,7 @@ class WooPaymentsCapitalRestController extends RestApiControllerBase {
 		try {
 			return new WP_REST_Response( $this->api_client->get_capital_active_loan_summary() );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -109,7 +109,7 @@ class WooPaymentsCapitalRestController extends RestApiControllerBase {
 		try {
 			return new WP_REST_Response( $this->api_client->get_capital_loans() );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error();
 		}
 	}
 
@@ -165,23 +165,6 @@ class WooPaymentsCapitalRestController extends RestApiControllerBase {
 			'methods'             => WP_REST_Server::READABLE,
 			'callback'            => array( $this, $callback ),
 			'permission_callback' => array( $this, 'has_permission' ),
-		);
-	}
-
-	/**
-	 * Convert an API exception to a REST error.
-	 *
-	 * @param WooPaymentsApiException $exception API exception.
-	 * @return WP_Error
-	 */
-	private function api_exception_to_wp_error( WooPaymentsApiException $exception ): WP_Error {
-		$http_code = $exception->get_http_code();
-		$status    = $http_code >= 400 && $http_code <= 599 ? $http_code : 500;
-
-		return new WP_Error(
-			'' !== $exception->get_error_code() ? $exception->get_error_code() : 'wcpay_api_error',
-			$exception->getMessage(),
-			array( 'status' => $status )
 		);
 	}
 
