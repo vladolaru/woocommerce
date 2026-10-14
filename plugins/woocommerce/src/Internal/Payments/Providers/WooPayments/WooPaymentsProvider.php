@@ -336,6 +336,9 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 				// The client refreshes the account and syncs the store setup on its own update (client 11.1.0
 				// `includes/class-wc-payments-account.php:143-147`); here, a WooCommerce update is that event.
 				$matrix[ $state ][ $request ][] = WooPaymentsWooCommerceUpdateListener::class;
+				// Jetpack enables connection features on plugins_loaded, and every request can call WordPress.com; client 11.1.0
+				// asks for them on every request (`woocommerce-payments.php:85-156`).
+				$matrix[ $state ][ $request ][] = WooPaymentsConnectionFeatures::class;
 				// The gateway settings can be written directly (classic toggle, REST, WP-CLI); keep the tier in step.
 				if ( 'front' !== $request ) {
 					$matrix[ $state ][ $request ][] = WooPaymentsGatewaySettingsSynchronizer::class;

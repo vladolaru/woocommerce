@@ -5,14 +5,17 @@ import { Button, ExternalLink, Notice } from '@wordpress/components';
 import { createInterpolateElement, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { recordEvent } from '@woocommerce/tracks';
+import type { ReactNode } from 'react';
 
 /**
  * Internal dependencies
  */
 import { SetupLivePaymentsModal } from '~/woopayments/settings/account-mode-notice';
+import { getWooPaymentsSettingsBootstrap } from '~/woopayments/settings/bootstrap';
 import BannerNotice from '~/settings-payments/onboarding/providers/woopayments/components/banner-notice';
 import type { WooPaymentsOverviewAccount } from '../types';
 import { HelpPopover } from './help-popover';
+import { getSettingsPaymentsProviderRouteUrl } from '../utils';
 
 const TEST_ACCOUNTS_URL =
 	'https://woocommerce.com/document/woopayments/testing-and-troubleshooting/test-accounts/';
@@ -32,6 +35,26 @@ export const OverviewNotices = () => {
 			message: __(
 				'There was a problem redirecting you to the account dashboard. Please try again.',
 				'woocommerce'
+			),
+		},
+		// Client 11.1.0 components/jetpack-idc-notice/index.tsx, after the login error (overview/index.js:239-240).
+		getWooPaymentsSettingsBootstrap().isJetpackIdcActive === true && {
+			className: 'wcpay-jetpack-idc-notice',
+			message: (
+				<>
+					{ __(
+						'Your site is currently in Safe Mode.',
+						'woocommerce'
+					) }
+					<span>&nbsp;</span>
+					<a
+						href={ getSettingsPaymentsProviderRouteUrl(
+							'/woopayments/settings'
+						) }
+					>
+						{ __( 'Please take action', 'woocommerce' ) }
+					</a>
+				</>
 			),
 		},
 		getQueryParam( 'wcpay-loan-offer-error' ) && {
@@ -55,7 +78,7 @@ export const OverviewNotices = () => {
 				'woocommerce'
 			),
 		},
-	].filter( Boolean ) as Array< { className: string; message: string } >;
+	].filter( Boolean ) as Array< { className: string; message: ReactNode } >;
 
 	if ( notices.length === 0 ) {
 		return null;

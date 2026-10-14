@@ -3,6 +3,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Admin\Settings\PaymentsProviders\WooPayments;
 
+use Automattic\Jetpack\Connection\Manager as JetpackConnectionManager;
+use Automattic\Jetpack\Identity_Crisis;
+use Automattic\Jetpack\Status\Cache as StatusCache;
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsOnboardingRedirect;
@@ -321,6 +324,55 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$settings = $sut->preload_shared_settings( array() );
 
 		$this->assertSame( $expected, $settings['woopaymentsSettings']['isNextDepositNoticeDismissed'] );
+	}
+
+	/**
+	 * @testdox Should preload whether the store is in Safe Mode, which shows the Safe Mode notice on the Overview (in Safe Mode: $in_safe_mode).
+	 *
+	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:1026` (`isJetpackIdcActive`) and `components/jetpack-idc-notice/index.tsx`.
+	 *
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $in_safe_mode Whether the connection holds a Safe Mode error for the store's current URLs.
+	 */
+	public function test_preloads_safe_mode_flag( bool $in_safe_mode ): void {
+		if ( $in_safe_mode && is_multisite() ) {
+			$this->markTestSkipped( 'Jetpack does not handle Safe Mode on multisite by default (Identity_Crisis::should_handle_idc()).' );
+		}
+		// The test site's local domain would put Jetpack in offline mode, where Safe Mode never applies.
+		add_filter( 'jetpack_offline_mode', '__return_false' );
+		StatusCache::clear();
+		\Jetpack_Options::update_option( 'id', 123 );
+		\Jetpack_Options::update_option( 'blog_token', 'tokenkey.blogsecret' );
+		( new JetpackConnectionManager() )->reset_connection_status();
+		if ( $in_safe_mode ) {
+			// The error the connection stores from a platform answer that reports a mismatched URL (class-identity-crisis.php:315-336).
+			\Jetpack_Options::update_option(
+				'sync_error_idc',
+				Identity_Crisis::get_sync_error_idc_option(
+					array(
+						'error_code'    => 'jetpack_url_mismatch',
+						'wpcom_siteurl' => 'https://production-store.example',
+						'wpcom_home'    => 'https://production-store.example',
+					)
+				)
+			);
+		}
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$sut          = $this->create_controller( true );
+
+		try {
+			$settings = $sut->preload_shared_settings( array() );
+		} finally {
+			\Jetpack_Options::delete_option( array( 'id', 'blog_token', 'sync_error_idc' ) );
+			delete_transient( 'jetpack_idc_local' );
+			( new JetpackConnectionManager() )->reset_connection_status();
+			StatusCache::clear();
+		}
+
+		$this->assertSame( $in_safe_mode, $settings['woopaymentsSettings']['isJetpackIdcActive'] );
 	}
 
 	/**

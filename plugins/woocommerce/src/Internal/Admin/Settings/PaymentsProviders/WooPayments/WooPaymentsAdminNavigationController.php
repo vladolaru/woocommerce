@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments;
 
+use Automattic\Jetpack\Identity_Crisis;
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
@@ -459,6 +460,8 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		$settings['woopaymentsSettings']['isManualCaptureEnabled'] = $this->badge_service->is_manual_capture_enabled();
 		// Plugin 11.1.0 `class-wc-payments-admin.php:1060` localizes this for the payouts page schedule notice (`deposits/index.tsx:28-43`).
 		$settings['woopaymentsSettings']['isNextDepositNoticeDismissed'] = '1' === get_option( 'wcpay_next_deposit_notice_dismissed', '0' );
+		// Plugin 11.1.0 `class-wc-payments-admin.php:1026` localizes this for the Overview's Safe Mode notice.
+		$settings['woopaymentsSettings']['isJetpackIdcActive'] = Identity_Crisis::has_identity_crisis();
 		// Plugin 11.1.0 `class-wc-payments-admin.php:1021` localizes this for the transactions list's Subscription # column.
 		$settings['woopaymentsSettings']['isSubscriptionsActive'] = $this->is_subscriptions_plugin_active();
 		// Plugin 11.1.0 `class-wc-payments-admin.php:1040` localizes this for `formatExplicitCurrency()`.

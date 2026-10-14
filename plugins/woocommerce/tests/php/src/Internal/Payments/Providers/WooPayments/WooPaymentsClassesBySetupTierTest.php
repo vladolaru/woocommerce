@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Payments\ProviderGatewaysController;
 use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsConnectionFeatures;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner;
@@ -79,19 +80,37 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The WooCommerce update listener loads on every request of a connected or active store, since an update finishes on the init of any request.
+	 * @testdox $_dataName loads on every request of a connected or active store and on none of a store without an account.
+	 *
+	 * @dataProvider connected_request_roots_provider
+	 *
+	 * @param string $root The root class.
 	 */
-	public function test_woocommerce_update_listener_loads_on_every_connected_request(): void {
+	public function test_root_loads_on_every_connected_request( string $root ): void {
 		$matrix = WooPaymentsProvider::get_classes_by_setup_tier();
 
 		foreach ( array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
-				$this->assertContains( WooPaymentsWooCommerceUpdateListener::class, ( $matrix[ $state ][ $request ] ?? array() ), "The $state $request request must load the WooCommerce update listener." );
+				$this->assertContains( $root, ( $matrix[ $state ][ $request ] ?? array() ), "The $state $request request must load $root." );
 			}
 		}
 		foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
-			$this->assertNotContains( WooPaymentsWooCommerceUpdateListener::class, ( $matrix[ WooPaymentsSetupTier::AVAILABLE ][ $request ] ?? array() ), "A store without an account has nothing to refresh on a $request request." );
+			$this->assertNotContains( $root, ( $matrix[ WooPaymentsSetupTier::AVAILABLE ][ $request ] ?? array() ), "A store without an account must not load $root on a $request request." );
 		}
+	}
+
+	/**
+	 * Roots that act on any request of a store with an account.
+	 *
+	 * @return array<string, array{0: string}>
+	 */
+	public function connected_request_roots_provider(): array {
+		return array(
+			// An update finishes on the init of any request.
+			'The WooCommerce update listener'       => array( WooPaymentsWooCommerceUpdateListener::class ),
+			// Every WordPress.com request of the store carries the connection's Safe Mode arguments.
+			'The WordPress.com connection features' => array( WooPaymentsConnectionFeatures::class ),
+		);
 	}
 
 	/**
