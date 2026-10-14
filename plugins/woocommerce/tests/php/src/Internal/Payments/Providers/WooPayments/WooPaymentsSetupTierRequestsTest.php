@@ -5,7 +5,9 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use ActionScheduler;
 use ActionScheduler_Store;
+use Automattic\Jetpack\Connection\Manager as JetpackConnectionManager;
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
@@ -16,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
@@ -27,6 +30,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPluginLifecycleListener;
 use WC_Order;
 use WC_Order_Refund;
 use WC_Payment_Tokens;
@@ -263,6 +267,77 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 
 		// The client loads its SEPA token class on every request (client 11.1.0 `includes/class-wc-payments.php:468`).
 		$this->assertInstanceOf( WooPaymentsSepaToken::class, WC_Payment_Tokens::get( $token->get_id() ), 'A renewal or subscription view must find the saved SEPA credential.' );
+	}
+
+	/**
+	 * @testdox A $label request registers its classes while plugins load without reading the account or the connection.
+	 * @dataProvider registration_requests
+	 *
+	 * @param string $label   Case label.
+	 * @param string $tier    Stored setup tier.
+	 * @param bool   $builtin Whether the built-in WooPayments owns payments; otherwise the WooPayments extension does.
+	 * @param string $request Request class.
+	 */
+	public function test_registration_reads_no_account_or_connection_before_init( string $label, string $tier, bool $builtin, string $request ): void {
+		unset( $label );
+		if ( $builtin ) {
+			$this->arrange_builtin_owner( $tier );
+		} else {
+			update_option( 'active_plugins', array_merge( (array) get_option( 'active_plugins', array() ), array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ) );
+			add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+			update_option( WooPaymentsSetupTier::OPTION_NAME, $tier, true );
+			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+			wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+		}
+		$this->arrange_request( $request );
+
+		// Before Jetpack can tell the connection owner, an account or connection read answers wrongly, and a register()
+		// that decides on it adds the wrong hooks; each of these fails the test on any call but the account service's
+		// own register().
+		$container       = wc_get_container();
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )->disableOriginalConstructor()->getMock();
+		$account_service->expects( $this->never() )->method( $this->logicalNot( $this->equalTo( 'register' ) ) );
+		$http_client = $this->getMockBuilder( WooPaymentsHttpClient::class )->disableOriginalConstructor()->getMock();
+		$http_client->expects( $this->never() )->method( $this->anything() );
+		$jetpack_manager = $this->getMockBuilder( JetpackConnectionManager::class )->disableOriginalConstructor()->getMock();
+		$jetpack_manager->expects( $this->never() )->method( $this->anything() );
+		$container->reset_all_resolved();
+		$container->replace( WooPaymentsAccountService::class, $account_service );
+		$container->replace( WooPaymentsHttpClient::class, $http_client );
+		$account_option_reads = 0;
+		add_filter(
+			'pre_option_wcpay_account_data',
+			static function ( $value ) use ( &$account_option_reads ) {
+				++$account_option_reads;
+				return $value;
+			}
+		);
+
+		global $wp_actions;
+		$manager_property = new \ReflectionProperty( JetpackConnection::class, 'manager' );
+		$manager_property->setAccessible( true );
+		$original_manager = $manager_property->getValue();
+		$manager_property->setValue( null, $jetpack_manager );
+		// What WordPress has fired by the time WooCommerce loads: none of these.
+		$fired  = array( 'plugins_loaded', 'after_setup_theme', 'init', 'wp_loaded', 'action_scheduler_init' );
+		$counts = array_intersect_key( $wp_actions, array_flip( $fired ) );
+		foreach ( $fired as $hook ) {
+			unset( $wp_actions[ $hook ] ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+		}
+		try {
+			( new PaymentsBootstrap(
+				static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
+				static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner(),
+				static fn(): array => WooPaymentsProvider::get_multi_currency_provider_roots()
+			) )->register( $container, 'rest' === $request ? '__return_true' : '__return_false' );
+		} finally {
+			$wp_actions = array_merge( $wp_actions, $counts ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+			$manager_property->setValue( null, $original_manager );
+		}
+
+		$this->assertSame( 0, $account_option_reads, 'No class may read the stored account while plugins load.' );
+		// The lifecycle listener loads on every tier and request type, so the boot registered the request's classes.
+		$this->assertSame( 10, has_action( 'activate_plugin', array( $container->get( WooPaymentsCutoverPluginLifecycleListener::class ), 'guard_woopayments_activation' ) ) );
 	}
 
 	/**
@@ -596,6 +671,21 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( WC_Order_Refund::class, $manual );
 		$this->assertSame( 'yes', wc_get_order( $manual->get_id() )->get_meta( RefundRowCapture::MANUAL_REFUND_META, true ), 'A manual refund is marked as a manual record.' );
+	}
+
+	/** @return array<string,array{string,string,bool,string}> */
+	public static function registration_requests(): array {
+		$cases = array();
+		foreach ( array( WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $tier ) {
+			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
+				$cases[ "built-in owned {$tier} {$request}" ] = array( "built-in owned {$tier} {$request}", $tier, true, $request );
+			}
+		}
+		foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
+			$cases[ "extension-owned {$request}" ] = array( "extension-owned {$request}", WooPaymentsSetupTier::ACTIVE, false, $request );
+		}
+
+		return $cases;
 	}
 
 	/** @return array<string,array{string,bool,string}> */
