@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeaturePolicy;
 
 /**
  * The WooPayments payment method definitions, filtered by account capability, country and currency.
@@ -37,6 +36,8 @@ class WooPaymentsPaymentMethodRegistry {
 
 	private const EXPRESS_CHECKOUT = 'express_checkout';
 
+	private const AMAZON_PAY_FLAG_OPTION = '_wcpay_feature_amazon_pay';
+
 	/**
 	 * Payment methods WooPayments discontinued: they have no definition here, and settings that still name them are cleaned when a store switches to the built-in WooPayments.
 	 */
@@ -62,11 +63,62 @@ class WooPaymentsPaymentMethodRegistry {
 		$this->initialize_definitions();
 
 		$definitions = $this->definitions;
-		if ( ! WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $account_service ) ) {
+		if ( ! $this->is_amazon_pay_enabled( $account_service ) ) {
 			unset( $definitions['amazon_pay'] );
 		}
 
 		return $definitions;
+	}
+
+	/**
+	 * Tell whether Amazon Pay is enabled by rollout and account policy.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @return bool
+	 */
+	public function is_amazon_pay_enabled( WooPaymentsAccountService $account_service ): bool {
+		return '1' === (string) get_option( self::AMAZON_PAY_FLAG_OPTION, '1' )
+			&& $account_service->is_ece_confirmation_tokens_enabled();
+	}
+
+	/**
+	 * Tell whether Link folds into the card payment method for a currency.
+	 *
+	 * The single source of truth for Link enablement: the Payment Element and
+	 * the intent's payment_method_types must agree, or a Link-paid checkout
+	 * produces a credential the intent does not declare.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @param string                    $currency        Checkout currency.
+	 * @return bool
+	 */
+	public function is_link_folded_into_card( WooPaymentsAccountService $account_service, string $currency ): bool {
+		$method_ids = $account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array( 'card' ) );
+
+		$enabled_method_ids = array();
+		foreach ( (array) $method_ids as $method_id ) {
+			if ( is_scalar( $method_id ) ) {
+				$enabled_method_ids[] = sanitize_key( (string) $method_id );
+			}
+		}
+
+		if ( ! in_array( 'card', $enabled_method_ids, true ) || ! in_array( 'link', $enabled_method_ids, true ) ) {
+			return false;
+		}
+
+		$link_definition = $this->get( 'link' );
+		if ( null === $link_definition || ! $link_definition->is_available_for( $currency, $account_service->get_account_country() ) ) {
+			return false;
+		}
+
+		$account_data = $account_service->get_cached_account_data();
+		$fees         = is_array( $account_data['fees'] ?? null ) ? $account_data['fees'] : array();
+
+		return $account_service->is_capability_active( $link_definition->get_account_capability_key() ) && array_key_exists( 'link', $fees );
 	}
 
 	/**

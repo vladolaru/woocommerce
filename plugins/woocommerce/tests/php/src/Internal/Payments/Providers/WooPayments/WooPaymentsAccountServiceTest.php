@@ -1578,6 +1578,39 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox ECE confirmation tokens are on only for a cached account that does not turn them off ($description).
+	 * @dataProvider ece_confirmation_tokens_provider
+	 *
+	 * @param string              $description  Case.
+	 * @param array<string,mixed> $account_data Cached account data.
+	 * @param bool                $expected     Whether the tokens are on.
+	 */
+	public function test_ece_confirmation_tokens( string $description, array $account_data, bool $expected ): void {
+		unset( $description );
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn( $account_data );
+
+		$this->assertSame( $expected, $account_service->is_ece_confirmation_tokens_enabled() );
+	}
+
+	/**
+	 * Provide confirmation-token rows: case, cached account, expected.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:bool}>
+	 */
+	public function ece_confirmation_tokens_provider(): array {
+		return array(
+			// No cached account reads as tokens off, as client 11.1.0 class-wc-payments-features.php:438-442 does.
+			'no cached account'      => array( 'no cached account', array(), false ),
+			'account turns them off' => array( 'account turns them off', array( 'ece_confirmation_tokens_disabled' => true ), false ),
+			'account leaves them on' => array( 'account leaves them on', array( 'account_id' => 'acct_1' ), true ),
+		);
+	}
+
+	/**
 	 * @testdox Should read an admin account cache stored as $description.
 	 * @dataProvider provide_account_cache_wrappers_from_earlier_versions
 	 *

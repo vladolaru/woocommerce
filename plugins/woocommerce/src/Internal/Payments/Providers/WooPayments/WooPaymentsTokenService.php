@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
@@ -113,6 +114,13 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	private WooPaymentsOrderDataService $order_data_service;
 
 	/**
+	 * WooPayments payment method registry.
+	 *
+	 * @var WooPaymentsPaymentMethodRegistry
+	 */
+	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -125,13 +133,15 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * @param WooPaymentsCustomerService             $customer_service               Customer service.
 	 * @param WooPaymentsAccountService              $account_service                Account service.
 	 * @param WooPaymentsOrderDataService            $order_data_service             Order data service.
+	 * @param WooPaymentsPaymentMethodRegistry       $payment_method_registry        Payment method registry.
 	 */
-	final public function init( WooPaymentsPaymentMethodDetailsService $payment_method_details_service, WooPaymentsApiClient $api_client, WooPaymentsCustomerService $customer_service, WooPaymentsAccountService $account_service, WooPaymentsOrderDataService $order_data_service ): void {
+	final public function init( WooPaymentsPaymentMethodDetailsService $payment_method_details_service, WooPaymentsApiClient $api_client, WooPaymentsCustomerService $customer_service, WooPaymentsAccountService $account_service, WooPaymentsOrderDataService $order_data_service, WooPaymentsPaymentMethodRegistry $payment_method_registry ): void {
 		$this->payment_method_details_service = $payment_method_details_service;
 		$this->api_client                     = $api_client;
 		$this->customer_service               = $customer_service;
 		$this->account_service                = $account_service;
 		$this->order_data_service             = $order_data_service;
+		$this->payment_method_registry        = $payment_method_registry;
 	}
 
 	/**
@@ -1126,7 +1136,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 				continue;
 			}
 
-			if ( '' === $gateway_id && self::PAYMENT_METHOD_TYPE_AMAZON_PAY === $type && ! WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $this->account_service ) ) {
+			if ( '' === $gateway_id && self::PAYMENT_METHOD_TYPE_AMAZON_PAY === $type && ! $this->payment_method_registry->is_amazon_pay_enabled( $this->account_service ) ) {
 				continue;
 			}
 

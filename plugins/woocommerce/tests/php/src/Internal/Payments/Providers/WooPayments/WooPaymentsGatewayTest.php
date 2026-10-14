@@ -7763,7 +7763,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			$container->get( WooPaymentsApiClient::class ),
 			$container->get( WooPaymentsCustomerService::class ),
 			$container->get( WooPaymentsAccountService::class ),
-			$container->get( WooPaymentsOrderDataService::class )
+			$container->get( WooPaymentsOrderDataService::class ),
+			$container->get( WooPaymentsPaymentMethodRegistry::class )
 		);
 
 		return $token_service;

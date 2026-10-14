@@ -10656,7 +10656,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		};
 
 		$token_service = new WooPaymentsTokenService();
-		$token_service->init( $details_service, wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
+		$token_service->init( $details_service, wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
 
 		return $token_service;
 	}

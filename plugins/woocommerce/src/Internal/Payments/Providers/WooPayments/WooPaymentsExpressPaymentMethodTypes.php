@@ -344,7 +344,7 @@ class WooPaymentsExpressPaymentMethodTypes {
 	private static function can_use_amazon_pay( WooPaymentsAccountService $account_service, string $context, string $currency = '' ): bool {
 		$context = self::normalize_context( $context );
 
-		if ( ! WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $account_service ) ) {
+		if ( ! self::get_payment_method_registry()->is_amazon_pay_enabled( $account_service ) ) {
 			return false;
 		}
 
@@ -440,7 +440,7 @@ class WooPaymentsExpressPaymentMethodTypes {
 	 * @return bool
 	 */
 	private static function is_amazon_pay_currency_supported( string $currency, string $account_country ): bool {
-		$definition = wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class )->get( self::STRIPE_TYPE_AMAZON_PAY );
+		$definition = self::get_payment_method_registry()->get( self::STRIPE_TYPE_AMAZON_PAY );
 		if ( null === $definition ) {
 			return false;
 		}
@@ -448,5 +448,14 @@ class WooPaymentsExpressPaymentMethodTypes {
 		$supported_currencies = $definition->get_supported_currencies( $account_country );
 
 		return array() === $supported_currencies || in_array( strtoupper( $currency ), $supported_currencies, true );
+	}
+
+	/**
+	 * Get the payment method registry. This class is static and has no init(), so it reads the registry from the container.
+	 *
+	 * @return WooPaymentsPaymentMethodRegistry
+	 */
+	private static function get_payment_method_registry(): WooPaymentsPaymentMethodRegistry {
+		return wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class );
 	}
 }

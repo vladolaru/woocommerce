@@ -166,14 +166,13 @@ class WooPaymentsExpressCheckoutService {
 				'accountId'      => $this->account_service->get_account_id(),
 				'locale'         => WooPaymentsLocaleUtils::get_stripe_locale(),
 				// Drives the Link autofill beta on the express Stripe instances.
-				'linkEnabled'    => WooPaymentsFeaturePolicy::is_link_folded_into_card(
+				'linkEnabled'    => wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry::class )->is_link_folded_into_card(
 					$this->account_service,
-					wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry::class ),
 					$context_currency
 				),
 			),
 			'flags'                       => array(
-				'isEceUsingConfirmationTokens' => WooPaymentsFeaturePolicy::is_ece_confirmation_tokens_enabled( $this->account_service ),
+				'isEceUsingConfirmationTokens' => $this->account_service->is_ece_confirmation_tokens_enabled(),
 			),
 		);
 

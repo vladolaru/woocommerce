@@ -605,7 +605,7 @@ class WooPaymentsIntentRequestBuilder {
 	 * @return array<int,string>
 	 */
 	private function card_payment_method_types( string $currency ): array {
-		if ( WooPaymentsFeaturePolicy::is_link_folded_into_card( $this->account_service, $this->payment_method_registry, $currency ) ) {
+		if ( $this->payment_method_registry->is_link_folded_into_card( $this->account_service, $currency ) ) {
 			return array( WooPaymentsExpressPaymentMethodTypes::STRIPE_TYPE_CARD, 'link' );
 		}
 

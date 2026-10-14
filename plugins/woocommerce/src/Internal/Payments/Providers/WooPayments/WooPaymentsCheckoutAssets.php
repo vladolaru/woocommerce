@@ -1093,11 +1093,7 @@ class WooPaymentsCheckoutAssets {
 	 * @return bool
 	 */
 	private function should_fold_link_into_card( string $currency ): bool {
-		return WooPaymentsFeaturePolicy::is_link_folded_into_card(
-			$this->get_account_service(),
-			$this->get_payment_method_registry(),
-			$currency
-		);
+		return $this->get_payment_method_registry()->is_link_folded_into_card( $this->get_account_service(), $currency );
 	}
 
 	/**

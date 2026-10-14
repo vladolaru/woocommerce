@@ -1346,6 +1346,48 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Pay-for-order express params turn Link on only when the account folds Link into card for the order currency ($description).
+	 * @dataProvider link_enabled_param_provider
+	 *
+	 * @param string              $description  Case.
+	 * @param string[]            $enabled_ids  Enabled payment method IDs.
+	 * @param array<string,mixed> $account_data Account data overrides.
+	 * @param bool                $expected     Expected linkEnabled.
+	 */
+	public function test_link_enabled_param_follows_the_link_fold( string $description, array $enabled_ids, array $account_data, bool $expected ): void {
+		unset( $description );
+		$order = wc_create_order();
+		$order->set_total( '24.00' );
+		$order->set_currency( 'USD' );
+		$order->set_billing_email( 'shopper@example.test' );
+		$order->save();
+		$_GET['pay_for_order'] = 'true';
+		$_GET['key']           = $order->get_order_key();
+		$this->set_order_pay_query_var( $order->get_id() );
+
+		$params = $this->create_service( array( 'upe_enabled_payment_method_ids' => $enabled_ids ), true, $account_data )->get_express_checkout_params( 'pay_for_order' );
+
+		$this->assertSame( $expected, $params['stripe']['linkEnabled'] );
+	}
+
+	/**
+	 * Provide linkEnabled rows: case, enabled IDs, account data, expected.
+	 *
+	 * @return array<string,array{0:string,1:string[],2:array<string,mixed>,3:bool}>
+	 */
+	public function link_enabled_param_provider(): array {
+		$link_account = array(
+			'capabilities' => array( 'link_payments' => 'active' ),
+			'fees'         => array( 'link' => array( 'base' => array( 'currency' => 'usd' ) ) ),
+		);
+
+		return array(
+			'Link folded'      => array( 'Link folded', array( 'card', 'link' ), $link_account, true ),
+			'Link not enabled' => array( 'Link not enabled', array( 'card' ), $link_account, false ),
+		);
+	}
+
+	/**
 	 * @testdox Express params expose the account confirmation-token policy.
 	 */
 	public function test_express_params_disable_confirmation_tokens_from_account_policy(): void {

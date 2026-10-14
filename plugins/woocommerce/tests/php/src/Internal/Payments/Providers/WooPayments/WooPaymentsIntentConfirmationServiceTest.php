@@ -171,7 +171,7 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function create_token_service(): WooPaymentsTokenService {
 		$sut = new WooPaymentsTokenService();
-		$sut->init( $this->create_empty_details_service(), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
+		$sut->init( $this->create_empty_details_service(), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
 
 		return $sut;
 	}
@@ -243,7 +243,7 @@ class WooPaymentsIntentConfirmationServiceTest extends WC_Unit_Test_Case {
 			}
 		};
 		$token_service->subscription = $subscription;
-		$token_service->init( $this->create_empty_details_service(), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
+		$token_service->init( $this->create_empty_details_service(), wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
 
 		return $token_service;
 	}

@@ -1357,7 +1357,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 			new StaticWooPaymentsRuntimeArbiter( true )
 		);
 		$token_service = new WooPaymentsTokenService();
-		$token_service->init( $details_service, wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ) );
+		$token_service->init( $details_service, wc_get_container()->get( WooPaymentsApiClient::class ), wc_get_container()->get( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsOrderDataService::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ) );
 
 		return $token_service;
 	}
@@ -1758,7 +1758,8 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 			$container->get( WooPaymentsApiClient::class ),
 			$container->get( WooPaymentsCustomerService::class ),
 			$container->get( WooPaymentsAccountService::class ),
-			$container->get( WooPaymentsOrderDataService::class )
+			$container->get( WooPaymentsOrderDataService::class ),
+			$container->get( WooPaymentsPaymentMethodRegistry::class )
 		);
 
 		return $token_service;

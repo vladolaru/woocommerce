@@ -633,6 +633,94 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Amazon Pay is enabled only with its rollout flag on and ECE confirmation tokens on ($description).
+	 * @dataProvider amazon_pay_gate_provider
+	 *
+	 * @param string     $description  Case.
+	 * @param string     $flag         Stored rollout flag.
+	 * @param array|null $account_data Cached account, or null for no account.
+	 * @param bool       $expected     Whether Amazon Pay is enabled.
+	 */
+	public function test_amazon_pay_follows_its_flag_and_confirmation_tokens( string $description, string $flag, ?array $account_data, bool $expected ): void {
+		unset( $description );
+		update_option( '_wcpay_feature_amazon_pay', $flag );
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn( $account_data ?? array() );
+
+		$this->assertSame( $expected, $this->registry->is_amazon_pay_enabled( $account_service ) );
+	}
+
+	/**
+	 * Provide Amazon Pay gate rows: case, flag, cached account, expected.
+	 *
+	 * @return array<string,array{0:string,1:string,2:array<string,mixed>|null,3:bool}>
+	 */
+	public function amazon_pay_gate_provider(): array {
+		return array(
+			'flag on, tokens on'         => array( 'flag on, tokens on', '1', array( 'ece_confirmation_tokens_disabled' => false ), true ),
+			'flag on, tokens off'        => array( 'flag on, tokens off', '1', array( 'ece_confirmation_tokens_disabled' => true ), false ),
+			'flag off, tokens on'        => array( 'flag off, tokens on', '0', array( 'ece_confirmation_tokens_disabled' => false ), false ),
+			// No cached account reads as tokens off, as client 11.1.0 class-wc-payments-features.php:438-442 does.
+			'flag on, no cached account' => array( 'flag on, no cached account', '1', null, false ),
+		);
+	}
+
+	/**
+	 * @testdox Link folds into card only with card and Link enabled, Link available, its capability active and a Link fee ($description).
+	 * @dataProvider link_fold_provider
+	 *
+	 * @param string               $description Case.
+	 * @param string[]             $enabled_ids Enabled payment method IDs.
+	 * @param string               $currency    Checkout currency.
+	 * @param array<string,string> $capability  Capability statuses.
+	 * @param array<string,array>  $fees        Account fees.
+	 * @param bool                 $expected    Whether Link folds into card.
+	 */
+	public function test_link_folds_into_card_only_when_every_condition_holds( string $description, array $enabled_ids, string $currency, array $capability, array $fees, bool $expected ): void {
+		unset( $description );
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_setting', 'get_cached_account_data', 'get_account_country' ) )
+			->getMock();
+		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
+			static function ( string $key, $fallback = null ) use ( $enabled_ids ) {
+				return 'upe_enabled_payment_method_ids' === $key ? $enabled_ids : $fallback;
+			}
+		);
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'capabilities' => $capability,
+				'fees'         => $fees,
+			)
+		);
+		$account_service->method( 'get_account_country' )->willReturn( 'US' );
+
+		$this->assertSame( $expected, $this->registry->is_link_folded_into_card( $account_service, $currency ) );
+	}
+
+	/**
+	 * Provide Link fold rows: case, enabled IDs, currency, capabilities, fees, expected.
+	 *
+	 * @return array<string,array{0:string,1:string[],2:string,3:array<string,string>,4:array<string,array>,5:bool}>
+	 */
+	public function link_fold_provider(): array {
+		$active = array( 'link_payments' => 'active' );
+		$fee    = array( 'link' => array() );
+
+		return array(
+			'every condition holds' => array( 'every condition holds', array( 'card', 'link' ), 'USD', $active, $fee, true ),
+			'Link not enabled'      => array( 'Link not enabled', array( 'card' ), 'USD', $active, $fee, false ),
+			'card not enabled'      => array( 'card not enabled', array( 'link' ), 'USD', $active, $fee, false ),
+			'currency without Link' => array( 'currency without Link', array( 'card', 'link' ), 'EUR', $active, $fee, false ),
+			'capability inactive'   => array( 'capability inactive', array( 'card', 'link' ), 'USD', array( 'link_payments' => 'pending' ), $fee, false ),
+			'no Link fee'           => array( 'no Link fee', array( 'card', 'link' ), 'USD', $active, array( 'card' => array() ), false ),
+		);
+	}
+
+	/**
 	 * Create an account service whose account has a fee for every payment method, so Amazon Pay is registered and every
 	 * method is available. Fees are keyed by payment method ID, as in the recorded Fixtures/platform-test-drive-account.json
 	 * `account.fees`.

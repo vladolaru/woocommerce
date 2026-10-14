@@ -422,8 +422,8 @@ class WooPaymentsSettingsService {
 			'woopay'                                   => $is_woopay_eligible,
 			'woopayExpressCheckout'                    => $this->is_feature_flag_enabled( self::WOOPAY_EXPRESS_CHECKOUT_FLAG_OPTION, true ),
 			'isDynamicCheckoutPlaceOrderButtonEnabled' => self::is_dynamic_checkout_place_order_button_enabled(),
-			'amazonPay'                                => WooPaymentsFeaturePolicy::is_amazon_pay_enabled( $this->account_service ),
-			'isEceUsingConfirmationTokens'             => WooPaymentsFeaturePolicy::is_ece_confirmation_tokens_enabled( $this->account_service ),
+			'amazonPay'                                => $this->get_payment_method_registry()->is_amazon_pay_enabled( $this->account_service ),
+			'isEceUsingConfirmationTokens'             => $this->account_service->is_ece_confirmation_tokens_enabled(),
 		);
 	}
 
