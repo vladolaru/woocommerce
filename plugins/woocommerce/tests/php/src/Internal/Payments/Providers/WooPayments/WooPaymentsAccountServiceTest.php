@@ -19,6 +19,13 @@ use WC_Unit_Test_Case;
 class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 
 	/**
+	 * Countries where WooPayments accounts are supported, as client 11.1.0 lists them (includes/class-wc-payments-utils.php:263-305).
+	 *
+	 * @var string[]
+	 */
+	private const WOOPAYMENTS_COUNTRY_CODES = array( 'AE', 'AT', 'AU', 'BE', 'BG', 'CA', 'CH', 'CY', 'CZ', 'DE', 'DK', 'EE', 'FI', 'ES', 'FR', 'HR', 'JP', 'LU', 'GB', 'GR', 'HK', 'HU', 'IE', 'IT', 'LT', 'LV', 'MT', 'NL', 'NO', 'NZ', 'PL', 'PT', 'RO', 'SE', 'SI', 'SK', 'SG', 'US', 'PR' );
+
+	/**
 	 * Multisite blogs created by tests.
 	 *
 	 * @var int[]
@@ -2418,6 +2425,42 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( get_option( 'wcpay_onboarding_fields_data' ), 'Client 11.1.0 clears this cache on its own update (class-wc-payments-onboarding-service.php:127, 967-970).' );
 		$sut->get_onboarding_fields_data( 'en_US' );
 		$this->assertSame( 1, $api_client->calls );
+	}
+
+	/**
+	 * @testdox Supported countries are the 39 WooPayments countries with WooCommerce's labels, with $label.
+	 * @testWith ["no country removed", ""]
+	 *           ["Puerto Rico removed by the woocommerce_countries filter", "PR"]
+	 *
+	 * @param string $label   Case.
+	 * @param string $removed Country code the woocommerce_countries filter removes.
+	 */
+	public function test_supported_countries_are_the_woopayments_countries_with_woocommerce_labels( string $label, string $removed ): void {
+		unset( $label );
+		$countries      = WC()->countries;
+		WC()->countries = new \WC_Countries();
+		add_filter(
+			'woocommerce_countries',
+			static function ( array $all ) use ( $removed ): array {
+				unset( $all[ $removed ] );
+				return $all;
+			}
+		);
+		try {
+			$supported = $this->create_service()->get_supported_countries();
+			$labels    = WC()->countries->get_countries();
+		} finally {
+			WC()->countries = $countries;
+		}
+
+		$codes    = array_keys( $supported );
+		$expected = array_values( array_diff( self::WOOPAYMENTS_COUNTRY_CODES, array( $removed ) ) );
+		sort( $codes );
+		sort( $expected );
+		$this->assertSame( $expected, $codes );
+		foreach ( $supported as $code => $name ) {
+			$this->assertSame( $labels[ $code ], $name, "The label of {$code} is WooCommerce's." );
+		}
 	}
 
 	/**

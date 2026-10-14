@@ -188,12 +188,43 @@ class WooPaymentsDisputesTaskTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A zero-decimal currency amount is not divided by 100.
+	 * @testdox A zero-decimal currency amount is not divided by 100, for $label.
+	 * @dataProvider provide_zero_decimal_cases
+	 *
+	 * @param string                         $label    Case.
+	 * @param array<int,array<string,mixed>> $disputes Cached disputes.
+	 * @param string                         $expected Task title.
 	 */
-	public function test_zero_decimal_currency_amount(): void {
-		$sut = $this->create_task( array( $this->dispute( 5000, 'jpy', '+3 days +1 hour' ) ) );
+	public function test_zero_decimal_currency_amount( string $label, array $disputes, string $expected ): void {
+		unset( $label );
 
-		$this->assertSame( 'Respond to a dispute for ¥5,000', $sut->get_title() );
+		$this->assertSame( $expected, $this->create_task( $disputes )->get_title() );
+	}
+
+	/**
+	 * Zero-decimal currency cases.
+	 *
+	 * @return array<string,array{0:string,1:array<int,array<string,mixed>>,2:string}>
+	 */
+	public function provide_zero_decimal_cases(): array {
+		return array(
+			'one dispute'  => array( 'one dispute', array( $this->dispute( 5000, 'jpy', '+3 days +1 hour' ) ), 'Respond to a dispute for ¥5,000' ),
+			'two disputes' => array(
+				'the total of two disputes',
+				array(
+					$this->dispute( 5000, 'jpy', '+3 days +1 hour' ),
+					$this->dispute( 1200, 'jpy', '+5 days +1 hour' ),
+				),
+				'Respond to 2 active disputes for a total of ¥6,200',
+			),
+		);
+	}
+
+	/**
+	 * @testdox With no dispute awaiting a response, the task has no title.
+	 */
+	public function test_no_active_disputes_have_no_title(): void {
+		$this->assertSame( '', $this->create_task( array() )->get_title() );
 	}
 
 	/**

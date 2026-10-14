@@ -146,6 +146,20 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Adds the Link note and the remediation note only once over two admin page loads.
+	 */
+	public function test_adds_link_and_remediation_notes_once(): void {
+		update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY, 'has_affected_orders', true );
+		$sut = $this->create_sut( $this->get_link_account_data(), array( 'card' ) );
+
+		$sut->add_woo_admin_notes();
+		$sut->add_woo_admin_notes();
+
+		$this->assertCount( 1, Notes::load_data_store()->get_notes_with_name( WooPaymentsSetUpLinkNote::NOTE_NAME ) );
+		$this->assertCount( 1, Notes::load_data_store()->get_notes_with_name( WooPaymentsCanceledAuthRemediationNote::NOTE_NAME ) );
+	}
+
+	/**
 	 * @testdox Adds the Link note when Link is enabled but cannot run at checkout in the store currency.
 	 */
 	public function test_adds_link_note_when_enabled_link_does_not_support_store_currency(): void {
