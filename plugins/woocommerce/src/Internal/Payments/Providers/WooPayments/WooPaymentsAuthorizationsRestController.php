@@ -242,18 +242,10 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 			return $live_intent;
 		}
 
-		$capture_amount = null;
-		if ( 'capture' === $action ) {
-			$capture_amount = $this->get_capture_amount( $request, $order, $live_intent );
-			if ( is_wp_error( $capture_amount ) ) {
-				return $capture_amount;
-			}
-		}
-
 		$this->add_fraud_outcome_manual_entry( $order, 'capture' === $action ? 'approve' : 'block' );
 
 		$outcome = 'capture' === $action
-			? $this->processing_service->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, $capture_amount ), $this->provider )
+			? $this->processing_service->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $this->provider )
 			: $this->processing_service->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $this->provider );
 
 		// The merchant's audit entry is kept whatever the platform answered: the client's capture and cancel save the order on
@@ -301,7 +293,8 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 	}
 
 	/**
-	 * Build the capture route definition with its optional partial amount.
+	 * Build the capture route definition with its required intent ID. It takes no amount: the order total is captured, as on
+	 * the client (class-wc-rest-payments-orders-controller.php:106-119).
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -310,10 +303,6 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 		$route['args'] = array(
 			'payment_intent_id' => array(
 				'required' => true,
-			),
-			'amount'            => array(
-				'required' => false,
-				'type'     => 'number',
 			),
 		);
 
@@ -446,60 +435,6 @@ class WooPaymentsAuthorizationsRestController implements RegisterHooksInterface 
 		}
 
 		return $intent;
-	}
-
-	/**
-	 * Get and validate an explicit capture amount.
-	 *
-	 * The REST amount uses WooCommerce decimal units. It is normalized through the
-	 * provider's minor-unit convention before comparison and downstream use.
-	 *
-	 * @param WP_REST_Request     $request Request.
-	 * @param WC_Order            $order   Order.
-	 * @param array<string,mixed> $intent  Live PaymentIntent response.
-	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
-	 * @return float|null|WP_Error
-	 */
-	private function get_capture_amount( WP_REST_Request $request, WC_Order $order, array $intent ) {
-		if ( ! $request->has_param( 'amount' ) ) {
-			return null;
-		}
-
-		$requested_amount = $request->get_param( 'amount' );
-		if ( ! is_numeric( $requested_amount ) ) {
-			return $this->invalid_capture_amount_error();
-		}
-
-		$amount   = (float) $requested_amount;
-		$currency = (string) $order->get_currency();
-		if ( ! is_finite( $amount ) || 0 >= $amount ) {
-			return $this->invalid_capture_amount_error();
-		}
-
-		$authorized_amount = $intent['amount'] ?? null;
-		if ( ! is_int( $authorized_amount ) || 0 > $authorized_amount ) {
-			return $this->invalid_capture_amount_error();
-		}
-
-		$amount_minor = WooPaymentsCurrencyUtils::amount_to_minor_units( $amount, $currency );
-		if ( 0 >= $amount_minor || $amount_minor > $authorized_amount ) {
-			return $this->invalid_capture_amount_error();
-		}
-
-		return WooPaymentsCurrencyUtils::amount_from_minor_units( $amount_minor, $currency );
-	}
-
-	/**
-	 * Build the invalid capture amount response.
-	 *
-	 * @return WP_Error
-	 */
-	private function invalid_capture_amount_error(): WP_Error {
-		return new WP_Error(
-			'wcpay_invalid_capture_amount',
-			__( 'The capture amount must be greater than zero and no more than the authorized amount.', 'woocommerce' ),
-			array( 'status' => 400 )
-		);
 	}
 
 	/**
