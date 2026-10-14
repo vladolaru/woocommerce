@@ -972,6 +972,30 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox WooPay session data reports WooCommerce Subscriptions inactive while its class is not loaded.
+	 */
+	public function test_init_session_request_reports_woocommerce_subscriptions_inactive(): void {
+		$result = $this->create_service()->get_init_session_request( 'shopper@example.com' );
+
+		$this->assertFalse( $result['store_data']['is_subscriptions_plugin_active'] );
+	}
+
+	/**
+	 * @testdox WooPay session data reports WooCommerce Subscriptions active once its class is loaded.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_init_session_request_reports_woocommerce_subscriptions_active(): void {
+		// The global WC_Subscriptions class cannot be unloaded, so this test runs in its own process.
+		require_once __DIR__ . '/Fixtures/LateLoadedSubscriptions.php';
+		class_alias( Fixtures\LateLoadedSubscriptions::class, 'WC_Subscriptions' );
+
+		$result = $this->create_service()->get_init_session_request( 'shopper@example.com' );
+
+		$this->assertTrue( $result['store_data']['is_subscriptions_plugin_active'] );
+	}
+
+	/**
 	 * @testdox Should preload current Store API cart and checkout data for WooPay init sessions.
 	 */
 	public function test_preloads_current_store_api_cart_and_checkout_data(): void {

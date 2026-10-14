@@ -796,6 +796,77 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should report the bundled subscriptions off and not eligible on a store without them ($description).
+	 * @testWith ["flag never stored", null]
+	 *           ["flag stored off", "0"]
+	 *
+	 * @param string      $description Case.
+	 * @param string|null $flag        Stored bundled subscriptions flag, or null when never stored.
+	 */
+	public function test_get_settings_reports_bundled_subscriptions_off( string $description, ?string $flag ): void {
+		unset( $description );
+		if ( null !== $flag ) {
+			update_option( '_wcpay_feature_subscriptions', $flag );
+		}
+
+		$settings = $this->sut->get_settings();
+
+		$this->assertFalse( $settings['is_wcpay_subscriptions_enabled'] );
+		$this->assertFalse( $settings['is_wcpay_subscriptions_eligible'], 'No subscription or product carries Stripe Billing data.' );
+	}
+
+	/**
+	 * Client 11.1.0 only turns the bundled subscriptions off from the settings save (class-wc-rest-payments-settings-controller.php:904-916).
+	 *
+	 * @testdox Should never turn the bundled subscriptions on from the settings save ($description).
+	 * @testWith ["flag never stored", null]
+	 *           ["flag stored on", "1"]
+	 *
+	 * @param string      $description Case.
+	 * @param string|null $flag        Stored bundled subscriptions flag, or null when never stored.
+	 */
+	public function test_update_settings_never_turns_bundled_subscriptions_on( string $description, ?string $flag ): void {
+		unset( $description );
+		if ( null !== $flag ) {
+			update_option( '_wcpay_feature_subscriptions', $flag );
+		}
+
+		$this->sut->update_settings( array( 'is_wcpay_subscriptions_enabled' => true ) );
+
+		$this->assertSame( $flag ?? false, get_option( '_wcpay_feature_subscriptions', false ) );
+	}
+
+	/**
+	 * @testdox Should report WooCommerce Subscriptions inactive while its class is not loaded.
+	 */
+	public function test_get_settings_reports_woocommerce_subscriptions_inactive(): void {
+		$this->assertFalse( $this->sut->get_settings()['is_subscriptions_plugin_active'] );
+	}
+
+	/**
+	 * @testdox Should report WooCommerce Subscriptions active once its class is loaded.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_get_settings_reports_woocommerce_subscriptions_active(): void {
+		// The global WC_Subscriptions class cannot be unloaded, so this test runs in its own process.
+		require_once __DIR__ . '/Fixtures/LateLoadedSubscriptions.php';
+		class_alias( Fixtures\LateLoadedSubscriptions::class, 'WC_Subscriptions' );
+
+		$this->assertTrue( $this->sut->get_settings()['is_subscriptions_plugin_active'] );
+	}
+
+	/**
+	 * @testdox Should accept and report one fixed list of payment method IDs.
+	 */
+	public function test_settings_payment_method_ids(): void {
+		$this->assertSame(
+			array( 'alipay', 'amazon_pay', 'apple_pay', 'au_becs_debit', 'bancontact', 'card', 'eps', 'google_pay', 'grabpay', 'ideal', 'jcb', 'klarna', 'link', 'multibanco', 'p24', 'sepa_debit', 'wechat_pay', 'affirm', 'afterpay_clearpay' ),
+			WooPaymentsSettingsService::get_supported_payment_method_ids()
+		);
+	}
+
+	/**
 	 * @testdox Should derive WooPayments Subscriptions eligibility from Stripe Billing product metadata.
 	 */
 	public function test_get_settings_detects_stripe_billing_subscription_product(): void {

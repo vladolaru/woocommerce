@@ -877,6 +877,92 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should read Apple Pay and Google Pay as on from their own gateway settings, and from the card settings only before either exists ($description).
+	 * @dataProvider payment_request_enabled_provider
+	 *
+	 * @param string              $description Case.
+	 * @param array<string,mixed> $wallet_rows Stored wallet gateway settings by payment method ID.
+	 * @param string              $card_switch Stored payment_request value in the card gateway settings.
+	 * @param bool                $expected    Whether Apple Pay or Google Pay reads as on.
+	 */
+	public function test_is_payment_request_enabled( string $description, array $wallet_rows, string $card_switch, bool $expected ): void {
+		unset( $description );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'payment_request' => $card_switch ) );
+		foreach ( $wallet_rows as $method_id => $row ) {
+			update_option( 'woocommerce_woocommerce_payments_' . $method_id . '_settings', $row );
+		}
+
+		$this->assertSame( $expected, $this->create_service()->is_payment_request_enabled() );
+	}
+
+	/**
+	 * Provide wallet rows: case, wallet gateway settings, card switch, expected.
+	 *
+	 * Client 11.1.0 reads the Google Pay and Apple Pay gateways' enabled setting (includes/class-wc-payment-gateway-wcpay.php:996-1009).
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:string,3:bool}>
+	 */
+	public function payment_request_enabled_provider(): array {
+		return array(
+			'no wallet rows, card switch on'  => array( 'no wallet rows, card switch on', array(), 'yes', true ),
+			'no wallet rows, card switch off' => array( 'no wallet rows, card switch off', array(), 'no', false ),
+			'Apple Pay on'                    => array( 'Apple Pay on', array( 'apple_pay' => array( 'enabled' => 'yes' ) ), 'no', true ),
+			'Google Pay on'                   => array(
+				'Google Pay on',
+				array(
+					'apple_pay'  => array( 'enabled' => 'no' ),
+					'google_pay' => array( 'enabled' => 'yes' ),
+				),
+				'no',
+				true,
+			),
+			'both off, card switch on'        => array(
+				'both off, card switch on',
+				array(
+					'apple_pay'  => array( 'enabled' => 'no' ),
+					'google_pay' => array( 'enabled' => 'no' ),
+				),
+				'yes',
+				false,
+			),
+			'a row not an array'              => array( 'a row not an array', array( 'google_pay' => 'corrupt' ), 'yes', false ),
+		);
+	}
+
+	/**
+	 * @testdox Should read one wallet gateway as on only from its own enabled setting ($description).
+	 * @dataProvider payment_request_method_enabled_provider
+	 *
+	 * @param string $description Case.
+	 * @param string $method_id   Payment method ID asked about.
+	 * @param mixed  $row         Stored gateway settings of that method, or null when never stored.
+	 * @param bool   $expected    Whether it reads as on.
+	 */
+	public function test_is_payment_request_method_enabled( string $description, string $method_id, $row, bool $expected ): void {
+		unset( $description );
+		if ( null !== $row ) {
+			update_option( 'woocommerce_woocommerce_payments_' . $method_id . '_settings', $row );
+		}
+
+		$this->assertSame( $expected, $this->create_service()->is_payment_request_method_enabled( $method_id ) );
+	}
+
+	/**
+	 * Provide wallet method rows: case, method, stored row, expected.
+	 *
+	 * @return array<string,array{0:string,1:string,2:mixed,3:bool}>
+	 */
+	public function payment_request_method_enabled_provider(): array {
+		return array(
+			'Apple Pay on'         => array( 'Apple Pay on', 'apple_pay', array( 'enabled' => 'yes' ), true ),
+			'Apple Pay off'        => array( 'Apple Pay off', 'apple_pay', array( 'enabled' => 'no' ), false ),
+			'Google Pay never set' => array( 'Google Pay never set', 'google_pay', null, false ),
+			'a row not an array'   => array( 'a row not an array', 'google_pay', 'corrupt', false ),
+			'card is not a wallet' => array( 'card is not a wallet', 'card', array( 'enabled' => 'yes' ), false ),
+		);
+	}
+
+	/**
 	 * @testdox Should read a yes/no gateway setting as on only for yes, 1 or true ($description).
 	 * @dataProvider gateway_setting_enabled_provider
 	 *

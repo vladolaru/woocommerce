@@ -829,6 +829,21 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should accept only the settings payment method IDs in the settings update route.
+	 */
+	public function test_settings_update_route_accepts_the_settings_payment_method_ids(): void {
+		$handlers = $this->server->get_routes()['/wc/v3/payments/settings'];
+		$update   = current( array_filter( $handlers, static fn( array $handler ): bool => ! empty( $handler['methods']['POST'] ) ) );
+		$arg      = $update['args']['enabled_payment_method_ids'];
+
+		$this->assertSame(
+			array( 'alipay', 'amazon_pay', 'apple_pay', 'au_becs_debit', 'bancontact', 'card', 'eps', 'google_pay', 'grabpay', 'ideal', 'jcb', 'klarna', 'link', 'multibanco', 'p24', 'sepa_debit', 'wechat_pay', 'affirm', 'afterpay_clearpay' ),
+			$arg['items']['enum']
+		);
+		$this->assertSame( 19, $arg['maxItems'] );
+	}
+
+	/**
 	 * @testdox Should reject duplicate payment method IDs before settings persistence.
 	 */
 	public function test_update_native_settings_rejects_duplicate_payment_method_ids(): void {
