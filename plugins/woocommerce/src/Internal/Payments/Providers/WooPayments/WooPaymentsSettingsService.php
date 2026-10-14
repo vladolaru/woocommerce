@@ -299,7 +299,7 @@ class WooPaymentsSettingsService {
 	 * @return array<string,mixed>
 	 */
 	public function get_settings(): array {
-		$settings = $this->get_gateway_settings();
+		$settings = $this->account_service->get_gateway_settings();
 		// The availability filter runs before any account read, as client 11.1.0 get_settings() does (class-wc-rest-payments-settings-controller.php:513-516).
 		$available_payment_method_ids = $this->get_available_payment_method_ids();
 		$account_fields               = $this->get_account_backed_response_fields( $settings );
@@ -541,7 +541,7 @@ class WooPaymentsSettingsService {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function update_settings( array $params ) {
-		$settings                = $this->get_gateway_settings();
+		$settings                = $this->account_service->get_gateway_settings();
 		$previous_settings       = $settings;
 		$was_woopay_enabled      = $this->is_yes( $settings['platform_checkout'] ?? 'no' );
 		$payment_request_enabled = array_key_exists( 'is_payment_request_enabled', $params )
@@ -748,17 +748,6 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
-	 * Get gateway settings.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function get_gateway_settings(): array {
-		$settings = get_option( self::SETTINGS_OPTION, array() );
-
-		return array_replace( WooPaymentsSettingsDefaults::all(), is_array( $settings ) ? $settings : array() );
-	}
-
-	/**
 	 * Get the canonical-to-split gateway settings synchronizer.
 	 *
 	 * @return WooPaymentsGatewaySettingsSynchronizer
@@ -934,7 +923,7 @@ class WooPaymentsSettingsService {
 	public function get_duplicated_payment_method_ids(): array {
 		try {
 			$duplicate_candidates = array();
-			$settings             = $this->get_gateway_settings();
+			$settings             = $this->account_service->get_gateway_settings();
 
 			foreach ( $this->get_registered_payment_gateways() as $gateway ) {
 				if ( ! $this->is_gateway_enabled( $gateway ) ) {

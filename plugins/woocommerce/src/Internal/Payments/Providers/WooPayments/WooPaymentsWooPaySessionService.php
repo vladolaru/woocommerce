@@ -1977,7 +1977,7 @@ class WooPaymentsWooPaySessionService {
 		$account_data = $this->get_account_service()->get_cached_account_data();
 
 		return ! empty( $account_data['platform_global_theme_support_enabled'] ) &&
-			$this->is_truthy_gateway_setting( 'is_woopay_global_theme_support_enabled' );
+			$this->get_account_service()->is_gateway_setting_enabled( 'is_woopay_global_theme_support_enabled' );
 	}
 
 	/**
@@ -2127,18 +2127,6 @@ class WooPaymentsWooPaySessionService {
 		$value = $this->get_account_service()->get_gateway_setting( $key, $fallback );
 
 		return is_scalar( $value ) ? sanitize_text_field( (string) $value ) : $fallback;
-	}
-
-	/**
-	 * Tell whether a gateway setting is truthy.
-	 *
-	 * @param string $key Setting key.
-	 * @return bool
-	 */
-	private function is_truthy_gateway_setting( string $key ): bool {
-		$value = $this->get_account_service()->get_gateway_setting( $key );
-
-		return true === $value || 'yes' === $value || '1' === $value || 1 === $value;
 	}
 
 	/**

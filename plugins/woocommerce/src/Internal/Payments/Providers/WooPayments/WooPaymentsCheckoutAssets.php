@@ -1058,7 +1058,7 @@ class WooPaymentsCheckoutAssets {
 	 */
 	private function is_express_checkout_in_payment_methods_enabled(): bool {
 		return WooPaymentsSettingsService::is_dynamic_checkout_place_order_button_enabled()
-			&& $this->is_truthy_gateway_setting( 'express_checkout_in_payment_methods' );
+			&& $this->get_account_service()->is_gateway_setting_enabled( 'express_checkout_in_payment_methods' );
 	}
 
 	/**
@@ -1402,18 +1402,6 @@ class WooPaymentsCheckoutAssets {
 	 */
 	public function should_use_stripe_platform_on_checkout_page(): bool {
 		return $this->get_woopay_session_service()->should_use_stripe_platform_on_checkout_page();
-	}
-
-	/**
-	 * Tell whether a WooPayments gateway setting is truthy.
-	 *
-	 * @param string $key Setting key.
-	 * @return bool
-	 */
-	private function is_truthy_gateway_setting( string $key ): bool {
-		$value = $this->get_account_service()->get_gateway_setting( $key, 'no' );
-
-		return true === $value || 'yes' === $value || '1' === $value || 1 === $value;
 	}
 
 	/**

@@ -44,7 +44,7 @@ class WooPaymentsPaymentDetailsOrderlessRefundTest extends WC_REST_Unit_Test_Cas
 		$api_client->init( $this->http_client, $this->create_test_mode_account_service(), wc_get_container()->get( WooPaymentsTransportLog::class ) );
 
 		$sut = new WooPaymentsPaymentDetailsRestController();
-		$sut->init( $api_client, $this->create_order_service() );
+		$sut->init( $api_client, $this->create_order_service(), wc_get_container()->get( WooPaymentsAccountService::class ) );
 		$sut->register_routes();
 
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );

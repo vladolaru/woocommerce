@@ -134,7 +134,7 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 	 */
 	private function create_payment_details_controller(): WooPaymentsPaymentDetailsRestController {
 		$controller = new WooPaymentsPaymentDetailsRestController();
-		$controller->init( new WooPaymentsApiClient(), new WooPaymentsOrderDetailsService() );
+		$controller->init( new WooPaymentsApiClient(), new WooPaymentsOrderDetailsService(), wc_get_container()->get( WooPaymentsAccountService::class ) );
 
 		return $controller;
 	}

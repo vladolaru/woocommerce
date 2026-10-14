@@ -150,7 +150,7 @@ class WooPaymentsExpressCheckoutService {
 				'display_prices_with_tax'    => 'incl' === get_option( 'woocommerce_tax_display_cart' ),
 			),
 			'has_subscription'            => $this->context_has_subscription( $context ),
-			'is_manual_capture'           => $this->is_truthy_gateway_setting( 'manual_capture' ),
+			'is_manual_capture'           => $this->account_service->is_gateway_setting_enabled( 'manual_capture' ),
 			// Snake case only, as client 11.1.0 adds it to these params (class-woopay-tracker.php:672).
 			'is_shopper_tracking_enabled' => $tracking_enabled,
 			'button'                      => $this->get_button_settings( $context ),
@@ -1024,18 +1024,6 @@ class WooPaymentsExpressCheckoutService {
 		$value = $this->account_service->get_gateway_setting( $key, $fallback );
 
 		return is_scalar( $value ) ? sanitize_text_field( (string) $value ) : $fallback;
-	}
-
-	/**
-	 * Tell whether a gateway setting is truthy.
-	 *
-	 * @param string $key Setting key.
-	 * @return bool
-	 */
-	private function is_truthy_gateway_setting( string $key ): bool {
-		$value = $this->account_service->get_gateway_setting( $key, 'no' );
-
-		return true === $value || 'yes' === $value || '1' === $value || 1 === $value;
 	}
 
 	/**

@@ -933,7 +933,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	private function get_store_setup_details(): array {
-		$settings                         = $this->get_gateway_settings();
+		$settings                         = $this->account_service->get_gateway_settings();
 		$payment_methods_available        = $this->get_payment_methods_available();
 		$payment_methods_enabled          = $this->get_payment_methods_enabled();
 		$payment_methods_disabled         = array_values( array_diff( $payment_methods_available, $payment_methods_enabled ) );
@@ -1007,20 +1007,6 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 				'wc_subscriptions_version'    => $this->get_subscriptions_version(),
 			),
 		);
-	}
-
-	/**
-	 * Get WooPayments gateway settings, a key never saved reading as its form default.
-	 *
-	 * A natively onboarded store stores only the keys onboarding writes until the settings page is saved; the gateway
-	 * answers every other key with its form default (WC_Settings_API::get_option()), and so does the snapshot.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function get_gateway_settings(): array {
-		$settings = get_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings', array() );
-
-		return array_replace( WooPaymentsSettingsDefaults::all(), is_array( $settings ) ? $settings : array() );
 	}
 
 	/**

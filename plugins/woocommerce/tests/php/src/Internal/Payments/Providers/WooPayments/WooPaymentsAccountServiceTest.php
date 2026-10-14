@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsDefaults;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use RuntimeException;
 use WC_Unit_Test_Case;
@@ -765,6 +766,83 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( $sut->is_account_rejected() );
 		$this->assertTrue( $sut->is_account_under_review() );
+	}
+
+	/**
+	 * @testdox Should read a yes/no gateway setting as on only for yes, 1 or true ($description).
+	 * @dataProvider gateway_setting_enabled_provider
+	 *
+	 * @param string $description Case.
+	 * @param mixed  $stored      Stored settings option.
+	 * @param bool   $expected    Whether the setting reads as on.
+	 */
+	public function test_is_gateway_setting_enabled( string $description, $stored, bool $expected ): void {
+		unset( $description );
+		update_option( 'woocommerce_woocommerce_payments_settings', $stored );
+
+		$this->assertSame( $expected, $this->create_service()->is_gateway_setting_enabled( 'manual_capture' ) );
+	}
+
+	/**
+	 * Provide yes/no setting rows: case, stored option, expected.
+	 *
+	 * @return array<string,array{0:string,1:mixed,2:bool}>
+	 */
+	public function gateway_setting_enabled_provider(): array {
+		return array(
+			'never saved'         => array( 'never saved', array( 'enabled' => 'yes' ), false ),
+			'yes'                 => array( 'yes', array( 'manual_capture' => 'yes' ), true ),
+			'no'                  => array( 'no', array( 'manual_capture' => 'no' ), false ),
+			'empty string'        => array( 'empty string', array( 'manual_capture' => '' ), false ),
+			'string 0'            => array( 'string 0', array( 'manual_capture' => '0' ), false ),
+			'string 1'            => array( 'string 1', array( 'manual_capture' => '1' ), true ),
+			'integer 1'           => array( 'integer 1', array( 'manual_capture' => 1 ), true ),
+			'boolean true'        => array( 'boolean true', array( 'manual_capture' => true ), true ),
+			'option not an array' => array( 'option not an array', 'corrupt', false ),
+		);
+	}
+
+	/**
+	 * @testdox Should read the gateway settings with every key never saved as its form default.
+	 */
+	public function test_get_gateway_settings_reads_missing_keys_as_form_defaults(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card', 'link' ),
+				'apple_pay_domain_set'           => 'yes',
+			)
+		);
+
+		$settings = $this->create_service()->get_gateway_settings();
+
+		$this->assertSame( 'yes', $settings['enabled'], 'A stored value wins over its default.' );
+		$this->assertSame( array( 'card', 'link' ), $settings['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'yes', $settings['apple_pay_domain_set'], 'A stored key without a default is kept.' );
+		$this->assertSame( 'no', $settings['manual_capture'] );
+		$this->assertSame( array( 'payment_request', 'woopay', 'amazon_pay' ), $settings['express_checkout_checkout_methods'] );
+		$this->assertSame( array(), array_diff_key( WooPaymentsSettingsDefaults::all(), $settings ), 'Every form default is present.' );
+
+		update_option( 'woocommerce_woocommerce_payments_settings', 'corrupt' );
+		$this->assertSame( WooPaymentsSettingsDefaults::all(), $this->create_service()->get_gateway_settings(), 'A settings option that is not an array reads as the defaults.' );
+	}
+
+	/**
+	 * @testdox Should log a gateway settings read that a third-party option filter makes throw, and serve the defaults.
+	 */
+	public function test_throwing_gateway_settings_read_is_logged_and_read_as_defaults(): void {
+		add_filter(
+			'pre_option_woocommerce_woocommerce_payments_settings',
+			static function () {
+				throw new \RuntimeException( 'Filter failed for acct_secret.' );
+			}
+		);
+		$logger = RecordingWcLogger::install();
+
+		$this->assertSame( WooPaymentsSettingsDefaults::all(), $this->create_service()->get_gateway_settings() );
+		$this->assertStringContainsString( 'could not read the gateway settings; treating it as missing.', $logger->get_errors()[0][1] );
+		$this->assertStringNotContainsString( 'acct_secret', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
 	}
 
 	/**

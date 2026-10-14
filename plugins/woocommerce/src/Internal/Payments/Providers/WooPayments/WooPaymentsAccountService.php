@@ -484,7 +484,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return void
 	 */
 	public function cleanup_after_account_reset(): void {
-		$settings = $this->get_gateway_settings();
+		$settings = $this->get_stored_gateway_settings();
 
 		$settings['enabled']                        = 'no';
 		$settings['test_mode']                      = 'no';
@@ -656,7 +656,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			return;
 		}
 
-		$settings = $this->get_gateway_settings();
+		$settings = $this->get_stored_gateway_settings();
 		$this->setup_tier->write_tier(
 			'yes' === ( $settings['enabled'] ?? null ) ? WooPaymentsSetupTier::ACTIVE : WooPaymentsSetupTier::CONNECTED
 		);
@@ -1245,7 +1245,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return mixed Persisted value, caller fallback, plugin default, or an empty string when no default exists.
 	 */
 	public function get_gateway_setting( string $key, $fallback = null ) {
-		$settings = $this->get_gateway_settings();
+		$settings = $this->get_stored_gateway_settings();
 
 		if ( array_key_exists( $key, $settings ) ) {
 			return $settings[ $key ];
@@ -1256,6 +1256,35 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		}
 
 		return WooPaymentsSettingsDefaults::get( $key ) ?? '';
+	}
+
+	/**
+	 * Tell whether a yes/no gateway setting is on: `yes`, `1` or true. A setting never saved reads as off.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $key Setting key.
+	 * @return bool
+	 */
+	public function is_gateway_setting_enabled( string $key ): bool {
+		$value = $this->get_gateway_setting( $key, 'no' );
+
+		return true === $value || 'yes' === $value || '1' === $value || 1 === $value;
+	}
+
+	/**
+	 * Get the gateway settings, a key never saved reading as its form default.
+	 *
+	 * A natively onboarded store stores only the keys onboarding writes until the settings page is saved; the gateway
+	 * answers every other key with its form default (WC_Settings_API::get_option()). A settings read that throws is logged
+	 * and read as no stored settings.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return array<string,mixed>
+	 */
+	public function get_gateway_settings(): array {
+		return array_replace( WooPaymentsSettingsDefaults::all(), $this->get_stored_gateway_settings() );
 	}
 
 	/**
@@ -1277,7 +1306,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			$this->gateway_settings_synchronizer = wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class );
 		}
 
-		return $this->gateway_settings_synchronizer->is_payment_request_enabled( $this->get_gateway_settings() );
+		return $this->gateway_settings_synchronizer->is_payment_request_enabled( $this->get_stored_gateway_settings() );
 	}
 
 	/**
@@ -1436,11 +1465,11 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get persisted gateway settings.
+	 * Get the gateway settings as stored, without the form defaults.
 	 *
 	 * @return array<string,mixed>
 	 */
-	private function get_gateway_settings(): array {
+	private function get_stored_gateway_settings(): array {
 		try {
 			$settings = $this->legacy_proxy->call_function( 'get_option', self::SETTINGS_OPTION, array() );
 		} catch ( \Throwable $e ) {

@@ -201,7 +201,7 @@ class WooPaymentsExpressPaymentMethodTypes {
 	 */
 	public static function is_express_checkout_in_payment_methods_enabled( WooPaymentsAccountService $account_service ): bool {
 		return WooPaymentsSettingsService::is_dynamic_checkout_place_order_button_enabled()
-			&& self::is_truthy_gateway_setting( $account_service, 'express_checkout_in_payment_methods' );
+			&& $account_service->is_gateway_setting_enabled( 'express_checkout_in_payment_methods' );
 	}
 
 	/**
@@ -413,19 +413,6 @@ class WooPaymentsExpressPaymentMethodTypes {
 		}
 
 		return $account_service->is_capability_active( 'amazon_pay_payments' );
-	}
-
-	/**
-	 * Tell whether a yes/no gateway setting is enabled.
-	 *
-	 * @param WooPaymentsAccountService $account_service WooPayments account service.
-	 * @param string                    $key             Setting key.
-	 * @return bool
-	 */
-	private static function is_truthy_gateway_setting( WooPaymentsAccountService $account_service, string $key ): bool {
-		$value = $account_service->get_gateway_setting( $key, 'no' );
-
-		return true === $value || 'yes' === $value || '1' === $value || 1 === $value;
 	}
 
 	/**

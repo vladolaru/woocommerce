@@ -60,16 +60,25 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	private WooPaymentsOrderDetailsService $order_service;
 
 	/**
+	 * WooPayments account service.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient           $api_client    WooPayments API client.
-	 * @param WooPaymentsOrderDetailsService $order_service Order details service.
+	 * @param WooPaymentsApiClient           $api_client      WooPayments API client.
+	 * @param WooPaymentsOrderDetailsService $order_service   Order details service.
+	 * @param WooPaymentsAccountService      $account_service Account service.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsOrderDetailsService $order_service ): void {
-		$this->api_client    = $api_client;
-		$this->order_service = $order_service;
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsOrderDetailsService $order_service, WooPaymentsAccountService $account_service ): void {
+		$this->api_client      = $api_client;
+		$this->order_service   = $order_service;
+		$this->account_service = $account_service;
 	}
 
 	/**
@@ -743,9 +752,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	 * @return bool
 	 */
 	private function is_manual_capture_enabled(): bool {
-		$settings = get_option( 'woocommerce_woocommerce_payments_settings', array() );
-
-		return is_array( $settings ) && 'yes' === (string) ( $settings['manual_capture'] ?? 'no' );
+		return 'yes' === (string) $this->account_service->get_gateway_setting( 'manual_capture', 'no' );
 	}
 
 	/**
