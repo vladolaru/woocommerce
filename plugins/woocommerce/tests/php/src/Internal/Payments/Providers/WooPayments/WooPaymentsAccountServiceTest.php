@@ -41,7 +41,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_test_mode_enabled_date' );
 		delete_option( 'woocommerce_woopayments_nox_profile' );
 		delete_option( 'woocommerce_woopayments_nox_onboarding_locked' );
-		delete_option( 'woocommerce_woopayments_account_deletion_pending_id' );
 		delete_option( '_wcpay_feature_reports_area' );
 		delete_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments' );
 		delete_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version' );
@@ -55,7 +54,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		delete_transient( 'wcpay_test_to_live_eligible' );
 		delete_transient( 'wcpay_post_kyc_activation_eligible' );
 		remove_all_filters( 'pre_option_wcpay_account_data' );
-		remove_all_filters( 'pre_option_woocommerce_woopayments_account_deletion_pending_id' );
 		remove_all_filters( 'wcpay_dev_mode' );
 		remove_all_filters( 'wcpay_test_mode' );
 		remove_all_filters( 'wcpay_test_mode_onboarding' );
@@ -1460,123 +1458,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $stale_account, $cached['data'] );
 		$this->assertTrue( $cached['errored'] );
 		$this->assertSame( 2, $cached['consecutive_errors'] );
-	}
-
-	/**
-	 * @testdox Should fail closed when a strict account refresh cannot fetch fresh provider data.
-	 */
-	public function test_refresh_account_data_strict_fails_when_refresh_falls_back_to_stale_data(): void {
-		$stale_account = $this->get_valid_live_account_payload(
-			array(
-				'account_id' => 'acct_stale',
-			)
-		);
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data'               => $stale_account,
-				'fetched'            => time() - DAY_IN_SECONDS,
-				'errored'            => false,
-				'consecutive_errors' => 0,
-			)
-		);
-
-		$api_client = new class() extends WooPaymentsApiClient {
-			/**
-			 * Tell whether the fake client is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			/**
-			 * Throw a transient account-fetch failure.
-			 *
-			 * @param string $woocommerce_store_id WooCommerce store ID.
-			 * @throws WooPaymentsApiException Always throws a transient account-fetch failure.
-			 */
-			public function get_account( string $woocommerce_store_id = '' ): array {
-				throw new WooPaymentsApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
-			}
-		};
-		$sut        = $this->create_service_with_api_client( $api_client );
-
-		$this->expectException( WooPaymentsApiException::class );
-
-		$sut->refresh_account_data_strict();
-	}
-
-	/**
-	 * @testdox Should fail closed when a strict account refresh cannot persist fresh account data.
-	 */
-	public function test_refresh_account_data_strict_fails_when_cache_write_does_not_stick(): void {
-		$stale_cache   = array(
-			'data'               => $this->get_valid_live_account_payload(
-				array(
-					'account_id' => 'acct_stale',
-				)
-			),
-			'fetched'            => time() - DAY_IN_SECONDS,
-			'errored'            => false,
-			'consecutive_errors' => 0,
-		);
-		$fresh_account = $this->get_valid_live_account_payload(
-			array(
-				'account_id' => 'acct_fresh',
-			)
-		);
-		$sut           = $this->create_service_with_api_client( $this->create_counting_account_api_client( $fresh_account ) );
-
-		add_filter(
-			'pre_option_wcpay_account_data',
-			static function () use ( $stale_cache ) {
-				return $stale_cache;
-			}
-		);
-
-		$this->expectException( WooPaymentsApiException::class );
-
-		$sut->refresh_account_data_strict();
-	}
-
-	/**
-	 * @testdox Should fail closed when the pending account-deletion marker cannot be written.
-	 */
-	public function test_mark_account_deletion_pending_fails_when_marker_write_does_not_stick(): void {
-		$sut = $this->create_service();
-
-		add_filter(
-			'pre_option_woocommerce_woopayments_account_deletion_pending_id',
-			static function () {
-				return '';
-			}
-		);
-
-		$this->expectException( RuntimeException::class );
-
-		$sut->mark_account_deletion_pending( 'acct_123' );
-	}
-
-	/**
-	 * @testdox Should fail closed when the pending account-deletion marker cannot be cleared.
-	 */
-	public function test_clear_pending_account_deletion_fails_when_marker_delete_does_not_stick(): void {
-		update_option( 'woocommerce_woopayments_account_deletion_pending_id', 'acct_123', false );
-
-		$sut = $this->create_service();
-
-		add_filter(
-			'pre_option_woocommerce_woopayments_account_deletion_pending_id',
-			static function () {
-				return 'acct_123';
-			}
-		);
-
-		$this->expectException( RuntimeException::class );
-
-		$sut->clear_pending_account_deletion();
 	}
 
 	/**

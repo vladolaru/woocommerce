@@ -12,7 +12,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
-use RuntimeException;
 
 /**
  * Reads Core-owned WooPayments account readiness from preserved persisted data.
@@ -102,8 +101,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	private const NOX_PROFILE_OPTION = 'woocommerce_woopayments_nox_profile';
 
 	private const NOX_ONBOARDING_LOCKED_OPTION = 'woocommerce_woopayments_nox_onboarding_locked';
-
-	private const ACCOUNT_DELETION_PENDING_OPTION = 'woocommerce_woopayments_account_deletion_pending_id';
 
 	private const INCENTIVES_USAGE_OPTION = 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments';
 
@@ -324,42 +321,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 */
 	public function refresh_account_data(): array {
 		return $this->get_cached_account_data( true );
-	}
-
-	/**
-	 * Refetch WooPayments account data and fail when fresh data cannot be fetched.
-	 *
-	 * Normal account reads intentionally fall back to stale data on provider failures for storefront stability. The
-	 * `account.deleted` webhook keeps this strict path so a failed refresh redelivers instead of acknowledging stale
-	 * account state, which its deletion-retry marker depends on (see {@see WooPaymentsAccountEventHandler::process()}).
-	 * `account.updated` uses the non-strict {@see self::refresh_account_data()} instead (C25).
-	 *
-	 * @since 11.0.0
-	 * @return array<string,mixed>
-	 * @throws WooPaymentsApiException When fresh account data cannot be fetched.
-	 */
-	public function refresh_account_data_strict(): array {
-		$data = $this->fetch_account_data();
-		if ( false === $data ) {
-			throw new WooPaymentsApiException( 'Unable to refresh WooPayments account data.', 'wcpay_account_refresh_failed', 500 );
-		}
-
-		$cache_contents = $this->build_account_cache_contents( $data, false );
-		$this->persist_account_cache( $cache_contents );
-		if ( ! $this->is_persisted_account_cache( $cache_contents ) ) {
-			throw new WooPaymentsApiException( 'Unable to persist refreshed WooPayments account data.', 'wcpay_account_refresh_persist_failed', 500 );
-		}
-
-		/**
-		 * Allows native WooPayments integrations to react when account data is refreshed.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param array<string,mixed> $data Refreshed WooPayments account data.
-		 */
-		do_action( 'woocommerce_payments_account_refreshed', $data );
-
-		return $data;
 	}
 
 	/**
@@ -607,49 +568,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		$data  = is_array( $cache ) && array_key_exists( 'data', $cache ) ? $cache['data'] : null;
 
 		return is_array( $data ) ? $data : array();
-	}
-
-	/**
-	 * Persist the account deletion currently being processed so retries can continue after partial cleanup.
-	 *
-	 * @since 11.0.0
-	 * @param string $account_id Account ID.
-	 * @return void
-	 * @throws RuntimeException When the marker cannot be persisted.
-	 */
-	public function mark_account_deletion_pending( string $account_id ): void {
-		$this->legacy_proxy->call_function( 'update_option', self::ACCOUNT_DELETION_PENDING_OPTION, $account_id, false );
-		$this->legacy_proxy->call_function( 'wp_cache_delete', self::ACCOUNT_DELETION_PENDING_OPTION, 'options' );
-		if ( $account_id !== $this->get_pending_account_deletion_id() ) {
-			throw new RuntimeException( 'Unable to persist the pending WooPayments account deletion marker.' );
-		}
-	}
-
-	/**
-	 * Get the pending account deletion ID, if any.
-	 *
-	 * @since 11.0.0
-	 * @return string
-	 */
-	public function get_pending_account_deletion_id(): string {
-		$account_id = $this->legacy_proxy->call_function( 'get_option', self::ACCOUNT_DELETION_PENDING_OPTION, '' );
-
-		return is_scalar( $account_id ) ? (string) $account_id : '';
-	}
-
-	/**
-	 * Clear the pending account deletion marker.
-	 *
-	 * @since 11.0.0
-	 * @return void
-	 * @throws RuntimeException When the marker cannot be cleared.
-	 */
-	public function clear_pending_account_deletion(): void {
-		$this->legacy_proxy->call_function( 'delete_option', self::ACCOUNT_DELETION_PENDING_OPTION );
-		$this->legacy_proxy->call_function( 'wp_cache_delete', self::ACCOUNT_DELETION_PENDING_OPTION, 'options' );
-		if ( '' !== $this->get_pending_account_deletion_id() ) {
-			throw new RuntimeException( 'Unable to clear the pending WooPayments account deletion marker.' );
-		}
 	}
 
 	/**

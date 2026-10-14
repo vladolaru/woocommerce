@@ -78,13 +78,9 @@ class WooPaymentsAccountEventHandler {
 					return;
 				}
 
-				$this->account_service->mark_account_deletion_pending( $event_account_id );
 				$this->account_service->cleanup_after_account_reset();
-				// Authorized divergence: C25 (account.deleted keeps 500 so the platform redelivers for the
-				// deletion-retry marker, 7496a33d5df).
-				$this->account_service->refresh_account_data_strict();
+				$this->account_service->refresh_account_data();
 				$this->token_service->clear_all_cached_payment_methods();
-				$this->account_service->clear_pending_account_deletion();
 				return;
 		}
 
@@ -110,17 +106,15 @@ class WooPaymentsAccountEventHandler {
 	/**
 	 * Tell whether an account.deleted event applies to the current preserved account.
 	 *
+	 * Client 11.1.0 resets on every account.deleted (class-wc-payments-webhook-processing-service.php:209-221). An event
+	 * for another account is ignored here, so a late deletion of a previous account cannot reset the connected one.
+	 *
 	 * @param string $event_account_id Account ID from the event.
 	 * @return bool
 	 * @throws RuntimeException When local account identity is missing while the gateway appears enabled.
 	 */
 	private function should_process_deleted_account( string $event_account_id ): bool {
-		$pending_account_id = $this->account_service->get_pending_account_deletion_id();
 		$current_account_id = $this->account_service->get_preserved_account_id();
-
-		if ( $event_account_id === $pending_account_id ) {
-			return '' === $current_account_id || $event_account_id === $current_account_id;
-		}
 
 		if ( '' === $current_account_id ) {
 			if ( 'yes' === $this->account_service->get_gateway_setting( 'enabled', 'no' ) ) {
