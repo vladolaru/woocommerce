@@ -775,22 +775,28 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	 * @param string $description Case.
 	 * @param mixed  $stored      Stored settings option.
 	 * @param bool   $expected    Whether the setting reads as on.
+	 * @param string $key         Setting key.
 	 */
-	public function test_is_gateway_setting_enabled( string $description, $stored, bool $expected ): void {
+	public function test_is_gateway_setting_enabled( string $description, $stored, bool $expected, string $key = 'manual_capture' ): void {
 		unset( $description );
 		update_option( 'woocommerce_woocommerce_payments_settings', $stored );
 
-		$this->assertSame( $expected, $this->create_service()->is_gateway_setting_enabled( 'manual_capture' ) );
+		$this->assertSame( $expected, $this->create_service()->is_gateway_setting_enabled( $key ) );
 	}
 
 	/**
-	 * Provide yes/no setting rows: case, stored option, expected.
+	 * Provide yes/no setting rows: case, stored option, expected, and the key when not manual_capture.
 	 *
-	 * @return array<string,array{0:string,1:mixed,2:bool}>
+	 * A key never saved reads as its form default, as in client includes/class-wc-payment-gateway-wcpay.php:379-540
+	 * (WC_Settings_API::get_option(); manual_capture no, saved_cards yes).
+	 *
+	 * @return array<string,array{0:string,1:mixed,2:bool,3?:string}>
 	 */
 	public function gateway_setting_enabled_provider(): array {
 		return array(
 			'never saved'         => array( 'never saved', array( 'enabled' => 'yes' ), false ),
+			'on by default'       => array( 'never saved, on by default', array( 'enabled' => 'yes' ), true, 'saved_cards' ),
+			'no default'          => array( 'never saved, no default', array( 'enabled' => 'yes' ), false, 'is_woopay_global_theme_support_enabled' ),
 			'yes'                 => array( 'yes', array( 'manual_capture' => 'yes' ), true ),
 			'no'                  => array( 'no', array( 'manual_capture' => 'no' ), false ),
 			'empty string'        => array( 'empty string', array( 'manual_capture' => '' ), false ),

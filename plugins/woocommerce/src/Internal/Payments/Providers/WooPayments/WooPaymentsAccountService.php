@@ -1257,7 +1257,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether a yes/no gateway setting is on: `yes`, `1` or true. A setting never saved reads as off.
+	 * Tell whether a yes/no gateway setting is on: `yes`, `1` or true. A setting never saved reads as its form default.
 	 *
 	 * @since 11.2.0
 	 *
@@ -1265,7 +1265,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	public function is_gateway_setting_enabled( string $key ): bool {
-		$value = $this->get_gateway_setting( $key, 'no' );
+		$value = $this->get_gateway_setting( $key );
 
 		return true === $value || 'yes' === $value || '1' === $value || 1 === $value;
 	}
