@@ -678,6 +678,10 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 
 		// Assert.
 		$this->assertFalse( $is_supported );
+
+		// FR is in core's list but not in the extension's: with the extension active, its list decides, as client 11.1.0
+		// stores answer from includes/class-wc-payments-utils.php:263-305.
+		$this->assertFalse( $this->sut->is_onboarding_supported( $fake_gateway, 'FR' ) );
 	}
 
 	/**

@@ -56,16 +56,18 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	 *           ["a subscription product without a Stripe Billing hash", true, false, false]
 	 *           ["a subscription product with a Stripe Billing hash", true, false, true]
 	 *           ["a Stripe-billed subscription and no subscription product", false, true, true]
+	 *           ["a subscription not billed by Stripe Billing and no subscription product", false, true, false, false]
 	 *
 	 * @param string $label             Case.
 	 * @param bool   $with_product      Whether a published subscription product exists.
-	 * @param bool   $with_subscription Whether a subscription billed by Stripe Billing exists.
+	 * @param bool   $with_subscription Whether a subscription exists.
 	 * @param bool   $expected          Whether the bundled subscriptions are eligible.
+	 * @param bool   $billed_by_stripe  Whether the subscription carries its Stripe Billing subscription ID.
 	 */
-	public function test_bundled_subscriptions_eligibility( string $label, bool $with_product, bool $with_subscription, bool $expected ): void {
+	public function test_bundled_subscriptions_eligibility( string $label, bool $with_product, bool $with_subscription, bool $expected, bool $billed_by_stripe = true ): void {
 		unset( $label );
 		if ( $with_subscription ) {
-			$this->create_stripe_billed_subscription_and_renewal();
+			$this->create_stripe_billed_subscription_and_renewal( $billed_by_stripe );
 		}
 		if ( $with_product ) {
 			$product_id = self::factory()->post->create(
@@ -395,14 +397,17 @@ class WooPaymentsStripeBillingModuleTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a subscription billed by Stripe Billing on the recorded main chain, and a renewal order of it.
 	 *
+	 * @param bool $billed_by_stripe Whether the subscription carries its Stripe Billing subscription ID.
 	 * @return array{0:WC_Order,1:WC_Order}
 	 */
-	private function create_stripe_billed_subscription_and_renewal(): array {
+	private function create_stripe_billed_subscription_and_renewal( bool $billed_by_stripe = true ): array {
 		WooCommerceSubscriptionsDoubles::load();
 
 		$subscription = new SubscriptionDouble();
 		$subscription->set_payment_method( 'woocommerce_payments' );
-		$subscription->update_meta_data( '_wcpay_subscription_id', 'sub_1UM1VrBzWlxcwgpP6A3GwGLe' );
+		if ( $billed_by_stripe ) {
+			$subscription->update_meta_data( '_wcpay_subscription_id', 'sub_1UM1VrBzWlxcwgpP6A3GwGLe' );
+		}
 		$subscription->save();
 		$order = \WC_Helper_Order::create_order();
 
