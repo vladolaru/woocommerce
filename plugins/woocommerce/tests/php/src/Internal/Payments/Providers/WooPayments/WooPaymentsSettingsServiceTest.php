@@ -18,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLocaleUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicateGatewayMethodsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudRulesetService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
@@ -84,7 +85,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->pm_promotions_service  = new RecordingPmPromotionsService();
 		$account_service              = $this->create_account_service();
 		$this->sut                    = new WooPaymentsSettingsService();
-		$this->sut->init( $account_service, $this->api_client, $this->pm_promotions_service, wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), $this->create_fraud_ruleset_service( $account_service ), $this->create_duplicate_gateway_methods_service( $account_service ), $this->woopay_session_service );
+		$this->sut->init( $account_service, $this->api_client, $this->pm_promotions_service, wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), $this->create_fraud_ruleset_service( $account_service ), $this->create_duplicate_gateway_methods_service( $account_service ), $this->woopay_session_service, wc_get_container()->get( WooPaymentsFrontendTrackingController::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
 	}
 
 	/**
@@ -730,7 +731,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsStripeBillingModule::class ),
 			$this->create_fraud_ruleset_service( $account_service ),
 			$this->create_duplicate_gateway_methods_service( $account_service ),
-			$this->woopay_session_service
+			$this->woopay_session_service,
+			wc_get_container()->get( WooPaymentsFrontendTrackingController::class ),
+			wc_get_container()->get( WooPaymentsLogger::class )
 		);
 
 		$settings = $service->get_settings();
@@ -3562,18 +3565,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			'woocommerce_specific_allowed_countries',
 			'woocommerce_all_except_countries',
 		);
-	}
-
-	/**
-	 * @testdox Should return the injected PM promotions service instead of constructing a fallback.
-	 */
-	public function test_get_pm_promotions_service_returns_injected_instance(): void {
-		$reflection = new \ReflectionMethod( $this->sut, 'get_pm_promotions_service' );
-		$reflection->setAccessible( true );
-
-		$resolved = $reflection->invoke( $this->sut );
-
-		$this->assertSame( $this->pm_promotions_service, $resolved );
 	}
 
 	/**

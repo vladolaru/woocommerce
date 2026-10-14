@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicateGatewayMethodsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudRulesetService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
@@ -93,7 +94,9 @@ class WooPaymentsSettingsServiceWooPayToggleTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsStripeBillingModule::class ),
 			$fraud_ruleset_service,
 			$duplicate_gateway_methods_service,
-			new RecordingWooPaySessionService()
+			new RecordingWooPaySessionService(),
+			wc_get_container()->get( WooPaymentsFrontendTrackingController::class ),
+			wc_get_container()->get( WooPaymentsLogger::class )
 		);
 	}
 

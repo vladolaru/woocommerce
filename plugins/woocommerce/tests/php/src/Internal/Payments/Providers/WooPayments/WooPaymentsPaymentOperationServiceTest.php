@@ -49,6 +49,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPay
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicateGatewayMethodsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudRulesetService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
@@ -10682,7 +10683,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$duplicate_gateway_methods_service = new WooPaymentsDuplicateGatewayMethodsService();
 		$duplicate_gateway_methods_service->init( $account_service, wc_get_container()->get( WooPaymentsLogger::class ) );
 		$settings_service = new WooPaymentsSettingsService();
-		$settings_service->init( $account_service, $api_client, new RecordingPmPromotionsService(), wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), $fraud_ruleset_service, $duplicate_gateway_methods_service, new RecordingWooPaySessionService() );
+		$settings_service->init( $account_service, $api_client, new RecordingPmPromotionsService(), wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), $fraud_ruleset_service, $duplicate_gateway_methods_service, new RecordingWooPaySessionService(), wc_get_container()->get( WooPaymentsFrontendTrackingController::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
 
 		return array( $settings_service, $fraud_ruleset_service );
 	}

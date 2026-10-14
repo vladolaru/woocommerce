@@ -12,7 +12,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
-use Throwable;
 use WP_Error;
 
 /**
@@ -144,9 +143,23 @@ class WooPaymentsSettingsService {
 	/**
 	 * WooPay session service.
 	 *
-	 * @var WooPaymentsWooPaySessionService|null
+	 * @var WooPaymentsWooPaySessionService
 	 */
-	private ?WooPaymentsWooPaySessionService $woopay_session_service = null;
+	private WooPaymentsWooPaySessionService $woopay_session_service;
+
+	/**
+	 * Frontend tracking controller.
+	 *
+	 * @var WooPaymentsFrontendTrackingController
+	 */
+	private WooPaymentsFrontendTrackingController $frontend_tracking_controller;
+
+	/**
+	 * WooPayments logger.
+	 *
+	 * @var WooPaymentsLogger
+	 */
+	private WooPaymentsLogger $logger;
 
 	/**
 	 * Canonical-to-split gateway settings synchronizer.
@@ -203,9 +216,11 @@ class WooPaymentsSettingsService {
 	 * @param WooPaymentsStripeBillingModule            $stripe_billing_module             Stripe Billing module.
 	 * @param WooPaymentsFraudRulesetService            $fraud_ruleset_service             Fraud ruleset service.
 	 * @param WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service Duplicate gateway methods service.
-	 * @param WooPaymentsWooPaySessionService|null      $woopay_session_service            Optional WooPay session service.
+	 * @param WooPaymentsWooPaySessionService           $woopay_session_service            WooPay session service.
+	 * @param WooPaymentsFrontendTrackingController     $frontend_tracking_controller      Frontend tracking controller.
+	 * @param WooPaymentsLogger                         $logger                            WooPayments logger.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsStripeBillingModule $stripe_billing_module, WooPaymentsFraudRulesetService $fraud_ruleset_service, WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service, ?WooPaymentsWooPaySessionService $woopay_session_service = null ): void {
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsStripeBillingModule $stripe_billing_module, WooPaymentsFraudRulesetService $fraud_ruleset_service, WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service, WooPaymentsWooPaySessionService $woopay_session_service, WooPaymentsFrontendTrackingController $frontend_tracking_controller, WooPaymentsLogger $logger ): void {
 		$this->account_service                   = $account_service;
 		$this->api_client                        = $api_client;
 		$this->pm_promotions_service             = $pm_promotions_service;
@@ -215,6 +230,8 @@ class WooPaymentsSettingsService {
 		$this->fraud_ruleset_service             = $fraud_ruleset_service;
 		$this->duplicate_gateway_methods_service = $duplicate_gateway_methods_service;
 		$this->woopay_session_service            = $woopay_session_service;
+		$this->frontend_tracking_controller      = $frontend_tracking_controller;
+		$this->logger                            = $logger;
 	}
 
 	/**
@@ -261,7 +278,7 @@ class WooPaymentsSettingsService {
 			'duplicated_payment_method_ids'              => $this->duplicate_gateway_methods_service->get_duplicated_payment_method_ids(),
 			'dismissed_duplicate_payment_method_notices' => $this->duplicate_gateway_methods_service->get_dismissed_duplicate_payment_method_notices(),
 			'account_fees'                               => $this->get_account_fees(),
-			'pm_promotions'                              => $this->get_pm_promotions_service()->get_visible_promotions() ?? array(),
+			'pm_promotions'                              => $this->pm_promotions_service->get_visible_promotions() ?? array(),
 			'is_wcpay_enabled'                           => $this->is_yes( $settings['enabled'] ),
 			'is_manual_capture_enabled'                  => $this->is_yes( $settings['manual_capture'] ),
 			'is_test_mode_enabled'                       => $this->account_service->is_test_mode_enabled(),
@@ -304,8 +321,8 @@ class WooPaymentsSettingsService {
 			'show_woopay_incompatibility_notice'         => (bool) get_option( 'woopay_invalid_extension_found', false ),
 			'woopay_custom_message'                      => $this->get_string_setting( $settings, 'platform_checkout_custom_message' ),
 			'woopay_store_logo'                          => $this->get_string_setting( $settings, 'platform_checkout_store_logo' ),
-			'woopay_appearance'                          => $this->get_woopay_appearance_for_settings(),
-			'woopay_font_rules'                          => $this->get_woopay_font_rules_for_settings(),
+			'woopay_appearance'                          => $this->woopay_session_service->get_woopay_appearance(),
+			'woopay_font_rules'                          => $this->woopay_session_service->get_woopay_font_rules(),
 			'store_name'                                 => get_bloginfo( 'name' ),
 			'store_currency'                             => $this->get_store_currency(),
 			'site_logo_url'                              => $this->get_site_logo_url(),
@@ -404,28 +421,6 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
-	 * Get WooPay appearance data for the settings preview.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function get_woopay_appearance_for_settings(): array {
-		$service = $this->get_woopay_session_service();
-
-		return $service instanceof WooPaymentsWooPaySessionService ? $service->get_woopay_appearance() : array();
-	}
-
-	/**
-	 * Get WooPay font rules for the settings preview.
-	 *
-	 * @return array<int,array<string,string>>
-	 */
-	private function get_woopay_font_rules_for_settings(): array {
-		$service = $this->get_woopay_session_service();
-
-		return $service instanceof WooPaymentsWooPaySessionService ? $service->get_woopay_font_rules() : array();
-	}
-
-	/**
 	 * Get the site's logo URL for the settings preview.
 	 *
 	 * @return string
@@ -440,44 +435,6 @@ class WooPaymentsSettingsService {
 		$url = wp_get_attachment_image_url( (int) $logo_id, 'full' );
 
 		return is_string( $url ) ? $url : '';
-	}
-
-	/**
-	 * Get the WooPay session service when it is available.
-	 *
-	 * @return WooPaymentsWooPaySessionService|null
-	 */
-	private function get_woopay_session_service(): ?WooPaymentsWooPaySessionService {
-		if ( $this->woopay_session_service instanceof WooPaymentsWooPaySessionService ) {
-			return $this->woopay_session_service;
-		}
-
-		if ( ! function_exists( 'wc_get_container' ) ) {
-			return null;
-		}
-
-		try {
-			$service = wc_get_container()->get( WooPaymentsWooPaySessionService::class );
-		} catch ( Throwable $e ) {
-			return null;
-		}
-
-		if ( ! $service instanceof WooPaymentsWooPaySessionService ) {
-			return null;
-		}
-
-		$this->woopay_session_service = $service;
-
-		return $this->woopay_session_service;
-	}
-
-	/**
-	 * Get the payment method promotions service.
-	 *
-	 * @return WooPaymentsPmPromotionsService
-	 */
-	private function get_pm_promotions_service(): WooPaymentsPmPromotionsService {
-		return $this->pm_promotions_service;
 	}
 
 	/**
@@ -554,7 +511,7 @@ class WooPaymentsSettingsService {
 			}
 			foreach ( $added_payment_method_ids as $payment_method_id ) {
 				WooPaymentsTracks::record_wcadmin_event( 'wcpay_payment_method_enabled', $tracks_properties( $payment_method_id ) );
-				$this->get_pm_promotions_service()->maybe_activate_promotion_for_payment_method( $payment_method_id );
+				$this->pm_promotions_service->maybe_activate_promotion_for_payment_method( $payment_method_id );
 			}
 			// Card's gateway is the WooPayments gateway: adding or removing card turns it on or off, as the client enables and
 			// disables each changed method's gateway (class-wc-rest-payments-settings-controller.php:766-790).
@@ -601,7 +558,7 @@ class WooPaymentsSettingsService {
 		$result = $this->gateway_settings_synchronizer->persist( $settings, $payment_request_enabled );
 		if ( ! $result['persisted'] ) {
 			// Account and fraud settings in this request already reached the platform; say which local option did not save.
-			wc_get_container()->get( WooPaymentsLogger::class )->log_always(
+			$this->logger->log_always(
 				'Native WooPayments settings could not be saved locally.',
 				'error',
 				array( 'failed_options' => $result['failed_option_names'] )
@@ -634,7 +591,7 @@ class WooPaymentsSettingsService {
 	 * @param array<string,mixed> $settings Settings after the update.
 	 */
 	private function record_woopay_settings_events( array $params, array $previous, array $settings ): void {
-		$tracking    = wc_get_container()->get( WooPaymentsFrontendTrackingController::class );
+		$tracking    = $this->frontend_tracking_controller;
 		$properties  = array( 'test_mode' => $this->account_service->is_test_mode_enabled() ? 1 : 0 );
 		$is_enabled  = $this->is_yes( $settings['platform_checkout'] ?? 'no' );
 		$was_enabled = $this->is_yes( $previous['platform_checkout'] ?? 'no' );
