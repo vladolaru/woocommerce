@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\Wo
 use Exception;
 use Throwable;
 use WC_Payment_Gateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNoticeService;
 
 defined( 'ABSPATH' ) || exit;
 
