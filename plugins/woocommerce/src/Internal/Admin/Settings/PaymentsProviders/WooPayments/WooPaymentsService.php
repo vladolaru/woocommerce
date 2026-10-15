@@ -167,8 +167,7 @@ class WooPaymentsService {
 	/**
 	 * Initialize the class instance.
 	 *
-	 * The settings adapter and the extension runtime are resolved on first use: the admin controllers that load on every
-	 * request take this service, and those classes must not load on requests that never call it.
+	 * The settings adapter and the extension runtime are taken from the container by their accessors, on first use.
 	 *
 	 * @param PaymentsProviders $payment_providers The PaymentsProviders instance.
 	 * @param LegacyProxy       $proxy             The LegacyProxy instance.

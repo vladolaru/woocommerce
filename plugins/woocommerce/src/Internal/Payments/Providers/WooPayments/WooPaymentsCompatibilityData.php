@@ -11,7 +11,8 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
  * Collects the store data the platform uses to check WooPayments compatibility with the site.
  *
  * It is sent after account refreshes and theme switches and with every onboarding request (client 11.1.0
- * `includes/class-compatibility-service.php:85-139`). The WooPayments version is `WooPaymentsClientVersion::VERSION`,
+ * `includes/class-compatibility-service.php:43-46`, `:75-77`). The fields are the ones client 11.1.0 collects
+ * (`includes/class-compatibility-service.php:85-139`). The WooPayments version is `WooPaymentsClientVersion::VERSION`,
  * the same value as `client_version`, `wcpay_version` and the user agent's WooPayments part.
  *
  * @since 11.2.0

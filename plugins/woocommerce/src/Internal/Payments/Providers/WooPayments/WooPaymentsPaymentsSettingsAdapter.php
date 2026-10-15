@@ -93,8 +93,7 @@ class WooPaymentsPaymentsSettingsAdapter {
 	/**
 	 * Initialize the class instance.
 	 *
-	 * The built-in WooPayments classes are resolved on first use, so a store where the WooPayments extension owns payments
-	 * loads none of them for its onboarding pages.
+	 * The built-in WooPayments classes this adapter uses are resolved on first use.
 	 *
 	 * @internal
 	 *

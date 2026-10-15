@@ -1481,8 +1481,8 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * Get the WooPayments API client, resolved from the container on first use.
 	 *
 	 * The API client takes this service in its `init()` (test mode, the store ID, the account refresh after VAT details
-	 * are saved), so it is not injected here; resolving it on use also leaves it unbuilt on requests that never reach the
-	 * platform. A failed resolution returns null, which reads as not connected: no platform call can be made without it.
+	 * are saved), so it is not injected here; it is resolved when a read checks the platform connection or fetches. A
+	 * failed resolution returns null, which reads as not connected: no platform call can be made without it.
 	 *
 	 * @return WooPaymentsApiClient|null
 	 */
