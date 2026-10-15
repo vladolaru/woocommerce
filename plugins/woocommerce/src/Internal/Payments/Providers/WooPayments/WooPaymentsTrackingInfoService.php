@@ -18,12 +18,12 @@ defined( 'ABSPATH' ) || exit;
  * requests, like client 11.1.0 `WC_Payments_Account::get_tracking_info()` (`includes/class-wc-payments-account.php:3156-3169`).
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsTrackingInfoService {
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */

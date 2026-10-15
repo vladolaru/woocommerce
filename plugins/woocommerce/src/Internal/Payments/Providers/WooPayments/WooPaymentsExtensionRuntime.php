@@ -19,34 +19,34 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 class WooPaymentsExtensionRuntime {
 
 	/**
-	 * Default WooPayments admin onboarding source context.
+	 * The onboarding `from` value used when the WooPayments extension does not declare its own.
 	 */
 	public const ADMIN_ONBOARDING_FROM_DEFAULT = 'WCADMIN_PAYMENT_SETTINGS';
 
 	/**
-	 * Default WooPayments admin onboarding source slug.
+	 * The onboarding `source` value used when the WooPayments extension does not declare its own.
 	 */
 	public const ADMIN_ONBOARDING_SOURCE_DEFAULT = 'wcadmin-settings-page';
 
 	/**
-	 * WooPayments admin onboarding source context constant.
+	 * The WooPayments extension's constant that holds its onboarding `from` value.
 	 */
 	private const ADMIN_ONBOARDING_FROM_CONSTANT = 'WC_Payments_Onboarding_Service::FROM_WCADMIN_PAYMENTS_SETTINGS';
 
 	/**
-	 * WooPayments admin onboarding source slug constant.
+	 * The WooPayments extension's constant that holds its onboarding `source` value.
 	 */
 	private const ADMIN_ONBOARDING_SOURCE_CONSTANT = 'WC_Payments_Onboarding_Service::SOURCE_WCADMIN_SETTINGS_PAGE';
 
 	/**
-	 * Legacy proxy.
+	 * The LegacyProxy instance.
 	 *
 	 * @var LegacyProxy
 	 */
 	private LegacyProxy $legacy_proxy;
 
 	/**
-	 * Runtime owner arbiter for container-managed instances.
+	 * Runtime arbiter; when set, the reads answer only while the WooPayments extension owns payments.
 	 *
 	 * @var WooPaymentsRuntimeArbiter|null
 	 */
@@ -57,8 +57,8 @@ class WooPaymentsExtensionRuntime {
 	 *
 	 * @internal
 	 *
-	 * @param LegacyProxy                    $legacy_proxy Legacy proxy.
-	 * @param WooPaymentsRuntimeArbiter|null $arbiter      Runtime owner arbiter. Optional for isolated legacy-runtime adapters.
+	 * @param LegacyProxy                    $legacy_proxy The LegacyProxy instance.
+	 * @param WooPaymentsRuntimeArbiter|null $arbiter      Runtime arbiter. Without it, a loaded extension counts whoever owns payments.
 	 */
 	final public function init( LegacyProxy $legacy_proxy, ?WooPaymentsRuntimeArbiter $arbiter = null ): void {
 		$this->legacy_proxy = $legacy_proxy;
@@ -66,7 +66,7 @@ class WooPaymentsExtensionRuntime {
 	}
 
 	/**
-	 * Tell whether the WooPayments plugin runtime is loaded.
+	 * Tell whether the WooPayments extension is loaded and, with an arbiter, owns payments.
 	 *
 	 * @return bool
 	 */
@@ -83,7 +83,7 @@ class WooPaymentsExtensionRuntime {
 	}
 
 	/**
-	 * Get the active WooPayments gateway.
+	 * Get the WooPayments extension's gateway.
 	 *
 	 * @return object|null
 	 */
@@ -92,7 +92,7 @@ class WooPaymentsExtensionRuntime {
 	}
 
 	/**
-	 * Get the WooPayments account service.
+	 * Get the WooPayments extension's account service.
 	 *
 	 * @return object|null
 	 */
@@ -101,7 +101,7 @@ class WooPaymentsExtensionRuntime {
 	}
 
 	/**
-	 * Get the WooPayments API client.
+	 * Get the WooPayments extension's API client.
 	 *
 	 * @return object|null
 	 */
@@ -125,7 +125,7 @@ class WooPaymentsExtensionRuntime {
 	}
 
 	/**
-	 * Get the WooPayments account connect URL.
+	 * Get the WooPayments extension's account connect URL.
 	 *
 	 * @param string $source Source context.
 	 * @return string|null
@@ -139,7 +139,7 @@ class WooPaymentsExtensionRuntime {
 	}
 
 	/**
-	 * Tell whether WooPayments is in test mode.
+	 * Tell whether the WooPayments extension is in test mode.
 	 *
 	 * @return bool|null
 	 */
@@ -148,7 +148,7 @@ class WooPaymentsExtensionRuntime {
 	}
 
 	/**
-	 * Tell whether WooPayments is in development mode.
+	 * Tell whether the WooPayments extension is in development mode.
 	 *
 	 * @return bool|null
 	 */
@@ -157,7 +157,7 @@ class WooPaymentsExtensionRuntime {
 	}
 
 	/**
-	 * Tell whether WooPayments is in test-mode onboarding.
+	 * Tell whether the WooPayments extension is in test-mode onboarding.
 	 *
 	 * @return bool|null
 	 */
@@ -166,7 +166,7 @@ class WooPaymentsExtensionRuntime {
 	}
 
 	/**
-	 * Get WooPayments account status data.
+	 * Get the WooPayments extension's account status data.
 	 *
 	 * @return array|null
 	 */
@@ -193,7 +193,7 @@ class WooPaymentsExtensionRuntime {
 	}
 
 	/**
-	 * Tell whether the WooPayments account cache contains a live account.
+	 * Tell whether the account cache holds a live account.
 	 *
 	 * @return bool
 	 */
@@ -208,7 +208,7 @@ class WooPaymentsExtensionRuntime {
 	}
 
 	/**
-	 * Tell whether the WooPayments account cache contains an onboarded account.
+	 * Tell whether the account cache holds an onboarded account.
 	 *
 	 * @return bool
 	 */
@@ -222,7 +222,7 @@ class WooPaymentsExtensionRuntime {
 	}
 
 	/**
-	 * Get WooPayments supported countries.
+	 * Get the countries the WooPayments extension supports.
 	 *
 	 * @return array|null
 	 */
@@ -248,7 +248,7 @@ class WooPaymentsExtensionRuntime {
 	}
 
 	/**
-	 * Get the WooPayments admin onboarding context.
+	 * Get the WooPayments extension's onboarding `from` and `source` values for the Payments settings.
 	 *
 	 * @return array{from:string,source:string}
 	 */
@@ -279,7 +279,7 @@ class WooPaymentsExtensionRuntime {
 	}
 
 	/**
-	 * Reset the WooPayments onboarding test-mode option when the legacy constant is available.
+	 * Reset the WooPayments extension's onboarding test-mode option, when the extension declares the option's name.
 	 *
 	 * @return void
 	 */
@@ -301,7 +301,7 @@ class WooPaymentsExtensionRuntime {
 	}
 
 	/**
-	 * Get a WooPayments service through the extension runtime.
+	 * Get one of the WooPayments extension's services through its `WC_Payments` static accessor.
 	 *
 	 * @param string $method_name WC_Payments static accessor.
 	 * @return object|null
@@ -321,7 +321,7 @@ class WooPaymentsExtensionRuntime {
 	}
 
 	/**
-	 * Get the WooPayments mode service.
+	 * Get the WooPayments extension's mode service.
 	 *
 	 * @return object|null
 	 */
@@ -330,7 +330,7 @@ class WooPaymentsExtensionRuntime {
 	}
 
 	/**
-	 * Call a boolean method on the WooPayments mode service.
+	 * Call a boolean method on the WooPayments extension's mode service.
 	 *
 	 * @param string $method_name Mode service method name.
 	 * @return bool|null
@@ -354,7 +354,7 @@ class WooPaymentsExtensionRuntime {
 	}
 
 	/**
-	 * Get a WooPayments account URL through the legacy account static helper.
+	 * Get a WooPayments extension account URL through `WC_Payments_Account`'s static helper.
 	 *
 	 * @param string $method_name WC_Payments_Account static URL accessor.
 	 * @param mixed  ...$args     Method arguments.
@@ -398,7 +398,7 @@ class WooPaymentsExtensionRuntime {
 	}
 
 	/**
-	 * Get the normalized WooPayments account cache data.
+	 * Get the account data from the account cache, empty when there is none.
 	 *
 	 * @return array<string,mixed>
 	 */

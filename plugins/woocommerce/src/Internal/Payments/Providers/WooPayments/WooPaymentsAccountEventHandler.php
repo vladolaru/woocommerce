@@ -11,10 +11,10 @@ use InvalidArgumentException;
 use RuntimeException;
 
 /**
- * Handles WooPayments account lifecycle provider events.
+ * Applies the platform's `account.updated` and `account.deleted` webhook events to the store's WooPayments account.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsAccountEventHandler {
 
@@ -68,8 +68,8 @@ class WooPaymentsAccountEventHandler {
 
 		switch ( $event_type ) {
 			case 'account.updated':
-				// Client 11.1.0 webhook-processing-service.php:205-208 ignores a refresh failure, clears the
-				// payment-method cache and acknowledges the webhook; C25 ports that behaviour here.
+				// A failed refresh is ignored and the saved payment methods are still cleared (client 11.1.0
+				// `includes/class-wc-payments-webhook-processing-service.php:205-208`).
 				$this->account_service->refresh_account_data();
 				$this->token_service->clear_all_cached_payment_methods();
 				return;
@@ -104,7 +104,7 @@ class WooPaymentsAccountEventHandler {
 	}
 
 	/**
-	 * Tell whether an account.deleted event applies to the current preserved account.
+	 * Tell whether an account.deleted event applies to the stored account.
 	 *
 	 * Client 11.1.0 resets on every account.deleted (class-wc-payments-webhook-processing-service.php:209-221). An event
 	 * for another account is ignored here, so a late deletion of a previous account cannot reset the connected one.

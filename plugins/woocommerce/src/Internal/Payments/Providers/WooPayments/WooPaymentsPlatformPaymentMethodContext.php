@@ -8,7 +8,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 /**
- * Provider-owned context for WooPayments platform-created payment methods.
+ * Carries whether a payment method was created on the platform account and whether the shopper asked WooPay to save it
+ * there, and adds both to platform requests.
  *
  * @since 11.0.0
  * @internal
@@ -102,9 +103,9 @@ class WooPaymentsPlatformPaymentMethodContext {
 	}
 
 	/**
-	 * Add platform-payment-method fields to a WCPay request payload.
+	 * Add the platform payment method fields to a platform request payload.
 	 *
-	 * @param array<string,mixed> $request_data WCPay request data.
+	 * @param array<string,mixed> $request_data Platform request data.
 	 * @return array<string,mixed>
 	 */
 	public function apply_to_request_data( array $request_data ): array {

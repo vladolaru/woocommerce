@@ -13,10 +13,10 @@ use InvalidArgumentException;
 use RuntimeException;
 
 /**
- * Creates WooPayments remote inbox notes from provider notifications.
+ * Adds the admin inbox notes the platform sends, once per note name, with only admin links as actions.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsRemoteNoteService {
 
@@ -30,7 +30,7 @@ class WooPaymentsRemoteNoteService {
 	/**
 	 * Put a remote note in the WooCommerce inbox if it does not already exist.
 	 *
-	 * @param array<string,mixed> $note_data Note data from the provider notification.
+	 * @param array<string,mixed> $note_data Note data from the platform notification.
 	 * @return bool True when a note was created.
 	 * @throws RuntimeException When the note cannot be persisted.
 	 */

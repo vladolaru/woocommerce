@@ -14,11 +14,11 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  * Runs the WooPayments duties of a WooCommerce update for a connected store.
  *
  * The client runs them on its own update action (client 11.1.0 `includes/class-wc-payments-account.php:143,147`,
- * `includes/woopay/class-woopay-scheduler.php:50`). Native ships inside WooCommerce, so a WooCommerce update is that
- * event; it finishes on the init of any request, and the services are resolved only when it fires.
+ * `includes/woopay/class-woopay-scheduler.php:50`). The built-in WooPayments updates with WooCommerce, so a WooCommerce
+ * update is that event; it finishes on the init of any request, and the services are resolved only when it fires.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsWooCommerceUpdateListener implements RegisterHooksInterface {
 
@@ -30,7 +30,7 @@ class WooPaymentsWooCommerceUpdateListener implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Refresh the account, queue a store setup sync and drop the retired WooPay schedule.
+	 * Clear the account cache so the next read fetches it, queue a store setup sync and drop the retired WooPay schedule.
 	 *
 	 * @internal
 	 */

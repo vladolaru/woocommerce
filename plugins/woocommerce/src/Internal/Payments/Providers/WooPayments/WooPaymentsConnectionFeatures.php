@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  * Turns on Jetpack's Safe Mode and Sync for the store's WordPress.com connection once WooPayments is set up.
  *
  * Safe Mode shows WooCommerce's banner when a copy of the store shares the connection. Sync keeps WordPress.com's copy of
- * the store name, description, timezone and active plugins current, with the WooPayments extension's minimal settings.
+ * the store name, description, timezone and active plugins current.
  * It loads on every request of a connected store, while WooCommerce loads, so jetpack-config enables both on
  * `plugins_loaded`, Safe Mode before Sync sends anything.
  *

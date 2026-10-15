@@ -10,10 +10,10 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use InvalidArgumentException;
 
 /**
- * Handles WooPayments remote notification provider events.
+ * Adds the admin inbox note that the platform's notification webhook event carries.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsNotificationEventHandler {
 

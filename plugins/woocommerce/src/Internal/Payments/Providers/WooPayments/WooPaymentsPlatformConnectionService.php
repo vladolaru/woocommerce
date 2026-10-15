@@ -11,15 +11,16 @@ use Automattic\Jetpack\Connection\Manager as JetpackConnectionManager;
 use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
 
 /**
- * Provider-owned readiness checks for WooPayments platform connection operations.
+ * Checks the WordPress.com connection the cutover needs: the site is connected and has a blog ID, and the connection
+ * owner exists and has a user token.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsPlatformConnectionService {
 
 	/**
-	 * Get cutover preflight failures for post-plugin platform connection operations.
+	 * Get the connection failure codes that block the cutover.
 	 *
 	 * @return array<int,string> Failure codes.
 	 */
@@ -54,7 +55,9 @@ class WooPaymentsPlatformConnectionService {
 	}
 
 	/**
-	 * Get the connection-owner details required by the informational retry path.
+	 * Get the connection owner's ID, whether that user exists and whether it has a user token.
+	 *
+	 * The cutover preflight also reads it to tell a deleted owner apart.
 	 *
 	 * @return array{owner_id:int,owner_exists:bool,user_token_available:bool} Connection owner details.
 	 */

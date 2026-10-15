@@ -15,10 +15,13 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
- * Reads Core-owned WooPayments account readiness from preserved persisted data.
+ * Reads and caches the merchant's WooPayments account, and the gateway settings, test mode and dev mode it runs with.
+ *
+ * Read it from a hook callback on `init` or later: a `register()` reads only options, and before WordPress's pluggable
+ * functions exist the account read serves the cache and never fetches.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsAccountService implements RegisterHooksInterface {
 
@@ -64,21 +67,21 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	);
 
 	/**
-	 * Legacy proxy.
+	 * The LegacyProxy instance.
 	 *
 	 * @var LegacyProxy
 	 */
 	private LegacyProxy $legacy_proxy;
 
 	/**
-	 * Durable native payments state store.
+	 * Setup tier store.
 	 *
 	 * @var WooPaymentsSetupTier|null
 	 */
 	private ?WooPaymentsSetupTier $setup_tier = null;
 
 	/**
-	 * Native payments runtime arbiter.
+	 * Runtime arbiter.
 	 *
 	 * @var WooPaymentsRuntimeArbiter|null
 	 */
@@ -96,7 +99,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param LegacyProxy                    $legacy_proxy    Legacy proxy.
+	 * @param LegacyProxy                    $legacy_proxy    The LegacyProxy instance.
 	 * @param WooPaymentsDatabaseCache       $database_cache  Database cache.
 	 * @param WooPaymentsSetupTier|null      $setup_tier      Optional setup tier store.
 	 * @param WooPaymentsRuntimeArbiter|null $runtime_arbiter Optional payments runtime arbiter.
@@ -114,7 +117,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register account cache hooks.
+	 * Register the account cache hooks and allow the Stripe redirect host.
 	 *
 	 * The database cache stops refreshing while an Action Scheduler job runs.
 	 */
@@ -130,7 +133,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Add preserved WooPayments external redirect hosts.
+	 * Allow redirects to Stripe Connect (`connect.stripe.com`).
 	 *
 	 * @param mixed $hosts Allowed redirect hosts.
 	 * @return mixed
@@ -150,8 +153,8 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/**
 	 * Get normalized WooPayments account cache data.
 	 *
-	 * Without a platform connection this returns no account and leaves the cache alone, like the client. While plugins
-	 * load the connection state is not known yet, so this serves the cache as it is, with no fetch and no write.
+	 * Without a platform connection this returns no account and leaves the cache alone. While plugins load the
+	 * connection state is not known yet, so this serves the cache as it is, with no fetch and no write.
 	 *
 	 * @param bool $force_refresh Whether to force a live account refresh.
 	 * @return array<string,mixed>
@@ -187,7 +190,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 
 			if ( $refreshed ) {
 				/**
-				 * Allows native WooPayments integrations to react when account data is refreshed.
+				 * Fires after the WooPayments account data is fetched from the platform.
 				 *
 				 * @since 11.0.0
 				 *
@@ -210,7 +213,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the site can reach the WooPayments platform, like the client's `is_server_connected()`.
+	 * Tell whether the site can reach the WooPayments platform: the API client resolves and is connected.
 	 *
 	 * @since 11.2.0
 	 * @return bool
@@ -222,11 +225,11 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the onboarding fields data, cached like the client's `WC_Payments_Onboarding_Service::get_fields_data()`.
+	 * Get the onboarding fields data through the database cache.
 	 *
-	 * Successful data is cached for a week under the client's option and shape, with the locale stored in the data so a
-	 * different locale refetches. Errors back off for minutes and keep the old data. Without a platform connection this
-	 * serves whatever is cached, regardless of expiry.
+	 * Successful data is kept for a week under the option and shape the WooPayments extension uses, with the locale stored
+	 * in the data so a different locale refetches. Errors back off for minutes and keep the old data. Without a platform
+	 * connection this serves whatever is cached, regardless of expiry.
 	 *
 	 * @since 11.2.0
 	 * @param string $locale The locale to translate the fields data into.
@@ -300,7 +303,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Fetch account data from the native WooPayments API.
+	 * Fetch the account from the platform.
 	 *
 	 * @return array<string,mixed>|false
 	 */
@@ -335,10 +338,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Clear the preserved WooPayments account cache.
-	 *
-	 * This mirrors the plugin behavior after account creation/finalization so the next account read can refresh the
-	 * provider state instead of continuing to use stale cached readiness.
+	 * Delete the account cache, so the next account read fetches the account.
 	 *
 	 * @return void
 	 */
@@ -351,7 +351,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Persist normalized WooPayments account cache data.
+	 * Store account data in the account cache as a successful fetch.
 	 *
 	 * @param array<string,mixed> $account_data Account data.
 	 * @return void
@@ -363,9 +363,8 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/**
 	 * Persist partial account data that the next read must replace with the full account.
 	 *
-	 * The plugin clears its account cache after onboarding creates or finishes an account, so the next read fetches
-	 * the full record. Keeping the partial record, marked as never fetched, gives the same refetch while leaving the
-	 * account ID and publishable key available if that refetch fails.
+	 * An onboarding answer carries only part of the account. Storing it marked as never fetched makes the next read fetch
+	 * the full account, while the account ID and publishable key stay available if that fetch fails.
 	 *
 	 * @since 11.2.0
 	 * @param array<string,mixed> $account_data Partial account data from an onboarding response.
@@ -382,9 +381,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Immediately overwrite the preserved account cache with a connected-but-no-account payload.
-	 *
-	 * This avoids reading a stale account while the platform finishes deleting it.
+	 * Store an empty account right away, so nothing reads the account while the platform deletes it.
 	 *
 	 * @return void
 	 */
@@ -421,10 +418,10 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Reset preserved WooPayments account/onboarding state after the provider account is deleted.
+	 * Reset the store's WooPayments account and onboarding state after the platform deleted the account.
 	 *
-	 * This mirrors the extension account-reset cleanup for the Core-owned native runtime without performing a live account
-	 * refresh. The webhook handler refreshes account data after cleanup so the platform can drive the next steps.
+	 * The gateway is turned off and leaves test mode with only cards enabled; the onboarding and incentive options and every
+	 * database cache entry go. No account refresh runs here: the webhook handler refreshes after the reset.
 	 *
 	 * @since 11.0.0
 	 * @return void
@@ -504,7 +501,11 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Persist account cache contents.
+	 * Store account cache contents and rewrite the setup tier from them.
+	 *
+	 * Requests read the setup tier, not the account, to decide which WooPayments classes load, so the tier follows the
+	 * account cache writes. Only a write that reads back from the database and records no error rewrites it; any other
+	 * write leaves the stored tier as it was.
 	 *
 	 * @param array<string,mixed> $cache_contents Account cache contents.
 	 * @return void
@@ -609,7 +610,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether account cache contents were durably persisted.
+	 * Tell whether the account cache row in the database holds these contents, read past the object cache.
 	 *
 	 * @param array<string,mixed> $cache_contents Expected account cache contents.
 	 * @return bool
@@ -674,8 +675,8 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/**
 	 * Get the account data that built-in eligibility reads.
 	 *
-	 * These flags have no client counterpart. Without a platform connection they keep the cached platform decision,
-	 * because the account read then returns no account, which would read as eligible.
+	 * Without a platform connection this keeps the cached platform decision, because the account read then returns no
+	 * account, which would read as eligible.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -717,8 +718,8 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/**
 	 * Get the connected account's domestic currency, lowercase.
 	 *
-	 * Mirrors the client's get_account_domestic_currency(): the account country's locale data gives the currency, and the
-	 * account default currency is the fallback when the country has no locale data.
+	 * The account country's locale data gives the currency, and the account default currency is the fallback when the
+	 * country has no locale data.
 	 *
 	 * @since 11.2.0
 	 *
@@ -753,8 +754,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/**
 	 * Get the account's customer-supported presentment currencies.
 	 *
-	 * Reads the account payload's customer_currencies.supported list, as the
-	 * reference client's get_account_customer_supported_currencies() does.
+	 * Reads the account payload's customer_currencies.supported list.
 	 * Currency codes are returned as the platform ships them (lowercase).
 	 *
 	 * @since 11.0.0
@@ -791,7 +791,8 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether WooPayments native processing has enough account data to act.
+	 * Tell whether the account can take payments: it has an ID and a publishable key for the current mode, payments are
+	 * enabled and details are submitted.
 	 *
 	 * @return bool
 	 */
@@ -808,7 +809,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * Tell whether the platform reports an account capability as active.
 	 *
 	 * Only `active` counts; every other status the platform reports (pending, inactive, rejected, disabled and the rest) does
-	 * not. With no capabilities reported, card payments count as active, as the client assumes before onboarding
+	 * not. With no capabilities reported, as before onboarding, card payments count as active
 	 * (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:4696-4717`).
 	 *
 	 * @param string $capability_key Capability key, such as `card_payments` or `link_payments`.
@@ -852,8 +853,8 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * Tell whether an account exists or its connection state cannot be determined after a refresh failure.
 	 *
 	 * Address-token cache cleanup must not treat a transient account refresh failure as a confirmed disconnect. Without a
-	 * platform connection the state is known, like the client's `is_stripe_connected( true )`, so an errored entry left
-	 * from that time does not count. While plugins load the connection state is not known yet, which is indeterminate.
+	 * platform connection the state is known (no account), so an errored entry left from that time does not count. While
+	 * plugins load the connection state is not known yet, which is indeterminate.
 	 *
 	 * @since 11.2.0
 	 *
@@ -956,9 +957,9 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		/**
 		 * Allows forcing WooPayments to use network-wide saved payment methods across a multisite network.
 		 *
-		 * Kept under the WooPayments extension's filter name for parity. The extension
-		 * marks it internal to Automattic; native honors the same opt-in so customer
-		 * IDs, saved-method behavior and the WooPay flags stay network-consistent.
+		 * The filter keeps the WooPayments extension's name, so a callback written for it keeps working. It is meant only
+		 * for Automattic's own sites; returning true keeps customer IDs, saved payment methods and the WooPay flags the
+		 * same across the network.
 		 *
 		 * @since 11.0.0
 		 *
@@ -1004,7 +1005,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the cached account is valid for native WooPayments admin navigation.
+	 * Tell whether the account finished onboarding: details are submitted and card payments were requested.
 	 *
 	 * @return bool
 	 */
@@ -1262,8 +1263,8 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * Get a persisted WooPayments gateway setting.
 	 *
 	 * @param string $key      Setting key.
-	 * @param mixed  $fallback Optional caller fallback, which takes precedence over the plugin default.
-	 * @return mixed Persisted value, caller fallback, plugin default, or an empty string when no default exists.
+	 * @param mixed  $fallback Optional caller fallback, which takes precedence over the form default.
+	 * @return mixed Persisted value, caller fallback, form default, or an empty string when no default exists.
 	 */
 	public function get_gateway_setting( string $key, $fallback = null ) {
 		$settings = $this->get_stored_gateway_settings();
@@ -1296,9 +1297,9 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/**
 	 * Get the gateway settings, a key never saved reading as its form default.
 	 *
-	 * A natively onboarded store stores only the keys onboarding writes until the settings page is saved; the gateway
-	 * answers every other key with its form default (WC_Settings_API::get_option()). A settings read that throws is logged
-	 * and read as no stored settings.
+	 * A store onboarded through the built-in WooPayments stores only the keys onboarding writes until the settings page is
+	 * saved; the gateway answers every other key with its form default (WC_Settings_API::get_option()). A settings read
+	 * that throws is logged and read as no stored settings.
 	 *
 	 * @since 11.2.0
 	 *
@@ -1477,7 +1478,11 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the native WooPayments API client when account data needs a live refresh.
+	 * Get the WooPayments API client, resolved from the container on first use.
+	 *
+	 * The API client takes this service in its `init()` (test mode, the store ID, the account refresh after VAT details
+	 * are saved), so it is not injected here; resolving it on use also leaves it unbuilt on requests that never reach the
+	 * platform. A failed resolution returns null, which reads as not connected: no platform call can be made without it.
 	 *
 	 * @return WooPaymentsApiClient|null
 	 */
@@ -1604,7 +1609,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		}
 
 		try {
-			// Autoloaded like the client: storefront renders read it through is_test_mode_enabled().
+			// Autoloaded: storefront renders read it through is_test_mode_enabled().
 			$this->legacy_proxy->call_function( 'update_option', self::ONBOARDING_TEST_MODE_OPTION, 'yes', true );
 			$this->legacy_proxy->call_function( 'wp_cache_delete', self::ONBOARDING_TEST_MODE_OPTION, 'options' );
 		} catch ( \Throwable $e ) {
