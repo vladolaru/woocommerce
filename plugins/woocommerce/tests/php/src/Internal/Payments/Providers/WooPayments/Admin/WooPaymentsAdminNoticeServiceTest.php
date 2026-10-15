@@ -67,7 +67,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_order_query_args', $record_query );
 
 		try {
-			$notice = $sut->get_notice_for_current_user();
+			$notice = $sut->refresh_notice_for_current_user();
 			$this->assertIsArray( $notice );
 			$this->assertSame( 'test_to_live', $notice['id'] );
 			$this->assertSame( "You're ready to take real payments. Switch from test mode to start charging customers.", $notice['message'] );
@@ -84,7 +84,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			$this->assertSame( array( 'wc-completed', 'wc-processing' ), $queries[0]['status'] );
 			$this->assertSame( '_wcpay_mode', $queries[0]['meta_key'] );
 			$this->assertSame( 'test', $queries[0]['meta_value'] );
-			$this->assertSame( $notice, $sut->get_notice_for_current_user() );
+			$this->assertSame( $notice, $sut->refresh_notice_for_current_user() );
 			$this->assertCount( 1, $queries, 'The one-hour site transient should prevent another existence query.' );
 		} finally {
 			remove_filter( 'woocommerce_order_query_args', $record_query );
@@ -120,7 +120,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_order_query_args', $record_query );
 
 		try {
-			$this->assertNotNull( $sut->get_notice_for_current_user() );
+			$this->assertNotNull( $sut->refresh_notice_for_current_user() );
 			$this->assertCount( 1, $queries, 'Irrelevant order volume must not increase the test-to-live query count.' );
 			$this->assertSame( 1, $queries[0]['limit'] );
 			$this->assertSame( 'none', $queries[0]['orderby'] );
@@ -149,7 +149,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$sut->init( $account );
 
 		try {
-			$notice = $sut->get_notice_for_current_user();
+			$notice = $sut->refresh_notice_for_current_user();
 			$this->assertIsArray( $notice );
 			$this->assertSame( 'onboard', $notice['primary']['kind'] );
 			$this->assertSame( Utils::wc_payments_settings_url( '/woopayments/onboarding' ), $notice['primary']['href'] );
@@ -186,7 +186,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 
 		try {
 			$this->assertTrue( $arbiter->is_extension_owner() );
-			$this->assertNull( $sut->get_notice_for_current_user() );
+			$this->assertNull( $sut->refresh_notice_for_current_user() );
 			$this->assertInstanceOf( \WP_Error::class, $sut->record_action( 'test_to_live', 'dismiss' ) );
 			$this->assertCount( 1, $data_store->get_notes_with_name( 'wc-payments-notes-test-to-live' ), 'No native note may be deleted while the plugin owns payments.' );
 			$this->assertSame( $notes, count( $data_store->get_notes( array( 'per_page' => 100 ) ) ), 'No native note may be created while the plugin owns payments.' );
@@ -223,7 +223,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$sut->init( $account );
 
 		try {
-			$this->assertNotNull( $sut->get_notice_for_current_user() );
+			$this->assertNotNull( $sut->refresh_notice_for_current_user() );
 			$data_store = Notes::load_data_store();
 			$this->assertEmpty( $data_store->get_notes_with_name( 'wc-payments-notes-test-to-live' ) );
 			$this->assertCount( 1, $data_store->get_notes_with_name( 'unrelated-note' ) );
@@ -257,7 +257,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$sut->init( $account );
 
 		try {
-			$this->assertNull( $sut->get_notice_for_current_user() );
+			$this->assertNull( $sut->refresh_notice_for_current_user() );
 			$data_store = Notes::load_data_store();
 			$this->assertEmpty( $data_store->get_notes_with_name( 'wc-payments-notes-test-to-live' ) );
 			$this->assertCount( 1, $data_store->get_notes_with_name( 'unrelated-note' ) );
@@ -297,7 +297,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_order_query_args', $record_query );
 
 		try {
-			$this->assertNull( $sut->get_notice_for_current_user() );
+			$this->assertNull( $sut->refresh_notice_for_current_user() );
 			$this->assertSame( 0, $queries );
 		} finally {
 			remove_filter( 'woocommerce_order_query_args', $record_query );
@@ -360,11 +360,11 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		add_action( 'set_transient_wcpay_test_to_live_eligible', $record_lifetime, 10, 2 );
 
 		try {
-			$this->assertNull( $sut->get_notice_for_current_user() );
+			$this->assertNull( $sut->refresh_notice_for_current_user() );
 			$this->assertSame( '0', get_transient( 'wcpay_test_to_live_eligible' ) );
 			$this->assertSame( array( HOUR_IN_SECONDS ), $lifetimes );
 			add_filter( 'woocommerce_order_query_args', $record_query );
-			$this->assertNull( $sut->get_notice_for_current_user() );
+			$this->assertNull( $sut->refresh_notice_for_current_user() );
 			$this->assertSame( 0, $queries );
 		} finally {
 			remove_action( 'set_transient_wcpay_test_to_live_eligible', $record_lifetime, 10 );
@@ -408,7 +408,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_order_query_args', $record_query );
 
 		try {
-			$notice = $sut->get_notice_for_current_user();
+			$notice = $sut->refresh_notice_for_current_user();
 			$this->assertSame( $expected, null !== $notice );
 			$this->assertSame( $expected ? 1 : 0, $queries );
 		} finally {
@@ -841,7 +841,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_order_query_args', $record_query );
 
 		try {
-			$notice = $sut->get_notice_for_current_user();
+			$notice = $sut->refresh_notice_for_current_user();
 			$this->assertSame( $expected_notice, null !== $notice );
 			$this->assertSame( $expected_cache, get_transient( 'wcpay_one_and_done_eligible' ) );
 			$this->assertNotEmpty( $queries );
@@ -910,10 +910,10 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_order_query_args', $record_query );
 
 		try {
-			$this->assertNull( $sut->get_notice_for_current_user() );
+			$this->assertNull( $sut->refresh_notice_for_current_user() );
 			$this->assertSame( '1', get_option( 'wcpay_one_and_done_permanently_ineligible' ) );
 			$this->assertSame( 1, $queries );
-			$this->assertNull( $sut->get_notice_for_current_user() );
+			$this->assertNull( $sut->refresh_notice_for_current_user() );
 			$this->assertSame( 1, $queries, 'Permanent ineligibility should suppress all future scans.' );
 		} finally {
 			remove_filter( 'woocommerce_order_query_args', $record_query );
@@ -944,7 +944,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_order_query_args', $record_query );
 
 		try {
-			$this->assertSame( $expected_notice, null !== $sut->get_notice_for_current_user() );
+			$this->assertSame( $expected_notice, null !== $sut->refresh_notice_for_current_user() );
 			$this->assertSame( $expected_permanent, (bool) get_option( 'wcpay_one_and_done_permanently_ineligible' ) );
 			$this->assertCount( 2, $queries );
 			$this->assertIsArray( $queries[1]['payment_method'] );
@@ -992,7 +992,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_order_query_args', $record_query );
 
 		try {
-			$this->assertSame( $expected, null !== $sut->get_notice_for_current_user() );
+			$this->assertSame( $expected, null !== $sut->refresh_notice_for_current_user() );
 			$this->assertSame( $expected ? 2 : 0, $queries );
 		} finally {
 			remove_filter( 'woocommerce_order_query_args', $record_query );
@@ -1050,7 +1050,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_order_query_args', $record_query );
 
 		try {
-			$notice = $sut->get_notice_for_current_user();
+			$notice = $sut->refresh_notice_for_current_user();
 			if ( null === $expected_stage ) {
 				$this->assertNull( $notice );
 				$this->assertSame( 0, $queries, 'The one-hour site transient should prevent another existence query.' );
@@ -1140,7 +1140,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_order_query_args', $record_query );
 
 		try {
-			$this->assertNull( $sut->get_notice_for_current_user() );
+			$this->assertNull( $sut->refresh_notice_for_current_user() );
 			$this->assertSame( 0, $queries );
 		} finally {
 			remove_filter( 'woocommerce_order_query_args', $record_query );
@@ -1202,7 +1202,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_order_query_args', $record_query );
 
 		try {
-			$this->assertNull( $sut->get_notice_for_current_user() );
+			$this->assertNull( $sut->refresh_notice_for_current_user() );
 			$this->assertSame( 0, $queries );
 		} finally {
 			remove_filter( 'woocommerce_order_query_args', $record_query );
@@ -1245,7 +1245,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_order_query_args', $record_query );
 
 		try {
-			$this->assertNull( $sut->get_notice_for_current_user() );
+			$this->assertNull( $sut->refresh_notice_for_current_user() );
 			$this->assertSame( '1', get_option( 'wcpay_has_live_sale' ) );
 			$this->assertCount( 1, $queries );
 			$this->assertSame( 'woocommerce_payments', $queries[0]['payment_method'] );
@@ -1286,7 +1286,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_order_query_args', $record_query );
 
 		try {
-			$notice = $sut->get_notice_for_current_user();
+			$notice = $sut->refresh_notice_for_current_user();
 			$this->assertIsArray( $notice );
 			$this->assertSame( 'one_and_done', $notice['id'] );
 			$this->assertCount( 3, $queries, 'Cold selection should run the live-sale query, the limit-two WooPayments query and the limit-one alternate-gateway query.' );
@@ -1323,7 +1323,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_order_query_args', $record_query );
 
 		try {
-			$notice = $sut->get_notice_for_current_user();
+			$notice = $sut->refresh_notice_for_current_user();
 			$this->assertIsArray( $notice );
 			$this->assertSame( 'post_kyc_activation', $notice['id'] );
 			$this->assertFalse( get_option( 'wcpay_has_live_sale' ) );
@@ -1364,8 +1364,8 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_order_query_args', $record_query );
 
 		try {
-			$this->assertNotNull( $sut->get_notice_for_current_user() );
-			$this->assertNotNull( $sut->get_notice_for_current_user() );
+			$this->assertNotNull( $sut->refresh_notice_for_current_user() );
+			$this->assertNotNull( $sut->refresh_notice_for_current_user() );
 			$this->assertSame( 1, $queries, 'The live-sale query runs once; the second call reads the cached eligibility.' );
 			$this->assertSame( '1', get_transient( 'wcpay_post_kyc_activation_eligible' ) );
 			$this->assertFalse( get_option( 'wcpay_has_live_sale' ) );
@@ -1423,7 +1423,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_order_query_args', $record_query );
 
 		try {
-			$this->assertNull( $sut->get_notice_for_current_user(), 'The main-blog live order should suppress its notice.' );
+			$this->assertNull( $sut->refresh_notice_for_current_user(), 'The main-blog live order should suppress its notice.' );
 			$this->assertSame( '1', get_option( 'wcpay_has_live_sale' ) );
 			set_transient( 'wcpay_post_kyc_activation_eligible', 'main-blog-cache', HOUR_IN_SECONDS );
 			$main_admin_url = admin_url( 'admin.php?page=wc-admin&path=/marketing' );
@@ -1440,7 +1440,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 
 			$this->assertFalse( get_option( 'wcpay_has_live_sale' ), 'The main-blog live-sale marker must not leak to the secondary blog.' );
 			$this->assertFalse( get_transient( 'wcpay_post_kyc_activation_eligible' ), 'The main-blog transient must not leak to the secondary blog.' );
-			$notice = $sut->get_notice_for_current_user();
+			$notice = $sut->refresh_notice_for_current_user();
 			$this->assertIsArray( $notice, 'A main-blog order must not suppress the secondary-blog notice.' );
 			$this->assertSame( 7, $notice['stage'] );
 			$this->assertSame( admin_url( 'admin.php?page=wc-admin&path=/marketing' ), $notice['primary']['href'] );
@@ -1496,7 +1496,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_order_query_args', $record_query );
 
 		try {
-			$notice = $sut->get_notice_for_current_user();
+			$notice = $sut->refresh_notice_for_current_user();
 			$this->assertIsArray( $notice );
 			$this->assertSame( 'one_and_done', $notice['id'] );
 			set_transient( 'wcpay_one_and_done_eligible', 'main-blog-cache', HOUR_IN_SECONDS );
@@ -1507,7 +1507,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			add_filter( 'woocommerce_order_query_args', $record_query );
 			$this->assertFalse( get_transient( 'wcpay_one_and_done_eligible' ), 'The main-blog transient must not leak to the secondary blog.' );
 			$this->assertFalse( get_option( 'wcpay_one_and_done_permanently_ineligible' ), 'The main-blog option must not leak to the secondary blog.' );
-			$this->assertNull( $sut->get_notice_for_current_user() );
+			$this->assertNull( $sut->refresh_notice_for_current_user() );
 			$this->assertSame( '0', get_transient( 'wcpay_one_and_done_eligible' ) );
 
 			restore_current_blog();

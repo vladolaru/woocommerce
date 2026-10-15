@@ -392,12 +392,12 @@ class WooPaymentsOnboardingAdapter {
 	}
 
 	/**
-	 * Get the WooPayments settings notice for the current user, if any.
+	 * Work out the WooPayments settings notice for the current user, if any.
 	 *
 	 * @return array<string,mixed>|null
 	 */
-	public function get_settings_notice_for_current_user(): ?array {
-		return wc_get_container()->get( WooPaymentsAdminNoticeService::class )->get_notice_for_current_user();
+	public function refresh_settings_notice_for_current_user(): ?array {
+		return wc_get_container()->get( WooPaymentsAdminNoticeService::class )->refresh_notice_for_current_user();
 	}
 
 	/**

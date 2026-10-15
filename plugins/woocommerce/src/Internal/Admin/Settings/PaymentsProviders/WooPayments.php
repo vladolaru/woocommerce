@@ -230,7 +230,7 @@ class WooPayments extends PaymentGateway {
 		}
 
 		if ( null !== $this->onboarding_adapter && 0 < get_current_user_id() ) {
-			$notice = $this->onboarding_adapter->get_settings_notice_for_current_user();
+			$notice = $this->onboarding_adapter->refresh_settings_notice_for_current_user();
 			if ( ! empty( $details['state']['enabled'] ) && ! empty( $details['state']['account_connected'] ) && null !== $notice ) {
 				$details['_admin_notice'] = $notice;
 			}

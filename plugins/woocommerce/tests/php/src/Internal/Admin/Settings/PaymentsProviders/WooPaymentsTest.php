@@ -131,7 +131,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			'_links'  => array(),
 		);
 		$service = $this->createMock( WooPaymentsAdminNoticeService::class );
-		$service->expects( $this->exactly( 2 ) )->method( 'get_notice_for_current_user' )->willReturnOnConsecutiveCalls( null, $notice );
+		$service->expects( $this->exactly( 2 ) )->method( 'refresh_notice_for_current_user' )->willReturnOnConsecutiveCalls( null, $notice );
 		$this->set_notice_service_resolver( static fn() => $service );
 
 		$before = $this->sut->get_details( $gateway );
@@ -164,7 +164,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			)
 		);
 		$service = $this->createMock( WooPaymentsAdminNoticeService::class );
-		$service->expects( $this->exactly( $notice_reads ) )->method( 'get_notice_for_current_user' )->willReturn( array( 'id' => 'test_to_live' ) );
+		$service->expects( $this->exactly( $notice_reads ) )->method( 'refresh_notice_for_current_user' )->willReturn( array( 'id' => 'test_to_live' ) );
 		$this->set_notice_service_resolver( static fn() => $service );
 
 		$this->assertArrayNotHasKey( '_admin_notice', $this->sut->get_details( $gateway ) );
@@ -227,7 +227,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$legacy_runtime = new WooPaymentsLegacyRuntime();
 		$legacy_runtime->init( $this->mockable_proxy );
 		$adapter = $this->createMock( WooPaymentsOnboardingAdapter::class );
-		$adapter->method( 'get_settings_notice_for_current_user' )->willReturnCallback( static fn() => $notice_resolver()->get_notice_for_current_user() );
+		$adapter->method( 'refresh_settings_notice_for_current_user' )->willReturnCallback( static fn() => $notice_resolver()->refresh_notice_for_current_user() );
 		$this->sut->set_admin_runtime_collaborators(
 			$legacy_runtime,
 			fn(): WooPaymentsRestController => $this->mock_rest_controller,

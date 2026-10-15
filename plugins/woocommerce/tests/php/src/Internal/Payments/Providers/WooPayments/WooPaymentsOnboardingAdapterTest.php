@@ -589,10 +589,10 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 	public function test_settings_notice_comes_from_the_notice_service(): void {
 		$notice  = array( 'id' => 'test_to_live' );
 		$service = $this->createMock( WooPaymentsAdminNoticeService::class );
-		$service->expects( $this->once() )->method( 'get_notice_for_current_user' )->willReturn( $notice );
+		$service->expects( $this->once() )->method( 'refresh_notice_for_current_user' )->willReturn( $notice );
 		wc_get_container()->replace( WooPaymentsAdminNoticeService::class, $service );
 
-		$this->assertSame( $notice, $this->adapter->get_settings_notice_for_current_user() );
+		$this->assertSame( $notice, $this->adapter->refresh_settings_notice_for_current_user() );
 	}
 
 	/**

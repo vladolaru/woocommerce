@@ -119,13 +119,13 @@ class WooPaymentsAdminNoticeService {
 	}
 
 	/**
-	 * Get the current settings notice, if any.
+	 * Work out the current user's settings notice, refreshing the cached eligibility and removing the test-to-live inbox note it replaces.
 	 *
 	 * @since 11.2.0
 	 *
 	 * @return array|null
 	 */
-	public function get_notice_for_current_user(): ?array {
+	public function refresh_notice_for_current_user(): ?array {
 		$user_id = get_current_user_id();
 		if ( 0 === $user_id || $this->is_plugin_owner() ) {
 			return null;
@@ -137,8 +137,8 @@ class WooPaymentsAdminNoticeService {
 		}
 
 		if ( ! $this->account_service->is_test_mode_enabled() ) {
-			$post_kyc_notice = $this->get_post_kyc_notice( $user_id );
-			return $post_kyc_notice ?? $this->get_one_and_done_notice( $user_id );
+			$post_kyc_notice = $this->refresh_post_kyc_notice( $user_id );
+			return $post_kyc_notice ?? $this->refresh_one_and_done_notice( $user_id );
 		}
 		if ( $this->account_service->is_dev_mode_enabled() ) {
 			return null;
@@ -211,7 +211,7 @@ class WooPaymentsAdminNoticeService {
 	 * @param int $user_id Current user ID.
 	 * @return array|null
 	 */
-	private function get_one_and_done_notice( int $user_id ): ?array {
+	private function refresh_one_and_done_notice( int $user_id ): ?array {
 		$now = (int) call_user_func( $this->clock );
 		if ( ! $this->can_consider_one_and_done( $user_id, $now ) ) {
 			return null;
@@ -345,7 +345,7 @@ class WooPaymentsAdminNoticeService {
 	 * @param int $user_id Current user ID.
 	 * @return array|null
 	 */
-	private function get_post_kyc_notice( int $user_id ): ?array {
+	private function refresh_post_kyc_notice( int $user_id ): ?array {
 		if ( ! $this->account_service->can_process_payments() || ! $this->account_service->has_live_account() || $this->account_service->has_test_account() || $this->account_service->is_dev_mode_enabled() || get_option( WooPaymentsAccountMilestonesController::HAS_LIVE_SALE_OPTION ) ) {
 			return null;
 		}
