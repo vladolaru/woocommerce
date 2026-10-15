@@ -477,6 +477,41 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A classic cart loads WooPay direct checkout only while WooPayments is an available gateway: $label.
+	 *
+	 * Client 11.1.0 loads its direct-checkout script whenever the store-level check passes (class-wc-payments-features.php:237-243,
+	 * class-wc-payments-woopay-direct-checkout.php:87-121), so its cart also redirects to WooPay while WooPayments is not
+	 * offered. Here nothing loads then, and "Proceed to checkout" stays on the store.
+	 *
+	 * @testWith ["gateway available", true]
+	 *           ["gateway unavailable", false]
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param string $label             Case label.
+	 * @param bool   $gateway_available Whether the base gateway is among the available gateways.
+	 */
+	public function test_cart_loads_direct_checkout_only_while_the_gateway_is_available( string $label, bool $gateway_available ): void {
+		unset( $label );
+		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
+		if ( $gateway_available ) {
+			$this->make_base_gateway_available();
+		}
+		$this->sut = $this->create_controller( true, $this->create_real_enabled_session_service() );
+		add_filter( 'woocommerce_is_cart', '__return_true' );
+
+		$this->sut->enqueue_frontend_assets();
+
+		$this->assertSame( $gateway_available, wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
+		if ( $gateway_available ) {
+			$localized_data = wp_scripts()->get_data( 'wc-woopayments-woopay', 'data' );
+			$this->assertIsString( $localized_data );
+			$this->assertStringContainsString( '"isWooPayDirectCheckoutEnabled":"1"', $localized_data );
+		}
+	}
+
+	/**
 	 * @testdox A product page with a mini-cart keeps the WooPay button but not direct checkout for a guest the guest rule keeps out.
 	 *
 	 * On a product page the client's button checks the product, not the cart (client 11.1.0

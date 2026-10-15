@@ -459,27 +459,42 @@ class WooPaymentsWooPayEligibilityTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Direct checkout runs for $label.
-	 * @dataProvider direct_checkout_guest_rule_provider
+	 * @dataProvider direct_checkout_run_provider
 	 *
 	 * Client 11.1.0 loads its direct-checkout script only when WooPay_Utilities::should_enable_woopay_on_guest_checkout()
-	 * passes (class-wc-payments-woopay-direct-checkout.php:92-94, class-woopay-utilities.php:46-62).
+	 * passes (class-wc-payments-woopay-direct-checkout.php:92-94, class-woopay-utilities.php:46-62). It does not check that
+	 * WooPayments is an available gateway (class-wc-payments-features.php:237-243), so its cart sends the shopper to WooPay
+	 * while WooPayments is not offered, for example before card payments are active. Here availability is also required,
+	 * read at page render as the client's WooPay button reads it (class-wc-payments-woopay-button-handler.php:245-250).
 	 *
-	 * @param string $label              Case label.
-	 * @param bool   $logged_in          Whether the shopper is logged in.
-	 * @param bool   $has_subscription   Whether the cart contains a subscription.
-	 * @param string $guest_checkout     The guest checkout setting.
-	 * @param bool   $expected           Whether direct checkout runs.
+	 * @param string $label             Case label.
+	 * @param bool   $logged_in         Whether the shopper is logged in.
+	 * @param bool   $has_subscription  Whether the cart contains a subscription.
+	 * @param string $guest_checkout    The guest checkout setting.
+	 * @param bool   $gateway_available Whether the base gateway stays among the available gateways.
+	 * @param bool   $expected          Whether direct checkout runs.
 	 */
-	public function test_direct_checkout_applies_the_guest_rule( string $label, bool $logged_in, bool $has_subscription, string $guest_checkout, bool $expected ): void {
+	public function test_direct_checkout_runs_for_the_shopper_while_the_gateway_is_available( string $label, bool $logged_in, bool $has_subscription, string $guest_checkout, bool $gateway_available, bool $expected ): void {
 		unset( $label );
 		update_option( 'woocommerce_enable_guest_checkout', $guest_checkout );
 		if ( $logged_in ) {
 			wp_set_current_user( self::factory()->user->create( array( 'role' => 'customer' ) ) );
 		}
+		if ( ! $gateway_available ) {
+			add_filter(
+				'woocommerce_available_payment_gateways',
+				static function ( array $gateways ): array {
+					unset( $gateways['woocommerce_payments'] );
+
+					return $gateways;
+				},
+				20
+			);
+		}
 		$sut                             = $this->create_eligibility( array(), array( 'platform_direct_checkout_eligible' => true ) );
 		$sut->cart_contains_subscription = $has_subscription;
 
-		$this->assertTrue( $sut->is_woopay_direct_checkout_enabled(), 'The store-level direct checkout flag stays shopper-independent.' );
+		$this->assertTrue( $sut->is_woopay_direct_checkout_enabled(), 'The store-level direct checkout flag stays shopper- and availability-independent.' );
 		$this->assertSame( $expected, $sut->should_run_woopay_direct_checkout() );
 	}
 
@@ -648,16 +663,18 @@ class WooPaymentsWooPayEligibilityTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Provide the client's guest-rule cases.
+	 * Provide the guest-rule cases of client 11.1.0 and the gateway availability cases.
 	 *
-	 * @return array<string,array{string,bool,bool,string,bool}>
+	 * @return array<string,array{string,bool,bool,string,bool,bool}>
 	 */
-	public function direct_checkout_guest_rule_provider(): array {
+	public function direct_checkout_run_provider(): array {
 		return array(
-			'a guest with a plain cart'                    => array( 'a guest with a plain cart', false, false, 'yes', true ),
-			'not a guest with a subscription in the cart'  => array( 'not a guest with a subscription in the cart', false, true, 'yes', false ),
-			'not a guest when guest checkout is off'       => array( 'not a guest when guest checkout is off', false, false, 'no', false ),
-			'a logged-in shopper with a subscription cart' => array( 'a logged-in shopper with a subscription cart', true, true, 'no', true ),
+			'a guest with a plain cart'                    => array( 'a guest with a plain cart', false, false, 'yes', true, true ),
+			'not a guest with a subscription in the cart'  => array( 'not a guest with a subscription in the cart', false, true, 'yes', true, false ),
+			'not a guest when guest checkout is off'       => array( 'not a guest when guest checkout is off', false, false, 'no', true, false ),
+			'a logged-in shopper with a subscription cart' => array( 'a logged-in shopper with a subscription cart', true, true, 'no', true, true ),
+			'a guest with a plain cart, WooPayments not offered' => array( 'a guest with a plain cart, WooPayments not offered', false, false, 'yes', false, false ),
+			'a logged-in shopper, WooPayments not offered' => array( 'a logged-in shopper, WooPayments not offered', true, false, 'yes', false, false ),
 		);
 	}
 }
