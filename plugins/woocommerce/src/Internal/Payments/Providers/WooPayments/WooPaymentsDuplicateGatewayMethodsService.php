@@ -133,7 +133,7 @@ class WooPaymentsDuplicateGatewayMethodsService {
 
 			return $this->keep_woopayments_duplicate_clusters_only( $duplicate_candidates );
 		} catch ( Throwable $e ) {
-			$this->logger->log_throwable( 'Native WooPayments duplicate payment method detection failed.', $e, array(), 'warning' );
+			$this->logger->log_throwable( 'WooPayments duplicate payment method detection failed.', $e, array(), 'warning' );
 
 			return array();
 		}

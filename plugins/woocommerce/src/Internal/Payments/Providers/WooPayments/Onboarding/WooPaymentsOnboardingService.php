@@ -480,7 +480,7 @@ class WooPaymentsOnboardingService {
 		$persist_result = wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class )->persist( $settings );
 		if ( ! $persist_result['persisted'] ) {
 			$this->log_onboarding_error(
-				'Native WooPayments could not enable the gateway after KYC finalization.',
+				'WooPayments could not enable the gateway after KYC finalization.',
 				array( 'failed_options' => $persist_result['failed_option_names'] )
 			);
 		}
@@ -499,7 +499,7 @@ class WooPaymentsOnboardingService {
 		$restored_ids = $this->get_test_drive_enabled_payment_method_ids();
 		if ( ! empty( $restored_ids ) && ! $this->add_enabled_payment_methods( $restored_ids ) ) {
 			// Keep the Test Drive selection until the transient expires, so it is not lost with the failed write.
-			$this->log_onboarding_error( 'Native WooPayments could not restore the Test Drive payment methods after KYC finalization.' );
+			$this->log_onboarding_error( 'WooPayments could not restore the Test Drive payment methods after KYC finalization.' );
 			return;
 		}
 
@@ -864,7 +864,7 @@ class WooPaymentsOnboardingService {
 		} catch ( \Throwable $e ) {
 			try {
 				// Gated like the client's Logger::error() (client 11.1.0 `includes/class-wc-payments-onboarding-service.php:1029-1032`); a PHP Error is always logged.
-				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Native WooPayments could not read the actioned promotion notes for onboarding.', $e );
+				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'WooPayments could not read the actioned promotion notes for onboarding.', $e );
 			} catch ( \Throwable $logging_error ) {
 				unset( $logging_error );
 			}

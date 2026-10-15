@@ -125,7 +125,7 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 			->method( 'log' )
 			->with(
 				'warning',
-				'WooPayments split gateway settings drift was detected during canonical projection.',
+				'WooPayments split gateway settings drifted from the unchanged stored settings.',
 				array(
 					'event'                => 'split_gateway_settings_drift',
 					'drifted_option_names' => array( $option_name ),

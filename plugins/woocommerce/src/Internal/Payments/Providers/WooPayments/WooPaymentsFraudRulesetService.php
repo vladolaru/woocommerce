@@ -491,7 +491,7 @@ class WooPaymentsFraudRulesetService {
 		} catch ( WooPaymentsApiException $e ) {
 			// The client lets this failure surface from the settings save; native runs it at shutdown, so it always logs it.
 			$this->logger->log_always(
-				'Native WooPayments fraud ruleset update for new selling locations failed.',
+				'WooPayments fraud ruleset update for new selling locations failed.',
 				'warning',
 				array(
 					'error_code'  => WooPaymentsLogger::get_loggable_error_code( $e->get_error_code() ),
@@ -532,12 +532,12 @@ class WooPaymentsFraudRulesetService {
 				set_transient( 'wcpay_fraud_protection_settings', $ruleset, DAY_IN_SECONDS );
 				update_option( 'current_protection_level', $this->get_matching_fraud_protection_level( $ruleset ) );
 			} else {
-				$this->log_fraud_ruleset_refresh_warning( 'Native WooPayments fraud ruleset refresh returned an invalid ruleset.' );
+				$this->log_fraud_ruleset_refresh_warning( 'WooPayments fraud ruleset refresh returned an invalid ruleset.' );
 			}
 		} catch ( WooPaymentsApiException $e ) {
 			if ( 'wcpay_fraud_ruleset_not_found' !== $e->get_error_code() ) {
 				$this->log_fraud_ruleset_refresh_warning(
-					'Native WooPayments fraud ruleset refresh failed.',
+					'WooPayments fraud ruleset refresh failed.',
 					array(
 						'error_code'  => WooPaymentsLogger::get_loggable_error_code( $e->get_error_code() ),
 						'http_status' => $e->get_http_code(),
@@ -557,7 +557,7 @@ class WooPaymentsFraudRulesetService {
 				update_option( 'current_protection_level', 'basic' );
 			} catch ( WooPaymentsApiException $save_exception ) {
 				$this->log_fraud_ruleset_refresh_warning(
-					'Native WooPayments fraud ruleset Basic initialization failed.',
+					'WooPayments fraud ruleset Basic initialization failed.',
 					array(
 						'error_code'  => WooPaymentsLogger::get_loggable_error_code( $save_exception->get_error_code() ),
 						'http_status' => $save_exception->get_http_code(),

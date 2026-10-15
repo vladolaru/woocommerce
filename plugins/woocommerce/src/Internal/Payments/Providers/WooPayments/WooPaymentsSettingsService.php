@@ -551,7 +551,7 @@ class WooPaymentsSettingsService {
 		if ( ! $result['persisted'] ) {
 			// Account and fraud settings in this request already reached the platform; say which local option did not save.
 			$this->logger->log_always(
-				'Native WooPayments settings could not be saved locally.',
+				'WooPayments settings could not be saved locally.',
 				'error',
 				array( 'failed_options' => $result['failed_option_names'] )
 			);

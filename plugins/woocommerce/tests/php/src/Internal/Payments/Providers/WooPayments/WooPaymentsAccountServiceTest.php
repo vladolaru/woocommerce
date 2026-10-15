@@ -1109,7 +1109,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $sut->get_account_id() );
 		$errors = $logger->get_errors();
 		$this->assertNotEmpty( $errors );
-		$this->assertSame( 'Native WooPayments could not read the account cache; treating it as missing.', $errors[0][1] );
+		$this->assertSame( 'WooPayments could not read the account cache; treating it as missing.', $errors[0][1] );
 		$this->assertStringNotContainsString( 'acct_secret', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
 	}
 

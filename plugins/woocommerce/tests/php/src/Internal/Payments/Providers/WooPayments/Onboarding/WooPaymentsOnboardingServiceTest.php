@@ -905,7 +905,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $this->dispatch_onboarding_route_for_actioned_notes( $call ) );
 		$note_store_errors = array_filter(
 			$logger->get_errors(),
-			static fn( array $line ): bool => 'Native WooPayments could not read the actioned promotion notes for onboarding.' === $line[1]
+			static fn( array $line ): bool => 'WooPayments could not read the actioned promotion notes for onboarding.' === $line[1]
 		);
 		$this->assertCount( 1, $note_store_errors, 'The note store failure is logged once.' );
 
@@ -1269,10 +1269,10 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $response['success'], 'The platform finalization cannot be replayed, so the answer stays a success.' );
 		$messages = array_column( $logger->get_errors(), 1 );
 		if ( 'gateway enable' === $refused_write ) {
-			$this->assertContains( 'Native WooPayments could not enable the gateway after KYC finalization.', $messages );
+			$this->assertContains( 'WooPayments could not enable the gateway after KYC finalization.', $messages );
 			$this->assertStringContainsString( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, (string) wp_json_encode( $logger->contexts ) );
 		} else {
-			$this->assertSame( array( 'Native WooPayments could not restore the Test Drive payment methods after KYC finalization.' ), $messages );
+			$this->assertSame( array( 'WooPayments could not restore the Test Drive payment methods after KYC finalization.' ), $messages );
 			$this->assertNotFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ), 'The Test Drive selection is not deleted with the failed write.' );
 		}
 	}

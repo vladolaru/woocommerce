@@ -381,7 +381,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 		sort( $failed_option_names );
 		try {
 			wc_get_container()->get( WooPaymentsLogger::class )->log_always(
-				'WooPayments split gateway settings drift was detected during canonical projection.',
+				'WooPayments split gateway settings drifted from the unchanged stored settings.',
 				'warning',
 				array(
 					'event'                => 'split_gateway_settings_drift',

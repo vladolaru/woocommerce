@@ -1559,7 +1559,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	private function log_read_failure( string $what, \Throwable $throwable ): void {
 		try {
 			wc_get_logger()->error(
-				'Native WooPayments could not read ' . $what . '; treating it as missing.',
+				'WooPayments could not read ' . $what . '; treating it as missing.',
 				array_merge( WooPaymentsLogger::get_failure_context( $throwable ), array( 'source' => WooPaymentsLogger::SOURCE ) )
 			);
 		} catch ( \Throwable $logging_error ) {

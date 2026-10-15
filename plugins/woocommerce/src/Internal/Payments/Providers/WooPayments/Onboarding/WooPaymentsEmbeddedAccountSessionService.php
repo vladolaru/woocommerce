@@ -48,12 +48,12 @@ class WooPaymentsEmbeddedAccountSessionService {
 		try {
 			$session = $this->api_client->create_embedded_account_session();
 		} catch ( WooPaymentsApiException $exception ) {
-			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable_always( 'Native WooPayments could not create an embedded account session.', $exception );
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable_always( 'WooPayments could not create an embedded account session.', $exception );
 			return array();
 		}
 
 		if ( ! $this->is_valid_session( $session ) ) {
-			wc_get_container()->get( WooPaymentsLogger::class )->log_always( 'Native WooPayments received an embedded account session without the fields the page needs.', 'error' );
+			wc_get_container()->get( WooPaymentsLogger::class )->log_always( 'WooPayments received an embedded account session without the fields the page needs.', 'error' );
 			return array();
 		}
 
