@@ -39,7 +39,8 @@ class WooPaymentsController {
 		add_action( 'admin_init', array( $this, 'handle_returns_from_wpcom' ) );
 		add_action( 'admin_init', array( $this, 'handle_referral_link' ), 13 );
 		add_action( 'admin_init', array( $this, 'maybe_activate_woopay' ) );
-		// Fire only when the Settings or WC Admin page loads, before any output; WC Admin carries the client's legacy links.
+		// Only when the Settings or WC Admin page loads, before any output; WC Admin carries the WooPayments extension's
+		// `/payments/*` links.
 		add_action( 'load-woocommerce_page_wc-settings', array( $this, 'maybe_redirect_to_onboarding' ) );
 		add_action( 'load-woocommerce_page_wc-admin', array( $this, 'maybe_redirect_to_onboarding' ) );
 		add_action( 'woocommerce_updated', array( $this, 'clear_onboarding_fields_cache' ) );
@@ -59,9 +60,9 @@ class WooPaymentsController {
 	}
 
 	/**
-	 * Drop the native onboarding fields cache when WooCommerce updates.
+	 * Drop the onboarding fields cache when WooCommerce updates.
 	 *
-	 * Client 11.1.0 drops it on its own update; native ships inside WooCommerce. Registered here because this
+	 * Client 11.1.0 drops it on its own update; the built-in WooPayments updates with WooCommerce. Registered here because this
 	 * controller loads on every request; the adapter clears the cache only while the built-in WooPayments owns
 	 * payments.
 	 *
@@ -74,7 +75,7 @@ class WooPaymentsController {
 	}
 
 	/**
-	 * Send merchants from native WooPayments admin pages to onboarding in every native payments state.
+	 * Send merchants from the WooPayments admin pages to onboarding in every setup tier.
 	 *
 	 * The admin navigation controller only loads for connected stores; this covers the rest. The redirect is resolved
 	 * only for a guarded WooPayments route and decides once per request, so connected stores are not handled twice.
@@ -84,7 +85,7 @@ class WooPaymentsController {
 	 * @internal
 	 */
 	public function maybe_redirect_to_onboarding(): void {
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only redirect for native admin routes.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only redirect for the WooPayments admin routes.
 		if ( '' === WooPaymentsOnboardingRedirect::get_guarded_path( $_GET ) ) {
 			return;
 		}
@@ -100,7 +101,7 @@ class WooPaymentsController {
 	 * @internal
 	 */
 	public function maybe_activate_woopay(): void {
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only marks the landing page, like the plugin; the stored platform answer decides.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only marks the landing page; the stored platform answer decides.
 		if ( ! isset( $_GET['wcpay-connection-success'] ) ) {
 			return;
 		}

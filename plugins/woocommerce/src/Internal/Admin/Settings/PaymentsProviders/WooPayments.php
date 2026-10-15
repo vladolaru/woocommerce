@@ -80,8 +80,8 @@ class WooPayments extends PaymentGateway {
 	/**
 	 * Get the settings URL for the WooPayments payment gateway.
 	 *
-	 * While the WooPayments plugin owns the runtime, the native settings routes are not served, so the plugin gateway's
-	 * own settings page is kept.
+	 * While the WooPayments extension owns payments, the `/woopayments/settings` page is not served, so the WooPayments
+	 * extension's own gateway settings page is used.
 	 *
 	 * @param WC_Payment_Gateway $payment_gateway The payment gateway object.
 	 *
@@ -321,7 +321,7 @@ class WooPayments extends PaymentGateway {
 	/**
 	 * Get the incentive call to action for the built-in WooPayments gateway.
 	 *
-	 * The incentives API words it around installing the extension, which the built-in runtime never needs.
+	 * The incentives API words it around installing the WooPayments extension, which the built-in WooPayments never needs.
 	 *
 	 * @since 11.2.0
 	 *

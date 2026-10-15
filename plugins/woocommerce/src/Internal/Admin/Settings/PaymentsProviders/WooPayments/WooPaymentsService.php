@@ -167,8 +167,8 @@ class WooPaymentsService {
 	/**
 	 * Initialize the class instance.
 	 *
-	 * The native collaborators are resolved on first use: the trunk admin controllers resolve this service on every
-	 * request, and their dependency graphs must not load on requests that never call it.
+	 * The settings adapter and the extension runtime are resolved on first use: the admin controllers that load on every
+	 * request take this service, and those classes must not load on requests that never call it.
 	 *
 	 * @param PaymentsProviders $payment_providers The PaymentsProviders instance.
 	 * @param LegacyProxy       $proxy             The LegacyProxy instance.
@@ -1400,8 +1400,7 @@ class WooPaymentsService {
 		if ( ! empty( $configured_payment_methods ) && is_array( $configured_payment_methods ) ) {
 			foreach ( $configured_payment_methods as $pm_id => $enabled ) {
 				if ( ! is_string( $pm_id ) || ! is_bool( $enabled ) ) {
-					// Skip invalid entries.
-					continue;
+					continue; // Skip invalid entries.
 				}
 
 				if ( $enabled ) {
@@ -1872,7 +1871,7 @@ class WooPaymentsService {
 				if ( null !== $onboarding ) {
 					$response = $onboarding->disable_test_account( true );
 				} else {
-					// The legacy endpoint runs after releasing the shared onboarding lock.
+					// The WooPayments extension's endpoint is called after the onboarding lock is released, below.
 					$endpoint = '/wc/v3/payments/onboarding/test_drive_account/disable';
 				}
 			} elseif ( $had_sandbox_account ) {
@@ -1880,7 +1879,7 @@ class WooPaymentsService {
 				if ( null !== $onboarding ) {
 					$response = $onboarding->disable_test_account( false );
 				} else {
-					// The legacy endpoint runs after releasing the shared onboarding lock.
+					// The WooPayments extension's endpoint is called after the onboarding lock is released, below.
 					$endpoint = '/wc/v3/payments/onboarding/reset';
 				}
 			}
@@ -2046,10 +2045,11 @@ class WooPaymentsService {
 	/**
 	 * Store the referral code from a partner link and get the URL to continue to.
 	 *
-	 * Matches the plugin's `WC_Payments_Account::maybe_redirect_onboarding_referral()` (11.1.0); the active plugin keeps handling its own links.
+	 * While the WooPayments extension is loaded it handles its own referral links (client 11.1.0
+	 * `WC_Payments_Account::maybe_redirect_onboarding_referral()`).
 	 *
 	 * @param string $referral_code The sanitized referral code from the link.
-	 * @return string The URL to redirect to, or an empty string when the plugin handles the link.
+	 * @return string The URL to redirect to, or an empty string when the WooPayments extension handles the link.
 	 */
 	public function handle_onboarding_referral( string $referral_code ): string {
 		if ( $this->get_extension_runtime()->is_loaded() ) {
@@ -3005,13 +3005,13 @@ class WooPaymentsService {
 	 * @throws Exception If the onboarding fields data could not be retrieved or there was an error.
 	 */
 	private function get_onboarding_kyc_fields( string $location ): array {
-		// The built-in WooPayments answers the fields unless the extension is active or the platform is unreachable.
+		// The built-in WooPayments answers the fields unless the WooPayments extension is active or the platform is unreachable.
 		$fields = $this->get_settings_adapter()->get_onboarding_fields( (string) $this->proxy->call_function( 'get_user_locale' ) );
 		if ( null !== $fields ) {
 			return $this->prepare_onboarding_kyc_fields( $fields, $location );
 		}
 
-		// Call the WooPayments plugin REST API to get the onboarding fields when the plugin runtime owns the route.
+		// Call the WooPayments API to get the onboarding fields.
 		$response = $this->proxy->call_static( Utils::class, 'rest_endpoint_get_request', '/wc/v3/payments/onboarding/fields' );
 
 		if ( is_wp_error( $response ) ) {
@@ -3125,6 +3125,9 @@ class WooPaymentsService {
 
 	/**
 	 * Get the WooPayments Payments settings adapter.
+	 *
+	 * Each onboarding action asks it for the built-in onboarding first; when the answer is null, the action calls the
+	 * WooPayments extension's onboarding REST route.
 	 *
 	 * @return WooPaymentsPaymentsSettingsAdapter
 	 */

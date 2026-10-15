@@ -641,12 +641,8 @@ class Plugins extends \WC_REST_Data_Controller {
 	public function connect_wcpay() {
 		$extension_runtime = $this->get_woopayments_extension_runtime();
 		if ( null === $extension_runtime || ! $extension_runtime->is_loaded() ) {
-			// Intentional response-shape change: when the legacy WooPayments runtime is absent,
-			// this used to return a WP_Error ('woocommerce_rest_helper_connect', HTTP 500). Since
-			// WooPayments is now a Core-owned native provider, the runtime being absent is the normal
-			// native-only state, not an error. We therefore return a 200 with the native onboarding
-			// URL so callers redirect into Settings Payments onboarding. Do not "restore" the 500:
-			// external/third-party callers should be migrated to follow connectUrl on success.
+			// Unless the WooPayments extension owns payments, WooPayments is set up from the Payments settings: answer a 200
+			// with the Payments settings onboarding URL, not an error. Callers follow connectUrl on success.
 			return array(
 				'connectUrl' => SettingsUtils::wc_payments_settings_url(
 					'/woopayments/onboarding',

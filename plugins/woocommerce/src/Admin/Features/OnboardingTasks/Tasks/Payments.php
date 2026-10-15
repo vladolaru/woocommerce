@@ -173,10 +173,8 @@ class Payments extends Task {
 	/**
 	 * Get the task badge.
 	 *
-	 * Backward compatibility: the standalone WooPayments onboarding task (removed when
-	 * WooPayments merged into core) fired this documented public filter. It is re-fired
-	 * here so extensions (e.g. WooPayments' own incentives service) that hook it keep
-	 * working. Deprecated: prefer the native payments incentive surface.
+	 * The deprecated filter below was fired by the WooPayments onboarding task this task replaces. It still fires, so
+	 * callbacks that hook it, such as the WooPayments extension's incentives, keep working.
 	 *
 	 * @return string
 	 */
@@ -232,7 +230,7 @@ class Payments extends Task {
 		);
 
 		if ( is_array( $deprecated ) ) {
-			// Native values take precedence; the deprecated filter may only add keys.
+			// This task's values take precedence; the deprecated filter may only add keys.
 			return array_merge( $deprecated, $native );
 		}
 
@@ -240,7 +238,7 @@ class Payments extends Task {
 	}
 
 	/**
-	 * Check if WooPayments is active: the plugin runtime is loaded, or the built-in gateway is in use.
+	 * Check if WooPayments is active: the WooPayments extension is loaded and owns payments, or the built-in gateway is in use.
 	 *
 	 * @return bool
 	 */

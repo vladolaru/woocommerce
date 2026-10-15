@@ -88,11 +88,10 @@ class Init extends RemoteSpecsEngine {
 	}
 
 	/**
-	 * Remove legacy WooPayments plugin install metadata from suggestions.
+	 * Remove the woocommerce-payments plugin from the plugins a WooPayments suggestion installs.
 	 *
-	 * WooPayments is a Core-owned native provider. Remote suggestions may still carry
-	 * the historical WooPayments plugin slug, but Core surfaces should not advertise
-	 * native WooPayments setup as a plugin install.
+	 * WooPayments is built into WooCommerce, so its suggestion installs nothing. Remote suggestions still name the
+	 * plugin; with WC_ALLOW_MERGED_FEATURE_PLUGINS they are left as they are.
 	 *
 	 * @param array $suggestions Payment gateway suggestions.
 	 * @return array Normalized suggestions.

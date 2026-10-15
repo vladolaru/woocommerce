@@ -513,7 +513,8 @@ class PaymentsProviders {
 	}
 
 	/**
-	 * Configure provider instances that need explicit runtime collaborators.
+	 * Give the WooPayments provider its collaborators: the extension runtime, the settings adapter, and resolvers that build
+	 * the REST controller and the service on first use.
 	 *
 	 * @param PaymentGateway $provider The payment gateway provider instance.
 	 * @return PaymentGateway
@@ -1458,7 +1459,7 @@ class PaymentsProviders {
 		}
 
 		// If we have a matching suggestion, hoist details from there.
-		// Native WooPayments is matched by ID because its localized suggestion intentionally omits plugin metadata.
+		// The built-in WooPayments gateway is matched by ID, because its localized suggestion carries no plugin details.
 		$suggestion = $this->get_extension_suggestion_for_gateway( $payment_gateway, $suggestion_plugin_slug, $country_code );
 		if ( ! is_null( $suggestion ) ) {
 			// The title, description, icon, and image from the suggestion take precedence over the ones from the gateway.
@@ -1612,7 +1613,7 @@ class PaymentsProviders {
 	}
 
 	/**
-	 * Check if a gateway is the WooPayments gateway built into WooCommerce, not the extension's.
+	 * Check if a gateway is the WooPayments gateway built into WooCommerce, not the WooPayments extension's.
 	 *
 	 * @param WC_Payment_Gateway $payment_gateway        The payment gateway object.
 	 * @param string             $normalized_plugin_slug The normalized gateway plugin slug.

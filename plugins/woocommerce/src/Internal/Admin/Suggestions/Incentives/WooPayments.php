@@ -141,7 +141,8 @@ class WooPayments extends Incentive {
 	}
 
 	/**
-	 * Check if WooPayments is active, either as the extension plugin or as the built-in runtime.
+	 * Check if WooPayments is active: the WooPayments extension is loaded and owns payments, or the built-in WooPayments
+	 * owns payments.
 	 *
 	 * @return boolean Whether WooPayments is active.
 	 */

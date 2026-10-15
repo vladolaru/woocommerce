@@ -1082,8 +1082,8 @@ class DefaultPaymentGateways {
 	/**
 	 * Get default rules for WooPayments being active.
 	 *
-	 * WooPayments is active when the WooPayments plugin is active, or when the native runtime is enabled and its kill
-	 * switch is off. Rules read stored options only, so a site that enables native payments through the
+	 * WooPayments is active when the WooPayments extension is active, or when the built-in WooPayments is enabled and its
+	 * kill switch is off. Rules read stored options only, so a site that enables the built-in WooPayments through the
 	 * woocommerce_woopayments_builtin_enabled filter alone reads as inactive here.
 	 *
 	 * @param bool $should_be Whether WooPayments should be activated.

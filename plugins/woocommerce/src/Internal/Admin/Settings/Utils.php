@@ -461,7 +461,8 @@ class Utils {
 				array(
 					// We use the new WooDNA value.
 					'from'         => 'woocommerce-onboarding',
-					// Native WooPayments onboarding belongs to WooCommerce core; retain the plugin identity for merged-feature development.
+					// The built-in WooPayments connects as WooCommerce; with WC_ALLOW_MERGED_FEATURE_PLUGINS, which lets merged
+					// feature plugins run alongside, it keeps the woocommerce-payments plugin name.
 					'plugin_name'  => Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' ) ? 'woocommerce-payments' : 'woocommerce',
 					// Use the current user's WP admin color scheme.
 					'color_scheme' => $result['color_scheme'],

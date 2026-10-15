@@ -604,7 +604,7 @@ class PageController {
 	}
 
 	/**
-	 * Redirect payment tasks and legacy WooPayments entry points to the settings page.
+	 * Redirect payment tasks and the retired WooPayments entry points to the settings page.
 	 *
 	 * Redirects the current payments task, the deprecated WooPayments task alias, and the
 	 * deprecated `setup-woocommerce-payments` action to the Payments settings page when it is safe
@@ -623,7 +623,7 @@ class PageController {
 
 		$redirect_url = admin_url( 'admin.php?page=wc-settings&tab=checkout&from=WCADMIN_PAYMENT_TASK' );
 
-		// Redirect legacy inbox note actions that used to boot the removed WooPayments task surface.
+		// Redirect the inbox note action that opened the retired WooPayments task.
 		// phpcs:ignore WordPress.Security.NonceVerification
 		$action = ! empty( $_GET['action'] ) ? wc_clean( wp_unslash( $_GET['action'] ) ) : '';
 		if ( 'setup-woocommerce-payments' === $action ) {
