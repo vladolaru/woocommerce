@@ -80,7 +80,7 @@ class WooPaymentsWooCommerceUpdateListenerTest extends WC_Unit_Test_Case {
 		// woopay/class-woopay-scheduler.php:50.
 		$this->account_service->expects( $this->once() )->method( 'clear_cache' );
 		$this->operational_queue->expects( $this->once() )->method( 'queue_store_setup_sync' );
-		$this->woopay_extension_sync->expects( $this->once() )->method( 'remove_legacy_schedule_action_name_on_update' );
+		$this->woopay_extension_sync->expects( $this->once() )->method( 'remove_retired_validation_schedule' );
 		$this->sut->register();
 
 		do_action( 'woocommerce_updated' );
@@ -92,7 +92,7 @@ class WooPaymentsWooCommerceUpdateListenerTest extends WC_Unit_Test_Case {
 	public function test_registration_runs_no_update_duty(): void {
 		$this->account_service->expects( $this->never() )->method( 'clear_cache' );
 		$this->operational_queue->expects( $this->never() )->method( 'queue_store_setup_sync' );
-		$this->woopay_extension_sync->expects( $this->never() )->method( 'remove_legacy_schedule_action_name_on_update' );
+		$this->woopay_extension_sync->expects( $this->never() )->method( 'remove_retired_validation_schedule' );
 
 		$this->sut->register();
 

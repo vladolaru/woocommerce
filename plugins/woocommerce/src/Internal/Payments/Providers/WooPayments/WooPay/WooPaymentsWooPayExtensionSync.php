@@ -29,11 +29,11 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 	public const VALIDATE_COMPATIBILITY_ACTION = 'validate_woopay_compatibility';
 
 	/**
-	 * Legacy WooPay incompatible-extension validation hook.
+	 * The WooPay incompatible-extension validation hook the extension retired; core only clears it.
 	 *
 	 * @var string
 	 */
-	private const LEGACY_VALIDATE_INCOMPATIBLE_EXTENSIONS_ACTION = 'validate_incompatible_extensions';
+	private const RETIRED_INCOMPATIBLE_EXTENSIONS_ACTION = 'validate_incompatible_extensions';
 
 	/**
 	 * Preserved invalid-extension warning option.
@@ -118,15 +118,15 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Remove legacy WooPay incompatible-extension validation schedules.
+	 * Remove the retired WooPay incompatible-extension validation schedules.
 	 */
-	public function remove_legacy_schedule_action_name_on_update(): void {
-		if ( wp_next_scheduled( self::LEGACY_VALIDATE_INCOMPATIBLE_EXTENSIONS_ACTION ) ) {
-			wp_clear_scheduled_hook( self::LEGACY_VALIDATE_INCOMPATIBLE_EXTENSIONS_ACTION );
+	public function remove_retired_validation_schedule(): void {
+		if ( wp_next_scheduled( self::RETIRED_INCOMPATIBLE_EXTENSIONS_ACTION ) ) {
+			wp_clear_scheduled_hook( self::RETIRED_INCOMPATIBLE_EXTENSIONS_ACTION );
 		}
 
 		if ( function_exists( 'as_unschedule_all_actions' ) ) {
-			as_unschedule_all_actions( self::LEGACY_VALIDATE_INCOMPATIBLE_EXTENSIONS_ACTION, array(), WooPaymentsActionSchedulerService::GROUP_ID );
+			as_unschedule_all_actions( self::RETIRED_INCOMPATIBLE_EXTENSIONS_ACTION, array(), WooPaymentsActionSchedulerService::GROUP_ID );
 		}
 	}
 

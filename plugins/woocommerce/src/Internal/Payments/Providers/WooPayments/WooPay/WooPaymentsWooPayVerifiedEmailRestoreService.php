@@ -83,7 +83,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 		foreach ( array( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION, WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION ) as $option_name ) {
 			foreach ( array( 'add', 'update', 'delete' ) as $operation ) {
 				$hook_name = "{$operation}_option_{$option_name}";
-				add_action( $hook_name, array( $this, 'handle_native_runtime_option_change' ), 10, 0 );
+				add_action( $hook_name, array( $this, 'handle_builtin_runtime_option_change' ), 10, 0 );
 			}
 		}
 	}
@@ -175,11 +175,11 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 	}
 
 	/**
-	 * Restore detached orders when native runtime ownership is lost.
+	 * Restore detached orders once no WooPayments runtime owns payments any more.
 	 *
 	 * @internal
 	 */
-	public function handle_native_runtime_option_change(): void {
+	public function handle_builtin_runtime_option_change(): void {
 		if ( self::$registered_instance !== $this ) {
 			return;
 		}
@@ -283,7 +283,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 		$this->pending_drain_blog_ids = array();
 		foreach ( array( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION, WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION ) as $option_name ) {
 			foreach ( array( 'add', 'update', 'delete' ) as $operation ) {
-				remove_action( "{$operation}_option_{$option_name}", array( $this, 'handle_native_runtime_option_change' ), 10 );
+				remove_action( "{$operation}_option_{$option_name}", array( $this, 'handle_builtin_runtime_option_change' ), 10 );
 			}
 		}
 	}

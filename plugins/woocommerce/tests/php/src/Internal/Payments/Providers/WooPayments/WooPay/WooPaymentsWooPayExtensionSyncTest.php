@@ -72,7 +72,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_action( 'activated_plugin', array( $sync, 'show_warning_when_incompatible_extension_is_enabled' ) ) );
 		$this->assertSame( 10, has_action( 'deactivated_plugin', array( $sync, 'hide_warning_when_incompatible_extension_is_disabled' ) ) );
 		// Native never fires the plugin's update hook (no plugin version), so nothing listens to it.
-		$this->assertFalse( has_action( 'woocommerce_woocommerce_payments_updated', array( $sync, 'remove_legacy_schedule_action_name_on_update' ) ) );
+		$this->assertFalse( has_action( 'woocommerce_woocommerce_payments_updated', array( $sync, 'remove_retired_validation_schedule' ) ) );
 	}
 
 	/**
@@ -155,13 +155,13 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Legacy incompatible-extension cron hook is cleared on WooPayments updates.
 	 */
-	public function test_remove_legacy_schedule_action_name_on_update_clears_wp_cron_hook(): void {
+	public function test_remove_retired_validation_schedule_clears_wp_cron_hook(): void {
 		$sync = $this->create_sync();
 
 		wp_schedule_event( time(), 'daily', 'validate_incompatible_extensions' );
 		$this->assertNotFalse( wp_next_scheduled( 'validate_incompatible_extensions' ) );
 
-		$sync->remove_legacy_schedule_action_name_on_update();
+		$sync->remove_retired_validation_schedule();
 
 		$this->assertFalse( wp_next_scheduled( 'validate_incompatible_extensions' ) );
 	}

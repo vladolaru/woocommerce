@@ -38,6 +38,6 @@ class WooPaymentsWooCommerceUpdateListener implements RegisterHooksInterface {
 		$container = wc_get_container();
 		$container->get( WooPaymentsAccountService::class )->clear_cache();
 		$container->get( WooPaymentsStoreSetupReportController::class )->queue_store_setup_sync();
-		$container->get( WooPaymentsWooPayExtensionSync::class )->remove_legacy_schedule_action_name_on_update();
+		$container->get( WooPaymentsWooPayExtensionSync::class )->remove_retired_validation_schedule();
 	}
 }
