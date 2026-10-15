@@ -25,7 +25,8 @@ class WooPaymentsTerminalRoutesContractTest extends WC_REST_Unit_Test_Case {
 
 	/**
 	 * Connected account in the shape the platform answers (Fixtures/platform-test-drive-account.json `account`), trimmed
-	 * to what these routes read.
+	 * to what these routes read. The support address is this test's own: the recording's is empty, and the receipt
+	 * answer prints it.
 	 *
 	 * @var array<string,mixed>
 	 */
@@ -306,12 +307,14 @@ class WooPaymentsTerminalRoutesContractTest extends WC_REST_Unit_Test_Case {
 
 		switch ( $method . ' ' . $route ) {
 			case 'POST /wc/v3/payments/connection_tokens':
+				// A Stripe ConnectionToken, which the platform proxies (https://docs.stripe.com/api/terminal/connection_tokens/object).
 				$this->api_client->connection_token_response = array(
 					'object' => 'terminal.connection_token',
 					'secret' => 'pst_test_terminal',
 				);
 				break;
 			case 'POST /wc/v3/payments/orders/(?P<order_id>\w+)/capture_terminal_payment':
+				// Stripe PaymentIntents, trimmed to what the capture reads (https://docs.stripe.com/api/payment_intents/object).
 				$this->api_client->payment_intention_response  = array(
 					'id'       => 'pi_terminal',
 					'status'   => 'requires_capture',
@@ -329,7 +332,8 @@ class WooPaymentsTerminalRoutesContractTest extends WC_REST_Unit_Test_Case {
 				$params = array( 'payment_intent_id' => 'pi_terminal' );
 				break;
 			case 'GET /wc/v3/payments/readers':
-				$this->api_client->terminal_readers_response      = array( $this->get_platform_reader() );
+				$this->api_client->terminal_readers_response = array( $this->get_platform_reader() );
+				// The platform's reader charges summary, without its fee (wpcom service/class-charge-authorization-service.php:231-238).
 				$this->api_client->reader_charge_summary_response = array(
 					array(
 						'reader_id' => 'tmr_counter',
@@ -347,7 +351,8 @@ class WooPaymentsTerminalRoutesContractTest extends WC_REST_Unit_Test_Case {
 				);
 				break;
 			case 'GET /wc/v3/payments/readers/charges/(?P<transaction_id>\w+)':
-				$this->api_client->transaction_response           = array( 'created' => 1760486400 );
+				$this->api_client->transaction_response = array( 'created' => 1760486400 );
+				// The platform's reader charges summary, without its fee (wpcom service/class-charge-authorization-service.php:231-238).
 				$this->api_client->reader_charge_summary_response = array(
 					array(
 						'reader_id' => 'tmr_counter',
@@ -360,8 +365,9 @@ class WooPaymentsTerminalRoutesContractTest extends WC_REST_Unit_Test_Case {
 				$params = array( 'accountBusinessName' => 'Preview Store' );
 				break;
 			case 'GET /wc/v3/payments/readers/receipts/(?P<payment_intent_id>\w+)':
-				// The charge carries no order number, so the order comes from the intent's metadata (client
-				// includes/admin/class-wc-rest-payments-reader-controller.php:283-295).
+				// The charge carries the order number, which client 11.1.0 reads (includes/admin/class-wc-rest-payments-reader-controller.php:295);
+				// its API client adds it to the platform's charge by looking the charge ID up locally
+				// (includes/wc-payment-api/class-wc-payments-api-client.php:2316-2321, :2988-2993).
 				$this->api_client->payment_intention_response = array(
 					'id'       => 'pi_receipt',
 					'status'   => 'succeeded',
@@ -374,6 +380,7 @@ class WooPaymentsTerminalRoutesContractTest extends WC_REST_Unit_Test_Case {
 					'id'                     => 'ch_receipt',
 					'amount_captured'        => 1234,
 					'currency'               => 'usd',
+					'order'                  => array( 'number' => (string) $order->get_id() ),
 					'payment_method_details' => array(
 						'card_present' => array(
 							'brand'   => 'visa',
@@ -599,6 +606,11 @@ class WooPaymentsTerminalRoutesContractTest extends WC_REST_Unit_Test_Case {
 	private function get_platform_calls(): array {
 		return array_filter(
 			array(
+				'connection token' => $this->api_client->connection_token_calls,
+				'reader list'      => $this->api_client->reader_list_calls,
+				'transaction read' => $this->api_client->transaction_reads,
+				'location list'    => $this->api_client->location_list_calls,
+				'charge read'      => $this->api_client->charge_reads,
 				'terminal intent'  => $this->api_client->last_terminal_intent_payload,
 				'prepare'          => $this->api_client->prepared_terminal_payments,
 				'reader register'  => $this->api_client->last_registered_reader,

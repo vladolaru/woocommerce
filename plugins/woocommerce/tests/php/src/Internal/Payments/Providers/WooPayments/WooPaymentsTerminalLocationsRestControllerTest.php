@@ -5,7 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTerminalLocationsRestController;
-use WC_Helper_Order;
 use WC_REST_Unit_Test_Case;
 use WP_Error;
 use WP_REST_Request;
@@ -278,12 +277,9 @@ class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_C
 	 * @param string $expected_code   Expected error code.
 	 */
 	public function test_mobile_route_failures_answer_as_the_extension_does( string $scenario, int $expected_status, string $expected_code ): void {
-		$encode_failure  = new WooPaymentsApiException( 'Unable to encode the WooPayments request body.', 'wcpay_client_unable_to_encode_json', 0 );
 		$missing         = new WooPaymentsApiException( 'No such object.', 'resource_missing', 404 );
 		$refused_request = new WooPaymentsApiException( 'Invalid request.', 'invalid_request_error', 400 );
-		$order           = $this->create_order( 12.34, 'USD' );
 		$request         = new WP_REST_Request( 'POST', '/wc/v3/payments/test' );
-		$request->set_param( 'order_id', $order->get_id() );
 
 		switch ( $scenario ) {
 			case 'store location, incomplete store address':
@@ -322,7 +318,6 @@ class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_C
 	 */
 	public function provide_mobile_route_failures(): array {
 		$cases = array(
-			// A capture that did not succeed answers 502, as the extension's failure branch sets it (class-wc-payment-gateway-wcpay.php:4045-4049).
 			array( 'store location, incomplete store address', 500, 'store_address_is_incomplete' ),
 			array( 'store location, platform refuses the address', 500, 'store_address_is_incomplete' ),
 			array( 'terminal locations, platform 404', 500, 'resource_missing' ),
@@ -331,22 +326,6 @@ class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_C
 		return array_combine( array_column( $cases, 0 ), $cases );
 	}
 
-	/**
-	 * Create a minimal order for terminal-route tests.
-	 *
-	 * @param float  $total    Order total.
-	 * @param string $currency Order currency.
-	 * @return \WC_Order
-	 */
-	private function create_order( float $total = 10.0, string $currency = 'USD' ): \WC_Order {
-		$order = WC_Helper_Order::create_order();
-		$order->set_total( $total );
-		$order->set_currency( $currency );
-		$order->set_status( 'pending' );
-		$order->save();
-
-		return $order;
-	}
 
 	/**
 	 * Get the current test site's hostname.

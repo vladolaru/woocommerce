@@ -74,6 +74,41 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	public array $reader_charge_summary_calls = array();
 
 	/**
+	 * Connection token creations.
+	 *
+	 * @var int[]
+	 */
+	public array $connection_token_calls = array();
+
+	/**
+	 * Reader list reads.
+	 *
+	 * @var int[]
+	 */
+	public array $reader_list_calls = array();
+
+	/**
+	 * Transaction reads, by transaction ID.
+	 *
+	 * @var string[]
+	 */
+	public array $transaction_reads = array();
+
+	/**
+	 * Location list reads.
+	 *
+	 * @var int[]
+	 */
+	public array $location_list_calls = array();
+
+	/**
+	 * Charge reads, by charge ID.
+	 *
+	 * @var string[]
+	 */
+	public array $charge_reads = array();
+
+	/**
 	 * Transaction response.
 	 *
 	 * @var array<string,mixed>
@@ -266,6 +301,7 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	 * @return array<string,mixed>
 	 */
 	public function create_terminal_connection_token(): array {
+		$this->connection_token_calls[] = 1;
 		$this->maybe_fail( __FUNCTION__ );
 
 		return $this->connection_token_response;
@@ -315,6 +351,7 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	 * @return array<string,mixed>
 	 */
 	public function get_terminal_readers(): array {
+		$this->reader_list_calls[] = 1;
 		$this->maybe_fail( __FUNCTION__ );
 
 		return $this->terminal_readers_response;
@@ -367,7 +404,7 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	 * @return array<string,mixed>
 	 */
 	public function get_transaction( string $transaction_id ): array {
-		unset( $transaction_id );
+		$this->transaction_reads[] = $transaction_id;
 		$this->maybe_fail( __FUNCTION__ );
 
 		return $this->transaction_response;
@@ -379,6 +416,7 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	 * @return array<string,mixed>
 	 */
 	public function get_terminal_locations(): array {
+		$this->location_list_calls[] = 1;
 		$this->maybe_fail( __FUNCTION__ );
 
 		return $this->terminal_locations_response;
@@ -398,6 +436,8 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 
 	/**
 	 * Create a terminal location.
+	 *
+	 * Answers the Stripe Terminal Location the platform proxies, trimmed (https://docs.stripe.com/api/terminal/locations/object).
 	 *
 	 * @param string              $display_name Display name.
 	 * @param array<string,mixed> $address      Address.
@@ -423,7 +463,8 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	/**
 	 * Update a terminal location.
 	 *
-	 * Answers the Stripe Terminal Location the platform proxies, with the new display name.
+	 * Answers the Stripe Terminal Location the platform proxies, with the new display name
+	 * (https://docs.stripe.com/api/terminal/locations/object).
 	 *
 	 * @param string                   $location_id  Location ID.
 	 * @param string|null              $display_name Display name.
@@ -450,7 +491,8 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	/**
 	 * Delete a terminal location.
 	 *
-	 * Answers Stripe's deleted Terminal Location, which the platform proxies.
+	 * Answers Stripe's deleted Terminal Location, which the platform proxies
+	 * (https://docs.stripe.com/api/terminal/locations/delete).
 	 *
 	 * @param string $location_id Location ID.
 	 * @return array<string,mixed>
@@ -531,7 +573,7 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	 * @return array<string,mixed>
 	 */
 	public function get_charge( string $charge_id ): array {
-		unset( $charge_id );
+		$this->charge_reads[] = $charge_id;
 
 		return $this->charge_response;
 	}

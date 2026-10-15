@@ -1996,7 +1996,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * Create a native mobile REST controller.
+	 * Create the controller under test.
 	 *
 	 * @param bool                                           $test_mode  Whether the account runs in test mode.
 	 * @param WooPaymentsTerminalPaymentsRestController|null $controller Controller instance to initialize, a new one when null.
@@ -2070,7 +2070,6 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	 */
 	public function test_mobile_route_failures_answer_as_the_extension_does( string $scenario, int $expected_status, string $expected_code ): void {
 		$encode_failure  = new WooPaymentsApiException( 'Unable to encode the WooPayments request body.', 'wcpay_client_unable_to_encode_json', 0 );
-		$missing         = new WooPaymentsApiException( 'No such object.', 'resource_missing', 404 );
 		$refused_request = new WooPaymentsApiException( 'Invalid request.', 'invalid_request_error', 400 );
 		$order           = $this->create_order( 12.34, 'USD' );
 		$request         = new WP_REST_Request( 'POST', '/wc/v3/payments/test' );
