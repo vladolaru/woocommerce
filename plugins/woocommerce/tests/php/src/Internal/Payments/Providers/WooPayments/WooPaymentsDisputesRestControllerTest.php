@@ -167,10 +167,11 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A disputes list order lookup that throws is logged with the exception class, never its message.
+	 * @testdox A disputes list order lookup that throws is logged with the exception class, code and trace, never its message.
 	 */
 	public function test_disputes_list_logs_an_order_lookup_failure_without_its_message(): void {
 		$this->create_order_with_charge( 'ch_dispute', 'pi_dispute' );
+		// Shape: client 11.1.0 `includes/core/server/request/class-list-disputes.php:174-187` reads `data`, `dispute_id` and `charge_id`.
 		$this->api_client->response = array(
 			'data' => array(
 				array(
@@ -190,7 +191,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 		add_filter(
 			'woocommerce_order_number',
 			static function (): string {
-				throw new RuntimeException( 'Order lookup failed for ada@example.com' );
+				throw new RuntimeException( 'Order lookup failed for ada@example.com', 4242 );
 			}
 		);
 		$this->create_disputes_controller()->register_routes();
@@ -205,6 +206,9 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 'woopayments', $logger->entries[0]['context']['source'] );
 		$this->assertSame( RuntimeException::class, $logger->entries[0]['context']['exception'] );
 		$this->assertSame( 'dp_order', $logger->entries[0]['context']['entity_id'] );
+		$this->assertSame( 'dispute_list', $logger->entries[0]['context']['context'] );
+		$this->assertSame( 4242, $logger->entries[0]['context']['code'] );
+		$this->assertMatchesRegularExpression( '/\A#0 [^\n]*\(\)(\n#\d+ [^\n]*\(\))*\z/', $logger->entries[0]['context']['trace'], 'The trace lists frames without call arguments.' );
 		$this->assertStringNotContainsString( 'ada@example.com', (string) wp_json_encode( $logger->entries ) );
 	}
 
