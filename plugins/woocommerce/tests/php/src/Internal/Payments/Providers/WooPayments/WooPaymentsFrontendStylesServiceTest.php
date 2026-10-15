@@ -38,14 +38,14 @@ class WooPaymentsFrontendStylesServiceTest extends WC_Unit_Test_Case {
 	public function test_cache_token_advances_only_after_invalidation(): void {
 		$service = new WooPaymentsFrontendStylesService();
 
-		$first  = $service->get_styles_cache_version();
-		$second = $service->get_styles_cache_version();
+		$first  = $service->get_or_create_styles_cache_version();
+		$second = $service->get_or_create_styles_cache_version();
 
 		$this->assertSame( $first, $second );
 		$this->assertStringEndsWith( '|appearance-extractor-v4', $first );
 
 		$service->invalidate_styles_cache_version();
-		$third = $service->get_styles_cache_version();
+		$third = $service->get_or_create_styles_cache_version();
 
 		$this->assertNotSame( $first, $third );
 		$this->assertStringEndsWith( '|appearance-extractor-v4', $third );
@@ -92,12 +92,12 @@ class WooPaymentsFrontendStylesServiceTest extends WC_Unit_Test_Case {
 		);
 		$service = $this->create_service();
 		$service->register();
-		$first = $service->get_styles_cache_version();
+		$first = $service->get_or_create_styles_cache_version();
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test trigger for the registered lifecycle hook.
 		do_action( 'customize_save_after' );
 
-		$this->assertNotSame( $first, $service->get_styles_cache_version() );
+		$this->assertNotSame( $first, $service->get_or_create_styles_cache_version() );
 	}
 
 	/**

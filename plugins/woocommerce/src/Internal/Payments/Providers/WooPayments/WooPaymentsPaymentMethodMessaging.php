@@ -269,7 +269,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			),
 			'wcAjaxUrl'            => WC_AJAX::get_endpoint( '%%endpoint%%' ),
 			'shouldInitializePMME' => $this->is_any_bnpl_supporting_country( $payment_methods, $country, $currency_code ),
-			'stylesCacheVersion'   => $this->get_frontend_styles_service()->get_styles_cache_version(),
+			'stylesCacheVersion'   => $this->get_frontend_styles_service()->get_or_create_styles_cache_version(),
 		);
 
 		if ( $product instanceof WC_Product ) {

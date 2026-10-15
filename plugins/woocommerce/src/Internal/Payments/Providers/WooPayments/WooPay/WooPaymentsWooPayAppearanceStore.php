@@ -297,7 +297,7 @@ class WooPaymentsWooPayAppearanceStore {
 	 * @return string
 	 */
 	private function get_appearance_version(): string {
-		return $this->frontend_styles_service->get_styles_cache_version();
+		return $this->frontend_styles_service->get_or_create_styles_cache_version();
 	}
 
 	/**

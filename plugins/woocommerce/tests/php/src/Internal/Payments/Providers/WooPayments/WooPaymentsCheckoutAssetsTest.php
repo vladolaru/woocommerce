@@ -2565,10 +2565,10 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 */
 	private function create_frontend_styles_service() {
 		$service = $this->getMockBuilder( WooPaymentsFrontendStylesService::class )
-			->onlyMethods( array( 'get_styles_cache_version' ) )
+			->onlyMethods( array( 'get_or_create_styles_cache_version' ) )
 			->getMock();
 
-		$service->method( 'get_styles_cache_version' )->willReturn( 'styles-v1' );
+		$service->method( 'get_or_create_styles_cache_version' )->willReturn( 'styles-v1' );
 
 		return $service;
 	}

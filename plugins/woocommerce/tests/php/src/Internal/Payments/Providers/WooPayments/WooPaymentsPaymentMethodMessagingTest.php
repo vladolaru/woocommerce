@@ -527,9 +527,9 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 		$account_service = $account_service ?? $this->create_account_service( $gateway_enabled, $enabled_payment_methods, $capabilities );
 
 		$frontend_styles_service = $this->getMockBuilder( WooPaymentsFrontendStylesService::class )
-			->onlyMethods( array( 'get_styles_cache_version' ) )
+			->onlyMethods( array( 'get_or_create_styles_cache_version' ) )
 			->getMock();
-		$frontend_styles_service->method( 'get_styles_cache_version' )->willReturn( 'shared-styles-token' );
+		$frontend_styles_service->method( 'get_or_create_styles_cache_version' )->willReturn( 'shared-styles-token' );
 
 		$controller = new WooPaymentsPaymentMethodMessaging();
 		$controller->init( $account_service, new WooPaymentsPaymentMethodRegistry(), $frontend_styles_service );

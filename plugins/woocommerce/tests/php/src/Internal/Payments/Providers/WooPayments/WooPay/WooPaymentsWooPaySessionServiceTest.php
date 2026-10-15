@@ -975,7 +975,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 
 		$service = new WooPaymentsFrontendStylesService();
 
-		$this->assertSame( 'version-one|appearance-extractor-v4', $service->get_styles_cache_version() );
+		$this->assertSame( 'version-one|appearance-extractor-v4', $service->get_or_create_styles_cache_version() );
 	}
 
 	/**

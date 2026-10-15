@@ -39,7 +39,7 @@ class WooPaymentsFrontendStylesService implements RegisterHooksInterface {
 	 *
 	 * @return string
 	 */
-	public function get_styles_cache_version(): string {
+	public function get_or_create_styles_cache_version(): string {
 		$version = get_option( self::STYLES_CACHE_VERSION_OPTION );
 
 		if ( is_scalar( $version ) && '' !== (string) $version ) {

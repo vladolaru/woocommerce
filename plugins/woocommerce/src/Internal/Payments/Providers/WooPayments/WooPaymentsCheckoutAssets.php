@@ -405,7 +405,7 @@ class WooPaymentsCheckoutAssets {
 			'cartTotal'                                => $payment_context['total'],
 			'storeCountry'                             => WC()->countries->get_base_country(),
 			'cartContainsSubscription'                 => WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal(),
-			'stylesCacheVersion'                       => $this->get_frontend_styles_service()->get_styles_cache_version(),
+			'stylesCacheVersion'                       => $this->get_frontend_styles_service()->get_or_create_styles_cache_version(),
 			'forceNetworkSavedCards'                   => $force_network_saved_cards,
 			'isSavedCardsEnabled'                      => $saved_cards_enabled,
 			'customerData'                             => $customer_data,
