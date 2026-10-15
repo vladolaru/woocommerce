@@ -132,57 +132,6 @@ class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
 	public int $appearance_writes = 0;
 
 	/**
-	 * Tell whether WooPay is enabled.
-	 *
-	 * @return bool
-	 */
-	public function is_woopay_enabled(): bool {
-		return $this->woopay_enabled;
-	}
-
-	/**
-	 * Tell whether the WooPay button should be shown.
-	 *
-	 * @param string $context Express checkout context.
-	 * @return bool
-	 */
-	public function should_show_woopay_button( string $context = 'checkout' ): bool {
-		unset( $context );
-
-		return $this->should_show_woopay_button;
-	}
-
-	/**
-	 * Tell whether WooPay save-user assets should load.
-	 *
-	 * @param string $context Express checkout context.
-	 * @return bool
-	 */
-	public function should_load_woopay_save_user_assets( string $context = 'checkout' ): bool {
-		unset( $context );
-
-		return $this->should_load_woopay_save_user_assets;
-	}
-
-	/**
-	 * Tell whether WooPay direct checkout is enabled.
-	 *
-	 * @return bool
-	 */
-	public function is_woopay_direct_checkout_enabled(): bool {
-		return $this->direct_checkout_enabled;
-	}
-
-	/**
-	 * Tell whether WooPay direct checkout runs for the current shopper.
-	 *
-	 * @return bool
-	 */
-	public function should_run_woopay_direct_checkout(): bool {
-		return $this->direct_checkout_enabled && $this->guest_rule_passes;
-	}
-
-	/**
 	 * Get WooPay frontend config.
 	 *
 	 * @param string $context Express checkout context.
@@ -349,15 +298,6 @@ class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
 		$this->last_appearance = $appearance;
 
 		return $this->appearance_stored;
-	}
-
-	/**
-	 * Tell whether WooPay global theme support is enabled.
-	 *
-	 * @return bool
-	 */
-	public function is_woopay_global_theme_support_enabled(): bool {
-		return $this->global_theme_support_enabled;
 	}
 
 	/**

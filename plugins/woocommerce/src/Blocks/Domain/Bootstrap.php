@@ -39,7 +39,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 use Automattic\WooCommerce\Blocks\Shipping\ShippingController;
 use Automattic\WooCommerce\Blocks\TemplateOptions;
 use Automattic\WooCommerce\Internal\Features\BlockEditorUnifiedAssets;
@@ -546,10 +546,10 @@ class Bootstrap {
 				$arbiter           = $core_container->get( WooPaymentsRuntimeArbiter::class );
 				$checkout_assets   = $core_container->get( WooPaymentsCheckoutAssets::class );
 				$payments_provider = $core_container->get( WooPaymentsProvider::class );
-				$woopay_service    = $core_container->get( WooPaymentsWooPaySessionService::class );
+				$woopay            = $core_container->get( WooPaymentsWooPayEligibility::class );
 				$express_service   = $core_container->get( WooPaymentsExpressCheckoutService::class );
 
-				return new WooPayments( $asset_api, $arbiter, $checkout_assets, $payments_provider, $woopay_service, $express_service );
+				return new WooPayments( $asset_api, $arbiter, $checkout_assets, $payments_provider, $woopay, $express_service );
 			}
 		);
 	}

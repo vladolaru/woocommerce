@@ -18,7 +18,7 @@ use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_User;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 
 /**
  * Native WooPayments shopper frontend Tracks callbacks.
@@ -183,11 +183,11 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	private WooPaymentsAccountService $account_service;
 
 	/**
-	 * WooPay session service, looked up when a funnel event first needs it.
+	 * WooPay eligibility rules, looked up when a funnel event first needs them.
 	 *
-	 * @var WooPaymentsWooPaySessionService|null
+	 * @var WooPaymentsWooPayEligibility|null
 	 */
-	private ?WooPaymentsWooPaySessionService $woopay_session_service = null;
+	private ?WooPaymentsWooPayEligibility $woopay_eligibility = null;
 
 	/**
 	 * Initialize the class instance.
@@ -232,11 +232,11 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 			switch ( current_action() ) {
 				case 'woocommerce_after_cart':
 					$this->queue_user_event( 'cart_page_view', array( 'theme_type' => 'short_code' ) );
-					$this->track_proceed_to_checkout_clicks( fn(): bool => $this->get_woopay_session_service()->is_woopay_direct_checkout_enabled() );
+					$this->track_proceed_to_checkout_clicks( fn(): bool => $this->get_woopay_eligibility()->is_woopay_direct_checkout_enabled() );
 					break;
 				case 'woocommerce_blocks_enqueue_cart_block_scripts_after':
 					$this->queue_user_event( 'cart_page_view', array( 'theme_type' => 'blocks' ) );
-					$this->track_proceed_to_checkout_clicks( fn(): bool => $this->get_woopay_session_service()->is_woopay_direct_checkout_enabled() );
+					$this->track_proceed_to_checkout_clicks( fn(): bool => $this->get_woopay_eligibility()->is_woopay_direct_checkout_enabled() );
 					break;
 				case 'woocommerce_after_single_product':
 					$this->queue_user_event( 'product_page_view', array( 'theme_type' => 'short_code' ) );
@@ -282,7 +282,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 				'checkout_page_view',
 				array(
 					'theme_type'     => $theme_type,
-					'woopay_enabled' => $this->get_woopay_session_service()->is_woopay_enabled(),
+					'woopay_enabled' => $this->get_woopay_eligibility()->is_woopay_enabled(),
 				)
 			);
 		} catch ( Throwable $throwable ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
@@ -996,18 +996,16 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the WooPay session service, looked up on first use.
+	 * Get the WooPay eligibility rules, looked up on first use: only the funnel events read them, so a request that
+	 * records none builds nothing more.
 	 *
-	 * It is not an init() dependency: the WooPay session service injects this controller, so the container would
-	 * resolve the two recursively.
-	 *
-	 * @return WooPaymentsWooPaySessionService
+	 * @return WooPaymentsWooPayEligibility
 	 */
-	private function get_woopay_session_service(): WooPaymentsWooPaySessionService {
-		if ( null === $this->woopay_session_service ) {
-			$this->woopay_session_service = wc_get_container()->get( WooPaymentsWooPaySessionService::class );
+	private function get_woopay_eligibility(): WooPaymentsWooPayEligibility {
+		if ( null === $this->woopay_eligibility ) {
+			$this->woopay_eligibility = wc_get_container()->get( WooPaymentsWooPayEligibility::class );
 		}
 
-		return $this->woopay_session_service;
+		return $this->woopay_eligibility;
 	}
 }

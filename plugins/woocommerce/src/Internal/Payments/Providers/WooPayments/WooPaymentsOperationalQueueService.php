@@ -22,6 +22,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Utilities\PluginUtil;
 use Throwable;
 use WC_Order;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 
 /**
  * Runs the WooPayments account and store jobs: platform syncs, the Instant Deposits note, the post-KYC activation
@@ -206,11 +207,11 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	private WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service;
 
 	/**
-	 * WooPayments settings service.
+	 * WooPay eligibility rules.
 	 *
-	 * @var WooPaymentsSettingsService|null
+	 * @var WooPaymentsWooPayEligibility
 	 */
-	private ?WooPaymentsSettingsService $settings_service = null;
+	private WooPaymentsWooPayEligibility $woopay_eligibility;
 
 	/**
 	 * Initialize the class instance.
@@ -221,33 +222,20 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	 * @param WooPaymentsApiClient                      $api_client                        WooPayments API client.
 	 * @param WooPaymentsAccountService                 $account_service                   WooPayments account service.
 	 * @param WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service Duplicate gateway methods service.
-	 * @param WooPaymentsSettingsService|null           $settings_service                  Optional WooPayments settings service.
+	 * @param WooPaymentsWooPayEligibility              $woopay_eligibility                WooPay eligibility rules.
 	 */
 	final public function init(
 		WooPaymentsActionSchedulerService $scheduler,
 		WooPaymentsApiClient $api_client,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service,
-		?WooPaymentsSettingsService $settings_service = null
+		WooPaymentsWooPayEligibility $woopay_eligibility
 	): void {
 		$this->scheduler                         = $scheduler;
 		$this->api_client                        = $api_client;
 		$this->account_service                   = $account_service;
 		$this->duplicate_gateway_methods_service = $duplicate_gateway_methods_service;
-		$this->settings_service                  = $settings_service;
-	}
-
-	/**
-	 * Get the WooPayments settings service.
-	 *
-	 * @return WooPaymentsSettingsService
-	 */
-	private function get_settings_service(): WooPaymentsSettingsService {
-		if ( null === $this->settings_service ) {
-			$this->settings_service = wc_get_container()->get( WooPaymentsSettingsService::class );
-		}
-
-		return $this->settings_service;
+		$this->woopay_eligibility                = $woopay_eligibility;
 	}
 
 	/**
@@ -1030,7 +1018,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	private function is_woopay_enabled( array $settings ): bool {
 		return $this->is_setting_enabled( $settings, 'platform_checkout' )
 			&& '1' === (string) get_option( '_wcpay_feature_woopay_express_checkout', '1' )
-			&& $this->get_settings_service()->is_woopay_eligible();
+			&& $this->woopay_eligibility->is_woopay_eligible();
 	}
 
 	/**

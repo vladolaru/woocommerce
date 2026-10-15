@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 
 /**
  * WooPayments payment method integration.
@@ -91,11 +91,11 @@ final class WooPayments extends AbstractPaymentMethodType {
 	private WooPaymentsProvider $provider;
 
 	/**
-	 * WooPay session service.
+	 * WooPay eligibility rules.
 	 *
-	 * @var WooPaymentsWooPaySessionService
+	 * @var WooPaymentsWooPayEligibility
 	 */
-	private WooPaymentsWooPaySessionService $woopay_session_service;
+	private WooPaymentsWooPayEligibility $woopay_eligibility;
 
 	/**
 	 * Express checkout service.
@@ -125,16 +125,16 @@ final class WooPayments extends AbstractPaymentMethodType {
 	 * @param WooPaymentsRuntimeArbiter         $arbiter                   Runtime owner arbiter.
 	 * @param WooPaymentsCheckoutAssets         $checkout_assets           Checkout scripts and their config.
 	 * @param WooPaymentsProvider               $provider                  Native WooPayments provider.
-	 * @param WooPaymentsWooPaySessionService   $woopay_session_service    WooPay session service.
+	 * @param WooPaymentsWooPayEligibility      $woopay_eligibility        WooPay eligibility rules.
 	 * @param WooPaymentsExpressCheckoutService $express_checkout_service  Express checkout service.
 	 * @param WooPaymentsGateway|null           $payment_gateway           Optional payment gateway instance.
 	 */
-	public function __construct( Api $asset_api, WooPaymentsRuntimeArbiter $arbiter, WooPaymentsCheckoutAssets $checkout_assets, WooPaymentsProvider $provider, WooPaymentsWooPaySessionService $woopay_session_service, WooPaymentsExpressCheckoutService $express_checkout_service, ?WooPaymentsGateway $payment_gateway = null ) {
+	public function __construct( Api $asset_api, WooPaymentsRuntimeArbiter $arbiter, WooPaymentsCheckoutAssets $checkout_assets, WooPaymentsProvider $provider, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsExpressCheckoutService $express_checkout_service, ?WooPaymentsGateway $payment_gateway = null ) {
 		$this->asset_api                = $asset_api;
 		$this->arbiter                  = $arbiter;
 		$this->checkout_assets          = $checkout_assets;
 		$this->provider                 = $provider;
-		$this->woopay_session_service   = $woopay_session_service;
+		$this->woopay_eligibility       = $woopay_eligibility;
 		$this->express_checkout_service = $express_checkout_service;
 		$this->payment_gateway          = $payment_gateway;
 		$this->name                     = null === $payment_gateway ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : $payment_gateway->id;
@@ -296,7 +296,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 					$this->arbiter,
 					$this->checkout_assets,
 					$this->provider,
-					$this->woopay_session_service,
+					$this->woopay_eligibility,
 					$this->express_checkout_service,
 					$gateway
 				);
@@ -392,7 +392,7 @@ final class WooPayments extends AbstractPaymentMethodType {
 	private function should_enqueue_woopay_assets(): bool {
 		return $this->is_active() &&
 			$this->is_blocks_cart_or_checkout_surface() &&
-			$this->woopay_session_service->should_show_woopay_button( $this->get_button_context() );
+			$this->woopay_eligibility->should_show_woopay_button( $this->get_button_context() );
 	}
 
 	/**

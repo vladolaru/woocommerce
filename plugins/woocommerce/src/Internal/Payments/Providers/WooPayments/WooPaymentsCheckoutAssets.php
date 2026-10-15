@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 
 /**
  * Registers the WooPayments checkout scripts and styles, and builds the payment fields config they read: the
@@ -231,6 +232,13 @@ class WooPaymentsCheckoutAssets {
 	private WooPaymentsWooPaySessionService $woopay_session_service;
 
 	/**
+	 * WooPay eligibility rules.
+	 *
+	 * @var WooPaymentsWooPayEligibility
+	 */
+	private WooPaymentsWooPayEligibility $woopay_eligibility;
+
+	/**
 	 * Shared frontend styles service.
 	 *
 	 * @var WooPaymentsFrontendStylesService
@@ -291,6 +299,7 @@ class WooPaymentsCheckoutAssets {
 	 *
 	 * @param WooPaymentsAccountService              $account_service              WooPayments account service.
 	 * @param WooPaymentsWooPaySessionService        $woopay_session_service       WooPay session service.
+	 * @param WooPaymentsWooPayEligibility           $woopay_eligibility           WooPay eligibility rules.
 	 * @param WooPaymentsFrontendStylesService       $frontend_styles_service      Shared frontend styles service.
 	 * @param WooPaymentsFrontendTrackingController  $frontend_tracking_controller Frontend tracking controller.
 	 * @param WooPaymentsPaymentMethodRegistry       $payment_method_registry      Payment method registry.
@@ -300,6 +309,7 @@ class WooPaymentsCheckoutAssets {
 	final public function init(
 		WooPaymentsAccountService $account_service,
 		WooPaymentsWooPaySessionService $woopay_session_service,
+		WooPaymentsWooPayEligibility $woopay_eligibility,
 		WooPaymentsFrontendStylesService $frontend_styles_service,
 		WooPaymentsFrontendTrackingController $frontend_tracking_controller,
 		WooPaymentsPaymentMethodRegistry $payment_method_registry,
@@ -308,6 +318,7 @@ class WooPaymentsCheckoutAssets {
 	): void {
 		$this->account_service              = $account_service;
 		$this->woopay_session_service       = $woopay_session_service;
+		$this->woopay_eligibility           = $woopay_eligibility;
 		$this->frontend_styles_service      = $frontend_styles_service;
 		$this->frontend_tracking_controller = $frontend_tracking_controller;
 		$this->payment_method_registry      = $payment_method_registry;
@@ -418,7 +429,7 @@ class WooPaymentsCheckoutAssets {
 			'platformTrackerNonce'                     => wp_create_nonce( 'platform_tracks_nonce' ),
 			'tracksUrl'                                => $this->get_frontend_tracking_controller()->get_tracks_rest_url(),
 			'tracksRestNonce'                          => wp_create_nonce( 'wp_rest' ),
-			'woopayHost'                               => $this->get_woopay_session_service()->get_woopay_url(),
+			'woopayHost'                               => WooPaymentsWooPaySessionService::get_woopay_url(),
 			'accountIdForIntentConfirmation'           => $account_id_for_intent_confirmation,
 			'wcpayVersionNumber'                       => WooPaymentsClientVersion::VERSION,
 			'icon'                                     => '',
@@ -653,7 +664,7 @@ class WooPaymentsCheckoutAssets {
 	 * @return bool
 	 */
 	private function should_add_woopay_button_config(): bool {
-		return $this->should_add_express_button_config() && $this->get_woopay_session_service()->is_woopay_button_enabled();
+		return $this->should_add_express_button_config() && $this->get_woopay_eligibility()->is_woopay_button_enabled();
 	}
 
 	/**
@@ -876,6 +887,19 @@ class WooPaymentsCheckoutAssets {
 		}
 
 		return $this->woopay_session_service;
+	}
+
+	/**
+	 * Get the WooPay eligibility rules.
+	 *
+	 * @return WooPaymentsWooPayEligibility
+	 */
+	private function get_woopay_eligibility(): WooPaymentsWooPayEligibility {
+		if ( ! isset( $this->woopay_eligibility ) ) {
+			$this->woopay_eligibility = wc_get_container()->get( WooPaymentsWooPayEligibility::class );
+		}
+
+		return $this->woopay_eligibility;
 	}
 
 	/**
@@ -1360,7 +1384,7 @@ class WooPaymentsCheckoutAssets {
 	 * @return bool
 	 */
 	private function should_show_card_save_option( bool $saved_cards_enabled ): bool {
-		if ( is_user_logged_in() && $this->get_woopay_session_service()->is_woopay_enabled() ) {
+		if ( is_user_logged_in() && $this->get_woopay_eligibility()->is_woopay_enabled() ) {
 			return false;
 		}
 
@@ -1388,7 +1412,7 @@ class WooPaymentsCheckoutAssets {
 	 * @return bool
 	 */
 	public function should_use_stripe_platform_on_checkout_page(): bool {
-		return $this->get_woopay_session_service()->should_use_stripe_platform_on_checkout_page();
+		return $this->get_woopay_eligibility()->should_use_stripe_platform_on_checkout_page();
 	}
 
 	/**

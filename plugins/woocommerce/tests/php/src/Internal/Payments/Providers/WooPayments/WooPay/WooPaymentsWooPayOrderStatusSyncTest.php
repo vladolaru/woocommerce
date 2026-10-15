@@ -7,9 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayOrderStatusSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Helper_Order;
@@ -726,11 +724,11 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->account_service->woopay_enabled         = $woopay_enabled;
 		$this->account_service->account_status         = $account_status;
 		$this->account_service->account_data_overrides = $account_data;
-		$session_service                               = new Task25WooPaySessionService();
-		$session_service->init( $this->account_service, new WooPaymentsFrontendStylesService(), new WooPaymentsFrontendTrackingController() );
+		$woopay_eligibility                            = new WooPaymentsWooPayEligibility();
+		$woopay_eligibility->init( $this->account_service );
 		$this->api_client = new Task25WooPayApiClient();
 		$sync             = new WooPaymentsWooPayOrderStatusSync();
-		$sync->init( new StaticWooPaymentsRuntimeArbiter( $native_register ), $session_service, $this->api_client, new TransientRowLock() );
+		$sync->init( new StaticWooPaymentsRuntimeArbiter( $native_register ), $woopay_eligibility, $this->api_client, new TransientRowLock() );
 
 		$this->syncs[] = $sync;
 
@@ -909,15 +907,6 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 }
 
 // phpcs:disable Generic.Files.OneObjectStructurePerFile.MultipleFound,Squiz.Classes.ClassFileName.NoMatch,SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName,Squiz.Commenting.FunctionComment.Missing
-
-/**
- * WooPay session service with a fixed WooPay host.
- */
-class Task25WooPaySessionService extends WooPaymentsWooPaySessionService {
-	public function get_woopay_rest_url( string $endpoint ): string {
-		return 'https://pay.woo.com/wp-json/platform-checkout/v1/' . ltrim( $endpoint, '/' );
-	}
-}
 
 /**
  * Recording WooPay API client.

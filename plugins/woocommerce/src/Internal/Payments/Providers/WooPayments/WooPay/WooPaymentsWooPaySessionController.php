@@ -40,6 +40,13 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	private WooPaymentsWooPaySessionService $session_service;
 
 	/**
+	 * WooPay eligibility rules.
+	 *
+	 * @var WooPaymentsWooPayEligibility
+	 */
+	private WooPaymentsWooPayEligibility $woopay_eligibility;
+
+	/**
 	 * Whether WooPay frontend assets have already been localized and enqueued.
 	 *
 	 * @var bool
@@ -58,10 +65,12 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsWooPaySessionService $session_service WooPay session service.
+	 * @param WooPaymentsWooPaySessionService $session_service    WooPay session service.
+	 * @param WooPaymentsWooPayEligibility    $woopay_eligibility WooPay eligibility rules.
 	 */
-	final public function init( WooPaymentsWooPaySessionService $session_service ): void {
-		$this->session_service = $session_service;
+	final public function init( WooPaymentsWooPaySessionService $session_service, WooPaymentsWooPayEligibility $woopay_eligibility ): void {
+		$this->session_service    = $session_service;
+		$this->woopay_eligibility = $woopay_eligibility;
 	}
 
 	/**
@@ -108,7 +117,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function register_woopay_hooks(): void {
-		if ( ! $this->session_service->is_woopay_enabled() ) {
+		if ( ! $this->woopay_eligibility->is_woopay_enabled() ) {
 			return;
 		}
 
@@ -145,7 +154,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		// Client 11.1.0 hooks the draft-order reuse only while direct checkout is enabled (class-wc-payments.php:1770-1777,
 		// class-wc-payments-woopay-direct-checkout.php:40-43).
 		if (
-			$this->session_service->is_woopay_direct_checkout_enabled() &&
+			$this->woopay_eligibility->is_woopay_direct_checkout_enabled() &&
 			false === has_filter( 'woocommerce_create_order', array( $this->session_service, 'maybe_use_store_api_draft_order_id' ) )
 		) {
 			add_filter( 'woocommerce_create_order', array( $this->session_service, 'maybe_use_store_api_draft_order_id' ) );
@@ -407,7 +416,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			return;
 		}
 
-		$direct_checkout_runs = $this->session_service->should_run_woopay_direct_checkout();
+		$direct_checkout_runs = $this->woopay_eligibility->should_run_woopay_direct_checkout();
 		if ( ! $supported_frontend_surface ) {
 			if ( ! $direct_checkout_runs ) {
 				return;
@@ -425,7 +434,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		$config  = $this->get_woopay_frontend_config( $context );
 		if (
 			empty( $config['shouldShowWooPayButton'] ) &&
-			! $this->session_service->should_load_woopay_save_user_assets( $context ) &&
+			! $this->woopay_eligibility->should_load_woopay_save_user_assets( $context ) &&
 			! ( $direct_checkout_surface && $direct_checkout_runs )
 		) {
 			return;
@@ -466,7 +475,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 * @return string Escaped markup, or an empty string when the WooPay button does not show on this page.
 	 */
 	public function get_express_checkout_button_html(): string {
-		if ( ! $this->is_supported_frontend_surface() || ! $this->session_service->is_woopay_enabled() ) {
+		if ( ! $this->is_supported_frontend_surface() || ! $this->woopay_eligibility->is_woopay_enabled() ) {
 			return '';
 		}
 
@@ -695,7 +704,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 * (class-woopay-session.php:1219-1224, :1273-1278), so nothing fills the slot WooPay would serve once it is turned on.
 	 */
 	private function reject_appearance_write_without_global_theme_support(): void {
-		if ( ! $this->session_service->is_woopay_global_theme_support_enabled() ) {
+		if ( ! $this->woopay_eligibility->is_woopay_global_theme_support_enabled() ) {
 			wp_send_json_error( __( 'This action is not available.', 'woocommerce' ), 403 );
 		}
 	}

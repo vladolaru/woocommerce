@@ -18,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\RecordingWooPaySessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 
 /**
  * Tests for the WooPay toggle round-trip through the WooPaymentsSettingsService contract.
@@ -96,6 +97,7 @@ class WooPaymentsSettingsServiceWooPayToggleTest extends WC_Unit_Test_Case {
 			$fraud_ruleset_service,
 			$duplicate_gateway_methods_service,
 			new RecordingWooPaySessionService(),
+			$this->create_woopay_eligibility( $account_service ),
 			wc_get_container()->get( WooPaymentsFrontendTrackingController::class ),
 			wc_get_container()->get( WooPaymentsLogger::class )
 		);
@@ -203,5 +205,18 @@ class WooPaymentsSettingsServiceWooPayToggleTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'yes', $stored_after_enable['platform_checkout'] );
 		$this->assertSame( 'yes', $stored_after_enable['manual_capture'] );
 		$this->assertSame( 'yes', $stored_after_enable['test_mode'] );
+	}
+
+	/**
+	 * Create the WooPay eligibility rules over an account service.
+	 *
+	 * @param WooPaymentsAccountService $account_service Account service.
+	 * @return WooPaymentsWooPayEligibility
+	 */
+	private function create_woopay_eligibility( WooPaymentsAccountService $account_service ): WooPaymentsWooPayEligibility {
+		$woopay_eligibility = new WooPaymentsWooPayEligibility();
+		$woopay_eligibility->init( $account_service );
+
+		return $woopay_eligibility;
 	}
 }

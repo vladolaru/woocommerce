@@ -17,6 +17,7 @@ use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_REST_Server;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 
 /**
  * Tests for the WooPaymentsWooPaySessionController class.
@@ -29,6 +30,13 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @var WooPaymentsWooPaySessionController
 	 */
 	private $sut;
+
+	/**
+	 * WooPay eligibility rules the controller under test reads.
+	 *
+	 * @var WooPaymentsWooPayEligibility|null
+	 */
+	private ?WooPaymentsWooPayEligibility $woopay_eligibility = null;
 
 	/**
 	 * Set up test fixtures.
@@ -158,7 +166,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->sut->register();
 
-		$this->assertTrue( $service->is_woopay_enabled() );
+		$this->assertTrue( $this->woopay_eligibility->is_woopay_enabled() );
 		$this->assertNotFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
 	}
 
@@ -1747,11 +1755,12 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	private function create_controller( bool $woopay_enabled, ?WooPaymentsWooPaySessionService $service = null ): WooPaymentsWooPaySessionController {
 		$service = $service ?? new RecordingWooPaySessionService();
 		if ( $service instanceof RecordingWooPaySessionService ) {
-			$service->woopay_enabled = $woopay_enabled;
+			$service->woopay_enabled  = $woopay_enabled;
+			$this->woopay_eligibility = new RecordingWooPayEligibility( $service );
 		}
 
 		$controller = new WooPaymentsWooPaySessionController();
-		$controller->init( $service );
+		$controller->init( $service, $this->woopay_eligibility );
 
 		return $controller;
 	}
@@ -1797,8 +1806,11 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 			->getMock();
 		$tracking_controller->method( 'is_shopper_tracking_enabled' )->willReturn( true );
 
+		$this->woopay_eligibility = new WooPaymentsWooPayEligibility();
+		$this->woopay_eligibility->init( $account_service );
+
 		$service = new WooPaymentsWooPaySessionService();
-		$service->init( $account_service, new WooPaymentsFrontendStylesService(), $tracking_controller );
+		$service->init( $account_service, $this->woopay_eligibility, new WooPaymentsFrontendStylesService(), $tracking_controller );
 
 		return $service;
 	}

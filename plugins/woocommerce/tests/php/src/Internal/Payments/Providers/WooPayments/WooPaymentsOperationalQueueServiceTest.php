@@ -33,6 +33,7 @@ use WC_Data_Store;
 use WC_Order;
 use WC_Unit_Test_Case;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\RecordingWooPaySessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 
 /**
  * Tests for the WooPaymentsOperationalQueueService class.
@@ -639,12 +640,11 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			update_option( '_wcpay_feature_woopay_express_checkout', $flag );
 		}
 
-		$account_service  = $this->create_account_service( $account_data );
-		$settings_service = new WooPaymentsSettingsService();
-		$settings_service->init( $account_service, $this->create_api_client( array() ), wc_get_container()->get( WooPaymentsPmPromotionsService::class ), wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), wc_get_container()->get( WooPaymentsFraudRulesetService::class ), wc_get_container()->get( WooPaymentsDuplicateGatewayMethodsService::class ), new RecordingWooPaySessionService(), wc_get_container()->get( WooPaymentsFrontendTrackingController::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
+		$account_service    = $this->create_account_service( $account_data );
+		$woopay_eligibility = $this->create_woopay_eligibility( $account_service );
 
 		try {
-			$snapshot = $this->send_store_setup_snapshot( $settings, $account_service, $settings_service );
+			$snapshot = $this->send_store_setup_snapshot( $settings, $account_service, $woopay_eligibility );
 		} finally {
 			delete_option( '_wcpay_feature_woopay_express_checkout' );
 		}
@@ -734,11 +734,11 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @param array<string,mixed>                            $settings                          Gateway settings to store first.
 	 * @param WooPaymentsAccountService|null                 $account_service                   Account service, or the default double.
-	 * @param WooPaymentsSettingsService|null                $settings_service                  Settings service, or none.
+	 * @param WooPaymentsWooPayEligibility|null              $woopay_eligibility                WooPay eligibility rules, or the container's.
 	 * @param WooPaymentsDuplicateGatewayMethodsService|null $duplicate_gateway_methods_service Duplicate gateway methods service, or the container's.
 	 * @return array<string,mixed>
 	 */
-	private function send_store_setup_snapshot( array $settings = array( 'enabled' => 'yes' ), ?WooPaymentsAccountService $account_service = null, ?WooPaymentsSettingsService $settings_service = null, ?WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service = null ): array {
+	private function send_store_setup_snapshot( array $settings = array( 'enabled' => 'yes' ), ?WooPaymentsAccountService $account_service = null, ?WooPaymentsWooPayEligibility $woopay_eligibility = null, ?WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service = null ): array {
 		update_option( 'woocommerce_woocommerce_payments_settings', $settings );
 
 		$snapshots  = array();
@@ -751,7 +751,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$this->create_service( new RecordingActionSchedulerService(), $api_client, $account_service, $settings_service, $duplicate_gateway_methods_service )->handle_wcpay_store_setup_sync();
+		$this->create_service( new RecordingActionSchedulerService(), $api_client, $account_service, $woopay_eligibility, $duplicate_gateway_methods_service )->handle_wcpay_store_setup_sync();
 
 		$this->assertCount( 1, $snapshots, 'The store setup sync sends one snapshot.' );
 
@@ -1571,7 +1571,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsActionSchedulerService|null         $scheduler          Scheduler service.
 	 * @param WooPaymentsApiClient|null                      $api_client         API client.
 	 * @param WooPaymentsAccountService|null                 $account_service    Account service.
-	 * @param WooPaymentsSettingsService|null                $settings_service   Settings service.
+	 * @param WooPaymentsWooPayEligibility|null              $woopay_eligibility WooPay eligibility rules, or the container's.
 	 * @param WooPaymentsDuplicateGatewayMethodsService|null $duplicate_gateway_methods_service Duplicate gateway methods service, or the container's.
 	 * @return WooPaymentsOperationalQueueService
 	 */
@@ -1579,7 +1579,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 		?WooPaymentsActionSchedulerService $scheduler = null,
 		?WooPaymentsApiClient $api_client = null,
 		?WooPaymentsAccountService $account_service = null,
-		?WooPaymentsSettingsService $settings_service = null,
+		?WooPaymentsWooPayEligibility $woopay_eligibility = null,
 		?WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service = null
 	): WooPaymentsOperationalQueueService {
 		$service = new WooPaymentsOperationalQueueService();
@@ -1588,7 +1588,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 			$api_client ?? $this->create_api_client( array() ),
 			$account_service ?? $this->create_account_service(),
 			$duplicate_gateway_methods_service ?? wc_get_container()->get( WooPaymentsDuplicateGatewayMethodsService::class ),
-			$settings_service
+			$woopay_eligibility ?? wc_get_container()->get( WooPaymentsWooPayEligibility::class )
 		);
 
 		$this->services[] = $service;
@@ -1702,5 +1702,18 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 				$data_store->delete( $note );
 			}
 		}
+	}
+
+	/**
+	 * Create the WooPay eligibility rules over an account service.
+	 *
+	 * @param WooPaymentsAccountService $account_service Account service.
+	 * @return WooPaymentsWooPayEligibility
+	 */
+	private function create_woopay_eligibility( WooPaymentsAccountService $account_service ): WooPaymentsWooPayEligibility {
+		$woopay_eligibility = new WooPaymentsWooPayEligibility();
+		$woopay_eligibility->init( $account_service );
+
+		return $woopay_eligibility;
 	}
 }

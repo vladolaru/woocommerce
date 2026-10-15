@@ -20,7 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCh
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 use WP_UnitTestCase;
 
 /**
@@ -74,7 +74,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_eligibility(), $this->create_express_checkout_service() );
 
 		$this->assertFalse( $integration->is_active() );
 	}
@@ -97,7 +97,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( false );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_eligibility(), $this->create_express_checkout_service() );
 
 		$this->assertFalse( $integration->is_active() );
 	}
@@ -120,7 +120,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter( false ), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter( false ), $assets, $provider, $this->create_woopay_eligibility(), $this->create_express_checkout_service() );
 
 		$this->assertFalse( $integration->is_active() );
 	}
@@ -149,7 +149,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$gateway->id = 'woocommerce_payments_klarna';
 		$gateway->expects( $this->once() )->method( 'is_available' )->willReturn( false );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service(), $gateway );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_eligibility(), $this->create_express_checkout_service(), $gateway );
 
 		$this->assertFalse( $integration->is_active() );
 	}
@@ -216,7 +216,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_eligibility(), $this->create_express_checkout_service() );
 
 		$this->assertSame( array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-fraud-scripts' ), $integration->get_payment_method_script_handles() );
 		$this->assertTrue( wp_script_is( 'stripe', 'registered' ) );
@@ -301,7 +301,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			->onlyMethods( array( 'can_process_payments' ) )
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
-		$woopay_session_service = $this->create_woopay_session_service( true );
+		$woopay_session_service = $this->create_woopay_eligibility( true );
 
 		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $woopay_session_service, $this->create_express_checkout_service() );
 
@@ -388,7 +388,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$provider->method( 'can_process_payments' )->willReturn( true );
 		$express_checkout_service = $this->create_express_checkout_service( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $express_checkout_service );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_eligibility(), $express_checkout_service );
 
 		$this->assertSame(
 			array( 'wc-payment-method-woopayments', 'wc-payment-method-woopayments-express-checkout', 'wc-payment-method-woopayments-fraud-scripts' ),
@@ -432,7 +432,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service( true ), $this->create_express_checkout_service( true ) );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_eligibility( true ), $this->create_express_checkout_service( true ) );
 
 		$handles = $integration->get_payment_method_script_handles();
 
@@ -478,7 +478,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service( true ), $this->create_express_checkout_service( true ) );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_eligibility( true ), $this->create_express_checkout_service( true ) );
 
 		$handles = $integration->get_payment_method_script_handles();
 
@@ -517,7 +517,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			->getMock();
 		$provider->method( 'can_process_payments' )->willReturn( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service( true ), $this->create_express_checkout_service( true ) );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_eligibility( true ), $this->create_express_checkout_service( true ) );
 		$handles     = $integration->get_payment_method_script_handles();
 		set_current_screen( 'front' );
 
@@ -671,7 +671,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$provider->method( 'can_process_payments' )->willReturn( true );
 		$provider->method( 'get_payment_gateways' )->willReturn( array() );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_eligibility(), $this->create_express_checkout_service() );
 
 		$this->assertSame(
 			array(
@@ -706,7 +706,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$provider->method( 'can_process_payments' )->willReturn( true );
 		$provider->method( 'get_payment_gateways' )->willReturn( array( $card_gateway, $klarna_gateway, $alipay_gateway ) );
 
-		$integration  = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
+		$integration  = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_eligibility(), $this->create_express_checkout_service() );
 		$integrations = $integration->get_payment_method_integrations();
 
 		$this->assertSame(
@@ -751,7 +751,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$provider->method( 'can_process_payments' )->willReturn( false );
 		$provider->method( 'get_payment_gateways' )->willReturn( array( new WooPaymentsGateway( $registry->get( 'card' ) ), new WooPaymentsGateway( $registry->get( 'klarna' ) ) ) );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_eligibility(), $this->create_express_checkout_service() );
 		foreach ( $integration->get_payment_method_integrations() as $payment_method ) {
 			$payment_method->get_payment_method_data();
 		}
@@ -789,7 +789,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$assets          = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
 			->disableOriginalConstructor()
 			->getMock();
-		$integration     = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service() );
+		$integration     = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_eligibility(), $this->create_express_checkout_service() );
 		$integration_ids = array_map(
 			static fn( WooPayments $payment_method ): string => $payment_method->get_name(),
 			$integration->get_payment_method_integrations()
@@ -838,7 +838,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$provider->method( 'get_payment_gateways' )->willReturn( array( $card_gateway, $klarna_gateway ) );
 		$provider->method( 'get_gateway_for_method' )->willReturnMap( array( array( 'card', $card_gateway ) ) );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $this->create_express_checkout_service(), $klarna_gateway );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_eligibility(), $this->create_express_checkout_service(), $klarna_gateway );
 
 		$this->assertSame(
 			array(
@@ -877,7 +877,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 		$provider->method( 'get_payment_gateways' )->willReturn( array() );
 		$express_checkout_service = $this->create_express_checkout_service( true );
 
-		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_session_service(), $express_checkout_service );
+		$integration = new WooPayments( $asset_api, $this->create_runtime_arbiter(), $assets, $provider, $this->create_woopay_eligibility(), $express_checkout_service );
 
 		$this->assertSame(
 			array(
@@ -986,7 +986,7 @@ class WooPaymentsTest extends WP_UnitTestCase {
 			$this->create_runtime_arbiter(),
 			$assets,
 			$provider,
-			$this->create_woopay_session_service( $show_woopay_button ),
+			$this->create_woopay_eligibility( $show_woopay_button ),
 			$this->create_express_checkout_service( $show_express_button )
 		);
 	}
@@ -1040,13 +1040,13 @@ class WooPaymentsTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * Create a WooPay session service mock.
+	 * Create a WooPay eligibility mock.
 	 *
 	 * @param bool $should_show_button Whether the WooPay button should be available.
-	 * @return WooPaymentsWooPaySessionService
+	 * @return WooPaymentsWooPayEligibility
 	 */
-	private function create_woopay_session_service( bool $should_show_button = false ): WooPaymentsWooPaySessionService {
-		$service = $this->getMockBuilder( WooPaymentsWooPaySessionService::class )
+	private function create_woopay_eligibility( bool $should_show_button = false ): WooPaymentsWooPayEligibility {
+		$service = $this->getMockBuilder( WooPaymentsWooPayEligibility::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'should_show_woopay_button' ) )
 			->getMock();

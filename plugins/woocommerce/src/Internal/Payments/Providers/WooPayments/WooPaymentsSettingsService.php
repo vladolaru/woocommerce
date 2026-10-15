@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use WP_Error;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 
 /**
  * Provides the native WooPayments settings contract consumed by the hoisted settings store.
@@ -149,6 +150,13 @@ class WooPaymentsSettingsService {
 	private WooPaymentsWooPaySessionService $woopay_session_service;
 
 	/**
+	 * WooPay eligibility rules.
+	 *
+	 * @var WooPaymentsWooPayEligibility
+	 */
+	private WooPaymentsWooPayEligibility $woopay_eligibility;
+
+	/**
 	 * Frontend tracking controller.
 	 *
 	 * @var WooPaymentsFrontendTrackingController
@@ -218,10 +226,11 @@ class WooPaymentsSettingsService {
 	 * @param WooPaymentsFraudRulesetService            $fraud_ruleset_service             Fraud ruleset service.
 	 * @param WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service Duplicate gateway methods service.
 	 * @param WooPaymentsWooPaySessionService           $woopay_session_service            WooPay session service.
+	 * @param WooPaymentsWooPayEligibility              $woopay_eligibility                WooPay eligibility rules.
 	 * @param WooPaymentsFrontendTrackingController     $frontend_tracking_controller      Frontend tracking controller.
 	 * @param WooPaymentsLogger                         $logger                            WooPayments logger.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsStripeBillingModule $stripe_billing_module, WooPaymentsFraudRulesetService $fraud_ruleset_service, WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service, WooPaymentsWooPaySessionService $woopay_session_service, WooPaymentsFrontendTrackingController $frontend_tracking_controller, WooPaymentsLogger $logger ): void {
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsStripeBillingModule $stripe_billing_module, WooPaymentsFraudRulesetService $fraud_ruleset_service, WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service, WooPaymentsWooPaySessionService $woopay_session_service, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsFrontendTrackingController $frontend_tracking_controller, WooPaymentsLogger $logger ): void {
 		$this->account_service                   = $account_service;
 		$this->api_client                        = $api_client;
 		$this->pm_promotions_service             = $pm_promotions_service;
@@ -231,6 +240,7 @@ class WooPaymentsSettingsService {
 		$this->fraud_ruleset_service             = $fraud_ruleset_service;
 		$this->duplicate_gateway_methods_service = $duplicate_gateway_methods_service;
 		$this->woopay_session_service            = $woopay_session_service;
+		$this->woopay_eligibility                = $woopay_eligibility;
 		$this->frontend_tracking_controller      = $frontend_tracking_controller;
 		$this->logger                            = $logger;
 	}
@@ -315,7 +325,7 @@ class WooPaymentsSettingsService {
 			'payment_request_button_border_radius'       => $this->get_int_setting( $settings, 'payment_request_button_border_radius', 4 ),
 			'is_saved_cards_enabled'                     => $this->is_yes( $settings['saved_cards'] ),
 			'is_card_present_eligible'                   => $this->is_card_present_eligible(),
-			'is_woopay_enabled'                          => $this->is_woopay_eligible() && $this->is_yes( $settings['platform_checkout'] ?? 'no' ),
+			'is_woopay_enabled'                          => $this->woopay_eligibility->is_woopay_eligible() && $this->is_yes( $settings['platform_checkout'] ?? 'no' ),
 			'woopay_last_disable_date'                   => $this->get_string_setting( $settings, 'platform_checkout_last_disable_date' ),
 			'is_woopay_global_theme_support_enabled'     => $this->is_yes( $settings['is_woopay_global_theme_support_enabled'] ?? 'no' ),
 			'is_woopay_global_theme_support_eligible'    => $this->is_woopay_global_theme_support_eligible(),
@@ -380,7 +390,7 @@ class WooPaymentsSettingsService {
 	 * @return array<string,bool>
 	 */
 	private function get_feature_flags(): array {
-		$is_woopay_eligible = $this->is_woopay_eligible();
+		$is_woopay_eligible = $this->woopay_eligibility->is_woopay_eligible();
 
 		return array(
 			'woopay'                                   => $is_woopay_eligible,
@@ -389,25 +399,6 @@ class WooPaymentsSettingsService {
 			'amazonPay'                                => $this->payment_method_registry->is_amazon_pay_enabled( $this->account_service ),
 			'isEceUsingConfirmationTokens'             => $this->account_service->is_ece_confirmation_tokens_enabled(),
 		);
-	}
-
-	/**
-	 * Tell whether the connected account can use WooPay surfaces.
-	 *
-	 * @internal
-	 *
-	 * @return bool
-	 */
-	public function is_woopay_eligible(): bool {
-		if ( ! class_exists( 'Automattic\WooCommerce\StoreApi\Routes\V1\AbstractCartRoute' ) ) {
-			return false;
-		}
-
-		$account_data = $this->account_service->get_cached_account_data();
-
-		return ! empty( $account_data['platform_checkout_eligible'] )
-			&& ! $this->account_service->is_account_rejected()
-			&& ! $this->account_service->is_account_under_review();
 	}
 
 	/**

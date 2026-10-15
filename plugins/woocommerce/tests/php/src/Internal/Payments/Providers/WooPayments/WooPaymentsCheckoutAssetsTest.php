@@ -25,6 +25,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Unit_Test_Case;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 
 /**
  * Tests for the WooPaymentsCheckoutAssets class.
@@ -56,7 +57,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			)
 		);
 		$sut             = new WooPaymentsCheckoutAssets();
-		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		try {
 			$gateway = $this->create_card_gateway( $sut );
@@ -87,7 +88,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	public function test_after_checkout_form_fallback_does_nothing_when_builtin_does_not_own_payments(): void {
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
 		$sut = new WooPaymentsCheckoutAssets();
-		$sut->init( $this->create_account_service( true ), $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$sut->init( $this->create_account_service( true ), $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		try {
 			$this->create_card_gateway( $sut );
@@ -131,7 +132,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			)
 		);
 		$sut             = new WooPaymentsCheckoutAssets();
-		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		try {
 			$gateway = $this->create_card_gateway( $sut );
@@ -161,7 +162,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 
 		$account_service = $this->create_account_service( true );
 		$sut             = new WooPaymentsCheckoutAssets();
-		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		try {
 			$gateway = $this->create_card_gateway( $sut );
@@ -334,7 +335,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	public function test_get_payment_fields_js_config_ignores_a_non_array_filter_result(): void {
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( true ), $this->create_woopay_eligibility( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 		add_filter( 'wcpay_payment_fields_js_config', '__return_null' );
 
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
@@ -351,7 +352,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	public function test_get_payment_fields_js_config_translates_card_brand_labels(): void {
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( true ), $this->create_woopay_eligibility( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 		$translate = static function ( $translation, $text ) {
 			return 'Supported credit card brands' === $text || 'Show all supported credit card brands' === $text ? 'translated: ' . $text : $translation;
 		};
@@ -374,7 +375,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$account_service = $this->create_account_service( true );
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_woopay_eligibility( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		add_filter(
 			'wcpay_payment_fields_js_config',
@@ -474,6 +475,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$assets->init(
 			$this->create_account_service( true ),
 			$this->create_woopay_session_service( false ),
+			$this->create_woopay_eligibility( false ),
 			$this->create_frontend_styles_service(),
 			$this->create_frontend_tracking_controller(),
 			new WooPaymentsPaymentMethodRegistry()
@@ -552,6 +554,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$assets->init(
 			$this->create_account_service( true ),
 			$this->create_woopay_session_service( false ),
+			$this->create_woopay_eligibility( false ),
 			$this->create_frontend_styles_service(),
 			$this->create_frontend_tracking_controller(),
 			new WooPaymentsPaymentMethodRegistry()
@@ -596,7 +599,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		);
 		$registry        = new WooPaymentsPaymentMethodRegistry();
 		$assets          = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), $registry );
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), $registry );
 
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS, $explicit_card_definition ? $registry->get( 'card' ) : null );
 
@@ -645,7 +648,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			$gateway_settings
 		);
 		$assets          = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
@@ -686,7 +689,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		);
 		$registry        = new WooPaymentsPaymentMethodRegistry();
 		$sut             = new WooPaymentsCheckoutAssets();
-		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), $registry );
+		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), $registry );
 
 		$config          = $sut->get_payment_fields_js_config( self::CARD_SUPPORTS, $registry->get( 'afterpay_clearpay' ) );
 		$afterpay_config = $config['paymentMethodsConfig']['afterpay_clearpay'];
@@ -715,7 +718,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		);
 		$registry        = new WooPaymentsPaymentMethodRegistry();
 		$sut             = new WooPaymentsCheckoutAssets();
-		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), $registry );
+		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), $registry );
 
 		$p24_config = $sut->get_payment_fields_js_config( self::CARD_SUPPORTS, $registry->get( 'p24' ) )['paymentMethodsConfig']['p24'];
 
@@ -746,7 +749,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			)
 		);
 		$sut             = new WooPaymentsCheckoutAssets();
-		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$config = $sut->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
@@ -781,7 +784,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			)
 		);
 		$sut             = new WooPaymentsCheckoutAssets();
-		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$sut->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$config = $sut->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
@@ -825,6 +828,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 				)
 			),
 			$this->create_woopay_session_service( false ),
+			$this->create_woopay_eligibility( false ),
 			$this->create_frontend_styles_service(),
 			$this->create_frontend_tracking_controller(),
 			new WooPaymentsPaymentMethodRegistry()
@@ -878,6 +882,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 				array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) )
 			),
 			$this->create_woopay_session_service( false ),
+			$this->create_woopay_eligibility( false ),
 			$this->create_frontend_styles_service(),
 			$this->create_frontend_tracking_controller(),
 			new WooPaymentsPaymentMethodRegistry()
@@ -926,6 +931,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$assets->init(
 			$account_service,
 			$this->create_woopay_session_service( false ),
+			$this->create_woopay_eligibility( false ),
 			$this->create_frontend_styles_service(),
 			$this->create_frontend_tracking_controller(),
 			new WooPaymentsPaymentMethodRegistry(),
@@ -954,7 +960,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		);
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
@@ -969,7 +975,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( true, true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( true, true ), $this->create_woopay_eligibility( true, true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
@@ -990,7 +996,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	public function test_card_config_reads_the_session_service_platform_predicate( bool $platform ): void {
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( false, false, $platform ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( false, false, $platform ), $this->create_woopay_eligibility( false, false, $platform ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
@@ -1029,7 +1035,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$account_service = $this->create_account_service( true, array( 'country' => 'RO' ), $gateway_settings );
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( $woopay ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( $woopay ), $this->create_woopay_eligibility( $woopay ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
@@ -1079,7 +1085,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		);
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_woopay_eligibility( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
@@ -1102,7 +1108,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		);
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
@@ -1122,7 +1128,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		);
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 		$icons  = $config['paymentMethodsConfig']['card']['cardBrandIcons'];
@@ -1150,7 +1156,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		);
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
@@ -1164,7 +1170,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	public function test_get_payment_fields_js_config_uses_the_site_locale(): void {
 		$account_service = $this->create_account_service( true );
 		$assets          = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$config = $this->in_admin_with_french_user_locale( static fn() => $assets->get_payment_fields_js_config( self::CARD_SUPPORTS ) );
 
@@ -1182,7 +1188,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$account_service = $this->create_account_service( true, array() );
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
@@ -1242,7 +1248,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		}
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_woopay_eligibility( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		add_filter(
 			'wcpay_payment_fields_js_config',
@@ -1298,7 +1304,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		wp_deregister_script( 'woocommerce-tokenization-form' );
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$assets->enqueue_classic_checkout_assets_for_fields( array( 'products', 'tokenization' ) );
 
@@ -1318,7 +1324,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		wp_deregister_script( 'woocommerce-tokenization-form' );
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $this->create_account_service( true ), $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$assets->enqueue_classic_checkout_assets_for_fields( self::CARD_SUPPORTS );
 
@@ -1335,7 +1341,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$account_service = $this->create_account_service( true );
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$payment_method_registry = new WooPaymentsPaymentMethodRegistry();
 
@@ -1362,7 +1368,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$account_service = $this->create_account_service( true );
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$payment_method_registry = new WooPaymentsPaymentMethodRegistry();
 
@@ -1382,7 +1388,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	public function test_split_gateway_blocks_data_builds_the_shared_config_once(): void {
 		$account_service = $this->create_account_service( true );
 		$assets          = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 		$registry = new WooPaymentsPaymentMethodRegistry();
 		$builds   = 0;
 		$filtered = 0;
@@ -1432,7 +1438,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$account_service = $this->create_account_service( true );
 		$assets          = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 		$registry = new WooPaymentsPaymentMethodRegistry();
 		$builds   = 0;
 		$filtered = 0;
@@ -1525,7 +1531,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$account_service = $this->create_account_service( true );
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_woopay_eligibility( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$data = $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 
@@ -1543,7 +1549,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	public function test_config_features_are_the_supports_passed_in(): void {
 		$account_service = $this->create_account_service( true );
 		$assets          = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 		$registry = new WooPaymentsPaymentMethodRegistry();
 
 		// An extension removed `products` from the gateway's supports, leaving a gap in the keys.
@@ -1575,7 +1581,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$account_service = $this->create_account_service( true, self::EXPRESS_ACCOUNT_DATA, self::EXPRESS_GATEWAY_SETTINGS );
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_woopay_eligibility( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$data = $assets->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 
@@ -1708,8 +1714,10 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$database_cache       = new WooPaymentsDatabaseCache();
 		$database_cache->init( new LegacyProxy() );
 		$real_account_service->init( new LegacyProxy(), $database_cache );
+		$real_eligibility = new WooPaymentsWooPayEligibility();
+		$real_eligibility->init( $real_account_service );
 		$real_woopay_service = new WooPaymentsWooPaySessionService();
-		$real_woopay_service->init( $real_account_service, new WooPaymentsFrontendStylesService(), $this->create_frontend_tracking_controller() );
+		$real_woopay_service->init( $real_account_service, $real_eligibility, new WooPaymentsFrontendStylesService(), $this->create_frontend_tracking_controller() );
 		$woopay_config = array_merge(
 			array_fill_keys( array_keys( $real_woopay_service->get_woopay_frontend_config( 'checkout' ) ), '' ),
 			array(
@@ -1721,15 +1729,14 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 
 		$woopay_service = $this->getMockBuilder( WooPaymentsWooPaySessionService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_woopay_enabled', 'get_woopay_frontend_config', 'get_save_user_checkout_data' ) )
+			->onlyMethods( array( 'get_woopay_frontend_config', 'get_save_user_checkout_data' ) )
 			->getMock();
-		$woopay_service->method( 'is_woopay_enabled' )->willReturn( true );
 		$woopay_service->method( 'get_woopay_frontend_config' )->willReturn( $woopay_config );
 		$woopay_service->method( 'get_save_user_checkout_data' )->willReturn( array( 'PRE_CHECK_SAVE_MY_INFO' => true ) );
 
 		$account_service = $this->create_account_service( true, self::EXPRESS_ACCOUNT_DATA, self::EXPRESS_GATEWAY_SETTINGS );
 		$assets          = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $woopay_service, $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $woopay_service, $this->create_woopay_eligibility( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 		$this->inject_express_checkout_service( $assets, $account_service );
 
 		return $assets;
@@ -2134,7 +2141,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$account_service = $this->create_account_service( true );
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		add_filter(
 			'wcpay_payment_fields_js_config',
@@ -2164,6 +2171,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$assets->init(
 			$account_service,
 			$this->create_woopay_session_service( true ),
+			$this->create_woopay_eligibility( true ),
 			$this->create_frontend_styles_service(),
 			$this->create_frontend_tracking_controller(),
 			new WooPaymentsPaymentMethodRegistry(),
@@ -2190,6 +2198,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$assets->init(
 			$account_service,
 			$this->create_woopay_session_service( true ),
+			$this->create_woopay_eligibility( true ),
 			$this->create_frontend_styles_service(),
 			$this->create_frontend_tracking_controller(),
 			new WooPaymentsPaymentMethodRegistry(),
@@ -2213,7 +2222,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$account_service = $this->create_account_service( false );
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( true ), $this->create_woopay_eligibility( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
@@ -2238,7 +2247,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$account_service = $this->create_account_service( true );
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
 
@@ -2268,7 +2277,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		);
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 		$this->inject_fraud_service( $assets, $account_service );
 
 		$config = $assets->get_payment_fields_js_config( self::CARD_SUPPORTS );
@@ -2390,7 +2399,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		);
 
 		$assets = new WooPaymentsCheckoutAssets();
-		$assets->init( $account_service, $this->create_woopay_session_service( $woopay ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
+		$assets->init( $account_service, $this->create_woopay_session_service( $woopay ), $this->create_woopay_eligibility( $woopay ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 		$this->inject_express_checkout_service( $assets, $account_service );
 
 		return $assets;
@@ -2468,7 +2477,28 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a WooPay session service mock for checkout assets tests.
+	 * Create a WooPay eligibility double for checkout assets tests.
+	 *
+	 * @param bool $enabled                 Whether WooPay is enabled.
+	 * @param bool $direct_checkout_enabled Whether WooPay direct checkout is enabled.
+	 * @param bool $uses_stripe_platform    Whether checkout uses the Stripe platform account for WooPay.
+	 * @return WooPaymentsWooPayEligibility|\PHPUnit\Framework\MockObject\MockObject
+	 */
+	private function create_woopay_eligibility( bool $enabled, bool $direct_checkout_enabled = false, bool $uses_stripe_platform = false ) {
+		$eligibility = $this->getMockBuilder( WooPaymentsWooPayEligibility::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_woopay_enabled', 'is_woopay_direct_checkout_enabled', 'should_use_stripe_platform_on_checkout_page' ) )
+			->getMock();
+
+		$eligibility->method( 'is_woopay_enabled' )->willReturn( $enabled );
+		$eligibility->method( 'should_use_stripe_platform_on_checkout_page' )->willReturn( $uses_stripe_platform );
+		$eligibility->method( 'is_woopay_direct_checkout_enabled' )->willReturn( $direct_checkout_enabled );
+
+		return $eligibility;
+	}
+
+	/**
+	 * Create a WooPay session service mock for checkout assets tests: the WooPay config and the save-user data.
 	 *
 	 * @param bool $enabled                 Whether WooPay is enabled.
 	 * @param bool $direct_checkout_enabled Whether WooPay direct checkout is enabled.
@@ -2478,12 +2508,9 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	private function create_woopay_session_service( bool $enabled, bool $direct_checkout_enabled = false, bool $uses_stripe_platform = false ) {
 		$service = $this->getMockBuilder( WooPaymentsWooPaySessionService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_woopay_enabled', 'is_woopay_direct_checkout_enabled', 'get_woopay_frontend_config', 'get_save_user_checkout_data', 'should_use_stripe_platform_on_checkout_page' ) )
+			->onlyMethods( array( 'get_woopay_frontend_config', 'get_save_user_checkout_data' ) )
 			->getMock();
 
-		$service->method( 'is_woopay_enabled' )->willReturn( $enabled );
-		$service->method( 'should_use_stripe_platform_on_checkout_page' )->willReturn( $uses_stripe_platform );
-		$service->method( 'is_woopay_direct_checkout_enabled' )->willReturn( $direct_checkout_enabled );
 		$service->method( 'get_woopay_frontend_config' )->willReturn(
 			array(
 				'isWooPayEnabled'                   => $enabled,

@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicateGatewayMethodsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
 use WC_Unit_Test_Case;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 
 /**
  * Store setup sync on a multisite network.
@@ -56,7 +57,7 @@ class WooPaymentsStoreSetupSyncMultisiteTest extends WC_Unit_Test_Case {
 		);
 
 		$service = new WooPaymentsOperationalQueueService();
-		$service->init( new RecordingActionSchedulerService(), $api_client, wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsDuplicateGatewayMethodsService::class ) );
+		$service->init( new RecordingActionSchedulerService(), $api_client, wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsDuplicateGatewayMethodsService::class ), wc_get_container()->get( WooPaymentsWooPayEligibility::class ) );
 
 		try {
 			$service->handle_wcpay_store_setup_sync();

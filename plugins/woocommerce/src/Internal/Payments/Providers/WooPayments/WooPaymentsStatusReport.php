@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Exception;
 use Throwable;
 use WC_Order;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -441,11 +442,11 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 */
 	private function get_client_account_status_rows( WooPaymentsGateway $gateway ): array {
 		$account_service       = $this->get_account_service();
-		$settings_service      = wc_get_container()->get( WooPaymentsSettingsService::class );
+		$woopay_eligibility    = wc_get_container()->get( WooPaymentsWooPayEligibility::class );
 		$fraud_ruleset_service = wc_get_container()->get( WooPaymentsFraudRulesetService::class );
 		$needs_setup           = $gateway->needs_setup();
 		$dev_triggers          = $account_service->get_dev_mode_triggers();
-		$woopay_eligible       = $settings_service->is_woopay_eligible();
+		$woopay_eligible       = $woopay_eligibility->is_woopay_eligible();
 		$protection_level      = $fraud_ruleset_service->get_current_protection_level();
 		$support_phone         = $account_service->get_cached_account_data()['business_profile']['support_phone'] ?? '';
 		$support_phone         = is_scalar( $support_phone ) ? (string) $support_phone : '';

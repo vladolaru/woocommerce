@@ -74,11 +74,11 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
-	 * WooPay session service.
+	 * WooPay eligibility rules.
 	 *
-	 * @var WooPaymentsWooPaySessionService
+	 * @var WooPaymentsWooPayEligibility
 	 */
-	private WooPaymentsWooPaySessionService $session_service;
+	private WooPaymentsWooPayEligibility $woopay_eligibility;
 
 	/**
 	 * WooPayments API client.
@@ -99,16 +99,16 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter       $arbiter         Runtime owner arbiter.
-	 * @param WooPaymentsWooPaySessionService $session_service WooPay session service.
-	 * @param WooPaymentsApiClient            $api_client      WooPayments API client.
-	 * @param TransientRowLock                $row_lock        Lock held in the database rows of a transient.
+	 * @param WooPaymentsRuntimeArbiter    $arbiter            Runtime owner arbiter.
+	 * @param WooPaymentsWooPayEligibility $woopay_eligibility WooPay eligibility rules.
+	 * @param WooPaymentsApiClient         $api_client         WooPayments API client.
+	 * @param TransientRowLock             $row_lock           Lock held in the database rows of a transient.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsWooPaySessionService $session_service, WooPaymentsApiClient $api_client, TransientRowLock $row_lock ): void {
-		$this->arbiter         = $arbiter;
-		$this->session_service = $session_service;
-		$this->api_client      = $api_client;
-		$this->row_lock        = $row_lock;
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsApiClient $api_client, TransientRowLock $row_lock ): void {
+		$this->arbiter            = $arbiter;
+		$this->woopay_eligibility = $woopay_eligibility;
+		$this->api_client         = $api_client;
+		$this->row_lock           = $row_lock;
 	}
 
 	/**
@@ -147,7 +147,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( ! $this->session_service->is_woopay_enabled() ) {
+		if ( ! $this->woopay_eligibility->is_woopay_enabled() ) {
 			$this->remove_woopay_webhooks();
 			return;
 		}
@@ -161,7 +161,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	 * @since 11.2.0
 	 */
 	public function maybe_create_woopay_order_webhook(): void {
-		if ( $this->arbiter->is_builtin_owner() && $this->session_service->is_woopay_enabled() && current_user_can( 'manage_woocommerce' ) ) {
+		if ( $this->arbiter->is_builtin_owner() && $this->woopay_eligibility->is_woopay_enabled() && current_user_can( 'manage_woocommerce' ) ) {
 			$this->maybe_create_webhook();
 		}
 	}
@@ -266,7 +266,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 			return $payload;
 		}
 
-		$merchant_notification_url = $this->session_service->get_woopay_rest_url( 'merchant-notification' );
+		$merchant_notification_url = WooPaymentsWooPaySessionService::get_woopay_rest_url( 'merchant-notification' );
 		if ( 0 !== strpos( $webhook->get_delivery_url(), $merchant_notification_url ) ) {
 			return $payload;
 		}
@@ -347,7 +347,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 		$webhook->set_user_id( get_current_user_id() );
 		$webhook->set_topic( self::WEBHOOK_TOPIC );
 		$webhook->set_secret( wp_generate_password( 50, false ) );
-		$webhook->set_delivery_url( $this->session_service->get_woopay_rest_url( 'merchant-notification' ) );
+		$webhook->set_delivery_url( WooPaymentsWooPaySessionService::get_woopay_rest_url( 'merchant-notification' ) );
 		$webhook->set_status( 'active' );
 		$webhook->set_api_version( 'wp_api_v3' );
 
@@ -471,7 +471,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 				$wpdb->prepare(
 					"SELECT webhook_id FROM {$wpdb->prefix}wc_webhooks WHERE status = 'active' AND topic = %s AND delivery_url LIKE %s ORDER BY webhook_id",
 					self::WEBHOOK_TOPIC,
-					$wpdb->esc_like( $this->session_service->get_woopay_rest_url( 'merchant-notification' ) ) . '%'
+					$wpdb->esc_like( WooPaymentsWooPaySessionService::get_woopay_rest_url( 'merchant-notification' ) ) . '%'
 				)
 			)
 		);
