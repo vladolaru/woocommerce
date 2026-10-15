@@ -499,6 +499,42 @@ class WooPaymentsWooPayEligibilityTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Direct checkout resolves the available gateways only after the store and guest checks pass: $_dataName.
+	 * @dataProvider direct_checkout_gateway_lookup_provider
+	 *
+	 * The store-level check also runs from the draft-order hook at init, where resolving the available gateways is too
+	 * early, so the availability read comes last.
+	 *
+	 * @param array<string,mixed> $account_data     Cached account data.
+	 * @param string              $feature_option   The direct checkout feature option.
+	 * @param bool                $has_subscription Whether the guest's cart contains a subscription.
+	 * @param string              $guest_checkout   The guest checkout setting.
+	 * @param bool                $expected         Whether direct checkout runs.
+	 */
+	public function test_direct_checkout_resolves_no_available_gateways_until_the_earlier_checks_pass( array $account_data, string $feature_option, bool $has_subscription, string $guest_checkout, bool $expected ): void {
+		update_option( '_wcpay_feature_woopay_direct_checkout', $feature_option );
+		update_option( 'woocommerce_enable_guest_checkout', $guest_checkout );
+		$lookups = 0;
+		add_filter(
+			'woocommerce_available_payment_gateways',
+			static function ( $gateways ) use ( &$lookups ) {
+				++$lookups;
+
+				return $gateways;
+			}
+		);
+		$sut                             = $this->create_eligibility( array(), $account_data );
+		$sut->cart_contains_subscription = $has_subscription;
+
+		$this->assertSame( $expected, $sut->should_run_woopay_direct_checkout() );
+		if ( $expected ) {
+			$this->assertGreaterThan( 0, $lookups, 'The availability read runs once the earlier checks pass.' );
+		} else {
+			$this->assertSame( 0, $lookups, 'No available gateways are resolved while an earlier check fails.' );
+		}
+	}
+
+	/**
 	 * @testdox Checkout uses the Stripe platform account for WooPay only for an eligible account with WooPay on: $label.
 	 *
 	 * Client 11.1.0 should_use_stripe_platform_on_checkout_page() (class-wc-payment-gateway-wcpay.php:1173-1191) with
@@ -673,8 +709,25 @@ class WooPaymentsWooPayEligibilityTest extends WC_Unit_Test_Case {
 			'not a guest with a subscription in the cart'  => array( 'not a guest with a subscription in the cart', false, true, 'yes', true, false ),
 			'not a guest when guest checkout is off'       => array( 'not a guest when guest checkout is off', false, false, 'no', true, false ),
 			'a logged-in shopper with a subscription cart' => array( 'a logged-in shopper with a subscription cart', true, true, 'no', true, true ),
-			'a guest with a plain cart, WooPayments not offered' => array( 'a guest with a plain cart, WooPayments not offered', false, false, 'yes', false, false ),
-			'a logged-in shopper, WooPayments not offered' => array( 'a logged-in shopper, WooPayments not offered', true, false, 'yes', false, false ),
+			'not a guest with a plain cart when WooPayments is not offered' => array( 'not a guest with a plain cart when WooPayments is not offered', false, false, 'yes', false, false ),
+			'not a logged-in shopper when WooPayments is not offered' => array( 'not a logged-in shopper when WooPayments is not offered', true, false, 'yes', false, false ),
+		);
+	}
+
+	/**
+	 * Provide the cases where an earlier direct checkout check fails, and one where every check passes.
+	 *
+	 * @return array<string,array{array<string,mixed>,string,bool,string,bool}>
+	 */
+	public function direct_checkout_gateway_lookup_provider(): array {
+		$eligible = array( 'platform_direct_checkout_eligible' => true );
+
+		return array(
+			'the account is not eligible'      => array( array(), '1', false, 'yes', false ),
+			'the feature option is off'        => array( $eligible, '0', false, 'yes', false ),
+			'a guest with a subscription cart' => array( $eligible, '1', true, 'yes', false ),
+			'a guest with guest checkout off'  => array( $eligible, '1', false, 'no', false ),
+			'every check passes'               => array( $eligible, '1', false, 'yes', true ),
 		);
 	}
 }
