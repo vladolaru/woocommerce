@@ -66,21 +66,32 @@ class WooPaymentsWooPayEligibilityTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should load the WooPay save-user assets on checkout only while the base gateway is available: $label.
+	 * @testdox Should load the WooPay save-user assets on checkout only while the base gateway is available, checked before the visitor's country: $label.
 	 *
-	 * Client 11.1.0 loads its save-user script only when WooPayments is an available gateway
-	 * (includes/woopay-user/class-woopay-save-user.php:49-53).
+	 * Client 11.1.0 loads its save-user script only when WooPayments is an available gateway, and returns before
+	 * geolocating the visitor when it is not (includes/woopay-user/class-woopay-save-user.php:49-57). Live mode, where
+	 * the country check geolocates.
 	 *
-	 * @testWith ["base gateway available", true, true]
-	 *           ["base gateway filtered out", false, false]
+	 * @testWith ["base gateway available", true, true, 1]
+	 *           ["base gateway filtered out", false, false, 0]
 	 *
-	 * @param string $label             Case label.
-	 * @param bool   $gateway_available Whether the base gateway stays among the available gateways.
-	 * @param bool   $expected          Whether the save-user assets load.
+	 * @param string $label                   Case label.
+	 * @param bool   $gateway_available       Whether the base gateway stays among the available gateways.
+	 * @param bool   $expected                Whether the save-user assets load.
+	 * @param int    $expected_country_checks How many times the visitor's country is looked up.
 	 */
-	public function test_save_user_assets_require_the_available_base_gateway( string $label, bool $gateway_available, bool $expected ): void {
+	public function test_save_user_assets_require_the_available_base_gateway( string $label, bool $gateway_available, bool $expected, int $expected_country_checks ): void {
 		unset( $label );
 		add_filter( 'wcpay_force_network_saved_cards', '__return_true' );
+		$country_checks = 0;
+		add_filter(
+			'woocommerce_geolocate_ip',
+			static function () use ( &$country_checks ): string {
+				++$country_checks;
+
+				return 'US';
+			}
+		);
 		if ( ! $gateway_available ) {
 			add_filter(
 				'woocommerce_available_payment_gateways',
@@ -93,7 +104,8 @@ class WooPaymentsWooPayEligibilityTest extends WC_Unit_Test_Case {
 			);
 		}
 
-		$this->assertSame( $expected, $this->create_eligibility()->should_load_woopay_save_user_assets( 'checkout' ) );
+		$this->assertSame( $expected, $this->create_eligibility( array(), array(), null, null, null, false )->should_load_woopay_save_user_assets( 'checkout' ) );
+		$this->assertSame( $expected_country_checks, $country_checks, 'The gateway check runs before the country check.' );
 	}
 
 	/**
