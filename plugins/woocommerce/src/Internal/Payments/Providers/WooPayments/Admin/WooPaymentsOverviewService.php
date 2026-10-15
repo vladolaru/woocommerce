@@ -55,16 +55,16 @@ class WooPaymentsOverviewService {
 		$account_data = $this->account_service->get_stored_account_data();
 
 		return array(
-			'account'                               => $this->get_account_projection( $account_data ),
-			'account_status'                        => $this->get_account_status_projection( $account_data ),
+			'account'                               => $this->get_account_summary_fields( $account_data ),
+			'account_status'                        => $this->get_account_status_fields( $account_data ),
 			'show_update_details_task'              => $this->should_show_update_business_details_task( $account_data ),
 			'overview_tasks_visibility'             => $this->get_overview_tasks_visibility(),
 			'is_connection_success_modal_dismissed' => $this->is_truthy( get_option( 'wcpay_connection_success_modal_dismissed', false ) ),
 			'disputes_awaiting_response_count'      => $this->get_cached_disputes_awaiting_response_count(),
-			'account_details'                       => $this->get_account_details_projection( $account_data ),
+			'account_details'                       => $this->get_account_details( $account_data ),
 			'account_fees'                          => $this->get_active_account_fees( $account_data ),
-			'feature_flags'                         => $this->get_feature_flags_projection(),
-			'account_loans'                         => $this->get_account_loans_projection( $account_data ),
+			'feature_flags'                         => $this->get_feature_flags(),
+			'account_loans'                         => $this->get_capital_loans( $account_data ),
 			// Client 11.1.0 `class-wc-payments-admin.php:1062` localizes this option as `instantDepositsPreviouslyEligible`.
 			'instant_deposits_previously_eligible'  => $this->is_truthy( get_option( 'wcpay_instant_deposits_previously_eligible', false ) ),
 			// Client 11.1.0 `class-wc-payments-admin.php:1061` localizes this option as `isInstantDepositNoticeDismissed`.
@@ -119,7 +119,7 @@ class WooPaymentsOverviewService {
 	 * @param array<string,mixed> $account_data Preserved account data snapshot.
 	 * @return array<string,mixed>
 	 */
-	private function get_account_projection( array $account_data ): array {
+	private function get_account_summary_fields( array $account_data ): array {
 		$account_id = $this->get_account_id( $account_data );
 		$test_mode  = $this->account_service->is_test_mode_enabled();
 
@@ -148,7 +148,7 @@ class WooPaymentsOverviewService {
 	 * @param array<string,mixed> $account_data Cached account data.
 	 * @return array<string,mixed>
 	 */
-	private function get_account_status_projection( array $account_data ): array {
+	private function get_account_status_fields( array $account_data ): array {
 		return array(
 			'status'            => $this->get_account_status( $account_data ),
 			'current_deadline'  => $this->get_current_deadline( $account_data ),
@@ -160,7 +160,7 @@ class WooPaymentsOverviewService {
 			'details_submitted' => $this->is_truthy( $account_data['details_submitted'] ?? false ),
 			'payments_enabled'  => $this->is_truthy( $account_data['payments_enabled'] ?? false ),
 			'deposits_enabled'  => $this->are_deposits_enabled( $account_data ),
-			'deposits'          => $this->get_deposits_projection( $account_data ),
+			'deposits'          => $this->get_payouts_status( $account_data ),
 		);
 	}
 
@@ -173,7 +173,7 @@ class WooPaymentsOverviewService {
 	 * @param array<string,mixed> $account_data Cached account data.
 	 * @return array{restrictions:string,completed_waiting_period:bool,minimum_scheduled_deposit_amounts:array<string,int>}
 	 */
-	private function get_deposits_projection( array $account_data ): array {
+	private function get_payouts_status( array $account_data ): array {
 		$deposits        = is_array( $account_data['deposits'] ?? null ) ? $account_data['deposits'] : array();
 		$minimum_amounts = array();
 
@@ -420,7 +420,7 @@ class WooPaymentsOverviewService {
 	 * @param array<string,mixed> $account_data Preserved account data snapshot.
 	 * @return array<string,mixed>|null
 	 */
-	private function get_account_details_projection( array $account_data ): ?array {
+	private function get_account_details( array $account_data ): ?array {
 		$account_details = $account_data['account_details'] ?? null;
 
 		if (
@@ -497,7 +497,7 @@ class WooPaymentsOverviewService {
 	 *
 	 * @return array<string,bool>
 	 */
-	private function get_feature_flags_projection(): array {
+	private function get_feature_flags(): array {
 		return array(
 			'dispute_readiness_overview' => $this->is_truthy( get_option( '_wcpay_feature_dispute_readiness_overview', '1' ) ),
 		);
@@ -512,7 +512,7 @@ class WooPaymentsOverviewService {
 	 * @param array<string,mixed> $account_data Preserved account data snapshot.
 	 * @return array{has_active_loan:bool,loans:string[]}
 	 */
-	private function get_account_loans_projection( array $account_data ): array {
+	private function get_capital_loans( array $account_data ): array {
 		$account_loans = $account_data['capital'] ?? array();
 		$account_loans = is_array( $account_loans ) ? $account_loans : array();
 		$loans         = array();
