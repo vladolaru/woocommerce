@@ -5,8 +5,7 @@ namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPa
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsOnboardingRedirect;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -63,19 +62,15 @@ class WooPaymentsController {
 	 * Drop the native onboarding fields cache when WooCommerce updates.
 	 *
 	 * Client 11.1.0 drops it on its own update; native ships inside WooCommerce. Registered here because this
-	 * controller loads in every native state, and the account service resolves only when the update fires.
+	 * controller loads on every request; the adapter clears the cache only while the built-in WooPayments owns
+	 * payments.
 	 *
 	 * @internal
 	 *
 	 * @return void
 	 */
 	public function clear_native_onboarding_fields_cache(): void {
-		$container = wc_get_container();
-		if ( ! $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner() ) {
-			return;
-		}
-
-		$container->get( WooPaymentsAccountService::class )->clear_onboarding_fields_cache();
+		$this->get_onboarding_adapter()->clear_builtin_onboarding_fields_cache();
 	}
 
 	/**
@@ -94,16 +89,7 @@ class WooPaymentsController {
 			return;
 		}
 
-		$this->get_onboarding_redirect()->maybe_redirect();
-	}
-
-	/**
-	 * Resolve the shared onboarding redirect.
-	 *
-	 * @return WooPaymentsOnboardingRedirect
-	 */
-	protected function get_onboarding_redirect(): WooPaymentsOnboardingRedirect {
-		return wc_get_container()->get( WooPaymentsOnboardingRedirect::class );
+		$this->get_onboarding_adapter()->maybe_redirect_to_onboarding();
 	}
 
 	/**
@@ -119,7 +105,7 @@ class WooPaymentsController {
 			return;
 		}
 
-		$this->woopayments->maybe_activate_woopay_enabled_by_default();
+		$this->get_onboarding_adapter()->maybe_activate_woopay_enabled_by_default();
 	}
 
 	/**
@@ -139,6 +125,15 @@ class WooPaymentsController {
 			wp_safe_redirect( $redirect_url );
 			exit;
 		}
+	}
+
+	/**
+	 * Get the WooPayments onboarding adapter, the Payments settings' way into the WooPayments runtime.
+	 *
+	 * @return WooPaymentsOnboardingAdapter
+	 */
+	private function get_onboarding_adapter(): WooPaymentsOnboardingAdapter {
+		return wc_get_container()->get( WooPaymentsOnboardingAdapter::class );
 	}
 
 	/**

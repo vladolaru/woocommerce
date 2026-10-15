@@ -145,6 +145,44 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should leave the settings notice out when $label.
+	 * @dataProvider provide_states_without_a_settings_notice
+	 *
+	 * @param string $label         The state.
+	 * @param bool   $logged_in     Whether a store manager is logged in.
+	 * @param bool   $enabled       Whether the gateway is enabled.
+	 * @param int    $notice_reads  How many times the notice is read.
+	 */
+	public function test_get_details_leaves_the_settings_notice_out( string $label, bool $logged_in, bool $enabled, int $notice_reads ): void {
+		unset( $label );
+		wp_set_current_user( $logged_in ? self::factory()->user->create( array( 'role' => 'administrator' ) ) : 0 );
+		$gateway = new FakePaymentGateway(
+			'woocommerce_payments',
+			array(
+				'enabled'           => $enabled,
+				'account_connected' => true,
+			)
+		);
+		$service = $this->createMock( WooPaymentsAdminNoticeService::class );
+		$service->expects( $this->exactly( $notice_reads ) )->method( 'get_notice_for_current_user' )->willReturn( array( 'id' => 'test_to_live' ) );
+		$this->set_notice_service_resolver( static fn() => $service );
+
+		$this->assertArrayNotHasKey( '_admin_notice', $this->sut->get_details( $gateway ) );
+	}
+
+	/**
+	 * States in which the provider details carry no settings notice.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:bool,3:int}>
+	 */
+	public function provide_states_without_a_settings_notice(): array {
+		return array(
+			'no user is logged in'    => array( 'no user is logged in', false, true, 0 ),
+			'the gateway is disabled' => array( 'the gateway is disabled', true, false, 1 ),
+		);
+	}
+
+	/**
 	 * @testdox Should clean the obsolete inbox note for a disconnected provider without attaching a settings notice.
 	 */
 	public function test_get_details_cleans_legacy_note_for_disconnected_account(): void {
@@ -181,19 +219,20 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Set a test notice resolver through the optional collaborator slot.
+	 * Give the provider an adapter whose settings notice comes from the test's notice service.
 	 *
-	 * @param callable $notice_resolver The test resolver.
+	 * @param callable $notice_resolver Returns the test's notice service.
 	 */
 	private function set_notice_service_resolver( callable $notice_resolver ): void {
 		$legacy_runtime = new WooPaymentsLegacyRuntime();
 		$legacy_runtime->init( $this->mockable_proxy );
+		$adapter = $this->createMock( WooPaymentsOnboardingAdapter::class );
+		$adapter->method( 'get_settings_notice_for_current_user' )->willReturnCallback( static fn() => $notice_resolver()->get_notice_for_current_user() );
 		$this->sut->set_admin_runtime_collaborators(
 			$legacy_runtime,
 			fn(): WooPaymentsRestController => $this->mock_rest_controller,
 			fn(): WooPaymentsService => wc_get_container()->get( WooPaymentsService::class ),
-			null,
-			$notice_resolver
+			$adapter
 		);
 	}
 

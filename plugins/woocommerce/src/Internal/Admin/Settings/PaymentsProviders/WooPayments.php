@@ -16,7 +16,6 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Logging\SafeGlobalFunctionProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Throwable;
 use WC_Abstract_Order;
@@ -62,13 +61,6 @@ class WooPayments extends PaymentGateway {
 	private $service_resolver = null;
 
 	/**
-	 * The lazy settings notice service resolver.
-	 *
-	 * @var callable|null
-	 */
-	private $admin_notice_service_resolver = null;
-
-	/**
 	 * Set the admin runtime collaborators.
 	 *
 	 * @since 11.2.0
@@ -77,14 +69,12 @@ class WooPayments extends PaymentGateway {
 	 * @param callable                          $rest_controller_resolver The lazy WooPayments REST controller resolver.
 	 * @param callable                          $service_resolver         The lazy WooPayments service resolver.
 	 * @param WooPaymentsOnboardingAdapter|null $onboarding_adapter       Optional WooPayments onboarding adapter.
-	 * @param callable|null                     $admin_notice_service_resolver Optional settings notice service resolver.
 	 */
-	public function set_admin_runtime_collaborators( WooPaymentsLegacyRuntime $legacy_runtime, callable $rest_controller_resolver, callable $service_resolver, ?WooPaymentsOnboardingAdapter $onboarding_adapter = null, ?callable $admin_notice_service_resolver = null ): void {
-		$this->legacy_runtime                = $legacy_runtime;
-		$this->rest_controller_resolver      = $rest_controller_resolver;
-		$this->service_resolver              = $service_resolver;
-		$this->onboarding_adapter            = $onboarding_adapter;
-		$this->admin_notice_service_resolver = $admin_notice_service_resolver;
+	public function set_admin_runtime_collaborators( WooPaymentsLegacyRuntime $legacy_runtime, callable $rest_controller_resolver, callable $service_resolver, ?WooPaymentsOnboardingAdapter $onboarding_adapter = null ): void {
+		$this->legacy_runtime           = $legacy_runtime;
+		$this->rest_controller_resolver = $rest_controller_resolver;
+		$this->service_resolver         = $service_resolver;
+		$this->onboarding_adapter       = $onboarding_adapter;
 	}
 
 	/**
@@ -239,13 +229,10 @@ class WooPayments extends PaymentGateway {
 			}
 		}
 
-		if ( null !== $this->admin_notice_service_resolver && 0 < get_current_user_id() ) {
-			$notice_service = call_user_func( $this->admin_notice_service_resolver );
-			if ( $notice_service instanceof WooPaymentsAdminNoticeService ) {
-				$notice = $notice_service->get_notice_for_current_user();
-				if ( ! empty( $details['state']['enabled'] ) && ! empty( $details['state']['account_connected'] ) && null !== $notice ) {
-					$details['_admin_notice'] = $notice;
-				}
+		if ( null !== $this->onboarding_adapter && 0 < get_current_user_id() ) {
+			$notice = $this->onboarding_adapter->get_settings_notice_for_current_user();
+			if ( ! empty( $details['state']['enabled'] ) && ! empty( $details['state']['account_connected'] ) && null !== $notice ) {
+				$details['_admin_notice'] = $notice;
 			}
 		}
 

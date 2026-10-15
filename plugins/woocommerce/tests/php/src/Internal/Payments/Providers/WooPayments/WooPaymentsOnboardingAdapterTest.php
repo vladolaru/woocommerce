@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsOnboardingRedirect;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
@@ -14,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -547,6 +549,50 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		$reflection->setAccessible( true );
 		// Without a stored answer the landing page resolves no API client.
 		$this->assertSame( $asked, null !== $reflection->getValue( $this->adapter ) );
+	}
+
+	/**
+	 * @testdox The WooCommerce update clears the onboarding fields cache only while the built-in WooPayments owns payments.
+	 *
+	 * @testWith [true, 1]
+	 *           [false, 0]
+	 *
+	 * @param bool $builtin_owner Whether the built-in WooPayments owns payments.
+	 * @param int  $clears        Expected cache clears.
+	 */
+	public function test_onboarding_fields_cache_is_cleared_only_for_the_builtin_owner( bool $builtin_owner, int $clears ): void {
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $builtin_owner ? '__return_true' : '__return_false' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		$account_service = $this->createMock( WooPaymentsAccountService::class );
+		$account_service->expects( $this->exactly( $clears ) )->method( 'clear_onboarding_fields_cache' );
+		$this->set_adapter_property( 'account_service', $account_service );
+
+		$this->adapter->clear_builtin_onboarding_fields_cache();
+
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+	}
+
+	/**
+	 * @testdox The onboarding redirect request reaches the container's onboarding redirect.
+	 */
+	public function test_onboarding_redirect_request_reaches_the_onboarding_redirect(): void {
+		$redirect = $this->createMock( WooPaymentsOnboardingRedirect::class );
+		$redirect->expects( $this->once() )->method( 'maybe_redirect' );
+		wc_get_container()->replace( WooPaymentsOnboardingRedirect::class, $redirect );
+
+		$this->adapter->maybe_redirect_to_onboarding();
+	}
+
+	/**
+	 * @testdox The settings notice is the notice service's answer for the current user.
+	 */
+	public function test_settings_notice_comes_from_the_notice_service(): void {
+		$notice  = array( 'id' => 'test_to_live' );
+		$service = $this->createMock( WooPaymentsAdminNoticeService::class );
+		$service->expects( $this->once() )->method( 'get_notice_for_current_user' )->willReturn( $notice );
+		wc_get_container()->replace( WooPaymentsAdminNoticeService::class, $service );
+
+		$this->assertSame( $notice, $this->adapter->get_settings_notice_for_current_user() );
 	}
 
 	/**

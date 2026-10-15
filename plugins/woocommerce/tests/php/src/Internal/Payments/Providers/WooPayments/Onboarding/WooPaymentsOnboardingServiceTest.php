@@ -746,8 +746,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			$session_extras
 		);
 		$recorder   = $this->record_wcpay_tracks_event_names();
-		$controller = new WooPaymentsController();
-		$controller->init( $this->getMockBuilder( Payments::class )->getMock(), $this->sut );
+		$controller = $this->create_trunk_controller();
 
 		$this->sut->get_onboarding_kyc_session( 'US' );
 		$this->assertSame( 'yes' === $landed_woopay, (bool) get_transient( self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT ), 'Session creation stores the platform answer.' );
@@ -775,8 +774,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	public function test_platform_woopay_default_leaves_woopay_off_when_link_is_enabled(): void {
 		$this->arrange_native_finalize_projection( array( $this->get_native_finalize_projection_account() ), array( 'card' => true ) );
 		$recorder   = $this->record_wcpay_tracks_event_names();
-		$controller = new WooPaymentsController();
-		$controller->init( $this->getMockBuilder( Payments::class )->getMock(), $this->sut );
+		$controller = $this->create_trunk_controller();
 		update_option(
 			WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
 			array(
@@ -3419,6 +3417,21 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 				false
 			);
 		}
+	}
+
+	/**
+	 * Create trunk's WooPayments controller over this test's settings service, reaching this test's adapter.
+	 *
+	 * @return WooPaymentsController
+	 */
+	private function create_trunk_controller(): WooPaymentsController {
+		$reflection = new \ReflectionProperty( WooPaymentsService::class, 'onboarding_adapter' );
+		$reflection->setAccessible( true );
+		wc_get_container()->replace( WooPaymentsOnboardingAdapter::class, $reflection->getValue( $this->sut ) );
+		$controller = new WooPaymentsController();
+		$controller->init( $this->getMockBuilder( Payments::class )->getMock(), $this->sut );
+
+		return $controller;
 	}
 
 	/**

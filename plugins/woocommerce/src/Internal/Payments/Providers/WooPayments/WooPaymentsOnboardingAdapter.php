@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsOnboardingRedirect;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Exception;
@@ -364,6 +365,38 @@ class WooPaymentsOnboardingAdapter {
 	 */
 	public function get_overview_page_url(): string {
 		return Utils::wc_payments_settings_url( self::OVERVIEW_PATH );
+	}
+
+	/**
+	 * Send a request for a guarded WooPayments admin page to onboarding when the store has no working connection and
+	 * valid account, deciding once per request.
+	 *
+	 * @return void
+	 */
+	public function maybe_redirect_to_onboarding(): void {
+		wc_get_container()->get( WooPaymentsOnboardingRedirect::class )->maybe_redirect();
+	}
+
+	/**
+	 * Drop the onboarding fields cache while the built-in WooPayments owns payments; the extension keeps its own.
+	 *
+	 * @return void
+	 */
+	public function clear_builtin_onboarding_fields_cache(): void {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
+			return;
+		}
+
+		$this->get_native_account_service()->clear_onboarding_fields_cache();
+	}
+
+	/**
+	 * Get the WooPayments settings notice for the current user, if any.
+	 *
+	 * @return array<string,mixed>|null
+	 */
+	public function get_settings_notice_for_current_user(): ?array {
+		return wc_get_container()->get( WooPaymentsAdminNoticeService::class )->get_notice_for_current_user();
 	}
 
 	/**

@@ -2996,17 +2996,6 @@ class WooPaymentsService {
 	}
 
 	/**
-	 * Turn WooPay on when the platform asked for it during onboarding, like client 11.1.0 WC_Payments_Account::maybe_activate_woopay().
-	 *
-	 * Runs on the admin page the merchant lands on after KYC. Link wins, so WooPay stays off when Link is enabled.
-	 *
-	 * @since 11.2.0
-	 */
-	public function maybe_activate_woopay_enabled_by_default(): void {
-		$this->get_onboarding_adapter()->maybe_activate_woopay_enabled_by_default();
-	}
-
-	/**
 	 * Get the onboarding fields data for the KYC business verification.
 	 *
 	 * @param string $location The location for which we are onboarding.
