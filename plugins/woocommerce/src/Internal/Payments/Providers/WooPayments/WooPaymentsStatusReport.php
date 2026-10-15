@@ -36,12 +36,12 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 */
 	private const NATIVE_RUNTIME_FIELDS = array(
 		'runtime_owner'                => 'Runtime owner',
-		'native_enabled'               => 'Native runtime enabled',
-		'native_enabled_filter'        => 'Native enabled filter',
-		'native_enabled_note'          => 'Native enabled note',
+		'native_enabled'               => 'Built-in WooPayments enabled',
+		'native_enabled_filter'        => 'Built-in WooPayments filter',
+		'native_enabled_note'          => 'Built-in WooPayments enabled note',
 		'preflight_failures'           => 'Cutover preflight failures',
 		'multi_currency_rate_provider' => 'WooPayments rate provider',
-		'last_webhook_fetch'           => 'Last webhook fetch',
+		'last_webhook_fetch'           => 'Last fetch of failed webhook events',
 	);
 
 	private const SITE_HEALTH_TEST_ID = 'woocommerce_woopayments_native_cutover';
@@ -167,7 +167,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		$tests['async'] = $tests['async'] ?? array();
 
 		$tests['async'][ self::SITE_HEALTH_TEST_ID ] = array(
-			'label'             => __( 'WooPayments native cutover readiness', 'woocommerce' ),
+			'label'             => __( 'Ready to switch to the built-in WooPayments', 'woocommerce' ),
 			'test'              => self::SITE_HEALTH_TEST_ACTION,
 			'async_direct_test' => array( $this, 'run_cutover_site_health_test' ),
 		);
@@ -200,23 +200,23 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 
 		if ( $is_ready ) {
 			$description = sprintf(
-				/* translators: %s: payments runtime owner. */
-				__( 'Runtime owner: %s. Cutover preflight has no failures.', 'woocommerce' ),
-				$runtime_owner
+				/* translators: %s: who runs WooPayments: the WooPayments extension, the built-in WooPayments, or neither. */
+				__( 'WooPayments runs as %s. The switch checks found no failures.', 'woocommerce' ),
+				$this->describe_runtime_owner( $runtime_owner )
 			);
 		} else {
 			$description = sprintf(
-				/* translators: 1: payments runtime owner, 2: comma-separated preflight failure codes. */
-				__( 'Runtime owner: %1$s. Preflight failures: %2$s.', 'woocommerce' ),
-				$runtime_owner,
+				/* translators: 1: who runs WooPayments: the WooPayments extension, the built-in WooPayments, or neither, 2: comma-separated codes of the failed switch checks. */
+				__( 'WooPayments runs as %1$s. Failed switch checks: %2$s.', 'woocommerce' ),
+				$this->describe_runtime_owner( $runtime_owner ),
 				implode( ', ', $failures )
 			);
 		}
 
 		return array(
 			'label'       => $is_ready
-				? __( 'WooPayments native cutover is ready', 'woocommerce' )
-				: __( 'WooPayments native cutover is not ready', 'woocommerce' ),
+				? __( 'The switch to the built-in WooPayments is ready', 'woocommerce' )
+				: __( 'The switch to the built-in WooPayments is not ready', 'woocommerce' ),
 			'status'      => $is_ready ? 'good' : 'recommended',
 			'badge'       => array(
 				'label' => __( 'Performance', 'woocommerce' ),
@@ -286,11 +286,11 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 				'value' => (string) $data['runtime_owner'],
 			),
 			'native_enabled'               => array(
-				'label' => __( 'Native runtime enabled', 'woocommerce' ),
+				'label' => __( 'Built-in WooPayments enabled', 'woocommerce' ),
 				'value' => $this->format_enabled( (bool) $data['builtin_enabled'] ),
 			),
 			'native_enabled_filter'        => array(
-				'label' => __( 'Native enabled filter', 'woocommerce' ),
+				'label' => __( 'Built-in WooPayments filter', 'woocommerce' ),
 				'value' => sprintf(
 					/* translators: 1: filter name, 2: resolution source. */
 					__( '%1$s (source: %2$s)', 'woocommerce' ),
@@ -299,7 +299,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 				),
 			),
 			'native_enabled_note'          => array(
-				'label' => __( 'Native enabled note', 'woocommerce' ),
+				'label' => __( 'Built-in WooPayments enabled note', 'woocommerce' ),
 				'value' => (string) $data['builtin_enabled_note'],
 			),
 			'preflight_failures'           => array(
@@ -348,7 +348,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 				),
 			),
 			'last_webhook_fetch'           => array(
-				'label' => __( 'Last webhook fetch', 'woocommerce' ),
+				'label' => __( 'Last fetch of failed webhook events', 'woocommerce' ),
 				'value' => $this->format_timestamp( (int) $data['last_webhook_fetch'] ),
 			),
 		);
@@ -368,7 +368,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		if ( ! $this->arbiter->is_extension_owner() ) {
 			$this->render_status_table( 'WooPayments', $this->get_client_status_rows() );
 		}
-		$this->render_status_table( 'WooPayments native runtime', $native_rows );
+		$this->render_status_table( 'Built-in WooPayments', $native_rows );
 	}
 
 	/**
@@ -386,7 +386,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 				'Version',
 				__( 'Version', 'woocommerce' ),
 				/* translators: %s: WooPayments */
-				sprintf( __( 'The current version of the %s extension.', 'woocommerce' ), 'WooPayments' ),
+				sprintf( __( 'The %s version this store reports to the WooPayments platform.', 'woocommerce' ), 'WooPayments' ),
 				WooPaymentsClientVersion::get_reported_version()
 			),
 		);
@@ -620,7 +620,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		}
 
 		$info['woocommerce_native_payments'] = array(
-			'label'  => __( 'WooPayments native payments', 'woocommerce' ),
+			'label'  => __( 'Built-in WooPayments', 'woocommerce' ),
 			'fields' => $this->get_status_fields(),
 		);
 
@@ -925,7 +925,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	private function get_native_enabled_note(): string {
 		return sprintf(
 			/* translators: 1: option name, 2: filter name. */
-			__( 'The %1$s option disables native runtime by default when set to true. The %2$s filter has final authority and is resolved while WooCommerce is being loaded. Use a mu-plugin or earlier bootstrap code to override this value for all native registrations.', 'woocommerce' ),
+			__( 'The %1$s option turns off the built-in WooPayments by default when set to true. The %2$s filter has final authority and is resolved while WooCommerce is being loaded. Use a mu-plugin or earlier bootstrap code to override this value.', 'woocommerce' ),
 			WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION,
 			WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER
 		);
@@ -995,6 +995,23 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 */
 	private function format_yes_no( bool $value ): string {
 		return $value ? __( 'Yes', 'woocommerce' ) : __( 'No', 'woocommerce' );
+	}
+
+	/**
+	 * Say who runs WooPayments, in words, for the Site Health check.
+	 *
+	 * @param string $runtime_owner Runtime owner value.
+	 * @return string
+	 */
+	private function describe_runtime_owner( string $runtime_owner ): string {
+		if ( WooPaymentsRuntimeArbiter::OWNER_EXTENSION === $runtime_owner ) {
+			return __( 'the WooPayments extension', 'woocommerce' );
+		}
+		if ( WooPaymentsRuntimeArbiter::OWNER_BUILTIN === $runtime_owner ) {
+			return __( 'the built-in WooPayments', 'woocommerce' );
+		}
+
+		return __( 'neither', 'woocommerce' );
 	}
 
 	/**
