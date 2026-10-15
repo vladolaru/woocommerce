@@ -12,12 +12,11 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 /**
  * Registers the user meta that keeps each admin list's hidden columns.
  *
- * The keys are the client's (WC_Payments::add_user_data_fields()), so a choice made under the
- * plugin carries over. The admin reads them from the preloaded current user and writes them
- * through the users REST route, so this loads on admin and REST requests only.
+ * The keys are the WooPayments extension's, so a choice made while it ran carries over. The admin reads them from the
+ * preloaded current user and writes them through the users REST route, so this loads on admin and REST requests only.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsUserPreferenceFields implements RegisterHooksInterface {
 

@@ -248,7 +248,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Schedule WooPayments recurring operational actions.
+	 * Schedule the store setup sync every six hours.
 	 *
 	 * @internal
 	 */
@@ -628,12 +628,11 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 	 * Log a failed platform report without fataling the request.
 	 *
 	 * The exception's message is left out: the platform's errors carry its text. The class, code, trace and, for a
-	 * platform error, its status and code are logged instead.
+	 * platform error, its status and code are logged instead, whatever the logging setting.
 	 *
 	 * @param string              $message   Log message.
 	 * @param Throwable           $exception Exception thrown.
-	 * @param array<string,mixed> $context   Optional correlation context (e.g. order_id, intent_id, action)
-	 *                                       merged into the log entry alongside the source.
+	 * @param array<string,mixed> $context   Context added to the line, such as the Action Scheduler hook.
 	 */
 	private function log_exception( string $message, Throwable $exception, array $context = array() ): void {
 		wc_get_logger()->error(

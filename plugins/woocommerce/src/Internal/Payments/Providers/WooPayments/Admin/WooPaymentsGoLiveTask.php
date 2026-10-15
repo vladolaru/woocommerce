@@ -14,20 +14,21 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 defined( 'ABSPATH' ) || exit;
 
 /**
- * The WC Home "Things to do next" task that asks a connected test-mode WooPayments store to activate live payments.
+ * Asks a connected WooPayments store that onboarded in test mode to activate live payments, in the WC Home "Things to
+ * do next" list.
  *
  * Ports client 11.1.0 `getGoLiveTask()` (`client/overview/task-list/tasks/go-live-task.tsx`), which the client adds only
  * to the WC Home list through `woocommerce_admin_onboarding_task_list` (`client/index.js:391-405`, `showGoLiveTask: true`)
  * when `isAccountConnected && testModeOnboarding` (`tasks.tsx:76-79`). A click opens the live payments modal; the
- * `woopayments/home-tasks/go-live-task.tsx` fill in the WC admin client handles it.
+ * `woopayments/home-tasks/go-live-task.tsx` fill in WooCommerce's admin app handles it.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsGoLiveTask extends Task {
 
 	/**
-	 * Task ID, shared with the client.
+	 * Task ID, the WooPayments extension's, so WC Home keeps one task across the switch.
 	 */
 	public const ID = 'go-live-payments';
 
@@ -88,8 +89,8 @@ class WooPaymentsGoLiveTask extends Task {
 	/**
 	 * The task shows while the store has a cached account and onboards in test mode.
 	 *
-	 * The client reads `has_account_data()` (a cached account ID, no refresh) and `is_test_mode_onboarding()`
-	 * (`class-wc-payments-admin.php:979,1027`).
+	 * The account ID is read from the cache without a refresh, as client 11.1.0 reads `has_account_data()` and
+	 * `is_test_mode_onboarding()` (`includes/admin/class-wc-payments-admin.php:979,1027`).
 	 *
 	 * @return bool
 	 */
@@ -106,7 +107,7 @@ class WooPaymentsGoLiveTask extends Task {
 	}
 
 	/**
-	 * The client task is never complete and cannot be dismissed or snoozed.
+	 * Never complete; it shows until the store leaves test-mode onboarding, and cannot be dismissed or snoozed.
 	 *
 	 * @return bool
 	 */

@@ -682,12 +682,11 @@ class WooPaymentsAccountMilestonesController implements RegisterHooksInterface {
 	 * Log a failed Instant Deposits note job without fataling the request.
 	 *
 	 * The exception's message is left out. The class, code, trace and, for a platform error, its status and code are
-	 * logged instead.
+	 * logged instead, whatever the logging setting.
 	 *
 	 * @param string              $message   Log message.
 	 * @param Throwable           $exception Exception thrown.
-	 * @param array<string,mixed> $context   Optional correlation context (e.g. order_id, intent_id, action)
-	 *                                       merged into the log entry alongside the source.
+	 * @param array<string,mixed> $context   Context added to the line, such as the Action Scheduler hook.
 	 */
 	private function log_exception( string $message, Throwable $exception, array $context = array() ): void {
 		wc_get_logger()->error(

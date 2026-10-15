@@ -17,14 +17,15 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPa
 defined( 'ABSPATH' ) || exit;
 
 /**
- * The WC Home "Things to do next" task that asks a restricted WooPayments account to update its business details.
+ * Asks a restricted WooPayments account to update its business details, or to finish setup when it never submitted
+ * them, in the WC Home "Things to do next" list.
  *
  * Ports client 11.1.0: `get_should_show_update_business_details_task()` (`class-wc-payments-admin.php:1222-1231`) decides
  * visibility, and `getUpdateBusinessDetailsTask()` (`client/overview/task-list/tasks/update-business-details-task.tsx`),
  * added to the extended list through `woocommerce_admin_onboarding_task_list` (`client/index.js:391-405`), gives the copy.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsUpdateBusinessDetailsTask extends Task {
 
@@ -93,7 +94,7 @@ class WooPaymentsUpdateBusinessDetailsTask extends Task {
 	/**
 	 * Content.
 	 *
-	 * The client maps known Stripe error codes to its own sentences; native uses the error's reason, the client's fallback.
+	 * A single requirement error shows Stripe's reason for it, or its code when Stripe gives none.
 	 *
 	 * @return string
 	 */
@@ -151,8 +152,8 @@ class WooPaymentsUpdateBusinessDetailsTask extends Task {
 	/**
 	 * Action URL.
 	 *
-	 * The client opens a modal for several errors and the Stripe dashboard in a new tab; a Home task can only
-	 * navigate, so several errors go to Overview, whose task opens the same modal, and the dashboard opens in place.
+	 * A Home task can only navigate: several errors go to the Overview page, whose task opens the errors modal, and the
+	 * Stripe dashboard opens in the same tab.
 	 *
 	 * @return string
 	 */
@@ -171,12 +172,12 @@ class WooPaymentsUpdateBusinessDetailsTask extends Task {
 			);
 		}
 
-		// Test-drive accounts have no dashboard access (client `get_account_status_data()` `accountLink`).
+		// Test-drive accounts have no Stripe dashboard access, so the task opens the Overview page.
 		if ( ! empty( $this->get_account_data()['is_test_drive'] ) ) {
 			return Utils::wc_payments_settings_url( WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH );
 		}
 
-		// The login link that `LegacyAdminLinkHandler::handle_login_request()` serves, with the client's attribution args.
+		// The Stripe dashboard login link `LegacyAdminLinkHandler::handle_login_request()` serves, with its `from` and `source` args.
 		return Utils::wc_payments_settings_url(
 			WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH,
 			array(
@@ -199,7 +200,7 @@ class WooPaymentsUpdateBusinessDetailsTask extends Task {
 		}
 
 		$account = $this->get_account_data();
-		// Client `get_account_status_data()` reports an error, and so no status, without these fields.
+		// Without these fields the account status is unknown, so the task stays hidden.
 		if ( ! isset( $account['status'], $account['payments_enabled'] ) ) {
 			return false;
 		}
@@ -211,7 +212,7 @@ class WooPaymentsUpdateBusinessDetailsTask extends Task {
 	}
 
 	/**
-	 * The task stays until the account is no longer restricted; the client never lets it be dismissed.
+	 * Complete once the account status is `complete` or `enabled`; the task cannot be dismissed.
 	 *
 	 * @return bool
 	 */
@@ -244,7 +245,7 @@ class WooPaymentsUpdateBusinessDetailsTask extends Task {
 	}
 
 	/**
-	 * Tell whether the account submitted its details; the client assumes it did when the field is missing.
+	 * Tell whether the account submitted its details; a missing field counts as submitted.
 	 *
 	 * @return bool
 	 */
@@ -264,7 +265,7 @@ class WooPaymentsUpdateBusinessDetailsTask extends Task {
 	}
 
 	/**
-	 * Get the unique requirement error messages the client would show.
+	 * Get the unique requirement error messages, leaving out the codes merchants are never shown.
 	 *
 	 * @return array<int,string>
 	 */

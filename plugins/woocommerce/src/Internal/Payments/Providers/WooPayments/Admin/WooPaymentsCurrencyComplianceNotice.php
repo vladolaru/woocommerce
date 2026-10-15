@@ -11,10 +11,11 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 
 /**
- * Admin notices for store currency configurations the provider rejects.
+ * Warns in WP admin when WooPayments cannot charge in the store currency: the account's country does not support it,
+ * or Icelandic króna is set with price decimals.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsCurrencyComplianceNotice implements RegisterHooksInterface {
 
@@ -84,7 +85,7 @@ class WooPaymentsCurrencyComplianceNotice implements RegisterHooksInterface {
 	 * The provider treats ISK as a two-decimal minor-unit currency that only
 	 * accepts whole-krona amounts, so a store left at WooCommerce's default
 	 * two price decimals mints amounts the provider rejects on every charge.
-	 * Like the client, the bold label carries no currency code: the sentence names the currency.
+	 * The bold label carries no currency code: the sentence names the currency.
 	 *
 	 * @internal
 	 */

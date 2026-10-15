@@ -17,13 +17,14 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 
 /**
- * Inbox note telling the merchant their WooPayments Capital loan was paid out.
+ * Adds the inbox note telling the merchant their WooPayments Capital loan was paid out, on each account refresh, and
+ * deletes it once no loan is active.
  *
  * Ports client 11.1.0 `includes/notes/class-wc-payments-notes-loan-approved.php` and its account-refresh handler
  * `WC_Payments_Account::handle_loan_approved_inbox_note()` (`includes/class-wc-payments-account.php:135,2778-2805`).
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsLoanApprovedNote implements RegisterHooksInterface {
 
@@ -139,16 +140,15 @@ class WooPaymentsLoanApprovedNote implements RegisterHooksInterface {
 	/**
 	 * Build the note.
 	 *
-	 * The client formats the amount through a throwaway order it creates with `wc_create_order()` on every build
-	 * (client `get_note()` lines 42-44), leaving an empty pending order behind; native passes the loan currency to the
-	 * explicit-price formatter instead, which yields the same text without writing an order.
+	 * The loan currency goes straight to the explicit-price formatter, so no order is created to carry it.
 	 *
 	 * @param array<string,mixed> $details Validated loan details with an upper-case currency.
 	 * @return Note
 	 */
 	private function get_note( array $details ): Note {
 		$currency = (string) $details['currency'];
-		// The client calls interpret_stripe_amount() without a currency, so it always divides by 100 (client line 53).
+		// Divided by 100 whatever the currency, as client 11.1.0 does (`includes/notes/class-wc-payments-notes-loan-approved.php:56`,
+		// `interpret_stripe_amount()` defaults to `usd`).
 		$price = WooPaymentsCurrencyUtils::format_price_in_currency(
 			WooPaymentsCurrencyUtils::amount_from_minor_units( (int) $details['advance_amount'], 'usd' ),
 			$currency
@@ -180,7 +180,8 @@ class WooPaymentsLoanApprovedNote implements RegisterHooksInterface {
 		$note->add_action(
 			self::NOTE_NAME,
 			__( 'View loan details', 'woocommerce' ),
-			// A stored note outlives a switch back to the plugin, so it keeps the client route; native redirects it.
+			// The WooPayments extension's path, so a stored note still opens its loans page after a switch back; the built-in
+			// WooPayments redirects it.
 			WooPaymentsAdminUrl::get_wc_admin_path_url( '/payments/loans' ),
 			Note::E_WC_ADMIN_NOTE_UNACTIONED,
 			true

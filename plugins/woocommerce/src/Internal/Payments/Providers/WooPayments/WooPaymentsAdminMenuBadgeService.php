@@ -13,10 +13,11 @@ use Throwable;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Provides source-backed WooPayments admin menu badge counts.
+ * Reads, through the database cache, the counts the WooPayments admin menu badges show (disputes awaiting a response,
+ * uncaptured authorizations) and the disputes the WC Home disputes task lists.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsAdminMenuBadgeService {
 
@@ -28,7 +29,7 @@ class WooPaymentsAdminMenuBadgeService {
 	private WooPaymentsAccountService $account_service;
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */

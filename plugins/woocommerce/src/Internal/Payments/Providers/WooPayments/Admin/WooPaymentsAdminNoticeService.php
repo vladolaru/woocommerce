@@ -19,7 +19,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
 
 /**
- * Current-user notice state for the WooPayments settings page.
+ * Picks the notice the WooPayments settings page shows the current user (go live after test mode, the first-sale nudges
+ * after KYC, or the follow-up to a first sale) and records the user's actions on it.
+ *
+ * It answers nothing while the WooPayments extension owns payments.
  *
  * @since 11.2.0
  * @internal
@@ -51,7 +54,7 @@ class WooPaymentsAdminNoticeService {
 	private const POST_KYC_ACTIVATION_STAGES = array( 7, 14, 30 );
 
 	/**
-	 * Duplicate inbox note previously produced for the same journey.
+	 * Name of a test-to-live inbox note no current code adds; the notice refresh deletes it.
 	 */
 	private const TEST_TO_LIVE_NOTE_NAME = 'wc-payments-notes-test-to-live';
 
@@ -65,7 +68,8 @@ class WooPaymentsAdminNoticeService {
 	);
 
 	/**
-	 * Preserved client user-meta keys for non-staged notices.
+	 * The WooPayments extension's user meta keys for the test-to-live and one-and-done notices, so a dismissal or snooze
+	 * carries over.
 	 */
 	private const USER_META_KEYS = array(
 		'test_to_live' => array(
@@ -320,7 +324,7 @@ class WooPaymentsAdminNoticeService {
 	/**
 	 * Query a bounded set of paid live WooPayments order IDs.
 	 *
-	 * Plugin 11.1.0 one-and-done notice Q1 matches `_wcpay_mode = Order_Mode::PRODUCTION` (admin/attach-rate/class-wc-payments-one-and-done-notice.php:169-180).
+	 * Client 11.1.0 one-and-done notice Q1 matches `_wcpay_mode = Order_Mode::PRODUCTION` (includes/admin/attach-rate/class-wc-payments-one-and-done-notice.php:166-180).
 	 *
 	 * @param int $limit Maximum IDs to return.
 	 * @return int[]
@@ -412,7 +416,7 @@ class WooPaymentsAdminNoticeService {
 	/**
 	 * Tell whether the store has a live WooPayments sale.
 	 *
-	 * The account milestones controller is looked up here, so requests that never reach the post-KYC check do not build it.
+	 * Read through the account milestones controller, which keeps the live-sale flag.
 	 *
 	 * @return bool
 	 */
@@ -450,7 +454,7 @@ class WooPaymentsAdminNoticeService {
 			return true;
 		}
 
-		// A CTA click also dismisses the notice, like the client's record_dismissal_and_redirect().
+		// A CTA click also dismisses the notice.
 		$marker   = 'cta' === $action ? 'dismiss' : $action;
 		$meta_key = 'post_kyc_activation' === $notice_id
 			? sprintf( 'wcpay_post_kyc_activation_%d_%s', $stage, 'dismiss' === $marker ? 'dismissed' : 'shown' )

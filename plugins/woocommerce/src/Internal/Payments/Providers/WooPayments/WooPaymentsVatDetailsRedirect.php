@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  * connected store, at the client's priority (client 11.1.0 `includes/class-wc-payments-vat-redirect-service.php:25-27`).
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsVatDetailsRedirect implements RegisterHooksInterface {
 
@@ -40,7 +40,7 @@ class WooPaymentsVatDetailsRedirect implements RegisterHooksInterface {
 	 * @return void
 	 */
 	public function handle_template_redirect(): void {
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only redirect, as in the client.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only redirect.
 		if ( ! isset( $_GET[ self::REDIRECT_QUERY_ARG ] ) ) {
 			return;
 		}

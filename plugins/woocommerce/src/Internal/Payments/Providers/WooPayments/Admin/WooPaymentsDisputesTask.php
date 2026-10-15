@@ -19,18 +19,18 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 defined( 'ABSPATH' ) || exit;
 
 /**
- * The WC Home "Things to do next" task that asks the merchant to respond to disputes due within a week.
+ * Asks the merchant to respond to disputes due within a week, in the WC Home "Things to do next" list.
  *
  * Ports client 11.1.0 `WC_Payments_Task_Disputes` (`includes/admin/tasks/class-wc-payments-task-disputes.php`),
  * reading the same cached list of disputes awaiting a response.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsDisputesTask extends Task {
 
 	/**
-	 * Task ID, shared with the client.
+	 * Task ID, the WooPayments extension's, so WC Home keeps one task across the switch.
 	 */
 	public const ID = 'woocommerce_payments_disputes_task';
 
@@ -125,7 +125,7 @@ class WooPaymentsDisputesTask extends Task {
 	}
 
 	/**
-	 * Content; the client puts the due-date copy in the additional info instead.
+	 * Content: empty, the due date is the additional info.
 	 *
 	 * @return string
 	 */
@@ -145,7 +145,7 @@ class WooPaymentsDisputesTask extends Task {
 		if ( 1 === count( $due_within_7d ) ) {
 			$local_timezone    = new DateTimeZone( wp_timezone_string() );
 			$due_by_local_time = ( new DateTime( (string) $due_within_7d[0]['due_by'], new DateTimeZone( 'UTC' ) ) )->setTimezone( $local_timezone );
-			// The client formats the local wall-clock time as a timestamp with the offset added.
+			// date_i18n() takes a timestamp with the site offset added, so it prints the local wall-clock time.
 			$due_by_ts = $due_by_local_time->getTimestamp() + $due_by_local_time->getOffset();
 
 			if ( count( $due_within_1d ) > 0 ) {
@@ -219,7 +219,8 @@ class WooPaymentsDisputesTask extends Task {
 	}
 
 	/**
-	 * Client `WC_Payments_Account::is_stripe_account_valid()`, over the cached account without a refresh.
+	 * Tell whether the cached account, read without a refresh, submitted its details and requested card payments, as
+	 * client 11.1.0 checks (`includes/class-wc-payments-account.php:278-298`).
 	 *
 	 * @return bool
 	 */
@@ -275,7 +276,7 @@ class WooPaymentsDisputesTask extends Task {
 	}
 
 	/**
-	 * Client `WC_Payments_Utils::format_currency( interpret_stripe_amount() )` over a Stripe minor-unit amount.
+	 * Format a Stripe minor-unit amount as a price in its currency.
 	 *
 	 * @param int    $amount   Amount in minor units.
 	 * @param string $currency Currency code.

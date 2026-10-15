@@ -12,12 +12,13 @@ use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
 
 /**
- * Inbox note asking the merchant to serve checkout over HTTPS.
+ * Adds the inbox note asking the merchant to serve checkout over HTTPS, while checkout is neither forced to HTTPS nor
+ * served over it.
  *
  * Ports client 11.1.0 `includes/notes/class-wc-payments-notes-set-https-for-checkout.php`.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsSetHttpsForCheckoutNote {
 

@@ -13,12 +13,13 @@ use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 
 /**
- * Inbox note pointing merchants with affected orders to the canceled-authorization fee remediation tool.
+ * Adds the inbox note that sends a merchant with affected orders to the canceled-authorization fee remediation tool
+ * under WooCommerce > Status > Tools.
  *
  * Ports client 11.1.0 `includes/notes/class-wc-payments-notes-canceled-auth-remediation.php`.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsCanceledAuthRemediationNote {
 
@@ -67,8 +68,7 @@ class WooPaymentsCanceledAuthRemediationNote {
 			return;
 		}
 
-		// The client checks for a running batch before reading this state; reading the state first skips the
-		// Action Scheduler query for the states that can never add a note, with the same outcome.
+		// Reading the state first skips the Action Scheduler query for the states that can never add a note.
 		$state = get_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY );
 		if ( false !== $state && 'has_affected_orders' !== $state ) {
 			return;

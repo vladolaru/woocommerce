@@ -14,12 +14,12 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 
 /**
- * Inbox note suggesting Link by Stripe to merchants who accept cards without Link.
+ * Adds the inbox note suggesting Link by Stripe to a merchant who accepts cards at checkout without Link.
  *
  * Ports client 11.1.0 `includes/notes/class-wc-payments-notes-set-up-stripelink.php`.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsSetUpLinkNote {
 
@@ -94,8 +94,8 @@ class WooPaymentsSetUpLinkNote {
 	/**
 	 * Tell whether the note applies to the store.
 	 *
-	 * Client `should_display_note()` (lines 39-58): Link is among the available methods, and the methods
-	 * enabled at checkout and backed by account fees include card but not Link.
+	 * Link is among the available methods, and the methods enabled at checkout and backed by account fees include card but
+	 * not Link (client 11.1.0 `includes/notes/class-wc-payments-notes-set-up-stripelink.php:44-58`).
 	 *
 	 * @return bool
 	 */
@@ -108,7 +108,7 @@ class WooPaymentsSetUpLinkNote {
 		$fees         = is_array( $account_data['fees'] ?? null ) ? $account_data['fees'] : array();
 		$fee_ids      = array_map( 'strval', array_keys( $fees ) );
 
-		// The client drops Link from the enabled methods when card is not enabled, so only card-without-Link qualifies.
+		// Link is not used without card, so only card enabled without Link qualifies.
 		return $this->is_enabled_at_checkout( self::CARD, $fee_ids )
 			&& ! $this->is_enabled_at_checkout( self::LINK, $fee_ids );
 	}
@@ -140,9 +140,9 @@ class WooPaymentsSetUpLinkNote {
 	/**
 	 * Tell whether a payment method is enabled at checkout and backed by account fees.
 	 *
-	 * Client `get_payment_method_ids_enabled_at_checkout_filtered_by_fees( null, true )` for card and Link on an admin
-	 * request: the method is in the enabled setting, supports the store currency, and its account capability is active
-	 * (an empty capability map counts as an active card capability). Manual capture keeps card and Link, and neither
+	 * The method is in the enabled setting, supports the store currency, and its account capability is active (an empty
+	 * capability map counts as an active card capability), as client 11.1.0 decides on an admin request
+	 * (`includes/class-wc-payment-gateway-wcpay.php:4778-4838`). Manual capture keeps card and Link, and neither
 	 * has amount limits or country restrictions, so those checks cannot change the result.
 	 *
 	 * @param string   $payment_method_id Payment method ID.

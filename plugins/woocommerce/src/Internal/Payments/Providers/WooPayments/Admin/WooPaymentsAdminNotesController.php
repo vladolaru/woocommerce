@@ -12,12 +12,13 @@ use Throwable;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 
 /**
- * Adds the WooPayments inbox notes that the client evaluates on every admin page load.
+ * Adds the WooPayments inbox notes whose conditions hold on each admin page load: secure checkout, Link by Stripe and the
+ * canceled-authorization fee remediation.
  *
  * Ports client 11.1.0 `WC_Payments::add_woo_admin_notes()` (`includes/class-wc-payments.php:374,1595-1621`).
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsAdminNotesController implements RegisterHooksInterface {
 
@@ -71,7 +72,7 @@ class WooPaymentsAdminNotesController implements RegisterHooksInterface {
 	/**
 	 * Add the WooPayments inbox notes whose conditions currently hold.
 	 *
-	 * AJAX requests are skipped to keep them fast, as in the client.
+	 * AJAX requests are skipped to keep them fast.
 	 *
 	 * @internal
 	 */

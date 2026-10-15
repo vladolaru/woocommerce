@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use WC_Email;
 
 /**
- * Store-owner email sent after KYC completion when the store has not made its first live WooPayments sale.
+ * Emails the store owner 7, 14 and 30 days after KYC completion while the store has no live WooPayments sale.
  *
  * @since 11.0.0
  * @internal

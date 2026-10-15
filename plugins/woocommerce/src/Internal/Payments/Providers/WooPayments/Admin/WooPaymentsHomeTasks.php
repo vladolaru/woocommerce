@@ -15,13 +15,14 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAd
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Adds the native WooPayments tasks to the WC Home "Things to do next" list.
+ * Adds the WooPayments tasks (update business details, respond to disputes, activate payments) to the WC Home "Things
+ * to do next" list.
  *
  * Loads only for connected stores, on admin and REST requests, since WC Home reads its task lists over REST.
  * The tasks read the account and dispute caches only when the list is rendered.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsHomeTasks implements RegisterHooksInterface {
 
