@@ -17,10 +17,11 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Registers persistent admin navigation for native WooPayments surfaces.
+ * Puts the WooPayments pages in the Payments menu and sends merchants to them: the submenu with its badges, the menu
+ * highlighting, the browser tab title, the redirects of `/payments/*` WC Admin links and the onboarding redirect.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 
@@ -122,7 +123,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 
 	/**
 	 * Client 11.1.0 Transactions tab names (`client/transactions/index.tsx:77-97`, written to the URL as `tab`)
-	 * mapped to the native Transactions `view` values.
+	 * mapped to the Transactions page's `view` values.
 	 */
 	private const PAYMENTS_TRANSACTIONS_TAB_VIEWS = array(
 		'uncaptured-page' => 'uncaptured',
@@ -130,12 +131,12 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	);
 
 	/**
-	 * Client 11.1.0 WC Admin paths mapped to the native `/woopayments/*` routes.
+	 * Client 11.1.0 WC Admin paths mapped to the Payments settings `/woopayments/*` routes.
 	 *
-	 * Authorized divergence (inbox.md N-125): native paths follow trunk's `/woopayments/onboarding` convention
-	 * (launch-your-store/hub/main-content/xstate.tsx:122, launch-your-store/data/setup-payments-context.tsx:115 on trunk).
-	 * Client deep links keep working through this map; platform-issued email links go through Compat/LegacyAdminLinkHandler.
-	 * The test pins every client route from Fixtures/woopayments-admin-routes.json.
+	 * The onboarding route uses the `/woopayments/onboarding` path the Launch Your Store hub links to and checks for
+	 * (`client/admin/client/launch-your-store/hub/main-content/xstate.tsx:122`, `launch-your-store/data/setup-payments-context.tsx:130`).
+	 * Old `/payments/*` links keep working through this map; the platform's email links go through
+	 * `Compat/LegacyAdminLinkHandler`.
 	 */
 	private const PAYMENTS_PATH_REDIRECTS = array(
 		'/payments/connect'                    => self::PATH_ONBOARDING,
@@ -221,14 +222,14 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the native route a client 11.1.0 WC Admin path redirects to, or an empty string for any other path.
+	 * Get the route a client 11.1.0 WC Admin path redirects to, or an empty string for any other path.
 	 *
-	 * The onboarding redirect uses it on stores where this controller is not loaded.
+	 * Static, so the onboarding redirect can use it on stores where this controller is not registered.
 	 *
 	 * @since 11.2.0
 	 * @internal
 	 *
-	 * @param string $payments_path Client WC Admin route path, for example `/payments/overview`.
+	 * @param string $payments_path `/payments/*` WC Admin path, for example `/payments/overview`.
 	 * @return string
 	 */
 	public static function get_route_for_payments_path( string $payments_path ): string {
@@ -253,7 +254,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Name the browser tab after the native WooPayments page on first paint, in WooCommerce admin's header format.
+	 * Name the browser tab after the WooPayments page on first paint, in WooCommerce admin's header format.
 	 *
 	 * A detail page's title is followed by its list's title: the same sections `admin/routes.tsx` sets after load, with each
 	 * parent taken from the client's `client/index.js` breadcrumbs (client 11.1.0).
@@ -293,7 +294,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Open the Payments menu on native WooPayments pages, like the client's pages under its Payments menu.
+	 * Open the Payments menu on the WooPayments pages.
 	 *
 	 * WordPress resolves the open top-level menu from the `wc-settings` page slug after the `parent_file` filter runs,
 	 * so it always opens WooCommerce here. This moves the open state to the menu that holds the current item, right
@@ -313,7 +314,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Mark the current native WooPayments page's Payments submenu item; detail pages mark their list, like the client.
+	 * Mark the current WooPayments page's Payments submenu item; a detail page marks its list.
 	 *
 	 * @since 11.2.0
 	 * @internal
@@ -328,7 +329,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the registered Payments submenu URL for the current native WooPayments page, or an empty string.
+	 * Get the registered Payments submenu URL for the current WooPayments page, or an empty string.
 	 *
 	 * @return string
 	 */
@@ -361,7 +362,8 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Redirect legacy WooPayments WC Admin paths to their native Settings > Payments routes.
+	 * Redirect the `/payments/*` WC Admin paths and the `woocommerce_payments_*` settings sections to their Payments settings
+	 * routes.
 	 *
 	 * @return void
 	 */
@@ -370,7 +372,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 			return;
 		}
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only redirect for legacy admin deep links.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only redirect for old admin links.
 		$redirect_url = $this->get_payments_path_redirect_url( $_GET );
 		if ( '' === $redirect_url ) {
 			return;
@@ -381,9 +383,9 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Redirect native WooPayments admin pages to onboarding without a working connection and a valid account.
+	 * Redirect the WooPayments pages to onboarding without a working connection and a valid account.
 	 *
-	 * Runs at the client's admin_init priority; see WooPaymentsOnboardingRedirect for the ported client behavior.
+	 * Runs at ONBOARDING_REDIRECT_HOOK_PRIORITY; WooPaymentsOnboardingRedirect decides.
 	 *
 	 * @since 11.2.0
 	 *
@@ -394,7 +396,8 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the native redirect URL for a legacy WooPayments WC Admin request.
+	 * Get the Payments settings URL a `/payments/*` WC Admin request or a `woocommerce_payments_*` section redirects to, or
+	 * an empty string.
 	 *
 	 * @param array<string,mixed> $request Query request.
 	 * @return string
@@ -434,7 +437,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 			$query[ $sanitized_key ] = sanitize_text_field( wp_unslash( (string) $value ) );
 		}
 
-		// `tab` belongs to wc-settings on native routes, so the client's tab moves to the argument each native page reads.
+		// `tab` belongs to wc-settings on these routes, so an old link's tab moves to the argument each page reads.
 		$tab = $query['tab'] ?? null;
 		unset( $query['tab'] );
 		if ( self::PAYMENTS_REPORTS_PATH === $payments_path && null !== $tab ) {
@@ -457,7 +460,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the native settings redirect URL for legacy WooPayments payment method sections.
+	 * Get the settings URL a `woocommerce_payments_*` payment method section redirects to.
 	 *
 	 * @param array<string,mixed> $request Query request.
 	 * @return string
@@ -477,9 +480,9 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether a legacy route is part of the setup/onboarding flow.
+	 * Tell whether a `/payments/*` path is a setup or onboarding link.
 	 *
-	 * @param string $payments_path Legacy WooPayments WC Admin route path.
+	 * @param string $payments_path `/payments/*` WC Admin path.
 	 * @return bool
 	 */
 	private function is_payments_setup_path( string $payments_path ): bool {
@@ -495,7 +498,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Resolve setup-era deep links to the best available native account route.
+	 * Pick the route a setup link opens: onboarding when available, else the Overview, else the settings.
 	 *
 	 * @param array{gatewayEnabled:bool,accountState:string,allowedRoutes:array<string,bool>} $route_availability Route availability.
 	 * @return string
@@ -513,7 +516,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Resolve denied legacy redirects to the best available native fallback.
+	 * Pick the route a redirect opens when its target is not available: the Overview when available, else the settings.
 	 *
 	 * @param array{gatewayEnabled:bool,accountState:string,allowedRoutes:array<string,bool>} $route_availability Route availability.
 	 * @return string
@@ -572,7 +575,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get native WooPayments admin route availability for protected routes.
+	 * Get the WooPayments pages' availability for this request.
 	 *
 	 * @internal
 	 * @return array{gatewayEnabled:bool,accountState:string,allowedRoutes:array<string,bool>}
@@ -633,7 +636,8 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether every route exposed through the availability map is registered by the client router.
+	 * Tell whether every page in the availability map is a route the WooPayments admin pages register
+	 * (`REGISTERED_ROUTE_PATHS`).
 	 *
 	 * @internal
 	 * @return bool
@@ -645,7 +649,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get a coarse account state label for native WooPayments admin route availability.
+	 * Get the availability's account state: restricted, onboarding, full or unavailable.
 	 *
 	 * @param bool $restricted      Whether the account is rejected or under review.
 	 * @param bool $valid_account   Whether the account can use admin navigation.
@@ -669,7 +673,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Add native WooPayments submenu items under the Core Payments parent menu.
+	 * Add the WooPayments submenu items under the Payments menu.
 	 *
 	 * @return void
 	 */
@@ -718,7 +722,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the full native WooPayments submenu for a valid account.
+	 * Get the full WooPayments submenu for a valid account.
 	 *
 	 * @param array<string,bool> $allowed_routes The pages' availability.
 	 * @return array<int,array{title:string,path:string,query?:array<string,string>,badge_count?:int}>
@@ -777,7 +781,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the titles of the native WooPayments pages, keyed by route path.
+	 * Get the titles of the WooPayments pages, keyed by route path.
 	 *
 	 * The submenu reads the list pages' titles. The first-paint browser tab title reads them all: the same sections
 	 * `admin/routes.tsx` sets, with each detail page's parent taken from the client's `client/index.js` breadcrumbs
@@ -803,7 +807,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the reduced native WooPayments submenu for restricted accounts.
+	 * Get the reduced WooPayments submenu for a rejected or under-review account.
 	 *
 	 * @return array<int,array{title:string,path:string,query?:array<string,string>,badge_count?:int}>
 	 */
@@ -861,7 +865,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 * Append one submenu item under the Core Payments parent.
 	 *
 	 * @param string               $title       Menu title.
-	 * @param string               $path        Native WooPayments settings route path.
+	 * @param string               $path        Payments settings route path.
 	 * @param array<string,string> $query       Extra query args.
 	 * @param int                  $badge_count Badge count.
 	 * @return void

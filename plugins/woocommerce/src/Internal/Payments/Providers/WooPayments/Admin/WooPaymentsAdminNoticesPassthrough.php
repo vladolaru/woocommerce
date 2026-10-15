@@ -11,23 +11,23 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Keeps WooPayments' own admin notices on the native WooPayments pages of the Payments settings tab.
+ * Keeps the WooPayments store currency notices and the cutover notices on the WooPayments pages of the Payments
+ * settings tab, so a merchant sees a currency problem and, mid-switch, the switch's state on every WooPayments page.
  *
  * Core's Payments tab removes every non-core `admin_notices` callback (`WC_Settings_Payment_Gateways::suppress_admin_notices()`).
- * Client 11.1.0 shows these notices on its WooPayments pages, so on native WooPayments routes this puts back the
- * callbacks it names, as they were registered; every other Payments tab route keeps core's stripping.
+ * On the WooPayments routes, onboarding aside, this puts back the callbacks of the classes it names, as they were
+ * registered; every other Payments tab route keeps core's stripping.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsAdminNoticesPassthrough implements RegisterHooksInterface {
 
 	/**
-	 * Classes whose `admin_notices` callbacks are kept on native WooPayments routes.
+	 * Classes whose `admin_notices` callbacks are kept on the WooPayments routes.
 	 *
-	 * The cutover notices (switch in progress, reconnect, completed) have no client counterpart; they are kept
-	 * on these pages by monitor ruling N-261. The multi-currency notices, which the client also shows here, follow
-	 * core's stripping by owner decision N-285; they still show on the Multi-currency tab and other admin pages.
+	 * The cutover notices (switch in progress, reconnect, completed) are kept, so a merchant mid-switch sees them on every
+	 * WooPayments page. Multi-Currency's notices are not kept: they show on the Multi-currency tab and the other admin pages.
 	 */
 	private const KEPT_NOTICE_CLASSES = array(
 		WooPaymentsCurrencyComplianceNotice::class,
@@ -50,7 +50,7 @@ class WooPaymentsAdminNoticesPassthrough implements RegisterHooksInterface {
 	}
 
 	/**
-	 * On a native WooPayments route, note the kept `admin_notices` callbacks and schedule putting them back.
+	 * On a WooPayments route, note the kept `admin_notices` callbacks and schedule putting them back.
 	 *
 	 * @internal
 	 */
@@ -117,7 +117,7 @@ class WooPaymentsAdminNoticesPassthrough implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the request is a native WooPayments page of the Payments settings tab (not its onboarding).
+	 * Tell whether the request is a WooPayments page of the Payments settings tab (not its onboarding).
 	 *
 	 * @return bool
 	 */

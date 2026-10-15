@@ -10,10 +10,10 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Builds the WooPayments admin page URLs the extension's links use (`admin.php?page=wc-admin&path=/payments/...`), from
+ * Builds the WooPayments admin page URLs in the WC Admin `/payments/...` shape (`admin.php?page=wc-admin&path=/payments/...`), from
  * checkout, webhooks and admin: order notes, the order page's transaction link and inbox note buttons.
  *
- * The links keep the extension's shape because stored notes outlive a switch back to it; the built-in WooPayments
+ * The links keep the WooPayments extension's shape because stored notes outlive a switch back to it; the built-in WooPayments
  * redirects them to its own pages.
  *
  * @since 11.2.0
@@ -22,7 +22,7 @@ defined( 'ABSPATH' ) || exit;
 final class WooPaymentsAdminUrl {
 
 	/**
-	 * Get the URL of a WooPayments admin page in the extension's WC Admin path shape.
+	 * Get the URL of a WooPayments admin page in the WC Admin `/payments/*` path shape.
 	 *
 	 * @param string               $path  WC Admin path, for example `/payments/transactions/details`.
 	 * @param array<string,string> $query Query parameters to append to the path.

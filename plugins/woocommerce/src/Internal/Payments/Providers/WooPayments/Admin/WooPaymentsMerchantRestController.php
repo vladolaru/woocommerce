@@ -21,7 +21,11 @@ use WP_REST_Request;
 use WP_REST_Response;
 
 /**
- * Controller for the native WooPayments merchant REST endpoints.
+ * Serves the REST routes of the WooPayments settings and admin pages: the account summary, the Overview data and the
+ * settings notices' actions under `wc-admin/settings/payments/woopayments`, and, while the built-in WooPayments owns
+ * payments, the settings, payment method promotions and files under `wc/v3/payments`.
+ *
+ * A file the platform marks public is served without a login.
  *
  * @internal
  */
@@ -64,28 +68,28 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	protected string $rest_base = 'settings/payments/woopayments';
 
 	/**
-	 * The native WooPayments settings contract service.
+	 * Settings service.
 	 *
 	 * @var WooPaymentsSettingsService|null
 	 */
 	private ?WooPaymentsSettingsService $settings_service = null;
 
 	/**
-	 * The native WooPayments payment method promotions service.
+	 * Payment method promotions service.
 	 *
 	 * @var WooPaymentsPmPromotionsService|null
 	 */
 	private ?WooPaymentsPmPromotionsService $pm_promotions_service = null;
 
 	/**
-	 * The native WooPayments Overview projection service.
+	 * Overview service.
 	 *
 	 * @var WooPaymentsOverviewService|null
 	 */
 	private ?WooPaymentsOverviewService $overview_service = null;
 
 	/**
-	 * The native WooPayments account service.
+	 * Account service.
 	 *
 	 * @var WooPaymentsAccountService|null
 	 */
@@ -106,7 +110,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	private ?WooPaymentsApplePayDomainService $apple_pay_domain_service = null;
 
 	/**
-	 * Native payments runtime arbiter.
+	 * Runtime arbiter.
 	 *
 	 * @var WooPaymentsRuntimeArbiter|null
 	 */
@@ -204,11 +208,11 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	/**
 	 * Initialize the class instance.
 	 *
-	 * @param WooPaymentsSettingsService|null       $settings_service      Optional native WooPayments settings service.
-	 * @param WooPaymentsRuntimeArbiter|null        $runtime_arbiter       Optional native payments runtime arbiter.
-	 * @param WooPaymentsPmPromotionsService|null   $pm_promotions_service Optional native WooPayments PM promotions service.
-	 * @param WooPaymentsOverviewService|null       $overview_service      Optional native WooPayments Overview projection service.
-	 * @param WooPaymentsAccountService|null        $account_service       Optional native WooPayments account service.
+	 * @param WooPaymentsSettingsService|null       $settings_service      Settings service.
+	 * @param WooPaymentsRuntimeArbiter|null        $runtime_arbiter       Runtime arbiter.
+	 * @param WooPaymentsPmPromotionsService|null   $pm_promotions_service Payment method promotions service.
+	 * @param WooPaymentsOverviewService|null       $overview_service      Overview service.
+	 * @param WooPaymentsAccountService|null        $account_service       Account service.
 	 * @param WooPaymentsAdminNoticeService|null    $admin_notice_service  Optional current-user settings notice service.
 	 * @param WooPaymentsApplePayDomainService|null $apple_pay_domain_service Optional Apple Pay domain service.
 	 * @param WooPaymentsApiClient|null             $api_client            Optional WooPayments API client.
@@ -228,7 +232,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Register the legacy-compatible native WooPayments settings endpoints.
+	 * Register the `wc/v3/payments` settings, promotions and file routes.
 	 *
 	 * @param bool $override Whether to override existing routes.
 	 * @return void
@@ -373,7 +377,8 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Tell whether native WooPayments settings routes may register for this request.
+	 * Tell whether the built-in WooPayments owns payments, so these `wc/v3/payments` routes are its own; while the
+	 * WooPayments extension owns payments, it serves them.
 	 *
 	 * @return bool
 	 */
@@ -382,7 +387,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get validation args for the legacy-compatible WooPayments settings update route.
+	 * Get the validation args of the settings update route.
 	 *
 	 * @return array<string,array<string,mixed>>
 	 */
@@ -513,7 +518,8 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	/**
 	 * Validate the advanced fraud protection settings field.
 	 *
-	 * A structurally invalid advanced ruleset must fail the save here: the settings service would otherwise skip the fraud block silently and return 200 while the platform keeps the previous ruleset. The WooPayments plugin persists its non-fraud settings and then dies with a 500 on the same input; rejecting atomically with a 400 is a deliberate, strictly safer deviation.
+	 * A structurally invalid advanced ruleset fails the whole save with a 400 here, before anything is saved: the settings
+	 * service would otherwise skip the fraud block and answer 200 while the platform keeps the previous ruleset.
 	 *
 	 * @param mixed           $value   Advanced fraud protection settings value.
 	 * @param WP_REST_Request $request Request.
@@ -558,7 +564,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Validate the account statement descriptor with the WooPayments plugin's rules.
+	 * Validate the account statement descriptor.
 	 *
 	 * The platform validates before Stripe as well, but a boundary rejection is the only shape that surfaces the field-specific inline error the settings UI renders.
 	 *
@@ -590,7 +596,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Validate the account communications email with the WooPayments plugin's rules.
+	 * Validate the account communications email.
 	 *
 	 * The platform stores this address without validating it, so an empty or malformed value would silently detach the merchant from account notification emails.
 	 *
@@ -624,7 +630,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Validate the business support email with the WooPayments plugin's rules.
+	 * Validate the business support email.
 	 *
 	 * Unlike the communications email, an empty support email is allowed.
 	 *
@@ -653,7 +659,9 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	/**
 	 * Validate a branding color as empty or a hex color.
 	 *
-	 * The plugin has no server-side rule here, but the native runtime mirrors the sent value locally, and an unvalidated non-hex value would previously be sanitized to an empty mirror while the raw value went to the platform. The UI's color picker only emits hex values, so this only constrains direct REST clients.
+	 * The stored settings keep a copy of the sent value, so a non-hex value is refused instead of being stored empty while
+	 * the platform gets the raw value. The settings page's color picker sends only hex values, so this only limits direct
+	 * REST callers.
 	 *
 	 * @param mixed           $value   Branding color value.
 	 * @param WP_REST_Request $request Request.
@@ -680,7 +688,8 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	/**
 	 * Validate the business URL against dangerous schemes.
 	 *
-	 * Deliberately lenient — the plugin forwards scheme-less values like example.com raw, so only values esc_url_raw() strips entirely (e.g. javascript: URLs) are rejected.
+	 * Lenient: a value without a scheme, such as example.com, is sent as it is; only a value esc_url_raw() strips
+	 * entirely, such as a javascript: URL, is refused.
 	 *
 	 * @param mixed           $value   Business URL value.
 	 * @param WP_REST_Request $request Request.
@@ -705,9 +714,9 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Validate the business support phone with the WooPayments plugin's rules.
+	 * Validate the business support phone.
 	 *
-	 * Japanese accounts require a +81 number even when the value is empty, matching the plugin.
+	 * Japanese accounts require a +81 number even when the value is empty.
 	 *
 	 * @param mixed           $value   Support phone value.
 	 * @param WP_REST_Request $request Request.
@@ -740,7 +749,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Validate the business support address key allowlist with the WooPayments plugin's rules.
+	 * Validate the business support address key allowlist.
 	 *
 	 * The platform maps the address straight onto the provider account, so a stray key fails the whole account update opaquely.
 	 *
@@ -771,7 +780,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get the native WooPayments account service.
+	 * Get the account service set by init(), or the container's when init() did not set it.
 	 *
 	 * @return WooPaymentsAccountService
 	 */
@@ -858,7 +867,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get a safe read-only account summary for the native WooPayments settings surface.
+	 * Answer the account summary the WooPayments pages read; an exception answers a 500.
 	 *
 	 * @return WP_Error|WP_REST_Response The response or error.
 	 */
@@ -873,7 +882,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get a safe read-only Overview projection for the native WooPayments settings surface.
+	 * Answer the Overview page's data; an exception answers a 500.
 	 *
 	 * @return WP_Error|WP_REST_Response The response or error.
 	 */
@@ -888,7 +897,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get the native WooPayments settings contract.
+	 * Answer the settings page's data.
 	 *
 	 * @return WP_REST_Response The response.
 	 */
@@ -897,7 +906,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Update the native WooPayments settings contract.
+	 * Save a settings page update.
 	 *
 	 * @param WP_REST_Request $request The request object.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -906,7 +915,8 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	protected function update_settings( WP_REST_Request $request ) {
 		$result = $this->get_settings_service()->update_settings( $request->get_params() );
 		if ( is_wp_error( $result ) ) {
-			// A platform account-update rejection with no inline-capable field uses the plugin's legacy body shape, which the settings UI reads from the server_error key.
+			// A platform rejection of the account update with no field the page shows errors under answers `{ server_error }`
+			// with a 400, which the settings page shows as a notice.
 			if ( 'woocommerce_woopayments_account_update_rejected' === $result->get_error_code() ) {
 				return new WP_REST_Response( array( 'server_error' => $result->get_error_message() ), 400 );
 			}
@@ -918,7 +928,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Update an allowlisted native WooPayments settings option.
+	 * Update one of the settings page's allowed options.
 	 *
 	 * @param WP_REST_Request $request The request object.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -936,7 +946,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get visible native WooPayments payment method promotions.
+	 * Answer the payment method promotions the merchant can still use.
 	 *
 	 * @return WP_REST_Response The response.
 	 */
@@ -999,7 +1009,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Activate a native WooPayments payment method promotion.
+	 * Activate a payment method promotion.
 	 *
 	 * @param WP_REST_Request $request The request object.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -1014,7 +1024,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Dismiss a native WooPayments payment method promotion.
+	 * Dismiss a payment method promotion.
 	 *
 	 * @param WP_REST_Request $request The request object.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -1029,7 +1039,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Upload a file for the native WooPayments settings page.
+	 * Upload a settings page file to the platform.
 	 *
 	 * @param WP_REST_Request $request The request object.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -1044,7 +1054,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get provider file details for the native WooPayments settings page.
+	 * Answer a platform file's details.
 	 *
 	 * @param WP_REST_Request $request The request object.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -1059,7 +1069,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get provider file contents for the native WooPayments settings page.
+	 * Answer a platform file's contents.
 	 *
 	 * @param WP_REST_Request $request The request object.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -1201,7 +1211,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Normalize public file route errors to the reference REST contract.
+	 * Answer a file error with a 404 when the platform has no such file, else a 500.
 	 *
 	 * @param WP_Error $error File API error.
 	 * @return WP_Error
@@ -1230,7 +1240,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get the native WooPayments settings service.
+	 * Get the settings service set by init(), or the container's when init() did not set it.
 	 *
 	 * @return WooPaymentsSettingsService
 	 */
@@ -1243,7 +1253,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get the native WooPayments payment method promotions service.
+	 * Get the payment method promotions service set by init(), or the container's when init() did not set it.
 	 *
 	 * @return WooPaymentsPmPromotionsService
 	 */
@@ -1256,7 +1266,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get the native WooPayments Overview projection service.
+	 * Get the Overview service set by init(), or the container's when init() did not set it.
 	 *
 	 * @return WooPaymentsOverviewService
 	 */

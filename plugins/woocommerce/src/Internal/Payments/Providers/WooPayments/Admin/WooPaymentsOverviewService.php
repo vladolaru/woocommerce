@@ -19,10 +19,14 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Provides the native WooPayments Overview action shell projection.
+ * Builds the WooPayments Overview page's data from the stored account data, and the account summary the WooPayments
+ * pages read.
+ *
+ * The Overview data reads the stored account without a refresh; the summary reads through the account service, which
+ * can refresh it.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native WooPayments admin runtime.
+ * @internal
  */
 class WooPaymentsOverviewService {
 
@@ -45,7 +49,7 @@ class WooPaymentsOverviewService {
 	}
 
 	/**
-	 * Get the Overview action shell projection.
+	 * Get the Overview page's data.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -80,7 +84,8 @@ class WooPaymentsOverviewService {
 	}
 
 	/**
-	 * Get a safe read-only account summary for the native WooPayments settings surface.
+	 * Get the account summary the WooPayments pages read: the account's mode and state, its Documents fields and the
+	 * Overview and setup links.
 	 *
 	 * @return array<string,array<string,mixed>>
 	 */
@@ -116,7 +121,7 @@ class WooPaymentsOverviewService {
 	/**
 	 * Get safe account fields needed by the Overview shell.
 	 *
-	 * @param array<string,mixed> $account_data Preserved account data snapshot.
+	 * @param array<string,mixed> $account_data Stored account data.
 	 * @return array<string,mixed>
 	 */
 	private function get_account_summary_fields( array $account_data ): array {
@@ -277,7 +282,8 @@ class WooPaymentsOverviewService {
 	}
 
 	/**
-	 * Get a reference-compatible account status from cached account data.
+	 * Get the account status: the platform's status when the stored data has one, else one derived from the details and
+	 * requirements.
 	 *
 	 * @param array<string,mixed> $account_data Cached account data.
 	 * @return string
@@ -390,7 +396,7 @@ class WooPaymentsOverviewService {
 	}
 
 	/**
-	 * Prime caches for the fixed option set used by the Overview projection.
+	 * Prime the option caches get_overview() reads.
 	 *
 	 * @return void
 	 */
@@ -415,9 +421,9 @@ class WooPaymentsOverviewService {
 	}
 
 	/**
-	 * Get AccountDetails card data from the preserved account snapshot.
+	 * Get the AccountDetails card data from the stored account data.
 	 *
-	 * @param array<string,mixed> $account_data Preserved account data snapshot.
+	 * @param array<string,mixed> $account_data Stored account data.
 	 * @return array<string,mixed>|null
 	 */
 	private function get_account_details( array $account_data ): ?array {
@@ -443,7 +449,7 @@ class WooPaymentsOverviewService {
 	 * Get active discounted account fee rows for enabled payment methods, in the account's fee order, as client 11.1.0
 	 * `client/overview/index.js:146-163` builds them.
 	 *
-	 * @param array<string,mixed> $account_data Preserved account data snapshot.
+	 * @param array<string,mixed> $account_data Stored account data.
 	 * @return array<int,array{payment_method:string,fee:array<string,mixed>}>
 	 */
 	private function get_active_account_fees( array $account_data ): array {
@@ -504,12 +510,12 @@ class WooPaymentsOverviewService {
 	}
 
 	/**
-	 * Get native Overview account-loan data.
+	 * Get the Overview's Capital loan data.
 	 *
 	 * `loans` keeps the platform's `<loan id>|<status>` strings, which client 11.1.0 reads from `wcpaySettings.accountLoans.loans`
 	 * to link the active loan's transactions (`components/active-loan-summary/index.tsx:114-123`).
 	 *
-	 * @param array<string,mixed> $account_data Preserved account data snapshot.
+	 * @param array<string,mixed> $account_data Stored account data.
 	 * @return array{has_active_loan:bool,loans:string[]}
 	 */
 	private function get_capital_loans( array $account_data ): array {
@@ -531,9 +537,9 @@ class WooPaymentsOverviewService {
 	}
 
 	/**
-	 * Get the account ID from a preserved account snapshot.
+	 * Get the account ID from the stored account data.
 	 *
-	 * @param array<string,mixed> $account_data Preserved account data snapshot.
+	 * @param array<string,mixed> $account_data Stored account data.
 	 * @return string
 	 */
 	private function get_account_id( array $account_data ): string {
@@ -541,12 +547,12 @@ class WooPaymentsOverviewService {
 	}
 
 	/**
-	 * Tell whether the preserved snapshot has enough fields to process payments.
+	 * Tell whether the stored account data can take payments.
 	 *
-	 * The Overview reads every account field from this snapshot, so this does not call WooPaymentsAccountService::can_process_payments(),
+	 * The Overview reads every account field from the stored data, so this does not call WooPaymentsAccountService::can_process_payments(),
 	 * which can refresh the account and reads none without a platform connection.
 	 *
-	 * @param array<string,mixed> $account_data Preserved account data snapshot.
+	 * @param array<string,mixed> $account_data Stored account data.
 	 * @param bool                $test_mode    Whether WooPayments is currently in test mode.
 	 * @return bool
 	 */

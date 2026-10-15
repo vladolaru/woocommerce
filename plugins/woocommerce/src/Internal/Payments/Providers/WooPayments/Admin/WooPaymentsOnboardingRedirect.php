@@ -16,15 +16,16 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\Wo
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Sends merchants from native WooPayments admin pages to onboarding without a working connection and a valid account.
+ * Sends a merchant from a WooPayments page to onboarding when the store has no working connection or no valid account.
  *
  * Ports client 11.1.0 `WC_Payments_Admin::maybe_redirect_from_payments_admin_child_pages()` and the Overview and
- * settings redirects in `WC_Payments_Account`. The admin navigation controller and the Payments settings controller
- * both call it, so every native payments state gets the same redirect.
- * While the extension owns payments, it sends a built-in settings link to the extension's settings section instead.
+ * settings redirects in `WC_Payments_Account`. The navigation controller calls it on connected stores, and the Payments
+ * settings controller, through the adapter, on every store, so every setup tier gets the same redirect.
+ * While the WooPayments extension owns payments, a link to a settings route opens the WooPayments extension's settings
+ * section instead.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsOnboardingRedirect {
 
@@ -50,10 +51,11 @@ class WooPaymentsOnboardingRedirect {
 	private const GATEWAY_SETTINGS_SECTION = 'woocommerce_payments';
 
 	/**
-	 * Native routes that need a working connection and a valid account, matched by prefix.
+	 * Payments settings routes that need a working connection and a valid account, matched by prefix.
 	 *
 	 * Mirrors the client 11.1.0 Payments child pages plus its settings page, which redirect to onboarding
-	 * otherwise. Detail and settings sub-routes match through their parent prefix, like the client's unanchored regex.
+	 * otherwise. Detail and settings sub-routes match through their parent prefix, as the client 11.1.0 pattern has no end
+	 * anchor (`includes/admin/class-wc-payments-admin.php:1280`).
 	 */
 	private const GUARDED_PATHS = array(
 		self::PATH_OVERVIEW,
@@ -111,10 +113,10 @@ class WooPaymentsOnboardingRedirect {
 	}
 
 	/**
-	 * Get the guarded native route a request asks for, or an empty string when it asks for none.
+	 * Get the guarded route a request asks for, or an empty string when it asks for none.
 	 *
-	 * Also covers the client's legacy links: the `woocommerce_payments` settings sections and the WC Admin `/payments/*`
-	 * paths, which the client redirects the same way. Reads only the request, so callers can skip resolving this class on every other page.
+	 * Also covers the old links: the `woocommerce_payments` settings sections and the WC Admin `/payments/*` paths.
+	 * Static and reads only the request, so a caller can check it before resolving this class.
 	 *
 	 * @param array<string,mixed> $request Query request.
 	 * @return string
@@ -142,9 +144,9 @@ class WooPaymentsOnboardingRedirect {
 	}
 
 	/**
-	 * Get the guarded native route for a client 11.1.0 WC Admin `/payments/*` link, or an empty string.
+	 * Get the guarded route for a client 11.1.0 WC Admin `/payments/*` link, or an empty string.
 	 *
-	 * The setup links map to onboarding, which is guarded only here: a native onboarding request must not redirect to itself.
+	 * The setup links map to onboarding, which is guarded only here: an onboarding route request must not redirect to itself.
 	 *
 	 * @param array<string,mixed> $request Query request.
 	 * @return string
@@ -168,9 +170,9 @@ class WooPaymentsOnboardingRedirect {
 	}
 
 	/**
-	 * Get the guarded route a native route path falls under, or an empty string.
+	 * Get the guarded route a Payments settings route path falls under, or an empty string.
 	 *
-	 * @param string $current_path Native WooPayments route path.
+	 * @param string $current_path Payments settings route path.
 	 * @return string
 	 */
 	private static function match_guarded_path( string $current_path ): string {
@@ -188,7 +190,7 @@ class WooPaymentsOnboardingRedirect {
 	}
 
 	/**
-	 * Tell whether the WordPress.com connection works, the first half of the client's full-menu condition.
+	 * Tell whether the WordPress.com connection works.
 	 *
 	 * Client 11.1.0 `has_working_jetpack_connection()`: a connected site with a connection owner.
 	 *
@@ -211,7 +213,7 @@ class WooPaymentsOnboardingRedirect {
 			return;
 		}
 
-		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only redirect for native admin routes and legacy links.
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only redirect for the WooPayments routes and old links.
 		$guarded_path   = self::get_guarded_path( $_GET );
 		$requested_path = isset( $_GET['path'] ) && is_string( $_GET['path'] ) ? sanitize_text_field( wp_unslash( $_GET['path'] ) ) : '';
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended
@@ -222,7 +224,7 @@ class WooPaymentsOnboardingRedirect {
 		$this->decided = true;
 
 		if ( ! $this->arbiter->is_builtin_owner() ) {
-			// While the plugin owns the runtime the native routes are not served: a native settings link opens the plugin's
+			// While the WooPayments extension owns payments these routes are not served: a settings route link opens its
 			// settings page, the URL WooPayments::get_settings_url() gives there (client 11.1.0
 			// `class-wc-payments-admin-settings.php:32-36`). The section link itself carries no path, so it is left alone.
 			if ( self::PATH_SETTINGS === $guarded_path && str_starts_with( $requested_path, self::PATH_SETTINGS ) && $this->arbiter->is_extension_owner() ) {
@@ -233,7 +235,8 @@ class WooPaymentsOnboardingRedirect {
 			return;
 		}
 
-		// Client `has_working_jetpack_connection() && is_stripe_account_valid()`; no connection skips the account read.
+		// A working connection and a valid account, as client 11.1.0 checks (`includes/admin/class-wc-payments-admin.php:1285`);
+		// no connection skips the account read.
 		if ( $this->has_working_connection() && $this->account_service->has_valid_account_for_admin_navigation() ) {
 			return;
 		}
