@@ -218,8 +218,9 @@ class WooPaymentsWooPayEligibility {
 	/**
 	 * Tell whether WooPay direct checkout is enabled for this store.
 	 *
-	 * Reads the gateway's enabled setting rather than resolving gateway availability, like the plugin's
-	 * `WC_Payments_Features::is_woopay_direct_checkout_enabled()` (11.1.0), so the check stays cheap on every cart page.
+	 * Reads the gateway's enabled setting rather than resolving gateway availability, like client 11.1.0
+	 * `WC_Payments_Features::is_woopay_direct_checkout_enabled()`: its caller on `init` at priority 15, the draft-order
+	 * hook, runs too early to resolve the available gateways, and the extension reverted two changes that did.
 	 * should_run_woopay_direct_checkout() adds gateway availability, at page render.
 	 *
 	 * @return bool
@@ -236,11 +237,10 @@ class WooPaymentsWooPayEligibility {
 	/**
 	 * Tell whether WooPay direct checkout runs for the current shopper.
 	 *
-	 * Client 11.1.0 loads its direct-checkout script only while the feature is enabled and the guest rule passes
-	 * (class-wc-payments-woopay-direct-checkout.php:87-94), so a guest whose cart needs an account keeps the store checkout.
-	 * Unlike client 11.1.0 (class-wc-payments-features.php:237-243), WooPayments must also be an available gateway;
-	 * otherwise the cart sends the shopper to WooPay with no WooPayments method to pay with. Availability is read here, at
-	 * page render, never at init.
+	 * The store-level check and the guest rule come first, as client 11.1.0 loads its script
+	 * (class-wc-payments-woopay-direct-checkout.php:87-94). Unlike client 11.1.0 (class-wc-payments-features.php:237-243),
+	 * WooPayments must also be an available gateway, so a cart never sends the shopper to WooPay without a WooPayments
+	 * method; availability is read last, at page render.
 	 *
 	 * @since 11.2.0
 	 *
