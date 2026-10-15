@@ -89,13 +89,6 @@ class WooPaymentsAdminNoticeService {
 	private $clock;
 
 	/**
-	 * WooPayments live-order IDs already loaded while checking post-KYC eligibility.
-	 *
-	 * @var int[]|null
-	 */
-	private ?array $one_and_done_live_order_ids = null;
-
-	/**
 	 * Set the clock used for notice markers.
 	 *
 	 * @since 11.2.0
@@ -127,8 +120,7 @@ class WooPaymentsAdminNoticeService {
 	 * @return array|null
 	 */
 	public function get_notice_for_current_user(): ?array {
-		$this->one_and_done_live_order_ids = null;
-		$user_id                           = get_current_user_id();
+		$user_id = get_current_user_id();
 		if ( 0 === $user_id || $this->is_plugin_owner() ) {
 			return null;
 		}
@@ -224,7 +216,7 @@ class WooPaymentsAdminNoticeService {
 			return null;
 		}
 		if ( false === $eligibility ) {
-			$wcpay_live_order_ids = $this->one_and_done_live_order_ids ?? $this->query_live_woopayments_order_ids( 2 );
+			$wcpay_live_order_ids = $this->query_live_woopayments_order_ids( 2 );
 			if ( 2 <= count( $wcpay_live_order_ids ) ) {
 				update_option( self::ONE_AND_DONE_PERMANENTLY_INELIGIBLE_OPTION, '1', false );
 				delete_transient( self::ONE_AND_DONE_ELIGIBLE_TRANSIENT );
@@ -348,7 +340,7 @@ class WooPaymentsAdminNoticeService {
 	 * @return array|null
 	 */
 	private function get_post_kyc_notice( int $user_id ): ?array {
-		if ( ! $this->account_service->can_process_payments() || ! $this->account_service->has_live_account() || $this->account_service->has_test_account() || $this->account_service->is_dev_mode_enabled() || get_option( 'wcpay_has_live_sale' ) ) {
+		if ( ! $this->account_service->can_process_payments() || ! $this->account_service->has_live_account() || $this->account_service->has_test_account() || $this->account_service->is_dev_mode_enabled() || get_option( WooPaymentsAccountMilestonesController::HAS_LIVE_SALE_OPTION ) ) {
 			return null;
 		}
 
@@ -378,15 +370,7 @@ class WooPaymentsAdminNoticeService {
 		}
 
 		if ( false === get_transient( self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT ) ) {
-			$share_one_and_done_query = false === get_transient( self::ONE_AND_DONE_ELIGIBLE_TRANSIENT ) && $this->can_consider_one_and_done( $user_id, $now );
-			// Plugin 11.1.0 `WC_Payments_Order_Service::has_live_sale()` (class-wc-payments-order-service.php:361-381), read by the post-KYC notice (class-wc-payments-post-kyc-activation-notice.php:206).
-			$orders = $this->query_live_woopayments_order_ids( $share_one_and_done_query ? 2 : 1 );
-			if ( $share_one_and_done_query ) {
-				$this->one_and_done_live_order_ids = $orders;
-			}
-			if ( ! empty( $orders ) ) {
-				update_option( 'wcpay_has_live_sale', '1', true );
-				delete_transient( self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT );
+			if ( $this->has_live_sale() ) {
 				return null;
 			}
 			set_transient( self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT, '1', HOUR_IN_SECONDS );
@@ -408,6 +392,17 @@ class WooPaymentsAdminNoticeService {
 				'cta'     => array( 'href' => rest_url( $action_base . 'cta' ) ),
 			),
 		);
+	}
+
+	/**
+	 * Tell whether the store has a live WooPayments sale.
+	 *
+	 * The account milestones controller is looked up here, so requests that never reach the post-KYC check do not build it.
+	 *
+	 * @return bool
+	 */
+	private function has_live_sale(): bool {
+		return wc_get_container()->get( WooPaymentsAccountMilestonesController::class )->has_live_sale();
 	}
 
 	/**

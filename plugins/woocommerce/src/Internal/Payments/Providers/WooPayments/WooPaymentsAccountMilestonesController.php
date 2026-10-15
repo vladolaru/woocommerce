@@ -105,7 +105,7 @@ class WooPaymentsAccountMilestonesController implements RegisterHooksInterface {
 	 *
 	 * @var string
 	 */
-	private const HAS_LIVE_SALE_OPTION = 'wcpay_has_live_sale';
+	public const HAS_LIVE_SALE_OPTION = 'wcpay_has_live_sale';
 
 	/**
 	 * Option holding the time test mode was turned on.
@@ -628,11 +628,17 @@ class WooPaymentsAccountMilestonesController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the store has a live WooPayments sale.
+	 * Tell whether the store has a live WooPayments sale: the recorded flag, or else one query for a paid live order through
+	 * the card gateway, which records the flag when it finds one, as client 11.1.0 `has_live_sale()` does
+	 * (`includes/class-wc-payments-order-service.php:360-382`). Recording it drops the cached post-KYC eligibility, as the
+	 * client's listener on the flag's first write does (`includes/admin/attach-rate/class-wc-payments-post-kyc-activation-notice.php:68-73`).
+	 * The query only checks that one order exists, so it asks for no sort.
+	 *
+	 * @since 11.2.0
 	 *
 	 * @return bool
 	 */
-	private function has_live_sale(): bool {
+	public function has_live_sale(): bool {
 		if ( get_option( self::HAS_LIVE_SALE_OPTION ) ) {
 			return true;
 		}
@@ -641,6 +647,7 @@ class WooPaymentsAccountMilestonesController implements RegisterHooksInterface {
 			array(
 				'payment_method' => WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'limit'          => 1,
+				'orderby'        => 'none',
 				'return'         => 'ids',
 				'status'         => array( OrderInternalStatus::COMPLETED, OrderInternalStatus::PROCESSING ),
 				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key

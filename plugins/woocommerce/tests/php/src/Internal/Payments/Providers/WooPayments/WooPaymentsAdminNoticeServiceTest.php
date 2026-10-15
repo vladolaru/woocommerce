@@ -1116,10 +1116,12 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		} else {
 			delete_option( 'wcpay_kyc_completion_date' );
 		}
+		delete_transient( 'wcpay_post_kyc_activation_eligible' );
 		if ( $live_sale ) {
 			update_option( 'wcpay_has_live_sale', '1', false );
+			// An eligibility cached just before the sale was recorded must not show the notice.
+			set_transient( 'wcpay_post_kyc_activation_eligible', '1', HOUR_IN_SECONDS );
 		}
-		delete_transient( 'wcpay_post_kyc_activation_eligible' );
 		set_transient( 'wcpay_one_and_done_eligible', '0', HOUR_IN_SECONDS );
 		$account = $this->createMock( WooPaymentsAccountService::class );
 		$account->method( 'has_working_account' )->willReturn( $working );
@@ -1264,9 +1266,9 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Cold live-mode selection reuses bounded scans when post-KYC and one-and-done overlap.
+	 * @testdox Cold live-mode selection runs one bounded query for the live sale, then one-and-done's two.
 	 */
-	public function test_live_mode_notice_selection_uses_at_most_two_cold_cache_queries(): void {
+	public function test_live_mode_notice_selection_runs_bounded_cold_cache_queries(): void {
 		$now = 1700000000;
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		update_option( 'wcpay_kyc_completion_date', $now - 7 * DAY_IN_SECONDS, false );
@@ -1287,9 +1289,8 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			$notice = $sut->get_notice_for_current_user();
 			$this->assertIsArray( $notice );
 			$this->assertSame( 'one_and_done', $notice['id'] );
-			$this->assertCount( 2, $queries, 'Cold selection should perform only the limit-two WooPayments query and limit-one alternate-gateway query.' );
-			$this->assertSame( 2, $queries[0]['limit'] );
-			$this->assertSame( 1, $queries[1]['limit'] );
+			$this->assertCount( 3, $queries, 'Cold selection should run the live-sale query, the limit-two WooPayments query and the limit-one alternate-gateway query.' );
+			$this->assertSame( array( 1, 2, 1 ), array_column( $queries, 'limit' ) );
 		} finally {
 			remove_filter( 'woocommerce_order_query_args', $record_query );
 			delete_option( 'wcpay_kyc_completion_date' );
@@ -1301,11 +1302,11 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Shared cold-cache selection counts only the client's `prod` order mode as a live sale.
+	 * @testdox Cold-cache selection counts only the `prod` order mode as a live sale.
 	 *
 	 * Plugin 11.1.0 `has_live_sale()` matches `_wcpay_mode = Order_Mode::PRODUCTION` only (class-wc-payments-order-service.php:361-381).
 	 */
-	public function test_shared_cold_cache_selection_ignores_account_mode_live_value(): void {
+	public function test_cold_cache_selection_ignores_account_mode_live_value(): void {
 		$now = 1700000000;
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		update_option( 'wcpay_kyc_completion_date', $now - 7 * DAY_IN_SECONDS, false );
@@ -1326,7 +1327,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			$this->assertIsArray( $notice );
 			$this->assertSame( 'post_kyc_activation', $notice['id'] );
 			$this->assertFalse( get_option( 'wcpay_has_live_sale' ) );
-			$this->assertSame( 2, $queries[0]['limit'] );
+			$this->assertSame( 1, $queries[0]['limit'] );
 			$this->assertSame( 'prod', $queries[0]['meta_value'] );
 		} finally {
 			remove_filter( 'woocommerce_order_query_args', $record_query );
@@ -1471,7 +1472,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox One-and-done queries, transients, options, and request-local order IDs stay on the current blog.
+	 * @testdox One-and-done queries, transients and options stay on the current blog.
 	 * @group multisite
 	 */
 	public function test_one_and_done_state_and_queries_are_isolated_by_blog(): void {
@@ -1512,7 +1513,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			restore_current_blog();
 			$this->assertSame( $main_blog_id, get_current_blog_id() );
 			$this->assertSame( 'main-blog-cache', get_transient( 'wcpay_one_and_done_eligible' ) );
-			$this->assertSame( array( $main_blog_id, $main_blog_id, $secondary_blog_id ), $queried_blog_ids );
+			$this->assertSame( array( $main_blog_id, $main_blog_id, $main_blog_id, $secondary_blog_id ), $queried_blog_ids );
 		} finally {
 			remove_filter( 'woocommerce_order_query_args', $record_query );
 			while ( ms_is_switched() ) {
