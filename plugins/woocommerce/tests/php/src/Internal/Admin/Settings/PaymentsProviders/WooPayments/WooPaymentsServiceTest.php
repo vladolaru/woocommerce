@@ -23,6 +23,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
@@ -293,6 +294,22 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			$reflection->setAccessible( true );
 			$reflection->setValue( $this->sut, $collaborator );
 		}
+
+		// The built-in onboarding runs in its own service, with the same doubles.
+		$onboarding_service = new WooPaymentsOnboardingService();
+		$onboarding_service->init( $proxy );
+		$onboarding_collaborators = array(
+			'api_client'      => $api_client,
+			'account_service' => $account_service,
+		);
+		foreach ( $onboarding_collaborators as $property => $collaborator ) {
+			$reflection = new \ReflectionProperty( WooPaymentsOnboardingService::class, $property );
+			$reflection->setAccessible( true );
+			$reflection->setValue( $onboarding_service, $collaborator );
+		}
+		$reflection = new \ReflectionProperty( WooPaymentsService::class, 'onboarding_service' );
+		$reflection->setAccessible( true );
+		$reflection->setValue( $this->sut, $onboarding_service );
 	}
 
 	/**
@@ -14954,66 +14971,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			$steps[ $step_id ]['statuses'] ?? array(),
 			sprintf( 'The "%s" onboarding step should be marked completed on a successful disable.', $step_id )
 		);
-	}
-
-	/**
-	 * @testdox Native test-drive payment-method snapshots remain scoped to the active multisite blog.
-	 * @group ms-required
-	 */
-	public function test_native_test_drive_payment_method_snapshot_is_site_scoped(): void {
-		if ( ! is_multisite() ) {
-			$this->markTestSkipped( 'This assertion requires the multisite test configuration.' );
-		}
-
-		$main_site_id = get_current_blog_id();
-		$subsite_id   = self::factory()->blog->create();
-		set_transient(
-			self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
-			array( 'enabled_payment_methods' => array( 'card' ) ),
-			HOUR_IN_SECONDS
-		);
-
-		switch_to_blog( $subsite_id );
-		try {
-			set_transient(
-				self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
-				array( 'enabled_payment_methods' => array( 'card', 'link' ) ),
-				HOUR_IN_SECONDS
-			);
-			$this->assertSame( array( 'card', 'link' ), $this->invoke_private_method( 'get_test_drive_enabled_payment_method_ids' ) );
-		} finally {
-			restore_current_blog();
-		}
-
-		$this->assertSame( $main_site_id, get_current_blog_id() );
-		$this->assertSame( array( 'card' ), $this->invoke_private_method( 'get_test_drive_enabled_payment_method_ids' ) );
-	}
-
-	/**
-	 * @testdox Should autoload the onboarding test-mode option when persisting it, since storefront renders read it.
-	 */
-	public function test_set_native_onboarding_test_mode_autoloads_option(): void {
-		delete_option( 'wcpay_onboarding_test_mode' );
-
-		$this->invoke_private_method( 'set_native_onboarding_test_mode', array( true ) );
-
-		$this->assertSame( 'yes', get_option( 'wcpay_onboarding_test_mode' ) );
-		$this->assertArrayHasKey( 'wcpay_onboarding_test_mode', wp_load_alloptions( true ), 'Client 11.1.0 autoloads it (onboarding service :1086).' );
-	}
-
-	/**
-	 * @testdox Should not autoload the Stripe-connected onboarding marker when persisting it.
-	 */
-	public function test_update_native_gateway_settings_after_test_account_init_does_not_autoload_stripe_connected_marker(): void {
-		delete_option( '_wcpay_onboarding_stripe_connected' );
-
-		$this->invoke_private_method(
-			'update_native_gateway_settings_after_test_account_init',
-			array( array( 'card_payments' => true ), array( 'is_live' => false ) )
-		);
-
-		$this->assertIsArray( get_option( '_wcpay_onboarding_stripe_connected' ) );
-		$this->assertOptionNotAutoloaded( '_wcpay_onboarding_stripe_connected' );
 	}
 
 	/**

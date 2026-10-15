@@ -84,7 +84,7 @@ class WooPaymentsAccountMilestonesController implements RegisterHooksInterface {
 	 *
 	 * @var string
 	 */
-	private const KYC_SUBMITTED_DATE_OPTION = 'wcpay_kyc_submitted_date';
+	public const KYC_SUBMITTED_DATE_OPTION = 'wcpay_kyc_submitted_date';
 
 	/**
 	 * Option listing the post-KYC activation email stages already sent.
