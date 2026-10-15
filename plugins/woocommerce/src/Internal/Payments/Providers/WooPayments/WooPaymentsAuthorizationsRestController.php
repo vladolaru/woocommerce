@@ -22,22 +22,26 @@ use WP_REST_Response;
 use WP_REST_Server;
 
 /**
- * Native WooPayments uncaptured authorizations REST controller.
+ * Serves the uncaptured authorizations list, its summary and one authorization, and captures or cancels an order's
+ * authorization.
+ *
+ * A capture or cancel is refused for a refunded order, for an intent that is not the order's and for a payment no longer
+ * awaiting capture.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
 	private WooPaymentsApiClient $api_client;
 
 	/**
-	 * Native payment processing service.
+	 * Payment processing service.
 	 *
 	 * @var PaymentProcessingService
 	 */
@@ -55,8 +59,8 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient     $api_client         Native WooPayments API client.
-	 * @param PaymentProcessingService $processing_service Native payment processing service.
+	 * @param WooPaymentsApiClient     $api_client         WooPayments API client.
+	 * @param PaymentProcessingService $processing_service Payment processing service.
 	 * @param WooPaymentsProvider      $provider           WooPayments provider.
 	 */
 	final public function init( WooPaymentsApiClient $api_client, PaymentProcessingService $processing_service, WooPaymentsProvider $provider ): void {
@@ -75,7 +79,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Register WooPayments-compatible authorization routes.
+	 * Register the authorization routes.
 	 */
 	public function register_routes(): void {
 		register_rest_route( $this->route_namespace, '/payments/authorizations', $this->get_readable_route( 'get_authorizations' ) );
@@ -165,7 +169,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Run a capture or cancel request, logging any unexpected error before the client's generic answer.
+	 * Run a capture or cancel request; an unexpected error is logged and answered as a 500 `wcpay_server_error`.
 	 *
 	 * Client 11.1.0 wraps both routes the same way (class-wc-rest-payments-orders-controller.php:434-436, :667-669).
 	 *
@@ -234,8 +238,9 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 			? $this->processing_service->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $this->provider )
 			: $this->processing_service->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $this->provider );
 
-		// The merchant's audit entry is kept whatever the platform answered: the client's capture and cancel save the order on
-		// failure too (class-wc-payment-gateway-wcpay.php capture_charge and cancel_authorization).
+		// The merchant's audit entry is saved whatever the platform answered; client 11.1.0's capture and cancel also save the
+		// order on failure (`includes/class-wc-payment-gateway-wcpay.php:4043-4051,4129-4130`,
+		// `includes/class-wc-payments-order-service.php:2894`).
 		$order->save_meta_data();
 
 		if ( ! $this->is_expected_action_outcome( $outcome, $action ) ) {
@@ -312,7 +317,8 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get authorizations list params after reference-compatible normalization.
+	 * Get the authorizations list params, with their alias params mapped, after the `wcpay_list_authorizations_request` filter
+	 * ran.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -348,7 +354,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Apply the preserved authorizations request filter to REST list params.
+	 * Apply the `wcpay_list_authorizations_request` filter to the list params.
 	 *
 	 * @param array<string,mixed> $params Request params.
 	 * @return array<string,mixed>
@@ -467,7 +473,7 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Convert a failed action outcome to the client's REST error.
+	 * Convert a failed capture or cancel to its REST error.
 	 *
 	 * Client 11.1.0 answers a failed capture with wcpay_capture_error, the escaped platform message, the minimum amount for
 	 * amount_too_small, the platform's status and the error type (class-wc-rest-payments-orders-controller.php:410-425,

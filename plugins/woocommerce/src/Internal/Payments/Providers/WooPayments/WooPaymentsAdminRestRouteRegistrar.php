@@ -15,7 +15,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPay
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Defers native WooPayments REST controller resolution for admin requests until WordPress initializes its REST server.
+ * On admin requests, registers the WooPayments REST controllers when WordPress starts its REST server, so a REST call
+ * made inside the admin request, such as a preload, finds the routes.
+ *
+ * REST requests register the controllers directly; the WooPay session routes register only in the active setup tier.
  *
  * @since 11.2.0
  * @internal
@@ -61,7 +64,7 @@ final class WooPaymentsAdminRestRouteRegistrar implements RegisterHooksInterface
 	 */
 	public function register_rest_controllers(): void {
 		/**
-		 * Effective native state store.
+		 * Setup tier store.
 		 *
 		 * @var WooPaymentsSetupTier $setup_tier
 		 */
@@ -79,7 +82,7 @@ final class WooPaymentsAdminRestRouteRegistrar implements RegisterHooksInterface
 	}
 
 	/**
-	 * Get the native route controllers available for connected and active sites.
+	 * Get the REST controllers of a connected or active setup tier.
 	 *
 	 * @since 11.2.0
 	 *
@@ -108,9 +111,9 @@ final class WooPaymentsAdminRestRouteRegistrar implements RegisterHooksInterface
 	}
 
 	/**
-	 * Get the route controllers for the current effective state.
+	 * Get the route controllers for the setup tier.
 	 *
-	 * @param string $state Effective native state.
+	 * @param string $state Effective setup tier.
 	 * @return array<int,class-string<RegisterHooksInterface>> Route controller classes in registration order.
 	 */
 	private static function get_controller_roots_for_state( string $state ): array {

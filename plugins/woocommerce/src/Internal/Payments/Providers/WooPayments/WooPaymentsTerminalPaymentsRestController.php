@@ -24,9 +24,9 @@ use WP_REST_Server;
 
 /**
  * Serves the in-person payment routes the WooCommerce mobile apps call: the card reader connection token, and for an order
- * its terminal payment intent, the preparation and capture of that payment, and its WooPayments customer. The extension
- * serves them from includes/admin/class-wc-rest-payments-orders-controller.php and
- * class-wc-rest-payments-connection-tokens-controller.php.
+ * its terminal payment intent, the preparation and capture of that payment, and its WooPayments customer, at the routes
+ * client 11.1.0 serves from `includes/admin/class-wc-rest-payments-orders-controller.php` and
+ * `includes/admin/class-wc-rest-payments-connection-tokens-controller.php`.
  *
  * @since 11.2.0
  * @internal
@@ -38,7 +38,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	private const LOCK_RETRY_WAIT_MICROSECONDS = 500000;
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
@@ -77,7 +77,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient        $api_client         Native WooPayments API client.
+	 * @param WooPaymentsApiClient        $api_client         WooPayments API client.
 	 * @param WooPaymentsAccountService   $account_service    WooPayments account service.
 	 * @param WooPaymentsCustomerService  $customer_service   WooPayments customer service.
 	 * @param WooPaymentsOrderDataService $order_data_service WooPayments order data service.
@@ -272,8 +272,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 		}
 
 		try {
-			// App metadata is forwarded verbatim like the plugin: the apps reconcile
-			// on exact metadata names, and it only ever travels to the provider API.
+			// App metadata is sent as it is: the apps reconcile on exact metadata names, and it only goes to the platform.
 			$currency        = strtolower( $order->get_currency() );
 			$raw_metadata    = $request->get_param( 'metadata' );
 			$metadata        = is_array( $raw_metadata ) ? $raw_metadata : array();
@@ -458,7 +457,8 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 			// A reader that captured the payment itself (Interac) has charged the card before any write below.
 			$payment_captured = 'succeeded' === $status;
 
-			// The client attaches the in-person method and channel before any status change, so the order emails and core's POS email checks see them (class-wc-rest-payments-orders-controller.php:209-215).
+			// The in-person method and channel are set before any status change, so the order emails and core's POS email checks
+			// see them (client 11.1.0 `includes/admin/class-wc-rest-payments-orders-controller.php:209-215`).
 			$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 			$order->set_payment_method_title( __( 'WooCommerce In-Person Payments', 'woocommerce' ) );
 			$ipp_channel = $this->get_ipp_channel_from_intent( $intent );
@@ -478,7 +478,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 					: $this->api_client->capture_intention(
 						$intent_id,
 						WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), (string) $order->get_currency() ),
-						// Order-derived metadata first; the intent's own metadata wins, mirroring the plugin's mobile-app priority.
+						// Order-derived metadata first; the intent's own metadata, which the app sent, wins.
 						array_merge( WooPaymentsIntentRequestBuilder::capture_metadata_from_order( $order ), $this->get_intent_metadata( $intent ) )
 					);
 			} catch ( WooPaymentsApiException $capture_exception ) {
@@ -507,7 +507,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 				)
 			);
 		} catch ( Throwable $exception ) {
-			// A platform error before the capture call, such as the intent read, lands here too, as on the client.
+			// A platform error before the capture call, such as the intent read, lands here too.
 			$context = array(
 				'order_id'  => $order->get_id(),
 				'intent_id' => $intent_id,
@@ -654,7 +654,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Build the capture result the client's capture_charge() returns for a failed capture call.
+	 * Build the capture result of a failed capture call.
 	 *
 	 * Client 11.1.0 keeps the exception's HTTP status and code, escapes its message and, for amount_too_small, adds the
 	 * minimum amount the mobile app parses to prompt for a higher amount (class-wc-payment-gateway-wcpay.php:3991-4061).
@@ -691,7 +691,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Record a terminal payment step through the payment lifecycle with the client's note for it.
+	 * Record a terminal payment step through the payment lifecycle, with its order note.
 	 *
 	 * @param WC_Order            $order              Order.
 	 * @param array<string,mixed> $intent             Intent or capture response.
@@ -805,7 +805,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	 * Mirrors client 11.1.0 capture_terminal_payment() (class-wc-rest-payments-orders-controller.php:256-280): the
 	 * generated card becomes the customer's token on the order and its subscriptions, which switch to WooPayments and
 	 * leave manual renewal unless the store requires it. A wallet payment has no generated card and changes nothing.
-	 * A card that cannot be saved for a registered customer fails the request as the client's uncaught fetch error does.
+	 * A card that cannot be saved for a registered customer fails the request.
 	 *
 	 * @param WC_Order            $order  Order.
 	 * @param array<string,mixed> $intent Intent read before the capture.
@@ -848,7 +848,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get the IPP channel from a PaymentIntent, restricted to the channels the plugin recognizes.
+	 * Get the IPP channel from a PaymentIntent, restricted to `mobile_pos` and `mobile_store_management`.
 	 *
 	 * @param array<string,mixed> $intent Intent.
 	 * @return string Validated channel, or an empty string.
@@ -864,8 +864,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	/**
 	 * Build the failure-note message for a failed capture call.
 	 *
-	 * An amount-too-small decline carries the provider minimum; the plugin
-	 * appends the formatted minimum to the message before noting the order.
+	 * An amount-too-small decline carries the platform's minimum, which is added to the message before the order note.
 	 *
 	 * @param WooPaymentsApiException $exception Capture exception.
 	 * @return string
@@ -880,10 +879,8 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	/**
 	 * Reconcile a terminal capture that failed with an API error.
 	 *
-	 * Mirrors the plugin's capture_charge: re-fetch the intent to catch an
-	 * authorization that already expired (the site may have missed the
-	 * charge.expired webhook). A canceled intent fails the order with the
-	 * expired note; anything else records the plain capture failure.
+	 * The intent is read again to catch an authorization that already expired (the site may have missed the charge.expired
+	 * webhook). A canceled intent fails the order with the expired note; anything else records the plain capture failure.
 	 *
 	 * @param WC_Order $order     Order.
 	 * @param string   $intent_id Intent ID.
@@ -910,7 +907,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	/**
 	 * Record a failed terminal capture: failure note, still-capturable authorization.
 	 *
-	 * The order keeps its status, matching the plugin's mark_payment_capture_failed.
+	 * The order keeps its status.
 	 *
 	 * @param WC_Order $order     Order.
 	 * @param string   $intent_id Intent ID.
@@ -939,7 +936,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	/**
 	 * Record an expired-authorization terminal capture: failed order, expired note.
 	 *
-	 * Matches the plugin's mark_payment_capture_expired and the charge.expired webhook.
+	 * The same outcome as the `charge.expired` webhook.
 	 *
 	 * @param WC_Order $order     Order.
 	 * @param string   $intent_id Intent ID.

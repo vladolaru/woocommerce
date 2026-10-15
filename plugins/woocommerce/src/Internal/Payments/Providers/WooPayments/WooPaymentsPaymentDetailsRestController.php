@@ -18,10 +18,11 @@ use WP_REST_Server;
 use Throwable;
 
 /**
- * Native WooPayments payment detail REST controller.
+ * Serves a charge or an order's charge, a payment intent and its timeline, creates and confirms a payment intent for an
+ * order, and refunds a payment.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 
@@ -46,14 +47,14 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	);
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
 	private WooPaymentsApiClient $api_client;
 
 	/**
-	 * WooPayments local order context service.
+	 * Order details service.
 	 *
 	 * @var WooPaymentsOrderDetailsService
 	 */
@@ -91,7 +92,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Register WooPayments-compatible payment detail routes.
+	 * Register the payment detail routes.
 	 */
 	public function register_routes(): void {
 		register_rest_route( $this->route_namespace, '/payments/charges/(?P<charge_id>\w+)', $this->get_readable_route( 'get_charge' ) );
@@ -384,7 +385,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get an order by the persisted native payment intent meta.
+	 * Get the order whose `_intent_id` meta is this payment intent.
 	 *
 	 * @param string $intention_id Payment intent ID.
 	 * @return WC_Order|null
@@ -427,7 +428,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Sort timeline events like the reference WooPayments client.
+	 * Sort timeline events newest first, then by event type.
 	 *
 	 * @param mixed $event_a First event.
 	 * @param mixed $event_b Second event.
@@ -525,7 +526,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 		$item           = array(
 			'id'             => $intent['id'] ?? null,
 			'amount'         => $intent['amount'] ?? null,
-			// The client's intent model uppercases the currency.
+			// Uppercase, as client 11.1.0's intent model returns it (`includes/wc-payment-api/models/class-wc-payments-api-payment-intention.php:93`).
 			'currency'       => isset( $intent['currency'] ) ? strtoupper( (string) $intent['currency'] ) : null,
 			'created'        => gmdate( 'Y-m-d H:i:s', (int) ( $intent['created'] ?? 0 ) ),
 			'customer'       => $intent['customer'] ?? $charge['customer'] ?? null,
@@ -758,9 +759,9 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 	/**
 	 * Refund a charge that has no WooCommerce order.
 	 *
-	 * Ports client 11.1.0 `process_charge_refund()` and its `Refund_Charge` request: the charge must be a `ch_`
-	 * or `py_` ID, the amount a positive integer, and nothing is written locally. The client throws on invalid
-	 * input (a fatal); native refuses it with a 400 instead.
+	 * The charge must be a `ch_` or `py_` ID and the amount a positive integer, and nothing is written locally
+	 * (client 11.1.0 `includes/admin/class-wc-rest-payments-refunds-controller.php:107-114` and its `Refund_Charge` request).
+	 * Invalid input is refused with a 400.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -791,7 +792,8 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 		}
 
 		try {
-			// The client sets no idempotency key here, so the transport mints a fresh one per request.
+			// No idempotency key is set, as in client 11.1.0 (`includes/admin/class-wc-rest-payments-refunds-controller.php:107-114`),
+			// so the transport mints a fresh one per request.
 			return new WP_REST_Response( $this->api_client->refund_charge( $charge_id, $amount, $reason, 'transaction_details_no_order', '' ) );
 		} catch ( WooPaymentsApiException $exception ) {
 			return new WP_Error(

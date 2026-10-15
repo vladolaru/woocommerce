@@ -18,10 +18,13 @@ use WP_REST_Response;
 use WP_REST_Server;
 
 /**
- * Native WooPayments Reports REST controller.
+ * Serves the reporting API: the balance summary, the Fees report with its summary and CSV export, and the transaction
+ * and authorization reports with one row each.
+ *
+ * The route args refuse a malformed date, a non-integer order ID or a page size over 100.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsReportsRestController extends RestApiControllerBase {
 
@@ -39,7 +42,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	);
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
@@ -53,7 +56,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	private WooPaymentsAccountService $account_service;
 
 	/**
-	 * WooPayments local order context service.
+	 * Order details service.
 	 *
 	 * @var WooPaymentsOrderDetailsService
 	 */
@@ -88,7 +91,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Register WooPayments-compatible Reports routes.
+	 * Register the report routes.
 	 */
 	public function register_routes(): void {
 		register_rest_route( $this->route_namespace, '/payments/reports/balance', $this->get_readable_route( 'get_balance_summary', $this->get_balance_args() ) );
@@ -468,7 +471,8 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get filtered Fees list params after the preserved transactions request filter has run.
+	 * Get the Fees list params after the `wcpay_list_transactions_request` filter ran, with order-number searches mapped to
+	 * charge IDs.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -823,7 +827,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Remove empty params while preserving zero-like values.
+	 * Remove empty params while keeping zero-like values.
 	 *
 	 * @param array<string,mixed> $params Params.
 	 * @return array<string,mixed>

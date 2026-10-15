@@ -17,10 +17,11 @@ use WP_REST_Response;
 use WP_REST_Server;
 
 /**
- * Native WooPayments Capital REST controller.
+ * Serves the Capital active loan summary and loans, and sends the merchant to a fresh loan offer link, from the loan
+ * offer route or from a `wcpay-loan-offer` admin link in an offer email or an expired offer.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsCapitalRestController extends RestApiControllerBase {
 
@@ -32,7 +33,7 @@ class WooPaymentsCapitalRestController extends RestApiControllerBase {
 	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
@@ -44,7 +45,7 @@ class WooPaymentsCapitalRestController extends RestApiControllerBase {
 	 * @internal
 	 *
 	 * @param WooPaymentsRuntimeArbiter $arbiter    Runtime owner arbiter.
-	 * @param WooPaymentsApiClient      $api_client Native WooPayments API client.
+	 * @param WooPaymentsApiClient      $api_client WooPayments API client.
 	 */
 	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client ): void {
 		$this->arbiter    = $arbiter;
@@ -61,7 +62,7 @@ class WooPaymentsCapitalRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Register WooPayments-compatible Capital routes.
+	 * Register the Capital routes.
 	 */
 	public function register_routes(): void {
 		register_rest_route( $this->route_namespace, '/payments/capital/active_loan_summary', $this->get_readable_route( 'get_active_loan_summary' ) );
@@ -126,9 +127,9 @@ class WooPaymentsCapitalRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Redirect legacy Capital offer links to a fresh provider loan offer link.
+	 * Send a merchant who opened a `wcpay-loan-offer` admin link to a fresh loan offer link.
 	 *
-	 * Like the plugin's `maybe_redirect_by_get_param()` (11.1.0), any `manage_woocommerce` admin is sent on, with no
+	 * Any `manage_woocommerce` admin is sent on, with no
 	 * Capital eligibility check: a merchant's first offer email comes before any loan, and the platform refuses an
 	 * ineligible offer, which lands on the overview error notice.
 	 *
@@ -143,7 +144,7 @@ class WooPaymentsCapitalRestController extends RestApiControllerBase {
 			return;
 		}
 
-		// This mirrors the legacy automatic email/expired-link redirect. The GET flag only indicates that we should create a fresh Capital link.
+		// The query flag only asks for a fresh Capital link; its value is ignored.
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		if ( ! isset( $_GET['wcpay-loan-offer'] ) ) {
 			return;
@@ -168,7 +169,7 @@ class WooPaymentsCapitalRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Build the native WooPayments overview URL.
+	 * Build the Payments Overview page URL.
 	 *
 	 * @param array<string,string> $query Query args.
 	 * @return string
@@ -231,7 +232,7 @@ class WooPaymentsCapitalRestController extends RestApiControllerBase {
 			$url          = isset( $capital_link['url'] ) ? (string) $capital_link['url'] : '';
 
 			if ( '' !== $url ) {
-				// Plugin 11.1.0 `WC_Payments_Redirect_Service::redirect_to_capital_view_offer_page()`.
+				// The Tracks event client 11.1.0 records for this redirect (`includes/class-wc-payments-redirect-service.php:96`).
 				WooPaymentsTracks::record_wcadmin_event( 'wcpay_capital_view_offer_redirect' );
 				return $url;
 			}

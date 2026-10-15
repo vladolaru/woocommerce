@@ -17,8 +17,8 @@ use WP_REST_Server;
 
 /**
  * Serves the terminal location routes the WooCommerce mobile apps call: the store's location, created from the store
- * address when none matches, and the account's locations. The extension serves them from
- * includes/admin/class-wc-rest-payments-terminal-locations-controller.php.
+ * address when none matches, and the account's locations to list, read, create, update and delete, at the routes
+ * client 11.1.0 serves from `includes/admin/class-wc-rest-payments-terminal-locations-controller.php`.
  *
  * @since 11.2.0
  * @internal
@@ -30,7 +30,7 @@ class WooPaymentsTerminalLocationsRestController extends RestApiControllerBase {
 	private const LOCATION_CACHE_TTL = DAY_IN_SECONDS;
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
@@ -235,7 +235,8 @@ class WooPaymentsTerminalLocationsRestController extends RestApiControllerBase {
 		$display_name = $this->get_request_string( $request, 'display_name' );
 
 		try {
-			// No metadata is forwarded on location create, matching the plugin.
+			// Only the display name and the address are sent (client 11.1.0
+			// `includes/admin/class-wc-rest-payments-terminal-locations-controller.php:263-266`).
 			$location = $this->api_client->create_terminal_location(
 				$display_name,
 				is_array( $address ) ? $address : array()
@@ -298,7 +299,7 @@ class WooPaymentsTerminalLocationsRestController extends RestApiControllerBase {
 	 */
 	private function get_cached_terminal_locations(): array {
 		$cached = get_transient( self::STORE_LOCATIONS_TRANSIENT_KEY );
-		// An empty list is a cache miss, matching the plugin's falsy check.
+		// An empty list is a cache miss: a location created elsewhere must not stay invisible for a day.
 		if ( is_array( $cached ) && array() !== $cached ) {
 			return $cached;
 		}
@@ -359,7 +360,7 @@ class WooPaymentsTerminalLocationsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get store location display names that may have been used by prior clients.
+	 * Get the display names a store location may carry: the site URL without its scheme, the site title and the host.
 	 *
 	 * @return string[]
 	 */

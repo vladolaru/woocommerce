@@ -16,10 +16,13 @@ use WP_REST_Response;
 use WP_REST_Server;
 
 /**
- * Native WooPayments Documents REST controller.
+ * Serves the Documents list, summary and file downloads, and the VAT number check and save, only while the account has
+ * Documents enabled.
+ *
+ * A download sends the platform's file and headers instead of JSON.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 
@@ -54,7 +57,7 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 	private ?WP_REST_Response $raw_document_response = null;
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
@@ -72,7 +75,7 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient      $api_client      Native WooPayments API client.
+	 * @param WooPaymentsApiClient      $api_client      WooPayments API client.
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 */
 	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
@@ -103,7 +106,7 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Register WooPayments-compatible Documents and VAT routes.
+	 * Register the Documents and VAT routes.
 	 */
 	private function register_documents_routes(): void {
 		register_rest_route( $this->route_namespace, '/payments/documents', $this->get_readable_route( 'get_documents' ) );
@@ -194,7 +197,8 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 		try {
 			$raw_response = $this->api_client->get_document( $document_id );
 		} catch ( WooPaymentsApiException $exception ) {
-			// The merchant opened this URL in a browser window, so the client answers with an error page (documents controller :91-98).
+			// The merchant opened this URL in a browser window, so a failure answers an error page with the platform's status, not
+			// JSON (client 11.1.0 `includes/admin/class-wc-rest-payments-documents-controller.php:91-98`).
 			$message = sprintf(
 				/* translators: %1: The document ID. %2: The error message. */
 				esc_html__( 'There was an error accessing document %1$s. %2$s', 'woocommerce' ),
@@ -208,7 +212,7 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 		$content_type        = $this->get_raw_response_header( $raw_response, 'content-type' );
 		$content_disposition = $this->get_raw_response_header( $raw_response, 'content-disposition' );
 		$body                = wp_remote_retrieve_body( $raw_response );
-		// Invoices are private: like the client's nocache_headers() (documents controller :114-115), whatever rest_send_nocache_headers says.
+		// Invoices are private, so the answer is never cached, whatever the `rest_send_nocache_headers` filter says.
 		$headers = array_filter( wp_get_nocache_headers() );
 
 		if ( $status <= 0 ) {
@@ -368,7 +372,7 @@ class WooPaymentsDocumentsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Record the preserved document download Tracks event.
+	 * Record the `wcpay_document_downloaded` Tracks event.
 	 *
 	 * @param string $document_id Document ID.
 	 */

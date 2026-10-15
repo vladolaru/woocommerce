@@ -18,22 +18,23 @@ use WP_REST_Response;
 use WP_REST_Server;
 
 /**
- * Native WooPayments disputes REST controller.
+ * Serves the disputes list, summary and export, one dispute with its order, and the evidence update and close; an
+ * update or a close clears the dispute caches.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsDisputesRestController extends RestApiControllerBase {
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
 	private WooPaymentsApiClient $api_client;
 
 	/**
-	 * WooPayments local order context service.
+	 * Order details service.
 	 *
 	 * @var WooPaymentsOrderDetailsService
 	 */
@@ -71,7 +72,7 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Register WooPayments-compatible disputes routes.
+	 * Register the dispute routes.
 	 */
 	public function register_routes(): void {
 		register_rest_route( $this->route_namespace, '/payments/disputes', $this->get_readable_route( 'get_disputes' ) );
@@ -300,7 +301,7 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get disputes list params after the preserved legacy request filter has run.
+	 * Get the disputes list params after the `wcpay_list_disputes_request` filter ran.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -314,7 +315,7 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get the summary and export filters: the client's get_disputes_filters() keys, with no paging and no list filter.
+	 * Get the summary and export filters: the list's filters, with no paging and no list request filter.
 	 *
 	 * Client 11.1.0 class-wc-rest-payments-disputes-controller.php:188-205.
 	 *

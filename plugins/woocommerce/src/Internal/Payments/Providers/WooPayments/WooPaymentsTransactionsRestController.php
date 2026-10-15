@@ -18,24 +18,25 @@ use WP_REST_Response;
 use WP_REST_Server;
 
 /**
- * Native WooPayments transactions REST controller.
+ * Serves the transactions list, summary, search, export and one transaction, and the fraud outcome lists with their
+ * summary, search and export.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 
 	private const FRAUD_OUTCOME_MAX_PAGE_SIZE = 100;
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
 	private WooPaymentsApiClient $api_client;
 
 	/**
-	 * WooPayments local order context service.
+	 * Order details service.
 	 *
 	 * @var WooPaymentsOrderDetailsService
 	 */
@@ -64,7 +65,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Register WooPayments-compatible transactions routes.
+	 * Register the transaction routes.
 	 */
 	public function register_routes(): void {
 		register_rest_route( $this->route_namespace, '/payments/transactions', $this->get_readable_route( 'get_transactions' ) );
@@ -326,7 +327,8 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get transactions list params after the preserved legacy request filter has run.
+	 * Get the transactions list params after the `wcpay_list_transactions_request` filter ran, with order-number searches
+	 * mapped to charge IDs.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -342,8 +344,8 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get the summary and export filters, with order-number search terms mapped to charge IDs as the client's API client
-	 * does for both (class-wc-payments-api-client.php get_transactions_summary() and get_transactions_export()).
+	 * Get the summary and export filters, with order-number search terms mapped to charge IDs, as client 11.1.0's API
+	 * client maps them for both (`includes/wc-payment-api/class-wc-payments-api-client.php:300,447`).
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
@@ -372,7 +374,7 @@ class WooPaymentsTransactionsRestController extends RestApiControllerBase {
 	 * Get fraud outcome request params.
 	 *
 	 * @param WP_REST_Request $request Request.
-	 * @param string          $hook    Legacy request hook.
+	 * @param string          $hook    The request filter to fire.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When a filter callback returns no request.

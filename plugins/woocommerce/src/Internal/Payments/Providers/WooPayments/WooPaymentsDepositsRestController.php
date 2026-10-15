@@ -18,12 +18,12 @@ use WP_REST_Server;
 use Throwable;
 
 /**
- * Native WooPayments deposits REST controller.
+ * Serves the payouts overview, list, summary and export, one payout, and manual payouts.
  *
- * These deposits-named endpoints back merchant-facing payouts surfaces and intentionally preserve the WooPayments API contract.
+ * The routes keep the platform's `deposits` names, which the payout pages call.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsDepositsRestController extends RestApiControllerBase {
 
@@ -41,7 +41,7 @@ class WooPaymentsDepositsRestController extends RestApiControllerBase {
 	);
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
@@ -52,7 +52,7 @@ class WooPaymentsDepositsRestController extends RestApiControllerBase {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient $api_client Native WooPayments API client.
+	 * @param WooPaymentsApiClient $api_client WooPayments API client.
 	 */
 	final public function init( WooPaymentsApiClient $api_client ): void {
 		$this->api_client = $api_client;
@@ -68,7 +68,7 @@ class WooPaymentsDepositsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Register WooPayments-compatible deposits routes.
+	 * Register the payout routes.
 	 */
 	public function register_routes(): void {
 		register_rest_route(
@@ -295,7 +295,7 @@ class WooPaymentsDepositsRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get deposits list params after the preserved legacy request filter has run.
+	 * Get the payouts list params after the `wcpay_list_deposits_request` filter ran.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request

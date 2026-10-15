@@ -18,7 +18,7 @@ use Automattic\WooCommerce\Internal\Utilities\ArrayUtil;
 final class WooPaymentsTerminalListResponses {
 
 	/**
-	 * Extract a list from common WPCOM collection envelopes.
+	 * Extract a list from the platform's list envelopes (`data`, `readers`, `locations`, `terminal_locations`) or a bare list.
 	 *
 	 * @param array<string,mixed> $response Response.
 	 * @return array<int,array<string,mixed>>

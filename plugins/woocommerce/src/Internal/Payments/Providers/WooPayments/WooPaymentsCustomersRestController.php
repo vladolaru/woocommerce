@@ -14,10 +14,10 @@ use WP_REST_Response;
 use WP_REST_Server;
 
 /**
- * Native WooPayments customer REST controller.
+ * Serves a WooPayments customer's saved payment methods of the store's enabled types, for the mobile apps.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsCustomersRestController extends RestApiControllerBase {
 
@@ -58,7 +58,7 @@ class WooPaymentsCustomersRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Register WooPayments-compatible customer routes.
+	 * Register the customer route.
 	 */
 	public function register_routes(): void {
 		register_rest_route( $this->route_namespace, '/payments/customers/(?P<customer_id>\w+)/payment_methods', $this->get_readable_route( 'get_customer_payment_methods' ) );

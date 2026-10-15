@@ -19,8 +19,8 @@ use WP_REST_Server;
 
 /**
  * Serves the card reader routes the WooCommerce mobile apps call: the store's readers and their registration, a
- * transaction's reader charge summary, and printed receipts with their preview. The extension serves them from
- * includes/admin/class-wc-rest-payments-reader-controller.php.
+ * transaction's reader charge summary, and printed receipts with their preview, at the routes client 11.1.0 serves from
+ * `includes/admin/class-wc-rest-payments-reader-controller.php`.
  *
  * @since 11.2.0
  * @internal
@@ -32,7 +32,7 @@ class WooPaymentsCardReadersRestController extends RestApiControllerBase {
 	private const READER_CACHE_TTL = 2 * HOUR_IN_SECONDS;
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
@@ -155,8 +155,7 @@ class WooPaymentsCardReadersRestController extends RestApiControllerBase {
 		unset( $request );
 
 		$cached = get_transient( self::STORE_READERS_TRANSIENT_KEY );
-		// An empty list is a cache miss, matching the plugin's falsy check: a reader
-		// registered elsewhere must not stay invisible for the full TTL.
+		// An empty list is a cache miss: a reader registered elsewhere must not stay invisible for the full TTL.
 		if ( is_array( $cached ) && array() !== $cached ) {
 			return new WP_REST_Response( $cached );
 		}
@@ -200,8 +199,7 @@ class WooPaymentsCardReadersRestController extends RestApiControllerBase {
 				$metadata
 			);
 			delete_transient( self::STORE_READERS_TRANSIENT_KEY );
-			// Pairing a reader can change account-derived state (capabilities, IPP
-			// flags); the plugin eagerly refreshes the account cache here.
+			// Pairing a reader can change the account's capabilities and in-person flags, so the account is fetched again.
 			$this->account_service->refresh_account_data();
 
 			return new WP_REST_Response( $this->extract_reader( $reader ) );
@@ -618,9 +616,8 @@ class WooPaymentsCardReadersRestController extends RestApiControllerBase {
 	/**
 	 * Render the print receipt through the theme-overridable WooCommerce template.
 	 *
-	 * The template and its variable contract match the WooPayments plugin's
-	 * html-in-person-payment-receipt.php, so theme overrides written against
-	 * the plugin (including legally required receipt text) keep applying.
+	 * The template and its variables are the WooPayments extension's `html-in-person-payment-receipt.php`, so theme
+	 * overrides written for the extension, including legally required receipt text, keep applying.
 	 *
 	 * @param array<string,mixed> $data Receipt data.
 	 * @return string
@@ -663,8 +660,7 @@ class WooPaymentsCardReadersRestController extends RestApiControllerBase {
 	/**
 	 * Get the account branding logo contents for the printed receipt.
 	 *
-	 * Fetched platform-side (as_account false) like the reference client; a
-	 * fetch failure propagates to the caller's error envelope.
+	 * Fetched as the platform, not the account (`as_account` false); a failed fetch fails the receipt request.
 	 *
 	 * @return array<string,mixed> File contents payload, or an empty array when no logo is configured.
 	 */

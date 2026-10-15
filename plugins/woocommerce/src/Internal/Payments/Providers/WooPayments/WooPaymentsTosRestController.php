@@ -15,10 +15,13 @@ use WP_REST_Response;
 use WP_REST_Server;
 
 /**
- * Native WooPayments Terms of Service REST controller.
+ * Records the merchant's answer to the WooPayments Terms of Service: accepting turns the gateway on and sends the
+ * agreement to the platform, declining turns it off, and the reactivate route turns it back on.
+ *
+ * A request without an answer gets a 400 and a failure a 500, with `result` set to `bad_request` or `error`.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsTosRestController extends RestApiControllerBase {
 
@@ -67,7 +70,7 @@ class WooPaymentsTosRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Register WooPayments-compatible ToS routes.
+	 * Register the Terms of Service routes.
 	 */
 	public function register_routes(): void {
 		register_rest_route( $this->route_namespace, '/payments/tos', $this->get_creatable_route( 'handle_tos' ) );
@@ -163,7 +166,7 @@ class WooPaymentsTosRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Persist the native WooPayments gateway enabled state.
+	 * Turn the WooPayments gateway on or off in its stored settings.
 	 *
 	 * @param bool $enabled Whether the gateway should be enabled.
 	 */

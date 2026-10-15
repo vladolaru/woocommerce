@@ -14,10 +14,12 @@ use WP_REST_Response;
 use WP_REST_Server;
 
 /**
- * Native WooPayments dispute readiness REST controller.
+ * Serves the Overview page's dispute readiness card: its score, its dismissal and the statement descriptor confirmation.
+ *
+ * While `_wcpay_feature_dispute_readiness_overview` is off, the card reads as hidden and the two writes answer 403.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsDisputeReadinessRestController extends RestApiControllerBase {
 
@@ -53,7 +55,7 @@ class WooPaymentsDisputeReadinessRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Register WooPayments-compatible dispute readiness routes.
+	 * Register the dispute readiness routes.
 	 */
 	public function register_routes(): void {
 		register_rest_route( $this->route_namespace, self::REST_BASE, $this->get_readable_route( 'get_readiness' ) );
