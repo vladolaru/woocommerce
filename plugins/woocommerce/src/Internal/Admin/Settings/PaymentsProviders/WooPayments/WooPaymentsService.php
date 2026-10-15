@@ -12,7 +12,6 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTracks;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Exception;
 use WP_Error;
@@ -102,8 +101,6 @@ class WooPaymentsService {
 	const NOX_ONBOARDING_LOCKED_KEY = 'woocommerce_woopayments_nox_onboarding_locked';
 
 	private const TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT = 'test_drive_account_settings_for_live_account';
-
-	private const REFERRAL_CODE_TRANSIENT = 'woopayments_referral_code';
 
 	/**
 	 * The TTL for the onboarding lock.
@@ -2117,19 +2114,9 @@ class WooPaymentsService {
 			return $this->get_overview_page_url();
 		}
 
-		$referral_code = trim( strtolower( substr( $referral_code, 0, 50 ) ) );
-		if ( empty( $referral_code ) ) {
+		if ( '' === $this->get_onboarding_adapter()->store_referral_code( $referral_code ) ) {
 			return Utils::wc_payments_settings_url( self::ONBOARDING_PATH_BASE );
 		}
-
-		set_transient( self::REFERRAL_CODE_TRANSIENT, $referral_code, 30 * DAY_IN_SECONDS );
-		WooPaymentsTracks::record_wcadmin_event(
-			'wcpay_account_referral',
-			array(
-				'referral_code' => $referral_code,
-				'referrer'      => wp_get_referer(),
-			)
-		);
 
 		return Utils::wc_payments_settings_url( self::ONBOARDING_PATH_BASE, array( 'from' => self::FROM_REFERRAL ) );
 	}

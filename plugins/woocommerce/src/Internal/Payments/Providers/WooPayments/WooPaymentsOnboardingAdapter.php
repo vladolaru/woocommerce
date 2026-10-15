@@ -353,6 +353,19 @@ class WooPaymentsOnboardingAdapter {
 	}
 
 	/**
+	 * Store a partner's referral code with the built-in onboarding.
+	 *
+	 * A referral link can arrive before the store connects to the platform, so this does not ask whether the built-in
+	 * onboarding runs; the caller has already checked that the extension is not active.
+	 *
+	 * @param string $referral_code The sanitized code from the referral link.
+	 * @return string The stored code, or an empty string when there is none.
+	 */
+	public function store_referral_code( string $referral_code ): string {
+		return $this->get_onboarding_service()->store_referral_code( $referral_code );
+	}
+
+	/**
 	 * Get the WooPayments account service.
 	 *
 	 * @return object|null

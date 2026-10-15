@@ -119,6 +119,16 @@ class DelegatingOnboardingAdapter extends WooPaymentsOnboardingAdapter {
 	}
 
 	/**
+	 * Store the referral code with the test's onboarding service.
+	 *
+	 * @param string $referral_code The code.
+	 * @return string
+	 */
+	public function store_referral_code( string $referral_code ): string {
+		return $this->test_onboarding->store_referral_code( $referral_code );
+	}
+
+	/**
 	 * Delegate.
 	 *
 	 * @return bool

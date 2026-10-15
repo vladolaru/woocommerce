@@ -22,6 +22,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTracks;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WP_Error;
 
@@ -162,6 +163,33 @@ class WooPaymentsOnboardingService {
 	public function activate_woopay_enabled_by_default(): void {
 		$this->enable_native_payment_methods( array(), true );
 		$this->proxy->call_function( 'delete_transient', WooPaymentsOnboardingAdapter::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT );
+	}
+
+	/**
+	 * Store a partner's referral code for the KYC session and record the referral.
+	 *
+	 * Like the extension's `normalize_and_store_referral_code()`, the code is cut to 50 characters, lowercased and
+	 * trimmed, and kept for 30 days. An empty code stores nothing.
+	 *
+	 * @param string $referral_code The sanitized code from the referral link.
+	 * @return string The stored code, or an empty string when there is none.
+	 */
+	public function store_referral_code( string $referral_code ): string {
+		$referral_code = trim( strtolower( substr( $referral_code, 0, 50 ) ) );
+		if ( empty( $referral_code ) ) {
+			return '';
+		}
+
+		set_transient( self::REFERRAL_CODE_TRANSIENT, $referral_code, 30 * DAY_IN_SECONDS );
+		WooPaymentsTracks::record_wcadmin_event(
+			'wcpay_account_referral',
+			array(
+				'referral_code' => $referral_code,
+				'referrer'      => wp_get_referer(),
+			)
+		);
+
+		return $referral_code;
 	}
 
 	/**

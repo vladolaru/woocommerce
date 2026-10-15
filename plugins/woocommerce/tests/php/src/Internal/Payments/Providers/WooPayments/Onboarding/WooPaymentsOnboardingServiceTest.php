@@ -3125,6 +3125,54 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A referral code is stored cut to 50 characters, lowercased and trimmed for 30 days, and the referral is recorded.
+	 *
+	 * Source: the extension's `WC_Payments_Onboarding_Service::normalize_and_store_referral_code()` and the
+	 * `wcpay_account_referral` event `WC_Payments_Account::maybe_redirect_onboarding_referral()` records.
+	 */
+	public function test_store_referral_code_stores_the_normalized_code_and_records_the_referral(): void {
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$recorded = array();
+		add_filter(
+			'woocommerce_tracks_event_properties',
+			function ( $properties, $event_name ) use ( &$recorded ) {
+				$recorded[ $event_name ] = $properties;
+				return $properties;
+			},
+			10,
+			2
+		);
+
+		$stored = $this->onboarding_service->store_referral_code( ' ' . str_repeat( 'Ab', 30 ) );
+
+		$this->assertSame( str_repeat( 'ab', 24 ) . 'a', $stored );
+		$this->assertSame( $stored, get_transient( 'woopayments_referral_code' ) );
+		$this->assertEqualsWithDelta( time() + 30 * DAY_IN_SECONDS, (int) get_option( '_transient_timeout_woopayments_referral_code' ), 60 );
+		$this->assertSame( $stored, $recorded['wcadmin_wcpay_account_referral']['referral_code'] );
+	}
+
+	/**
+	 * @testdox An empty referral code stores nothing and records nothing.
+	 */
+	public function test_store_referral_code_ignores_an_empty_code(): void {
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$recorded = array();
+		add_filter(
+			'woocommerce_tracks_event_properties',
+			function ( $properties, $event_name ) use ( &$recorded ) {
+				$recorded[ $event_name ] = $properties;
+				return $properties;
+			},
+			10,
+			2
+		);
+
+		$this->assertSame( '', $this->onboarding_service->store_referral_code( '   ' ) );
+		$this->assertFalse( get_transient( 'woopayments_referral_code' ) );
+		$this->assertArrayNotHasKey( 'wcadmin_wcpay_account_referral', $recorded );
+	}
+
+	/**
 	 * Give the onboarding service an API client double and an account service on this test's proxy.
 	 *
 	 * @param WooPaymentsApiClient $api_client The API client double.
