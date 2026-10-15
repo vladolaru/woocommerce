@@ -10,10 +10,10 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 use WP_REST_Request;
 
 /**
- * Compatibility request object for the preserved WooPayments authorizations list filter.
+ * The authorizations list request, filtered by `wcpay_list_authorizations_request`.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsAuthorizationsListRequest extends WooPaymentsPaginatedListRequest {
 	/**

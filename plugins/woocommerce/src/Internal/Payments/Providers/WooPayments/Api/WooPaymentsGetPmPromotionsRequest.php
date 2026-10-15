@@ -8,10 +8,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
 /**
- * Request object for the preserved WooPayments PM promotions list hook.
+ * The payment method promotions list request, filtered by `wcpay_get_pm_promotions_request` and sent with the store
+ * context.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsGetPmPromotionsRequest extends WooPaymentsApiRequest {
 	/**
@@ -39,7 +40,7 @@ class WooPaymentsGetPmPromotionsRequest extends WooPaymentsApiRequest {
 	}
 
 	/**
-	 * Preserve the legacy raw-response flag for consumers that inspect the request.
+	 * Ask the API client for the raw answer, whose `cache-for` header sets how long the promotions are cached.
 	 *
 	 * @return bool
 	 */
@@ -48,7 +49,7 @@ class WooPaymentsGetPmPromotionsRequest extends WooPaymentsApiRequest {
 	}
 
 	/**
-	 * Wrap the raw transport response like the legacy concrete request.
+	 * Wrap the raw answer in a response object.
 	 *
 	 * @param array<mixed> $response Transport response.
 	 * @return mixed

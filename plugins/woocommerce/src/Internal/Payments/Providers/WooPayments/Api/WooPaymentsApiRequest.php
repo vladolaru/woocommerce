@@ -8,10 +8,10 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
 /**
- * Mutable WooPayments request object exposed to legacy compatibility filters.
+ * A platform request built from an API path, an HTTP method and params, for requests that need no class of their own.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsApiRequest extends AbstractWooPaymentsApiRequest {
 
@@ -87,7 +87,7 @@ class WooPaymentsApiRequest extends AbstractWooPaymentsApiRequest {
 	}
 
 	/**
-	 * Return the decoded transport array unchanged like legacy Get_Request.
+	 * Return the decoded answer as it is.
 	 *
 	 * @param array<mixed> $response Transport response.
 	 * @return mixed

@@ -8,10 +8,10 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
 /**
- * Request object for the preserved WooPayments Capital account-link hook.
+ * The request for a link to the merchant's Capital loan offer, filtered by `wcpay_get_account_capital_link`.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsGetAccountCapitalLinkRequest extends WooPaymentsApiRequest {
 	/**
@@ -44,7 +44,7 @@ class WooPaymentsGetAccountCapitalLinkRequest extends WooPaymentsApiRequest {
 	}
 
 	/**
-	 * Preserve the legacy Capital link type setter.
+	 * Set the Capital link type.
 	 *
 	 * @param string $type Capital link type.
 	 */
@@ -53,7 +53,7 @@ class WooPaymentsGetAccountCapitalLinkRequest extends WooPaymentsApiRequest {
 	}
 
 	/**
-	 * Preserve the legacy return URL setter.
+	 * Set the URL to return to after viewing the offer.
 	 *
 	 * @param string $return_url URL to return to after viewing the offer.
 	 */
@@ -62,7 +62,7 @@ class WooPaymentsGetAccountCapitalLinkRequest extends WooPaymentsApiRequest {
 	}
 
 	/**
-	 * Preserve the legacy refresh URL setter.
+	 * Set the URL used when the link expired or is invalid.
 	 *
 	 * @param string $refresh_url URL to use when the link expires or is invalid.
 	 */
@@ -80,7 +80,7 @@ class WooPaymentsGetAccountCapitalLinkRequest extends WooPaymentsApiRequest {
 	}
 
 	/**
-	 * Wrap the decoded transport response like the legacy concrete request.
+	 * Wrap the decoded answer in a response object.
 	 *
 	 * @param array<mixed> $response Transport response.
 	 * @return mixed

@@ -10,10 +10,10 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 use WP_REST_Request;
 
 /**
- * Compatibility request object for the preserved WooPayments deposits list filter.
+ * The payouts list request, filtered by `wcpay_list_deposits_request`.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsDepositsListRequest extends WooPaymentsPaginatedListRequest {
 	/**

@@ -12,10 +12,13 @@ use WC_Order;
 use WP_REST_Request;
 
 /**
- * Compatibility request object for the preserved WooPayments fraud outcome filters.
+ * The fraud outcome transactions request: the platform's rows for one status (allow, block or review), joined with their
+ * orders, then filtered, searched, sorted and paged here.
+ *
+ * Each route fires its own request filter (`WooPaymentsTransactionsRestController::get_fraud_outcome_params()`).
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsFraudOutcomeTransactionsListRequest extends WooPaymentsPaginatedListRequest {
 

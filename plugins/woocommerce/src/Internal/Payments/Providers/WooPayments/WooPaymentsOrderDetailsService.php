@@ -41,7 +41,7 @@ class WooPaymentsOrderDetailsService {
 	}
 
 	/**
-	 * Map legacy transaction search order tokens to charge IDs.
+	 * Replace the `Order #N` and `Subscription #N` search terms of a transactions request with the orders' charge IDs.
 	 *
 	 * @param array<string,mixed> $params Transaction request params.
 	 * @return array<string,mixed>
@@ -124,7 +124,7 @@ class WooPaymentsOrderDetailsService {
 	}
 
 	/**
-	 * Build a WooPayments-compatible charge-like response from a WooCommerce order.
+	 * Build a charge answer from an order, for an order that has no charge to read.
 	 *
 	 * @since 11.0.0
 	 *
@@ -175,7 +175,8 @@ class WooPaymentsOrderDetailsService {
 	}
 
 	/**
-	 * Build a WooPayments-compatible create-and-confirm intent request from a WooCommerce order.
+	 * Build the create-and-confirm payment intent request for an order: an off-session card payment of the order total,
+	 * with the order's metadata.
 	 *
 	 * @since 11.0.0
 	 *
@@ -283,7 +284,7 @@ class WooPaymentsOrderDetailsService {
 	}
 
 	/**
-	 * Map legacy search tokens to WooPayments charge IDs.
+	 * Replace each order or subscription search term with its charge IDs; other terms stay.
 	 *
 	 * @param array<int,mixed> $search Raw search terms.
 	 * @return array<int,mixed>
@@ -308,7 +309,7 @@ class WooPaymentsOrderDetailsService {
 	}
 
 	/**
-	 * Get charge IDs from a legacy Order/Subscription search token.
+	 * Get the charge IDs of an `Order #N` or `Subscription #N` search term.
 	 *
 	 * @param string $term Search term.
 	 * @return array<int,string>
@@ -472,7 +473,7 @@ class WooPaymentsOrderDetailsService {
 	}
 
 	/**
-	 * Build the compact order info used by legacy list rows.
+	 * Build the order info of a list row: number, URLs and subscriptions.
 	 *
 	 * @param WC_Order $order Order.
 	 * @return array<string,mixed>
@@ -488,7 +489,7 @@ class WooPaymentsOrderDetailsService {
 	}
 
 	/**
-	 * Build the richer order info used by legacy detail responses.
+	 * Build the order info of a detail answer, with the customer, the fraud box type and the suggested product type.
 	 *
 	 * @param WC_Order $order Order.
 	 * @return array<string,mixed>

@@ -8,12 +8,13 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
 /**
- * Request object for the preserved WooPayments dashboard login-link hook.
+ * The request for a one-time link into the merchant's Stripe dashboard, filtered by `wpcay_get_account_login_data`.
  *
- * Mirrors the plugin's `Get_Account_Login_Data` request (11.1.0), including its misspelled `wpcay_` filter name.
+ * The filter keeps the WooPayments extension's misspelled name, so callbacks written for it keep running (client 11.1.0
+ * `includes/core/server/request/class-get-account-login-data.php:29`).
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsGetAccountLoginDataRequest extends WooPaymentsApiRequest {
 	/**
@@ -44,7 +45,7 @@ class WooPaymentsGetAccountLoginDataRequest extends WooPaymentsApiRequest {
 	}
 
 	/**
-	 * Preserve the legacy redirect URL setter, which only accepts URLs in the allowed redirect hosts.
+	 * Set the redirect URL; only a URL in the allowed redirect hosts is accepted.
 	 *
 	 * @param string $redirect_url URL to navigate back to from the dashboard.
 	 * @throws WooPaymentsApiException When the redirect URL is not allowed.
@@ -76,7 +77,7 @@ class WooPaymentsGetAccountLoginDataRequest extends WooPaymentsApiRequest {
 	}
 
 	/**
-	 * Wrap the decoded transport response like the legacy concrete request.
+	 * Wrap the decoded answer in a response object.
 	 *
 	 * @param array<mixed> $response Transport response.
 	 * @return mixed

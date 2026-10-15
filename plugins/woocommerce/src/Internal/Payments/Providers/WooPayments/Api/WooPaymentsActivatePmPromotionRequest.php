@@ -8,10 +8,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
 /**
- * Request object for the preserved WooPayments PM promotion activation hook.
+ * The request that activates a payment method promotion on the platform, filtered by
+ * `wcpay_activate_pm_promotion_request`.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsActivatePmPromotionRequest extends WooPaymentsApiRequest {
 	/**
@@ -55,7 +56,7 @@ class WooPaymentsActivatePmPromotionRequest extends WooPaymentsApiRequest {
 	}
 
 	/**
-	 * Wrap the decoded transport response like the legacy concrete request.
+	 * Wrap the decoded answer in a response object.
 	 *
 	 * @param array<mixed> $response Transport response.
 	 * @return mixed

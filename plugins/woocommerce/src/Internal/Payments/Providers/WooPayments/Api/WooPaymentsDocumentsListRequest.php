@@ -10,10 +10,10 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 use WP_REST_Request;
 
 /**
- * Compatibility request object for the preserved WooPayments documents list filter.
+ * The documents list request, filtered by `wcpay_list_documents_request`; documents sort by date by default.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsDocumentsListRequest extends WooPaymentsPaginatedListRequest {
 	/**

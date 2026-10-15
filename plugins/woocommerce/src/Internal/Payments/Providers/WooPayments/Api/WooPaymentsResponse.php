@@ -11,10 +11,10 @@ use ArrayAccess;
 use BadMethodCallException;
 
 /**
- * Immutable compatibility response for legacy WooPayments request objects.
+ * A read-only array view of a platform answer, which a request's send() returns to filter callbacks.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  * @implements ArrayAccess<mixed,mixed>
  */
 class WooPaymentsResponse implements ArrayAccess {

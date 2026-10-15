@@ -8,10 +8,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
 /**
- * Compatibility request object for the preserved WooPayments reporting balance summary filter.
+ * The balance summary report request, filtered by `wcpay_get_reporting_balance_summary_request`; it refuses a date or a
+ * currency code in the wrong format.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsReportingBalanceSummaryRequest extends AbstractWooPaymentsApiRequest {
 	/**
@@ -113,7 +114,7 @@ class WooPaymentsReportingBalanceSummaryRequest extends AbstractWooPaymentsApiRe
 	}
 
 	/**
-	 * Return the reporting response array unchanged like the upstream request.
+	 * Return the decoded answer as it is.
 	 *
 	 * @param array<mixed> $response Transport response.
 	 * @return mixed

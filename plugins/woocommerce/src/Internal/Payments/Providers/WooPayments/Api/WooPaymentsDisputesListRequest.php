@@ -11,10 +11,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use WP_REST_Request;
 
 /**
- * Compatibility request object for the preserved WooPayments disputes list filter.
+ * The disputes list request, filtered by `wcpay_list_disputes_request`.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsDisputesListRequest extends WooPaymentsPaginatedListRequest {
 	/**
@@ -61,7 +61,7 @@ class WooPaymentsDisputesListRequest extends WooPaymentsPaginatedListRequest {
 	}
 
 	/**
-	 * Add local order context and wrap the response like the legacy request.
+	 * Add each dispute's order details and wrap the answer in a response object.
 	 *
 	 * @param array<mixed> $response Transport response.
 	 * @return mixed

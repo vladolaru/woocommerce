@@ -14,10 +14,11 @@ use Exception;
 use WP_REST_Request;
 
 /**
- * Compatibility request object for the preserved WooPayments transactions list filter.
+ * The transactions list request, filtered by `wcpay_list_transactions_request`; its date filters are shifted to the
+ * merchant's time zone.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsTransactionsListRequest extends WooPaymentsPaginatedListRequest {
 	/**
@@ -88,8 +89,8 @@ class WooPaymentsTransactionsListRequest extends WooPaymentsPaginatedListRequest
 	}
 
 	/**
-	 * Get the summary and export filters from REST request data: the client's get_transactions_filters() keys plus the
-	 * list's type filter, shifted to the merchant's time zone, with no paging, sorting or list request filter.
+	 * Get the summary and export filters from REST request data: the list's filters without `deposit_id`, shifted to the
+	 * merchant's time zone, with no paging, sorting or list request filter.
 	 *
 	 * Client 11.1.0 class-wc-rest-payments-transactions-controller.php:224-266.
 	 *
@@ -114,7 +115,7 @@ class WooPaymentsTransactionsListRequest extends WooPaymentsPaginatedListRequest
 			'date_before'  => self::format_transaction_date_by_timezone( self::get_scalar_param( $request, 'date_before' ), $user_timezone ),
 			'date_after'   => self::format_transaction_date_by_timezone( self::get_scalar_param( $request, 'date_after' ), $user_timezone ),
 			'date_between' => $date_between,
-			// The client's UI sends the list's type filter here too, but its REST filter set drops it; native keeps the totals in step with the list.
+			// `type_is_in` is kept too, so the totals cover the same transaction types as the list.
 			'type_is_in'   => null === $request->get_param( 'type_is_in' ) ? null : (array) $request->get_param( 'type_is_in' ),
 		);
 		foreach ( array( 'type_is', 'type_is_not', 'source_device_is', 'source_device_is_not', 'channel_is', 'channel_is_not', 'customer_country_is', 'customer_country_is_not', 'risk_level_is', 'risk_level_is_not', 'store_currency_is', 'customer_currency_is', 'customer_currency_is_not', 'source_is', 'source_is_not', 'loan_id_is', 'search' ) as $name ) {
@@ -168,7 +169,7 @@ class WooPaymentsTransactionsListRequest extends WooPaymentsPaginatedListRequest
 	}
 
 	/**
-	 * Add local order context and wrap the response like the legacy request.
+	 * Add each transaction's order details and wrap the answer in a response object.
 	 *
 	 * @param array<mixed> $response Transport response.
 	 * @return mixed
@@ -197,7 +198,7 @@ class WooPaymentsTransactionsListRequest extends WooPaymentsPaginatedListRequest
 	 * Shift a transaction date filter by the difference between the store's and the merchant's time zones.
 	 *
 	 * Client 11.1.0 Request_Utils::format_transaction_date_by_timezone() (includes/core/server/request/class-request-utils.php
-	 * :27-48). A date or time zone PHP cannot parse fatals the client's request; here the date is sent unchanged.
+	 * :27-48). A date or time zone PHP cannot parse is sent unchanged instead of failing the request.
 	 *
 	 * @param string|null $transaction_date Transaction date.
 	 * @param string|null $user_timezone    The merchant's time zone, as the browser reports it.
