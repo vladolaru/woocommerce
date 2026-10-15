@@ -58,7 +58,7 @@ class WooPaymentsAdminNoticesPassthrough implements RegisterHooksInterface {
 		global $wp_filter;
 
 		$this->kept_callbacks = array();
-		if ( ! $this->is_native_woopayments_route() || ! isset( $wp_filter['admin_notices'] ) ) {
+		if ( ! $this->is_woopayments_route() || ! isset( $wp_filter['admin_notices'] ) ) {
 			return;
 		}
 
@@ -121,7 +121,7 @@ class WooPaymentsAdminNoticesPassthrough implements RegisterHooksInterface {
 	 *
 	 * @return bool
 	 */
-	private function is_native_woopayments_route(): bool {
+	private function is_woopayments_route(): bool {
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only request routing.
 		$page = isset( $_GET['page'] ) && is_scalar( $_GET['page'] ) ? sanitize_text_field( wp_unslash( (string) $_GET['page'] ) ) : '';
 		$tab  = isset( $_GET['tab'] ) && is_scalar( $_GET['tab'] ) ? sanitize_text_field( wp_unslash( (string) $_GET['tab'] ) ) : '';

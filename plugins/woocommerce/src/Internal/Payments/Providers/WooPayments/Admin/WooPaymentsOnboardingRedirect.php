@@ -37,17 +37,17 @@ class WooPaymentsOnboardingRedirect {
 	/**
 	 * Client 11.1.0 WC Admin paths start with this prefix; they live on in old emails, notes and bookmarks.
 	 */
-	private const LEGACY_PATH_PREFIX = '/payments/';
+	private const PAYMENTS_PATH_PREFIX = '/payments/';
 
 	/**
 	 * Client 11.1.0 onboarding wizard path, which `maybe_redirect_from_onboarding_wizard_page()` tracks as its own origin.
 	 */
-	private const LEGACY_ONBOARDING_WIZARD_PATH = '/payments/onboarding';
+	private const PAYMENTS_ONBOARDING_PATH = '/payments/onboarding';
 
 	/**
 	 * Client 11.1.0 settings section; `woocommerce_payments_<method>` sections redirect to it first.
 	 */
-	private const LEGACY_SETTINGS_SECTION = 'woocommerce_payments';
+	private const GATEWAY_SETTINGS_SECTION = 'woocommerce_payments';
 
 	/**
 	 * Native routes that need a working connection and a valid account, matched by prefix.
@@ -122,7 +122,7 @@ class WooPaymentsOnboardingRedirect {
 	public static function get_guarded_path( array $request ): string {
 		$page = $request['page'] ?? '';
 		if ( 'wc-admin' === $page ) {
-			return self::get_guarded_legacy_admin_path( $request );
+			return self::get_guarded_payments_path( $request );
 		}
 
 		if ( 'wc-settings' !== $page || 'checkout' !== ( $request['tab'] ?? '' ) ) {
@@ -134,7 +134,7 @@ class WooPaymentsOnboardingRedirect {
 		}
 
 		$section = $request['section'] ?? '';
-		if ( is_string( $section ) && ( self::LEGACY_SETTINGS_SECTION === $section || str_starts_with( $section, self::LEGACY_SETTINGS_SECTION . '_' ) ) ) {
+		if ( is_string( $section ) && ( self::GATEWAY_SETTINGS_SECTION === $section || str_starts_with( $section, self::GATEWAY_SETTINGS_SECTION . '_' ) ) ) {
 			return self::PATH_SETTINGS;
 		}
 
@@ -149,22 +149,22 @@ class WooPaymentsOnboardingRedirect {
 	 * @param array<string,mixed> $request Query request.
 	 * @return string
 	 */
-	private static function get_guarded_legacy_admin_path( array $request ): string {
+	private static function get_guarded_payments_path( array $request ): string {
 		if ( ! isset( $request['path'] ) || ! is_string( $request['path'] ) ) {
 			return '';
 		}
 
-		$legacy_path = wp_unslash( $request['path'] );
-		if ( ! str_starts_with( $legacy_path, self::LEGACY_PATH_PREFIX ) ) {
+		$payments_path = wp_unslash( $request['path'] );
+		if ( ! str_starts_with( $payments_path, self::PAYMENTS_PATH_PREFIX ) ) {
 			return '';
 		}
 
-		$native_path = WooPaymentsAdminNavigationController::get_native_route_for_legacy_path( $legacy_path );
-		if ( self::PATH_ONBOARDING === $native_path ) {
+		$route = WooPaymentsAdminNavigationController::get_route_for_payments_path( $payments_path );
+		if ( self::PATH_ONBOARDING === $route ) {
 			return self::PATH_ONBOARDING;
 		}
 
-		return self::match_guarded_path( $native_path );
+		return self::match_guarded_path( $route );
 	}
 
 	/**
@@ -226,7 +226,7 @@ class WooPaymentsOnboardingRedirect {
 			// settings page, the URL WooPayments::get_settings_url() gives there (client 11.1.0
 			// `class-wc-payments-admin-settings.php:32-36`). The section link itself carries no path, so it is left alone.
 			if ( self::PATH_SETTINGS === $guarded_path && str_starts_with( $requested_path, self::PATH_SETTINGS ) && $this->arbiter->is_extension_owner() ) {
-				wp_safe_redirect( Utils::wc_payments_settings_url( null, array( 'section' => self::LEGACY_SETTINGS_SECTION ) ) );
+				wp_safe_redirect( Utils::wc_payments_settings_url( null, array( 'section' => self::GATEWAY_SETTINGS_SECTION ) ) );
 				exit;
 			}
 
@@ -245,7 +245,7 @@ class WooPaymentsOnboardingRedirect {
 		} elseif ( self::PATH_SETTINGS === $guarded_path ) {
 			$query['from']   = WooPaymentsOnboardingSource::FROM_WCADMIN_PAYMENTS_SETTINGS;
 			$query['source'] = WooPaymentsOnboardingSource::SOURCE_WCADMIN_SETTINGS_PAGE;
-		} elseif ( self::PATH_ONBOARDING === $guarded_path && self::LEGACY_ONBOARDING_WIZARD_PATH === $requested_path ) {
+		} elseif ( self::PATH_ONBOARDING === $guarded_path && self::PAYMENTS_ONBOARDING_PATH === $requested_path ) {
 			$query['from']   = WooPaymentsOnboardingSource::FROM_ONBOARDING_WIZARD;
 			$query['source'] = WooPaymentsOnboardingSource::get_source();
 		}

@@ -97,7 +97,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$sut->register();
 
 		$this->assertSame( 70, has_action( 'admin_menu', array( $sut, 'add_menu_items' ) ) );
-		$this->assertSame( 10, has_action( 'admin_init', array( $sut, 'redirect_legacy_payment_paths' ) ) );
+		$this->assertSame( 10, has_action( 'admin_init', array( $sut, 'redirect_payments_paths' ) ) );
 		$this->assertSame( 10, has_filter( 'submenu_file', array( $sut, 'highlight_current_payments_submenu' ) ) );
 		$this->assertSame( 10, has_action( 'adminmenu', array( $sut, 'open_payments_menu' ) ) );
 		$this->assertSame( 10, has_filter( 'admin_title', array( $sut, 'set_admin_title' ) ) );
@@ -105,7 +105,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		remove_filter( 'submenu_file', array( $sut, 'highlight_current_payments_submenu' ) );
 		remove_action( 'adminmenu', array( $sut, 'open_payments_menu' ) );
 		remove_action( 'admin_menu', array( $sut, 'add_menu_items' ), 70 );
-		remove_action( 'admin_init', array( $sut, 'redirect_legacy_payment_paths' ), 10 );
+		remove_action( 'admin_init', array( $sut, 'redirect_payments_paths' ), 10 );
 	}
 
 	/**
@@ -299,7 +299,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	public function test_maps_legacy_payment_transaction_details_url_to_native_route(): void {
 		$sut = $this->create_controller( true );
 
-		$url = $sut->get_legacy_payment_path_redirect_url(
+		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page'           => 'wc-admin',
 				'path'           => '%2Fpayments%2Ftransactions%2Fdetails',
@@ -331,7 +331,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	public function test_maps_legacy_payment_transactions_tab_url_to_native_view( string $client_tab, ?string $expected_view ): void {
 		$sut = $this->create_controller( true );
 
-		$url = $sut->get_legacy_payment_path_redirect_url(
+		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page' => 'wc-admin',
 				'path' => '/payments/transactions',
@@ -373,7 +373,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	public function test_redirects_every_client_admin_route_to_a_native_route( string $legacy_path, string $plugin_site ): void {
 		$sut = $this->create_controller( true );
 
-		$url = $sut->get_legacy_payment_path_redirect_url(
+		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page' => 'wc-admin',
 				'path' => rawurlencode( $legacy_path ),
@@ -430,7 +430,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$url = $sut->get_legacy_payment_path_redirect_url(
+		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page'   => 'wc-admin',
 				'path'   => rawurlencode( $legacy_path ),
@@ -465,7 +465,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	public function test_maps_legacy_setup_urls_to_native_overview_routes_for_connected_accounts( string $legacy_path ): void {
 		$sut = $this->create_controller( true );
 
-		$url = $sut->get_legacy_payment_path_redirect_url(
+		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page'   => 'wc-admin',
 				'path'   => rawurlencode( $legacy_path ),
@@ -492,7 +492,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	public function test_maps_legacy_settings_urls_to_native_provider_settings_routes( string $legacy_path, string $native_path, array $expected_query = array(), ?string $expected_fragment = null ): void {
 		$sut = $this->create_controller( true );
 
-		$url = $sut->get_legacy_payment_path_redirect_url(
+		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page'         => 'wc-admin',
 				'path'         => rawurlencode( $legacy_path ),
@@ -554,7 +554,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$url = $sut->get_legacy_payment_path_redirect_url(
+		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page'          => 'wc-admin',
 				'path'          => '%2Fpayments%2Fdocuments',
@@ -581,7 +581,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$url = $sut->get_legacy_payment_path_redirect_url(
+		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page' => 'wc-admin',
 				'path' => '%2Fpayments%2Fdocuments',
@@ -603,7 +603,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$url = $sut->get_legacy_payment_path_redirect_url(
+		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page'     => 'wc-admin',
 				'path'     => '%2Fpayments%2Freports',
@@ -634,7 +634,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$url = $sut->get_legacy_payment_path_redirect_url(
+		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page' => 'wc-admin',
 				'path' => '%2Fpayments%2Freports',
@@ -656,7 +656,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$url = $sut->get_legacy_payment_path_redirect_url(
+		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page' => 'wc-admin',
 				'path' => '%2Fpayments%2Fdeposits',
@@ -678,7 +678,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$url = $sut->get_legacy_payment_path_redirect_url(
+		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page' => 'wc-admin',
 				'path' => '%2Fpayments%2Fpayouts',
@@ -703,7 +703,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$url = $sut->get_legacy_payment_path_redirect_url(
+		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page' => 'wc-admin',
 				'path' => '%2Fpayments%2Ftransactions',
@@ -721,7 +721,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	public function test_maps_unknown_legacy_woopayments_method_section_to_native_settings(): void {
 		$sut = $this->create_controller( true );
 
-		$url = $sut->get_legacy_payment_path_redirect_url(
+		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page'    => 'wc-settings',
 				'tab'     => 'checkout',
@@ -741,7 +741,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$sut                                       = $this->create_controller( true );
 		WC()->payment_gateways()->payment_gateways = array( 0 => $this->create_native_gateway( 'woocommerce_payments_klarna' ) );
 
-		$url = $sut->get_legacy_payment_path_redirect_url(
+		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page'    => 'wc-settings',
 				'tab'     => 'checkout',
@@ -775,7 +775,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		);
 
 		try {
-			$sut->redirect_legacy_payment_paths();
+			$sut->redirect_payments_paths();
 			$this->assertTrue( wp_doing_ajax() );
 		} finally {
 			remove_all_filters( 'wp_doing_ajax' );
@@ -796,7 +796,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$url = $sut->get_legacy_payment_path_redirect_url(
+		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page' => 'wc-admin',
 				'path' => '%2Fpayments%2Fcard-readers',
@@ -820,7 +820,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$url = $sut->get_legacy_payment_path_redirect_url(
+		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page' => 'wc-admin',
 				'path' => '%2Fpayments%2Fcard-readers',
@@ -842,7 +842,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$url = $sut->get_legacy_payment_path_redirect_url(
+		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page' => 'wc-admin',
 				'path' => '%2Fpayments%2Floans',
@@ -865,7 +865,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$url = $sut->get_legacy_payment_path_redirect_url(
+		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page' => 'wc-admin',
 				'path' => '%2Fpayments%2Floans',
@@ -887,7 +887,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$settings_url = $sut->get_legacy_payment_path_redirect_url(
+		$settings_url = $sut->get_payments_path_redirect_url(
 			array(
 				'page' => 'wc-admin',
 				'path' => '%2Fpayments%2Fsettings',
@@ -897,7 +897,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'path=/woopayments/settings', $settings_url );
 		$this->assertStringContainsString(
 			'path=/woopayments/transactions',
-			$sut->get_legacy_payment_path_redirect_url(
+			$sut->get_payments_path_redirect_url(
 				array(
 					'page' => 'wc-admin',
 					'path' => '%2Fpayments%2Ftransactions',
@@ -914,7 +914,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			'',
-			$sut->get_legacy_payment_path_redirect_url(
+			$sut->get_payments_path_redirect_url(
 				array(
 					'page' => 'wc-admin',
 					'path' => '/analytics/revenue',
@@ -1499,7 +1499,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 16, has_action( 'admin_init', array( $sut, 'maybe_redirect_to_onboarding' ) ) );
 
 		remove_action( 'admin_menu', array( $sut, 'add_menu_items' ), 70 );
-		remove_action( 'admin_init', array( $sut, 'redirect_legacy_payment_paths' ), 10 );
+		remove_action( 'admin_init', array( $sut, 'redirect_payments_paths' ), 10 );
 		remove_action( 'admin_init', array( $sut, 'maybe_redirect_to_onboarding' ), 16 );
 	}
 

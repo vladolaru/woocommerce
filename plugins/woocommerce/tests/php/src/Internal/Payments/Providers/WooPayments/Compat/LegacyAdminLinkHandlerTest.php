@@ -680,7 +680,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
 		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 		$navigation = $this->createMock( WooPaymentsAdminNavigationController::class );
-		$navigation->method( 'get_legacy_payment_path_redirect_url' )->willReturn( '' );
+		$navigation->method( 'get_payments_path_redirect_url' )->willReturn( '' );
 		$handler = new LegacyAdminLinkHandler();
 		$handler->init( $arbiter, $this->api_client, $navigation, $this->capital, $this->account_service, $this->tracking_info );
 		$_GET = array(
@@ -1027,10 +1027,10 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 
 		$navigation = $this->getMockBuilder( WooPaymentsAdminNavigationController::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_legacy_payment_path_redirect_url' ) )
+			->onlyMethods( array( 'get_payments_path_redirect_url' ) )
 			->getMock();
 		// Like the real controller, resolve the legacy connect page and forward the other scalar query arguments.
-		$navigation->method( 'get_legacy_payment_path_redirect_url' )->willReturnCallback(
+		$navigation->method( 'get_payments_path_redirect_url' )->willReturnCallback(
 			static function ( array $request ): string {
 				if ( 'wc-admin' !== ( $request['page'] ?? '' ) || '/payments/connect' !== ( $request['path'] ?? '' ) ) {
 					return '';

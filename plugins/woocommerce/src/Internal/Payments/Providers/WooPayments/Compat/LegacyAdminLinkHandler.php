@@ -175,7 +175,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 
 		// The plugin continues with from=WCPAY_KYC_REMINDER (11.1.0 `redirect_to_wcpay_connect()`), which native onboarding keeps for attribution.
 		$from         = array( 'from' => 'WCPAY_KYC_REMINDER' );
-		$redirect_url = $this->navigation->get_legacy_payment_path_redirect_url( $connect_page + $from );
+		$redirect_url = $this->navigation->get_payments_path_redirect_url( $connect_page + $from );
 		wp_safe_redirect( '' !== $redirect_url ? $redirect_url : Utils::wc_payments_settings_url( WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH, $from ) );
 		exit;
 	}
@@ -228,7 +228,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	 * @return never
 	 */
 	private function redirect_to_connect_page( array $params ): void {
-		$redirect_url = $this->navigation->get_legacy_payment_path_redirect_url(
+		$redirect_url = $this->navigation->get_payments_path_redirect_url(
 			array(
 				'page' => 'wc-admin',
 				'path' => '/payments/connect',

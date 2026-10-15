@@ -106,21 +106,25 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 
 	private const SETTINGS_FRAGMENT_PAYMENT_METHODS = 'payment-methods';
 
-	private const LEGACY_DOCUMENTS_ROUTE = '/payments/documents';
+	/**
+	 * The `/payments/*` WC Admin paths that order notes and platform emails link to; PAYMENTS_PATH_REDIRECTS sends each one
+	 * to its Payments settings route.
+	 */
+	private const PAYMENTS_DOCUMENTS_PATH = '/payments/documents';
 
-	private const LEGACY_REPORTS_ROUTE = '/payments/reports';
+	private const PAYMENTS_REPORTS_PATH = '/payments/reports';
 
-	private const LEGACY_CARD_READERS_ROUTE = '/payments/card-readers';
+	private const PAYMENTS_CARD_READERS_PATH = '/payments/card-readers';
 
-	private const LEGACY_LOANS_ROUTE = '/payments/loans';
+	private const PAYMENTS_LOANS_PATH = '/payments/loans';
 
-	private const LEGACY_TRANSACTIONS_ROUTE = '/payments/transactions';
+	private const PAYMENTS_TRANSACTIONS_PATH = '/payments/transactions';
 
 	/**
 	 * Client 11.1.0 Transactions tab names (`client/transactions/index.tsx:77-97`, written to the URL as `tab`)
 	 * mapped to the native Transactions `view` values.
 	 */
-	private const LEGACY_TRANSACTIONS_TAB_VIEWS = array(
+	private const PAYMENTS_TRANSACTIONS_TAB_VIEWS = array(
 		'uncaptured-page' => 'uncaptured',
 		'blocked-page'    => 'blocked',
 	);
@@ -133,7 +137,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 * Client deep links keep working through this map; platform-issued email links go through Compat/LegacyAdminLinkHandler.
 	 * The test pins every client route from Fixtures/woopayments-admin-routes.json.
 	 */
-	private const LEGACY_ROUTE_REDIRECTS = array(
+	private const PAYMENTS_PATH_REDIRECTS = array(
 		'/payments/connect'                    => self::PATH_ONBOARDING,
 		'/payments/onboarding'                 => self::PATH_ONBOARDING,
 		'/payments/onboarding/kyc'             => self::PATH_ONBOARDING,
@@ -142,15 +146,15 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		'/payments/deposits/details'           => self::PATH_PAYOUT_DETAILS,
 		'/payments/payouts'                    => self::PATH_PAYOUTS,
 		'/payments/payouts/details'            => self::PATH_PAYOUT_DETAILS,
-		self::LEGACY_TRANSACTIONS_ROUTE        => self::PATH_TRANSACTIONS,
+		self::PAYMENTS_TRANSACTIONS_PATH       => self::PATH_TRANSACTIONS,
 		'/payments/transactions/details'       => self::PATH_TRANSACTION_DETAILS,
-		self::LEGACY_REPORTS_ROUTE             => self::PATH_REPORTS,
+		self::PAYMENTS_REPORTS_PATH            => self::PATH_REPORTS,
 		'/payments/disputes'                   => self::PATH_DISPUTES,
 		'/payments/disputes/details'           => self::PATH_DISPUTE_DETAILS,
 		'/payments/disputes/challenge'         => self::PATH_DISPUTE_CHALLENGE,
-		self::LEGACY_CARD_READERS_ROUTE        => self::PATH_CARD_READERS,
-		self::LEGACY_LOANS_ROUTE               => self::PATH_LOANS,
-		self::LEGACY_DOCUMENTS_ROUTE           => self::PATH_DOCUMENTS,
+		self::PAYMENTS_CARD_READERS_PATH       => self::PATH_CARD_READERS,
+		self::PAYMENTS_LOANS_PATH              => self::PATH_LOANS,
+		self::PAYMENTS_DOCUMENTS_PATH          => self::PATH_DOCUMENTS,
 		'/payments/settings'                   => self::PATH_SETTINGS,
 		'/payments/fraud-protection'           => self::PATH_FRAUD_PROTECTION_SETTINGS,
 		'/payments/multi-currency-setup'       => self::PATH_SETTINGS,
@@ -224,11 +228,11 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 * @since 11.2.0
 	 * @internal
 	 *
-	 * @param string $legacy_path Client WC Admin route path, for example `/payments/overview`.
+	 * @param string $payments_path Client WC Admin route path, for example `/payments/overview`.
 	 * @return string
 	 */
-	public static function get_native_route_for_legacy_path( string $legacy_path ): string {
-		return self::LEGACY_ROUTE_REDIRECTS[ $legacy_path ] ?? '';
+	public static function get_route_for_payments_path( string $payments_path ): string {
+		return self::PAYMENTS_PATH_REDIRECTS[ $payments_path ] ?? '';
 	}
 
 	/**
@@ -237,7 +241,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	public function register() {
 		add_action( 'admin_menu', array( $this, 'add_menu_items' ), self::MENU_HOOK_PRIORITY );
 
-		add_action( 'admin_init', array( $this, 'redirect_legacy_payment_paths' ) );
+		add_action( 'admin_init', array( $this, 'redirect_payments_paths' ) );
 
 		add_action( 'admin_init', array( $this, 'maybe_redirect_to_onboarding' ), self::ONBOARDING_REDIRECT_HOOK_PRIORITY );
 
@@ -361,13 +365,13 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 *
 	 * @return void
 	 */
-	public function redirect_legacy_payment_paths(): void {
+	public function redirect_payments_paths(): void {
 		if ( wp_doing_ajax() || ! current_user_can( self::CAPABILITY ) || ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only redirect for legacy admin deep links.
-		$redirect_url = $this->get_legacy_payment_path_redirect_url( $_GET );
+		$redirect_url = $this->get_payments_path_redirect_url( $_GET );
 		if ( '' === $redirect_url ) {
 			return;
 		}
@@ -395,20 +399,20 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 * @param array<string,mixed> $request Query request.
 	 * @return string
 	 */
-	public function get_legacy_payment_path_redirect_url( array $request ): string {
+	public function get_payments_path_redirect_url( array $request ): string {
 		if ( 'wc-admin' !== $this->get_request_scalar( $request, 'page' ) ) {
-			return $this->get_legacy_payment_method_section_redirect_url( $request );
+			return $this->get_payment_method_section_redirect_url( $request );
 		}
 
-		$legacy_path = sanitize_text_field( rawurldecode( $this->get_raw_request_scalar( $request, 'path' ) ) );
-		$target_path = self::LEGACY_ROUTE_REDIRECTS[ $legacy_path ] ?? '';
+		$payments_path = sanitize_text_field( rawurldecode( $this->get_raw_request_scalar( $request, 'path' ) ) );
+		$target_path   = self::PAYMENTS_PATH_REDIRECTS[ $payments_path ] ?? '';
 		if ( '' === $target_path ) {
 			return '';
 		}
 
 		$route_availability = $this->get_admin_route_availability();
-		if ( $this->is_legacy_setup_route( $legacy_path ) ) {
-			$target_path = $this->get_legacy_setup_route_redirect_path( $route_availability );
+		if ( $this->is_payments_setup_path( $payments_path ) ) {
+			$target_path = $this->get_payments_setup_path_redirect( $route_availability );
 		}
 
 		if ( true !== ( $route_availability['allowedRoutes'][ $target_path ] ?? false ) ) {
@@ -431,21 +435,21 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		}
 
 		// `tab` belongs to wc-settings on native routes, so the client's tab moves to the argument each native page reads.
-		$legacy_tab = $query['tab'] ?? null;
+		$tab = $query['tab'] ?? null;
 		unset( $query['tab'] );
-		if ( self::LEGACY_REPORTS_ROUTE === $legacy_path && null !== $legacy_tab ) {
-			$query['report_tab'] = $legacy_tab;
+		if ( self::PAYMENTS_REPORTS_PATH === $payments_path && null !== $tab ) {
+			$query['report_tab'] = $tab;
 		}
 
-		if ( self::LEGACY_TRANSACTIONS_ROUTE === $legacy_path && isset( self::LEGACY_TRANSACTIONS_TAB_VIEWS[ (string) $legacy_tab ] ) ) {
-			$query['view'] = self::LEGACY_TRANSACTIONS_TAB_VIEWS[ (string) $legacy_tab ];
+		if ( self::PAYMENTS_TRANSACTIONS_PATH === $payments_path && isset( self::PAYMENTS_TRANSACTIONS_TAB_VIEWS[ (string) $tab ] ) ) {
+			$query['view'] = self::PAYMENTS_TRANSACTIONS_TAB_VIEWS[ (string) $tab ];
 		}
 
-		if ( '/payments/multi-currency-setup' === $legacy_path ) {
+		if ( '/payments/multi-currency-setup' === $payments_path ) {
 			$fragment = self::SETTINGS_FRAGMENT_ADVANCED;
 		}
 
-		if ( '/payments/additional-payment-methods' === $legacy_path ) {
+		if ( '/payments/additional-payment-methods' === $payments_path ) {
 			$fragment = self::SETTINGS_FRAGMENT_PAYMENT_METHODS;
 		}
 
@@ -458,7 +462,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 * @param array<string,mixed> $request Query request.
 	 * @return string
 	 */
-	private function get_legacy_payment_method_section_redirect_url( array $request ): string {
+	private function get_payment_method_section_redirect_url( array $request ): string {
 		if ( 'wc-settings' !== $this->get_request_scalar( $request, 'page' ) || 'checkout' !== $this->get_request_scalar( $request, 'tab' ) ) {
 			return '';
 		}
@@ -475,12 +479,12 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	/**
 	 * Tell whether a legacy route is part of the setup/onboarding flow.
 	 *
-	 * @param string $legacy_path Legacy WooPayments WC Admin route path.
+	 * @param string $payments_path Legacy WooPayments WC Admin route path.
 	 * @return bool
 	 */
-	private function is_legacy_setup_route( string $legacy_path ): bool {
+	private function is_payments_setup_path( string $payments_path ): bool {
 		return in_array(
-			$legacy_path,
+			$payments_path,
 			array(
 				'/payments/connect',
 				'/payments/onboarding',
@@ -496,7 +500,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 * @param array{gatewayEnabled:bool,accountState:string,allowedRoutes:array<string,bool>} $route_availability Route availability.
 	 * @return string
 	 */
-	private function get_legacy_setup_route_redirect_path( array $route_availability ): string {
+	private function get_payments_setup_path_redirect( array $route_availability ): string {
 		if ( true === ( $route_availability['allowedRoutes'][ self::PATH_ONBOARDING ] ?? false ) ) {
 			return self::PATH_ONBOARDING;
 		}
