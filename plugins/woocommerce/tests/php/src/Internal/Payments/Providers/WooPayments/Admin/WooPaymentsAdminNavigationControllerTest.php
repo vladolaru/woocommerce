@@ -1450,6 +1450,18 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should add no navigation for a submitted account that cannot open the WooPayments pages.
+	 */
+	public function test_adds_no_menu_items_for_a_submitted_account_without_access(): void {
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
+
+		$sut = $this->create_controller( true, array( 'has_valid_admin_account_state' => false ) );
+		$sut->add_menu_items();
+
+		$this->assertSame( array(), $this->get_payments_submenu_items() );
+	}
+
+	/**
 	 * Not-ready account state provider.
 	 *
 	 * @return array<string,array{account_state:array<string,bool>,expected_title:string}>

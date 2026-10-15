@@ -186,6 +186,15 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	private WooPaymentsOnboardingRedirect $onboarding_redirect;
 
 	/**
+	 * The pages' availability for this request, and whether onboarding continues an account already started.
+	 *
+	 * The menu and the shared settings preload both read it, so the account is asked once per request.
+	 *
+	 * @var array{availability:array{gatewayEnabled:bool,accountState:string,allowedRoutes:array<string,bool>},continue_onboarding:bool}|null
+	 */
+	private ?array $access = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -565,37 +574,58 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 * @return array{gatewayEnabled:bool,accountState:string,allowedRoutes:array<string,bool>}
 	 */
 	public function get_admin_route_availability(): array {
+		return $this->get_access()['availability'];
+	}
+
+	/**
+	 * Get the pages' availability and the onboarding menu title's account state, derived once per request.
+	 *
+	 * @return array{availability:array{gatewayEnabled:bool,accountState:string,allowedRoutes:array<string,bool>},continue_onboarding:bool}
+	 */
+	private function get_access(): array {
+		if ( null !== $this->access ) {
+			return $this->access;
+		}
+
 		// Client 11.1.0 shows the account's pages only with a working WordPress.com connection, and sends everything else to connect.
 		$gateway_enabled  = $this->account_service->is_gateway_enabled();
 		$connected        = $this->onboarding_redirect->has_working_connection();
 		$restricted       = $connected && ( $this->account_service->is_account_rejected() || $this->account_service->is_account_under_review() );
 		$valid_account    = $connected && $this->account_service->has_valid_account_for_admin_navigation();
-		$onboarding       = ! $connected || ( ! $restricted && ! $valid_account && ( ! $this->account_service->has_account() || ! $this->account_service->is_details_submitted() ) );
+		$not_ready        = $connected && ! $restricted && ! $valid_account;
+		$has_account      = $not_ready && $this->account_service->has_account();
+		$onboarding       = ! $connected || ( $not_ready && ( ! $has_account || ! $this->account_service->is_details_submitted() ) );
 		$full_access      = $valid_account && ! $restricted;
 		$reduced_access   = $restricted;
 		$protected_access = $full_access || $reduced_access;
 
-		return array(
-			'gatewayEnabled' => $gateway_enabled,
-			'accountState'   => $this->get_admin_route_account_state( $restricted, $valid_account, $onboarding ),
-			'allowedRoutes'  => array(
-				self::PATH_SETTINGS                  => true,
-				self::PATH_FRAUD_PROTECTION_SETTINGS => true,
-				self::PATH_ONBOARDING                => $onboarding,
-				self::PATH_OVERVIEW                  => $protected_access,
-				self::PATH_PAYOUTS                   => $full_access,
-				self::PATH_PAYOUT_DETAILS            => $full_access,
-				self::PATH_TRANSACTIONS              => $protected_access,
-				self::PATH_TRANSACTION_DETAILS       => $protected_access,
-				self::PATH_DISPUTES                  => $protected_access,
-				self::PATH_DISPUTE_DETAILS           => $protected_access,
-				self::PATH_DISPUTE_CHALLENGE         => $protected_access,
-				self::PATH_REPORTS                   => $full_access && $this->account_service->is_reports_enabled(),
-				self::PATH_CARD_READERS              => $full_access && $this->account_service->is_card_present_eligible() && $this->account_service->has_card_readers_available(),
-				self::PATH_LOANS                     => $full_access && $this->account_service->has_previous_capital_loans(),
-				self::PATH_DOCUMENTS                 => $full_access && $this->account_service->is_documents_enabled(),
+		$this->access = array(
+			'availability'        => array(
+				'gatewayEnabled' => $gateway_enabled,
+				'accountState'   => $this->get_admin_route_account_state( $restricted, $valid_account, $onboarding ),
+				'allowedRoutes'  => array(
+					self::PATH_SETTINGS                  => true,
+					self::PATH_FRAUD_PROTECTION_SETTINGS => true,
+					self::PATH_ONBOARDING                => $onboarding,
+					self::PATH_OVERVIEW                  => $protected_access,
+					self::PATH_PAYOUTS                   => $full_access,
+					self::PATH_PAYOUT_DETAILS            => $full_access,
+					self::PATH_TRANSACTIONS              => $protected_access,
+					self::PATH_TRANSACTION_DETAILS       => $protected_access,
+					self::PATH_DISPUTES                  => $protected_access,
+					self::PATH_DISPUTE_DETAILS           => $protected_access,
+					self::PATH_DISPUTE_CHALLENGE         => $protected_access,
+					self::PATH_REPORTS                   => $full_access && $this->account_service->is_reports_enabled(),
+					self::PATH_CARD_READERS              => $full_access && $this->account_service->is_card_present_eligible() && $this->account_service->has_card_readers_available(),
+					self::PATH_LOANS                     => $full_access && $this->account_service->has_previous_capital_loans(),
+					self::PATH_DOCUMENTS                 => $full_access && $this->account_service->is_documents_enabled(),
+				),
 			),
+			// A connected account that started onboarding without submitting its details continues it.
+			'continue_onboarding' => $onboarding && $has_account,
 		);
+
+		return $this->access;
 	}
 
 	/**
@@ -663,51 +693,33 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 * @return array<int,array{title:string,path:string,query?:array<string,string>,badge_count?:int}>
 	 */
 	private function get_menu_items(): array {
-		// Client 11.1.0 renders no sub-items without a working connection; its menu links to the connect page (class-wc-payments-admin.php:383-394).
-		if ( ! $this->onboarding_redirect->has_working_connection() ) {
-			return array(
-				array(
-					'title' => __( 'Onboarding', 'woocommerce' ),
-					'path'  => self::PATH_ONBOARDING,
-				),
-			);
-		}
+		$access = $this->get_access();
 
-		if ( $this->account_service->is_account_rejected() || $this->account_service->is_account_under_review() ) {
-			return $this->get_reduced_menu_items();
-		}
-
-		if ( ! $this->account_service->has_valid_account_for_admin_navigation() ) {
-			if ( ! $this->account_service->has_account() ) {
+		switch ( $access['availability']['accountState'] ) {
+			case 'restricted':
+				return $this->get_reduced_menu_items();
+			case 'onboarding':
+				// Client 11.1.0 renders no sub-items without a working connection; its menu links to the connect page (class-wc-payments-admin.php:383-394).
 				return array(
 					array(
-						'title' => __( 'Onboarding', 'woocommerce' ),
+						'title' => $access['continue_onboarding'] ? __( 'Continue onboarding', 'woocommerce' ) : __( 'Onboarding', 'woocommerce' ),
 						'path'  => self::PATH_ONBOARDING,
 					),
 				);
-			}
-
-			if ( ! $this->account_service->is_details_submitted() ) {
-				return array(
-					array(
-						'title' => __( 'Continue onboarding', 'woocommerce' ),
-						'path'  => self::PATH_ONBOARDING,
-					),
-				);
-			}
-
-			return array();
+			case 'full':
+				return $this->get_full_menu_items( $access['availability']['allowedRoutes'] );
+			default:
+				return array();
 		}
-
-		return $this->get_full_menu_items();
 	}
 
 	/**
 	 * Get the full native WooPayments submenu for a valid account.
 	 *
+	 * @param array<string,bool> $allowed_routes The pages' availability.
 	 * @return array<int,array{title:string,path:string,query?:array<string,string>,badge_count?:int}>
 	 */
-	private function get_full_menu_items(): array {
+	private function get_full_menu_items( array $allowed_routes ): array {
 		$page_titles = $this->get_page_titles();
 		$menu_items  = array(
 			array(
@@ -724,28 +736,28 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		$menu_items[] = $this->get_disputes_menu_item();
 
 		// After Disputes, as the client registers it (client 11.1.0 `includes/admin/class-wc-payments-admin.php:370-381, 530-531`).
-		if ( $this->account_service->is_reports_enabled() ) {
+		if ( $allowed_routes[ self::PATH_REPORTS ] ) {
 			$menu_items[] = array(
 				'title' => $page_titles[ self::PATH_REPORTS ],
 				'path'  => self::PATH_REPORTS,
 			);
 		}
 
-		if ( $this->account_service->is_card_present_eligible() && $this->account_service->has_card_readers_available() ) {
+		if ( $allowed_routes[ self::PATH_CARD_READERS ] ) {
 			$menu_items[] = array(
 				'title' => $page_titles[ self::PATH_CARD_READERS ],
 				'path'  => self::PATH_CARD_READERS,
 			);
 		}
 
-		if ( $this->account_service->has_previous_capital_loans() ) {
+		if ( $allowed_routes[ self::PATH_LOANS ] ) {
 			$menu_items[] = array(
 				'title' => $page_titles[ self::PATH_LOANS ],
 				'path'  => self::PATH_LOANS,
 			);
 		}
 
-		if ( $this->account_service->is_documents_enabled() ) {
+		if ( $allowed_routes[ self::PATH_DOCUMENTS ] ) {
 			$menu_items[] = array(
 				'title' => $page_titles[ self::PATH_DOCUMENTS ],
 				'path'  => self::PATH_DOCUMENTS,
