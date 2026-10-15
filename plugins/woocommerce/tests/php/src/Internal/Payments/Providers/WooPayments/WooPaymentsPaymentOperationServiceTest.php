@@ -2610,6 +2610,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$fraud_api_client = new RecordingSettingsApiClient();
 		if ( $platform_answers ) {
 			$fraud_api_client->latest_fraud_ruleset_response = array(
+				// The AVS rule as client 11.1.0's tests store it (tests/unit/test-class-wc-payment-gateway-wcpay.php:4374-4386).
 				'ruleset_config' => array(
 					array(
 						'key'     => 'avs_verification',

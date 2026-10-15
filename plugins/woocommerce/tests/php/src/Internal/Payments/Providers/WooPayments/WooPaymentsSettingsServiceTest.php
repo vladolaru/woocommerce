@@ -2123,6 +2123,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should keep the local fraud state when the platform rejects the new ruleset.
 	 */
 	public function test_update_settings_keeps_local_fraud_state_when_the_platform_rejects_the_ruleset(): void {
+		// The AVS rule as client 11.1.0's tests store it (tests/unit/test-class-wc-payment-gateway-wcpay.php:4374-4386).
 		$ruleset = array(
 			array(
 				'key'     => 'avs_verification',

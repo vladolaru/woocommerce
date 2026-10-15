@@ -100,6 +100,9 @@ class WooPaymentsFraudRulesetServiceTest extends WC_Unit_Test_Case {
 
 			$this->assertSame( $fetches, $this->api_client->latest_fraud_ruleset_requests, 'A second read in the same request asks the platform nothing more.' );
 		}
+
+		// Client 11.1.0 saves the Basic ruleset once, after the not-found answer (includes/class-wc-payment-gateway-wcpay.php:3800-3805).
+		$this->assertSame( null === $basic_saved ? 0 : 1, $this->api_client->fraud_ruleset_saves, 'Both reads save the Basic ruleset at most once.' );
 	}
 
 	/**
@@ -108,8 +111,8 @@ class WooPaymentsFraudRulesetServiceTest extends WC_Unit_Test_Case {
 	 * @return array<string,array{0:string,1:bool,2:array<int,mixed>|null,3:array<string,mixed>|null,4:string|null,5:bool,6:int,7:array<int,mixed>|null}>
 	 */
 	public function provide_rule_reads(): array {
-		$avs = array( self::rule( 'avs_verification' ) );
-		$ip  = array( self::rule( 'international_ip_address' ) );
+		$avs = array( self::avs_rule() );
+		$ip  = array( self::international_ip_rule() );
 
 		return array(
 			'cached with AVS'    => array( 'a cached ruleset holding the rule', true, $avs, null, null, true, 0, null ),
@@ -122,14 +125,31 @@ class WooPaymentsFraudRulesetServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Build a fraud rule in the shape the platform stores.
+	 * Get the AVS rule as client 11.1.0's tests store it (tests/unit/test-class-wc-payment-gateway-wcpay.php:4374-4386).
 	 *
-	 * @param string $key Rule key.
 	 * @return array<string,mixed>
 	 */
-	private static function rule( string $key ): array {
+	private static function avs_rule(): array {
 		return array(
-			'key'     => $key,
+			'key'     => 'avs_verification',
+			'outcome' => 'block',
+			'check'   => array(
+				'key'      => 'avs_mismatch',
+				'operator' => 'equals',
+				'value'    => true,
+			),
+		);
+	}
+
+	/**
+	 * Get an international IP address rule: client 11.1.0 checks ip_country against the selling locations
+	 * (includes/fraud-prevention/class-fraud-risk-tools.php:150-160, tests/unit/fraud-prevention/test-class-fraud-risk-tools.php:44-52).
+	 *
+	 * @return array<string,mixed>
+	 */
+	private static function international_ip_rule(): array {
+		return array(
+			'key'     => 'international_ip_address',
 			'outcome' => 'block',
 			'check'   => array(
 				'key'      => 'ip_country',
