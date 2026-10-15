@@ -34,6 +34,11 @@ class WooPaymentsOnboardingAdapter {
 	public const WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT = 'woopay_enabled_by_default';
 
 	/**
+	 * The WooPayments Overview page's route in the Payments settings, declared here for the same reason.
+	 */
+	public const OVERVIEW_PATH = '/woopayments/overview';
+
+	/**
 	 * WooPayments legacy runtime.
 	 *
 	 * @var WooPaymentsLegacyRuntime
@@ -350,6 +355,15 @@ class WooPaymentsOnboardingAdapter {
 		if ( null !== $onboarding ) {
 			$onboarding->activate_woopay_enabled_by_default();
 		}
+	}
+
+	/**
+	 * Get the URL of the WooPayments Overview page in the Payments settings.
+	 *
+	 * @return string
+	 */
+	public function get_overview_page_url(): string {
+		return Utils::wc_payments_settings_url( self::OVERVIEW_PATH );
 	}
 
 	/**

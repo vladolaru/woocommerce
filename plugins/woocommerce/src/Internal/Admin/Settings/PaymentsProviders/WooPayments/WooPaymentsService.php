@@ -9,7 +9,6 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Exceptions\ApiArgumentExcepti
 use Automattic\WooCommerce\Internal\Admin\Settings\Exceptions\ApiException;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -33,8 +32,6 @@ class WooPaymentsService {
 	const EXTENSION_MINIMUM_VERSION = '9.3.0';
 
 	const ONBOARDING_PATH_BASE = '/woopayments/onboarding';
-
-	const OVERVIEW_PATH = '/woopayments/overview';
 
 	const ONBOARDING_STEP_PAYMENT_METHODS       = 'payment_methods';
 	const ONBOARDING_STEP_WPCOM_CONNECTION      = 'wpcom_connection';
@@ -168,13 +165,6 @@ class WooPaymentsService {
 	private ?WooPaymentsLegacyRuntime $legacy_runtime = null;
 
 	/**
-	 * The native WooPayments account service.
-	 *
-	 * @var WooPaymentsAccountService|null
-	 */
-	private ?WooPaymentsAccountService $account_service = null;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * The native collaborators are resolved on first use: the trunk admin controllers resolve this service on every
@@ -190,7 +180,6 @@ class WooPaymentsService {
 		$this->proxy              = $proxy;
 		$this->onboarding_adapter = null;
 		$this->legacy_runtime     = null;
-		$this->account_service    = null;
 
 		$this->wpcom_connection_manager = $this->proxy->get_instance_of( WPCOM_Connection_Manager::class, 'woocommerce' );
 		$this->provider                 = $this->payments_providers->get_payment_gateway_provider_instance( self::GATEWAY_ID );
@@ -242,49 +231,6 @@ class WooPaymentsService {
 				),
 			),
 		);
-	}
-
-	/**
-	 * Get a safe read-only account summary for the native WooPayments settings surface.
-	 *
-	 * @return array<string,array<string,mixed>>
-	 */
-	public function get_account_summary(): array {
-		$account_service = $this->get_native_account_service();
-
-		return array(
-			'account'   => array(
-				'id'                   => $account_service->get_account_id(),
-				'mode'                 => $account_service->get_mode(),
-				'default_currency'     => $account_service->get_account_default_currency(),
-				'connected'            => $account_service->has_account(),
-				'working'              => $account_service->has_working_account(),
-				'can_process_payments' => $account_service->can_process_payments(),
-				'test_mode'            => $account_service->is_test_mode_enabled(),
-				'test_drive'           => $account_service->has_test_account(),
-				'sandbox'              => $account_service->has_sandbox_account(),
-				'live'                 => $account_service->has_live_account(),
-			),
-			'documents' => array(
-				'enabled'                => $account_service->is_documents_enabled(),
-				'has_submitted_vat_data' => $account_service->has_submitted_vat_data(),
-				'country'                => $account_service->get_account_country(),
-			),
-			'urls'      => array(
-				'overview_page' => $this->get_overview_page_url(),
-				'setup'         => $this->get_setup_page_url(),
-			),
-		);
-	}
-
-	/**
-	 * Get the setup URL for the native WooPayments settings surface: the onboarding route, where plugin 11.1.0's
-	 * Activate payments modal sends a test or sandbox account (`sandbox-mode-switch-to-live-notice/modal/index.tsx:39-45`).
-	 *
-	 * @return string Setup URL.
-	 */
-	private function get_setup_page_url(): string {
-		return Utils::wc_payments_settings_url( self::ONBOARDING_PATH_BASE );
 	}
 
 	/**
@@ -3049,11 +2995,6 @@ class WooPaymentsService {
 		return $this->get_onboarding_adapter()->has_live_account( $this->provider );
 	}
 
-
-
-
-
-
 	/**
 	 * Turn WooPay on when the platform asked for it during onboarding, like client 11.1.0 WC_Payments_Account::maybe_activate_woopay().
 	 *
@@ -3064,24 +3005,6 @@ class WooPaymentsService {
 	public function maybe_activate_woopay_enabled_by_default(): void {
 		$this->get_onboarding_adapter()->maybe_activate_woopay_enabled_by_default();
 	}
-
-
-
-
-	/**
-	 * Get the native WooPayments account service.
-	 *
-	 * @return WooPaymentsAccountService
-	 */
-	private function get_native_account_service(): WooPaymentsAccountService {
-		if ( null === $this->account_service ) {
-			$this->account_service = wc_get_container()->get( WooPaymentsAccountService::class );
-		}
-
-		return $this->account_service;
-	}
-
-
 
 	/**
 	 * Get the onboarding fields data for the KYC business verification.
@@ -3193,9 +3116,6 @@ class WooPaymentsService {
 		return $country_names;
 	}
 
-
-
-
 	/**
 	 * Get the fallback URL for the embedded KYC flow.
 	 *
@@ -3211,7 +3131,7 @@ class WooPaymentsService {
 	 * @return string The WooPayments Overview page URL.
 	 */
 	private function get_overview_page_url(): string {
-		return Utils::wc_payments_settings_url( self::OVERVIEW_PATH );
+		return $this->get_onboarding_adapter()->get_overview_page_url();
 	}
 
 	/**

@@ -7,11 +7,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 
 defined( 'ABSPATH' ) || exit;
@@ -73,6 +75,40 @@ class WooPaymentsOverviewService {
 				'settings'      => Utils::wc_payments_settings_url( '/woopayments/settings' ),
 				'onboarding'    => Utils::wc_payments_settings_url( '/woopayments/onboarding' ),
 				'setup'         => Utils::wc_payments_settings_url( '/woopayments/onboarding' ),
+			),
+		);
+	}
+
+	/**
+	 * Get a safe read-only account summary for the native WooPayments settings surface.
+	 *
+	 * @return array<string,array<string,mixed>>
+	 */
+	public function get_account_summary(): array {
+		$account_service = $this->account_service;
+
+		return array(
+			'account'   => array(
+				'id'                   => $account_service->get_account_id(),
+				'mode'                 => $account_service->get_mode(),
+				'default_currency'     => $account_service->get_account_default_currency(),
+				'connected'            => $account_service->has_account(),
+				'working'              => $account_service->has_working_account(),
+				'can_process_payments' => $account_service->can_process_payments(),
+				'test_mode'            => $account_service->is_test_mode_enabled(),
+				'test_drive'           => $account_service->has_test_account(),
+				'sandbox'              => $account_service->has_sandbox_account(),
+				'live'                 => $account_service->has_live_account(),
+			),
+			'documents' => array(
+				'enabled'                => $account_service->is_documents_enabled(),
+				'has_submitted_vat_data' => $account_service->has_submitted_vat_data(),
+				'country'                => $account_service->get_account_country(),
+			),
+			'urls'      => array(
+				'overview_page' => Utils::wc_payments_settings_url( WooPaymentsOnboardingAdapter::OVERVIEW_PATH ),
+				// Client 11.1.0's Activate payments modal sends a test or sandbox account to onboarding (`sandbox-mode-switch-to-live-notice/modal/index.tsx:39-45`).
+				'setup'         => Utils::wc_payments_settings_url( WooPaymentsService::ONBOARDING_PATH_BASE ),
 			),
 		);
 	}

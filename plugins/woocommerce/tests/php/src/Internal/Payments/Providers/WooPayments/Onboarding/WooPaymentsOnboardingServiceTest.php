@@ -313,7 +313,6 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$collaborators = array(
 			'onboarding_adapter' => new DelegatingOnboardingAdapter( $onboarding_adapter, $api_client, $legacy_runtime, $account_service, $onboarding_service ),
 			'legacy_runtime'     => $legacy_runtime,
-			'account_service'    => $account_service,
 		);
 		foreach ( $collaborators as $property => $collaborator ) {
 			$reflection = new \ReflectionProperty( WooPaymentsService::class, $property );

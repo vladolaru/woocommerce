@@ -20,7 +20,6 @@ use WP_Http;
 use WP_HTTP_Response;
 use WP_REST_Request;
 use WP_REST_Response;
-use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 
 /**
  * Controller for the native WooPayments merchant REST endpoints.
@@ -64,13 +63,6 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @var string
 	 */
 	protected string $rest_base = 'settings/payments/woopayments';
-
-	/**
-	 * The WooPayments-specific Payments settings page service.
-	 *
-	 * @var WooPaymentsService
-	 */
-	private WooPaymentsService $woopayments;
 
 	/**
 	 * The native WooPayments settings contract service.
@@ -213,7 +205,6 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	/**
 	 * Initialize the class instance.
 	 *
-	 * @param WooPaymentsService                    $woopayments           The WooPayments-specific Payments settings page service.
 	 * @param WooPaymentsSettingsService|null       $settings_service      Optional native WooPayments settings service.
 	 * @param WooPaymentsRuntimeArbiter|null        $runtime_arbiter       Optional native payments runtime arbiter.
 	 * @param WooPaymentsPmPromotionsService|null   $pm_promotions_service Optional native WooPayments PM promotions service.
@@ -225,8 +216,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 *
 	 * @internal
 	 */
-	final public function init( WooPaymentsService $woopayments, ?WooPaymentsSettingsService $settings_service = null, ?WooPaymentsRuntimeArbiter $runtime_arbiter = null, ?WooPaymentsPmPromotionsService $pm_promotions_service = null, ?WooPaymentsOverviewService $overview_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsAdminNoticeService $admin_notice_service = null, ?WooPaymentsApplePayDomainService $apple_pay_domain_service = null, ?WooPaymentsApiClient $api_client = null ): void {
-		$this->woopayments           = $woopayments;
+	final public function init( ?WooPaymentsSettingsService $settings_service = null, ?WooPaymentsRuntimeArbiter $runtime_arbiter = null, ?WooPaymentsPmPromotionsService $pm_promotions_service = null, ?WooPaymentsOverviewService $overview_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsAdminNoticeService $admin_notice_service = null, ?WooPaymentsApplePayDomainService $apple_pay_domain_service = null, ?WooPaymentsApiClient $api_client = null ): void {
 		$this->settings_service      = $settings_service;
 		$this->runtime_arbiter       = $runtime_arbiter;
 		$this->pm_promotions_service = $pm_promotions_service;
@@ -875,7 +865,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 */
 	protected function get_account_summary() {
 		try {
-			$summary = $this->woopayments->get_account_summary();
+			$summary = $this->get_overview_service()->get_account_summary();
 		} catch ( Exception $e ) {
 			return new WP_Error( 'woocommerce_rest_woopayments_account_error', $e->getMessage(), array( 'status' => WP_Http::INTERNAL_SERVER_ERROR ) );
 		}

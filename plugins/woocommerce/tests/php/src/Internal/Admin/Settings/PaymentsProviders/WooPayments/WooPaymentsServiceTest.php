@@ -299,114 +299,12 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$collaborators = array(
 			'onboarding_adapter' => new DelegatingOnboardingAdapter( $onboarding_adapter, $api_client, $legacy_runtime, $account_service, $onboarding_service ),
 			'legacy_runtime'     => $legacy_runtime,
-			'account_service'    => $account_service,
 		);
 		foreach ( $collaborators as $property => $collaborator ) {
 			$reflection = new \ReflectionProperty( WooPaymentsService::class, $property );
 			$reflection->setAccessible( true );
 			$reflection->setValue( $this->sut, $collaborator );
 		}
-	}
-
-	/**
-	 * @testdox Should expose a safe native account summary for the WooPayments settings surface.
-	 */
-	public function test_get_account_summary_returns_safe_native_account_state(): void {
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data' => array(
-					'account_id'             => 'acct_native_test',
-					'test_publishable_key'   => 'pk_test_secret',
-					'live_publishable_key'   => 'pk_live_secret',
-					'payments_enabled'       => true,
-					'details_submitted'      => true,
-					'is_test_drive'          => true,
-					'is_live'                => false,
-					'is_documents_enabled'   => true,
-					'has_submitted_vat_data' => true,
-					'country'                => 'NL',
-					'store_currencies'       => array(
-						'default' => 'eur',
-					),
-				),
-			)
-		);
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array(
-				'enabled'   => 'yes',
-				'test_mode' => 'yes',
-			)
-		);
-		update_option( 'wcpay_onboarding_test_mode', 'yes' );
-		// A connected store whose account fetch fails, so the summary reads the seeded cache.
-		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
-		$connected_api_client->method( 'is_available' )->willReturn( true );
-		$connected_api_client->method( 'get_account' )->willThrowException( new WooPaymentsApiException( 'Unavailable.', 'wcpay_test_unavailable', 500 ) );
-		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
-
-		$summary = $this->sut->get_account_summary();
-
-		$this->assertSame( 'acct_native_test', $summary['account']['id'] );
-		$this->assertSame( 'test', $summary['account']['mode'] );
-		$this->assertSame( 'eur', $summary['account']['default_currency'] );
-		$this->assertTrue( $summary['account']['connected'] );
-		$this->assertTrue( $summary['account']['working'] );
-		$this->assertTrue( $summary['account']['can_process_payments'] );
-		$this->assertTrue( $summary['account']['test_mode'] );
-		$this->assertTrue( $summary['account']['test_drive'] );
-		$this->assertFalse( $summary['account']['sandbox'] );
-		$this->assertFalse( $summary['account']['live'] );
-		$this->assertSame(
-			array(
-				'enabled'                => true,
-				'has_submitted_vat_data' => true,
-				'country'                => 'NL',
-			),
-			$summary['documents']
-		);
-		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview', $summary['urls']['overview_page'] );
-		$this->assertStringNotContainsString( 'wcpay-connection-success', $summary['urls']['overview_page'] );
-		$this->assertStringNotContainsString( 'wcpay-connection-error', $summary['urls']['overview_page'] );
-		// Client 11.1.0 `sandbox-mode-switch-to-live-notice/modal/index.tsx:39-45`: Activate payments goes to the onboarding route.
-		$this->assertSame( Utils::wc_payments_settings_url( '/woopayments/onboarding' ), $summary['urls']['setup'] );
-		$this->assertArrayNotHasKey( 'test_publishable_key', $summary['account'] );
-		$this->assertArrayNotHasKey( 'live_publishable_key', $summary['account'] );
-		$this->assertArrayNotHasKey( 'is_documents_enabled', $summary['account'] );
-		$this->assertArrayNotHasKey( 'has_submitted_vat_data', $summary['account'] );
-	}
-
-	/**
-	 * @testdox Should expose a safe no-account summary for stores that still need setup.
-	 */
-	public function test_get_account_summary_returns_no_account_state(): void {
-		update_option( 'wcpay_account_data', array( 'data' => array() ) );
-
-		$summary = $this->sut->get_account_summary();
-
-		$this->assertSame( '', $summary['account']['id'] );
-		$this->assertSame( 'live', $summary['account']['mode'] );
-		$this->assertSame( 'usd', $summary['account']['default_currency'] );
-		$this->assertFalse( $summary['account']['connected'] );
-		$this->assertFalse( $summary['account']['working'] );
-		$this->assertFalse( $summary['account']['can_process_payments'] );
-		$this->assertFalse( $summary['account']['test_mode'] );
-		$this->assertFalse( $summary['account']['test_drive'] );
-		$this->assertFalse( $summary['account']['sandbox'] );
-		$this->assertFalse( $summary['account']['live'] );
-		$this->assertSame(
-			array(
-				'enabled'                => false,
-				'has_submitted_vat_data' => false,
-				'country'                => '',
-			),
-			$summary['documents']
-		);
-		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview', $summary['urls']['overview_page'] );
-		$this->assertStringNotContainsString( 'wcpay-connection-success', $summary['urls']['overview_page'] );
-		$this->assertStringNotContainsString( 'wcpay-connection-error', $summary['urls']['overview_page'] );
-		$this->assertSame( Utils::wc_payments_settings_url( '/woopayments/onboarding' ), $summary['urls']['setup'] );
 	}
 
 	/**
@@ -1332,7 +1230,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$sut = new WooPaymentsService();
 		$sut->init( $this->mock_providers, $this->mockable_proxy );
 
-		foreach ( array( 'onboarding_adapter', 'legacy_runtime', 'account_service' ) as $property ) {
+		foreach ( array( 'onboarding_adapter', 'legacy_runtime' ) as $property ) {
 			$reflection = new \ReflectionProperty( WooPaymentsService::class, $property );
 			$reflection->setAccessible( true );
 			$this->assertNull( $reflection->getValue( $sut ), $property . ' must be resolved on first use, not when the service is initialized.' );

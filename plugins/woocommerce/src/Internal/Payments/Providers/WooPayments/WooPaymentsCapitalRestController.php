@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -175,7 +174,7 @@ class WooPaymentsCapitalRestController extends RestApiControllerBase {
 	 * @return string
 	 */
 	private function get_overview_url( array $query = array() ): string {
-		return Utils::wc_payments_settings_url( WooPaymentsService::OVERVIEW_PATH, $query );
+		return Utils::wc_payments_settings_url( WooPaymentsOnboardingAdapter::OVERVIEW_PATH, $query );
 	}
 
 	/**

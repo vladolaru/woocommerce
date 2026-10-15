@@ -17,7 +17,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAd
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
-use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -561,7 +560,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 */
 	private function get_account_mode(): ?array {
 		try {
-			$summary = wc_get_container()->get( WooPaymentsService::class )->get_account_summary();
+			$summary = wc_get_container()->get( WooPaymentsOverviewService::class )->get_account_summary();
 		} catch ( \Throwable $e ) {
 			return null;
 		}

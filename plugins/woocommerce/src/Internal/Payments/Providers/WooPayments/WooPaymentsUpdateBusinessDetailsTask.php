@@ -156,7 +156,7 @@ class WooPaymentsUpdateBusinessDetailsTask extends Task {
 	 */
 	public function get_action_url() {
 		if ( count( $this->get_error_messages() ) > 1 ) {
-			return Utils::wc_payments_settings_url( WooPaymentsService::OVERVIEW_PATH );
+			return Utils::wc_payments_settings_url( WooPaymentsOnboardingAdapter::OVERVIEW_PATH );
 		}
 
 		if ( ! $this->is_details_submitted() ) {
@@ -171,12 +171,12 @@ class WooPaymentsUpdateBusinessDetailsTask extends Task {
 
 		// Test-drive accounts have no dashboard access (client `get_account_status_data()` `accountLink`).
 		if ( ! empty( $this->get_account_data()['is_test_drive'] ) ) {
-			return Utils::wc_payments_settings_url( WooPaymentsService::OVERVIEW_PATH );
+			return Utils::wc_payments_settings_url( WooPaymentsOnboardingAdapter::OVERVIEW_PATH );
 		}
 
 		// The login link that `LegacyAdminLinkHandler::handle_login_request()` serves, with the client's attribution args.
 		return Utils::wc_payments_settings_url(
-			WooPaymentsService::OVERVIEW_PATH,
+			WooPaymentsOnboardingAdapter::OVERVIEW_PATH,
 			array(
 				'wcpay-login' => '1',
 				'_wpnonce'    => wp_create_nonce( 'wcpay-login' ),

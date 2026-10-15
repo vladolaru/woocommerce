@@ -10,7 +10,6 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsOnboardingRedirect;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsOverviewService;
-use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -599,8 +598,8 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$_GET['page'] = 'wc-settings';
 		$_GET['tab']  = 'checkout';
 		$_GET['path'] = $path;
-		$this->replace_overview_service( null );
-		$this->replace_woopayments_service(
+		$this->replace_overview_service(
+			null,
 			array(
 				'account' => null,
 				'urls'    => array(),
@@ -662,7 +661,8 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$_GET['page'] = 'wc-settings';
 		$_GET['tab']  = 'checkout';
 		$_GET['path'] = $path;
-		$this->replace_woopayments_service(
+		$this->replace_overview_service(
+			null,
 			array(
 				'account'   => array(
 					'id'         => 'acct_test',
@@ -708,7 +708,6 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$_GET['tab']  = 'checkout';
 		$_GET['path'] = $path;
 		$this->replace_overview_service( array() );
-		$this->replace_woopayments_service( null );
 		$sut = $this->create_controller( true );
 
 		$settings = $sut->preload_shared_settings( array() );
@@ -2808,41 +2807,29 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Replace the container's Overview service with one that returns the shell, or that must not be asked for it.
+	 * Replace the container's Overview service with one that returns the shell and the account summary, or that must not be
+	 * asked for them.
 	 *
-	 * @param array<string,mixed>|null $shell The shell, or null when building it must not happen.
+	 * @param array<string,mixed>|null $shell   The shell, or null when building it must not happen.
+	 * @param array<string,mixed>|null $summary The account summary, or null when reading it must not happen.
 	 * @return void
 	 */
-	private function replace_overview_service( ?array $shell ): void {
+	private function replace_overview_service( ?array $shell, ?array $summary = null ): void {
 		$overview_service = $this->getMockBuilder( WooPaymentsOverviewService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_overview' ) )
+			->onlyMethods( array( 'get_overview', 'get_account_summary' ) )
 			->getMock();
 		if ( null === $shell ) {
 			$overview_service->expects( $this->never() )->method( 'get_overview' );
 		} else {
 			$overview_service->method( 'get_overview' )->willReturn( $shell );
 		}
-		wc_get_container()->replace( WooPaymentsOverviewService::class, $overview_service );
-	}
-
-	/**
-	 * Replace the container's WooPayments service with one that returns the account summary, or that must not be asked for it.
-	 *
-	 * @param array<string,mixed>|null $summary The account summary, or null when reading it must not happen.
-	 * @return void
-	 */
-	private function replace_woopayments_service( ?array $summary ): void {
-		$woopayments_service = $this->getMockBuilder( WooPaymentsService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_account_summary' ) )
-			->getMock();
 		if ( null === $summary ) {
-			$woopayments_service->expects( $this->never() )->method( 'get_account_summary' );
+			$overview_service->expects( $this->never() )->method( 'get_account_summary' );
 		} else {
-			$woopayments_service->method( 'get_account_summary' )->willReturn( $summary );
+			$overview_service->method( 'get_account_summary' )->willReturn( $summary );
 		}
-		wc_get_container()->replace( WooPaymentsService::class, $woopayments_service );
+		wc_get_container()->replace( WooPaymentsOverviewService::class, $overview_service );
 	}
 
 	/**

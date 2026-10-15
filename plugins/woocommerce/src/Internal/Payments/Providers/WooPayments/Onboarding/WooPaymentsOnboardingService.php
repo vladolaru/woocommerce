@@ -804,7 +804,7 @@ class WooPaymentsOnboardingService {
 	 * @return string
 	 */
 	private function get_native_onboarding_return_url(): string {
-		return Utils::wc_payments_settings_url( WooPaymentsService::OVERVIEW_PATH );
+		return Utils::wc_payments_settings_url( WooPaymentsOnboardingAdapter::OVERVIEW_PATH );
 	}
 
 	/**

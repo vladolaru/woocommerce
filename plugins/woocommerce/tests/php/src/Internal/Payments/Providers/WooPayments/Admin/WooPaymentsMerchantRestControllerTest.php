@@ -5,7 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\A
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsMerchantRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsOverviewService;
-use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -38,11 +37,6 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 * @var WooPaymentsMerchantRestController
 	 */
 	protected WooPaymentsMerchantRestController $sut;
-
-	/**
-	 * @var MockObject|WooPaymentsService
-	 */
-	private $mock_woopayments_service;
 
 	/**
 	 * @var MockObject|WooPaymentsSettingsService
@@ -104,13 +98,12 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 		$this->store_admin_id = $this->factory->user->create( array( 'role' => 'administrator' ) );
 		wp_set_current_user( $this->store_admin_id );
 
-		$this->mock_woopayments_service   = $this->getMockBuilder( WooPaymentsService::class )->getMock();
 		$this->mock_settings_service      = $this->getMockBuilder( WooPaymentsSettingsService::class )->getMock();
 		$this->mock_pm_promotions_service = $this->getMockBuilder( WooPaymentsPmPromotionsService::class )
 			->onlyMethods( array( 'get_visible_promotions', 'activate_promotion', 'dismiss_promotion' ) )
 			->getMock();
 		$this->mock_overview_service      = $this->getMockBuilder( WooPaymentsOverviewService::class )
-			->onlyMethods( array( 'get_overview' ) )
+			->onlyMethods( array( 'get_overview', 'get_account_summary' ) )
 			->getMock();
 		$this->mock_runtime_arbiter       = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
@@ -133,7 +126,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 			->getMock();
 
 		$this->sut = new WooPaymentsMerchantRestController();
-		$this->sut->init( $this->mock_woopayments_service, $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, null, null, $this->mock_api_client );
+		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, null, null, $this->mock_api_client );
 		$this->server = $this->create_rest_server_with_routes(
 			array(
 				function () {
@@ -174,7 +167,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 			),
 		);
 
-		$this->mock_woopayments_service
+		$this->mock_overview_service
 			->expects( $this->once() )
 			->method( 'get_account_summary' )
 			->willReturn( $summary );
@@ -195,7 +188,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 			->method( 'record_action' )
 			->with( 'test_to_live', 'shown', null )
 			->willReturn( true );
-		$this->sut->init( $this->mock_woopayments_service, $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
+		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
 		$this->sut->register_routes( true );
 
 		$request  = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/test_to_live/shown' );
@@ -334,7 +327,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 * @return \WP_REST_Response
 	 */
 	private function dispatch_apple_pay_domain_error_shown( ?string $error_id ): \WP_REST_Response {
-		$this->sut->init( $this->mock_woopayments_service, $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, null, new WooPaymentsApplePayDomainService() );
+		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, null, new WooPaymentsApplePayDomainService() );
 		$this->sut->register_routes( true );
 
 		$request = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/apple_pay_domain_error/shown' );
@@ -364,7 +357,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	public function test_record_admin_notice_action_rejects_anonymous_user(): void {
 		$notice_service = $this->createMock( WooPaymentsAdminNoticeService::class );
 		$notice_service->expects( $this->never() )->method( 'record_action' );
-		$this->sut->init( $this->mock_woopayments_service, $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
+		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
 		$this->sut->register_routes( true );
 		wp_set_current_user( 0 );
 
@@ -380,7 +373,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	public function test_record_admin_notice_action_rejects_non_manager(): void {
 		$notice_service = $this->createMock( WooPaymentsAdminNoticeService::class );
 		$notice_service->expects( $this->never() )->method( 'record_action' );
-		$this->sut->init( $this->mock_woopayments_service, $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
+		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
 		$this->sut->register_routes( true );
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'subscriber' ) ) );
 
@@ -394,7 +387,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	public function test_record_admin_notice_action_rejects_invalid_request(): void {
 		$notice_service = $this->createMock( WooPaymentsAdminNoticeService::class );
 		$notice_service->expects( $this->never() )->method( 'record_action' );
-		$this->sut->init( $this->mock_woopayments_service, $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
+		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
 		$this->sut->register_routes( true );
 
 		$this->assertSame( 404, $this->server->dispatch( new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/unknown/shown' ) )->get_status() );
@@ -418,7 +411,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 			}
 		);
 		$notice_service->init( $this->mock_account_service );
-		$this->sut->init( $this->mock_woopayments_service, $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
+		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
 		$this->sut->register_routes( true );
 
 		$request = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/test_to_live/' . $action );
@@ -454,7 +447,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 		);
 		add_filter( 'user_has_cap', $filter_callback );
 
-		$this->mock_woopayments_service
+		$this->mock_overview_service
 			->expects( $this->never() )
 			->method( 'get_account_summary' );
 
@@ -470,7 +463,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should return an account summary error when the service throws.
 	 */
 	public function test_get_account_summary_with_exception() {
-		$this->mock_woopayments_service
+		$this->mock_overview_service
 			->expects( $this->once() )
 			->method( 'get_account_summary' )
 			->willThrowException( new \Exception( 'Account summary unavailable.' ) );
@@ -1424,7 +1417,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 * @param string $route  Route path.
 	 */
 	public function test_write_routes_refuse_users_without_manager_permission( string $method, string $route ): void {
-		foreach ( array( $this->mock_settings_service, $this->mock_pm_promotions_service, $this->mock_woopayments_service ) as $service ) {
+		foreach ( array( $this->mock_settings_service, $this->mock_pm_promotions_service, $this->mock_overview_service ) as $service ) {
 			$service->expects( $this->never() )->method( $this->anything() );
 		}
 
@@ -1513,7 +1506,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 			->willReturn( false );
 
 		$sut = new WooPaymentsMerchantRestController();
-		$sut->init( $this->mock_woopayments_service, $this->mock_settings_service, $runtime_arbiter );
+		$sut->init( $this->mock_settings_service, $runtime_arbiter );
 		$sut->register_routes( true );
 
 		$routes = $this->server->get_routes();
@@ -1534,7 +1527,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 		$this->server   = $wp_rest_server;
 
 		$sut = new WooPaymentsMerchantRestController();
-		$sut->init( $this->mock_woopayments_service, $this->mock_settings_service );
+		$sut->init( $this->mock_settings_service );
 		$sut->register_routes( true );
 
 		$routes = $this->server->get_routes();
@@ -1563,7 +1556,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 			->willReturn( true );
 
 		$sut = new WooPaymentsMerchantRestController();
-		$sut->init( $this->mock_woopayments_service, $this->mock_settings_service, $runtime_arbiter );
+		$sut->init( $this->mock_settings_service, $runtime_arbiter );
 		$sut->register_routes( true );
 
 		$routes = $this->server->get_routes();

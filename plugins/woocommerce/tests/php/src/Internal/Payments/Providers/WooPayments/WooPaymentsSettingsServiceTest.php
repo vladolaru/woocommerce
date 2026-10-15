@@ -4,7 +4,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsMerchantRestController;
-use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -3418,7 +3417,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			->getMock();
 		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 		$controller = new WooPaymentsMerchantRestController();
-		$controller->init( $this->getMockBuilder( WooPaymentsService::class )->getMock(), $this->sut, $arbiter );
+		$controller->init( $this->sut, $arbiter );
 		$server = $this->create_rest_server_with_routes(
 			array(
 				static function () use ( $controller ): void {
