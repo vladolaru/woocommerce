@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding;
 
+use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
 use Automattic\WooCommerce\Admin\Notes\DataStore as NotesDataStore;
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
@@ -206,7 +207,7 @@ class WooPaymentsOnboardingService {
 	 */
 	public function get_recommended_payment_methods( string $country_code = '' ): array {
 		$country_code = strtoupper( trim( $country_code ) );
-		if ( ! array_key_exists( $country_code, $this->get_native_account_service()->get_supported_countries() ) ) {
+		if ( ! in_array( $country_code, DefaultPaymentGateways::get_wcpay_countries(), true ) ) {
 			return array();
 		}
 

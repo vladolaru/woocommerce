@@ -3375,6 +3375,49 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A supported country gets its recommendations even when a woocommerce_countries filter removes it from the store's country list.
+	 *
+	 * Source: client 11.1.0 checks its fixed list (`includes/class-wc-payments-account.php:684-686,698-702`, `includes/class-wc-payments-utils.php:263-305`).
+	 */
+	public function test_recommended_payment_methods_ignore_a_filtered_store_country_list(): void {
+		$this->seed_recommended_payment_methods_cache( null );
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_recommended_payment_methods' ) )
+			->getMock();
+		$api_client
+			->expects( $this->once() )
+			->method( 'get_recommended_payment_methods' )
+			->with( 'US', 'en_US' )
+			->willReturn(
+				array(
+					array(
+						'id'    => 'card',
+						'title' => 'Cards',
+					),
+				)
+			);
+		$this->set_onboarding_collaborators( $api_client );
+		$countries      = WC()->countries;
+		WC()->countries = new \WC_Countries();
+		add_filter(
+			'woocommerce_countries',
+			static function ( array $all ): array {
+				unset( $all['US'] );
+				return $all;
+			}
+		);
+
+		try {
+			$result = $this->onboarding_service->get_recommended_payment_methods( 'US' );
+		} finally {
+			WC()->countries = $countries;
+		}
+
+		$this->assertSame( array( 'card' ), array_column( $result, 'id' ) );
+	}
+
+	/**
 	 * Provide country codes WooPayments does not support.
 	 *
 	 * @return array<string,array{0:string}>
@@ -3383,6 +3426,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		return array(
 			'an unassigned code'   => array( 'XZ' ),
 			'a real store country' => array( 'BR' ),
+			'an empty code'        => array( '' ),
 		);
 	}
 
