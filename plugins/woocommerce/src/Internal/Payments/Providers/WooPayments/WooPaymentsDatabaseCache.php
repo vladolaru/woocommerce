@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
  * invalid or expired, keeps its last good data after an error, waits longer after each error in a row, and is read
  * from the database once per request. The option names, the stored shape and the TTLs are the WooPayments extension's
  * (client 11.1.0 `includes/class-database-cache.php`).
+ * One departure: a failed recommended payment methods answer is retried on the error ladder instead of being kept for a day.
  *
  * @since 11.2.0
  * @internal
