@@ -98,7 +98,8 @@ class WooPaymentsWooPaySessionService {
 	private WooPaymentsCustomerService $customer_service;
 
 	/**
-	 * WooPayments logger, which writes only when debug logging is on (client 11.1.0 `src/Internal/Logger.php:64-91`).
+	 * WooPayments logger, which writes only when debug logging is on or the store is in development mode (client 11.1.0
+	 * `src/Internal/Logger.php:64-91`).
 	 *
 	 * @var WooPaymentsLogger
 	 */

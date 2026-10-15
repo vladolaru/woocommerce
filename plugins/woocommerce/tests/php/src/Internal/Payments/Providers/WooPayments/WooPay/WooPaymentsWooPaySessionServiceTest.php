@@ -1472,6 +1472,29 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Init session request forwards the extension data of the adapted extensions registry.
+	 *
+	 * Client 11.1.0 puts the registry's extension data in the init request (includes/woopay/class-woopay-session.php:584-585),
+	 * in the shape Affiliate for WooCommerce gets (includes/woopay/class-woopay-adapted-extensions.php:172-176).
+	 */
+	public function test_init_session_request_forwards_extension_data(): void {
+		$adapted_extensions = new class() extends WooPaymentsWooPayAdaptedExtensions {
+			/**
+			 * Get the extension data of an active Affiliate for WooCommerce referral.
+			 *
+			 * @return array<string,mixed>
+			 */
+			public function get_extension_data(): array {
+				return array( 'affiliate-for-woocommerce' => array( 'affiliate-user' => 42 ) );
+			}
+		};
+
+		$request = $this->create_service( array(), array(), $adapted_extensions )->get_init_session_request( 'shopper@example.com' );
+
+		$this->assertSame( array( 'affiliate-for-woocommerce' => array( 'affiliate-user' => 42 ) ), $request['extension_data'] );
+	}
+
+	/**
 	 * @testdox Should fall back to the WooCommerce customer's billing email when no email is supplied.
 	 */
 	public function test_init_session_request_falls_back_to_customer_billing_email(): void {

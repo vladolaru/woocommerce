@@ -351,6 +351,8 @@ class WooPaymentsTerminalRoutesContractTest extends WC_REST_Unit_Test_Case {
 				);
 				break;
 			case 'GET /wc/v3/payments/readers/charges/(?P<transaction_id>\w+)':
+				// The transaction's creation time, which client 11.1.0 reads to date the reader charge summary
+				// (includes/admin/class-wc-rest-payments-reader-controller.php:151-163).
 				$this->api_client->transaction_response = array( 'created' => 1760486400 );
 				// The platform's reader charges summary, without its fee (wpcom service/class-charge-authorization-service.php:231-238).
 				$this->api_client->reader_charge_summary_response = array(
@@ -373,7 +375,6 @@ class WooPaymentsTerminalRoutesContractTest extends WC_REST_Unit_Test_Case {
 					'status'   => 'succeeded',
 					'currency' => 'usd',
 					'amount'   => 1234,
-					'metadata' => array( 'order_id' => (string) $order->get_id() ),
 					'charges'  => array( 'data' => array( array( 'id' => 'ch_receipt' ) ) ),
 				);
 				$this->api_client->charge_response            = array(
