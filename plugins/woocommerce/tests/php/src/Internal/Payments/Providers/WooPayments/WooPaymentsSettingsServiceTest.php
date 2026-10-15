@@ -29,6 +29,7 @@ use WP_Error;
 use WP_REST_Request;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\RecordingWooPaySessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\RecordingWooPayAppearanceStore;
 
 /**
  * Tests for the WooPaymentsSettingsService class.
@@ -87,7 +88,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->pm_promotions_service  = new RecordingPmPromotionsService();
 		$account_service              = $this->create_account_service();
 		$this->sut                    = new WooPaymentsSettingsService();
-		$this->sut->init( $account_service, $this->api_client, $this->pm_promotions_service, wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), $this->create_fraud_ruleset_service( $account_service ), $this->create_duplicate_gateway_methods_service( $account_service ), $this->woopay_session_service, $this->create_woopay_eligibility( $account_service ), wc_get_container()->get( WooPaymentsFrontendTrackingController::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
+		$this->sut->init( $account_service, $this->api_client, $this->pm_promotions_service, wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), $this->create_fraud_ruleset_service( $account_service ), $this->create_duplicate_gateway_methods_service( $account_service ), $this->create_woopay_eligibility( $account_service ), new RecordingWooPayAppearanceStore( $this->woopay_session_service ), wc_get_container()->get( WooPaymentsFrontendTrackingController::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
 	}
 
 	/**
@@ -733,8 +734,8 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsStripeBillingModule::class ),
 			$this->create_fraud_ruleset_service( $account_service ),
 			$this->create_duplicate_gateway_methods_service( $account_service ),
-			$this->woopay_session_service,
 			$this->create_woopay_eligibility( $account_service ),
+			new RecordingWooPayAppearanceStore( $this->woopay_session_service ),
 			wc_get_container()->get( WooPaymentsFrontendTrackingController::class ),
 			wc_get_container()->get( WooPaymentsLogger::class )
 		);

@@ -71,6 +71,7 @@ use WC_Unit_Test_Case;
 use WP_Error;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\RecordingWooPaySessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\RecordingWooPayAppearanceStore;
 
 /**
  * Tests for the WooPaymentsPaymentOperationService class.
@@ -10686,7 +10687,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$duplicate_gateway_methods_service = new WooPaymentsDuplicateGatewayMethodsService();
 		$duplicate_gateway_methods_service->init( $account_service, wc_get_container()->get( WooPaymentsLogger::class ) );
 		$settings_service = new WooPaymentsSettingsService();
-		$settings_service->init( $account_service, $api_client, new RecordingPmPromotionsService(), wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), $fraud_ruleset_service, $duplicate_gateway_methods_service, new RecordingWooPaySessionService(), $this->create_woopay_eligibility( $account_service ), wc_get_container()->get( WooPaymentsFrontendTrackingController::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
+		$settings_service->init( $account_service, $api_client, new RecordingPmPromotionsService(), wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), new WooPaymentsPaymentMethodRegistry(), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), $fraud_ruleset_service, $duplicate_gateway_methods_service, $this->create_woopay_eligibility( $account_service ), new RecordingWooPayAppearanceStore( new RecordingWooPaySessionService() ), wc_get_container()->get( WooPaymentsFrontendTrackingController::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
 
 		return array( $settings_service, $fraud_ruleset_service );
 	}

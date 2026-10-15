@@ -47,6 +47,13 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	private WooPaymentsWooPayEligibility $woopay_eligibility;
 
 	/**
+	 * WooPay checkout appearance store.
+	 *
+	 * @var WooPaymentsWooPayAppearanceStore
+	 */
+	private WooPaymentsWooPayAppearanceStore $appearance_store;
+
+	/**
 	 * Whether WooPay frontend assets have already been localized and enqueued.
 	 *
 	 * @var bool
@@ -65,12 +72,14 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsWooPaySessionService $session_service    WooPay session service.
-	 * @param WooPaymentsWooPayEligibility    $woopay_eligibility WooPay eligibility rules.
+	 * @param WooPaymentsWooPaySessionService  $session_service    WooPay session service.
+	 * @param WooPaymentsWooPayEligibility     $woopay_eligibility WooPay eligibility rules.
+	 * @param WooPaymentsWooPayAppearanceStore $appearance_store   WooPay checkout appearance store.
 	 */
-	final public function init( WooPaymentsWooPaySessionService $session_service, WooPaymentsWooPayEligibility $woopay_eligibility ): void {
+	final public function init( WooPaymentsWooPaySessionService $session_service, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsWooPayAppearanceStore $appearance_store ): void {
 		$this->session_service    = $session_service;
 		$this->woopay_eligibility = $woopay_eligibility;
+		$this->appearance_store   = $appearance_store;
 	}
 
 	/**
@@ -682,7 +691,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	private function save_admin_appearance( array $request ): void {
 		$payload = $this->get_appearance_payload( $request );
 
-		$this->session_service->save_woopay_appearance( $payload['appearance'], $payload['font_rules'] );
+		$this->appearance_store->save_woopay_appearance( $payload['appearance'], $payload['font_rules'] );
 	}
 
 	/**
@@ -695,7 +704,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		$payload = $this->get_appearance_payload( $request );
 
 		return array(
-			'stored' => $this->session_service->maybe_save_woopay_appearance( $payload['appearance'], $payload['font_rules'] ),
+			'stored' => $this->appearance_store->maybe_save_woopay_appearance( $payload['appearance'], $payload['font_rules'] ),
 		);
 	}
 
@@ -728,7 +737,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	private function is_valid_appearance_request( array $request ): bool {
 		return isset( $request['appearance'] ) &&
 			is_array( $request['appearance'] ) &&
-			$this->session_service->validate_appearance_schema( $request['appearance'] );
+			$this->appearance_store->validate_appearance_schema( $request['appearance'] );
 	}
 
 	/**
@@ -751,7 +760,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			}
 
 			if ( is_array( $raw_font_rules ) ) {
-				$font_rules = $this->session_service->sanitize_woopay_font_rules( $raw_font_rules );
+				$font_rules = $this->appearance_store->sanitize_woopay_font_rules( $raw_font_rules );
 			}
 		}
 

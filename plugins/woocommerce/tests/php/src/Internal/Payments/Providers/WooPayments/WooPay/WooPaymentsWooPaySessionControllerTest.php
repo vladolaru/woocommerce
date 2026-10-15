@@ -18,6 +18,7 @@ use WP_REST_Request;
 use WP_REST_Response;
 use WP_REST_Server;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAppearanceStore;
 
 /**
  * Tests for the WooPaymentsWooPaySessionController class.
@@ -37,6 +38,13 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @var WooPaymentsWooPayEligibility|null
 	 */
 	private ?WooPaymentsWooPayEligibility $woopay_eligibility = null;
+
+	/**
+	 * WooPay checkout appearance store the controller under test writes.
+	 *
+	 * @var WooPaymentsWooPayAppearanceStore|null
+	 */
+	private ?WooPaymentsWooPayAppearanceStore $appearance_store = null;
 
 	/**
 	 * Set up test fixtures.
@@ -1757,10 +1765,11 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		if ( $service instanceof RecordingWooPaySessionService ) {
 			$service->woopay_enabled  = $woopay_enabled;
 			$this->woopay_eligibility = new RecordingWooPayEligibility( $service );
+			$this->appearance_store   = new RecordingWooPayAppearanceStore( $service );
 		}
 
 		$controller = new WooPaymentsWooPaySessionController();
-		$controller->init( $service, $this->woopay_eligibility );
+		$controller->init( $service, $this->woopay_eligibility, $this->appearance_store );
 
 		return $controller;
 	}
@@ -1809,8 +1818,11 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->woopay_eligibility = new WooPaymentsWooPayEligibility();
 		$this->woopay_eligibility->init( $account_service );
 
+		$this->appearance_store = new WooPaymentsWooPayAppearanceStore();
+		$this->appearance_store->init( new WooPaymentsFrontendStylesService() );
+
 		$service = new WooPaymentsWooPaySessionService();
-		$service->init( $account_service, $this->woopay_eligibility, new WooPaymentsFrontendStylesService(), $tracking_controller );
+		$service->init( $account_service, $this->woopay_eligibility, $this->appearance_store, $tracking_controller );
 
 		return $service;
 	}

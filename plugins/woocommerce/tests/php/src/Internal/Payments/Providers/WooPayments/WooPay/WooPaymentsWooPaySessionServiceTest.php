@@ -1257,31 +1257,10 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertIsArray( $config['woopayAppearance'] );
 		$this->assertNotEmpty( $config['woopayAppearance'], 'WooPay gets the theme\'s appearance.' );
-		$this->assertTrue( $sut->validate_appearance_schema( $config['woopayAppearance'] ) );
+		$this->assertTrue( $this->appearance_store->validate_appearance_schema( $config['woopayAppearance'] ) );
 		$this->assertSame( $theme_background, $config['woopayAppearance']['variables']['colorBackground'] ?? null );
 		$this->assertIsArray( $stored, 'The computed appearance is stored.' );
 		$this->assertSame( $config['woopayAppearance'], $stored['appearance'] ?? null );
-	}
-
-	/**
-	 * @testdox On a classic theme with nothing stored, WooPay gets no appearance.
-	 */
-	public function test_classic_theme_gives_woopay_no_computed_appearance(): void {
-		$original_theme = get_stylesheet();
-		$sut            = $this->create_service(
-			array( 'is_woopay_global_theme_support_enabled' => 'yes' ),
-			array( 'platform_global_theme_support_enabled' => true )
-		);
-
-		try {
-			switch_theme( 'storefront' );
-			$appearance = $sut->get_woopay_appearance();
-		} finally {
-			switch_theme( $original_theme );
-		}
-
-		$this->assertSame( array(), $appearance );
-		$this->assertFalse( get_option( 'wcpay_woopay_checkout_appearance' ) );
 	}
 
 	/**
@@ -1696,7 +1675,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
 
 		$sut = $this->create_service();
-		$sut->save_woopay_appearance(
+		$this->appearance_store->save_woopay_appearance(
 			array( 'theme' => 'stripe' ),
 			array(
 				array( 'cssSrc' => 'https://fonts.googleapis.com/css2?family=Inter' ),
@@ -1882,112 +1861,6 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'https://example.test/checkout', $metadata['platform_checkout_source_url'] );
 		$this->assertTrue( $metadata['platform_checkout_is_blocks'] );
 		$this->assertSame( 'desktop', $metadata['platform_checkout_viewport'] );
-	}
-
-	/**
-	 * @testdox Should store WooPay checkout appearance in the preserved option shape.
-	 */
-	public function test_stores_appearance_in_preserved_option_shape(): void {
-		$sut        = $this->create_service();
-		$appearance = $this->get_valid_appearance();
-		$font_rules = array(
-			array(
-				'cssSrc' => 'https://fonts.googleapis.com/css2?family=Inter',
-			),
-		);
-
-		$sut->save_woopay_appearance( $appearance, $font_rules );
-
-		$stored = get_option( 'wcpay_woopay_checkout_appearance' );
-		$this->assertIsArray( $stored );
-		$this->assertSame( $appearance, $stored['appearance'] );
-		$this->assertSame( $font_rules, $stored['font_rules'] );
-		$this->assertNotEmpty( $stored['version'] );
-		$this->assertSame( $appearance, $sut->get_woopay_appearance() );
-		$this->assertSame( $font_rules, $sut->get_woopay_font_rules() );
-	}
-
-	/**
-	 * @testdox Should ignore stale WooPay appearance data when the styles cache version changes.
-	 */
-	public function test_ignores_stale_appearance_when_styles_cache_version_changes(): void {
-		$sut        = $this->create_service();
-		$appearance = $this->get_valid_appearance();
-
-		update_option( 'wcpay_styles_cache_version', 'version-one' );
-		$sut->save_woopay_appearance(
-			$appearance,
-			array(
-				array(
-					'cssSrc' => 'https://fonts.googleapis.com/css2?family=Inter',
-				),
-			)
-		);
-
-		update_option( 'wcpay_styles_cache_version', 'version-two' );
-
-		$this->assertSame( array(), $sut->get_woopay_appearance() );
-		$this->assertSame( array(), $sut->get_woopay_font_rules() );
-		$this->assertTrue(
-			$sut->maybe_save_woopay_appearance(
-				array(
-					'theme'     => 'night',
-					'variables' => array(
-						'colorText' => '#ffffff',
-					),
-				)
-			)
-		);
-	}
-
-	/**
-	 * @testdox Should ignore appearance stored before the current frontend style extractor schema.
-	 */
-	public function test_ignores_appearance_stored_before_current_frontend_style_extractor_schema(): void {
-		$sut        = $this->create_service();
-		$appearance = $this->get_valid_appearance();
-
-		update_option( 'wcpay_styles_cache_version', 'version-one' );
-		update_option(
-			'wcpay_woopay_checkout_appearance',
-			array(
-				'appearance' => $appearance,
-				'font_rules' => array(),
-				'version'    => 'version-one',
-			)
-		);
-
-		$this->assertSame( array(), $sut->get_woopay_appearance() );
-		$this->assertSame( array(), $sut->get_woopay_font_rules() );
-	}
-
-	/**
-	 * @testdox Should conditionally store shopper appearance only when no appearance exists.
-	 */
-	public function test_conditionally_stores_shopper_appearance_only_once(): void {
-		$sut    = $this->create_service();
-		$first  = $this->get_valid_appearance();
-		$second = array(
-			'theme'     => 'night',
-			'variables' => array(
-				'colorText' => '#ffffff',
-			),
-		);
-
-		$this->assertTrue( $sut->maybe_save_woopay_appearance( $first ) );
-		$this->assertFalse( $sut->maybe_save_woopay_appearance( $second ) );
-		$this->assertSame( $first, $sut->get_woopay_appearance() );
-	}
-
-	/**
-	 * @testdox Should reject invalid WooPay appearance schema.
-	 */
-	public function test_rejects_invalid_appearance_schema(): void {
-		$sut = $this->create_service();
-
-		$this->assertFalse( $sut->validate_appearance_schema( array( 'buttonTheme' => 'dark' ) ) );
-		$this->assertFalse( $sut->maybe_save_woopay_appearance( array( 'buttonTheme' => 'dark' ) ) );
-		$this->assertFalse( get_option( 'wcpay_woopay_checkout_appearance' ) );
 	}
 
 	/**
@@ -2737,7 +2610,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			array( 'is_woopay_global_theme_support_enabled' => 'no' ),
 			array( 'platform_global_theme_support_enabled' => true )
 		);
-		$sut->save_woopay_appearance( array( 'theme' => 'night' ), array( array( 'src' => 'https://example.com/font.woff2' ) ) );
+		$this->appearance_store->save_woopay_appearance( array( 'theme' => 'night' ), array( array( 'src' => 'https://example.com/font.woff2' ) ) );
 
 		$request = $sut->get_init_session_request( 'shopper@example.com' );
 
@@ -2753,7 +2626,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			array( 'is_woopay_global_theme_support_enabled' => 'yes' ),
 			array( 'platform_global_theme_support_enabled' => true )
 		);
-		$sut->save_woopay_appearance( array( 'theme' => 'night' ), array() );
+		$this->appearance_store->save_woopay_appearance( array( 'theme' => 'night' ), array() );
 
 		$request = $sut->get_init_session_request( 'shopper@example.com' );
 

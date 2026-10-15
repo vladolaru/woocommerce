@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\RecordingWooPaySessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\RecordingWooPayAppearanceStore;
 
 /**
  * Tests for the WooPay toggle round-trip through the WooPaymentsSettingsService contract.
@@ -96,8 +97,8 @@ class WooPaymentsSettingsServiceWooPayToggleTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsStripeBillingModule::class ),
 			$fraud_ruleset_service,
 			$duplicate_gateway_methods_service,
-			new RecordingWooPaySessionService(),
 			$this->create_woopay_eligibility( $account_service ),
+			new RecordingWooPayAppearanceStore( new RecordingWooPaySessionService() ),
 			wc_get_container()->get( WooPaymentsFrontendTrackingController::class ),
 			wc_get_container()->get( WooPaymentsLogger::class )
 		);

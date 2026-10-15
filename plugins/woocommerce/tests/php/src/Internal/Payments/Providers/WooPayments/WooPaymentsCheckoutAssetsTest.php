@@ -26,6 +26,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPr
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Unit_Test_Case;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAppearanceStore;
 
 /**
  * Tests for the WooPaymentsCheckoutAssets class.
@@ -1716,8 +1717,10 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$real_account_service->init( new LegacyProxy(), $database_cache );
 		$real_eligibility = new WooPaymentsWooPayEligibility();
 		$real_eligibility->init( $real_account_service );
+		$real_appearance_store = new WooPaymentsWooPayAppearanceStore();
+		$real_appearance_store->init( new WooPaymentsFrontendStylesService() );
 		$real_woopay_service = new WooPaymentsWooPaySessionService();
-		$real_woopay_service->init( $real_account_service, $real_eligibility, new WooPaymentsFrontendStylesService(), $this->create_frontend_tracking_controller() );
+		$real_woopay_service->init( $real_account_service, $real_eligibility, $real_appearance_store, $this->create_frontend_tracking_controller() );
 		$woopay_config = array_merge(
 			array_fill_keys( array_keys( $real_woopay_service->get_woopay_frontend_config( 'checkout' ) ), '' ),
 			array(

@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAppearanceStore;
 
 /**
  * Shared fixture for the WooPay session family tests: the account and tracking doubles and the WooPay services built
@@ -40,6 +41,13 @@ trait WooPayServicesFixture {
 	 * @var TestableWooPayEligibility|null
 	 */
 	private ?TestableWooPayEligibility $woopay_eligibility = null;
+
+	/**
+	 * WooPay checkout appearance store the last create_service() built.
+	 *
+	 * @var WooPaymentsWooPayAppearanceStore|null
+	 */
+	private ?WooPaymentsWooPayAppearanceStore $appearance_store = null;
 
 	/**
 	 * Set up test fixtures.
@@ -509,10 +517,26 @@ trait WooPayServicesFixture {
 		$this->woopay_eligibility = new TestableWooPayEligibility();
 		$this->woopay_eligibility->init( $account_service );
 
+		$this->appearance_store = new WooPaymentsWooPayAppearanceStore();
+		$this->appearance_store->init( new WooPaymentsFrontendStylesService() );
+
 		$sut = new WooPaymentsWooPaySessionService();
-		$sut->init( $account_service, $this->woopay_eligibility, new WooPaymentsFrontendStylesService(), $tracking_controller, null, $adapted_extensions, $customer_service );
+		$sut->init( $account_service, $this->woopay_eligibility, $this->appearance_store, $tracking_controller, null, $adapted_extensions, $customer_service );
 
 		return $sut;
+	}
+
+	/**
+	 * Create the WooPay appearance store under test, as create_service() builds it.
+	 *
+	 * @param array<string,mixed> $settings     Gateway settings.
+	 * @param array<string,mixed> $account_data Account data.
+	 * @return WooPaymentsWooPayAppearanceStore
+	 */
+	private function create_appearance_store( array $settings = array(), array $account_data = array() ): WooPaymentsWooPayAppearanceStore {
+		$this->create_service( $settings, $account_data );
+
+		return $this->appearance_store;
 	}
 
 	/**
@@ -540,7 +564,7 @@ trait WooPayServicesFixture {
 	 */
 	private function register_controller( WooPaymentsWooPaySessionService $service ): WooPaymentsWooPaySessionController {
 		$controller = new WooPaymentsWooPaySessionController();
-		$controller->init( $service, $this->woopay_eligibility );
+		$controller->init( $service, $this->woopay_eligibility, $this->appearance_store );
 		$controller->register();
 
 		return $controller;

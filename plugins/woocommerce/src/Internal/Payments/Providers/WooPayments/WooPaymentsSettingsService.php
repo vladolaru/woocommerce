@@ -13,8 +13,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 use WP_Error;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAppearanceStore;
 
 /**
  * Provides the native WooPayments settings contract consumed by the hoisted settings store.
@@ -143,18 +143,18 @@ class WooPaymentsSettingsService {
 	private WooPaymentsApiClient $api_client;
 
 	/**
-	 * WooPay session service.
-	 *
-	 * @var WooPaymentsWooPaySessionService
-	 */
-	private WooPaymentsWooPaySessionService $woopay_session_service;
-
-	/**
 	 * WooPay eligibility rules.
 	 *
 	 * @var WooPaymentsWooPayEligibility
 	 */
 	private WooPaymentsWooPayEligibility $woopay_eligibility;
+
+	/**
+	 * WooPay checkout appearance store.
+	 *
+	 * @var WooPaymentsWooPayAppearanceStore
+	 */
+	private WooPaymentsWooPayAppearanceStore $appearance_store;
 
 	/**
 	 * Frontend tracking controller.
@@ -225,12 +225,12 @@ class WooPaymentsSettingsService {
 	 * @param WooPaymentsStripeBillingModule            $stripe_billing_module             Stripe Billing module.
 	 * @param WooPaymentsFraudRulesetService            $fraud_ruleset_service             Fraud ruleset service.
 	 * @param WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service Duplicate gateway methods service.
-	 * @param WooPaymentsWooPaySessionService           $woopay_session_service            WooPay session service.
 	 * @param WooPaymentsWooPayEligibility              $woopay_eligibility                WooPay eligibility rules.
+	 * @param WooPaymentsWooPayAppearanceStore          $appearance_store                  WooPay checkout appearance store.
 	 * @param WooPaymentsFrontendTrackingController     $frontend_tracking_controller      Frontend tracking controller.
 	 * @param WooPaymentsLogger                         $logger                            WooPayments logger.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsStripeBillingModule $stripe_billing_module, WooPaymentsFraudRulesetService $fraud_ruleset_service, WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service, WooPaymentsWooPaySessionService $woopay_session_service, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsFrontendTrackingController $frontend_tracking_controller, WooPaymentsLogger $logger ): void {
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsStripeBillingModule $stripe_billing_module, WooPaymentsFraudRulesetService $fraud_ruleset_service, WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsWooPayAppearanceStore $appearance_store, WooPaymentsFrontendTrackingController $frontend_tracking_controller, WooPaymentsLogger $logger ): void {
 		$this->account_service                   = $account_service;
 		$this->api_client                        = $api_client;
 		$this->pm_promotions_service             = $pm_promotions_service;
@@ -239,8 +239,8 @@ class WooPaymentsSettingsService {
 		$this->stripe_billing_module             = $stripe_billing_module;
 		$this->fraud_ruleset_service             = $fraud_ruleset_service;
 		$this->duplicate_gateway_methods_service = $duplicate_gateway_methods_service;
-		$this->woopay_session_service            = $woopay_session_service;
 		$this->woopay_eligibility                = $woopay_eligibility;
+		$this->appearance_store                  = $appearance_store;
 		$this->frontend_tracking_controller      = $frontend_tracking_controller;
 		$this->logger                            = $logger;
 	}
@@ -332,8 +332,8 @@ class WooPaymentsSettingsService {
 			'show_woopay_incompatibility_notice'         => (bool) get_option( 'woopay_invalid_extension_found', false ),
 			'woopay_custom_message'                      => $this->get_string_setting( $settings, 'platform_checkout_custom_message' ),
 			'woopay_store_logo'                          => $this->get_string_setting( $settings, 'platform_checkout_store_logo' ),
-			'woopay_appearance'                          => $this->woopay_session_service->get_woopay_appearance(),
-			'woopay_font_rules'                          => $this->woopay_session_service->get_woopay_font_rules(),
+			'woopay_appearance'                          => $this->appearance_store->get_woopay_appearance(),
+			'woopay_font_rules'                          => $this->appearance_store->get_woopay_font_rules(),
 			'store_name'                                 => get_bloginfo( 'name' ),
 			'store_currency'                             => $this->get_store_currency(),
 			'site_logo_url'                              => $this->get_site_logo_url(),
