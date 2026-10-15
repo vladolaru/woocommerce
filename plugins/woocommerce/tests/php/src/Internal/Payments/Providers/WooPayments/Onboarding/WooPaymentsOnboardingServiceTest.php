@@ -20,6 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -43,6 +44,8 @@ use WP_REST_Request;
  * @class WooPaymentsOnboardingService
  */
 class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
+
+	use ProviderTextLogAssertions;
 
 	/**
 	 * @var WooPaymentsService
@@ -3170,6 +3173,154 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $this->onboarding_service->store_referral_code( '   ' ) );
 		$this->assertFalse( get_transient( 'woopayments_referral_code' ) );
 		$this->assertArrayNotHasKey( 'wcadmin_wcpay_account_referral', $recorded );
+	}
+
+	/**
+	 * @testdox Should expose recommended payment methods for the settings provider list.
+	 */
+	public function test_get_recommended_payment_methods_delegates_to_the_api_client(): void {
+		delete_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' );
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_recommended_payment_methods' ) )
+			->getMock();
+		$api_client
+			->expects( $this->once() )
+			->method( 'get_recommended_payment_methods' )
+			->with( 'GB', 'en_US' )
+			->willReturn(
+				array(
+					array(
+						'id'    => 'card',
+						'title' => 'Cards',
+					),
+					array(
+						'id'       => 'link',
+						'title'    => 'Link',
+						'type'     => 'available',
+						'priority' => '7',
+					),
+					array(
+						'title' => 'Invalid recommendation',
+					),
+				)
+			);
+
+		$this->set_onboarding_collaborators( $api_client );
+
+		$result = $this->onboarding_service->get_recommended_payment_methods( 'GB' );
+
+		$this->assertCount( 2, $result );
+		$this->assertSame( 'card', $result[0]['id'] );
+		$this->assertTrue( $result[0]['enabled'] );
+		$this->assertSame( 0, $result[0]['priority'] );
+		$this->assertSame( 'link', $result[1]['id'] );
+		$this->assertFalse( $result[1]['enabled'] );
+		$this->assertSame( 7, $result[1]['priority'] );
+
+		delete_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' );
+	}
+
+	/**
+	 * @testdox Should cache recommended payment methods by country and locale.
+	 */
+	public function test_get_recommended_payment_methods_uses_cached_country_locale_data(): void {
+		delete_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' );
+
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_recommended_payment_methods' ) )
+			->getMock();
+		$api_client
+			->expects( $this->once() )
+			->method( 'get_recommended_payment_methods' )
+			->with( 'GB', 'en_US' )
+			->willReturn(
+				array(
+					array(
+						'id'    => 'card',
+						'title' => 'Cards',
+					),
+				)
+			);
+
+		$this->set_onboarding_collaborators( $api_client );
+
+		$first_result  = $this->onboarding_service->get_recommended_payment_methods( 'GB' );
+		$second_result = $this->onboarding_service->get_recommended_payment_methods( 'GB' );
+
+		$this->assertSame( $first_result, $second_result );
+		$this->assertSame( 'card', $second_result[0]['id'] );
+
+		delete_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' );
+	}
+
+	/**
+	 * @testdox Cached recommended payment methods for another country or locale are fetched again.
+	 * @testWith ["GB", "de_DE"]
+	 *           ["FR", "en_US"]
+	 *
+	 * @param string $cached_country Country of the cached list.
+	 * @param string $cached_locale  Locale of the cached list.
+	 */
+	public function test_get_recommended_payment_methods_refetches_for_another_country_or_locale( string $cached_country, string $cached_locale ): void {
+		set_transient(
+			'woocommerce_woocommerce_payments_recommended_payment_methods',
+			array(
+				'payment_methods' => array(
+					array(
+						'id'    => 'stale',
+						'title' => 'Stale',
+					),
+				),
+				'__locale'        => $cached_locale,
+				'country_code'    => $cached_country,
+			),
+			DAY_IN_SECONDS
+		);
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_recommended_payment_methods' ) )
+			->getMock();
+		$api_client
+			->expects( $this->once() )
+			->method( 'get_recommended_payment_methods' )
+			->with( 'GB', 'en_US' )
+			->willReturn(
+				array(
+					array(
+						'id'    => 'card',
+						'title' => 'Cards',
+					),
+				)
+			);
+		$this->set_onboarding_collaborators( $api_client );
+
+		$result = $this->onboarding_service->get_recommended_payment_methods( 'GB' );
+
+		$this->assertSame( 'card', $result[0]['id'] );
+	}
+
+	/**
+	 * @testdox A platform error fetching the recommended payment methods is logged with its status and code, never its message.
+	 */
+	public function test_recommended_payment_methods_fetch_log_leaves_out_platform_text(): void {
+		delete_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' );
+		self::enable_woopayments_debug_logging();
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_recommended_payment_methods' ) )
+			->getMock();
+		$api_client->method( 'get_recommended_payment_methods' )->willThrowException( self::make_provider_error() );
+		$this->set_onboarding_collaborators( $api_client );
+		$logger = RecordingWcLogger::install();
+
+		$this->assertSame( array(), $this->onboarding_service->get_recommended_payment_methods( 'GB' ) );
+
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**

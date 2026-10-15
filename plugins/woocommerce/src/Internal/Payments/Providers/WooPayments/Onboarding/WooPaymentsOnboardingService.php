@@ -17,13 +17,13 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountMilestonesController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTracks;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Throwable;
 use WP_Error;
 
 defined( 'ABSPATH' ) || exit;
@@ -41,6 +41,16 @@ class WooPaymentsOnboardingService {
 	private const TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT = 'test_drive_account_settings_for_live_account';
 
 	private const REFERRAL_CODE_TRANSIENT = 'woopayments_referral_code';
+
+	/**
+	 * Recommended payment methods cache key.
+	 */
+	private const RECOMMENDED_PAYMENT_METHODS_CACHE_KEY = 'woocommerce_woocommerce_payments_recommended_payment_methods';
+
+	/**
+	 * Recommended payment methods cache TTL.
+	 */
+	private const RECOMMENDED_PAYMENT_METHODS_CACHE_TTL = DAY_IN_SECONDS;
 
 	/**
 	 * The LegacyProxy instance.
@@ -190,6 +200,112 @@ class WooPaymentsOnboardingService {
 		);
 
 		return $referral_code;
+	}
+
+	/**
+	 * Get the recommended payment methods list for onboarding.
+	 *
+	 * @param string $country_code Optional. Business location country code.
+	 * @return array<int,array<string,mixed>>
+	 */
+	public function get_recommended_payment_methods( string $country_code = '' ): array {
+		$country_code = strtoupper( trim( $country_code ) );
+		if ( '' === $country_code ) {
+			return array();
+		}
+
+		$locale = get_user_locale();
+		$cached = $this->get_cached_recommended_payment_methods( $country_code, $locale );
+		if ( null !== $cached ) {
+			return $cached;
+		}
+
+		try {
+			$recommended_pms = $this->get_native_api_client()->get_recommended_payment_methods( $country_code, $locale );
+		} catch ( Throwable $exception ) {
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Failed to fetch the WooPayments recommended payment methods.', $exception );
+
+			return array();
+		}
+
+		$recommended_pms = $this->normalize_recommended_payment_methods( $recommended_pms );
+		if ( ! empty( $recommended_pms ) ) {
+			$this->set_cached_recommended_payment_methods( $country_code, $locale, $recommended_pms );
+		}
+
+		return $recommended_pms;
+	}
+
+	/**
+	 * Normalize recommended payment methods for the settings provider pipeline.
+	 *
+	 * @param array $recommended_pms Raw recommended payment methods.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function normalize_recommended_payment_methods( array $recommended_pms ): array {
+		$recommended_pms = array_values(
+			array_filter(
+				$recommended_pms,
+				static function ( $payment_method ): bool {
+					return is_array( $payment_method ) && isset( $payment_method['id'], $payment_method['title'] );
+				}
+			)
+		);
+
+		return array_map(
+			static function ( array $payment_method, int $index ): array {
+				if ( ! isset( $payment_method['enabled'] ) ) {
+					$payment_method['enabled'] = ! isset( $payment_method['type'] ) || 'available' !== $payment_method['type'];
+				}
+
+				$payment_method['priority'] = isset( $payment_method['priority'] ) ? (int) $payment_method['priority'] : $index;
+
+				return $payment_method;
+			},
+			$recommended_pms,
+			array_keys( $recommended_pms )
+		);
+	}
+
+	/**
+	 * Get cached recommended payment methods for a country and locale.
+	 *
+	 * @param string $country_code Business location country code.
+	 * @param string $locale       User locale.
+	 * @return array<int,array<string,mixed>>|null
+	 */
+	private function get_cached_recommended_payment_methods( string $country_code, string $locale ): ?array {
+		$cached = get_transient( self::RECOMMENDED_PAYMENT_METHODS_CACHE_KEY );
+		if ( ! is_array( $cached ) ||
+			( $cached['country_code'] ?? '' ) !== $country_code ||
+			( $cached['__locale'] ?? '' ) !== $locale ||
+			! isset( $cached['payment_methods'] ) ||
+			! is_array( $cached['payment_methods'] ) ) {
+
+			return null;
+		}
+
+		return $cached['payment_methods'];
+	}
+
+	/**
+	 * Cache recommended payment methods for a country and locale.
+	 *
+	 * @param string $country_code    Business location country code.
+	 * @param string $locale          User locale.
+	 * @param array  $payment_methods Recommended payment methods.
+	 * @return void
+	 */
+	private function set_cached_recommended_payment_methods( string $country_code, string $locale, array $payment_methods ): void {
+		set_transient(
+			self::RECOMMENDED_PAYMENT_METHODS_CACHE_KEY,
+			array(
+				'payment_methods' => $payment_methods,
+				'__locale'        => $locale,
+				'country_code'    => $country_code,
+			),
+			self::RECOMMENDED_PAYMENT_METHODS_CACHE_TTL
+		);
 	}
 
 	/**
@@ -379,7 +495,7 @@ class WooPaymentsOnboardingService {
 	 * The client also drops its business types cache, which native never fills.
 	 */
 	private function clear_native_onboarding_data(): void {
-		$this->proxy->call_function( 'delete_transient', WooPaymentsGateway::RECOMMENDED_PAYMENT_METHODS_CACHE_KEY );
+		$this->proxy->call_function( 'delete_transient', self::RECOMMENDED_PAYMENT_METHODS_CACHE_KEY );
 		$this->get_native_account_service()->clear_onboarding_fields_cache();
 	}
 

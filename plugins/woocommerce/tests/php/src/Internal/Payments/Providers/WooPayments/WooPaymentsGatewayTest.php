@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOu
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
@@ -6117,86 +6118,22 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose recommended payment methods for the settings provider list.
+	 * @testdox The gateway answers trunk's settings provider list with the recommended payment methods the onboarding fetches.
 	 */
-	public function test_get_recommended_payment_methods_delegates_to_the_api_client(): void {
-		delete_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' );
+	public function test_get_recommended_payment_methods_answers_from_the_onboarding(): void {
+		$recommended = array(
+			array(
+				'id'       => 'card',
+				'title'    => 'Cards',
+				'enabled'  => true,
+				'priority' => 0,
+			),
+		);
+		$onboarding  = $this->createMock( WooPaymentsOnboardingService::class );
+		$onboarding->expects( $this->once() )->method( 'get_recommended_payment_methods' )->with( 'GB' )->willReturn( $recommended );
+		wc_get_container()->replace( WooPaymentsOnboardingService::class, $onboarding );
 
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_recommended_payment_methods' ) )
-			->getMock();
-		$api_client
-			->expects( $this->once() )
-			->method( 'get_recommended_payment_methods' )
-			->with( 'GB', 'en_US' )
-			->willReturn(
-				array(
-					array(
-						'id'    => 'card',
-						'title' => 'Cards',
-					),
-					array(
-						'id'       => 'link',
-						'title'    => 'Link',
-						'type'     => 'available',
-						'priority' => '7',
-					),
-					array(
-						'title' => 'Invalid recommendation',
-					),
-				)
-			);
-
-		$gateway = new WooPaymentsGateway();
-		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client );
-
-		$result = $gateway->get_recommended_payment_methods( 'GB' );
-
-		$this->assertCount( 2, $result );
-		$this->assertSame( 'card', $result[0]['id'] );
-		$this->assertTrue( $result[0]['enabled'] );
-		$this->assertSame( 0, $result[0]['priority'] );
-		$this->assertSame( 'link', $result[1]['id'] );
-		$this->assertFalse( $result[1]['enabled'] );
-		$this->assertSame( 7, $result[1]['priority'] );
-
-		delete_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' );
-	}
-
-	/**
-	 * @testdox Should cache recommended payment methods by country and locale.
-	 */
-	public function test_get_recommended_payment_methods_uses_cached_country_locale_data(): void {
-		delete_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' );
-
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_recommended_payment_methods' ) )
-			->getMock();
-		$api_client
-			->expects( $this->once() )
-			->method( 'get_recommended_payment_methods' )
-			->with( 'GB', 'en_US' )
-			->willReturn(
-				array(
-					array(
-						'id'    => 'card',
-						'title' => 'Cards',
-					),
-				)
-			);
-
-		$gateway = new WooPaymentsGateway();
-		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client );
-
-		$first_result  = $gateway->get_recommended_payment_methods( 'GB' );
-		$second_result = $gateway->get_recommended_payment_methods( 'GB' );
-
-		$this->assertSame( $first_result, $second_result );
-		$this->assertSame( 'card', $second_result[0]['id'] );
-
-		delete_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' );
+		$this->assertSame( $recommended, ( new WooPaymentsGateway() )->get_recommended_payment_methods( 'GB' ) );
 	}
 
 	/**
@@ -6396,28 +6333,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$context = $this->get_logged_context_at_level( $logger, 'error' );
 		$this->assertSame( array( $order->get_id(), 'unknown_error' ), array( $context['order_id'], $context['error_code'] ) );
 		$this->assertSame( 'woopayments', $context['source'] );
-		$this->assert_log_holds_no_provider_text( $logger );
-	}
-
-	/**
-	 * @testdox A platform error fetching the recommended payment methods is logged with its status and code, never its message.
-	 */
-	public function test_recommended_payment_methods_fetch_log_leaves_out_platform_text(): void {
-		delete_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' );
-		self::enable_woopayments_debug_logging();
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_recommended_payment_methods' ) )
-			->getMock();
-		$api_client->method( 'get_recommended_payment_methods' )->willThrowException( self::make_provider_error() );
-		$gateway = new WooPaymentsGateway();
-		$gateway->init( new RecordingPaymentProcessingService(), new WooPaymentsProvider(), null, $api_client );
-		$logger = RecordingWcLogger::install();
-
-		$this->assertSame( array(), $gateway->get_recommended_payment_methods( 'GB' ) );
-
-		$context = $this->get_logged_context_at_level( $logger, 'error' );
-		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
