@@ -95,33 +95,30 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not treat WooPay as enabled for invalid account data.
-	 * @dataProvider invalid_woopay_accounts
+	 * @testdox Should treat WooPay as enabled for an account still finishing onboarding: $label.
 	 *
-	 * @param array<string,mixed> $account_data Invalid account data.
+	 * Client 11.1.0 decides WooPay on the setting and `WC_Payments_Features::is_woopay_eligible()`, with no account validity
+	 * check (includes/woopay/class-woopay-session.php:883-890, includes/class-wc-payments.php:1711-1715,
+	 * includes/class-wc-payments-features.php:193-210); its own tests call an account holding only platform_checkout_eligible
+	 * eligible and enabled (tests/unit/test-class-wc-payments-features.php:133-136, :213-218).
+	 *
+	 * @testWith ["details not submitted", {"details_submitted": false}]
+	 *           ["card payments missing", {"capabilities": []}]
+	 *           ["card payments unrequested", {"capabilities": {"card_payments": "unrequested"}}]
+	 *           ["no account ID", {"account_id": ""}]
+	 *
+	 * @param string              $label        Case label.
+	 * @param array<string,mixed> $account_data Account data overrides.
 	 */
-	public function test_woopay_is_not_enabled_for_invalid_accounts( array $account_data ): void {
+	public function test_woopay_is_enabled_for_an_account_still_onboarding( string $label, array $account_data ): void {
+		unset( $label );
 		$sut = $this->create_service(
 			array( 'platform_checkout' => 'yes' ),
 			$account_data
 		);
 
-		$this->assertFalse( $this->woopay_eligibility->is_woopay_enabled() );
-		$this->assertFalse( $sut->get_woopay_frontend_config( 'checkout' )['isWooPayEnabled'] );
-	}
-
-	/**
-	 * Invalid WooPay accounts.
-	 *
-	 * @return array<string,array{array<string,mixed>}>
-	 */
-	public function invalid_woopay_accounts(): array {
-		return array(
-			'missing account'           => array( array( 'account_id' => '' ) ),
-			'details not submitted'     => array( array( 'details_submitted' => false ) ),
-			'missing card payments'     => array( array( 'capabilities' => array() ) ),
-			'card payments unrequested' => array( array( 'capabilities' => array( 'card_payments' => 'unrequested' ) ) ),
-		);
+		$this->assertTrue( $this->woopay_eligibility->is_woopay_enabled() );
+		$this->assertTrue( $sut->get_woopay_frontend_config( 'checkout' )['isWooPayEnabled'] );
 	}
 
 	/**

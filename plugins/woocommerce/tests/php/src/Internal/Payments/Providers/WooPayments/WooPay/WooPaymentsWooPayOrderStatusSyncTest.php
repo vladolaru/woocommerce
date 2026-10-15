@@ -583,6 +583,11 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Invalid account data prevents creation and removes the existing webhook.
+	 *
+	 * Client 11.1.0 creates the webhook only for a valid account (includes/woopay/class-woopay-order-status-sync.php:81;
+	 * tests/unit/woopay/test-class-woopay-order-status-sync.php:148-158) and removes it on every account refresh
+	 * (includes/class-wc-payments.php:683), while WooPay itself stays on for such an account.
+	 *
 	 * @dataProvider invalid_woopay_accounts
 	 *
 	 * @param array<string,mixed> $account_data Invalid account data.
@@ -728,7 +733,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$woopay_eligibility->init( $this->account_service );
 		$this->api_client = new Task25WooPayApiClient();
 		$sync             = new WooPaymentsWooPayOrderStatusSync();
-		$sync->init( new StaticWooPaymentsRuntimeArbiter( $native_register ), $woopay_eligibility, $this->api_client, new TransientRowLock() );
+		$sync->init( new StaticWooPaymentsRuntimeArbiter( $native_register ), $woopay_eligibility, $this->api_client, new TransientRowLock(), $this->account_service );
 
 		$this->syncs[] = $sync;
 

@@ -130,9 +130,19 @@ class WooPaymentsWooPayStoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should resolve the shopper from an authenticated cart-token session.
+	 * @testdox Should resolve the shopper from an authenticated cart-token session: $label.
+	 *
+	 * Client 11.1.0 honours the WooPay identity whenever WooPay is on for an eligible account, onboarded or not
+	 * (includes/woopay/class-woopay-session.php:101-108, :883-890).
+	 *
+	 * @testWith ["onboarded account", {}]
+	 *           ["account still finishing onboarding", {"details_submitted": false}]
+	 *
+	 * @param string              $label        Case label.
+	 * @param array<string,mixed> $account_data Account data overrides.
 	 */
-	public function test_determine_current_user_resolves_user_from_authenticated_cart_token(): void {
+	public function test_determine_current_user_resolves_user_from_authenticated_cart_token( string $label, array $account_data ): void {
+		unset( $label );
 		$this->simulate_woopay_store_api_request();
 		$this->force_real_blog_token_signed();
 
@@ -146,7 +156,7 @@ class WooPaymentsWooPayStoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 		);
 		$_SERVER['HTTP_CART_TOKEN'] = \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( (string) $user_id );
 
-		$this->assertSame( $user_id, $this->create_handler()->determine_current_user_for_woopay( false ) );
+		$this->assertSame( $user_id, $this->create_handler( array(), $account_data )->determine_current_user_for_woopay( false ) );
 	}
 
 	/**

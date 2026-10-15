@@ -53,13 +53,15 @@ class WooPaymentsWooPayEligibility {
 	}
 
 	/**
-	 * Tell whether WooPay is enabled in WooPayments gateway settings.
+	 * Tell whether WooPay is on: the WooPay setting is on and the account is eligible, as client 11.1.0 decides
+	 * (`WooPay_Session::is_woopay_enabled()`, includes/woopay/class-woopay-session.php:883-890, and the WooPay hooks,
+	 * includes/class-wc-payments.php:1711-1715). An account still finishing onboarding counts.
 	 *
 	 * @return bool
 	 */
 	public function is_woopay_enabled(): bool {
 		return 'yes' === $this->account_service->get_gateway_setting( 'platform_checkout', 'no' ) &&
-			$this->is_woopay_account_eligible();
+			$this->is_woopay_eligible();
 	}
 
 	/**
@@ -282,20 +284,6 @@ class WooPaymentsWooPayEligibility {
 		}
 
 		return $available_countries;
-	}
-
-	/**
-	 * Tell whether the connected account is eligible for WooPay.
-	 *
-	 * @return bool
-	 */
-	private function is_woopay_account_eligible(): bool {
-		$account_data = $this->account_service->get_cached_account_data();
-
-		return ! empty( $account_data['platform_checkout_eligible'] )
-			&& $this->account_service->has_valid_account_for_admin_navigation()
-			&& ! $this->account_service->is_account_rejected()
-			&& ! $this->account_service->is_account_under_review();
 	}
 
 	/**

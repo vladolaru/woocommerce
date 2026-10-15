@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -95,6 +96,13 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	private TransientRowLock $row_lock;
 
 	/**
+	 * WooPayments account service.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -103,12 +111,14 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	 * @param WooPaymentsWooPayEligibility $woopay_eligibility WooPay eligibility rules.
 	 * @param WooPaymentsApiClient         $api_client         WooPayments API client.
 	 * @param TransientRowLock             $row_lock           Lock held in the database rows of a transient.
+	 * @param WooPaymentsAccountService    $account_service    WooPayments account service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsApiClient $api_client, TransientRowLock $row_lock ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsApiClient $api_client, TransientRowLock $row_lock, WooPaymentsAccountService $account_service ): void {
 		$this->arbiter            = $arbiter;
 		$this->woopay_eligibility = $woopay_eligibility;
 		$this->api_client         = $api_client;
 		$this->row_lock           = $row_lock;
+		$this->account_service    = $account_service;
 	}
 
 	/**
@@ -136,7 +146,8 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	/**
 	 * Reconcile the WooPay order-status webhook after an account refresh.
 	 *
-	 * Removes every WooPay webhook when WooPay is no longer available. Otherwise asks the next admin page for a new secret:
+	 * Removes every WooPay webhook when WooPay is no longer available or the account is not valid. Otherwise asks the next
+	 * admin page for a new secret:
 	 * client 11.1.0 removes the row on every refresh and creates one with a new secret on the next admin page
 	 * (class-wc-payments.php:683), which leaves WooPay without a webhook in between; rotating in place does not.
 	 *
@@ -147,7 +158,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( ! $this->woopay_eligibility->is_woopay_enabled() ) {
+		if ( ! $this->can_hold_webhook() ) {
 			$this->remove_woopay_webhooks();
 			return;
 		}
@@ -156,14 +167,28 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Keep the webhook on admin pages, for WooCommerce managers and only while WooPay is on, so admin pages read nothing while it is off.
+	 * Keep the webhook on admin pages, for WooCommerce managers and only while WooPay is on for a valid account, so admin pages
+	 * read nothing while it is off.
 	 *
 	 * @since 11.2.0
 	 */
 	public function maybe_create_woopay_order_webhook(): void {
-		if ( $this->arbiter->is_builtin_owner() && $this->woopay_eligibility->is_woopay_enabled() && current_user_can( 'manage_woocommerce' ) ) {
+		if ( $this->arbiter->is_builtin_owner() && $this->can_hold_webhook() && current_user_can( 'manage_woocommerce' ) ) {
 			$this->maybe_create_webhook();
 		}
+	}
+
+	/**
+	 * Tell whether the store may hold the WooPay webhook: WooPay is on and the account is valid.
+	 *
+	 * Client 11.1.0 creates it only for a valid account (includes/woopay/class-woopay-order-status-sync.php:81, with
+	 * is_stripe_account_valid() at includes/class-wc-payments-account.php:278-300); WooPay eligibility already refuses an
+	 * account under review or rejected.
+	 *
+	 * @return bool
+	 */
+	private function can_hold_webhook(): bool {
+		return $this->woopay_eligibility->is_woopay_enabled() && $this->account_service->has_valid_account_for_admin_navigation();
 	}
 
 	/**
