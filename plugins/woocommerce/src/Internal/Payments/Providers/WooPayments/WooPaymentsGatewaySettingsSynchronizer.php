@@ -98,9 +98,9 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 		}
 		unset( $settings['payment_request'] );
 
-		$normalization                  = $this->normalize_settings( $settings );
-		$settings                       = $normalization['settings'];
-		$canonical_projection_is_stable = is_array( $stored_canonical_settings ) && $stored_canonical_settings === $settings;
+		$normalization             = $this->normalize_settings( $settings );
+		$settings                  = $normalization['settings'];
+		$stored_settings_unchanged = is_array( $stored_canonical_settings ) && $stored_canonical_settings === $settings;
 		if ( $missing_marker !== $pending_payment_request_setting && ! $has_pending_payment_request ) {
 			return array(
 				'settings'                        => $settings,
@@ -137,17 +137,17 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 		}
 		$this->sync_setup_tier( $settings );
 
-		$split_projection      = $this->synchronize_split_settings( $settings, $canonical_projection_is_stable );
-		$updated_split_options = $split_projection['updated_options'];
-		$failed_option_names   = $split_projection['failed_option_names'];
+		$split_result          = $this->synchronize_split_settings( $settings, $stored_settings_unchanged );
+		$updated_split_options = $split_result['updated_options'];
+		$failed_option_names   = $split_result['failed_option_names'];
 		$wallet_failures       = array();
 		if ( null !== $payment_request_enabled ) {
-			$wallet_projection     = $this->synchronize_payment_request_settings( $payment_request_enabled );
+			$wallet_result         = $this->synchronize_payment_request_settings( $payment_request_enabled );
 			$updated_split_options = array_merge(
 				$updated_split_options,
-				$wallet_projection['updated_options']
+				$wallet_result['updated_options']
 			);
-			$wallet_failures       = $wallet_projection['failed_option_names'];
+			$wallet_failures       = $wallet_result['failed_option_names'];
 			$failed_option_names   = array_merge( $failed_option_names, $wallet_failures );
 		}
 		$updated_split_options = array_values( array_unique( $updated_split_options ) );
@@ -158,8 +158,8 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 			}
 		}
 		$this->log_split_settings_drift(
-			$split_projection['drifted_option_names'],
-			array_values( array_intersect( $split_projection['drifted_option_names'], $failed_option_names ) )
+			$split_result['drifted_option_names'],
+			array_values( array_intersect( $split_result['drifted_option_names'], $failed_option_names ) )
 		);
 
 		return array(
@@ -308,10 +308,10 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	 * Synchronize existing or enabled split gateway settings.
 	 *
 	 * @param array<string,mixed> $settings                       Canonical gateway settings.
-	 * @param bool                $canonical_projection_is_stable Whether the canonical row is unchanged.
+	 * @param bool                $stored_settings_unchanged Whether the canonical row is unchanged.
 	 * @return array{updated_options:string[],failed_option_names:string[],drifted_option_names:string[]}
 	 */
-	private function synchronize_split_settings( array $settings, bool $canonical_projection_is_stable ): array {
+	private function synchronize_split_settings( array $settings, bool $stored_settings_unchanged ): array {
 		$enabled_method_ids = is_array( $settings['upe_enabled_payment_method_ids'] ?? null )
 			? $this->normalize_string_list( $settings['upe_enabled_payment_method_ids'] )
 			: array();
@@ -346,7 +346,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 			if ( $projected_settings === $existing ) {
 				continue;
 			}
-			if ( $canonical_projection_is_stable && $missing_marker !== $existing ) {
+			if ( $stored_settings_unchanged && $missing_marker !== $existing ) {
 				$drifted_option_names[] = $option_name;
 			}
 
