@@ -481,7 +481,7 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertCount( 2, $logger->entries );
 		$this->assertSame( 'info', $logger->entries[0]['level'] );
-		$this->assertSame( 'woopayments-payouts', $logger->entries[0]['context']['source'] );
+		$this->assertSame( 'woopayments', $logger->entries[0]['context']['source'] );
 		$this->assertSame( 'instant', $logger->entries[0]['context']['type'] );
 		$this->assertSame( 'usd', $logger->entries[0]['context']['currency'] );
 		$this->assertSame( 'info', $logger->entries[1]['level'] );
@@ -517,7 +517,7 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertCount( 2, $logger->entries );
 		$this->assertSame( 'error', $logger->entries[1]['level'] );
 		$this->assertStringContainsString( 'failed', $logger->entries[1]['message'] );
-		$this->assertSame( 'woopayments-payouts', $logger->entries[1]['context']['source'] );
+		$this->assertSame( 'woopayments', $logger->entries[1]['context']['source'] );
 		$this->assertSame( 'instant', $logger->entries[1]['context']['type'] );
 		$this->assertSame( 'usd', $logger->entries[1]['context']['currency'] );
 		$this->assertSame( 'unknown_error', $logger->entries[1]['context']['api_code'] );

@@ -158,7 +158,7 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 			// The client appends the platform's message; native logs its status and code.
 			wc_get_logger()->error(
 				'Failed to update WooPay compatibility data.',
-				array_merge( WooPaymentsLogger::get_failure_context( $e ), array( 'source' => 'woocommerce-woopayments' ) )
+				array_merge( WooPaymentsLogger::get_failure_context( $e ), array( 'source' => WooPaymentsLogger::SOURCE ) )
 			);
 		}
 	}

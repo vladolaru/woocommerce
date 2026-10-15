@@ -212,7 +212,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 
 		$sync->update_compatibility_and_maybe_show_incompatibility_warning();
 
-		$context = $this->get_logged_context_at_level( $logger, 'error', 'woocommerce-woopayments' );
+		$context = $this->get_logged_context_at_level( $logger, 'error', 'woopayments' );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}

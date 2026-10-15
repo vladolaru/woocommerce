@@ -25,8 +25,6 @@ use WP_REST_Server;
  */
 class WooPaymentsDisputesRestController extends RestApiControllerBase {
 
-	private const LOG_SOURCE = 'woopayments-disputes';
-
 	/**
 	 * Native WooPayments API client.
 	 *
@@ -366,7 +364,7 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 	 */
 	private function get_dispute_action_log_context( string $action, string $dispute_id, ?bool $submit = null ): array {
 		$context = array(
-			'source'     => self::LOG_SOURCE,
+			'source'     => WooPaymentsLogger::SOURCE,
 			'action'     => $action,
 			'dispute_id' => $dispute_id,
 			'user_id'    => get_current_user_id(),

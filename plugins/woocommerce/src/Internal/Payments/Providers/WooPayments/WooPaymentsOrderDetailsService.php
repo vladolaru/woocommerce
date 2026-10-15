@@ -22,8 +22,6 @@ use WC_Product;
  */
 class WooPaymentsOrderDetailsService {
 
-	private const LOG_SOURCE = 'woopayments-money-movement';
-
 	/**
 	 * WooPayments order data service.
 	 *
@@ -683,11 +681,14 @@ class WooPaymentsOrderDetailsService {
 	 */
 	private function log_enrichment_failure( Exception $exception, string $context, string $entity_id ): void {
 		wc_get_logger()->error(
-			'Error adding WooCommerce order info to WooPayments response: ' . $exception->getMessage(),
-			array(
-				'source'    => self::LOG_SOURCE,
-				'context'   => $context,
-				'entity_id' => $entity_id,
+			'Error adding WooCommerce order info to WooPayments response.',
+			array_merge(
+				WooPaymentsLogger::get_failure_context( $exception ),
+				array(
+					'source'    => WooPaymentsLogger::SOURCE,
+					'context'   => $context,
+					'entity_id' => $entity_id,
+				)
 			)
 		);
 	}

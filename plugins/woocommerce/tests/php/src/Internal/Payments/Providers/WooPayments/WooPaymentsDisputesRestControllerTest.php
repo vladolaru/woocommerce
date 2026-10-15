@@ -167,6 +167,48 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A disputes list order lookup that throws is logged with the exception class, never its message.
+	 */
+	public function test_disputes_list_logs_an_order_lookup_failure_without_its_message(): void {
+		$this->create_order_with_charge( 'ch_dispute', 'pi_dispute' );
+		$this->api_client->response = array(
+			'data' => array(
+				array(
+					'dispute_id' => 'dp_order',
+					'charge_id'  => 'ch_dispute',
+				),
+			),
+		);
+
+		$logger = $this->create_recording_logger();
+		add_filter(
+			'woocommerce_logging_class',
+			static function () use ( $logger ): object {
+				return $logger;
+			}
+		);
+		add_filter(
+			'woocommerce_order_number',
+			static function (): string {
+				throw new RuntimeException( 'Order lookup failed for ada@example.com' );
+			}
+		);
+		$this->create_disputes_controller()->register_routes();
+
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/disputes' ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertNull( $response->get_data()['data'][0]['order'] );
+		$this->assertCount( 1, $logger->entries );
+		$this->assertSame( 'error', $logger->entries[0]['level'] );
+		$this->assertSame( 'Error adding WooCommerce order info to WooPayments response.', $logger->entries[0]['message'] );
+		$this->assertSame( 'woopayments', $logger->entries[0]['context']['source'] );
+		$this->assertSame( RuntimeException::class, $logger->entries[0]['context']['exception'] );
+		$this->assertSame( 'dp_order', $logger->entries[0]['context']['entity_id'] );
+		$this->assertStringNotContainsString( 'ada@example.com', (string) wp_json_encode( $logger->entries ) );
+	}
+
+	/**
 	 * @testdox Disputes summary and export map reference REST filters to platform filter names.
 	 */
 	public function test_disputes_summary_and_export_map_reference_filters(): void {
@@ -510,7 +552,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertCount( 2, $logger->entries );
 		$this->assertSame( 'info', $logger->entries[0]['level'] );
-		$this->assertSame( 'woopayments-disputes', $logger->entries[0]['context']['source'] );
+		$this->assertSame( 'woopayments', $logger->entries[0]['context']['source'] );
 		$this->assertSame( 'update', $logger->entries[0]['context']['action'] );
 		$this->assertSame( 'dp_test', $logger->entries[0]['context']['dispute_id'] );
 		$this->assertTrue( $logger->entries[0]['context']['submit'] );
@@ -584,7 +626,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertCount( 2, $logger->entries );
 		$this->assertSame( 'error', $logger->entries[1]['level'] );
 		$this->assertStringContainsString( 'failed', $logger->entries[1]['message'] );
-		$this->assertSame( 'woopayments-disputes', $logger->entries[1]['context']['source'] );
+		$this->assertSame( 'woopayments', $logger->entries[1]['context']['source'] );
 		$this->assertSame( 'close', $logger->entries[1]['context']['action'] );
 		$this->assertSame( 'dp_test', $logger->entries[1]['context']['dispute_id'] );
 		$this->assertSame( 'unknown_error', $logger->entries[1]['context']['api_code'] );

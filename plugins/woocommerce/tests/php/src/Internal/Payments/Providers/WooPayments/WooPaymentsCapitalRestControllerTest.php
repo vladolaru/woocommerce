@@ -345,7 +345,7 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 		// The platform's message stays out of the log; its status and code go in.
 		$this->assertSame( 'Failed to build Capital loan offer redirect URL.', $logger->entries[0]['message'] );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $logger->entries[0]['context']['http_status'], $logger->entries[0]['context']['error_code'] ) );
-		$this->assertSame( 'woopayments-capital', $logger->entries[0]['context']['source'] );
+		$this->assertSame( 'woopayments', $logger->entries[0]['context']['source'] );
 		foreach ( self::$provider_leak_fragments as $fragment ) {
 			$this->assertStringNotContainsString( $fragment, (string) wp_json_encode( $logger->entries ) );
 		}

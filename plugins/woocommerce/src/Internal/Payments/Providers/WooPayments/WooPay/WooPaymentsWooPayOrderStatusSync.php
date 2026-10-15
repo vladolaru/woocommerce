@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -59,13 +60,6 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	 * @var string
 	 */
 	private const ROTATION_DUE_OPTION = 'woocommerce_woopayments_woopay_webhook_rotation_due';
-
-	/**
-	 * WooCommerce logger source.
-	 *
-	 * @var string
-	 */
-	private const LOGGER_SOURCE = 'woocommerce-woopayments';
 
 	/**
 	 * Runtime owner arbiter.
@@ -536,7 +530,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	private function log_reconciliation_error( string $message ): void {
 		wc_get_logger()->error(
 			$message,
-			array( 'source' => self::LOGGER_SOURCE )
+			array( 'source' => WooPaymentsLogger::SOURCE )
 		);
 	}
 }

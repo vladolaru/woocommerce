@@ -12,6 +12,7 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStoreApiRequestUtils;
@@ -121,7 +122,7 @@ class WooPaymentsWooPayStoreApiRequestHandler {
 		if ( ! $this->has_valid_request_signature() ) {
 			wc_get_logger()->info(
 				'WooPay request is not signed correctly.',
-				array( 'source' => 'woopayments-woopay-session' )
+				array( 'source' => WooPaymentsLogger::SOURCE )
 			);
 			wp_die( esc_html__( 'WooPay request is not signed correctly.', 'woocommerce' ), 401 );
 		}
@@ -418,7 +419,7 @@ class WooPaymentsWooPayStoreApiRequestHandler {
 				'file'       => (string) ( $error['file'] ?? '' ),
 				'line'       => (int) ( $error['line'] ?? 0 ),
 				'order_id'   => $this->checkout_error_order_id,
-				'source'     => 'woopayments-woopay-session',
+				'source'     => WooPaymentsLogger::SOURCE,
 			)
 		);
 

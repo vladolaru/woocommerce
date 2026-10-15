@@ -624,7 +624,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $this->api_client->woopay_updates );
 		$this->assertNull( $this->read_option_row( self::CLAIM_OPTION ) );
 		$this->assertSame( array( 'Unable to create the WooPay order-status webhook.' ), array_column( $logger->error_calls, 'message' ) );
-		$this->assertSame( 'woocommerce-woopayments', $logger->error_calls[0]['context']['source'] ?? null );
+		$this->assertSame( 'woopayments', $logger->error_calls[0]['context']['source'] ?? null );
 	}
 
 	/**

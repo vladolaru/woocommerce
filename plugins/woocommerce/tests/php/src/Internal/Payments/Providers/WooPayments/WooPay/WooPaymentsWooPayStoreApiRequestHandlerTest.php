@@ -397,7 +397,7 @@ class WooPaymentsWooPayStoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 			remove_filter( 'woocommerce_logger_log_message', $record, 10 );
 		}
 
-		$lines = array_values( array_filter( $logged, static fn( array $line ): bool => 'woopayments-woopay-session' === ( $line['context']['source'] ?? null ) ) );
+		$lines = array_values( array_filter( $logged, static fn( array $line ): bool => 'woopayments' === ( $line['context']['source'] ?? null ) ) );
 		$this->assertNotEmpty( $lines );
 		$this->assertSame( 'error', $lines[0]['level'] );
 		$this->assertSame( 'WooPay checkout fatal error.', $lines[0]['message'] );

@@ -27,8 +27,6 @@ use Throwable;
  */
 class WooPaymentsDepositsRestController extends RestApiControllerBase {
 
-	private const LOG_SOURCE = 'woopayments-payouts';
-
 	/**
 	 * Query params accepted by the payout summary endpoint.
 	 */
@@ -352,7 +350,7 @@ class WooPaymentsDepositsRestController extends RestApiControllerBase {
 	 */
 	private function get_manual_deposit_log_context( string $type, string $currency ): array {
 		return array(
-			'source'   => self::LOG_SOURCE,
+			'source'   => WooPaymentsLogger::SOURCE,
 			'user_id'  => get_current_user_id(),
 			'type'     => $type,
 			'currency' => $currency,

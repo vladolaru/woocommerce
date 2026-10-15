@@ -315,8 +315,7 @@ class WooPaymentsLogger {
 	/**
 	 * Get a throwable's class, code and first stack frames, without its message or call arguments.
 	 *
-	 * Public for the WooPay lines still written under their own log source, and for a line that logs a call trace with no
-	 * failure (a Stripe Billing subscription put on hold).
+	 * Public for a line that logs a call trace with no failure (a Stripe Billing subscription put on hold).
 	 *
 	 * @param Throwable $throwable   Caught throwable, or one made only for its trace.
 	 * @param int       $frame_limit Number of stack frames written.
