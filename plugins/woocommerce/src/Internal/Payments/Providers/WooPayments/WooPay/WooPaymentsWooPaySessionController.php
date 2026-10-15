@@ -54,6 +54,13 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	private WooPaymentsWooPayAppearanceStore $appearance_store;
 
 	/**
+	 * Handler of WooPay's Store API requests.
+	 *
+	 * @var WooPaymentsWooPayStoreApiRequestHandler
+	 */
+	private WooPaymentsWooPayStoreApiRequestHandler $store_api_request_handler;
+
+	/**
 	 * Whether WooPay frontend assets have already been localized and enqueued.
 	 *
 	 * @var bool
@@ -72,14 +79,16 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsWooPaySessionService  $session_service    WooPay session service.
-	 * @param WooPaymentsWooPayEligibility     $woopay_eligibility WooPay eligibility rules.
-	 * @param WooPaymentsWooPayAppearanceStore $appearance_store   WooPay checkout appearance store.
+	 * @param WooPaymentsWooPaySessionService         $session_service           WooPay session service.
+	 * @param WooPaymentsWooPayEligibility            $woopay_eligibility        WooPay eligibility rules.
+	 * @param WooPaymentsWooPayAppearanceStore        $appearance_store          WooPay checkout appearance store.
+	 * @param WooPaymentsWooPayStoreApiRequestHandler $store_api_request_handler Handler of WooPay's Store API requests.
 	 */
-	final public function init( WooPaymentsWooPaySessionService $session_service, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsWooPayAppearanceStore $appearance_store ): void {
-		$this->session_service    = $session_service;
-		$this->woopay_eligibility = $woopay_eligibility;
-		$this->appearance_store   = $appearance_store;
+	final public function init( WooPaymentsWooPaySessionService $session_service, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsWooPayAppearanceStore $appearance_store, WooPaymentsWooPayStoreApiRequestHandler $store_api_request_handler ): void {
+		$this->session_service           = $session_service;
+		$this->woopay_eligibility        = $woopay_eligibility;
+		$this->appearance_store          = $appearance_store;
+		$this->store_api_request_handler = $store_api_request_handler;
 	}
 
 	/**
@@ -89,18 +98,18 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		// Inbound WooPay identity hooks stay registered regardless of the enabled/eligibility
 		// snapshot — the plugin registers them unconditionally and every WooPay-specific check
 		// runs per request inside the callbacks themselves.
-		add_filter( 'determine_current_user', array( $this->session_service, 'determine_current_user_for_woopay' ), 20 );
+		add_filter( 'determine_current_user', array( $this->store_api_request_handler, 'determine_current_user_for_woopay' ), 20 );
 
-		add_action( 'woocommerce_order_payment_status_changed', array( $this->session_service, 'woopay_order_payment_status_changed' ) );
+		add_action( 'woocommerce_order_payment_status_changed', array( $this->store_api_request_handler, 'woopay_order_payment_status_changed' ) );
 
-		add_action( 'woocommerce_store_api_checkout_order_processed', array( $this->session_service, 'catch_woopay_checkout_errors' ), 1, 1 );
+		add_action( 'woocommerce_store_api_checkout_order_processed', array( $this->store_api_request_handler, 'catch_woopay_checkout_errors' ), 1, 1 );
 
-		add_filter( 'automatewoo/referrals/referred_order_advocate', array( $this->session_service, 'automatewoo_refer_a_friend_referral_from_parameter' ) );
+		add_filter( 'automatewoo/referrals/referred_order_advocate', array( $this->store_api_request_handler, 'automatewoo_refer_a_friend_referral_from_parameter' ) );
 
-		add_filter( 'woocommerce_order_needs_payment', array( $this->session_service, 'woopay_trial_subscriptions_handler' ), 20, 3 );
+		add_filter( 'woocommerce_order_needs_payment', array( $this->store_api_request_handler, 'woopay_trial_subscriptions_handler' ), 20, 3 );
 
 		// After the Store API session handler saves the session on shutdown (priority 20, StoreApi\SessionHandler::init()).
-		add_action( 'shutdown', array( $this->session_service, 'refresh_woopay_browser_session_cache' ), 21 );
+		add_action( 'shutdown', array( $this->store_api_request_handler, 'refresh_woopay_browser_session_cache' ), 21 );
 
 		// The session route stays registered whenever native owns the runtime: the plugin
 		// registers it unconditionally and answers ineligible or unsigned callers through the
@@ -164,9 +173,9 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		// class-wc-payments-woopay-direct-checkout.php:40-43).
 		if (
 			$this->woopay_eligibility->is_woopay_direct_checkout_enabled() &&
-			false === has_filter( 'woocommerce_create_order', array( $this->session_service, 'maybe_use_store_api_draft_order_id' ) )
+			false === has_filter( 'woocommerce_create_order', array( $this->store_api_request_handler, 'maybe_use_store_api_draft_order_id' ) )
 		) {
-			add_filter( 'woocommerce_create_order', array( $this->session_service, 'maybe_use_store_api_draft_order_id' ) );
+			add_filter( 'woocommerce_create_order', array( $this->store_api_request_handler, 'maybe_use_store_api_draft_order_id' ) );
 		}
 	}
 
@@ -279,7 +288,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			return new WP_Error( 'woocommerce_rest_cannot_view', __( 'Sorry, you cannot list resources.', 'woocommerce' ), array( 'status' => rest_authorization_required_code() ) );
 		}
 
-		if ( ! $this->session_service->has_valid_request_signature() ) {
+		if ( ! $this->store_api_request_handler->has_valid_request_signature() ) {
 			return new WP_Error( 'woocommerce_rest_cannot_view', __( 'Sorry, you cannot list resources.', 'woocommerce' ), array( 'status' => rest_authorization_required_code() ) );
 		}
 

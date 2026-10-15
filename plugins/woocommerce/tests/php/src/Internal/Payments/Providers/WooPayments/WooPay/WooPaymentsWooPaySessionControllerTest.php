@@ -19,6 +19,8 @@ use WP_REST_Response;
 use WP_REST_Server;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAppearanceStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayStoreApiRequestHandler;
 
 /**
  * Tests for the WooPaymentsWooPaySessionController class.
@@ -45,6 +47,13 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	 * @var WooPaymentsWooPayAppearanceStore|null
 	 */
 	private ?WooPaymentsWooPayAppearanceStore $appearance_store = null;
+
+	/**
+	 * Handler of WooPay's Store API requests the controller under test binds its hooks to.
+	 *
+	 * @var WooPaymentsWooPayStoreApiRequestHandler|null
+	 */
+	private ?WooPaymentsWooPayStoreApiRequestHandler $store_api_request_handler = null;
 
 	/**
 	 * Set up test fixtures.
@@ -118,9 +127,9 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$route_args = $this->server->get_routes()['/payments/woopay/session'][0]['args'];
 		$this->assertTrue( $route_args['email']['required'] );
 		$this->assertSame( 'email', $route_args['email']['format'] );
-		$this->assertSame( 20, has_filter( 'determine_current_user', array( $service, 'determine_current_user_for_woopay' ) ) );
-		$this->assertNotFalse( has_action( 'woocommerce_order_payment_status_changed', array( $service, 'woopay_order_payment_status_changed' ) ) );
-		$this->assertSame( 1, has_action( 'woocommerce_store_api_checkout_order_processed', array( $service, 'catch_woopay_checkout_errors' ) ) );
+		$this->assertSame( 20, has_filter( 'determine_current_user', array( $this->store_api_request_handler, 'determine_current_user_for_woopay' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_order_payment_status_changed', array( $this->store_api_request_handler, 'woopay_order_payment_status_changed' ) ) );
+		$this->assertSame( 1, has_action( 'woocommerce_store_api_checkout_order_processed', array( $this->store_api_request_handler, 'catch_woopay_checkout_errors' ) ) );
 
 		foreach ( $this->get_expected_ajax_hooks() as $hook => $method ) {
 			$this->assertNotFalse( has_action( $hook, array( $this->sut, $method ) ), "{$hook} should be registered." );
@@ -187,8 +196,8 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->sut->register();
 
-		$this->assertSame( 20, has_filter( 'determine_current_user', array( $service, 'determine_current_user_for_woopay' ) ) );
-		$this->assertNotFalse( has_action( 'woocommerce_order_payment_status_changed', array( $service, 'woopay_order_payment_status_changed' ) ) );
+		$this->assertSame( 20, has_filter( 'determine_current_user', array( $this->store_api_request_handler, 'determine_current_user_for_woopay' ) ) );
+		$this->assertNotFalse( has_action( 'woocommerce_order_payment_status_changed', array( $this->store_api_request_handler, 'woopay_order_payment_status_changed' ) ) );
 		// The session route stays registered so an ineligible or disabled state answers with the
 		// permission callback's 401 instead of a 404, mirroring the plugin's unconditional route.
 		$this->assertNotFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
@@ -1767,9 +1776,11 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 			$this->woopay_eligibility = new RecordingWooPayEligibility( $service );
 			$this->appearance_store   = new RecordingWooPayAppearanceStore( $service );
 		}
+		$this->store_api_request_handler = new WooPaymentsWooPayStoreApiRequestHandler();
+		$this->store_api_request_handler->init( $this->woopay_eligibility, new WooPaymentsWooPayAdaptedExtensions() );
 
 		$controller = new WooPaymentsWooPaySessionController();
-		$controller->init( $service, $this->woopay_eligibility, $this->appearance_store );
+		$controller->init( $service, $this->woopay_eligibility, $this->appearance_store, $this->store_api_request_handler );
 
 		return $controller;
 	}

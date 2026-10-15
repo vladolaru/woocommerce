@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAppearanceStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayStoreApiRequestHandler;
 
 /**
  * Shared fixture for the WooPay session family tests: the account and tracking doubles and the WooPay services built
@@ -48,6 +49,13 @@ trait WooPayServicesFixture {
 	 * @var WooPaymentsWooPayAppearanceStore|null
 	 */
 	private ?WooPaymentsWooPayAppearanceStore $appearance_store = null;
+
+	/**
+	 * Handler of WooPay's Store API requests the last create_service() built.
+	 *
+	 * @var WooPaymentsWooPayStoreApiRequestHandler|null
+	 */
+	private ?WooPaymentsWooPayStoreApiRequestHandler $store_api_request_handler = null;
 
 	/**
 	 * Set up test fixtures.
@@ -520,6 +528,9 @@ trait WooPayServicesFixture {
 		$this->appearance_store = new WooPaymentsWooPayAppearanceStore();
 		$this->appearance_store->init( new WooPaymentsFrontendStylesService() );
 
+		$this->store_api_request_handler = new WooPaymentsWooPayStoreApiRequestHandler();
+		$this->store_api_request_handler->init( $this->woopay_eligibility, $adapted_extensions ?? new WooPaymentsWooPayAdaptedExtensions() );
+
 		$sut = new WooPaymentsWooPaySessionService();
 		$sut->init( $account_service, $this->woopay_eligibility, $this->appearance_store, $tracking_controller, null, $adapted_extensions, $customer_service );
 
@@ -537,6 +548,20 @@ trait WooPayServicesFixture {
 		$this->create_service( $settings, $account_data );
 
 		return $this->appearance_store;
+	}
+
+	/**
+	 * Create the handler of WooPay's Store API requests under test, as create_service() builds it.
+	 *
+	 * @param array<string,mixed>                     $settings           Gateway settings.
+	 * @param array<string,mixed>                     $account_data       Account data.
+	 * @param WooPaymentsWooPayAdaptedExtensions|null $adapted_extensions Adapted extensions registry.
+	 * @return WooPaymentsWooPayStoreApiRequestHandler
+	 */
+	private function create_handler( array $settings = array(), array $account_data = array(), ?WooPaymentsWooPayAdaptedExtensions $adapted_extensions = null ): WooPaymentsWooPayStoreApiRequestHandler {
+		$this->create_service( $settings, $account_data, $adapted_extensions );
+
+		return $this->store_api_request_handler;
 	}
 
 	/**
@@ -564,7 +589,7 @@ trait WooPayServicesFixture {
 	 */
 	private function register_controller( WooPaymentsWooPaySessionService $service ): WooPaymentsWooPaySessionController {
 		$controller = new WooPaymentsWooPaySessionController();
-		$controller->init( $service, $this->woopay_eligibility, $this->appearance_store );
+		$controller->init( $service, $this->woopay_eligibility, $this->appearance_store, $this->store_api_request_handler );
 		$controller->register();
 
 		return $controller;
