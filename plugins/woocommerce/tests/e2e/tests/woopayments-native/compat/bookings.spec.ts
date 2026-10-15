@@ -74,7 +74,7 @@ $wcpay_fresh_cart(
 
 $container = wc_get_container();
 $express   = $container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService::class );
-$woopay    = $container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService::class );
+$woopay    = $container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService::class );
 
 return array(
 	'version'                  => $wcpay_extension_version( 'bookings' ),

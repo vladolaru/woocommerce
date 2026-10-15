@@ -12,7 +12,7 @@
 	],
 	"targets": [
 		{"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/NativeWooPaymentsGatewayTest.php;plugins/woocommerce/client/blocks/assets/js/extensions/payment-methods/woopayments/test/index.js;plugins/woocommerce/tests/e2e/tests/woopayments-native/performance/checkout-readiness.spec.ts", "contract": "pending"},
-		{"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsWooPaySessionServiceTest.php;plugins/woocommerce/client/blocks/assets/js/extensions/payment-methods/woopayments/woopay/test/index.js;plugins/woocommerce/tests/e2e/tests/woopayments-native/performance/checkout-readiness.spec.ts", "contract": "pending"}
+		{"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPay/WooPaymentsWooPaySessionServiceTest.php;plugins/woocommerce/client/blocks/assets/js/extensions/payment-methods/woopayments/woopay/test/index.js;plugins/woocommerce/tests/e2e/tests/woopayments-native/performance/checkout-readiness.spec.ts", "contract": "pending"}
 	],
 	"implementation_commits": [],
 	"verification": [],

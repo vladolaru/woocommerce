@@ -69,6 +69,7 @@ use WC_Payment_Token;
 use WC_Payment_Token_CC;
 use WC_Unit_Test_Case;
 use WP_Error;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\RecordingWooPaySessionService;
 
 /**
  * Tests for the WooPaymentsPaymentOperationService class.

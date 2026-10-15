@@ -1,7 +1,7 @@
 <?php
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Enums\OrderStatus;
@@ -14,14 +14,12 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionService;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\FakeWooPayMailchimpBlocksIntegration;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\FakeWooPayPointsRewardsBlocksIntegration;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\FakeWooPayPointsRewardsManager;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
 use WC_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Response;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\LateLoadedSubscriptions;
 
 // phpcs:disable Generic.Files.OneObjectStructurePerFile.MultipleFound,Squiz.Classes.ClassFileName.NoMatch,SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName -- Focused test doubles live next to the tests they support.
 
@@ -987,8 +985,8 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_init_session_request_reports_woocommerce_subscriptions_active(): void {
 		// The global WC_Subscriptions class cannot be unloaded, so this test runs in its own process.
-		require_once __DIR__ . '/Fixtures/LateLoadedSubscriptions.php';
-		class_alias( Fixtures\LateLoadedSubscriptions::class, 'WC_Subscriptions' );
+		require_once dirname( __DIR__ ) . '/Fixtures/LateLoadedSubscriptions.php';
+		class_alias( LateLoadedSubscriptions::class, 'WC_Subscriptions' );
 
 		$result = $this->create_service()->get_init_session_request( 'shopper@example.com' );
 

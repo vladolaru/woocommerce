@@ -32,6 +32,7 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Data_Store;
 use WC_Order;
 use WC_Unit_Test_Case;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\RecordingWooPaySessionService;
 
 /**
  * Tests for the WooPaymentsOperationalQueueService class.

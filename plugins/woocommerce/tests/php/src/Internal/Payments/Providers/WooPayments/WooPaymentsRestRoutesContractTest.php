@@ -16,13 +16,14 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportsRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooPaySessionController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsRestController;
 use Closure;
 use ReflectionFunction;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Server;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionControllerTest;
 
 /**
  * Pins the plugin 11.1.0 REST route and AJAX action surface (`woopayments-endpoints.json`)

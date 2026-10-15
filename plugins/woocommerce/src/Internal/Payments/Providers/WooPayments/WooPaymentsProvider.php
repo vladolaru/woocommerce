@@ -28,6 +28,8 @@ use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplierInter
 use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapperInterface;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplierInterface;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayPreflightGuard;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionController;
 
 /**
  * Connects WooPayments to the payments runtime: its gateways, its charge, capture, cancel and refund operations with their

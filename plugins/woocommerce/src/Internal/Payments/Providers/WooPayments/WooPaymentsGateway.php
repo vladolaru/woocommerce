@@ -32,6 +32,7 @@ use WC_Payment_Token;
 use WC_Payment_Token_CC;
 use WC_Payment_Gateway_CC;
 use WP_Error;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
 
 /**
  * The WooPayments card gateway and its payment-method instances: fields, availability, payments, refunds and

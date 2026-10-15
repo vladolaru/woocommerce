@@ -27,6 +27,7 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 use WP_Error;
 use WP_REST_Request;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay\RecordingWooPaySessionService;
 
 /**
  * Tests for the WooPaymentsSettingsService class.
