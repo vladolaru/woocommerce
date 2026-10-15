@@ -8,7 +8,7 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 /**
  * Fake legacy proxy for WooPayments runtime access.
  */
-class LegacyRuntimeProxy extends LegacyProxy {
+class WooPaymentsExtensionRuntimeProxy extends LegacyProxy {
 
 	/**
 	 * Whether the WooPayments runtime is loaded.

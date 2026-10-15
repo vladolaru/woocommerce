@@ -6,8 +6,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Admin\Suggestions\Incentives;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\Incentives\Incentive;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\Incentives\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\LegacyRuntimeProxy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntimeProxy;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
 
@@ -39,11 +39,11 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	protected $sut;
 
 	/**
-	 * WooPayments legacy runtime mock.
+	 * WooPayments extension runtime mock.
 	 *
-	 * @var WooPaymentsLegacyRuntime|MockObject
+	 * @var WooPaymentsExtensionRuntime|MockObject
 	 */
-	protected $legacy_runtime;
+	protected $extension_runtime;
 
 	/**
 	 * The incentive's suggestion ID.
@@ -84,10 +84,10 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 
 		$this->suggestion_id = 'suggestion1';
 
-		$this->legacy_runtime = $this->getMockBuilder( WooPaymentsLegacyRuntime::class )
+		$this->extension_runtime = $this->getMockBuilder( WooPaymentsExtensionRuntime::class )
 			->onlyMethods( array( 'is_loaded', 'has_live_cached_account_data' ) )
 			->getMock();
-		$this->sut            = new WooPayments( $this->suggestion_id, $this->legacy_runtime );
+		$this->sut               = new WooPayments( $this->suggestion_id, $this->extension_runtime );
 
 		// Mock the response from the API.
 		$this->response_mock_ref = function ( $preempt, $parsed_args, $url ) {
@@ -162,8 +162,8 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * @param bool $has_live_account_data Whether the runtime has meaningful live account data.
 	 */
 	private function mock_runtime_for_incentives_context( bool $has_live_account_data ): void {
-		$this->legacy_runtime->method( 'is_loaded' )->willReturn( false );
-		$this->legacy_runtime->method( 'has_live_cached_account_data' )->willReturn( $has_live_account_data );
+		$this->extension_runtime->method( 'is_loaded' )->willReturn( false );
+		$this->extension_runtime->method( 'has_live_cached_account_data' )->willReturn( $has_live_account_data );
 	}
 
 	/**
@@ -250,10 +250,10 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_is_visible_skips_extension_active_check() {
 		// Arrange.
-		$this->legacy_runtime
+		$this->extension_runtime
 			->expects( $this->never() )
 			->method( 'is_loaded' );
-		$this->legacy_runtime
+		$this->extension_runtime
 			->method( 'has_live_cached_account_data' )
 			->willReturn( false );
 
@@ -278,8 +278,8 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_is_visible_with_extension_active_and_no_account_data() {
 		// Arrange.
-		$this->legacy_runtime->method( 'is_loaded' )->willReturn( true );
-		$this->legacy_runtime->method( 'has_live_cached_account_data' )->willReturn( false );
+		$this->extension_runtime->method( 'is_loaded' )->willReturn( true );
+		$this->extension_runtime->method( 'has_live_cached_account_data' )->willReturn( false );
 
 		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
 
@@ -295,8 +295,8 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_is_visible_with_extension_active_and_has_account_data() {
 		// Arrange.
-		$this->legacy_runtime->method( 'is_loaded' )->willReturn( true );
-		$this->legacy_runtime->method( 'has_live_cached_account_data' )->willReturn( true );
+		$this->extension_runtime->method( 'is_loaded' )->willReturn( true );
+		$this->extension_runtime->method( 'has_live_cached_account_data' )->willReturn( true );
 
 		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
 
@@ -312,13 +312,13 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_is_visible_with_native_runtime_and_has_account_data(): void {
 		// Arrange.
-		$this->legacy_runtime->method( 'is_loaded' )->willReturn( false );
-		$this->legacy_runtime->method( 'has_live_cached_account_data' )->willReturn( true );
+		$this->extension_runtime->method( 'is_loaded' )->willReturn( false );
+		$this->extension_runtime->method( 'has_live_cached_account_data' )->willReturn( true );
 		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
 		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
-		$sut = new WooPayments( $this->suggestion_id, $this->legacy_runtime, $arbiter );
+		$sut = new WooPayments( $this->suggestion_id, $this->extension_runtime, $arbiter );
 
 		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
 
@@ -334,13 +334,13 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_is_visible_with_native_runtime_and_no_account_data(): void {
 		// Arrange.
-		$this->legacy_runtime->method( 'is_loaded' )->willReturn( false );
-		$this->legacy_runtime->method( 'has_live_cached_account_data' )->willReturn( false );
+		$this->extension_runtime->method( 'is_loaded' )->willReturn( false );
+		$this->extension_runtime->method( 'has_live_cached_account_data' )->willReturn( false );
 		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
 		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
-		$sut = new WooPayments( $this->suggestion_id, $this->legacy_runtime, $arbiter );
+		$sut = new WooPayments( $this->suggestion_id, $this->extension_runtime, $arbiter );
 
 		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );
 
@@ -352,14 +352,14 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should read WooPayments runtime state through WooPaymentsLegacyRuntime.
+	 * @testdox Should read WooPayments runtime state through WooPaymentsExtensionRuntime.
 	 */
 	public function test_runtime_access_is_centralized(): void {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Read a local source file for a boundary assertion.
 		$source = (string) file_get_contents( WC()->plugin_path() . '/src/Internal/Admin/Suggestions/Incentives/WooPayments.php' );
 
-		$this->assertStringNotContainsString( "class_exists( '\\WC_Payments' )", $source, 'WooPayments incentives should ask WooPaymentsLegacyRuntime whether WooPayments is loaded.' );
-		$this->assertStringNotContainsString( "'wcpay_account_data'", $source, 'WooPayments incentives should read WooPayments account cache through WooPaymentsLegacyRuntime.' );
+		$this->assertStringNotContainsString( "class_exists( '\\WC_Payments' )", $source, 'WooPayments incentives should ask WooPaymentsExtensionRuntime whether WooPayments is loaded.' );
+		$this->assertStringNotContainsString( "'wcpay_account_data'", $source, 'WooPayments incentives should read WooPayments account cache through WooPaymentsExtensionRuntime.' );
 	}
 
 	/**
@@ -533,9 +533,9 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_incentives_context_counts_account_data_without_mode_flags() {
 		// Arrange.
-		$proxy = new LegacyRuntimeProxy( false );
+		$proxy = new WooPaymentsExtensionRuntimeProxy( false );
 		$proxy->set_account_data( array( 'data' => array( 'account_id' => '123' ) ) );
-		$runtime = new WooPaymentsLegacyRuntime();
+		$runtime = new WooPaymentsExtensionRuntime();
 		$runtime->init( $proxy );
 		$this->sut = new WooPayments( $this->suggestion_id, $runtime );
 

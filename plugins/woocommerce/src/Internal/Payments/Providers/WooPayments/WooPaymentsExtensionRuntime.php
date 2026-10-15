@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsLegacyRuntime class file.
+ * WooPaymentsExtensionRuntime class file.
  */
 
 declare( strict_types = 1 );
@@ -11,12 +11,12 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
- * Centralizes access to the transitional WooPayments plugin runtime.
+ * Reads the state of the WooPayments extension's runtime while it is active.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
-class WooPaymentsLegacyRuntime {
+class WooPaymentsExtensionRuntime {
 
 	/**
 	 * Default WooPayments admin onboarding source context.
@@ -301,7 +301,7 @@ class WooPaymentsLegacyRuntime {
 	}
 
 	/**
-	 * Get a WooPayments service through the legacy runtime.
+	 * Get a WooPayments service through the extension runtime.
 	 *
 	 * @param string $method_name WC_Payments static accessor.
 	 * @return object|null

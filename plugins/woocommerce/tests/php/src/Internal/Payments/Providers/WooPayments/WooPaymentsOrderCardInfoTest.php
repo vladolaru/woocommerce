@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Internal\Orders\PaymentInfo;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderCardInfo;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -303,10 +303,10 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsApiClient $client API client double.
 	 */
 	private function register_card_info_service( WooPaymentsApiClient $client ): void {
-		$legacy_runtime = new WooPaymentsLegacyRuntime();
-		$legacy_runtime->init( new LegacyRuntimeProxy( false ) );
+		$extension_runtime = new WooPaymentsExtensionRuntime();
+		$extension_runtime->init( new WooPaymentsExtensionRuntimeProxy( false ) );
 		$service = new WooPaymentsPaymentMethodDetailsService();
-		$service->init( $legacy_runtime, $client, new StaticWooPaymentsRuntimeArbiter( true ) );
+		$service->init( $extension_runtime, $client, new StaticWooPaymentsRuntimeArbiter( true ) );
 		// The PaymentInfo fallback asks the container's service.
 		wc_get_container()->replace( WooPaymentsPaymentMethodDetailsService::class, $service );
 		$card_info = new WooPaymentsOrderCardInfo();

@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Admin\Features\OnboardingTasks\Tasks;
 use Automattic\WooCommerce\Admin\Features\OnboardingTasks\Tasks\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments as SettingsPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Payment_Gateway;
 use WC_Unit_Test_Case;
@@ -233,7 +233,7 @@ class PaymentsTest extends WC_Unit_Test_Case {
 		$settings = $this->createMock( SettingsPaymentsService::class );
 		$settings->expects( $this->never() )->method( 'get_payment_providers' );
 		wc_get_container()->replace( SettingsPaymentsService::class, $settings );
-		wc_get_container()->replace( WooPaymentsLegacyRuntime::class, $this->legacy_runtime( false ) );
+		wc_get_container()->replace( WooPaymentsExtensionRuntime::class, $this->extension_runtime( false ) );
 
 		$this->assertTrue( $this->sut->is_complete(), 'Completion falls back to the enabled gateways.' );
 	}
@@ -241,7 +241,7 @@ class PaymentsTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should keep the task open for a test-drive account when the WooPayments plugin runtime is loaded.
 	 */
-	public function test_legacy_runtime_test_drive_account_keeps_task_open(): void {
+	public function test_extension_runtime_test_drive_account_keeps_task_open(): void {
 		$this->arrange( true, 'yes', $this->woopayments_provider( 'woocommerce-payments', true, true, true, true ) );
 
 		$data = $this->sut->get_additional_data();
@@ -254,7 +254,7 @@ class PaymentsTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should count WooPayments as active whenever the plugin runtime is loaded, even before onboarding.
 	 */
-	public function test_legacy_runtime_is_active_before_onboarding(): void {
+	public function test_extension_runtime_is_active_before_onboarding(): void {
 		$this->arrange( true, 'yes', $this->woopayments_provider( 'woocommerce-payments', false, false, false, false ) );
 
 		$data = $this->sut->get_additional_data();
@@ -281,7 +281,7 @@ class PaymentsTest extends WC_Unit_Test_Case {
 		$settings->method( 'get_payment_extension_suggestions' )->willReturn( array() );
 
 		wc_get_container()->replace( SettingsPaymentsService::class, $settings );
-		wc_get_container()->replace( WooPaymentsLegacyRuntime::class, $this->legacy_runtime( $legacy_loaded ) );
+		wc_get_container()->replace( WooPaymentsExtensionRuntime::class, $this->extension_runtime( $legacy_loaded ) );
 	}
 
 	/**
@@ -321,14 +321,14 @@ class PaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Build a legacy runtime double.
+	 * Build an extension runtime double.
 	 *
 	 * @param bool $loaded Whether the WooPayments plugin runtime is loaded.
 	 *
-	 * @return WooPaymentsLegacyRuntime|MockObject
+	 * @return WooPaymentsExtensionRuntime|MockObject
 	 */
-	private function legacy_runtime( bool $loaded ) {
-		$runtime = $this->createMock( WooPaymentsLegacyRuntime::class );
+	private function extension_runtime( bool $loaded ) {
+		$runtime = $this->createMock( WooPaymentsExtensionRuntime::class );
 		$runtime->method( 'is_loaded' )->willReturn( $loaded );
 		$runtime->method( 'get_supported_countries' )->willReturn( null );
 

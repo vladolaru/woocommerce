@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Orders;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\RestApi\UnitTests\Helpers\OrderHelper;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
@@ -291,7 +291,7 @@ class PaymentInfoTest extends WC_Unit_Test_Case {
 			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
 		};
 		$details_service = new WooPaymentsPaymentMethodDetailsService();
-		$details_service->init( $container->get( WooPaymentsLegacyRuntime::class ), $api_client, $arbiter );
+		$details_service->init( $container->get( WooPaymentsExtensionRuntime::class ), $api_client, $arbiter );
 		$container->replace( WooPaymentsPaymentMethodDetailsService::class, $details_service );
 		$logger = RecordingWcLogger::install();
 

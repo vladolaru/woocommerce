@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGate
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Exception;
 use WC_Payment_Gateway;
@@ -35,9 +35,9 @@ class DelegatingOnboardingAdapter extends WooPaymentsOnboardingAdapter {
 	/**
 	 * The test's extension runtime.
 	 *
-	 * @var WooPaymentsLegacyRuntime
+	 * @var WooPaymentsExtensionRuntime
 	 */
-	private WooPaymentsLegacyRuntime $test_extension_runtime;
+	private WooPaymentsExtensionRuntime $test_extension_runtime;
 
 	/**
 	 * The test's account service.
@@ -58,11 +58,11 @@ class DelegatingOnboardingAdapter extends WooPaymentsOnboardingAdapter {
 	 *
 	 * @param WooPaymentsOnboardingAdapter $inner           The test's adapter.
 	 * @param WooPaymentsApiClient         $api_client      The test's API client.
-	 * @param WooPaymentsLegacyRuntime     $extension_runtime The test's extension runtime.
+	 * @param WooPaymentsExtensionRuntime  $extension_runtime The test's extension runtime.
 	 * @param WooPaymentsAccountService    $account_service The test's account service.
 	 * @param WooPaymentsOnboardingService $onboarding      The test's onboarding service.
 	 */
-	public function __construct( WooPaymentsOnboardingAdapter $inner, WooPaymentsApiClient $api_client, WooPaymentsLegacyRuntime $extension_runtime, WooPaymentsAccountService $account_service, WooPaymentsOnboardingService $onboarding ) {
+	public function __construct( WooPaymentsOnboardingAdapter $inner, WooPaymentsApiClient $api_client, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsAccountService $account_service, WooPaymentsOnboardingService $onboarding ) {
 		$this->inner                  = $inner;
 		$this->test_api_client        = $api_client;
 		$this->test_extension_runtime = $extension_runtime;

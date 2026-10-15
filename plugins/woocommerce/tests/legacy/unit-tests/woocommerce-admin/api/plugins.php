@@ -252,9 +252,9 @@ class WC_Admin_Tests_API_Plugins extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return the native WooPayments onboarding URL when the legacy runtime is unavailable.
+	 * @testdox Should return the native WooPayments onboarding URL when the extension runtime is unavailable.
 	 */
-	public function test_connect_wcpay_returns_native_onboarding_url_without_legacy_runtime() {
+	public function test_connect_wcpay_returns_native_onboarding_url_without_extension_runtime() {
 		wp_set_current_user( $this->user );
 
 		$request  = new WP_REST_Request( 'POST', $this->endpoint . '/connect-wcpay' );

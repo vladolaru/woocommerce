@@ -40,7 +40,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsRestController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\PaymentsExtensionSuggestions as ExtensionSuggestions;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Exception;
@@ -243,19 +243,19 @@ class PaymentsProviders {
 	private ?Container $container = null;
 
 	/**
-	 * The WooPayments legacy runtime.
+	 * The WooPayments extension runtime.
 	 *
-	 * @var WooPaymentsLegacyRuntime|null
+	 * @var WooPaymentsExtensionRuntime|null
 	 */
-	private ?WooPaymentsLegacyRuntime $woo_payments_legacy_runtime = null;
+	private ?WooPaymentsExtensionRuntime $woopayments_extension_runtime = null;
 
 	/**
 	 * Initialize the class instance.
 	 *
-	 * @param ExtensionSuggestions     $payment_extension_suggestions The payment extension suggestions service.
-	 * @param LegacyProxy              $proxy                         The LegacyProxy instance.
-	 * @param Container                $container                     Optional. The dependency injection container.
-	 * @param WooPaymentsLegacyRuntime $woo_payments_legacy_runtime Optional. The WooPayments legacy runtime.
+	 * @param ExtensionSuggestions        $payment_extension_suggestions The payment extension suggestions service.
+	 * @param LegacyProxy                 $proxy                         The LegacyProxy instance.
+	 * @param Container                   $container                     Optional. The dependency injection container.
+	 * @param WooPaymentsExtensionRuntime $woopayments_extension_runtime Optional. The WooPayments extension runtime.
 	 *
 	 * @internal
 	 */
@@ -263,12 +263,12 @@ class PaymentsProviders {
 		ExtensionSuggestions $payment_extension_suggestions,
 		LegacyProxy $proxy,
 		?Container $container = null,
-		?WooPaymentsLegacyRuntime $woo_payments_legacy_runtime = null
+		?WooPaymentsExtensionRuntime $woopayments_extension_runtime = null
 	): void {
-		$this->extension_suggestions       = $payment_extension_suggestions;
-		$this->proxy                       = $proxy;
-		$this->container                   = $container;
-		$this->woo_payments_legacy_runtime = $woo_payments_legacy_runtime;
+		$this->extension_suggestions         = $payment_extension_suggestions;
+		$this->proxy                         = $proxy;
+		$this->container                     = $container;
+		$this->woopayments_extension_runtime = $woopayments_extension_runtime;
 
 		wp_cache_add_non_persistent_groups( array( self::GATEWAY_DETAILS_REQUEST_CACHE_GROUP, self::PROVIDER_LISTS_REQUEST_CACHE_GROUP ) );
 	}
@@ -521,15 +521,15 @@ class PaymentsProviders {
 	private function configure_payment_gateway_provider_instance( PaymentGateway $provider ): PaymentGateway {
 		if ( ! $provider instanceof WooPayments ||
 			null === $this->container ||
-			null === $this->woo_payments_legacy_runtime ) {
+			null === $this->woopayments_extension_runtime ) {
 			return $provider;
 		}
 
-		$container                   = $this->container;
-		$woo_payments_legacy_runtime = $this->woo_payments_legacy_runtime;
+		$container                     = $this->container;
+		$woopayments_extension_runtime = $this->woopayments_extension_runtime;
 
 		$provider->set_admin_runtime_collaborators(
-			$woo_payments_legacy_runtime,
+			$woopayments_extension_runtime,
 			function () use ( $container ): WooPaymentsRestController {
 				$rest_controller = $container->get( WooPaymentsRestController::class );
 				if ( ! $rest_controller instanceof WooPaymentsRestController ) {

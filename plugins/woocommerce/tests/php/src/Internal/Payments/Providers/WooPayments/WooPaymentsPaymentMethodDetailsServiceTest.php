@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use RuntimeException;
@@ -83,8 +83,8 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 			),
 		);
 
-		$legacy_runtime = new WooPaymentsLegacyRuntime();
-		$legacy_runtime->init( new LegacyRuntimeProxy( false ) );
+		$extension_runtime = new WooPaymentsExtensionRuntime();
+		$extension_runtime->init( new WooPaymentsExtensionRuntimeProxy( false ) );
 
 		$client = new class( $details ) extends WooPaymentsApiClient {
 				/**
@@ -123,7 +123,7 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 			}
 		};
 		$sut    = new WooPaymentsPaymentMethodDetailsService();
-		$sut->init( $legacy_runtime, $client, new StaticWooPaymentsRuntimeArbiter( true ) );
+		$sut->init( $extension_runtime, $client, new StaticWooPaymentsRuntimeArbiter( true ) );
 
 		$this->assertSame( $details, $sut->get_payment_method_details( 'pm_123' ) );
 		$this->assertSame( array( 'pm_123' ), $client->requested_ids );

@@ -10,7 +10,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -101,7 +101,7 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 		$account_service->expects( $this->exactly( $clears ) )->method( 'clear_onboarding_fields_cache' );
 		wc_get_container()->replace( WooPaymentsAccountService::class, $account_service );
 		$adapter = new WooPaymentsOnboardingAdapter();
-		$adapter->init( $this->createMock( WooPaymentsLegacyRuntime::class ), $arbiter );
+		$adapter->init( $this->createMock( WooPaymentsExtensionRuntime::class ), $arbiter );
 		wc_get_container()->replace( WooPaymentsOnboardingAdapter::class, $adapter );
 		$sut = $this->create_controller( $this->createMock( WooPaymentsService::class ) );
 
@@ -323,8 +323,8 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsService
 	 */
 	private function create_native_onboarding_service(): WooPaymentsService {
-		$legacy_runtime = $this->createMock( WooPaymentsLegacyRuntime::class );
-		$legacy_runtime->method( 'is_loaded' )->willReturn( false );
+		$extension_runtime = $this->createMock( WooPaymentsExtensionRuntime::class );
+		$extension_runtime->method( 'is_loaded' )->willReturn( false );
 		$onboarding_adapter = $this->createMock( WooPaymentsOnboardingAdapter::class );
 		$onboarding_adapter->method( 'has_valid_account' )->willReturn( false );
 		$onboarding_service = new WooPaymentsOnboardingService();
@@ -337,7 +337,7 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 		// The service resolves its native collaborators on first use; set the doubles on the instance.
 		$collaborators = array(
 			'onboarding_adapter' => $onboarding_adapter,
-			'legacy_runtime'     => $legacy_runtime,
+			'extension_runtime'  => $extension_runtime,
 		);
 		foreach ( $collaborators as $property => $collaborator ) {
 			$reflection = new \ReflectionProperty( WooPaymentsService::class, $property );

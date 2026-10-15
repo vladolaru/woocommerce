@@ -10,7 +10,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils as SettingsUtils;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\PaymentsExtensionSuggestions;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use WC_Gateway_BACS;
 use WC_Gateway_Cheque;
 use WC_Gateway_COD;
@@ -245,8 +245,8 @@ class Payments extends Task {
 	 * @return bool
 	 */
 	private function is_woopayments_active(): bool {
-		$legacy_runtime = $this->get_woopayments_legacy_runtime();
-		if ( null !== $legacy_runtime && $legacy_runtime->is_loaded() ) {
+		$extension_runtime = $this->get_woopayments_extension_runtime();
+		if ( null !== $extension_runtime && $extension_runtime->is_loaded() ) {
 			return true;
 		}
 
@@ -386,8 +386,8 @@ class Payments extends Task {
 	 * @return bool Whether the country is supported by WooPayments.
 	 */
 	private function is_woopayments_supported_country( string $country_code ): bool {
-		$legacy_runtime      = $this->get_woopayments_legacy_runtime();
-		$supported_countries = null !== $legacy_runtime ? $legacy_runtime->get_supported_countries() : null;
+		$extension_runtime   = $this->get_woopayments_extension_runtime();
+		$supported_countries = null !== $extension_runtime ? $extension_runtime->get_supported_countries() : null;
 		if ( is_array( $supported_countries ) ) {
 			$supported_countries = array_keys( $supported_countries );
 			return in_array( $country_code, $supported_countries, true );
@@ -579,17 +579,17 @@ class Payments extends Task {
 	}
 
 	/**
-	 * Get the WooPayments legacy runtime.
+	 * Get the WooPayments extension runtime.
 	 *
-	 * @return WooPaymentsLegacyRuntime|null
+	 * @return WooPaymentsExtensionRuntime|null
 	 */
-	private function get_woopayments_legacy_runtime(): ?WooPaymentsLegacyRuntime {
+	private function get_woopayments_extension_runtime(): ?WooPaymentsExtensionRuntime {
 		try {
-			$legacy_runtime = wc_get_container()->get( WooPaymentsLegacyRuntime::class );
+			$extension_runtime = wc_get_container()->get( WooPaymentsExtensionRuntime::class );
 		} catch ( \Throwable $e ) {
 			return null;
 		}
 
-		return $legacy_runtime instanceof WooPaymentsLegacyRuntime ? $legacy_runtime : null;
+		return $extension_runtime instanceof WooPaymentsExtensionRuntime ? $extension_runtime : null;
 	}
 }

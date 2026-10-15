@@ -5,20 +5,20 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsLegacyRuntime class.
+ * Tests for the WooPaymentsExtensionRuntime class.
  */
-class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
+class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should fail closed when the WooPayments runtime is absent.
 	 */
 	public function test_fails_closed_when_woopayments_runtime_is_absent(): void {
-		$sut = new WooPaymentsLegacyRuntime();
-		$sut->init( new LegacyRuntimeProxy( false ) );
+		$sut = new WooPaymentsExtensionRuntime();
+		$sut->init( new WooPaymentsExtensionRuntimeProxy( false ) );
 
 		$this->assertFalse( $sut->is_loaded() );
 		$this->assertNull( $sut->get_gateway() );
@@ -35,8 +35,8 @@ class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
 			->method( 'is_extension_owner' )
 			->willReturn( false );
 
-		$sut = new WooPaymentsLegacyRuntime();
-		$sut->init( new LegacyRuntimeProxy( true ), $arbiter );
+		$sut = new WooPaymentsExtensionRuntime();
+		$sut->init( new WooPaymentsExtensionRuntimeProxy( true ), $arbiter );
 
 		$this->assertFalse( $sut->is_loaded() );
 	}
@@ -49,8 +49,8 @@ class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
 		$account    = (object) array( 'id' => 'account' );
 		$api_client = (object) array( 'id' => 'api_client' );
 		$logger     = (object) array( 'id' => 'logger' );
-		$sut        = new WooPaymentsLegacyRuntime();
-		$sut->init( new LegacyRuntimeProxy( true, $gateway, $account, $api_client, $logger ) );
+		$sut        = new WooPaymentsExtensionRuntime();
+		$sut->init( new WooPaymentsExtensionRuntimeProxy( true, $gateway, $account, $api_client, $logger ) );
 
 		$this->assertTrue( $sut->is_loaded() );
 		$this->assertSame( $gateway, $sut->get_gateway() );
@@ -63,9 +63,9 @@ class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
 	 * @testdox Should return WooPayments account URLs when the account helpers are callable.
 	 */
 	public function test_returns_woopayments_account_urls_when_helpers_are_callable(): void {
-		$sut = new WooPaymentsLegacyRuntime();
+		$sut = new WooPaymentsExtensionRuntime();
 		$sut->init(
-			new LegacyRuntimeProxy(
+			new WooPaymentsExtensionRuntimeProxy(
 				true,
 				null,
 				null,
@@ -110,8 +110,8 @@ class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
 				return true;
 			}
 		};
-		$sut  = new WooPaymentsLegacyRuntime();
-		$sut->init( new LegacyRuntimeProxy( true, null, null, null, null, null, null, $mode ) );
+		$sut  = new WooPaymentsExtensionRuntime();
+		$sut->init( new WooPaymentsExtensionRuntimeProxy( true, null, null, null, null, null, null, $mode ) );
 
 		$this->assertTrue( $sut->is_test_mode() );
 		$this->assertFalse( $sut->is_dev_mode() );
@@ -135,9 +135,9 @@ class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$sut     = new WooPaymentsLegacyRuntime();
+		$sut     = new WooPaymentsExtensionRuntime();
 		$sut->init(
-			new LegacyRuntimeProxy(
+			new WooPaymentsExtensionRuntimeProxy(
 				true,
 				null,
 				$account,
@@ -192,8 +192,8 @@ class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
 		Constants::set_constant( 'WC_Payments_Onboarding_Service::SOURCE_WCADMIN_SETTINGS_PAGE', 'runtime-source' );
 
 		try {
-			$sut = new WooPaymentsLegacyRuntime();
-			$sut->init( new LegacyRuntimeProxy( true ) );
+			$sut = new WooPaymentsExtensionRuntime();
+			$sut->init( new WooPaymentsExtensionRuntimeProxy( true ) );
 
 			$this->assertSame(
 				array(
@@ -213,8 +213,8 @@ class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
 	public function test_returns_admin_onboarding_context_fallback_values(): void {
 		Constants::clear_constants();
 
-		$sut = new WooPaymentsLegacyRuntime();
-		$sut->init( new LegacyRuntimeProxy( true ) );
+		$sut = new WooPaymentsExtensionRuntime();
+		$sut->init( new WooPaymentsExtensionRuntimeProxy( true ) );
 
 		$this->assertSame(
 			array(
@@ -263,8 +263,8 @@ class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
 		Constants::set_constant( 'WCPAY_VERSION_NUMBER', '10.0.0' );
 
 		try {
-			$sut = new WooPaymentsLegacyRuntime();
-			$sut->init( new LegacyRuntimeProxy( true ) );
+			$sut = new WooPaymentsExtensionRuntime();
+			$sut->init( new WooPaymentsExtensionRuntimeProxy( true ) );
 
 			$this->assertTrue( $sut->is_extension_version_less_than( '10.1.0' ) );
 			$this->assertFalse( $sut->is_extension_version_less_than( '10.0.0' ) );
@@ -280,8 +280,8 @@ class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
 	public function test_returns_null_when_extension_version_is_unavailable(): void {
 		Constants::clear_constants();
 
-		$sut = new WooPaymentsLegacyRuntime();
-		$sut->init( new LegacyRuntimeProxy( true ) );
+		$sut = new WooPaymentsExtensionRuntime();
+		$sut->init( new WooPaymentsExtensionRuntimeProxy( true ) );
 
 		$this->assertNull( $sut->is_extension_version_less_than( '10.0.0' ) );
 	}
@@ -293,8 +293,8 @@ class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
 		Constants::set_constant( 'WCPAY_VERSION_NUMBER', array( 'version' => '10.0.0' ) );
 
 		try {
-			$sut = new WooPaymentsLegacyRuntime();
-			$sut->init( new LegacyRuntimeProxy( true ) );
+			$sut = new WooPaymentsExtensionRuntime();
+			$sut->init( new WooPaymentsExtensionRuntimeProxy( true ) );
 
 			$this->assertNull( $sut->is_extension_version_less_than( '10.0.0' ) );
 		} finally {
@@ -336,8 +336,8 @@ class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_resets_onboarding_test_mode_option_when_available(): void {
 		Constants::set_constant( 'WC_Payments_Onboarding_Service::TEST_MODE_OPTION', 'wcpay_test_mode' );
-		$proxy = new LegacyRuntimeProxy( true );
-		$sut   = new WooPaymentsLegacyRuntime();
+		$proxy = new WooPaymentsExtensionRuntimeProxy( true );
+		$sut   = new WooPaymentsExtensionRuntime();
 		$sut->init( $proxy );
 
 		try {
@@ -358,18 +358,18 @@ class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
 	 * @testdox Should fail closed for account URLs when account helpers are unavailable.
 	 */
 	public function test_fails_closed_for_account_urls_when_helpers_are_unavailable(): void {
-		$sut = new WooPaymentsLegacyRuntime();
-		$sut->init( new LegacyRuntimeProxy( true ) );
+		$sut = new WooPaymentsExtensionRuntime();
+		$sut->init( new WooPaymentsExtensionRuntimeProxy( true ) );
 
 		$this->assertNull( $sut->get_account_connect_url( 'native-payments' ) );
 	}
 
 	/**
-	 * @testdox Should swallow legacy runtime lookup exceptions.
+	 * @testdox Should swallow extension runtime lookup exceptions.
 	 */
 	public function test_swallows_runtime_lookup_exceptions(): void {
-		$sut = new WooPaymentsLegacyRuntime();
-		$sut->init( new ThrowingLegacyRuntimeProxy() );
+		$sut = new WooPaymentsExtensionRuntime();
+		$sut->init( new ThrowingWooPaymentsExtensionRuntimeProxy() );
 
 		$this->assertFalse( $sut->is_loaded() );
 		$this->assertNull( $sut->get_gateway() );
@@ -393,13 +393,13 @@ class WooPaymentsLegacyRuntimeTest extends WC_Unit_Test_Case {
 	 * also pass are defensive inputs for the lenient check core's PaymentsController made before native payments.
 	 *
 	 * @param mixed $account_data Account data payload.
-	 * @return WooPaymentsLegacyRuntime
+	 * @return WooPaymentsExtensionRuntime
 	 */
-	private function create_runtime_with_account_data( $account_data ): WooPaymentsLegacyRuntime {
-		$proxy = new LegacyRuntimeProxy( true );
+	private function create_runtime_with_account_data( $account_data ): WooPaymentsExtensionRuntime {
+		$proxy = new WooPaymentsExtensionRuntimeProxy( true );
 		$proxy->set_account_data( $account_data );
 
-		$sut = new WooPaymentsLegacyRuntime();
+		$sut = new WooPaymentsExtensionRuntime();
 		$sut->init( $proxy );
 
 		return $sut;

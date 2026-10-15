@@ -19,7 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
@@ -30,7 +30,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\LegacyRuntimeProxy;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntimeProxy;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
@@ -1318,11 +1318,11 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsTokenService
 	 */
 	private function create_token_service_whose_payment_method_fetch_throws( \Throwable $thrown ): WooPaymentsTokenService {
-		$legacy_runtime = new WooPaymentsLegacyRuntime();
-		$legacy_runtime->init( new LegacyRuntimeProxy( false ) );
+		$extension_runtime = new WooPaymentsExtensionRuntime();
+		$extension_runtime->init( new WooPaymentsExtensionRuntimeProxy( false ) );
 		$details_service = new WooPaymentsPaymentMethodDetailsService();
 		$details_service->init(
-			$legacy_runtime,
+			$extension_runtime,
 			new class( $thrown ) extends WooPaymentsApiClient {
 				/**
 				 * Throwable to throw.

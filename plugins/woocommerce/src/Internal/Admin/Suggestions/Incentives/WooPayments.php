@@ -8,7 +8,7 @@ defined( 'ABSPATH' ) || exit;
 use Automattic\WooCommerce\Admin\WCAdminHelper;
 use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
 use WC_Abstract_Order;
 
@@ -69,11 +69,11 @@ class WooPayments extends Incentive {
 	private ?array $incentives_memo = null;
 
 	/**
-	 * WooPayments legacy runtime.
+	 * WooPayments extension runtime.
 	 *
-	 * @var WooPaymentsLegacyRuntime|null
+	 * @var WooPaymentsExtensionRuntime|null
 	 */
-	private ?WooPaymentsLegacyRuntime $legacy_runtime;
+	private ?WooPaymentsExtensionRuntime $extension_runtime;
 
 	/**
 	 * Payments runtime owner arbiter.
@@ -85,18 +85,18 @@ class WooPayments extends Incentive {
 	/**
 	 * Constructor.
 	 *
-	 * @param string                         $suggestion_id  The suggestion ID.
-	 * @param WooPaymentsLegacyRuntime|null  $legacy_runtime WooPayments legacy runtime.
-	 * @param WooPaymentsRuntimeArbiter|null $arbiter        Payments runtime owner arbiter.
+	 * @param string                           $suggestion_id  The suggestion ID.
+	 * @param WooPaymentsExtensionRuntime|null $extension_runtime WooPayments extension runtime.
+	 * @param WooPaymentsRuntimeArbiter|null   $arbiter        Payments runtime owner arbiter.
 	 */
-	public function __construct( string $suggestion_id, ?WooPaymentsLegacyRuntime $legacy_runtime = null, ?WooPaymentsRuntimeArbiter $arbiter = null ) {
+	public function __construct( string $suggestion_id, ?WooPaymentsExtensionRuntime $extension_runtime = null, ?WooPaymentsRuntimeArbiter $arbiter = null ) {
 		parent::__construct( $suggestion_id );
 
 		$this->cache_transient_name                      = self::PREFIX . $suggestion_id . '_cache';
 		$this->store_has_orders_transient_name           = self::PREFIX . $suggestion_id . '_store_has_orders';
 		$this->store_had_woopayments_option_name         = self::PREFIX . $suggestion_id . '_store_had_woopayments';
 		$this->store_had_woopayments_version_option_name = $this->store_had_woopayments_option_name . '_version';
-		$this->legacy_runtime                            = $legacy_runtime;
+		$this->extension_runtime                         = $extension_runtime;
 		$this->arbiter                                   = $arbiter;
 	}
 
@@ -146,7 +146,7 @@ class WooPayments extends Incentive {
 	 * @return boolean Whether WooPayments is active.
 	 */
 	protected function is_extension_active(): bool {
-		if ( null !== $this->legacy_runtime && $this->legacy_runtime->is_loaded() ) {
+		if ( null !== $this->extension_runtime && $this->extension_runtime->is_loaded() ) {
 			return true;
 		}
 
@@ -360,7 +360,7 @@ class WooPayments extends Incentive {
 	 * @return boolean
 	 */
 	private function has_wcpay_account_data(): bool {
-		return null !== $this->legacy_runtime && $this->legacy_runtime->has_live_cached_account_data();
+		return null !== $this->extension_runtime && $this->extension_runtime->has_live_cached_account_data();
 	}
 
 	/**

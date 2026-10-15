@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyFacadeLoader;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
@@ -75,11 +75,11 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
 		$arbiter->method( 'is_extension_owner' )->willReturn( false );
 
-		$legacy_runtime = new WooPaymentsLegacyRuntime();
-		$legacy_runtime->init( new LegacyProxy(), $arbiter );
+		$extension_runtime = new WooPaymentsExtensionRuntime();
+		$extension_runtime->init( new LegacyProxy(), $arbiter );
 
 		$this->assertTrue( class_exists( 'WC_Payments' ), 'Extension compatibility requires the native facade to be available.' );
-		$this->assertFalse( $legacy_runtime->is_loaded(), 'Core must retain its Payments menu and other native-only behavior when only the facade is present.' );
+		$this->assertFalse( $extension_runtime->is_loaded(), 'Core must retain its Payments menu and other native-only behavior when only the facade is present.' );
 	}
 
 	/**

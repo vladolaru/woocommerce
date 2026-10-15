@@ -9,7 +9,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Exceptions\ApiArgumentExcepti
 use Automattic\WooCommerce\Internal\Admin\Settings\Exceptions\ApiException;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Exception;
@@ -158,11 +158,11 @@ class WooPaymentsService {
 	private ?WooPaymentsOnboardingAdapter $onboarding_adapter = null;
 
 	/**
-	 * The WooPayments legacy runtime.
+	 * The WooPayments extension runtime.
 	 *
-	 * @var WooPaymentsLegacyRuntime|null
+	 * @var WooPaymentsExtensionRuntime|null
 	 */
-	private ?WooPaymentsLegacyRuntime $legacy_runtime = null;
+	private ?WooPaymentsExtensionRuntime $extension_runtime = null;
 
 	/**
 	 * Initialize the class instance.
@@ -179,7 +179,7 @@ class WooPaymentsService {
 		$this->payments_providers = $payment_providers;
 		$this->proxy              = $proxy;
 		$this->onboarding_adapter = null;
-		$this->legacy_runtime     = null;
+		$this->extension_runtime  = null;
 
 		$this->wpcom_connection_manager = $this->proxy->get_instance_of( WPCOM_Connection_Manager::class, 'woocommerce' );
 		$this->provider                 = $this->payments_providers->get_payment_gateway_provider_instance( self::GATEWAY_ID );
@@ -1783,7 +1783,7 @@ class WooPaymentsService {
 		$this->proxy->call_function( 'delete_option', self::NOX_PROFILE_OPTION_KEY );
 
 		// Make sure the onboarding mode is reset.
-		$this->get_legacy_runtime()->reset_onboarding_test_mode_option();
+		$this->get_extension_runtime()->reset_onboarding_test_mode_option();
 
 		if ( is_wp_error( $response ) ) {
 			throw new ApiException(
@@ -1915,7 +1915,7 @@ class WooPaymentsService {
 		}
 
 		// Make sure the onboarding mode is reset.
-		$this->get_legacy_runtime()->reset_onboarding_test_mode_option();
+		$this->get_extension_runtime()->reset_onboarding_test_mode_option();
 
 		// Track the failure to disable the test account.
 		if ( is_wp_error( $response ) || ! is_array( $response ) || empty( $response['success'] ) ) {
@@ -2052,7 +2052,7 @@ class WooPaymentsService {
 	 * @return string The URL to redirect to, or an empty string when the plugin handles the link.
 	 */
 	public function handle_onboarding_referral( string $referral_code ): string {
-		if ( $this->get_legacy_runtime()->is_loaded() ) {
+		if ( $this->get_extension_runtime()->is_loaded() ) {
 			return '';
 		}
 
@@ -2085,7 +2085,7 @@ class WooPaymentsService {
 		}
 
 		// If the WooPayments installed version is less than the minimum required version, we can't do anything.
-		if ( true === $this->get_legacy_runtime()->is_extension_version_less_than( self::EXTENSION_MINIMUM_VERSION ) ) {
+		if ( true === $this->get_extension_runtime()->is_extension_version_less_than( self::EXTENSION_MINIMUM_VERSION ) ) {
 			throw new ApiException(
 				'woocommerce_woopayments_onboarding_extension_version',
 				/* translators: %s: WooPayments. */
@@ -3040,7 +3040,7 @@ class WooPaymentsService {
 			$fields['__locale'] = (string) $this->proxy->call_function( 'get_user_locale' );
 		}
 
-		$supported_countries = $this->get_legacy_runtime()->get_supported_countries();
+		$supported_countries = $this->get_extension_runtime()->get_supported_countries();
 		if ( ! isset( $fields['available_countries'] ) && null !== $supported_countries ) {
 			$fields['available_countries'] = $supported_countries;
 		}
@@ -3137,16 +3137,16 @@ class WooPaymentsService {
 	}
 
 	/**
-	 * Get the WooPayments legacy runtime.
+	 * Get the WooPayments extension runtime.
 	 *
-	 * @return WooPaymentsLegacyRuntime
+	 * @return WooPaymentsExtensionRuntime
 	 */
-	private function get_legacy_runtime(): WooPaymentsLegacyRuntime {
-		if ( null === $this->legacy_runtime ) {
-			$this->legacy_runtime = wc_get_container()->get( WooPaymentsLegacyRuntime::class );
+	private function get_extension_runtime(): WooPaymentsExtensionRuntime {
+		if ( null === $this->extension_runtime ) {
+			$this->extension_runtime = wc_get_container()->get( WooPaymentsExtensionRuntime::class );
 		}
 
-		return $this->legacy_runtime;
+		return $this->extension_runtime;
 	}
 
 	/**

@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGate
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsRestController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
@@ -83,13 +83,13 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		// Finally, set up the mockable proxy.
 		$this->setup_legacy_proxy_mocks();
 
-		$this->sut      = new WooPayments( $this->mockable_proxy );
-		$legacy_runtime = new WooPaymentsLegacyRuntime();
-		$legacy_runtime->init( $this->mockable_proxy );
+		$this->sut         = new WooPayments( $this->mockable_proxy );
+		$extension_runtime = new WooPaymentsExtensionRuntime();
+		$extension_runtime->init( $this->mockable_proxy );
 
 		$container = wc_get_container();
 		$this->sut->set_admin_runtime_collaborators(
-			$legacy_runtime,
+			$extension_runtime,
 			static function () use ( $container ): WooPaymentsRestController {
 				$rest_controller = $container->get( WooPaymentsRestController::class );
 				if ( ! $rest_controller instanceof WooPaymentsRestController ) {
@@ -224,12 +224,12 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * @param callable $notice_resolver Returns the test's notice service.
 	 */
 	private function set_notice_service_resolver( callable $notice_resolver ): void {
-		$legacy_runtime = new WooPaymentsLegacyRuntime();
-		$legacy_runtime->init( $this->mockable_proxy );
+		$extension_runtime = new WooPaymentsExtensionRuntime();
+		$extension_runtime->init( $this->mockable_proxy );
 		$adapter = $this->createMock( WooPaymentsOnboardingAdapter::class );
 		$adapter->method( 'refresh_settings_notice_for_current_user' )->willReturnCallback( static fn() => $notice_resolver()->refresh_notice_for_current_user() );
 		$this->sut->set_admin_runtime_collaborators(
-			$legacy_runtime,
+			$extension_runtime,
 			fn(): WooPaymentsRestController => $this->mock_rest_controller,
 			fn(): WooPaymentsService => wc_get_container()->get( WooPaymentsService::class ),
 			$adapter
@@ -509,12 +509,12 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$source = (string) file_get_contents( WC()->plugin_path() . '/src/Internal/Admin/Settings/PaymentsProviders/WooPayments.php' );
 
 		$this->assertStringNotContainsString( 'wc_get_container()->get', $source, 'WooPayments provider should receive admin service and REST access through explicit resolvers.' );
-		$this->assertStringNotContainsString( 'WC_Payments::mode', $source, 'WooPayments provider should read mode state through WooPaymentsLegacyRuntime.' );
-		$this->assertStringNotContainsString( 'WC_Payments_Account::get_connect_url', $source, 'WooPayments provider should read account URLs through WooPaymentsLegacyRuntime.' );
-		$this->assertStringNotContainsString( 'wcpay_get_container', $source, 'WooPayments provider should read account status through WooPaymentsLegacyRuntime.' );
-		$this->assertStringNotContainsString( 'WC_Payments_Utils::supported_countries', $source, 'WooPayments provider should read supported countries through WooPaymentsLegacyRuntime.' );
-		$this->assertStringNotContainsString( 'WC_Payments_Onboarding_Service::FROM_WCADMIN_PAYMENTS_SETTINGS', $source, 'WooPayments provider should read admin onboarding context through WooPaymentsLegacyRuntime.' );
-		$this->assertStringNotContainsString( 'WC_Payments_Onboarding_Service::SOURCE_WCADMIN_SETTINGS_PAGE', $source, 'WooPayments provider should read admin onboarding context through WooPaymentsLegacyRuntime.' );
+		$this->assertStringNotContainsString( 'WC_Payments::mode', $source, 'WooPayments provider should read mode state through WooPaymentsExtensionRuntime.' );
+		$this->assertStringNotContainsString( 'WC_Payments_Account::get_connect_url', $source, 'WooPayments provider should read account URLs through WooPaymentsExtensionRuntime.' );
+		$this->assertStringNotContainsString( 'wcpay_get_container', $source, 'WooPayments provider should read account status through WooPaymentsExtensionRuntime.' );
+		$this->assertStringNotContainsString( 'WC_Payments_Utils::supported_countries', $source, 'WooPayments provider should read supported countries through WooPaymentsExtensionRuntime.' );
+		$this->assertStringNotContainsString( 'WC_Payments_Onboarding_Service::FROM_WCADMIN_PAYMENTS_SETTINGS', $source, 'WooPayments provider should read admin onboarding context through WooPaymentsExtensionRuntime.' );
+		$this->assertStringNotContainsString( 'WC_Payments_Onboarding_Service::SOURCE_WCADMIN_SETTINGS_PAGE', $source, 'WooPayments provider should read admin onboarding context through WooPaymentsExtensionRuntime.' );
 	}
 
 	/**
@@ -1464,11 +1464,11 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 			->expects( $this->never() )
 			->method( 'has_sandbox_account' );
 
-		$legacy_runtime = new WooPaymentsLegacyRuntime();
-		$legacy_runtime->init( $this->mockable_proxy );
+		$extension_runtime = new WooPaymentsExtensionRuntime();
+		$extension_runtime->init( $this->mockable_proxy );
 		$container = wc_get_container();
 		$this->sut->set_admin_runtime_collaborators(
-			$legacy_runtime,
+			$extension_runtime,
 			static function () use ( $container ): WooPaymentsRestController {
 				$rest_controller = $container->get( WooPaymentsRestController::class );
 				if ( ! $rest_controller instanceof WooPaymentsRestController ) {
@@ -1546,10 +1546,10 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 					'state' => array( 'test_mode' => $this->sut->is_in_test_mode_onboarding( $fake_gateway ) ),
 				)
 			);
-		$legacy_runtime = new WooPaymentsLegacyRuntime();
-		$legacy_runtime->init( $this->mockable_proxy );
+		$extension_runtime = new WooPaymentsExtensionRuntime();
+		$extension_runtime->init( $this->mockable_proxy );
 		$this->sut->set_admin_runtime_collaborators(
-			$legacy_runtime,
+			$extension_runtime,
 			fn(): WooPaymentsRestController => $this->mock_rest_controller,
 			static fn(): WooPaymentsService => $service
 		);

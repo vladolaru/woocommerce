@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNoticeService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -123,11 +123,11 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$legacy_runtime = new WooPaymentsLegacyRuntime();
-		$legacy_runtime->init( $this->legacy_proxy );
+		$extension_runtime = new WooPaymentsExtensionRuntime();
+		$extension_runtime->init( $this->legacy_proxy );
 
 		$this->adapter = new WooPaymentsOnboardingAdapter();
-		$this->init_adapter( $this->adapter, $legacy_runtime, $this->provider, $this->native_gateway, $this->native_account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
+		$this->init_adapter( $this->adapter, $extension_runtime, $this->provider, $this->native_gateway, $this->native_account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 	}
 
 	/**
@@ -361,12 +361,12 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Legacy runtime seam supplies extension, gateway, account, and URL data.
+	 * @testdox Extension runtime seam supplies extension, gateway, account, and URL data.
 	 */
-	public function test_legacy_runtime_seam_supplies_extension_gateway_account_and_url_data(): void {
-		$runtime = new WooPaymentsLegacyRuntime();
+	public function test_extension_runtime_seam_supplies_extension_gateway_account_and_url_data(): void {
+		$runtime = new WooPaymentsExtensionRuntime();
 		$runtime->init(
-			new LegacyRuntimeProxy(
+			new WooPaymentsExtensionRuntimeProxy(
 				true,
 				$this->gateway,
 				$this->account_service,
@@ -405,10 +405,10 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 	 * @testdox Onboarding adapter should resolve no native collaborator when initialized.
 	 */
 	public function test_init_resolves_no_native_collaborator(): void {
-		$legacy_runtime = new WooPaymentsLegacyRuntime();
-		$legacy_runtime->init( $this->legacy_proxy );
+		$extension_runtime = new WooPaymentsExtensionRuntime();
+		$extension_runtime->init( $this->legacy_proxy );
 		$adapter = new WooPaymentsOnboardingAdapter();
-		$adapter->init( $legacy_runtime, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
+		$adapter->init( $extension_runtime, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		foreach ( array( 'provider', 'native_gateway', 'account_service', 'api_client', 'onboarding_service' ) as $property ) {
 			$reflection = new \ReflectionProperty( WooPaymentsOnboardingAdapter::class, $property );
@@ -636,14 +636,14 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 	 * The adapter resolves them on first use, so the test doubles are set on the instance after init.
 	 *
 	 * @param WooPaymentsOnboardingAdapter $adapter         The adapter.
-	 * @param WooPaymentsLegacyRuntime     $legacy_runtime  The legacy runtime.
+	 * @param WooPaymentsExtensionRuntime  $extension_runtime  The extension runtime.
 	 * @param WooPaymentsProvider          $provider        The native provider.
 	 * @param WooPaymentsGateway           $native_gateway  The native gateway.
 	 * @param WooPaymentsAccountService    $account_service The native account service.
 	 * @param WooPaymentsRuntimeArbiter    $arbiter         The runtime arbiter.
 	 */
-	private function init_adapter( WooPaymentsOnboardingAdapter $adapter, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsProvider $provider, WooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter ): void {
-		$adapter->init( $legacy_runtime, $arbiter );
+	private function init_adapter( WooPaymentsOnboardingAdapter $adapter, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsProvider $provider, WooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter ): void {
+		$adapter->init( $extension_runtime, $arbiter );
 
 		$collaborators = array(
 			'provider'        => $provider,

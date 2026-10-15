@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Internal\Admin\Settings;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Logging\SafeGlobalFunctionProxy;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Throwable;
 use WC_Gateway_BACS;
 use WC_Gateway_Cheque;
@@ -31,11 +31,11 @@ class PaymentsController {
 	private Payments $payments;
 
 	/**
-	 * WooPayments legacy runtime.
+	 * WooPayments extension runtime.
 	 *
-	 * @var WooPaymentsLegacyRuntime
+	 * @var WooPaymentsExtensionRuntime
 	 */
-	private WooPaymentsLegacyRuntime $woopayments_runtime;
+	private WooPaymentsExtensionRuntime $woopayments_runtime;
 
 	/**
 	 * Register hooks.
@@ -52,12 +52,12 @@ class PaymentsController {
 	/**
 	 * Initialize the class instance.
 	 *
-	 * @param Payments                 $payments The payments service.
-	 * @param WooPaymentsLegacyRuntime $woopayments_runtime WooPayments legacy runtime.
+	 * @param Payments                    $payments The payments service.
+	 * @param WooPaymentsExtensionRuntime $woopayments_runtime WooPayments extension runtime.
 	 *
 	 * @internal
 	 */
-	final public function init( Payments $payments, WooPaymentsLegacyRuntime $woopayments_runtime ): void {
+	final public function init( Payments $payments, WooPaymentsExtensionRuntime $woopayments_runtime ): void {
 		$this->payments            = $payments;
 		$this->woopayments_runtime = $woopayments_runtime;
 	}

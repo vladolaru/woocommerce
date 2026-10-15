@@ -25,7 +25,7 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Recordi
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -256,7 +256,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			$this->mock_providers,
 			$this->mockable_proxy,
 			$this->create_onboarding_adapter(),
-			$this->create_legacy_runtime(),
+			$this->create_extension_runtime(),
 			$this->create_unavailable_api_client(),
 			$this->create_native_account_service()
 		);
@@ -291,11 +291,11 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * @param PaymentsProviders            $providers          The providers service.
 	 * @param LegacyProxy                  $proxy              The legacy proxy.
 	 * @param WooPaymentsOnboardingAdapter $onboarding_adapter The onboarding adapter.
-	 * @param WooPaymentsLegacyRuntime     $legacy_runtime     The legacy runtime.
+	 * @param WooPaymentsExtensionRuntime  $extension_runtime     The extension runtime.
 	 * @param WooPaymentsApiClient         $api_client         The API client.
 	 * @param WooPaymentsAccountService    $account_service    The account service.
 	 */
-	private function init_sut( PaymentsProviders $providers, LegacyProxy $proxy, WooPaymentsOnboardingAdapter $onboarding_adapter, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
+	private function init_sut( PaymentsProviders $providers, LegacyProxy $proxy, WooPaymentsOnboardingAdapter $onboarding_adapter, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
 		$this->sut->init( $providers, $proxy );
 
 		$onboarding_service = new WooPaymentsOnboardingService();
@@ -311,8 +311,8 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$collaborators = array(
-			'onboarding_adapter' => new DelegatingOnboardingAdapter( $onboarding_adapter, $api_client, $legacy_runtime, $account_service, $onboarding_service ),
-			'legacy_runtime'     => $legacy_runtime,
+			'onboarding_adapter' => new DelegatingOnboardingAdapter( $onboarding_adapter, $api_client, $extension_runtime, $account_service, $onboarding_service ),
+			'extension_runtime'  => $extension_runtime,
 		);
 		foreach ( $collaborators as $property => $collaborator ) {
 			$reflection = new \ReflectionProperty( WooPaymentsService::class, $property );
@@ -465,7 +465,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			$this->mock_providers,
 			$this->mockable_proxy,
 			$adapter,
-			$this->create_legacy_runtime(),
+			$this->create_extension_runtime(),
 			$api_client,
 			$this->create_native_account_service()
 		);
@@ -1688,7 +1688,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			$this->mock_providers,
 			$this->mockable_proxy,
 			$adapter,
-			$this->create_legacy_runtime(),
+			$this->create_extension_runtime(),
 			$api_client,
 			$this->create_native_account_service()
 		);
@@ -1875,7 +1875,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			$this->mock_providers,
 			$this->mockable_proxy,
 			$adapter,
-			$this->create_legacy_runtime(),
+			$this->create_extension_runtime(),
 			$api_client,
 			$this->create_native_account_service()
 		);
@@ -1984,7 +1984,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			$this->mock_providers,
 			$this->mockable_proxy,
 			$this->create_native_finalize_adapter(),
-			$this->create_legacy_runtime(),
+			$this->create_extension_runtime(),
 			$api_client,
 			$this->create_native_account_service()
 		);
@@ -2115,7 +2115,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			$this->mock_providers,
 			$this->mockable_proxy,
 			$adapter,
-			$this->create_legacy_runtime(),
+			$this->create_extension_runtime(),
 			$api_client,
 			$this->create_native_account_service()
 		);
@@ -2192,15 +2192,15 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a WooPayments legacy runtime wired to this test's mockable proxy.
+	 * Create a WooPayments extension runtime wired to this test's mockable proxy.
 	 *
-	 * @return WooPaymentsLegacyRuntime
+	 * @return WooPaymentsExtensionRuntime
 	 */
-	private function create_legacy_runtime(): WooPaymentsLegacyRuntime {
-		$legacy_runtime = new WooPaymentsLegacyRuntime();
-		$legacy_runtime->init( $this->mockable_proxy );
+	private function create_extension_runtime(): WooPaymentsExtensionRuntime {
+		$extension_runtime = new WooPaymentsExtensionRuntime();
+		$extension_runtime->init( $this->mockable_proxy );
 
-		return $legacy_runtime;
+		return $extension_runtime;
 	}
 
 	/**
@@ -2275,7 +2275,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$database_cache  = new WooPaymentsDatabaseCache();
 		$database_cache->init( $this->mockable_proxy );
 		$account_service->init( $this->mockable_proxy, $database_cache );
-		$this->init_adapter( $adapter, $this->create_legacy_runtime(), $provider, new WooPaymentsGateway(), $account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
+		$this->init_adapter( $adapter, $this->create_extension_runtime(), $provider, new WooPaymentsGateway(), $account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		return $adapter;
 	}
@@ -2351,14 +2351,14 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * The adapter resolves them on first use, so the test doubles are set on the instance after init.
 	 *
 	 * @param WooPaymentsOnboardingAdapter $adapter         The adapter.
-	 * @param WooPaymentsLegacyRuntime     $legacy_runtime  The legacy runtime.
+	 * @param WooPaymentsExtensionRuntime  $extension_runtime  The extension runtime.
 	 * @param WooPaymentsProvider          $provider        The native provider.
 	 * @param WooPaymentsGateway           $native_gateway  The native gateway.
 	 * @param WooPaymentsAccountService    $account_service The native account service.
 	 * @param WooPaymentsRuntimeArbiter    $arbiter         The runtime arbiter.
 	 */
-	private function init_adapter( WooPaymentsOnboardingAdapter $adapter, WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsProvider $provider, WooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter ): void {
-		$adapter->init( $legacy_runtime, $arbiter );
+	private function init_adapter( WooPaymentsOnboardingAdapter $adapter, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsProvider $provider, WooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter ): void {
+		$adapter->init( $extension_runtime, $arbiter );
 
 		$collaborators = array(
 			'provider'        => $provider,
@@ -2642,7 +2642,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			$this->mock_providers,
 			$this->mockable_proxy,
 			$adapter,
-			$this->create_legacy_runtime(),
+			$this->create_extension_runtime(),
 			$api_client,
 			$account_service
 		);
@@ -2821,7 +2821,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			$this->mock_providers,
 			$this->mockable_proxy,
 			$adapter,
-			$this->create_legacy_runtime(),
+			$this->create_extension_runtime(),
 			$api_client,
 			$this->create_native_account_service()
 		);

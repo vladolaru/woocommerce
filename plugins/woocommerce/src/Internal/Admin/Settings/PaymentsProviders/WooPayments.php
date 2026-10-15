@@ -15,7 +15,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Logging\SafeGlobalFunctionProxy;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
 use Throwable;
 use WC_Abstract_Order;
@@ -33,11 +33,11 @@ class WooPayments extends PaymentGateway {
 	const PREFIX = 'woocommerce_admin_settings_payments__woopayments__';
 
 	/**
-	 * The WooPayments legacy runtime.
+	 * The WooPayments extension runtime.
 	 *
-	 * @var WooPaymentsLegacyRuntime|null
+	 * @var WooPaymentsExtensionRuntime|null
 	 */
-	private ?WooPaymentsLegacyRuntime $legacy_runtime = null;
+	private ?WooPaymentsExtensionRuntime $extension_runtime = null;
 
 	/**
 	 * The WooPayments onboarding adapter.
@@ -65,13 +65,13 @@ class WooPayments extends PaymentGateway {
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param WooPaymentsLegacyRuntime          $legacy_runtime           The WooPayments legacy runtime.
+	 * @param WooPaymentsExtensionRuntime       $extension_runtime           The WooPayments extension runtime.
 	 * @param callable                          $rest_controller_resolver The lazy WooPayments REST controller resolver.
 	 * @param callable                          $service_resolver         The lazy WooPayments service resolver.
 	 * @param WooPaymentsOnboardingAdapter|null $onboarding_adapter       Optional WooPayments onboarding adapter.
 	 */
-	public function set_admin_runtime_collaborators( WooPaymentsLegacyRuntime $legacy_runtime, callable $rest_controller_resolver, callable $service_resolver, ?WooPaymentsOnboardingAdapter $onboarding_adapter = null ): void {
-		$this->legacy_runtime           = $legacy_runtime;
+	public function set_admin_runtime_collaborators( WooPaymentsExtensionRuntime $extension_runtime, callable $rest_controller_resolver, callable $service_resolver, ?WooPaymentsOnboardingAdapter $onboarding_adapter = null ): void {
+		$this->extension_runtime        = $extension_runtime;
 		$this->rest_controller_resolver = $rest_controller_resolver;
 		$this->service_resolver         = $service_resolver;
 		$this->onboarding_adapter       = $onboarding_adapter;
@@ -88,8 +88,8 @@ class WooPayments extends PaymentGateway {
 	 * @return string The settings URL for the payment gateway.
 	 */
 	public function get_settings_url( WC_Payment_Gateway $payment_gateway ): string {
-		$legacy_runtime = $this->get_legacy_runtime();
-		if ( null !== $legacy_runtime && $legacy_runtime->is_loaded() ) {
+		$extension_runtime = $this->get_extension_runtime();
+		if ( null !== $extension_runtime && $extension_runtime->is_loaded() ) {
 			return parent::get_settings_url( $payment_gateway );
 		}
 
@@ -131,9 +131,9 @@ class WooPayments extends PaymentGateway {
 
 		// If the WooPayments installed version is less than minimum required version,
 		// we can't use the in-context onboarding flows.
-		$legacy_runtime                         = $this->get_legacy_runtime();
-		$extension_version_is_less_than_minimum = null !== $legacy_runtime ?
-			$legacy_runtime->is_extension_version_less_than( WooPaymentsService::EXTENSION_MINIMUM_VERSION ) :
+		$extension_runtime                      = $this->get_extension_runtime();
+		$extension_version_is_less_than_minimum = null !== $extension_runtime ?
+			$extension_runtime->is_extension_version_less_than( WooPaymentsService::EXTENSION_MINIMUM_VERSION ) :
 			null;
 		if ( true === $extension_version_is_less_than_minimum ) {
 
@@ -369,8 +369,8 @@ class WooPayments extends PaymentGateway {
 	 * @return bool True if the payment gateway is in test mode, false otherwise.
 	 */
 	public function is_in_test_mode( WC_Payment_Gateway $payment_gateway ): bool {
-		$legacy_runtime = $this->get_legacy_runtime();
-		$is_test_mode   = null !== $legacy_runtime ? $legacy_runtime->is_test_mode() : null;
+		$extension_runtime = $this->get_extension_runtime();
+		$is_test_mode      = null !== $extension_runtime ? $extension_runtime->is_test_mode() : null;
 		if ( null !== $is_test_mode ) {
 			return $is_test_mode;
 		}
@@ -389,8 +389,8 @@ class WooPayments extends PaymentGateway {
 	 * @return bool True if the payment gateway is in dev mode, false otherwise.
 	 */
 	public function is_in_dev_mode( WC_Payment_Gateway $payment_gateway ): bool {
-		$legacy_runtime = $this->get_legacy_runtime();
-		$is_dev_mode    = null !== $legacy_runtime ? $legacy_runtime->is_dev_mode() : null;
+		$extension_runtime = $this->get_extension_runtime();
+		$is_dev_mode       = null !== $extension_runtime ? $extension_runtime->is_dev_mode() : null;
 		if ( null !== $is_dev_mode ) {
 			return $is_dev_mode;
 		}
@@ -472,8 +472,8 @@ class WooPayments extends PaymentGateway {
 	 * @return bool True if the payment gateway is in test mode onboarding, false otherwise.
 	 */
 	public function is_in_test_mode_onboarding( WC_Payment_Gateway $payment_gateway ): bool {
-		$legacy_runtime          = $this->get_legacy_runtime();
-		$is_test_mode_onboarding = null !== $legacy_runtime ? $legacy_runtime->is_test_mode_onboarding() : null;
+		$extension_runtime       = $this->get_extension_runtime();
+		$is_test_mode_onboarding = null !== $extension_runtime ? $extension_runtime->is_test_mode_onboarding() : null;
 		if ( true === $is_test_mode_onboarding ) {
 			return true;
 		}
@@ -501,15 +501,15 @@ class WooPayments extends PaymentGateway {
 	 * @return string The onboarding URL for the payment gateway.
 	 */
 	public function get_onboarding_url( WC_Payment_Gateway $payment_gateway, string $return_url = '' ): string {
-		$legacy_runtime = $this->get_legacy_runtime();
-		$connect_url    = null !== $legacy_runtime ? $legacy_runtime->get_account_connect_url() : null;
+		$extension_runtime = $this->get_extension_runtime();
+		$connect_url       = null !== $extension_runtime ? $extension_runtime->get_account_connect_url() : null;
 		if ( null === $connect_url ) {
 			$connect_url = parent::get_onboarding_url( $payment_gateway, $return_url );
 		}
 
-		$admin_onboarding_context = null !== $legacy_runtime ? $legacy_runtime->get_admin_onboarding_context() : array(
-			'from'   => WooPaymentsLegacyRuntime::ADMIN_ONBOARDING_FROM_DEFAULT,
-			'source' => WooPaymentsLegacyRuntime::ADMIN_ONBOARDING_SOURCE_DEFAULT,
+		$admin_onboarding_context = null !== $extension_runtime ? $extension_runtime->get_admin_onboarding_context() : array(
+			'from'   => WooPaymentsExtensionRuntime::ADMIN_ONBOARDING_FROM_DEFAULT,
+			'source' => WooPaymentsExtensionRuntime::ADMIN_ONBOARDING_SOURCE_DEFAULT,
 		);
 
 		// Default URL params to set, regardless if they exist.
@@ -669,8 +669,8 @@ class WooPayments extends PaymentGateway {
 			return true;
 		}
 
-		$legacy_runtime = $this->get_legacy_runtime();
-		$account_status = null !== $legacy_runtime ? $legacy_runtime->get_account_status_data() : null;
+		$extension_runtime = $this->get_extension_runtime();
+		$account_status    = null !== $extension_runtime ? $extension_runtime->get_account_status_data() : null;
 		return is_array( $account_status ) && ! empty( $account_status['testDrive'] );
 	}
 
@@ -689,8 +689,8 @@ class WooPayments extends PaymentGateway {
 			return true;
 		}
 
-		$legacy_runtime = $this->get_legacy_runtime();
-		$account_status = null !== $legacy_runtime ? $legacy_runtime->get_account_status_data() : null;
+		$extension_runtime = $this->get_extension_runtime();
+		$account_status    = null !== $extension_runtime ? $extension_runtime->get_account_status_data() : null;
 		return is_array( $account_status ) && empty( $account_status['isLive'] ) && empty( $account_status['testDrive'] );
 	}
 
@@ -705,8 +705,8 @@ class WooPayments extends PaymentGateway {
 	 */
 	private function get_supported_country_codes(): ?array {
 		try {
-			$legacy_runtime      = $this->get_legacy_runtime();
-			$supported_countries = null !== $legacy_runtime ? $legacy_runtime->get_supported_countries() : null;
+			$extension_runtime   = $this->get_extension_runtime();
+			$supported_countries = null !== $extension_runtime ? $extension_runtime->get_supported_countries() : null;
 			if ( is_array( $supported_countries ) ) {
 				return array_unique( array_map( 'strtoupper', array_keys( $supported_countries ) ) );
 			}
@@ -766,12 +766,12 @@ class WooPayments extends PaymentGateway {
 	}
 
 	/**
-	 * Get the WooPayments legacy runtime.
+	 * Get the WooPayments extension runtime.
 	 *
-	 * @return WooPaymentsLegacyRuntime|null
+	 * @return WooPaymentsExtensionRuntime|null
 	 */
-	private function get_legacy_runtime(): ?WooPaymentsLegacyRuntime {
-		return $this->legacy_runtime;
+	private function get_extension_runtime(): ?WooPaymentsExtensionRuntime {
+		return $this->extension_runtime;
 	}
 
 	/**

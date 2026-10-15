@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Admin\Settings;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
 
@@ -23,11 +23,11 @@ class PaymentsControllerTest extends WC_Unit_Test_Case {
 	private $payments;
 
 	/**
-	 * WooPayments legacy runtime mock.
+	 * WooPayments extension runtime mock.
 	 *
-	 * @var WooPaymentsLegacyRuntime|MockObject
+	 * @var WooPaymentsExtensionRuntime|MockObject
 	 */
-	private $legacy_runtime;
+	private $extension_runtime;
 
 	/**
 	 * System under test.
@@ -42,12 +42,12 @@ class PaymentsControllerTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 
-		$this->payments       = $this->createMock( Payments::class );
-		$this->legacy_runtime = $this->getMockBuilder( WooPaymentsLegacyRuntime::class )
+		$this->payments          = $this->createMock( Payments::class );
+		$this->extension_runtime = $this->getMockBuilder( WooPaymentsExtensionRuntime::class )
 			->onlyMethods( array( 'is_loaded', 'is_account_onboarded_from_cache' ) )
 			->getMock();
-		$this->sut            = new PaymentsController();
-		$this->sut->init( $this->payments, $this->legacy_runtime );
+		$this->sut               = new PaymentsController();
+		$this->sut->init( $this->payments, $this->extension_runtime );
 
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 	}
@@ -59,8 +59,8 @@ class PaymentsControllerTest extends WC_Unit_Test_Case {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Read a local source file for a boundary assertion.
 		$source = (string) file_get_contents( WC()->plugin_path() . '/src/Internal/Admin/Settings/PaymentsController.php' );
 
-		$this->assertStringNotContainsString( "class_exists( '\\WC_Payments' )", $source, 'PaymentsController should ask WooPaymentsLegacyRuntime whether WooPayments is loaded.' );
-		$this->assertStringNotContainsString( "'wcpay_account_data'", $source, 'PaymentsController should read WooPayments account cache through WooPaymentsLegacyRuntime.' );
+		$this->assertStringNotContainsString( "class_exists( '\\WC_Payments' )", $source, 'PaymentsController should ask WooPaymentsExtensionRuntime whether WooPayments is loaded.' );
+		$this->assertStringNotContainsString( "'wcpay_account_data'", $source, 'PaymentsController should read WooPayments account cache through WooPaymentsExtensionRuntime.' );
 	}
 
 	/**
@@ -72,11 +72,11 @@ class PaymentsControllerTest extends WC_Unit_Test_Case {
 		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Isolate admin menu assertions in this test.
 		$menu = array();
 
-		$this->legacy_runtime
+		$this->extension_runtime
 			->expects( $this->once() )
 			->method( 'is_loaded' )
 			->willReturn( true );
-		$this->legacy_runtime
+		$this->extension_runtime
 			->expects( $this->once() )
 			->method( 'is_account_onboarded_from_cache' )
 			->willReturn( true );
@@ -100,11 +100,11 @@ class PaymentsControllerTest extends WC_Unit_Test_Case {
 		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Isolate admin menu assertions in this test.
 		$menu = array();
 
-		$this->legacy_runtime
+		$this->extension_runtime
 			->expects( $this->once() )
 			->method( 'is_loaded' )
 			->willReturn( false );
-		$this->legacy_runtime
+		$this->extension_runtime
 			->expects( $this->never() )
 			->method( 'is_account_onboarded_from_cache' );
 

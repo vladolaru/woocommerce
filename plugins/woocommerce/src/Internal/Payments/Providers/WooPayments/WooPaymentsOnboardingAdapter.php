@@ -41,11 +41,11 @@ class WooPaymentsOnboardingAdapter {
 	public const OVERVIEW_PATH = '/woopayments/overview';
 
 	/**
-	 * WooPayments legacy runtime.
+	 * WooPayments extension runtime.
 	 *
-	 * @var WooPaymentsLegacyRuntime
+	 * @var WooPaymentsExtensionRuntime
 	 */
-	private WooPaymentsLegacyRuntime $legacy_runtime;
+	private WooPaymentsExtensionRuntime $extension_runtime;
 
 	/**
 	 * WooPayments provider.
@@ -96,12 +96,12 @@ class WooPaymentsOnboardingAdapter {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyRuntime  $legacy_runtime WooPayments legacy runtime.
-	 * @param WooPaymentsRuntimeArbiter $arbiter        Runtime ownership arbiter.
+	 * @param WooPaymentsExtensionRuntime $extension_runtime WooPayments extension runtime.
+	 * @param WooPaymentsRuntimeArbiter   $arbiter        Runtime ownership arbiter.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsRuntimeArbiter $arbiter ): void {
-		$this->legacy_runtime = $legacy_runtime;
-		$this->arbiter        = $arbiter;
+	final public function init( WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsRuntimeArbiter $arbiter ): void {
+		$this->extension_runtime = $extension_runtime;
+		$this->arbiter           = $arbiter;
 	}
 
 	/**
@@ -110,7 +110,7 @@ class WooPaymentsOnboardingAdapter {
 	 * @return bool
 	 */
 	public function is_extension_active(): bool {
-		return $this->get_legacy_runtime()->is_loaded();
+		return $this->get_extension_runtime()->is_loaded();
 	}
 
 	/**
@@ -147,7 +147,7 @@ class WooPaymentsOnboardingAdapter {
 	 */
 	public function get_payment_gateway(): WC_Payment_Gateway {
 		if ( $this->is_extension_active() ) {
-			$gateway = $this->get_legacy_runtime()->get_gateway();
+			$gateway = $this->get_extension_runtime()->get_gateway();
 
 			if ( $gateway instanceof WC_Payment_Gateway ) {
 				return $gateway;
@@ -292,7 +292,7 @@ class WooPaymentsOnboardingAdapter {
 	 * @return string
 	 */
 	public function get_onboarding_kyc_fallback_url( PaymentGateway $provider ): string {
-		$connect_url = $this->get_legacy_runtime()->get_account_connect_url( WooPaymentsService::FROM_NOX_IN_CONTEXT );
+		$connect_url = $this->get_extension_runtime()->get_account_connect_url( WooPaymentsService::FROM_NOX_IN_CONTEXT );
 		if ( null !== $connect_url ) {
 			return $connect_url;
 		}
@@ -419,7 +419,7 @@ class WooPaymentsOnboardingAdapter {
 	 * @return object|null
 	 */
 	private function get_account_service(): ?object {
-		return $this->get_legacy_runtime()->get_account_service();
+		return $this->get_extension_runtime()->get_account_service();
 	}
 
 	/**
@@ -440,12 +440,12 @@ class WooPaymentsOnboardingAdapter {
 	}
 
 	/**
-	 * Get the WooPayments legacy runtime.
+	 * Get the WooPayments extension runtime.
 	 *
-	 * @return WooPaymentsLegacyRuntime
+	 * @return WooPaymentsExtensionRuntime
 	 */
-	private function get_legacy_runtime(): WooPaymentsLegacyRuntime {
-		return $this->legacy_runtime;
+	private function get_extension_runtime(): WooPaymentsExtensionRuntime {
+		return $this->extension_runtime;
 	}
 
 	/**

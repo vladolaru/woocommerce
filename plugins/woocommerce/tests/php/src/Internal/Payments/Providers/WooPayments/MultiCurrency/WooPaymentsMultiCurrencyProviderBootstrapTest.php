@@ -15,8 +15,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\LegacyRuntimeProxy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntimeProxy;
 use WC_Unit_Test_Case;
 
 /**
@@ -98,8 +98,8 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 	 * @return array<string,mixed>
 	 */
 	private function create_bootstrap_context( bool $native_owner, bool $plugin_owner ): array {
-		$account_resolver = new MultiCurrencyProviderAccountResolver();
-		$arbiter          = new class( $native_owner, $plugin_owner ) extends WooPaymentsRuntimeArbiter {
+		$account_resolver  = new MultiCurrencyProviderAccountResolver();
+		$arbiter           = new class( $native_owner, $plugin_owner ) extends WooPaymentsRuntimeArbiter {
 			/**
 			 * Whether native owns runtime.
 			 *
@@ -143,14 +143,14 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 				return $this->plugin_owner;
 			}
 		};
-		$legacy_runtime   = new WooPaymentsLegacyRuntime();
-		$legacy_runtime->init( new LegacyRuntimeProxy( true, null, $this->create_legacy_account(), $this->create_legacy_api_client() ) );
+		$extension_runtime = new WooPaymentsExtensionRuntime();
+		$extension_runtime->init( new WooPaymentsExtensionRuntimeProxy( true, null, $this->create_legacy_account(), $this->create_legacy_api_client() ) );
 
 		$legacy_account_adapter = new WooPaymentsLegacyAccountAdapter();
-		$legacy_account_adapter->init( $legacy_runtime );
+		$legacy_account_adapter->init( $extension_runtime );
 
 		$legacy_api_client_adapter = new WooPaymentsLegacyApiClientAdapter();
-		$legacy_api_client_adapter->init( $legacy_runtime );
+		$legacy_api_client_adapter->init( $extension_runtime );
 
 		$native_account_adapter = new WooPaymentsNativeAccountAdapter();
 		$native_account_adapter->init( $this->create_native_account_service() );

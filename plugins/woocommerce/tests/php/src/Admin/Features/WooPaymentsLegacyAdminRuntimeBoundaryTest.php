@@ -39,9 +39,9 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Legacy admin sources should route WooPayments runtime access through WooPaymentsLegacyRuntime.
+	 * @testdox Legacy admin sources should route WooPayments runtime access through WooPaymentsExtensionRuntime.
 	 */
-	public function test_legacy_admin_sources_use_woopayments_legacy_runtime_boundary(): void {
+	public function test_legacy_admin_sources_use_woopayments_extension_runtime_boundary(): void {
 		$assertions = array(
 			'src/Admin/API/Plugins.php'                   => array(
 				"class_exists( 'WC_Payments' )",

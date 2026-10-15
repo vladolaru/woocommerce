@@ -9,7 +9,7 @@ use RuntimeException;
 /**
  * Fake legacy proxy that throws from every lookup.
  */
-class ThrowingLegacyRuntimeProxy extends LegacyProxy {
+class ThrowingWooPaymentsExtensionRuntimeProxy extends LegacyProxy {
 
 	/**
 	 * Call a user function.

@@ -12,7 +12,7 @@ namespace Automattic\WooCommerce\Admin\API;
 use Automattic\WooCommerce\Internal\Admin\Onboarding\OnboardingProfile;
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments as SettingsPayments;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils as SettingsUtils;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Admin\PluginsHelper;
 
 defined( 'ABSPATH' ) || exit;
@@ -639,8 +639,8 @@ class Plugins extends \WC_REST_Data_Controller {
 	 * @return \WP_Error|array Connect URL.
 	 */
 	public function connect_wcpay() {
-		$legacy_runtime = $this->get_woopayments_legacy_runtime();
-		if ( null === $legacy_runtime || ! $legacy_runtime->is_loaded() ) {
+		$extension_runtime = $this->get_woopayments_extension_runtime();
+		if ( null === $extension_runtime || ! $extension_runtime->is_loaded() ) {
 			// Intentional response-shape change: when the legacy WooPayments runtime is absent,
 			// this used to return a WP_Error ('woocommerce_rest_helper_connect', HTTP 500). Since
 			// WooPayments is now a Core-owned native provider, the runtime being absent is the normal
@@ -671,18 +671,18 @@ class Plugins extends \WC_REST_Data_Controller {
 	}
 
 	/**
-	 * Get the WooPayments legacy runtime.
+	 * Get the WooPayments extension runtime.
 	 *
-	 * @return WooPaymentsLegacyRuntime|null
+	 * @return WooPaymentsExtensionRuntime|null
 	 */
-	private function get_woopayments_legacy_runtime(): ?WooPaymentsLegacyRuntime {
+	private function get_woopayments_extension_runtime(): ?WooPaymentsExtensionRuntime {
 		try {
-			$legacy_runtime = wc_get_container()->get( WooPaymentsLegacyRuntime::class );
+			$extension_runtime = wc_get_container()->get( WooPaymentsExtensionRuntime::class );
 		} catch ( \Throwable $e ) {
 			return null;
 		}
 
-		return $legacy_runtime instanceof WooPaymentsLegacyRuntime ? $legacy_runtime : null;
+		return $extension_runtime instanceof WooPaymentsExtensionRuntime ? $extension_runtime : null;
 	}
 
 	/**

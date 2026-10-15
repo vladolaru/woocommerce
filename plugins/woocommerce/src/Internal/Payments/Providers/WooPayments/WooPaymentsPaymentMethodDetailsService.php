@@ -21,11 +21,11 @@ use Throwable;
 class WooPaymentsPaymentMethodDetailsService {
 
 	/**
-	 * The WooPaymentsLegacyRuntime instance.
+	 * The WooPaymentsExtensionRuntime instance.
 	 *
-	 * @var WooPaymentsLegacyRuntime
+	 * @var WooPaymentsExtensionRuntime
 	 */
-	private WooPaymentsLegacyRuntime $legacy_runtime;
+	private WooPaymentsExtensionRuntime $extension_runtime;
 
 	/**
 	 * WooPayments API client.
@@ -46,14 +46,14 @@ class WooPaymentsPaymentMethodDetailsService {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsLegacyRuntime  $legacy_runtime The WooPaymentsLegacyRuntime instance.
-	 * @param WooPaymentsApiClient      $api_client     WooPayments API client.
-	 * @param WooPaymentsRuntimeArbiter $arbiter        Runtime owner arbiter.
+	 * @param WooPaymentsExtensionRuntime $extension_runtime The WooPaymentsExtensionRuntime instance.
+	 * @param WooPaymentsApiClient        $api_client     WooPayments API client.
+	 * @param WooPaymentsRuntimeArbiter   $arbiter        Runtime owner arbiter.
 	 */
-	final public function init( WooPaymentsLegacyRuntime $legacy_runtime, WooPaymentsApiClient $api_client, WooPaymentsRuntimeArbiter $arbiter ): void {
-		$this->legacy_runtime = $legacy_runtime;
-		$this->api_client     = $api_client;
-		$this->arbiter        = $arbiter;
+	final public function init( WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsApiClient $api_client, WooPaymentsRuntimeArbiter $arbiter ): void {
+		$this->extension_runtime = $extension_runtime;
+		$this->api_client        = $api_client;
+		$this->arbiter           = $arbiter;
 	}
 
 	/**
@@ -95,7 +95,7 @@ class WooPaymentsPaymentMethodDetailsService {
 			return array();
 		}
 
-		$plugin_runtime_loaded = $this->legacy_runtime->is_loaded();
+		$plugin_runtime_loaded = $this->extension_runtime->is_loaded();
 		if ( ! $plugin_runtime_loaded && ! $this->arbiter->is_builtin_owner() ) {
 			return array();
 		}
@@ -104,7 +104,7 @@ class WooPaymentsPaymentMethodDetailsService {
 			return $this->api_client->get_payment_method( $payment_method_id );
 		}
 
-		$api_client = $this->legacy_runtime->get_payments_api_client();
+		$api_client = $this->extension_runtime->get_payments_api_client();
 		if ( ! is_object( $api_client ) || ! is_callable( array( $api_client, 'get_payment_method' ) ) ) {
 			return array();
 		}
