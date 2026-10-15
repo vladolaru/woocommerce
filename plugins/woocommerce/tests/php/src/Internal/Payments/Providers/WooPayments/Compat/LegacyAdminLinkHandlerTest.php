@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyAdminLinkHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCapitalRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTrackingInfoService;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
@@ -804,7 +805,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'is_existing_stripe_account' => false ), get_option( '_wcpay_onboarding_stripe_connected' ) );
 		$this->assertNotFalse( get_option( 'wcpay_kyc_submitted_date', false ) );
 		// Plugin 11.1.0 cleanup_on_account_onboarded() (class-wc-payments-onboarding-service.php:967-985) after a completed KYC.
-		$this->assertFalse( get_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' ) );
+		$this->assertFalse( get_option( 'wcpay_recommended_payment_methods' ) );
 		$this->assertFalse( get_option( 'wcpay_onboarding_fields_data' ) );
 	}
 
@@ -840,7 +841,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'yes', $settings['enabled'] );
 		$this->assertSame( 'yes', $settings['test_mode'] );
 		$this->assertFalse( get_transient( 'wcpay_stripe_onboarding_state' ) );
-		$this->assertNotFalse( get_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' ) );
+		$this->assertNotFalse( get_option( 'wcpay_recommended_payment_methods' ) );
 		$this->assertNotFalse( get_option( 'wcpay_onboarding_fields_data' ) );
 	}
 
@@ -848,7 +849,8 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 	 * Cache the data only the initial onboarding uses: recommended payment methods and onboarding fields.
 	 */
 	private function seed_onboarding_data(): void {
-		set_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods', array( 'payment_methods' => array( array( 'id' => 'card' ) ) ), DAY_IN_SECONDS );
+		wc_get_container()->get( WooPaymentsDatabaseCache::class )->delete( WooPaymentsDatabaseCache::RECOMMENDED_PAYMENT_METHODS_KEY );
+		update_option( 'wcpay_recommended_payment_methods', array( 'data' => array( 'payment_methods' => array( array( 'id' => 'card' ) ) ) ) );
 		update_option( 'wcpay_onboarding_fields_data', array( 'data' => array( '__locale' => 'en_US' ) ) );
 	}
 

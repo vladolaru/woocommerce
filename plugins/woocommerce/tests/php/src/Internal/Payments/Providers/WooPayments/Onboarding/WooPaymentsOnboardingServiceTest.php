@@ -1096,7 +1096,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Native embedded KYC finalization drops the cached recommended payment methods, like client 11.1.0 cleanup_on_account_onboarded().
 	 */
 	public function test_finish_native_onboarding_kyc_session_clears_recommended_payment_methods_cache(): void {
-		set_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods', array( 'payment_methods' => array( array( 'id' => 'card' ) ) ), DAY_IN_SECONDS );
+		$this->seed_recommended_payment_methods_cache( array( 'payment_methods' => array( array( 'id' => 'card' ) ) ) );
 		update_option( 'wcpay_onboarding_fields_data', array( 'data' => array( '__locale' => 'en_US' ) ) );
 		$fresh_account = array(
 			'account_id'        => 'acct_finalized_native',
@@ -1111,7 +1111,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$this->sut->finish_onboarding_kyc_session( 'US' );
 
 		// Client 11.1.0 class-wc-payments-onboarding-service.php:980-985, called from finalize_embedded_connection() (class-wc-payments-account.php:2336).
-		$this->assertFalse( get_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' ) );
+		$this->assertFalse( get_option( WooPaymentsDatabaseCache::RECOMMENDED_PAYMENT_METHODS_KEY ) );
 		$this->assertFalse( get_option( 'wcpay_onboarding_fields_data' ) );
 	}
 
@@ -1119,12 +1119,12 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A completed native hosted KYC return drops the cached recommended payment methods, like client 11.1.0 finalize_connection().
 	 */
 	public function test_finalize_native_hosted_kyc_connection_clears_recommended_payment_methods_cache(): void {
-		set_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods', array( 'payment_methods' => array( array( 'id' => 'card' ) ) ), DAY_IN_SECONDS );
+		$this->seed_recommended_payment_methods_cache( array( 'payment_methods' => array( array( 'id' => 'card' ) ) ) );
 
 		$this->onboarding_service->finish_hosted_kyc_connection( false, true );
 
 		// Client 11.1.0 class-wc-payments-account.php:2428 runs cleanup_on_account_onboarded() on a completed hosted return.
-		$this->assertFalse( get_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' ) );
+		$this->assertFalse( get_option( WooPaymentsDatabaseCache::RECOMMENDED_PAYMENT_METHODS_KEY ) );
 	}
 
 	/**
@@ -3181,35 +3181,26 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should expose recommended payment methods for the settings provider list.
 	 */
 	public function test_get_recommended_payment_methods_delegates_to_the_api_client(): void {
-		delete_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' );
-
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_recommended_payment_methods' ) )
-			->getMock();
+		$this->seed_recommended_payment_methods_cache( null );
 		// Synthetic recommendations in the platform's shape (id, title, type, priority), as in client 11.1.0 tests/unit/test-class-wc-payments-account.php:3661-3739.
-		$api_client
-			->expects( $this->once() )
-			->method( 'get_recommended_payment_methods' )
-			->with( 'GB', 'en_US' )
-			->willReturn(
+		$api_client = $this->create_recommendations_api_client(
+			1,
+			array(
 				array(
-					array(
-						'id'    => 'card',
-						'title' => 'Cards',
-					),
-					array(
-						'id'       => 'link',
-						'title'    => 'Link',
-						'type'     => 'available',
-						'priority' => '7',
-					),
-					array(
-						'title' => 'Invalid recommendation',
-					),
-				)
-			);
-
+					'id'    => 'card',
+					'title' => 'Cards',
+				),
+				array(
+					'id'       => 'link',
+					'title'    => 'Link',
+					'type'     => 'available',
+					'priority' => '7',
+				),
+				array(
+					'title' => 'Invalid recommendation',
+				),
+			)
+		);
 		$this->set_onboarding_collaborators( $api_client );
 
 		$result = $this->onboarding_service->get_recommended_payment_methods( 'GB' );
@@ -3221,56 +3212,79 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'link', $result[1]['id'] );
 		$this->assertFalse( $result[1]['enabled'] );
 		$this->assertSame( 7, $result[1]['priority'] );
-
-		delete_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' );
 	}
 
 	/**
-	 * @testdox Should cache recommended payment methods by country and locale.
+	 * @testdox The platform's recommendations are stored as client 11.1.0 stores them: the raw answer with its country and locale, in a non-autoloaded cache option.
+	 *
+	 * Source: client 11.1.0 `includes/class-wc-payments-onboarding-service.php:185-217`, `includes/class-database-cache.php:23`.
 	 */
-	public function test_get_recommended_payment_methods_uses_cached_country_locale_data(): void {
-		delete_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' );
+	public function test_recommended_payment_methods_are_stored_in_the_shared_cache_option(): void {
+		$this->seed_recommended_payment_methods_cache( null );
+		$answer = array(
+			array(
+				'id'    => 'card',
+				'title' => 'Cards',
+			),
+			array(
+				'id'    => 'ideal',
+				'title' => 'iDEAL',
+				'type'  => 'available',
+			),
+		);
+		$this->set_onboarding_collaborators( $this->create_recommendations_api_client( 1, $answer ) );
 
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_recommended_payment_methods' ) )
-			->getMock();
-		// Synthetic recommendations in the platform's shape (id, title, type, priority), as in client 11.1.0 tests/unit/test-class-wc-payments-account.php:3661-3739.
-		$api_client
-			->expects( $this->once() )
-			->method( 'get_recommended_payment_methods' )
-			->with( 'GB', 'en_US' )
-			->willReturn(
-				array(
-					array(
-						'id'    => 'card',
-						'title' => 'Cards',
-					),
-				)
-			);
+		$this->onboarding_service->get_recommended_payment_methods( 'gb' );
 
-		$this->set_onboarding_collaborators( $api_client );
-
-		$first_result  = $this->onboarding_service->get_recommended_payment_methods( 'GB' );
-		$second_result = $this->onboarding_service->get_recommended_payment_methods( 'GB' );
-
-		$this->assertSame( $first_result, $second_result );
-		$this->assertSame( 'card', $second_result[0]['id'] );
-
-		delete_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' );
+		$stored = get_option( WooPaymentsDatabaseCache::RECOMMENDED_PAYMENT_METHODS_KEY );
+		$this->assertSame(
+			array(
+				'payment_methods' => $answer,
+				'__locale'        => 'en_US',
+				'__country_code'  => 'GB',
+			),
+			$stored['data']
+		);
+		$this->assertFalse( $stored['errored'] );
+		$this->assertOptionNotAutoloaded( WooPaymentsDatabaseCache::RECOMMENDED_PAYMENT_METHODS_KEY );
 	}
 
 	/**
-	 * @testdox Cached recommended payment methods for another country or locale are fetched again.
+	 * @testdox A stored answer for the same country and locale, as client 11.1.0 writes it, is served without asking the platform.
+	 */
+	public function test_recommended_payment_methods_come_from_a_stored_entry(): void {
+		$this->seed_recommended_payment_methods_cache(
+			array(
+				'payment_methods' => array(
+					array(
+						'id'    => 'stored',
+						'title' => 'Stored',
+						'type'  => 'available',
+					),
+				),
+				'__locale'        => 'en_US',
+				'__country_code'  => 'GB',
+			)
+		);
+		$this->set_onboarding_collaborators( $this->create_recommendations_api_client( 0, array() ) );
+
+		$result = $this->onboarding_service->get_recommended_payment_methods( 'GB' );
+
+		$this->assertSame( 'stored', $result[0]['id'] );
+		$this->assertFalse( $result[0]['enabled'] );
+		$this->assertSame( 0, $result[0]['priority'] );
+	}
+
+	/**
+	 * @testdox A stored answer for another country or locale is fetched again.
 	 * @testWith ["GB", "de_DE"]
 	 *           ["FR", "en_US"]
 	 *
-	 * @param string $cached_country Country of the cached list.
-	 * @param string $cached_locale  Locale of the cached list.
+	 * @param string $cached_country Country of the stored answer.
+	 * @param string $cached_locale  Locale of the stored answer.
 	 */
 	public function test_get_recommended_payment_methods_refetches_for_another_country_or_locale( string $cached_country, string $cached_locale ): void {
-		set_transient(
-			'woocommerce_woocommerce_payments_recommended_payment_methods',
+		$this->seed_recommended_payment_methods_cache(
 			array(
 				'payment_methods' => array(
 					array(
@@ -3279,28 +3293,20 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 					),
 				),
 				'__locale'        => $cached_locale,
-				'country_code'    => $cached_country,
-			),
-			DAY_IN_SECONDS
+				'__country_code'  => $cached_country,
+			)
 		);
-		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_recommended_payment_methods' ) )
-			->getMock();
-		// Synthetic recommendations in the platform's shape (id, title, type, priority), as in client 11.1.0 tests/unit/test-class-wc-payments-account.php:3661-3739.
-		$api_client
-			->expects( $this->once() )
-			->method( 'get_recommended_payment_methods' )
-			->with( 'GB', 'en_US' )
-			->willReturn(
+		$this->set_onboarding_collaborators(
+			$this->create_recommendations_api_client(
+				1,
 				array(
 					array(
 						'id'    => 'card',
 						'title' => 'Cards',
 					),
 				)
-			);
-		$this->set_onboarding_collaborators( $api_client );
+			)
+		);
 
 		$result = $this->onboarding_service->get_recommended_payment_methods( 'GB' );
 
@@ -3308,10 +3314,56 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A platform error keeps the last good answer and waits out the cache lifetime before asking again, as client 11.1.0's database cache does.
+	 */
+	public function test_recommended_payment_methods_keep_the_last_good_answer_after_a_platform_error(): void {
+		$this->seed_recommended_payment_methods_cache(
+			array(
+				'payment_methods' => array(
+					array(
+						'id'    => 'card',
+						'title' => 'Cards',
+					),
+				),
+				'__locale'        => 'en_US',
+				'__country_code'  => 'GB',
+			),
+			$this->current_time - 2 * DAY_IN_SECONDS
+		);
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_recommended_payment_methods' ) )
+			->getMock();
+		$api_client->expects( $this->once() )->method( 'get_recommended_payment_methods' )->willThrowException( self::make_provider_error() );
+		$this->set_onboarding_collaborators( $api_client );
+
+		$first  = $this->onboarding_service->get_recommended_payment_methods( 'GB' );
+		$second = $this->onboarding_service->get_recommended_payment_methods( 'GB' );
+
+		$this->assertSame( 'card', $first[0]['id'] );
+		$this->assertSame( $first, $second );
+		$this->assertTrue( get_option( WooPaymentsDatabaseCache::RECOMMENDED_PAYMENT_METHODS_KEY )['errored'] );
+	}
+
+	/**
+	 * @testdox An empty answer is stored like any other, so the next request does not ask the platform again.
+	 */
+	public function test_recommended_payment_methods_store_an_empty_answer(): void {
+		$this->seed_recommended_payment_methods_cache( null );
+		$this->set_onboarding_collaborators( $this->create_recommendations_api_client( 1, array() ) );
+
+		$this->assertSame( array(), $this->onboarding_service->get_recommended_payment_methods( 'GB' ) );
+		$this->assertSame( array(), $this->onboarding_service->get_recommended_payment_methods( 'GB' ) );
+		$stored = get_option( WooPaymentsDatabaseCache::RECOMMENDED_PAYMENT_METHODS_KEY );
+		$this->assertSame( array(), $stored['data']['payment_methods'] );
+		$this->assertFalse( $stored['errored'] );
+	}
+
+	/**
 	 * @testdox A platform error fetching the recommended payment methods is logged with its status and code, never its message.
 	 */
 	public function test_recommended_payment_methods_fetch_log_leaves_out_platform_text(): void {
-		delete_transient( 'woocommerce_woocommerce_payments_recommended_payment_methods' );
+		$this->seed_recommended_payment_methods_cache( null );
 		self::enable_woopayments_debug_logging();
 		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
 			->disableOriginalConstructor()
@@ -3326,6 +3378,48 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$context = $this->get_logged_context_at_level( $logger, 'error' );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * Create an API client double that answers the recommended payment methods for GB in en_US.
+	 *
+	 * @param int                            $calls  How many times the platform must be asked.
+	 * @param array<int,array<string,mixed>> $answer The platform's answer.
+	 * @return WooPaymentsApiClient&MockObject
+	 */
+	private function create_recommendations_api_client( int $calls, array $answer ): WooPaymentsApiClient {
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_recommended_payment_methods' ) )
+			->getMock();
+		$api_client
+			->expects( $this->exactly( $calls ) )
+			->method( 'get_recommended_payment_methods' )
+			->with( 'GB', 'en_US' )
+			->willReturn( $answer );
+
+		return $api_client;
+	}
+
+	/**
+	 * Store the recommended payment methods cache entry, or remove it.
+	 *
+	 * @param array<string,mixed>|null $data    The cached data, or null for no entry.
+	 * @param int|null                 $fetched When the data was fetched; the test's current time by default.
+	 */
+	private function seed_recommended_payment_methods_cache( ?array $data, ?int $fetched = null ): void {
+		wc_get_container()->get( WooPaymentsDatabaseCache::class )->delete( WooPaymentsDatabaseCache::RECOMMENDED_PAYMENT_METHODS_KEY );
+		if ( null !== $data ) {
+			update_option(
+				WooPaymentsDatabaseCache::RECOMMENDED_PAYMENT_METHODS_KEY,
+				array(
+					'data'    => $data,
+					'fetched' => $fetched ?? $this->current_time,
+					'errored' => false,
+				),
+				false
+			);
+		}
 	}
 
 	/**
