@@ -226,9 +226,9 @@ class WooPaymentsAdminSharedSettings implements RegisterHooksInterface {
 		 *
 		 * @param array<string,mixed> $settings Native WooPayments settings.
 		 */
-		$legacy_settings_candidate = apply_filters( 'wcpay_js_settings', $provider_settings );
-		if ( is_array( $legacy_settings_candidate ) ) {
-			$provider_settings = $legacy_settings_candidate;
+		$filtered_settings = apply_filters( 'wcpay_js_settings', $provider_settings );
+		if ( is_array( $filtered_settings ) ) {
+			$provider_settings = $filtered_settings;
 		}
 
 		// The settings page can open through in-app navigation, with no server-rendered notice.

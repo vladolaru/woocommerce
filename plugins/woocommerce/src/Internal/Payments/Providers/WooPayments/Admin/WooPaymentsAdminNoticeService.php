@@ -88,6 +88,13 @@ class WooPaymentsAdminNoticeService {
 	private WooPaymentsAccountService $account_service;
 
 	/**
+	 * Runtime owner arbiter.
+	 *
+	 * @var WooPaymentsRuntimeArbiter
+	 */
+	private WooPaymentsRuntimeArbiter $runtime_arbiter;
+
+	/**
 	 * Current time provider.
 	 *
 	 * @var callable
@@ -113,9 +120,11 @@ class WooPaymentsAdminNoticeService {
 	 * @internal
 	 *
 	 * @param WooPaymentsAccountService $account_service Current account service.
+	 * @param WooPaymentsRuntimeArbiter $runtime_arbiter Runtime owner arbiter.
 	 */
-	final public function init( WooPaymentsAccountService $account_service ): void {
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $runtime_arbiter ): void {
 		$this->account_service = $account_service;
+		$this->runtime_arbiter = $runtime_arbiter;
 	}
 
 	/**
@@ -127,7 +136,7 @@ class WooPaymentsAdminNoticeService {
 	 */
 	public function refresh_notice_for_current_user(): ?array {
 		$user_id = get_current_user_id();
-		if ( 0 === $user_id || $this->is_plugin_owner() ) {
+		if ( 0 === $user_id || $this->runtime_arbiter->is_extension_owner() ) {
 			return null;
 		}
 		Notes::delete_notes_with_name( self::TEST_TO_LIVE_NOTE_NAME );
@@ -432,7 +441,7 @@ class WooPaymentsAdminNoticeService {
 		if ( 0 === $user_id ) {
 			return new WP_Error( 'woocommerce_woopayments_notice_user_required', __( 'Sign in to change this notice.', 'woocommerce' ) );
 		}
-		if ( $this->is_plugin_owner() ) {
+		if ( $this->runtime_arbiter->is_extension_owner() ) {
 			return new WP_Error( 'woocommerce_woopayments_notice_plugin_owned', __( 'The WooPayments plugin manages this notice.', 'woocommerce' ) );
 		}
 		if ( 'test_to_live' === $notice_id && 'cta' === $action ) {
@@ -522,14 +531,5 @@ class WooPaymentsAdminNoticeService {
 				WooPaymentsTracks::record_wcadmin_event( 'wcpay_post_kyc_activation_notice_cta_clicked', $stage_properties );
 				break;
 		}
-	}
-
-	/**
-	 * Tell whether the WooPayments plugin owns payments; it then shows its own notices, so the native ones stay off.
-	 *
-	 * @return bool
-	 */
-	private function is_plugin_owner(): bool {
-		return wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_extension_owner();
 	}
 }

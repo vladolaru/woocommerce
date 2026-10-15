@@ -485,7 +485,7 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 		);
 		$scheduled_before = as_next_scheduled_action( 'wcpay_post_kyc_activation_email_send', array( 7 ), 'woocommerce-payments' );
 		$notice_service   = new WooPaymentsAdminNoticeService( static fn(): int => 1700000000 );
-		$notice_service->init( $this->createMock( WooPaymentsAccountService::class ) );
+		$notice_service->init( $this->createMock( WooPaymentsAccountService::class ), wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter::class ) );
 
 		$this->assertTrue( $notice_service->record_action( 'post_kyc_activation', 'dismiss', 7 ) );
 

@@ -205,7 +205,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$account = $this->createMock( WooPaymentsAccountService::class );
 		$account->method( 'has_working_account' )->willReturn( false );
 		$service = new WooPaymentsAdminNoticeService( static fn(): int => 1700000000 );
-		$service->init( $account );
+		$service->init( $account, wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter::class ) );
 		$this->set_notice_service_resolver( static fn() => $service );
 
 		try {

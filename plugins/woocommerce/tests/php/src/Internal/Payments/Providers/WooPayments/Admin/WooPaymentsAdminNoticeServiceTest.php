@@ -58,7 +58,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
 		$account->method( 'has_live_account' )->willReturn( true );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
-		$sut->init( $account );
+		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 		$queries      = array();
 		$record_query = static function ( array $args ) use ( &$queries ): array {
 			$queries[] = $args;
@@ -111,7 +111,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account->method( 'is_test_mode_enabled' )->willReturn( true );
 		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
-		$sut->init( $account );
+		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 		$queries      = array();
 		$record_query = static function ( array $args ) use ( &$queries ): array {
 			$queries[] = $args;
@@ -146,7 +146,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
 		$account->method( 'has_live_account' )->willReturn( false );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
-		$sut->init( $account );
+		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		try {
 			$notice = $sut->refresh_notice_for_current_user();
@@ -180,7 +180,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account = $this->createMock( WooPaymentsAccountService::class );
 		$account->expects( $this->never() )->method( $this->anything() );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
-		$sut->init( $account );
+		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 		$data_store = Notes::load_data_store();
 		$notes      = count( $data_store->get_notes( array( 'per_page' => 100 ) ) );
 
@@ -220,7 +220,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account->method( 'is_test_mode_enabled' )->willReturn( true );
 		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
-		$sut->init( $account );
+		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		try {
 			$this->assertNotNull( $sut->refresh_notice_for_current_user() );
@@ -254,7 +254,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account->method( 'is_test_mode_enabled' )->willReturn( true );
 		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => 1700000000 );
-		$sut->init( $account );
+		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		try {
 			$this->assertNull( $sut->refresh_notice_for_current_user() );
@@ -288,7 +288,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account->method( 'is_dev_mode_enabled' )->willReturn( $dev_mode );
 		$account->method( 'has_test_account' )->willReturn( $test_drive );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
-		$sut->init( $account );
+		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 		$queries      = 0;
 		$record_query = static function ( array $args ) use ( &$queries ): array {
 			++$queries;
@@ -345,7 +345,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account->method( 'is_test_mode_enabled' )->willReturn( true );
 		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
-		$sut->init( $account );
+		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		$queries      = 0;
 		$record_query = static function ( array $args ) use ( &$queries ): array {
@@ -399,7 +399,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account->method( 'is_test_mode_enabled' )->willReturn( true );
 		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
-		$sut->init( $account );
+		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 		$queries      = 0;
 		$record_query = static function ( array $args ) use ( &$queries ): array {
 			++$queries;
@@ -445,7 +445,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		wp_set_current_user( $user_id );
 		$before = get_user_meta( $user_id );
 		$sut    = new WooPaymentsAdminNoticeService( static fn(): int => 1000 );
-		$sut->init( $this->createMock( WooPaymentsAccountService::class ) );
+		$sut->init( $this->createMock( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		$this->assertInstanceOf( WP_Error::class, $sut->record_action( $notice_id, $action, $stage ) );
 		$this->assertSame( $before, get_user_meta( $user_id ) );
@@ -484,7 +484,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 				return $now;
 			}
 		);
-		$sut->init( $this->createMock( WooPaymentsAccountService::class ) );
+		$sut->init( $this->createMock( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 		if ( 'post_kyc_activation' === $notice_id ) {
 			set_transient( 'wcpay_post_kyc_activation_eligible', '1', HOUR_IN_SECONDS );
 		}
@@ -557,7 +557,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account_service = $this->createMock( WooPaymentsAccountService::class );
 		$account_service->method( 'has_live_account' )->willReturn( $has_live_account );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => 1000 );
-		$sut->init( $account_service );
+		$sut->init( $account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		$pixels = $this->capture_notice_tracks_pixels(
 			function () use ( $sut, $notice_id, $action, $stage ): void {
@@ -580,7 +580,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_notice_action_that_lost_a_concurrent_first_write_records_no_tracks_event(): void {
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => 1000 );
-		$sut->init( $this->createMock( WooPaymentsAccountService::class ) );
+		$sut->init( $this->createMock( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		$pixels = $this->capture_notice_tracks_pixels(
 			function () use ( $sut ): void {
@@ -671,7 +671,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		wp_set_current_user( $user_id );
 		$before = get_user_meta( $user_id );
 		$sut    = new WooPaymentsAdminNoticeService( static fn(): int => 1000 );
-		$sut->init( $this->createMock( WooPaymentsAccountService::class ) );
+		$sut->init( $this->createMock( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		$this->assertTrue( $sut->record_action( 'test_to_live', 'cta' ) );
 		$this->assertSame( $before, get_user_meta( $user_id ) );
@@ -691,7 +691,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		wp_set_current_user( $user_id );
 		$now = 1700000000;
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
-		$sut->init( $this->createMock( WooPaymentsAccountService::class ) );
+		$sut->init( $this->createMock( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 		$simulate_race = null;
 		$simulate_race = static function ( $check, int $object_id, string $key, $value ) use ( &$simulate_race, $user_id, $meta_key ) {
 			if ( $user_id !== $object_id || $meta_key !== $key ) {
@@ -728,7 +728,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$user_id = self::factory()->user->create();
 		wp_set_current_user( $user_id );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => 1700000000 );
-		$sut->init( $this->createMock( WooPaymentsAccountService::class ) );
+		$sut->init( $this->createMock( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 		$fail_write = static function ( $check, int $object_id, string $key ) use ( $user_id ) {
 			return $user_id === $object_id && 'wcpay_test_to_live_notice_shown' === $key ? false : $check;
 		};
@@ -755,7 +755,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 				return $now;
 			}
 		);
-		$sut->init( $this->createMock( WooPaymentsAccountService::class ) );
+		$sut->init( $this->createMock( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 		$simulate_race = null;
 		$simulate_race = static function ( $check, int $object_id, string $key, $value ) use ( &$simulate_race, $user_id, $meta_key ) {
 			if ( $user_id !== $object_id || $meta_key !== $key ) {
@@ -791,7 +791,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 				return $now;
 			}
 		);
-		$sut->init( $this->createMock( WooPaymentsAccountService::class ) );
+		$sut->init( $this->createMock( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		$this->assertTrue( $sut->record_action( $notice_id, 'snooze' ) );
 		$this->assertSame( $now, (int) get_user_meta( $user_id, $meta_key, true ) );
@@ -1041,7 +1041,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account->method( 'is_test_mode_enabled' )->willReturn( false );
 		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
-		$sut->init( $account );
+		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 		$queries      = 0;
 		$record_query = static function ( array $args ) use ( &$queries ): array {
 			++$queries;
@@ -1131,7 +1131,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
 		$account->method( 'is_dev_mode_enabled' )->willReturn( $dev_mode );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
-		$sut->init( $account );
+		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 		$queries      = 0;
 		$record_query = static function ( array $args ) use ( &$queries ): array {
 			++$queries;
@@ -1193,7 +1193,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account->method( 'is_test_mode_enabled' )->willReturn( false );
 		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
-		$sut->init( $account );
+		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 		$queries      = 0;
 		$record_query = static function ( array $args ) use ( &$queries ): array {
 			++$queries;
@@ -1236,7 +1236,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account->method( 'is_test_mode_enabled' )->willReturn( false );
 		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
-		$sut->init( $account );
+		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 		$queries      = array();
 		$record_query = static function ( array $args ) use ( &$queries ): array {
 			$queries[] = $args;
@@ -1355,7 +1355,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account->method( 'is_test_mode_enabled' )->willReturn( false );
 		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
-		$sut->init( $account );
+		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 		$queries      = 0;
 		$record_query = static function ( array $args ) use ( &$queries ): array {
 			++$queries;
@@ -1400,7 +1400,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account->method( 'is_test_mode_enabled' )->willReturn( false );
 		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
-		$sut->init( $account );
+		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		$main_kyc_date = $now - 14 * DAY_IN_SECONDS;
 		update_option( 'wcpay_kyc_completion_date', $main_kyc_date, false );
@@ -1543,7 +1543,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account->method( 'is_test_mode_enabled' )->willReturn( false );
 		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
-		$sut->init( $account );
+		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		return $sut;
 	}

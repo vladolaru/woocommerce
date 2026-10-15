@@ -410,7 +410,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 				return $now;
 			}
 		);
-		$notice_service->init( $this->mock_account_service );
+		$notice_service->init( $this->mock_account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
 		$this->sut->register_routes( true );
 
