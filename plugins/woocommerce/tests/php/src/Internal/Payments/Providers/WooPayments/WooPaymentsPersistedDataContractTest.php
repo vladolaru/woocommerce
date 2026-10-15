@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStoreSetupReportController;
 use WC_Unit_Test_Case;
 
 /**
@@ -196,11 +197,12 @@ class WooPaymentsPersistedDataContractTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox The built-in WooPayments runs a handler on every preserved Action Scheduler hook.
 	 *
-	 * This proves the two owning services hook the preserved names when registered directly; that
+	 * This proves the owning classes hook the preserved names when registered directly; that
 	 * the cron request tier of the bootstrap matrix actually resolves and registers them
 	 * (`WooPaymentsProvider::get_classes_by_setup_tier()`) is owned by `PaymentsBootstrapTest`.
 	 */
 	public function test_builtin_handles_preserved_action_scheduler_hooks(): void {
+		wc_get_container()->get( WooPaymentsStoreSetupReportController::class )->register();
 		wc_get_container()->get( WooPaymentsOperationalQueueService::class )->register();
 		wc_get_container()->get( WooPaymentsCanceledAuthorizationFeeRemediationService::class )->register();
 

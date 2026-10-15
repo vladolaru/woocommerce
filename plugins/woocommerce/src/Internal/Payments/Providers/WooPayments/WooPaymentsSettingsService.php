@@ -569,7 +569,7 @@ class WooPaymentsSettingsService {
 		 *
 		 * @since 11.0.0
 		 */
-		do_action( WooPaymentsOperationalQueueService::STORE_SETUP_SYNC_ACTION );
+		do_action( WooPaymentsStoreSetupReportController::STORE_SETUP_SYNC_ACTION );
 
 		return $this->get_settings();
 	}

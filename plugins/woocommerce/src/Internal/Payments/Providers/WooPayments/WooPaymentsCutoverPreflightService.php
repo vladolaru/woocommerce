@@ -41,10 +41,10 @@ class WooPaymentsCutoverPreflightService {
 	 * @var string[]
 	 */
 	private const NATIVE_OWNED_OPERATIONAL_QUEUE_HOOKS = array(
-		WooPaymentsOperationalQueueService::STORE_SETUP_SYNC_ACTION,
+		WooPaymentsStoreSetupReportController::STORE_SETUP_SYNC_ACTION,
 		WooPaymentsTokenService::UPDATE_SAVED_PAYMENT_METHOD_ACTION,
 		WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
-		WooPaymentsOperationalQueueService::UPDATE_COMPATIBILITY_DATA_ACTION,
+		WooPaymentsStoreSetupReportController::UPDATE_COMPATIBILITY_DATA_ACTION,
 		WooPaymentsOperationalQueueService::INSTANT_DEPOSIT_REMINDER_ACTION,
 		WooPaymentsOperationalQueueService::POST_KYC_ACTIVATION_EMAIL_SEND_ACTION,
 		WooPaymentsFraudOrderTrackingService::TRACK_NEW_ORDER_ACTION,

@@ -72,7 +72,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * off Stripe Billing started by the plugin finishes after the switch.
 	 */
 	private const ADOPTED_OPERATIONAL_QUEUE_HOOKS = array(
-		WooPaymentsOperationalQueueService::STORE_SETUP_SYNC_ACTION,
+		WooPaymentsStoreSetupReportController::STORE_SETUP_SYNC_ACTION,
 		WooPaymentsOperationalQueueService::POST_KYC_ACTIVATION_EMAIL_SEND_ACTION,
 		WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK,
 		WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK,

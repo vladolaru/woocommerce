@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayExtensionSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStoreSetupReportController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooCommerceUpdateListener;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
@@ -34,9 +34,9 @@ class WooPaymentsWooCommerceUpdateListenerTest extends WC_Unit_Test_Case {
 	private $account_service;
 
 	/**
-	 * Operational queue double.
+	 * Store setup report double.
 	 *
-	 * @var WooPaymentsOperationalQueueService&MockObject
+	 * @var WooPaymentsStoreSetupReportController&MockObject
 	 */
 	private $operational_queue;
 
@@ -53,10 +53,10 @@ class WooPaymentsWooCommerceUpdateListenerTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 		$this->account_service       = $this->createMock( WooPaymentsAccountService::class );
-		$this->operational_queue     = $this->createMock( WooPaymentsOperationalQueueService::class );
+		$this->operational_queue     = $this->createMock( WooPaymentsStoreSetupReportController::class );
 		$this->woopay_extension_sync = $this->createMock( WooPaymentsWooPayExtensionSync::class );
 		wc_get_container()->replace( WooPaymentsAccountService::class, $this->account_service );
-		wc_get_container()->replace( WooPaymentsOperationalQueueService::class, $this->operational_queue );
+		wc_get_container()->replace( WooPaymentsStoreSetupReportController::class, $this->operational_queue );
 		wc_get_container()->replace( WooPaymentsWooPayExtensionSync::class, $this->woopay_extension_sync );
 		$this->sut = new WooPaymentsWooCommerceUpdateListener();
 	}
@@ -67,7 +67,7 @@ class WooPaymentsWooCommerceUpdateListenerTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		remove_action( 'woocommerce_updated', array( $this->sut, 'handle_woocommerce_updated' ) );
 		wc_get_container()->reset_replacement( WooPaymentsAccountService::class );
-		wc_get_container()->reset_replacement( WooPaymentsOperationalQueueService::class );
+		wc_get_container()->reset_replacement( WooPaymentsStoreSetupReportController::class );
 		wc_get_container()->reset_replacement( WooPaymentsWooPayExtensionSync::class );
 		parent::tearDown();
 	}

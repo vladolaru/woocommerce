@@ -37,7 +37,7 @@ class WooPaymentsWooCommerceUpdateListener implements RegisterHooksInterface {
 	public function handle_woocommerce_updated(): void {
 		$container = wc_get_container();
 		$container->get( WooPaymentsAccountService::class )->clear_cache();
-		$container->get( WooPaymentsOperationalQueueService::class )->queue_store_setup_sync();
+		$container->get( WooPaymentsStoreSetupReportController::class )->queue_store_setup_sync();
 		$container->get( WooPaymentsWooPayExtensionSync::class )->remove_legacy_schedule_action_name_on_update();
 	}
 }

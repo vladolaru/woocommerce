@@ -33,14 +33,14 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 	private const WCPAY = 'Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\\';
 
 	/**
-	 * @testdox The Fee details job's handler loads on every request the operational queue loads on, as it did when the queue ran it.
+	 * @testdox The Fee details job's handler, the store setup report and the operational queue load on the same requests.
 	 */
 	public function test_fee_details_note_controller_loads_wherever_the_operational_queue_does(): void {
+		$handlers = array( 'WooPaymentsFeeDetailsNoteController', 'WooPaymentsStoreSetupReportController', 'WooPaymentsOperationalQueueService' );
 		foreach ( WooPaymentsProvider::get_classes_by_setup_tier() as $state => $requests ) {
 			foreach ( $requests as $request => $roots ) {
-				if ( in_array( self::WCPAY . 'WooPaymentsOperationalQueueService', $roots, true ) ) {
-					$this->assertContains( self::WCPAY . 'WooPaymentsFeeDetailsNoteController', $roots, "The $state $request request must register the Fee details job's handler." );
-				}
+				$present = array_values( array_filter( $handlers, static fn( string $handler ): bool => in_array( self::WCPAY . $handler, $roots, true ) ) );
+				$this->assertContains( count( $present ), array( 0, count( $handlers ) ), "The $state $request request must register all of these scheduled-job handlers or none of them." );
 			}
 		}
 	}
@@ -187,6 +187,7 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 				self::WCPAY . 'WooPay\WooPaymentsWooPayOrderStatusSync',
 				self::WCPAY . 'WooPaymentsApplePayDomainService',
 				self::WCPAY . 'WooPaymentsFraudOrderTrackingService',
+				self::WCPAY . 'WooPaymentsStoreSetupReportController',
 				self::WCPAY . 'WooPaymentsOperationalQueueService',
 			) as $observer
 		) {
