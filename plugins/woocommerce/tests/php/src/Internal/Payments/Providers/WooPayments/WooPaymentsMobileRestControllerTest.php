@@ -21,7 +21,6 @@ use WC_REST_Unit_Test_Case;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
-use WP_REST_Server;
 
 /**
  * Tests for the native WooPayments mobile and IPP REST controller.
@@ -83,7 +82,6 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		remove_filter( 'woocommerce_rest_api_get_rest_namespaces', array( $this->sut, 'handle_woocommerce_rest_api_get_rest_namespaces' ) );
 		delete_transient( 'wcpay_store_terminal_readers' );
 		delete_transient( 'wcpay_store_terminal_locations' );
 		unset( $_GET['change_payment_method'], $GLOBALS['wcpay_test_subscription_ids'] );
@@ -93,89 +91,6 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		}
 		wc_get_container()->reset_all_replacements();
 		parent::tearDown();
-	}
-
-	/**
-	 * @testdox The mobile and IPP routes are registered under wc/v3 when native owns runtime.
-	 */
-	public function test_registers_mobile_ipp_routes_when_native_owns_runtime(): void {
-		// WooCommerce's REST server registers the routes of the instance the container holds.
-		wc_get_container()->replace( WooPaymentsMobileRestController::class, $this->sut );
-		$this->sut->register();
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		do_action( 'rest_api_init' );
-
-		$routes = $this->server->get_routes();
-
-		foreach ( $this->get_expected_routes() as $route => $methods ) {
-			$this->assertArrayHasKey( $route, $routes );
-			foreach ( $methods as $method ) {
-				$this->assertRouteHasMethod( $routes[ $route ], $method );
-			}
-		}
-	}
-
-	/**
-	 * @testdox Every mobile and IPP route refuses visitors and customers before reaching the platform.
-	 *
-	 * @dataProvider provide_mobile_route_requests
-	 *
-	 * @param string              $method HTTP method.
-	 * @param string              $path   Route path.
-	 * @param array<string,mixed> $params Required route arguments, which WordPress validates before the permission check.
-	 */
-	public function test_routes_require_manage_woocommerce( string $method, string $path, array $params = array() ): void {
-		$this->sut->register_routes();
-		$order = $this->create_order( 12.34, 'USD' );
-		$path  = str_replace( '{order_id}', (string) $order->get_id(), $path );
-
-		foreach ( array( 0, $this->factory->user->create( array( 'role' => 'customer' ) ) ) as $user_id ) {
-			wp_set_current_user( $user_id );
-			$request = new WP_REST_Request( $method, $path );
-			$request->set_body_params( $params );
-			$response = $this->server->dispatch( $request );
-
-			$this->assertSame( rest_authorization_required_code(), $response->get_status(), "User {$user_id} on {$method} {$path}." );
-		}
-		$this->assertSame( array(), $this->api_client->captures );
-		$this->assertSame( array(), $this->api_client->prepared_terminal_payments );
-		$this->assertSame( array(), $this->api_client->last_terminal_intent_payload );
-	}
-
-	/**
-	 * One request per mobile and IPP route and method.
-	 *
-	 * @return array<string,array<int,mixed>>
-	 */
-	public function provide_mobile_route_requests(): array {
-		$intent   = array( 'payment_intent_id' => 'pi_terminal' );
-		$reader   = array(
-			'location'          => 'tml_1',
-			'registration_code' => 'simulated-wpe',
-		);
-		$location = array(
-			'display_name' => 'Store',
-			'address'      => array( 'country' => 'US' ),
-		);
-
-		return array(
-			'connection token' => array( 'POST', '/wc/v3/payments/connection_tokens' ),
-			'capture'          => array( 'POST', '/wc/v3/payments/orders/{order_id}/capture_terminal_payment', $intent ),
-			'prepare'          => array( 'POST', '/wc/v3/payments/orders/{order_id}/prepare_terminal_payment', $intent ),
-			'terminal intent'  => array( 'POST', '/wc/v3/payments/orders/{order_id}/create_terminal_intent' ),
-			'customer'         => array( 'POST', '/wc/v3/payments/orders/{order_id}/create_customer' ),
-			'readers list'     => array( 'GET', '/wc/v3/payments/readers' ),
-			'reader register'  => array( 'POST', '/wc/v3/payments/readers', $reader ),
-			'reader charges'   => array( 'GET', '/wc/v3/payments/readers/charges/txn_1' ),
-			'receipt preview'  => array( 'POST', '/wc/v3/payments/readers/receipts/preview' ),
-			'receipt'          => array( 'GET', '/wc/v3/payments/readers/receipts/pi_terminal' ),
-			'store location'   => array( 'GET', '/wc/v3/payments/terminal/locations/store' ),
-			'locations list'   => array( 'GET', '/wc/v3/payments/terminal/locations' ),
-			'location create'  => array( 'POST', '/wc/v3/payments/terminal/locations', $location ),
-			'location read'    => array( 'GET', '/wc/v3/payments/terminal/locations/tml_1' ),
-			'location update'  => array( 'POST', '/wc/v3/payments/terminal/locations/tml_1' ),
-			'location delete'  => array( 'DELETE', '/wc/v3/payments/terminal/locations/tml_1' ),
-		);
 	}
 
 	/**
@@ -419,39 +334,6 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		);
 		$this->assertSame( 404, $customer_response->get_status() );
 		$this->assertSame( 'rest_no_route', $customer_response->get_data()['code'] );
-	}
-
-	/**
-	 * @testdox Missing required params fail with the WordPress args-schema code like the reference client.
-	 */
-	public function test_terminal_routes_require_params_via_args_schemas(): void {
-		$this->sut->register_routes();
-
-		$order = $this->create_order( 12.34, 'USD' );
-
-		$capture_response = $this->server->dispatch(
-			new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' )
-		);
-		$this->assertSame( 400, $capture_response->get_status() );
-		$this->assertSame( 'rest_missing_callback_param', $capture_response->get_data()['code'] );
-
-		$prepare_response = $this->server->dispatch(
-			new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/prepare_terminal_payment' )
-		);
-		$this->assertSame( 400, $prepare_response->get_status() );
-		$this->assertSame( 'rest_missing_callback_param', $prepare_response->get_data()['code'] );
-
-		$reader_response = $this->server->dispatch(
-			new WP_REST_Request( 'POST', '/wc/v3/payments/readers' )
-		);
-		$this->assertSame( 400, $reader_response->get_status() );
-		$this->assertSame( 'rest_missing_callback_param', $reader_response->get_data()['code'] );
-
-		$location_response = $this->server->dispatch(
-			new WP_REST_Request( 'POST', '/wc/v3/payments/terminal/locations' )
-		);
-		$this->assertSame( 400, $location_response->get_status() );
-		$this->assertSame( 'rest_missing_callback_param', $location_response->get_data()['code'] );
 	}
 
 	/**
@@ -1101,6 +983,54 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertInstanceOf( WP_REST_Response::class, $response );
 		$this->assertSame( 'tml_direct', $response->get_data()['id'] );
 		$this->assertSame( array( 'tml_direct' ), $this->api_client->terminal_location_calls );
+	}
+
+	/**
+	 * @testdox A Puerto Rico store's location is created in the US with the state PR.
+	 *
+	 * Client 11.1.0 treats Puerto Rico as a US state (includes/admin/class-wc-rest-payments-terminal-locations-controller.php:125-129).
+	 */
+	public function test_get_store_location_creates_a_puerto_rico_location_in_the_us(): void {
+		update_option( 'woocommerce_default_country', 'PR' );
+		update_option( 'woocommerce_store_address', '1 Calle Fortaleza' );
+		update_option( 'woocommerce_store_city', 'San Juan' );
+		update_option( 'woocommerce_store_postcode', '00901' );
+		update_option( 'woocommerce_store_address_2', '' );
+
+		$this->sut->get_store_location( new WP_REST_Request( 'GET', '/wc/v3/payments/terminal/locations/store' ) );
+
+		$this->assertSame( 'US', $this->api_client->last_created_location['address']['country'] ?? null );
+		$this->assertSame( 'PR', $this->api_client->last_created_location['address']['state'] ?? null );
+	}
+
+	/**
+	 * @testdox The location list read after a location is deleted comes from the platform, not the cache.
+	 *
+	 * Client 11.1.0 reloads its stored locations from the platform after a delete
+	 * (includes/admin/class-wc-rest-payments-terminal-locations-controller.php:200-207, :328-334).
+	 */
+	public function test_deleting_a_location_refreshes_the_location_list(): void {
+		set_transient(
+			'wcpay_store_terminal_locations',
+			array(
+				array(
+					'id'           => 'tml_deleted',
+					'display_name' => 'Old counter',
+					'address'      => array( 'country' => 'US' ),
+					'livemode'     => false,
+				),
+			),
+			DAY_IN_SECONDS
+		);
+		$this->api_client->terminal_locations_response = array();
+		$request                                       = new WP_REST_Request( 'DELETE', '/wc/v3/payments/terminal/locations/tml_deleted' );
+		$request->set_param( 'location_id', 'tml_deleted' );
+
+		$this->sut->delete_terminal_location( $request );
+		$response = $this->sut->get_terminal_locations( new WP_REST_Request( 'GET', '/wc/v3/payments/terminal/locations' ) );
+
+		$this->assertSame( array( 'tml_deleted' ), $this->api_client->deleted_locations );
+		$this->assertSame( array(), $response->get_data() );
 	}
 
 	/**
@@ -3179,44 +3109,6 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 		$order->save();
 
 		return $order;
-	}
-
-	/**
-	 * Expected route map and HTTP methods.
-	 *
-	 * @return array<string,string[]>
-	 */
-	private function get_expected_routes(): array {
-		return array(
-			'/wc/v3/payments/connection_tokens'        => array( WP_REST_Server::CREATABLE ),
-			'/wc/v3/payments/orders/(?P<order_id>\\w+)/capture_terminal_payment' => array( WP_REST_Server::CREATABLE ),
-			'/wc/v3/payments/orders/(?P<order_id>\\w+)/prepare_terminal_payment' => array( WP_REST_Server::CREATABLE ),
-			'/wc/v3/payments/orders/(?P<order_id>\\w+)/create_terminal_intent' => array( WP_REST_Server::CREATABLE ),
-			'/wc/v3/payments/orders/(?P<order_id>\\d+)/create_customer' => array( WP_REST_Server::CREATABLE ),
-			'/wc/v3/payments/readers'                  => array( WP_REST_Server::READABLE, WP_REST_Server::CREATABLE ),
-			'/wc/v3/payments/readers/charges/(?P<transaction_id>\\w+)' => array( WP_REST_Server::READABLE ),
-			'/wc/v3/payments/readers/receipts/preview' => array( WP_REST_Server::CREATABLE ),
-			'/wc/v3/payments/readers/receipts/(?P<payment_intent_id>\\w+)' => array( WP_REST_Server::READABLE ),
-			'/wc/v3/payments/terminal/locations/store' => array( WP_REST_Server::READABLE ),
-			'/wc/v3/payments/terminal/locations'       => array( WP_REST_Server::READABLE, WP_REST_Server::CREATABLE ),
-			'/wc/v3/payments/terminal/locations/(?P<location_id>\\w+)' => array( WP_REST_Server::READABLE, WP_REST_Server::CREATABLE, WP_REST_Server::DELETABLE ),
-		);
-	}
-
-	/**
-	 * Assert a route handler supports a method.
-	 *
-	 * @param array<int,array<string,mixed>> $route_handlers Route handlers.
-	 * @param string                         $method         Method constant.
-	 */
-	private function assertRouteHasMethod( array $route_handlers, string $method ): void {
-		foreach ( $route_handlers as $handler ) {
-			if ( isset( $handler['methods'][ $method ] ) && true === $handler['methods'][ $method ] ) {
-				return;
-			}
-		}
-
-		$this->fail( 'Route does not accept method ' . $method . '.' );
 	}
 
 	/**

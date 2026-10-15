@@ -109,6 +109,20 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 	public array $last_created_location = array();
 
 	/**
+	 * Updated location requests.
+	 *
+	 * @var array<int,array<string,mixed>>
+	 */
+	public array $updated_locations = array();
+
+	/**
+	 * Deleted location IDs.
+	 *
+	 * @var string[]
+	 */
+	public array $deleted_locations = array();
+
+	/**
 	 * Payment intent response.
 	 *
 	 * @var array<string,mixed>
@@ -403,6 +417,51 @@ class RecordingTerminalApiClient extends WooPaymentsApiClient {
 			'display_name' => $display_name,
 			'address'      => $address,
 			'livemode'     => false,
+		);
+	}
+
+	/**
+	 * Update a terminal location.
+	 *
+	 * Answers the Stripe Terminal Location the platform proxies, with the new display name.
+	 *
+	 * @param string                   $location_id  Location ID.
+	 * @param string|null              $display_name Display name.
+	 * @param array<string,mixed>|null $address      Address.
+	 * @return array<string,mixed>
+	 */
+	public function update_terminal_location( string $location_id, ?string $display_name = null, ?array $address = null ): array {
+		$this->updated_locations[] = array(
+			'location_id'  => $location_id,
+			'display_name' => $display_name,
+			'address'      => $address,
+		);
+
+		return array(
+			'id'           => $location_id,
+			'object'       => 'terminal.location',
+			'address'      => $address ?? array( 'country' => 'US' ),
+			'display_name' => $display_name ?? 'Store',
+			'livemode'     => false,
+			'metadata'     => array(),
+		);
+	}
+
+	/**
+	 * Delete a terminal location.
+	 *
+	 * Answers Stripe's deleted Terminal Location, which the platform proxies.
+	 *
+	 * @param string $location_id Location ID.
+	 * @return array<string,mixed>
+	 */
+	public function delete_terminal_location( string $location_id ): array {
+		$this->deleted_locations[] = $location_id;
+
+		return array(
+			'id'      => $location_id,
+			'object'  => 'terminal.location',
+			'deleted' => true,
 		);
 	}
 
