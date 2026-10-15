@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNavigationController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminSharedSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsMerchantRestController;
 use Automattic\WooCommerce\Internal\Payments\ProviderGatewaysController;
 use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderInterface;
@@ -248,6 +250,24 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 		$this->assertNotContains( WooPaymentsMerchantRestController::class, $matrix[ WooPaymentsSetupTier::ACTIVE ]['admin'] );
 		$this->assertContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ WooPaymentsSetupTier::ACTIVE ]['admin'] );
 		$this->assertNotContains( WooPaymentsAdminRestRouteRegistrar::class, $matrix[ WooPaymentsSetupTier::ACTIVE ]['rest'] );
+	}
+
+	/** @testdox The WooPayments admin pages' navigation and shared settings register together on connected and active admin requests only. */
+	public function test_provider_matrix_registers_the_admin_pages_on_connected_and_active_admin_requests(): void {
+		foreach ( WooPaymentsProvider::get_classes_by_setup_tier() as $state => $request_groups ) {
+			foreach ( $request_groups as $request_type => $roots ) {
+				$expected   = 'admin' === $request_type && in_array( $state, array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true );
+				$navigation = array_search( WooPaymentsAdminNavigationController::class, $roots, true );
+				$preload    = array_search( WooPaymentsAdminSharedSettings::class, $roots, true );
+
+				$this->assertSame( $expected, false !== $navigation, "$state $request_type navigation" );
+				$this->assertSame( $expected, false !== $preload, "$state $request_type shared settings" );
+				if ( $expected ) {
+					// Right after navigation, so the preload keeps its place among the priority-10 shared settings filters.
+					$this->assertSame( $navigation + 1, $preload, "$state $request_type order" );
+				}
+			}
+		}
 	}
 
 	/** @testdox Account refresh roots register the webhook recovery listener before refresh handlers can run. */

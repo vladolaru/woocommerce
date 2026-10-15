@@ -87,7 +87,7 @@ export const registerPaymentsRuntimeTracksProperty = () => {
 
 /**
  * Register the filter on a Payments settings page only when core preloaded `woopaymentsSettings`, which it does only
- * while native owns the runtime (`WooPaymentsAdminNavigationController::preload_shared_settings()`). A native route
+ * while native owns the runtime (`WooPaymentsAdminSharedSettings::preload_shared_settings()`). A native route
  * reached on a plugin-owned store has no preload.
  */
 export const registerPaymentsRuntimeTracksPropertyWhenPreloaded = () => {

@@ -117,6 +117,7 @@ describe( 'WooPayments payouts list status copy', () => {
 		mockGetSummary.mockResolvedValue( {} );
 	} );
 
+	// The file's first render pays for the page's first load; keep that cost out of the default timeout.
 	it( 'shows the recorded paid deposit as the client does', async () => {
 		mockGetDeposits.mockResolvedValue( {
 			data: [ RECORDED_PAID_DEPOSIT ] as never,
@@ -134,7 +135,7 @@ describe( 'WooPayments payouts list status copy', () => {
 				`status-${ String( RECORDED_PAID_DEPOSIT.id ) }`
 			)
 		).toHaveTextContent( /^Completed \(paid\)$/ );
-	} );
+	}, 30000 );
 
 	it.each( CLIENT_STATUS_COPY )(
 		'shows a %s with status %s as "%s"',
