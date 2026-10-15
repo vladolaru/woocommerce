@@ -543,6 +543,9 @@ class WooPaymentsOverviewService {
 	/**
 	 * Tell whether the preserved snapshot has enough fields to process payments.
 	 *
+	 * The Overview reads every account field from this snapshot, so this does not call WooPaymentsAccountService::can_process_payments(),
+	 * which can refresh the account and reads none without a platform connection.
+	 *
 	 * @param array<string,mixed> $account_data Preserved account data snapshot.
 	 * @param bool                $test_mode    Whether WooPayments is currently in test mode.
 	 * @return bool
