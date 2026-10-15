@@ -91,14 +91,14 @@ class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_C
 	/**
 	 * @testdox Store-location lookup creates a terminal location from the WooCommerce base address when none exists.
 	 */
-	public function test_get_store_location_creates_location_from_store_address(): void {
+	public function test_get_or_create_store_location_creates_location_from_store_address(): void {
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		update_option( 'woocommerce_store_address', '123 Main St' );
 		update_option( 'woocommerce_store_city', 'San Francisco' );
 		update_option( 'woocommerce_store_postcode', '94107' );
 		update_option( 'woocommerce_store_address_2', '' );
 
-		$response = $this->sut->get_store_location( new WP_REST_Request( 'GET', '/wc/v3/payments/terminal/locations/store' ) );
+		$response = $this->sut->get_or_create_store_location( new WP_REST_Request( 'GET', '/wc/v3/payments/terminal/locations/store' ) );
 
 		$this->assertInstanceOf( WP_REST_Response::class, $response );
 		$data = $response->get_data();
@@ -113,7 +113,7 @@ class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_C
 	/**
 	 * @testdox Store-location address honors the woocommerce_countries_base_* filters like the reference client.
 	 */
-	public function test_get_store_location_address_honors_base_address_filters(): void {
+	public function test_get_or_create_store_location_address_honors_base_address_filters(): void {
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		update_option( 'woocommerce_store_address', '123 Main St' );
 		update_option( 'woocommerce_store_address_2', 'Floor 2' );
@@ -126,7 +126,7 @@ class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_C
 		add_filter( 'woocommerce_countries_base_postcode', fn() => '94607' );
 
 		try {
-			$response = $this->sut->get_store_location( new WP_REST_Request( 'GET', '/wc/v3/payments/terminal/locations/store' ) );
+			$response = $this->sut->get_or_create_store_location( new WP_REST_Request( 'GET', '/wc/v3/payments/terminal/locations/store' ) );
 		} finally {
 			remove_all_filters( 'woocommerce_countries_base_address' );
 			remove_all_filters( 'woocommerce_countries_base_address_2' );
@@ -145,7 +145,7 @@ class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_C
 	/**
 	 * @testdox Store-location lookup reuses hostname-named locations created by the reference client.
 	 */
-	public function test_get_store_location_reuses_matching_hostname_location(): void {
+	public function test_get_or_create_store_location_reuses_matching_hostname_location(): void {
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		update_option( 'woocommerce_store_address', '123 Main St' );
 		update_option( 'woocommerce_store_city', 'San Francisco' );
@@ -169,7 +169,7 @@ class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_C
 			),
 		);
 
-		$response = $this->sut->get_store_location( new WP_REST_Request( 'GET', '/wc/v3/payments/terminal/locations/store' ) );
+		$response = $this->sut->get_or_create_store_location( new WP_REST_Request( 'GET', '/wc/v3/payments/terminal/locations/store' ) );
 
 		$this->assertInstanceOf( WP_REST_Response::class, $response );
 		$this->assertSame( 'tml_existing', $response->get_data()['id'] );
@@ -206,14 +206,14 @@ class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_C
 	 *
 	 * Client 11.1.0 treats Puerto Rico as a US state (includes/admin/class-wc-rest-payments-terminal-locations-controller.php:125-129).
 	 */
-	public function test_get_store_location_creates_a_puerto_rico_location_in_the_us(): void {
+	public function test_get_or_create_store_location_creates_a_puerto_rico_location_in_the_us(): void {
 		update_option( 'woocommerce_default_country', 'PR' );
 		update_option( 'woocommerce_store_address', '1 Calle Fortaleza' );
 		update_option( 'woocommerce_store_city', 'San Juan' );
 		update_option( 'woocommerce_store_postcode', '00901' );
 		update_option( 'woocommerce_store_address_2', '' );
 
-		$this->sut->get_store_location( new WP_REST_Request( 'GET', '/wc/v3/payments/terminal/locations/store' ) );
+		$this->sut->get_or_create_store_location( new WP_REST_Request( 'GET', '/wc/v3/payments/terminal/locations/store' ) );
 
 		$this->assertSame( 'US', $this->api_client->last_created_location['address']['country'] ?? null );
 		$this->assertSame( 'PR', $this->api_client->last_created_location['address']['state'] ?? null );
@@ -286,7 +286,7 @@ class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_C
 				update_option( 'woocommerce_store_address', '' );
 				update_option( 'woocommerce_store_city', '' );
 				update_option( 'woocommerce_store_postcode', '' );
-				$response = $this->sut->get_store_location( $request );
+				$response = $this->sut->get_or_create_store_location( $request );
 				break;
 			case 'store location, platform refuses the address':
 				update_option( 'woocommerce_default_country', 'US:CA' );
@@ -294,7 +294,7 @@ class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_C
 				update_option( 'woocommerce_store_city', 'San Francisco' );
 				update_option( 'woocommerce_store_postcode', '94107' );
 				$this->api_client->method_exceptions['create_terminal_location'] = $refused_request;
-				$response = $this->sut->get_store_location( $request );
+				$response = $this->sut->get_or_create_store_location( $request );
 				break;
 			case 'terminal locations, platform 404':
 				$this->api_client->method_exceptions['get_terminal_locations'] = $missing;

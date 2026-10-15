@@ -65,7 +65,7 @@ class WooPaymentsTerminalLocationsRestController extends RestApiControllerBase {
 			'/payments/terminal/locations/store',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
-				'callback'            => array( $this, 'get_store_location' ),
+				'callback'            => array( $this, 'get_or_create_store_location' ),
 				'permission_callback' => array( $this, 'has_permission' ),
 			)
 		);
@@ -146,7 +146,7 @@ class WooPaymentsTerminalLocationsRestController extends RestApiControllerBase {
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return WP_REST_Response|WP_Error
 	 */
-	public function get_store_location( WP_REST_Request $request ) {
+	public function get_or_create_store_location( WP_REST_Request $request ) {
 		unset( $request );
 
 		$address = $this->get_store_terminal_address();
