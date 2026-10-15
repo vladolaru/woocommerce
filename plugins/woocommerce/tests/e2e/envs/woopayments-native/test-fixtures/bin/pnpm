@@ -5,7 +5,7 @@ set -euo pipefail
 printf '%s\tpnpm %s\n' "$PWD" "$*" >> "$E2E_FAKE_COMMAND_LOG"
 
 if [[ "$*" == *"wc woopayments status"* ]]; then
-	echo 'Owner: builtin'
+	echo 'Runtime owner: builtin'
 	exit 0
 fi
 

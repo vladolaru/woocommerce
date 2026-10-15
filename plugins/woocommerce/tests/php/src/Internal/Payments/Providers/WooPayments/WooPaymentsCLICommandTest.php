@@ -50,12 +50,12 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 		$lines = wc_get_container()->get( WooPaymentsCLICommand::class )->get_status_lines();
 		$text  = implode( "\n", $lines );
 
-		$this->assertStringContainsString( 'Owner: builtin', $text );
-		$this->assertStringContainsString( 'Native enabled: yes', $text );
-		$this->assertStringContainsString( 'Filter: woocommerce_woopayments_builtin_enabled (source: filter)', $text );
+		$this->assertStringContainsString( 'Runtime owner: builtin', $text );
+		$this->assertStringContainsString( 'Built-in WooPayments enabled: yes', $text );
+		$this->assertStringContainsString( 'Built-in WooPayments filter: woocommerce_woopayments_builtin_enabled (source: filter)', $text );
 		$this->assertStringContainsString( 'woocommerce_woopayments_builtin_kill_switch', $text );
 		$this->assertStringContainsString( 'final authority', $text );
-		$this->assertStringContainsString( 'Preflight failures:', $text );
+		$this->assertStringContainsString( 'Cutover preflight failures:', $text );
 		$this->assertStringContainsString( 'Account: acct_native_test (connected)', $text );
 	}
 

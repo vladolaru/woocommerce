@@ -75,17 +75,17 @@ class WooPaymentsCLICommand {
 		$rate_available     = ! empty( $multi_currency['rate_provider_available'] ) ? 'available' : 'unavailable';
 
 		return array(
-			'Owner: ' . (string) $data['runtime_owner'],
+			'Runtime owner: ' . (string) $data['runtime_owner'],
 			sprintf(
-				'Native enabled: %s',
+				'Built-in WooPayments enabled: %s',
 				(bool) $data['builtin_enabled'] ? 'yes' : 'no'
 			),
 			sprintf(
-				'Filter: %s (source: %s)',
+				'Built-in WooPayments filter: %s (source: %s)',
 				(string) $data['builtin_enabled_filter'],
 				(string) $data['builtin_enabled_source']
 			),
-			'Preflight failures: ' . ( empty( $preflight_failures ) ? 'none' : implode( ', ', $preflight_failures ) ),
+			'Cutover preflight failures: ' . ( empty( $preflight_failures ) ? 'none' : implode( ', ', $preflight_failures ) ),
 			sprintf(
 				'Account: %s (%s)',
 				$account_id,
@@ -96,8 +96,8 @@ class WooPaymentsCLICommand {
 			'Enabled payment methods: ' . ( empty( $payment_methods ) ? '-' : implode( ', ', $payment_methods ) ),
 			'WooPay: ' . ( (bool) $data['woopay']['enabled'] ? 'enabled' : 'disabled' ) . ' (' . ( empty( $woopay_locations ) ? 'no locations enabled' : implode( ', ', $woopay_locations ) ) . ')',
 			'Multi-currency: ' . ( ! empty( $multi_currency['enabled'] ) ? 'enabled' : 'disabled' ) . ' (rate provider: ' . $rate_provider . ', ' . $rate_available . ')',
-			'Last webhook fetch: ' . ( (int) $data['last_webhook_fetch'] > 0 ? (string) $data['last_webhook_fetch'] : 'never' ),
-			'Note: ' . (string) $data['builtin_enabled_note'],
+			'Last fetch of failed webhook events: ' . ( (int) $data['last_webhook_fetch'] > 0 ? (string) $data['last_webhook_fetch'] : 'never' ),
+			'Built-in WooPayments enabled note: ' . (string) $data['builtin_enabled_note'],
 		);
 	}
 }
