@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 defined( 'ABSPATH' ) || exit;
@@ -262,12 +263,16 @@ class WooPaymentsAdminSharedSettings implements RegisterHooksInterface {
 	/**
 	 * The Overview shell the Overview page would request, built from the cached account.
 	 *
+	 * A failure is logged as client 11.1.0 logs its JS settings failures (`includes/admin/class-wc-payments-admin.php:973-988`).
+	 *
 	 * @return array<string,mixed>|null The shell, or null when it cannot be built and the page should request it.
 	 */
 	private function get_overview_shell(): ?array {
 		try {
 			return wc_get_container()->get( WooPaymentsOverviewService::class )->get_overview();
 		} catch ( \Throwable $e ) {
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'WooPayments JS settings: Could not build the Overview data.', $e, array(), 'warning' );
+
 			return null;
 		}
 	}
@@ -275,12 +280,16 @@ class WooPaymentsAdminSharedSettings implements RegisterHooksInterface {
 	/**
 	 * The account fields the settings test account notice reads, from the same summary the account request returns.
 	 *
+	 * A failure is logged like the Overview shell's.
+	 *
 	 * @return array{connected:bool,live:bool,testDrive:bool,sandbox:bool,setupUrl:string}|null The fields, or null when the summary cannot be read.
 	 */
 	private function get_account_mode(): ?array {
 		try {
 			$summary = wc_get_container()->get( WooPaymentsOverviewService::class )->get_account_summary();
 		} catch ( \Throwable $e ) {
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'WooPayments JS settings: Could not read the account mode.', $e, array(), 'warning' );
+
 			return null;
 		}
 

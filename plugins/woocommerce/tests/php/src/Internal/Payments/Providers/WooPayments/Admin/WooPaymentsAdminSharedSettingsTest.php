@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAd
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
 
@@ -66,6 +67,7 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'wcpay_onboarding_test_mode' );
 		delete_option( 'wcpay_next_deposit_notice_dismissed' );
+		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		foreach ( array( 'woocommerce_store_address', 'woocommerce_store_address_2', 'woocommerce_store_city', 'woocommerce_store_postcode', 'woocommerce_default_country' ) as $store_option ) {
 			delete_option( $store_option );
 		}
@@ -599,6 +601,68 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 		$settings = $sut->preload_shared_settings( array() );
 
 		$this->assertArrayNotHasKey( 'overviewShell', $settings['woopaymentsSettings'] );
+	}
+
+	/**
+	 * Client 11.1.0 logs each failure to read its JS settings as a warning line, gated by its logging setting, and lets a PHP
+	 * error fatal (`includes/admin/class-wc-payments-admin.php:973-988`, `src/Internal/Logger.php:64-90`). The page still
+	 * loads here, so an error is logged whatever the setting. The exception's message stays out of the line.
+	 *
+	 * @testdox Should log the $label failure as a $expected_level line, and still leave the data to the page's request.
+	 * @dataProvider provide_preload_failures
+	 *
+	 * @param string      $label            The failure.
+	 * @param string      $path             The settings page route.
+	 * @param string      $method           The Overview service method that fails.
+	 * @param \Throwable  $throwable        What it throws.
+	 * @param bool        $logging          Whether WooPayments logging is on.
+	 * @param string|null $expected_level   The expected line's level, or null for no line.
+	 * @param string      $expected_message The expected line's message.
+	 */
+	public function test_logs_preload_failures( string $label, string $path, string $method, \Throwable $throwable, bool $logging, ?string $expected_level, string $expected_message ): void {
+		unset( $label );
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$_GET['path'] = $path;
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => $logging ? 'yes' : 'no' ) );
+		$overview_service = $this->getMockBuilder( WooPaymentsOverviewService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_overview', 'get_account_summary' ) )
+			->getMock();
+		$overview_service->method( $method )->willThrowException( $throwable );
+		wc_get_container()->replace( WooPaymentsOverviewService::class, $overview_service );
+		$logger = RecordingWcLogger::install();
+
+		$settings = $this->create_shared_settings( true )->preload_shared_settings( array() );
+
+		$this->assertArrayNotHasKey( 'get_overview' === $method ? 'overviewShell' : 'accountMode', $settings['woopaymentsSettings'] );
+		$lines = array();
+		foreach ( $logger->lines as $index => $line ) {
+			if ( 'woopayments' === $line[2] ) {
+				$lines[] = array( $line[0], $line[1], $logger->contexts[ $index ]['exception'] ?? null );
+				$this->assertStringNotContainsString( $throwable->getMessage(), (string) wp_json_encode( $logger->contexts[ $index ] ) );
+			}
+		}
+		$this->assertSame( null === $expected_level ? array() : array( array( $expected_level, $expected_message, get_class( $throwable ) ) ), $lines );
+	}
+
+	/**
+	 * Preload failures and the line each one writes.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string,3:\Throwable,4:bool,5:string|null,6:string}>
+	 */
+	public function provide_preload_failures(): array {
+		$shell = 'WooPayments JS settings: Could not build the Overview data.';
+		$mode  = 'WooPayments JS settings: Could not read the account mode.';
+
+		return array(
+			'Overview shell, logging on'        => array( 'Overview shell', '/woopayments/overview', 'get_overview', new \Exception( 'Probe failure text' ), true, 'warning', $shell ),
+			'Overview shell, logging off'       => array( 'Overview shell', '/woopayments/overview', 'get_overview', new \Exception( 'Probe failure text' ), false, null, $shell ),
+			'Overview shell error, logging off' => array( 'Overview shell', '/woopayments/overview', 'get_overview', new \TypeError( 'Probe type error' ), false, 'error', $shell ),
+			'account mode, logging on'          => array( 'account mode', '/woopayments/settings', 'get_account_summary', new \Exception( 'Probe failure text' ), true, 'warning', $mode ),
+			'account mode, logging off'         => array( 'account mode', '/woopayments/settings', 'get_account_summary', new \Exception( 'Probe failure text' ), false, null, $mode ),
+			'account mode error, logging off'   => array( 'account mode', '/woopayments/settings', 'get_account_summary', new \TypeError( 'Probe type error' ), false, 'error', $mode ),
+		);
 	}
 
 	/**
