@@ -66,6 +66,37 @@ class WooPaymentsWooPayEligibilityTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should load the WooPay save-user assets on checkout only while the base gateway is available: $label.
+	 *
+	 * Client 11.1.0 loads its save-user script only when WooPayments is an available gateway
+	 * (includes/woopay-user/class-woopay-save-user.php:49-53).
+	 *
+	 * @testWith ["base gateway available", true, true]
+	 *           ["base gateway filtered out", false, false]
+	 *
+	 * @param string $label             Case label.
+	 * @param bool   $gateway_available Whether the base gateway stays among the available gateways.
+	 * @param bool   $expected          Whether the save-user assets load.
+	 */
+	public function test_save_user_assets_require_the_available_base_gateway( string $label, bool $gateway_available, bool $expected ): void {
+		unset( $label );
+		add_filter( 'wcpay_force_network_saved_cards', '__return_true' );
+		if ( ! $gateway_available ) {
+			add_filter(
+				'woocommerce_available_payment_gateways',
+				static function ( array $gateways ): array {
+					unset( $gateways['woocommerce_payments'] );
+
+					return $gateways;
+				},
+				20
+			);
+		}
+
+		$this->assertSame( $expected, $this->create_eligibility()->should_load_woopay_save_user_assets( 'checkout' ) );
+	}
+
+	/**
 	 * @testdox Should preserve the one-argument WooPay enabled filter and evaluate it once.
 	 */
 	public function test_woopay_button_applies_enabled_filter_once(): void {
