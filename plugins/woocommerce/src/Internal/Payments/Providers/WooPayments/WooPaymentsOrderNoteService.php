@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use WC_Order;
@@ -268,7 +267,7 @@ class WooPaymentsOrderNoteService {
 			return '';
 		}
 
-		return Utils::wc_payments_legacy_admin_url(
+		return WooPaymentsAdminUrl::get_wc_admin_path_url(
 			rawurlencode( '/payments/transactions/details' ),
 			array(
 				'id'        => '' !== $intent_id ? $intent_id : $order_id,
@@ -1422,7 +1421,7 @@ class WooPaymentsOrderNoteService {
 			return '';
 		}
 
-		return Utils::wc_payments_legacy_admin_url(
+		return WooPaymentsAdminUrl::get_wc_admin_path_url(
 			rawurlencode( '/payments/transactions/details' ),
 			array( 'id' => '' !== $intent_id ? $intent_id : $charge_id )
 		);

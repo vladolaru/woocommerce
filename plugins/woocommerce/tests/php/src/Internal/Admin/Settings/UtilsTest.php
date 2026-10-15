@@ -1808,22 +1808,6 @@ class UtilsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should build reference-shaped legacy WooPayments admin URLs for persisted records.
-	 */
-	public function test_wc_payments_legacy_admin_url_builds_reference_shaped_url(): void {
-		$url = Utils::wc_payments_legacy_admin_url(
-			'/payments/transactions/details',
-			array(
-				'id' => 'pi_123',
-			)
-		);
-
-		$this->assertStringContainsString( 'admin.php?page=wc-admin', $url );
-		$this->assertStringContainsString( 'path=/payments/transactions/details', $url );
-		$this->assertStringContainsString( 'id=pi_123', $url );
-	}
-
-	/**
 	 * @testdox Native WooPayments authorization should identify WooCommerce core.
 	 */
 	public function test_wpcom_connection_authorization_uses_the_core_identity_for_native_woopayments(): void {

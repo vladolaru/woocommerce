@@ -10,7 +10,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Admin\Notes\DataStore as NotesDataStore;
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
-use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -182,7 +181,7 @@ class WooPaymentsLoanApprovedNote implements RegisterHooksInterface {
 			self::NOTE_NAME,
 			__( 'View loan details', 'woocommerce' ),
 			// A stored note outlives a switch back to the plugin, so it keeps the client route; native redirects it.
-			Utils::wc_payments_legacy_admin_url( '/payments/loans' ),
+			WooPaymentsAdminUrl::get_wc_admin_path_url( '/payments/loans' ),
 			Note::E_WC_ADMIN_NOTE_UNACTIONED,
 			true
 		);
