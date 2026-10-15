@@ -199,13 +199,14 @@ class WooPaymentsOnboardingService {
 	 *
 	 * The platform's answer is cached as client 11.1.0 caches it (`includes/class-wc-payments-onboarding-service.php:185-217`):
 	 * through the database cache, valid only for the same country and locale, keeping the last good answer after an error.
+	 * A country WooPayments does not support gets an empty list without a platform call (client 11.1.0 `includes/class-wc-payments-account.php:698-702`).
 	 *
 	 * @param string $country_code Optional. Business location country code.
 	 * @return array<int,array<string,mixed>>
 	 */
 	public function get_recommended_payment_methods( string $country_code = '' ): array {
 		$country_code = strtoupper( trim( $country_code ) );
-		if ( '' === $country_code ) {
+		if ( ! array_key_exists( $country_code, $this->get_native_account_service()->get_supported_countries() ) ) {
 			return array();
 		}
 

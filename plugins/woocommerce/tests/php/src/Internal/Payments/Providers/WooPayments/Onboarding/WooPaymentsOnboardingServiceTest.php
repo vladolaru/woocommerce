@@ -3357,6 +3357,36 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A country WooPayments does not support ($country) gets no recommendations and no platform call.
+	 *
+	 * Source: client 11.1.0 `includes/class-wc-payments-account.php:698-702` and its test
+	 * `test_get_recommended_payment_methods_unsupported_country` (`tests/unit/test-class-wc-payments-account.php:3657-3659`).
+	 *
+	 * @dataProvider provide_unsupported_countries
+	 *
+	 * @param string $country Business location country code.
+	 */
+	public function test_recommended_payment_methods_skip_the_platform_for_an_unsupported_country( string $country ): void {
+		$this->seed_recommended_payment_methods_cache( null );
+		$this->set_onboarding_collaborators( $this->create_recommendations_api_client( 0, array() ) );
+
+		$this->assertSame( array(), $this->onboarding_service->get_recommended_payment_methods( $country ) );
+		$this->assertFalse( get_option( WooPaymentsDatabaseCache::RECOMMENDED_PAYMENT_METHODS_KEY ), 'Nothing is cached for an unsupported country.' );
+	}
+
+	/**
+	 * Provide country codes WooPayments does not support.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function provide_unsupported_countries(): array {
+		return array(
+			'an unassigned code'   => array( 'XZ' ),
+			'a real store country' => array( 'BR' ),
+		);
+	}
+
+	/**
 	 * @testdox A platform error fetching the recommended payment methods is logged with its status and code, never its message.
 	 */
 	public function test_recommended_payment_methods_fetch_log_leaves_out_platform_text(): void {
