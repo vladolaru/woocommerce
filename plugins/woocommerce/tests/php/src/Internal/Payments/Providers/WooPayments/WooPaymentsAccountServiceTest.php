@@ -712,7 +712,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should autoload the onboarding test-mode option when enabling it on the dev-mode cache path, like the client.
 	 */
 	public function test_dev_mode_cache_path_autoloads_onboarding_test_mode_option(): void {
-		// Arrange the dev-mode branch of is_valid_cached_account(): dev mode on, the
+		// Arrange the write in ensure_onboarding_test_mode_for_dev_mode(): dev mode on, the
 		// option absent (so it would be re-created via add_option's autoload default),
 		// and a non-live cached account so the guarded write fires.
 		delete_option( 'wcpay_onboarding_test_mode' );
@@ -737,6 +737,46 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'yes', get_option( 'wcpay_onboarding_test_mode' ) );
 		// Storefront renders read it through is_test_mode_enabled(); client 11.1.0 autoloads it (onboarding service :1086).
 		$this->assertOptionAutoloaded( 'wcpay_onboarding_test_mode' );
+	}
+
+	/**
+	 * With no cached account, the platform's answer is the only account the request checks, so the fetch is where onboarding
+	 * test mode gets turned on in dev mode; a live account leaves it off.
+	 *
+	 * @testdox Should turn onboarding test mode on in dev mode for a fetched test account only ($kind account).
+	 * @dataProvider provider_dev_mode_fetched_accounts
+	 *
+	 * @param string $kind     Account kind.
+	 * @param bool   $is_live  Whether the platform reports a live account.
+	 * @param string $expected The onboarding test-mode option after the read.
+	 */
+	public function test_dev_mode_fetch_turns_on_onboarding_test_mode_for_a_test_account( string $kind, bool $is_live, string $expected ): void {
+		delete_option( 'wcpay_onboarding_test_mode' );
+		delete_option( 'wcpay_account_data' );
+		add_filter( 'wcpay_dev_mode', '__return_true' );
+		// Fields the account checks read, as in the recorded account (Fixtures/platform-test-drive-account.json); `is_live` varied.
+		$account = array(
+			'account_id'        => 'acct_' . $kind,
+			'is_live'           => $is_live,
+			'payments_enabled'  => true,
+			'details_submitted' => true,
+		);
+		$sut     = $this->create_service_with_api_client( $this->create_recorded_account_api_client( $account, false ) );
+
+		$this->assertSame( 'acct_' . $kind, $sut->get_cached_account_data()['account_id'] ?? null );
+		$this->assertSame( $expected, get_option( 'wcpay_onboarding_test_mode', '(missing)' ) );
+	}
+
+	/**
+	 * Fetched accounts.
+	 *
+	 * @return array<string,array{string,bool,string}>
+	 */
+	public function provider_dev_mode_fetched_accounts(): array {
+		return array(
+			'test' => array( 'test', false, 'yes' ),
+			'live' => array( 'live', true, '(missing)' ),
+		);
 	}
 
 	/**

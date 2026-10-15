@@ -160,13 +160,12 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		$data           = null;
 		$old_data       = null;
 
-		if (
-			is_array( $cache_contents )
-			&& array_key_exists( 'data', $cache_contents )
-			&& $this->is_valid_cached_account( $cache_contents['data'] )
-		) {
-			$data     = $cache_contents['data'];
-			$old_data = $data;
+		if ( is_array( $cache_contents ) && array_key_exists( 'data', $cache_contents ) ) {
+			$this->ensure_onboarding_test_mode_for_dev_mode( $cache_contents['data'] );
+			if ( $this->is_valid_cached_account( $cache_contents['data'] ) ) {
+				$data     = $cache_contents['data'];
+				$old_data = $data;
+			}
 		}
 
 		if ( $connection_state_known && $this->should_refresh_account_cache( $cache_contents, $force_refresh ) ) {
@@ -321,6 +320,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			return false;
 		}
 
+		$this->ensure_onboarding_test_mode_for_dev_mode( $account_data );
 		if ( ! $this->is_valid_cached_account( $account_data ) ) {
 			return false;
 		}
@@ -628,7 +628,16 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function should_refresh_account_cache( $cache_contents, bool $force_refresh ): bool {
-		return $this->database_cache->should_refresh( WooPaymentsDatabaseCache::ACCOUNT_KEY, $cache_contents, fn( $data ): bool => $this->is_valid_cached_account( $data ), $force_refresh );
+		return $this->database_cache->should_refresh(
+			WooPaymentsDatabaseCache::ACCOUNT_KEY,
+			$cache_contents,
+			function ( $data ): bool {
+				$this->ensure_onboarding_test_mode_for_dev_mode( $data );
+
+				return $this->is_valid_cached_account( $data );
+			},
+			$force_refresh
+		);
 	}
 
 	/**
@@ -1375,7 +1384,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	public function is_test_mode_onboarding_enabled(): bool {
-		$test_mode_onboarding = $this->is_dev_mode_enabled() || $this->is_onboarding_test_mode_enabled();
+		$test_mode_onboarding = $this->is_dev_mode_enabled() || $this->get_onboarding_test_mode_option();
 
 		/**
 		 * Allows WooPayments to use test mode onboarding.
@@ -1517,11 +1526,11 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether onboarding test mode is enabled.
+	 * Tell whether the stored onboarding test-mode option is on, without the dev-mode fallback or the filter.
 	 *
 	 * @return bool
 	 */
-	private function is_onboarding_test_mode_enabled(): bool {
+	private function get_onboarding_test_mode_option(): bool {
 		try {
 			$value = $this->legacy_proxy->call_function( 'get_option', self::ONBOARDING_TEST_MODE_OPTION, 'no' );
 		} catch ( \Throwable $e ) {
@@ -1572,10 +1581,32 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether account data is valid to read from or write to the cache.
+	 * Turn onboarding test mode on for a test account read in dev mode while the option is off.
 	 *
-	 * Runs on cache reads as well as refreshes. For a test account checked in dev mode with onboarding test mode off, it
-	 * also turns onboarding test mode on, as the client does (client 11.1.0 `includes/class-wc-payments-account.php:2554-2583`).
+	 * Runs right before each account validity check, on cache reads as well as refreshes (client 11.1.0 `includes/class-wc-payments-account.php:2554-2583`).
+	 *
+	 * @param mixed $account_data Account data.
+	 */
+	private function ensure_onboarding_test_mode_for_dev_mode( $account_data ): void {
+		if ( ! is_array( $account_data ) || array() === $account_data || $this->is_truthy( $account_data['is_live'] ?? false ) ) {
+			return;
+		}
+
+		if ( $this->get_onboarding_test_mode_option() || ! $this->is_dev_mode_enabled() ) {
+			return;
+		}
+
+		try {
+			// Autoloaded like the client: storefront renders read it through is_test_mode_enabled().
+			$this->legacy_proxy->call_function( 'update_option', self::ONBOARDING_TEST_MODE_OPTION, 'yes', true );
+			$this->legacy_proxy->call_function( 'wp_cache_delete', self::ONBOARDING_TEST_MODE_OPTION, 'options' );
+		} catch ( \Throwable $e ) {
+			unset( $e );
+		}
+	}
+
+	/**
+	 * Tell whether account data is valid to read from or write to the cache.
 	 *
 	 * @param mixed $account_data Account data.
 	 * @return bool
@@ -1595,16 +1626,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 
 		if ( $this->is_truthy( $account_data['is_live'] ?? false ) ) {
 			return true;
-		}
-
-		if ( ! $this->is_onboarding_test_mode_enabled() && $this->is_dev_mode_enabled() ) {
-			try {
-				// Autoloaded like the client: storefront renders read it through is_test_mode_enabled().
-				$this->legacy_proxy->call_function( 'update_option', self::ONBOARDING_TEST_MODE_OPTION, 'yes', true );
-				$this->legacy_proxy->call_function( 'wp_cache_delete', self::ONBOARDING_TEST_MODE_OPTION, 'options' );
-			} catch ( \Throwable $e ) {
-				return $this->is_test_mode_onboarding_enabled();
-			}
 		}
 
 		return $this->is_test_mode_onboarding_enabled();
