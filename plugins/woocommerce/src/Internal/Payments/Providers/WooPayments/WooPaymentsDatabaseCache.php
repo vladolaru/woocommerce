@@ -379,6 +379,12 @@ class WooPaymentsDatabaseCache {
 					? $this->get_errored_ttl( (int) ( $cache_contents['consecutive_errors'] ?? 0 ) )
 					: self::ONBOARDING_FIELDS_DATA_TTL;
 				break;
+			case self::RECOMMENDED_PAYMENT_METHODS_KEY:
+				// Retry a failed answer on the error ladder, so one platform error does not hide the recommendations for a day.
+				$ttl = $errored
+					? $this->get_errored_ttl( (int) ( $cache_contents['consecutive_errors'] ?? 0 ) )
+					: DAY_IN_SECONDS;
+				break;
 			case self::TRACKING_INFO_KEY:
 				$ttl = $errored
 					? $this->get_errored_ttl( (int) ( $cache_contents['consecutive_errors'] ?? 0 ) )
