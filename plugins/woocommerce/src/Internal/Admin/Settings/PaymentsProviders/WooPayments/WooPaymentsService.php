@@ -9,9 +9,6 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Exceptions\ApiArgumentExcepti
 use Automattic\WooCommerce\Internal\Admin\Settings\Exceptions\ApiException;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLegacyRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
@@ -109,11 +106,6 @@ class WooPaymentsService {
 	private const REFERRAL_CODE_TRANSIENT = 'woopayments_referral_code';
 
 	/**
-	 * The plugin's `WC_Payments_Account::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT`: the platform asked to turn WooPay on after KYC.
-	 */
-	private const WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT = 'woopay_enabled_by_default';
-
-	/**
 	 * The TTL for the onboarding lock.
 	 * This is to prevent the onboarding from being locked indefinitely in case of uncaught errors.
 	 * If the lock timestamp is older than this, we consider the lock expired and allow onboarding actions again.
@@ -179,25 +171,11 @@ class WooPaymentsService {
 	private ?WooPaymentsLegacyRuntime $legacy_runtime = null;
 
 	/**
-	 * The native WooPayments API client.
-	 *
-	 * @var WooPaymentsApiClient|null
-	 */
-	private ?WooPaymentsApiClient $api_client = null;
-
-	/**
 	 * The native WooPayments account service.
 	 *
 	 * @var WooPaymentsAccountService|null
 	 */
 	private ?WooPaymentsAccountService $account_service = null;
-
-	/**
-	 * The built-in WooPayments onboarding service.
-	 *
-	 * @var WooPaymentsOnboardingService|null
-	 */
-	private ?WooPaymentsOnboardingService $onboarding_service = null;
 
 	/**
 	 * Initialize the class instance.
@@ -215,9 +193,7 @@ class WooPaymentsService {
 		$this->proxy              = $proxy;
 		$this->onboarding_adapter = null;
 		$this->legacy_runtime     = null;
-		$this->api_client         = null;
 		$this->account_service    = null;
-		$this->onboarding_service = null;
 
 		$this->wpcom_connection_manager = $this->proxy->get_instance_of( WPCOM_Connection_Manager::class, 'woocommerce' );
 		$this->provider                 = $this->payments_providers->get_payment_gateway_provider_instance( self::GATEWAY_ID );
@@ -1382,8 +1358,9 @@ class WooPaymentsService {
 		$this->set_onboarding_lock();
 
 		try {
-			if ( $this->should_use_native_onboarding_action_api() ) {
-				$response = $this->initialize_native_test_account( $location, (array) $configured_payment_methods );
+			$onboarding = $this->get_onboarding_adapter()->get_builtin_onboarding();
+			if ( null !== $onboarding ) {
+				$response = $onboarding->init_test_account( $location, (array) $configured_payment_methods );
 			} else {
 				// Call the WooPayments API to initialize the test account.
 				$response = $this->proxy->call_static(
@@ -1398,11 +1375,6 @@ class WooPaymentsService {
 					)
 				);
 			}
-		} catch ( WooPaymentsApiException $e ) {
-			$response = $this->get_wp_error_from_api_exception(
-				$e,
-				esc_html__( 'An unexpected error happened while initializing the test account.', 'woocommerce' )
-			);
 		} catch ( Exception $e ) {
 			// Catch any exceptions to allow for proper error handling and onboarding unlock.
 			$response = $this->get_onboarding_client_api_exception_error(
@@ -1550,8 +1522,9 @@ class WooPaymentsService {
 		$this->set_onboarding_lock();
 
 		try {
-			if ( $this->should_use_native_onboarding_action_api() ) {
-				$response = $this->create_native_onboarding_kyc_session( $self_assessment, (array) $selected_payment_methods );
+			$onboarding = $this->get_onboarding_adapter()->get_builtin_onboarding();
+			if ( null !== $onboarding ) {
+				$response = $onboarding->create_kyc_session( $this->provider->is_in_dev_mode( $this->get_payment_gateway() ), $self_assessment, (array) $selected_payment_methods );
 			} else {
 				// Call the WooPayments API to get the KYC session.
 				$response = $this->proxy->call_static(
@@ -1564,11 +1537,6 @@ class WooPaymentsService {
 					)
 				);
 			}
-		} catch ( WooPaymentsApiException $e ) {
-			$response = $this->get_wp_error_from_api_exception(
-				$e,
-				esc_html__( 'An unexpected error happened while creating the KYC session.', 'woocommerce' )
-			);
 		} catch ( Exception $e ) {
 			// Catch any exceptions to allow for proper error handling and onboarding unlock.
 			$response = $this->get_onboarding_client_api_exception_error(
@@ -1667,8 +1635,9 @@ class WooPaymentsService {
 		$this->set_onboarding_lock();
 
 		try {
-			if ( $this->should_use_native_onboarding_action_api() ) {
-				$response = $this->finalize_native_onboarding_kyc_session( $source );
+			$onboarding = $this->get_onboarding_adapter()->get_builtin_onboarding();
+			if ( null !== $onboarding ) {
+				$response = $onboarding->finish_kyc_session( $source );
 			} else {
 				// Call the WooPayments API to finalize the KYC session.
 				$response = $this->proxy->call_static(
@@ -1681,11 +1650,6 @@ class WooPaymentsService {
 					)
 				);
 			}
-		} catch ( WooPaymentsApiException $e ) {
-			$response = $this->get_wp_error_from_api_exception(
-				$e,
-				esc_html__( 'An unexpected error happened while finalizing the KYC session.', 'woocommerce' )
-			);
 		} catch ( Exception $e ) {
 			// Catch any exceptions to allow for proper error handling and onboarding unlock.
 			$response = $this->get_onboarding_client_api_exception_error(
@@ -1841,8 +1805,9 @@ class WooPaymentsService {
 
 			if ( $this->has_account() ) {
 				// Call the WooPayments API to reset onboarding.
-				if ( $this->should_use_native_onboarding_action_api() ) {
-					$response = $this->delete_native_onboarding_account( $this->is_native_onboarding_test_mode_enabled() );
+				$onboarding = $this->get_onboarding_adapter()->get_builtin_onboarding();
+				if ( null !== $onboarding ) {
+					$response = $onboarding->reset_onboarding();
 				} else {
 					$response = $this->proxy->call_static(
 						Utils::class,
@@ -1860,11 +1825,6 @@ class WooPaymentsService {
 					'success' => true,
 				);
 			}
-		} catch ( WooPaymentsApiException $e ) {
-			$response = $this->get_wp_error_from_api_exception(
-				$e,
-				esc_html__( 'An unexpected error happened while resetting onboarding.', 'woocommerce' )
-			);
 		} catch ( Exception $e ) {
 			// Catch any exceptions to allow for proper error handling and onboarding unlock.
 			$response = $this->get_onboarding_client_api_exception_error(
@@ -1965,26 +1925,22 @@ class WooPaymentsService {
 			);
 
 			if ( $had_test_account ) {
-				if ( $this->should_use_native_onboarding_action_api() ) {
-					$this->save_native_test_drive_settings_for_live_account();
-					$response = $this->delete_native_onboarding_account( true );
+				$onboarding = $this->get_onboarding_adapter()->get_builtin_onboarding();
+				if ( null !== $onboarding ) {
+					$response = $onboarding->disable_test_account( true );
 				} else {
 					// The legacy endpoint runs after releasing the shared onboarding lock.
 					$endpoint = '/wc/v3/payments/onboarding/test_drive_account/disable';
 				}
 			} elseif ( $had_sandbox_account ) {
-				if ( $this->should_use_native_onboarding_action_api() ) {
-					$response = $this->delete_native_onboarding_account( $this->is_native_onboarding_test_mode_enabled() );
+				$onboarding = $this->get_onboarding_adapter()->get_builtin_onboarding();
+				if ( null !== $onboarding ) {
+					$response = $onboarding->disable_test_account( false );
 				} else {
 					// The legacy endpoint runs after releasing the shared onboarding lock.
 					$endpoint = '/wc/v3/payments/onboarding/reset';
 				}
 			}
-		} catch ( WooPaymentsApiException $e ) {
-			$response = $this->get_wp_error_from_api_exception(
-				$e,
-				esc_html__( 'An unexpected error happened while disabling the test account.', 'woocommerce' )
-			);
 		} catch ( Exception $e ) {
 			// Convert the exception to a WP_Error; the onboarding lock is released in the finally below.
 			$response = $this->get_onboarding_client_api_exception_error( $e, $exception_error_message );
@@ -3106,66 +3062,10 @@ class WooPaymentsService {
 		return $this->get_onboarding_adapter()->has_live_account( $this->provider );
 	}
 
-	/**
-	 * Initialize a native test-drive account.
-	 *
-	 * @param string $location     Account country.
-	 * @param array  $capabilities Requested payment method capabilities.
-	 * @return array
-	 */
-	private function initialize_native_test_account( string $location, array $capabilities ): array {
-		return $this->get_onboarding_service()->initialize_native_test_account( $location, $capabilities );
-	}
 
-	/**
-	 * Create a native embedded KYC session.
-	 *
-	 * @param array $self_assessment_data Self assessment data.
-	 * @param array $capabilities         Requested payment method capabilities.
-	 * @return array
-	 */
-	private function create_native_onboarding_kyc_session( array $self_assessment_data, array $capabilities ): array {
-		return $this->get_onboarding_service()->create_native_onboarding_kyc_session( $this->provider->is_in_dev_mode( $this->get_payment_gateway() ), $self_assessment_data, $capabilities );
-	}
 
-	/**
-	 * Finalize a native embedded KYC session, like client 11.1.0 finalize_embedded_connection(), which applies no NOX picks.
-	 *
-	 * @param string $source Onboarding source.
-	 * @return array
-	 */
-	private function finalize_native_onboarding_kyc_session( string $source ): array {
-		return $this->get_onboarding_service()->finalize_native_onboarding_kyc_session( $source );
-	}
 
-	/**
-	 * Apply a KYC return from the platform's hosted onboarding, like client 11.1.0 finalize_connection() after its state check.
-	 *
-	 * Like the client (class-wc-payments-account.php:2417-2428), a merchant who left KYC early keeps the onboarding data.
-	 *
-	 * @since 11.2.0
-	 *
-	 * @param bool $is_live         Whether the returned account is live.
-	 * @param bool $is_kyc_complete Whether the merchant finished KYC rather than leaving it early.
-	 */
-	public function finalize_native_hosted_kyc_connection( bool $is_live, bool $is_kyc_complete ): void {
-		$this->get_onboarding_service()->finalize_native_hosted_kyc_connection( $is_live, $is_kyc_complete );
-	}
 
-	/**
-	 * Add payment methods to the stored enabled set without capability or availability checks, as client 11.1.0
-	 * update_enabled_payment_methods_ids() and restore_test_drive_enabled_payment_methods() write the gateway option.
-	 *
-	 * @param string[]  $payment_method_ids      Payment method IDs to enable.
-	 * @param bool|null $woopay_picked           WooPay pick, or null to keep the stored WooPay setting.
-	 * @param bool|null $payment_request_enabled Apple Pay / Google Pay pick, or null to keep the stored wallet state.
-	 * @param bool      $enable_card_gateway     Whether an enabled card method also enables the card gateway, as the client's
-	 *                                           update_enabled_payment_methods_ids() does for every method in the list.
-	 * @return bool Whether the canonical settings and split gateways were persisted.
-	 */
-	private function enable_native_payment_methods( array $payment_method_ids, ?bool $woopay_picked = null, ?bool $payment_request_enabled = null, bool $enable_card_gateway = false ): bool {
-		return $this->get_onboarding_service()->enable_native_payment_methods( $payment_method_ids, $woopay_picked, $payment_request_enabled, $enable_card_gateway );
-	}
 
 	/**
 	 * Turn WooPay on when the platform asked for it during onboarding, like client 11.1.0 WC_Payments_Account::maybe_activate_woopay().
@@ -3175,44 +3075,11 @@ class WooPaymentsService {
 	 * @since 11.2.0
 	 */
 	public function maybe_activate_woopay_enabled_by_default(): void {
-		if ( ! $this->proxy->call_function( 'get_transient', self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT ) || ! $this->should_use_native_onboarding_action_api() ) {
-			return;
-		}
-
-		$this->enable_native_payment_methods( array(), true );
-		$this->proxy->call_function( 'delete_transient', self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT );
+		$this->get_onboarding_adapter()->maybe_activate_woopay_enabled_by_default();
 	}
 
-	/**
-	 * Save enabled native test-drive payment methods before deleting the account.
-	 */
-	private function save_native_test_drive_settings_for_live_account(): void {
-		$this->get_onboarding_service()->save_native_test_drive_settings_for_live_account();
-	}
 
-	/**
-	 * Delete a native connected account.
-	 *
-	 * @param bool $test_mode Whether to delete a test-mode account.
-	 * @return array
-	 * @throws WooPaymentsApiException When account deletion fails.
-	 */
-	private function delete_native_onboarding_account( bool $test_mode ): array {
-		return $this->get_onboarding_service()->delete_native_onboarding_account( $test_mode );
-	}
 
-	/**
-	 * Get the native WooPayments API client.
-	 *
-	 * @return WooPaymentsApiClient
-	 */
-	private function get_native_api_client(): WooPaymentsApiClient {
-		if ( null === $this->api_client ) {
-			$this->api_client = wc_get_container()->get( WooPaymentsApiClient::class );
-		}
-
-		return $this->api_client;
-	}
 
 	/**
 	 * Get the native WooPayments account service.
@@ -3227,27 +3094,7 @@ class WooPaymentsService {
 		return $this->account_service;
 	}
 
-	/**
-	 * Determine if native onboarding test mode is enabled.
-	 *
-	 * @return bool
-	 */
-	private function is_native_onboarding_test_mode_enabled(): bool {
-		return $this->get_onboarding_service()->is_native_onboarding_test_mode_enabled();
-	}
 
-	/**
-	 * Get the built-in WooPayments onboarding service.
-	 *
-	 * @return WooPaymentsOnboardingService
-	 */
-	private function get_onboarding_service(): WooPaymentsOnboardingService {
-		if ( null === $this->onboarding_service ) {
-			$this->onboarding_service = wc_get_container()->get( WooPaymentsOnboardingService::class );
-		}
-
-		return $this->onboarding_service;
-	}
 
 	/**
 	 * Get the onboarding fields data for the KYC business verification.
@@ -3259,15 +3106,9 @@ class WooPaymentsService {
 	 * @throws Exception If the onboarding fields data could not be retrieved or there was an error.
 	 */
 	private function get_onboarding_kyc_fields( string $location ): array {
-		// While the plugin runtime is loaded, it owns the fields route (trunk's path) and the native client stays dormant.
-		if ( ! $this->get_legacy_runtime()->is_loaded() && $this->can_use_native_api_client() ) {
-			// The account service caches the fields like the client does behind the fields route.
-			$fields = $this->get_native_account_service()->get_onboarding_fields_data( (string) $this->proxy->call_function( 'get_user_locale' ) );
-			if ( null === $fields ) {
-				// Same message as the client's fields route.
-				throw new Exception( esc_html__( 'Failed to retrieve the onboarding fields.', 'woocommerce' ) );
-			}
-
+		// The built-in WooPayments answers the fields unless the extension is active or the platform is unreachable.
+		$fields = $this->get_onboarding_adapter()->get_onboarding_fields( (string) $this->proxy->call_function( 'get_user_locale' ) );
+		if ( null !== $fields ) {
 			return $this->prepare_onboarding_kyc_fields( $fields, $location );
 		}
 
@@ -3365,50 +3206,8 @@ class WooPaymentsService {
 		return $country_names;
 	}
 
-	/**
-	 * Tell whether the native WooPayments API client can be used.
-	 *
-	 * @return bool
-	 */
-	private function can_use_native_api_client(): bool {
-		return $this->get_native_api_client()->is_available();
-	}
 
-	/**
-	 * Tell whether onboarding actions should use the native API client.
-	 *
-	 * @return bool
-	 */
-	private function should_use_native_onboarding_action_api(): bool {
-		return $this->can_use_native_api_client() && ! $this->get_legacy_runtime()->is_loaded() && $this->get_onboarding_adapter()->is_native_onboarding_available();
-	}
 
-	/**
-	 * Convert a native API exception to a WP_Error compatible with existing onboarding handlers.
-	 *
-	 * The data carries the error code and error type the plugin's onboarding controller forwards
-	 * (client 11.1.0 `includes/admin/class-wc-rest-payments-onboarding-controller.php:370-385`), so callers
-	 * can tell non-recoverable errors from transient ones.
-	 *
-	 * @param WooPaymentsApiException $exception        API exception.
-	 * @param string                  $fallback_message Fallback error message.
-	 * @return WP_Error
-	 */
-	private function get_wp_error_from_api_exception( WooPaymentsApiException $exception, string $fallback_message ): WP_Error {
-		$error_code    = $exception->get_error_code();
-		$error_message = $exception->getMessage();
-
-		return new WP_Error(
-			'' !== $error_code ? $error_code : 'woocommerce_woopayments_onboarding_client_api_exception',
-			'' !== $error_message ? $error_message : $fallback_message,
-			array(
-				'code'       => $exception->get_http_code(),
-				'message'    => $error_message,
-				'error_code' => $error_code,
-				'error_type' => $exception->get_error_type(),
-			)
-		);
-	}
 
 	/**
 	 * Get the fallback URL for the embedded KYC flow.

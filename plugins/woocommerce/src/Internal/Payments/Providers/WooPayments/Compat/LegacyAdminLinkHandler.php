@@ -11,6 +11,7 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsOnboardingSource;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -206,7 +207,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 
 		delete_transient( self::ONBOARDING_STATE_TRANSIENT );
 		$this->account_service->clear_cache();
-		wc_get_container()->get( WooPaymentsService::class )->finalize_native_hosted_kyc_connection( 'live' === $mode, ! $connection_error );
+		wc_get_container()->get( WooPaymentsOnboardingService::class )->finish_hosted_kyc_connection( 'live' === $mode, ! $connection_error );
 
 		$params['from'] = WooPaymentsOnboardingSource::FROM_STRIPE;
 		if ( $connection_error ) {

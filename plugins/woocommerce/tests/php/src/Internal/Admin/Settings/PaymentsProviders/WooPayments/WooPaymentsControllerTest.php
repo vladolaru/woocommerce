@@ -752,7 +752,6 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 		$collaborators = array(
 			'onboarding_adapter' => $onboarding_adapter,
 			'legacy_runtime'     => $legacy_runtime,
-			'api_client'         => $this->createMock( WooPaymentsApiClient::class ),
 			'account_service'    => $this->createMock( WooPaymentsAccountService::class ),
 		);
 		foreach ( $collaborators as $property => $collaborator ) {

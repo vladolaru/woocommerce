@@ -10,6 +10,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
+use Exception;
 use Throwable;
 use WC_Payment_Gateway;
 
@@ -22,6 +25,13 @@ defined( 'ABSPATH' ) || exit;
  * @internal Transitional internal component for the native payments runtime.
  */
 class WooPaymentsOnboardingAdapter {
+
+	/**
+	 * The extension's `WC_Payments_Account::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT`: the platform asked to turn WooPay on after KYC.
+	 *
+	 * Declared here because this class loads on every request, so reading the name loads no other file.
+	 */
+	public const WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT = 'woopay_enabled_by_default';
 
 	/**
 	 * WooPayments legacy runtime.
@@ -50,6 +60,20 @@ class WooPaymentsOnboardingAdapter {
 	 * @var WooPaymentsAccountService|null
 	 */
 	private ?WooPaymentsAccountService $account_service = null;
+
+	/**
+	 * WooPayments API client.
+	 *
+	 * @var WooPaymentsApiClient|null
+	 */
+	private ?WooPaymentsApiClient $api_client = null;
+
+	/**
+	 * The onboarding built into WooCommerce.
+	 *
+	 * @var WooPaymentsOnboardingService|null
+	 */
+	private ?WooPaymentsOnboardingService $onboarding_service = null;
 
 	/**
 	 * Runtime ownership arbiter.
@@ -276,6 +300,59 @@ class WooPaymentsOnboardingAdapter {
 	}
 
 	/**
+	 * Get the onboarding built into WooCommerce, when it runs this store's onboarding.
+	 *
+	 * It does while the platform connection is available, the WooPayments extension is not active and the built-in
+	 * WooPayments owns the store. Otherwise the extension's onboarding routes answer.
+	 *
+	 * @return WooPaymentsOnboardingService|null
+	 */
+	public function get_builtin_onboarding(): ?WooPaymentsOnboardingService {
+		if ( $this->get_api_client()->is_available() && ! $this->is_extension_active() && $this->is_native_onboarding_available() ) {
+			return $this->get_onboarding_service();
+		}
+
+		return null;
+	}
+
+	/**
+	 * Get the KYC fields from the platform, through the account service's cache.
+	 *
+	 * @param string $locale The user's locale.
+	 * @return array|null The fields, or null while the extension is active or the platform connection is unavailable.
+	 * @throws Exception When the platform answers no fields.
+	 */
+	public function get_onboarding_fields( string $locale ): ?array {
+		if ( $this->is_extension_active() || ! $this->get_api_client()->is_available() ) {
+			return null;
+		}
+
+		$fields = $this->get_native_account_service()->get_onboarding_fields_data( $locale );
+		if ( null === $fields ) {
+			// The extension's fields route answers the same message.
+			throw new Exception( esc_html__( 'Failed to retrieve the onboarding fields.', 'woocommerce' ) );
+		}
+
+		return $fields;
+	}
+
+	/**
+	 * Turn WooPay on when the platform asked for it during onboarding and the built-in onboarding runs.
+	 *
+	 * The stored answer is read first, so the landing page loads nothing more when there is none.
+	 */
+	public function maybe_activate_woopay_enabled_by_default(): void {
+		if ( ! get_transient( self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT ) ) {
+			return;
+		}
+
+		$onboarding = $this->get_builtin_onboarding();
+		if ( null !== $onboarding ) {
+			$onboarding->activate_woopay_enabled_by_default();
+		}
+	}
+
+	/**
 	 * Get the WooPayments account service.
 	 *
 	 * @return object|null
@@ -347,5 +424,31 @@ class WooPaymentsOnboardingAdapter {
 		}
 
 		return $this->native_gateway;
+	}
+
+	/**
+	 * Get the WooPayments API client.
+	 *
+	 * @return WooPaymentsApiClient
+	 */
+	private function get_api_client(): WooPaymentsApiClient {
+		if ( null === $this->api_client ) {
+			$this->api_client = wc_get_container()->get( WooPaymentsApiClient::class );
+		}
+
+		return $this->api_client;
+	}
+
+	/**
+	 * Get the onboarding built into WooCommerce.
+	 *
+	 * @return WooPaymentsOnboardingService
+	 */
+	private function get_onboarding_service(): WooPaymentsOnboardingService {
+		if ( null === $this->onboarding_service ) {
+			$this->onboarding_service = wc_get_container()->get( WooPaymentsOnboardingService::class );
+		}
+
+		return $this->onboarding_service;
 	}
 }

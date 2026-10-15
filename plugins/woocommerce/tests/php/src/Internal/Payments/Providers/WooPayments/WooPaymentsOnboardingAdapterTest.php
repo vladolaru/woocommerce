@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -407,11 +408,167 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		$adapter = new WooPaymentsOnboardingAdapter();
 		$adapter->init( $legacy_runtime, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
-		foreach ( array( 'provider', 'native_gateway', 'account_service' ) as $property ) {
+		foreach ( array( 'provider', 'native_gateway', 'account_service', 'api_client', 'onboarding_service' ) as $property ) {
 			$reflection = new \ReflectionProperty( WooPaymentsOnboardingAdapter::class, $property );
 			$reflection->setAccessible( true );
 			$this->assertNull( $reflection->getValue( $adapter ), $property . ' must be resolved on first use, not when the adapter is initialized.' );
 		}
+	}
+
+	/**
+	 * The built-in onboarding runs only while the platform connection is available and the built-in WooPayments owns
+	 * the store. The extension check between them has no case: while the extension is active it owns the store, so the
+	 * ownership condition already fails.
+	 *
+	 * @return array<string,array{0:bool,1:bool,2:bool,3:bool}>
+	 */
+	public function provide_builtin_onboarding_conditions(): array {
+		return array(
+			'all hold'                              => array( true, true, true, true ),
+			'platform connection unavailable'       => array( false, true, true, false ),
+			'built-in WooPayments does not own'     => array( true, false, true, false ),
+			'the provider cannot manage onboarding' => array( true, true, false, false ),
+		);
+	}
+
+	/**
+	 * @testdox The built-in onboarding is offered only when every condition holds: $_dataName.
+	 * @dataProvider provide_builtin_onboarding_conditions
+	 *
+	 * @param bool $api_available    Whether the platform connection is available.
+	 * @param bool $builtin_owner    Whether the built-in WooPayments owns the store.
+	 * @param bool $can_manage       Whether the provider can manage onboarding.
+	 * @param bool $expect_onboarding Whether the built-in onboarding is expected.
+	 */
+	public function test_builtin_onboarding_runs_only_when_its_conditions_hold( bool $api_available, bool $builtin_owner, bool $can_manage, bool $expect_onboarding ): void {
+		$this->legacy_proxy->register_function_mocks(
+			array(
+				'class_exists' => fn() => false,
+			)
+		);
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $builtin_owner ? '__return_true' : '__return_false' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		$this->provider->method( 'can_manage_onboarding' )->willReturn( $can_manage );
+		$this->set_adapter_api_client( $api_available );
+		$onboarding = $this->createMock( WooPaymentsOnboardingService::class );
+		wc_get_container()->replace( WooPaymentsOnboardingService::class, $onboarding );
+
+		$result = $this->adapter->get_builtin_onboarding();
+
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		if ( $expect_onboarding ) {
+			$this->assertSame( $onboarding, $result );
+		} else {
+			$this->assertNull( $result );
+		}
+	}
+
+	/**
+	 * @testdox The KYC fields come from the platform unless the extension is active or the platform connection is unavailable.
+	 * @testWith [true, true, "extension"]
+	 *           [false, false, "unavailable"]
+	 *           [false, true, "fields"]
+	 *
+	 * @param bool   $extension_active Whether the WooPayments extension is loaded.
+	 * @param bool   $api_available    Whether the platform connection is available.
+	 * @param string $expected         The expected answer.
+	 */
+	public function test_onboarding_fields_come_from_the_platform_only_without_the_extension( bool $extension_active, bool $api_available, string $expected ): void {
+		$this->legacy_proxy->register_function_mocks(
+			array(
+				'class_exists' => fn( $class_name ) => $extension_active && 'WC_Payments' === ltrim( (string) $class_name, '\\' ),
+			)
+		);
+		$this->set_adapter_api_client( $api_available );
+		$account_service = $this->createMock( WooPaymentsAccountService::class );
+		$account_service->method( 'get_onboarding_fields_data' )->with( 'de_DE' )->willReturn( array( 'business_types' => array() ) );
+		$this->set_adapter_property( 'account_service', $account_service );
+
+		$fields = $this->adapter->get_onboarding_fields( 'de_DE' );
+
+		$this->assertSame( 'fields' === $expected ? array( 'business_types' => array() ) : null, $fields );
+	}
+
+	/**
+	 * @testdox The KYC fields read fails with the extension's message when the platform answers none.
+	 */
+	public function test_onboarding_fields_fail_when_the_platform_answers_none(): void {
+		$this->legacy_proxy->register_function_mocks(
+			array(
+				'class_exists' => fn() => false,
+			)
+		);
+		$this->set_adapter_api_client( true );
+		$account_service = $this->createMock( WooPaymentsAccountService::class );
+		$account_service->method( 'get_onboarding_fields_data' )->willReturn( null );
+		$this->set_adapter_property( 'account_service', $account_service );
+
+		$this->expectException( \Exception::class );
+		$this->expectExceptionMessage( 'Failed to retrieve the onboarding fields.' );
+
+		$this->adapter->get_onboarding_fields( 'en_US' );
+	}
+
+	/**
+	 * @testdox WooPay is turned on after KYC only when the platform asked for it and the built-in onboarding runs.
+	 * @testWith [false, true, false]
+	 *           [true, false, false]
+	 *           [true, true, true]
+	 *
+	 * @param bool $asked           Whether the platform's answer is stored.
+	 * @param bool $builtin_owner   Whether the built-in WooPayments owns the store.
+	 * @param bool $expect_activate Whether WooPay is expected to be turned on.
+	 */
+	public function test_woopay_default_is_applied_only_when_asked_and_built_in( bool $asked, bool $builtin_owner, bool $expect_activate ): void {
+		$this->legacy_proxy->register_function_mocks(
+			array(
+				'class_exists' => fn() => false,
+			)
+		);
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $builtin_owner ? '__return_true' : '__return_false' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
+		if ( $asked ) {
+			set_transient( WooPaymentsOnboardingAdapter::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT, true, DAY_IN_SECONDS );
+		}
+		$onboarding = $this->createMock( WooPaymentsOnboardingService::class );
+		$onboarding->expects( $expect_activate ? $this->once() : $this->never() )->method( 'activate_woopay_enabled_by_default' );
+		wc_get_container()->replace( WooPaymentsOnboardingService::class, $onboarding );
+		if ( $asked ) {
+			$this->set_adapter_api_client( true );
+		}
+
+		$this->adapter->maybe_activate_woopay_enabled_by_default();
+
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		delete_transient( WooPaymentsOnboardingAdapter::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT );
+		$reflection = new \ReflectionProperty( WooPaymentsOnboardingAdapter::class, 'api_client' );
+		$reflection->setAccessible( true );
+		// Without a stored answer the landing page resolves no API client.
+		$this->assertSame( $asked, null !== $reflection->getValue( $this->adapter ) );
+	}
+
+	/**
+	 * Give the adapter an API client double.
+	 *
+	 * @param bool $available Whether the platform connection is available.
+	 */
+	private function set_adapter_api_client( bool $available ): void {
+		$api_client = $this->createMock( WooPaymentsApiClient::class );
+		$api_client->method( 'is_available' )->willReturn( $available );
+		$this->set_adapter_property( 'api_client', $api_client );
+	}
+
+	/**
+	 * Set one of the adapter's lazily resolved collaborators.
+	 *
+	 * @param string $property     The property.
+	 * @param object $collaborator The collaborator.
+	 */
+	private function set_adapter_property( string $property, object $collaborator ): void {
+		$reflection = new \ReflectionProperty( WooPaymentsOnboardingAdapter::class, $property );
+		$reflection->setAccessible( true );
+		$reflection->setValue( $this->adapter, $collaborator );
 	}
 
 	/**
