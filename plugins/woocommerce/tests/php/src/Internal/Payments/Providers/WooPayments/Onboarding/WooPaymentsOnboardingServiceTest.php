@@ -3389,6 +3389,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			->expects( $this->once() )
 			->method( 'get_recommended_payment_methods' )
 			->with( 'US', 'en_US' )
+			// Synthetic recommendation with the two fields client 11.1.0 validates (includes/class-wc-payments-account.php:708-715: id and title).
 			->willReturn(
 				array(
 					array(
