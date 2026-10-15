@@ -556,7 +556,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should expose the legacy-compatible native WooPayments settings GET route.
 	 */
-	public function test_get_native_settings_contract_by_manager(): void {
+	public function test_get_settings_contract_by_manager(): void {
 		$settings = array(
 			'is_wcpay_enabled'           => true,
 			'enabled_payment_method_ids' => array( 'card' ),
@@ -586,7 +586,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 * `false`, which core's REST server turns into its own generic `rest_forbidden`); that
 	 * difference is not asserted here and is left as a T.7 finding.
 	 */
-	public function test_get_native_settings_denies_editor_without_payment_gateway_capability(): void {
+	public function test_get_settings_denies_editor_without_payment_gateway_capability(): void {
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'editor' ) ) );
 
 		$this->mock_settings_service
@@ -602,7 +602,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should persist the native WooPayments settings contract through the legacy-compatible POST route.
 	 */
-	public function test_update_native_settings_contract_by_manager(): void {
+	public function test_update_settings_contract_by_manager(): void {
 		$settings = array(
 			'is_wcpay_enabled'           => true,
 			'enabled_payment_method_ids' => array( 'card', 'link' ),
@@ -637,7 +637,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox The settings route forwards manual-capture and WooPay choices without changing their booleans.
 	 */
-	public function test_update_native_settings_forwards_manual_capture_and_woopay_choices(): void {
+	public function test_update_settings_forwards_manual_capture_and_woopay_choices(): void {
 		$settings = array(
 			'is_manual_capture_enabled' => true,
 			'is_woopay_enabled'         => false,
@@ -659,7 +659,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should round-trip the fraud settings error sentinel through the native settings POST route.
 	 */
-	public function test_update_native_settings_accepts_fraud_error_sentinel(): void {
+	public function test_update_settings_accepts_fraud_error_sentinel(): void {
 		$settings = array(
 			'is_debug_log_enabled'               => true,
 			'advanced_fraud_protection_settings' => 'error',
@@ -694,7 +694,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should reject unknown fraud settings strings before settings persistence.
 	 */
-	public function test_update_native_settings_rejects_unknown_fraud_settings_string(): void {
+	public function test_update_settings_rejects_unknown_fraud_settings_string(): void {
 		$this->mock_settings_service
 			->expects( $this->never() )
 			->method( 'update_settings' );
@@ -715,7 +715,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should reject a structurally invalid advanced fraud ruleset before settings persistence.
 	 */
-	public function test_update_native_settings_rejects_invalid_advanced_fraud_ruleset(): void {
+	public function test_update_settings_rejects_invalid_advanced_fraud_ruleset(): void {
 		$this->mock_settings_service
 			->expects( $this->never() )
 			->method( 'update_settings' );
@@ -737,7 +737,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should accept a structurally valid advanced fraud ruleset.
 	 */
-	public function test_update_native_settings_accepts_valid_advanced_fraud_ruleset(): void {
+	public function test_update_settings_accepts_valid_advanced_fraud_ruleset(): void {
 		$ruleset = array(
 			array(
 				'key'     => 'international_ip_address',
@@ -770,7 +770,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should not structurally validate the fraud ruleset when the protection level is not advanced.
 	 */
-	public function test_update_native_settings_skips_fraud_ruleset_validation_for_non_advanced_level(): void {
+	public function test_update_settings_skips_fraud_ruleset_validation_for_non_advanced_level(): void {
 		$this->mock_settings_service
 			->expects( $this->once() )
 			->method( 'update_settings' )
@@ -791,7 +791,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should reject invalid payment method IDs before settings persistence.
 	 */
-	public function test_update_native_settings_rejects_invalid_payment_method_ids(): void {
+	public function test_update_settings_rejects_invalid_payment_method_ids(): void {
 		$this->mock_settings_service
 			->expects( $this->never() )
 			->method( 'update_settings' );
@@ -827,7 +827,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should reject duplicate payment method IDs before settings persistence.
 	 */
-	public function test_update_native_settings_rejects_duplicate_payment_method_ids(): void {
+	public function test_update_settings_rejects_duplicate_payment_method_ids(): void {
 		$this->mock_settings_service
 			->expects( $this->never() )
 			->method( 'update_settings' );
@@ -851,7 +851,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string $descriptor Invalid statement descriptor.
 	 */
-	public function test_update_native_settings_rejects_invalid_statement_descriptor( string $descriptor ): void {
+	public function test_update_settings_rejects_invalid_statement_descriptor( string $descriptor ): void {
 		$this->mock_settings_service
 			->expects( $this->never() )
 			->method( 'update_settings' );
@@ -891,7 +891,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should accept a valid statement descriptor and pass it through to settings persistence.
 	 */
-	public function test_update_native_settings_accepts_valid_statement_descriptor(): void {
+	public function test_update_settings_accepts_valid_statement_descriptor(): void {
 		$this->mock_settings_service
 			->expects( $this->once() )
 			->method( 'update_settings' )
@@ -921,7 +921,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string $email Invalid communications email.
 	 */
-	public function test_update_native_settings_rejects_invalid_communications_email( string $email ): void {
+	public function test_update_settings_rejects_invalid_communications_email( string $email ): void {
 		$this->mock_settings_service
 			->expects( $this->never() )
 			->method( 'update_settings' );
@@ -956,7 +956,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should accept a valid communications email and pass it through to settings persistence.
 	 */
-	public function test_update_native_settings_accepts_valid_communications_email(): void {
+	public function test_update_settings_accepts_valid_communications_email(): void {
 		$this->mock_settings_service
 			->expects( $this->once() )
 			->method( 'update_settings' )
@@ -983,7 +983,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should convert an unattributed account-update rejection into the legacy server_error body.
 	 */
-	public function test_update_native_settings_converts_account_update_rejection_to_server_error_body(): void {
+	public function test_update_settings_converts_account_update_rejection_to_server_error_body(): void {
 		$this->mock_settings_service
 			->expects( $this->once() )
 			->method( 'update_settings' )
@@ -1010,7 +1010,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should pass a field-attributed platform rejection through as the standard error envelope.
 	 */
-	public function test_update_native_settings_passes_attributed_platform_rejection_through(): void {
+	public function test_update_settings_passes_attributed_platform_rejection_through(): void {
 		$this->mock_settings_service
 			->expects( $this->once() )
 			->method( 'update_settings' )
@@ -1048,7 +1048,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should reject a malformed branding color but accept a valid or empty one.
 	 */
-	public function test_update_native_settings_validates_branding_colors(): void {
+	public function test_update_settings_validates_branding_colors(): void {
 		$this->mock_settings_service
 			->expects( $this->never() )
 			->method( 'update_settings' );
@@ -1068,7 +1068,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should accept a valid hex branding color and an empty secondary color.
 	 */
-	public function test_update_native_settings_accepts_valid_branding_colors(): void {
+	public function test_update_settings_accepts_valid_branding_colors(): void {
 		$this->mock_settings_service
 			->expects( $this->once() )
 			->method( 'update_settings' )
@@ -1089,7 +1089,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should reject a business URL whose scheme is stripped entirely by esc_url_raw.
 	 */
-	public function test_update_native_settings_rejects_dangerous_business_url(): void {
+	public function test_update_settings_rejects_dangerous_business_url(): void {
 		$this->mock_settings_service
 			->expects( $this->never() )
 			->method( 'update_settings' );
@@ -1109,7 +1109,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should accept scheme-less and empty business URLs like the WooPayments plugin does.
 	 */
-	public function test_update_native_settings_accepts_lenient_business_urls(): void {
+	public function test_update_settings_accepts_lenient_business_urls(): void {
 		$this->mock_settings_service
 			->expects( $this->once() )
 			->method( 'update_settings' )
@@ -1136,7 +1136,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should reject a malformed business support email but accept an empty one.
 	 */
-	public function test_update_native_settings_validates_business_support_email(): void {
+	public function test_update_settings_validates_business_support_email(): void {
 		$this->mock_settings_service
 			->expects( $this->never() )
 			->method( 'update_settings' );
@@ -1156,7 +1156,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should accept an empty business support email.
 	 */
-	public function test_update_native_settings_accepts_empty_business_support_email(): void {
+	public function test_update_settings_accepts_empty_business_support_email(): void {
 		$this->mock_settings_service
 			->expects( $this->once() )
 			->method( 'update_settings' )
@@ -1176,7 +1176,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should reject a malformed support phone before settings persistence.
 	 */
-	public function test_update_native_settings_rejects_malformed_support_phone(): void {
+	public function test_update_settings_rejects_malformed_support_phone(): void {
 		$this->mock_settings_service
 			->expects( $this->never() )
 			->method( 'update_settings' );
@@ -1197,7 +1197,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should accept an empty support phone on a non-Japanese account.
 	 */
-	public function test_update_native_settings_accepts_empty_support_phone_outside_japan(): void {
+	public function test_update_settings_accepts_empty_support_phone_outside_japan(): void {
 		$this->mock_settings_service
 			->expects( $this->once() )
 			->method( 'update_settings' )
@@ -1220,7 +1220,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string $phone Support phone rejected for a Japanese account.
 	 */
-	public function test_update_native_settings_rejects_non_japanese_support_phone_on_japanese_account( string $phone ): void {
+	public function test_update_settings_rejects_non_japanese_support_phone_on_japanese_account( string $phone ): void {
 		$this->account_country = 'JP';
 		$this->mock_settings_service
 			->expects( $this->never() )
@@ -1253,7 +1253,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should accept a +81 support phone on a Japanese account.
 	 */
-	public function test_update_native_settings_accepts_japanese_support_phone_on_japanese_account(): void {
+	public function test_update_settings_accepts_japanese_support_phone_on_japanese_account(): void {
 		$this->account_country = 'JP';
 		$this->mock_settings_service
 			->expects( $this->once() )
@@ -1274,7 +1274,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should reject a support address carrying keys outside the allowlist.
 	 */
-	public function test_update_native_settings_rejects_support_address_with_unknown_key(): void {
+	public function test_update_settings_rejects_support_address_with_unknown_key(): void {
 		$this->mock_settings_service
 			->expects( $this->never() )
 			->method( 'update_settings' );
@@ -1297,7 +1297,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should accept a support address restricted to the allowlisted keys.
 	 */
-	public function test_update_native_settings_accepts_allowlisted_support_address(): void {
+	public function test_update_settings_accepts_allowlisted_support_address(): void {
 		$address = array(
 			'city'        => 'Portland',
 			'country'     => 'US',
@@ -1333,7 +1333,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should expose visible native WooPayments payment method promotions.
 	 */
-	public function test_get_native_pm_promotions_by_manager(): void {
+	public function test_get_pm_promotions_by_manager(): void {
 		$promotions = array(
 			array(
 				'id'             => 'klarna-promo__spotlight',
@@ -1357,7 +1357,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should activate native WooPayments payment method promotions.
 	 */
-	public function test_activate_native_pm_promotion_by_manager(): void {
+	public function test_activate_pm_promotion_by_manager(): void {
 		$this->mock_pm_promotions_service
 			->expects( $this->once() )
 			->method( 'activate_promotion' )
@@ -1374,7 +1374,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should dismiss native WooPayments payment method promotions.
 	 */
-	public function test_dismiss_native_pm_promotion_by_manager(): void {
+	public function test_dismiss_pm_promotion_by_manager(): void {
 		$this->mock_pm_promotions_service
 			->expects( $this->once() )
 			->method( 'dismiss_promotion' )
@@ -1433,7 +1433,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should require payment gateway management permission for native payment method promotions.
 	 */
-	public function test_get_native_pm_promotions_requires_manager_permission(): void {
+	public function test_get_pm_promotions_requires_manager_permission(): void {
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'subscriber' ) ) );
 		$this->mock_pm_promotions_service
 			->expects( $this->never() )
@@ -1448,7 +1448,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should accept nullable monthly anchor and keyed support address objects.
 	 */
-	public function test_update_native_settings_accepts_nullable_anchor_and_keyed_address(): void {
+	public function test_update_settings_accepts_nullable_anchor_and_keyed_address(): void {
 		$settings = array( 'deposit_schedule_monthly_anchor' => null );
 
 		$this->mock_settings_service
@@ -1574,7 +1574,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should update only allowlisted native WooPayments settings options.
 	 */
-	public function test_update_native_settings_option_by_manager(): void {
+	public function test_update_settings_option_by_manager(): void {
 		$this->mock_settings_service
 			->expects( $this->once() )
 			->method( 'update_option' )
@@ -1592,7 +1592,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should return option update errors from the native WooPayments settings service.
 	 */
-	public function test_update_native_settings_option_returns_service_error(): void {
+	public function test_update_settings_option_returns_service_error(): void {
 		$error = new WP_Error(
 			'woocommerce_woopayments_invalid_settings_option',
 			'Invalid option.',
@@ -1717,7 +1717,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should serve public WooPayments business logo files without payment manager permissions.
 	 */
-	public function test_get_native_public_settings_file_serves_public_logo_without_permissions(): void {
+	public function test_get_public_settings_file_serves_public_logo_without_permissions(): void {
 		// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 		$filter_callback = static fn( $caps ) => array(
 			'manage_woocommerce' => false,
@@ -1761,7 +1761,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should normalize missing public WooPayments files to a not found response.
 	 */
-	public function test_get_native_public_settings_file_normalizes_missing_file_errors(): void {
+	public function test_get_public_settings_file_normalizes_missing_file_errors(): void {
 		// Synthetic failure: the platform's resource_missing code with a 500, which client 11.1.0 also answers as 404 (includes/admin/class-wc-rest-payments-files-controller.php:199).
 		$this->mock_api_client
 			->expects( $this->once() )
@@ -1782,7 +1782,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should normalize public WooPayments file content errors to an internal error response.
 	 */
-	public function test_get_native_public_settings_file_normalizes_content_errors(): void {
+	public function test_get_public_settings_file_normalizes_content_errors(): void {
 		// File object shape from client 11.1.0 includes/admin/class-wc-rest-payments-files-controller.php:147, trimmed; the contents failure is synthetic.
 		$this->mock_api_client
 			->expects( $this->once() )
@@ -1810,7 +1810,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should block non-public WooPayments files without payment manager permissions.
 	 */
-	public function test_get_native_public_settings_file_blocks_private_files_without_permissions(): void {
+	public function test_get_public_settings_file_blocks_private_files_without_permissions(): void {
 		// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 		$filter_callback = static fn( $caps ) => array(
 			'manage_woocommerce' => false,
@@ -1845,7 +1845,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should re-evaluate file classification on a cache miss before serving to unauthorized callers.
 	 */
-	public function test_get_native_public_settings_file_rechecks_classification_on_cache_miss(): void {
+	public function test_get_public_settings_file_rechecks_classification_on_cache_miss(): void {
 		// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
 		$filter_callback = static fn( $caps ) => array(
 			'manage_woocommerce' => false,
@@ -1884,7 +1884,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should cache the file classification with a short TTL so reclassifications propagate quickly.
 	 */
-	public function test_get_native_public_settings_file_caches_classification_with_short_ttl(): void {
+	public function test_get_public_settings_file_caches_classification_with_short_ttl(): void {
 		$reflection = new \ReflectionClassConstant( WooPaymentsMerchantRestController::class, 'FILE_PURPOSE_CACHE_TTL' );
 
 		$this->assertSame( 5 * MINUTE_IN_SECONDS, $reflection->getValue() );
@@ -1894,7 +1894,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should register the public file REST serve filter at most once across repeated dispatches.
 	 */
-	public function test_get_native_public_settings_file_registers_serve_filter_once(): void {
+	public function test_get_public_settings_file_registers_serve_filter_once(): void {
 		// File object and file contents shapes from client 11.1.0 includes/admin/class-wc-rest-payments-files-controller.php:147 and :174, trimmed.
 		$this->mock_api_client
 			->method( 'get_file' )

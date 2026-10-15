@@ -149,7 +149,7 @@ describe( 'WooPayments settings store', () => {
 		const statuses = {
 			card_payments: { status: 'active', requirements: [] },
 		};
-		// Core answers the save with the settings themselves (`WooPaymentsMerchantRestController::update_native_settings()`).
+		// Core answers the save with the settings themselves (`WooPaymentsMerchantRestController::update_settings()`).
 		store.apiFetch.mockResolvedValueOnce( {
 			payment_method_statuses: statuses,
 		} );
@@ -211,7 +211,7 @@ describe( 'WooPayments settings store', () => {
 	it( 'shows the raw server error notice when saving fails without field-level details', async () => {
 		const store = await setupStore();
 		await loadSettings( store, { is_wcpay_enabled: true } );
-		// Core's account-update rejection body is `{ server_error }` (`update_native_settings()`); an empty details map
+		// Core's account-update rejection body is `{ server_error }` (`update_settings()`); an empty details map
 		// counts as no field details.
 		store.apiFetch.mockRejectedValueOnce( {
 			server_error: 'The request could not be completed.',

@@ -134,8 +134,8 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @param bool $override Whether to override the existing routes. Useful for testing.
 	 */
 	public function register_routes( bool $override = false ): void {
-		if ( $this->should_register_native_settings_routes() ) {
-			$this->register_native_settings_routes( $override );
+		if ( $this->should_register_settings_routes() ) {
+			$this->register_settings_routes( $override );
 		}
 
 		if ( null !== $this->admin_notice_service ) {
@@ -233,21 +233,21 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @param bool $override Whether to override existing routes.
 	 * @return void
 	 */
-	private function register_native_settings_routes( bool $override ): void {
+	private function register_settings_routes( bool $override ): void {
 		register_rest_route(
 			'wc/v3',
 			'/payments/settings',
 			array(
 				array(
 					'methods'             => \WP_REST_Server::READABLE,
-					'callback'            => fn( $request ) => $this->run( $request, 'get_native_settings' ),
+					'callback'            => fn( $request ) => $this->run( $request, 'get_settings' ),
 					'permission_callback' => fn( $request ) => $this->check_permissions( $request ),
 				),
 				array(
 					'methods'             => \WP_REST_Server::EDITABLE,
-					'callback'            => fn( $request ) => $this->run( $request, 'update_native_settings' ),
+					'callback'            => fn( $request ) => $this->run( $request, 'update_settings' ),
 					'permission_callback' => fn( $request ) => $this->check_permissions( $request ),
-					'args'                => $this->get_native_settings_update_args(),
+					'args'                => $this->get_settings_update_args(),
 				),
 			),
 			$override
@@ -259,7 +259,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 			array(
 				array(
 					'methods'             => \WP_REST_Server::EDITABLE,
-					'callback'            => fn( $request ) => $this->run( $request, 'update_native_settings_option' ),
+					'callback'            => fn( $request ) => $this->run( $request, 'update_settings_option' ),
 					'permission_callback' => fn( $request ) => $this->check_permissions( $request ),
 					'args'                => array(
 						'option_name' => array(
@@ -281,7 +281,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 			array(
 				array(
 					'methods'             => \WP_REST_Server::READABLE,
-					'callback'            => fn( $request ) => $this->run( $request, 'get_native_pm_promotions' ),
+					'callback'            => fn( $request ) => $this->run( $request, 'get_pm_promotions' ),
 					'permission_callback' => fn( $request ) => $this->check_permissions( $request ),
 				),
 			),
@@ -294,7 +294,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 			array(
 				array(
 					'methods'             => \WP_REST_Server::CREATABLE,
-					'callback'            => fn( $request ) => $this->run( $request, 'activate_native_pm_promotion' ),
+					'callback'            => fn( $request ) => $this->run( $request, 'activate_pm_promotion' ),
 					'permission_callback' => fn( $request ) => $this->check_permissions( $request ),
 					'args'                => $this->get_pm_promotion_route_args(),
 				),
@@ -308,7 +308,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 			array(
 				array(
 					'methods'             => \WP_REST_Server::CREATABLE,
-					'callback'            => fn( $request ) => $this->run( $request, 'dismiss_native_pm_promotion' ),
+					'callback'            => fn( $request ) => $this->run( $request, 'dismiss_pm_promotion' ),
 					'permission_callback' => fn( $request ) => $this->check_permissions( $request ),
 					'args'                => $this->get_pm_promotion_route_args(),
 				),
@@ -322,7 +322,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 			array(
 				array(
 					'methods'             => \WP_REST_Server::CREATABLE,
-					'callback'            => fn( $request ) => $this->run( $request, 'upload_native_settings_file' ),
+					'callback'            => fn( $request ) => $this->run( $request, 'upload_settings_file' ),
 					'permission_callback' => fn( $request ) => $this->check_permissions( $request ),
 				),
 			),
@@ -335,7 +335,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 			array(
 				array(
 					'methods'             => \WP_REST_Server::READABLE,
-					'callback'            => fn( $request ) => $this->run( $request, 'get_native_settings_file_details' ),
+					'callback'            => fn( $request ) => $this->run( $request, 'get_settings_file_details' ),
 					'permission_callback' => fn( $request ) => $this->check_permissions( $request ),
 					'args'                => $this->get_file_route_args(),
 				),
@@ -349,7 +349,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 			array(
 				array(
 					'methods'             => \WP_REST_Server::READABLE,
-					'callback'            => fn( $request ) => $this->run( $request, 'get_native_settings_file_contents' ),
+					'callback'            => fn( $request ) => $this->run( $request, 'get_settings_file_contents' ),
 					'permission_callback' => fn( $request ) => $this->check_permissions( $request ),
 					'args'                => $this->get_file_route_args(),
 				),
@@ -363,7 +363,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 			array(
 				array(
 					'methods'             => \WP_REST_Server::READABLE,
-					'callback'            => fn( $request ) => $this->run( $request, 'get_native_public_settings_file' ),
+					'callback'            => fn( $request ) => $this->run( $request, 'get_public_settings_file' ),
 					'permission_callback' => '__return_true',
 					'args'                => $this->get_file_route_args(),
 				),
@@ -377,7 +377,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 *
 	 * @return bool
 	 */
-	private function should_register_native_settings_routes(): bool {
+	private function should_register_settings_routes(): bool {
 		return null !== $this->runtime_arbiter && $this->runtime_arbiter->is_builtin_owner();
 	}
 
@@ -386,7 +386,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 *
 	 * @return array<string,array<string,mixed>>
 	 */
-	private function get_native_settings_update_args(): array {
+	private function get_settings_update_args(): array {
 		$payment_method_ids = WooPaymentsPaymentMethodRegistry::SETTINGS_PAYMENT_METHOD_IDS;
 		$express_method_ids = WooPaymentsSettingsService::get_express_checkout_method_ids();
 		$args               = array(
@@ -892,7 +892,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 *
 	 * @return WP_REST_Response The response.
 	 */
-	protected function get_native_settings(): WP_REST_Response {
+	protected function get_settings(): WP_REST_Response {
 		return rest_ensure_response( $this->get_settings_service()->get_settings() );
 	}
 
@@ -903,7 +903,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return WP_Error|WP_REST_Response The response or error.
 	 */
-	protected function update_native_settings( WP_REST_Request $request ) {
+	protected function update_settings( WP_REST_Request $request ) {
 		$result = $this->get_settings_service()->update_settings( $request->get_params() );
 		if ( is_wp_error( $result ) ) {
 			// A platform account-update rejection with no inline-capable field uses the plugin's legacy body shape, which the settings UI reads from the server_error key.
@@ -924,7 +924,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return WP_Error|WP_REST_Response The response or error.
 	 */
-	protected function update_native_settings_option( WP_REST_Request $request ) {
+	protected function update_settings_option( WP_REST_Request $request ) {
 		$option_name = (string) $request->get_param( 'option_name' );
 		$value       = $request->get_param( 'value' );
 		$result      = $this->get_settings_service()->update_option( $option_name, $value );
@@ -940,7 +940,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 *
 	 * @return WP_REST_Response The response.
 	 */
-	protected function get_native_pm_promotions(): WP_REST_Response {
+	protected function get_pm_promotions(): WP_REST_Response {
 		return rest_ensure_response( $this->get_pm_promotions_service()->get_visible_promotions() ?? array() );
 	}
 
@@ -1005,7 +1005,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return WP_REST_Response The response.
 	 */
-	protected function activate_native_pm_promotion( WP_REST_Request $request ): WP_REST_Response {
+	protected function activate_pm_promotion( WP_REST_Request $request ): WP_REST_Response {
 		return rest_ensure_response(
 			array(
 				'success' => $this->get_pm_promotions_service()->activate_promotion( (string) $request->get_param( 'id' ) ),
@@ -1020,7 +1020,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return WP_REST_Response The response.
 	 */
-	protected function dismiss_native_pm_promotion( WP_REST_Request $request ): WP_REST_Response {
+	protected function dismiss_pm_promotion( WP_REST_Request $request ): WP_REST_Response {
 		return rest_ensure_response(
 			array(
 				'success' => $this->get_pm_promotions_service()->dismiss_promotion( (string) $request->get_param( 'id' ) ),
@@ -1035,7 +1035,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return WP_Error|WP_REST_Response The response or error.
 	 */
-	protected function upload_native_settings_file( WP_REST_Request $request ) {
+	protected function upload_settings_file( WP_REST_Request $request ) {
 		try {
 			return rest_ensure_response( $this->get_api_client()->upload_file( $request ) );
 		} catch ( WooPaymentsApiException $exception ) {
@@ -1050,7 +1050,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return WP_Error|WP_REST_Response The response or error.
 	 */
-	protected function get_native_settings_file_details( WP_REST_Request $request ) {
+	protected function get_settings_file_details( WP_REST_Request $request ) {
 		try {
 			return rest_ensure_response( $this->get_api_client()->get_file( (string) $request->get_param( 'file_id' ), (bool) $request->get_param( 'as_account' ) ) );
 		} catch ( WooPaymentsApiException $exception ) {
@@ -1065,7 +1065,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return WP_Error|WP_REST_Response The response or error.
 	 */
-	protected function get_native_settings_file_contents( WP_REST_Request $request ) {
+	protected function get_settings_file_contents( WP_REST_Request $request ) {
 		try {
 			return rest_ensure_response( $this->get_api_client()->get_file_contents( (string) $request->get_param( 'file_id' ), (bool) $request->get_param( 'as_account' ) ) );
 		} catch ( WooPaymentsApiException $exception ) {
@@ -1080,7 +1080,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
 	 * @return WP_Error|WP_HTTP_Response The response or error.
 	 */
-	protected function get_native_public_settings_file( WP_REST_Request $request ) {
+	protected function get_public_settings_file( WP_REST_Request $request ) {
 		$file_id    = (string) $request->get_param( 'file_id' );
 		$as_account = (bool) $request->get_param( 'as_account' );
 		$purpose    = $this->get_cached_file_purpose( $file_id, $as_account );
