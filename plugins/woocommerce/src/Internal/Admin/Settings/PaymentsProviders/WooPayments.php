@@ -284,11 +284,11 @@ class WooPayments extends PaymentGateway {
 			$extension_suggestion['onboarding']['_links'] = array();
 		}
 
-		$is_core_native_suggestion = self::ONBOARDING_TYPE_NATIVE_IN_CONTEXT === $extension_suggestion['onboarding']['type'] && empty( $extension_suggestion['plugin']['slug'] );
-		if ( $is_core_native_suggestion ) {
+		$is_builtin_suggestion = self::ONBOARDING_TYPE_NATIVE_IN_CONTEXT === $extension_suggestion['onboarding']['type'] && empty( $extension_suggestion['plugin']['slug'] );
+		if ( $is_builtin_suggestion ) {
 			$extension_suggestion['_native'] = true;
 		}
-		if ( $is_core_native_suggestion && ! empty( $extension_suggestion['_incentive'] ) && is_array( $extension_suggestion['_incentive'] ) ) {
+		if ( $is_builtin_suggestion && ! empty( $extension_suggestion['_incentive'] ) && is_array( $extension_suggestion['_incentive'] ) ) {
 			$extension_suggestion['_incentive']['cta_label'] = __( 'Get started', 'woocommerce' );
 		}
 
@@ -329,7 +329,7 @@ class WooPayments extends PaymentGateway {
 	 *
 	 * @return string The call to action for the store's account state.
 	 */
-	public function get_native_incentive_cta_label( array $gateway_details ): string {
+	public function get_builtin_incentive_cta_label( array $gateway_details ): string {
 		if ( ! empty( $gateway_details['state']['account_connected'] ) && ! empty( $gateway_details['onboarding']['state']['test_mode'] ) ) {
 			return __( 'Activate payments', 'woocommerce' );
 		}

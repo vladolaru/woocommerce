@@ -1453,7 +1453,7 @@ class PaymentsProviders {
 		$normalized_plugin_slug = Utils::normalize_plugin_slug( $plugin_slug );
 		$suggestion_plugin_slug = $this->get_suggestion_plugin_slug_for_gateway( $payment_gateway, $normalized_plugin_slug );
 
-		if ( $this->is_native_woopayments_gateway( $payment_gateway, $normalized_plugin_slug ) ) {
+		if ( $this->is_builtin_woopayments_gateway( $payment_gateway, $normalized_plugin_slug ) ) {
 			$gateway_details['_native'] = true;
 		}
 
@@ -1520,10 +1520,10 @@ class PaymentsProviders {
 				$gateway_details['_incentive'] = $suggestion['_incentive'];
 			}
 			// The built-in WooPayments gateway installs nothing, so its provider words the incentive call to action.
-			if ( is_array( $gateway_details['_incentive'] ?? null ) && $this->is_native_woopayments_gateway( $payment_gateway, $normalized_plugin_slug ) ) {
+			if ( is_array( $gateway_details['_incentive'] ?? null ) && $this->is_builtin_woopayments_gateway( $payment_gateway, $normalized_plugin_slug ) ) {
 				$provider = $this->get_payment_gateway_provider_instance( $payment_gateway->id );
 				if ( $provider instanceof WooPayments ) {
-					$gateway_details['_incentive']['cta_label'] = $provider->get_native_incentive_cta_label( $gateway_details );
+					$gateway_details['_incentive']['cta_label'] = $provider->get_builtin_incentive_cta_label( $gateway_details );
 				}
 			}
 
@@ -1604,7 +1604,7 @@ class PaymentsProviders {
 	 * @return string
 	 */
 	private function get_suggestion_plugin_slug_for_gateway( WC_Payment_Gateway $payment_gateway, string $normalized_plugin_slug ): string {
-		if ( $this->is_native_woopayments_gateway( $payment_gateway, $normalized_plugin_slug ) ) {
+		if ( $this->is_builtin_woopayments_gateway( $payment_gateway, $normalized_plugin_slug ) ) {
 			return self::WOOPAYMENTS_EXTENSION_PLUGIN_SLUG;
 		}
 
@@ -1618,7 +1618,7 @@ class PaymentsProviders {
 	 * @param string             $normalized_plugin_slug The normalized gateway plugin slug.
 	 * @return bool
 	 */
-	private function is_native_woopayments_gateway( WC_Payment_Gateway $payment_gateway, string $normalized_plugin_slug ): bool {
+	private function is_builtin_woopayments_gateway( WC_Payment_Gateway $payment_gateway, string $normalized_plugin_slug ): bool {
 		return WooPaymentsService::GATEWAY_ID === $payment_gateway->id && 'woocommerce' === $normalized_plugin_slug;
 	}
 
