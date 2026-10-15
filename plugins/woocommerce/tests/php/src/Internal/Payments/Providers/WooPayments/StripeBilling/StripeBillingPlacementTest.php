@@ -22,7 +22,7 @@ class StripeBillingPlacementTest extends WC_Unit_Test_Case {
 		'src/Internal/Payments/Providers/WooPayments/Webhooks/WooPaymentsEventIngestor.php',
 		'src/Internal/Payments/Providers/WooPayments/WooPaymentsStoreSetupReportController.php',
 		'src/Internal/Payments/Providers/WooPayments/WooPaymentsSettingsService.php',
-		'src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsMerchantRestController.php',
+		'src/Internal/Payments/Providers/WooPayments/Admin/WooPaymentsMerchantRestController.php',
 		'src/Internal/Payments/Providers/WooPayments/Subscriptions/WooPaymentsLegacySubscriptionsGuard.php',
 		'src/Internal/Payments/Providers/WooPayments/WooPaymentsCutoverReconciliationJob.php',
 	);

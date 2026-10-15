@@ -5,12 +5,13 @@
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments;
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingSource;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -20,6 +21,7 @@ defined( 'ABSPATH' ) || exit;
  * Ports client 11.1.0 `WC_Payments_Admin::maybe_redirect_from_payments_admin_child_pages()` and the Overview and
  * settings redirects in `WC_Payments_Account`. The admin navigation controller and the Payments settings controller
  * both call it, so every native payments state gets the same redirect.
+ * While the extension owns payments, it sends a built-in settings link to the extension's settings section instead.
  *
  * @since 11.2.0
  * @internal Transitional internal component for the native payments runtime.

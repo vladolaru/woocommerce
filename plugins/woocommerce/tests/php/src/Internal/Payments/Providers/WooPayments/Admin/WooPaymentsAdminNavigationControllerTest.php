@@ -1,15 +1,15 @@
 <?php
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\Admin\Settings\PaymentsProviders\WooPayments;
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Admin;
 
 use Automattic\Jetpack\Connection\Manager as JetpackConnectionManager;
 use Automattic\Jetpack\Identity_Crisis;
 use Automattic\Jetpack\Status\Cache as StatusCache;
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
-use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsAdminNavigationController;
-use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsOnboardingRedirect;
-use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsOverviewService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNavigationController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsOnboardingRedirect;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsOverviewService;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
@@ -1235,7 +1235,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	 * @return array<string,array{0:string,1:string}>
 	 */
 	public function provider_client_admin_routes(): array {
-		$path = dirname( __DIR__, 4 ) . '/Payments/Providers/WooPayments/Fixtures/woopayments-admin-routes.json';
+		$path = dirname( __DIR__ ) . '/Fixtures/woopayments-admin-routes.json';
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local test fixture.
 		$fixture = json_decode( (string) file_get_contents( $path ), true );
 

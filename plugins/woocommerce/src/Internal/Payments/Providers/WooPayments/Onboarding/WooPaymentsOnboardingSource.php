@@ -5,7 +5,10 @@
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments;
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding;
+
+use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -38,9 +41,9 @@ final class WooPaymentsOnboardingSource {
 	public const SOURCE_WCPAY_ACCOUNT_DETAILS              = 'wcpay-account-details';
 	public const SOURCE_UNKNOWN                            = 'unknown';
 
-	public const FROM_WCADMIN_PAYMENTS_TASK     = 'WCADMIN_PAYMENT_TASK';
-	public const FROM_WCADMIN_PAYMENTS_SETTINGS = 'WCADMIN_PAYMENT_SETTINGS';
-	public const FROM_WCADMIN_NOX_IN_CONTEXT    = 'WCADMIN_NOX_IN_CONTEXT';
+	public const FROM_WCADMIN_PAYMENTS_TASK     = Payments::FROM_PAYMENTS_TASK;
+	public const FROM_WCADMIN_PAYMENTS_SETTINGS = Payments::FROM_PAYMENTS_SETTINGS;
+	public const FROM_WCADMIN_NOX_IN_CONTEXT    = WooPaymentsService::FROM_NOX_IN_CONTEXT;
 	public const FROM_WCADMIN_INCENTIVE         = 'WCADMIN_PAYMENT_INCENTIVE';
 	public const FROM_CONNECT_PAGE              = 'WCPAY_CONNECT';
 	public const FROM_OVERVIEW_PAGE             = 'WCPAY_OVERVIEW';
@@ -51,7 +54,7 @@ final class WooPaymentsOnboardingSource {
 	public const FROM_TEST_TO_LIVE              = 'WCPAY_TEST_TO_LIVE';
 	public const FROM_GO_LIVE_TASK              = 'WCPAY_GO_LIVE_TASK';
 	public const FROM_RESET_ACCOUNT             = 'WCPAY_RESET_ACCOUNT';
-	public const FROM_WPCOM                     = 'WPCOM';
+	public const FROM_WPCOM                     = WooPaymentsService::FROM_WPCOM;
 	public const FROM_WPCOM_CONNECTION          = 'WPCOM_CONNECTION';
 	public const FROM_STRIPE                    = 'STRIPE';
 
