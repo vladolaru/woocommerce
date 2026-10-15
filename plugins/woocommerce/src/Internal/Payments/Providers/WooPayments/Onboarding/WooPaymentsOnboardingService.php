@@ -88,7 +88,7 @@ class WooPaymentsOnboardingService {
 	 */
 	public function init_test_account( string $location, array $capabilities ) {
 		try {
-			return $this->initialize_native_test_account( $location, $capabilities );
+			return $this->init_test_drive_account( $location, $capabilities );
 		} catch ( WooPaymentsApiException $e ) {
 			return $this->get_wp_error_from_api_exception( $e, esc_html__( 'An unexpected error happened while initializing the test account.', 'woocommerce' ) );
 		}
@@ -104,7 +104,7 @@ class WooPaymentsOnboardingService {
 	 */
 	public function create_kyc_session( bool $is_dev_mode, array $self_assessment, array $capabilities ) {
 		try {
-			return $this->create_native_onboarding_kyc_session( $is_dev_mode, $self_assessment, $capabilities );
+			return $this->create_embedded_kyc_session( $is_dev_mode, $self_assessment, $capabilities );
 		} catch ( WooPaymentsApiException $e ) {
 			return $this->get_wp_error_from_api_exception( $e, esc_html__( 'An unexpected error happened while creating the KYC session.', 'woocommerce' ) );
 		}
@@ -118,7 +118,7 @@ class WooPaymentsOnboardingService {
 	 */
 	public function finish_kyc_session( string $source ) {
 		try {
-			return $this->finalize_native_onboarding_kyc_session( $source );
+			return $this->finalize_embedded_kyc( $source );
 		} catch ( WooPaymentsApiException $e ) {
 			return $this->get_wp_error_from_api_exception( $e, esc_html__( 'An unexpected error happened while finalizing the KYC session.', 'woocommerce' ) );
 		}
@@ -131,7 +131,7 @@ class WooPaymentsOnboardingService {
 	 */
 	public function reset_onboarding() {
 		try {
-			return $this->delete_native_onboarding_account( $this->is_native_onboarding_test_mode_enabled() );
+			return $this->delete_account( $this->is_onboarding_test_mode_enabled() );
 		} catch ( WooPaymentsApiException $e ) {
 			return $this->get_wp_error_from_api_exception( $e, esc_html__( 'An unexpected error happened while resetting onboarding.', 'woocommerce' ) );
 		}
@@ -148,11 +148,11 @@ class WooPaymentsOnboardingService {
 	public function disable_test_account( bool $is_test_drive ) {
 		try {
 			if ( $is_test_drive ) {
-				$this->save_native_test_drive_settings_for_live_account();
-				return $this->delete_native_onboarding_account( true );
+				$this->save_test_drive_settings_for_live_account();
+				return $this->delete_account( true );
 			}
 
-			return $this->delete_native_onboarding_account( $this->is_native_onboarding_test_mode_enabled() );
+			return $this->delete_account( $this->is_onboarding_test_mode_enabled() );
 		} catch ( WooPaymentsApiException $e ) {
 			return $this->get_wp_error_from_api_exception( $e, esc_html__( 'An unexpected error happened while disabling the test account.', 'woocommerce' ) );
 		}
@@ -164,7 +164,7 @@ class WooPaymentsOnboardingService {
 	 * Link wins, so WooPay stays off when Link is enabled.
 	 */
 	public function activate_woopay_enabled_by_default(): void {
-		$this->enable_native_payment_methods( array(), true );
+		$this->add_enabled_payment_methods( array(), true );
 		$this->proxy->call_function( 'delete_transient', WooPaymentsPaymentsSettingsAdapter::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT );
 	}
 
@@ -216,7 +216,7 @@ class WooPaymentsOnboardingService {
 			WooPaymentsDatabaseCache::RECOMMENDED_PAYMENT_METHODS_KEY,
 			function () use ( $country_code, $locale ) {
 				try {
-					$payment_methods = $this->get_native_api_client()->get_recommended_payment_methods( $country_code, $locale );
+					$payment_methods = $this->get_api_client()->get_recommended_payment_methods( $country_code, $locale );
 				} catch ( Throwable $exception ) {
 					wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Failed to fetch the WooPayments recommended payment methods.', $exception );
 
@@ -280,10 +280,10 @@ class WooPaymentsOnboardingService {
 	 * @param array  $capabilities Requested payment method capabilities.
 	 * @return array
 	 */
-	private function initialize_native_test_account( string $location, array $capabilities ): array {
-		$this->set_native_onboarding_test_mode( true );
+	private function init_test_drive_account( string $location, array $capabilities ): array {
+		$this->set_onboarding_test_mode( true );
 
-		$account_data = $this->get_native_onboarding_account_data(
+		$account_data = $this->build_account_creation_data(
 			'test_drive',
 			array(
 				'business_type' => 'individual',
@@ -292,13 +292,13 @@ class WooPaymentsOnboardingService {
 			$capabilities
 		);
 
-		$response = $this->get_native_api_client()->initialize_onboarding(
+		$response = $this->get_api_client()->initialize_onboarding(
 			false,
-			$this->get_native_onboarding_return_url(),
-			$this->get_native_onboarding_site_data(),
-			$this->array_filter_recursive( $this->get_native_onboarding_user_data() ),
+			$this->get_onboarding_return_url(),
+			$this->get_onboarding_site_data(),
+			$this->array_filter_recursive( $this->get_onboarding_user_data() ),
 			$this->array_filter_recursive( $account_data ),
-			$this->get_native_onboarding_actioned_notes()
+			$this->get_actioned_inbox_notes()
 		);
 
 		// Client 11.1.0 init_test_drive_account() remembers the platform's WooPay default only when should_enable_woopay() agrees.
@@ -308,10 +308,10 @@ class WooPaymentsOnboardingService {
 
 		$success = ! empty( $response['success'] ) || ( array_key_exists( 'url', $response ) && false === $response['url'] );
 		if ( $success ) {
-			$this->update_native_gateway_settings_after_test_account_init( $capabilities, $response );
-			$is_live = $this->get_native_response_bool( $response, array( 'is_live', 'isLive' ), false );
-			if ( ! $this->sync_native_account_cache_from_response( $response, $is_live, ! $is_live, true ) ) {
-				$this->get_native_account_service()->clear_cache();
+			$this->update_gateway_settings_after_test_account_init( $capabilities, $response );
+			$is_live = $this->get_response_bool( $response, array( 'is_live', 'isLive' ), false );
+			if ( ! $this->sync_account_cache_from_response( $response, $is_live, ! $is_live, true ) ) {
+				$this->get_account_service()->clear_cache();
 			}
 		}
 
@@ -331,13 +331,13 @@ class WooPaymentsOnboardingService {
 	 * @param array $capabilities         Requested payment method capabilities.
 	 * @return array
 	 */
-	private function create_native_onboarding_kyc_session( bool $is_dev_mode, array $self_assessment_data, array $capabilities ): array {
+	private function create_embedded_kyc_session( bool $is_dev_mode, array $self_assessment_data, array $capabilities ): array {
 		$setup_mode = $is_dev_mode ? 'test' : 'live';
-		$this->set_native_onboarding_test_mode( 'live' !== $setup_mode );
+		$this->set_onboarding_test_mode( 'live' !== $setup_mode );
 
 		// Client 11.1.0 create_embedded_kyc_session() applies the picks before it calls the platform.
-		if ( ! empty( $capabilities ) && ! $this->apply_native_onboarding_payment_method_picks( $capabilities ) ) {
-			$this->log_native_onboarding_error( 'WooPayments could not save the payment methods picked in onboarding.' );
+		if ( ! empty( $capabilities ) && ! $this->apply_payment_method_picks( $capabilities ) ) {
+			$this->log_onboarding_error( 'WooPayments could not save the payment methods picked in onboarding.' );
 		}
 
 		if ( 'live' === $setup_mode ) {
@@ -351,12 +351,12 @@ class WooPaymentsOnboardingService {
 		}
 
 		$referral_code = get_transient( self::REFERRAL_CODE_TRANSIENT );
-		$session       = $this->get_native_api_client()->initialize_onboarding_embedded_kyc(
+		$session       = $this->get_api_client()->initialize_onboarding_embedded_kyc(
 			'live' === $setup_mode,
-			$this->get_native_onboarding_site_data(),
-			$this->array_filter_recursive( $this->get_native_onboarding_user_data() ),
-			$this->array_filter_recursive( $this->get_native_onboarding_account_data( $setup_mode, $self_assessment_data, $capabilities ) ),
-			$this->get_native_onboarding_actioned_notes(),
+			$this->get_onboarding_site_data(),
+			$this->array_filter_recursive( $this->get_onboarding_user_data() ),
+			$this->array_filter_recursive( $this->build_account_creation_data( $setup_mode, $self_assessment_data, $capabilities ) ),
+			$this->get_actioned_inbox_notes(),
 			empty( $referral_code ) ? null : (string) $referral_code
 		);
 
@@ -368,14 +368,14 @@ class WooPaymentsOnboardingService {
 			DAY_IN_SECONDS
 		);
 
-		if ( $this->native_response_account_created( $session ) ) {
-			$is_live = $this->get_native_response_bool( $session, array( 'is_live', 'isLive' ), 'live' === $setup_mode );
-			if ( ! $this->sync_native_account_cache_from_response( $session, $is_live, false, false ) ) {
-				$this->get_native_account_service()->clear_cache();
+		if ( $this->is_account_created_response( $session ) ) {
+			$is_live = $this->get_response_bool( $session, array( 'is_live', 'isLive' ), 'live' === $setup_mode );
+			if ( ! $this->sync_account_cache_from_response( $session, $is_live, false, false ) ) {
+				$this->get_account_service()->clear_cache();
 			}
 		}
 
-		return $this->normalize_native_kyc_session_response( $session );
+		return $this->normalize_kyc_session_response( $session );
 	}
 
 	/**
@@ -384,11 +384,11 @@ class WooPaymentsOnboardingService {
 	 * @param string $source Onboarding source.
 	 * @return array
 	 */
-	private function finalize_native_onboarding_kyc_session( string $source ): array {
-		$response = $this->get_native_api_client()->finalize_onboarding_embedded_kyc(
+	private function finalize_embedded_kyc( string $source ): array {
+		$response = $this->get_api_client()->finalize_onboarding_embedded_kyc(
 			$this->proxy->call_function( 'get_user_locale' ),
 			$source,
-			$this->get_native_onboarding_actioned_notes()
+			$this->get_actioned_inbox_notes()
 		);
 
 		if ( ! isset( $response['success'] ) ) {
@@ -397,13 +397,13 @@ class WooPaymentsOnboardingService {
 
 		if ( ! empty( $response['success'] ) ) {
 			$mode    = isset( $response['mode'] ) && is_scalar( $response['mode'] ) ? (string) $response['mode'] : '';
-			$is_live = 'live' === $mode || $this->get_native_response_bool( $response, array( 'is_live', 'isLive' ), false );
-			if ( ! $this->sync_native_account_cache_from_response( $response, $is_live, false, true ) ) {
-				$this->get_native_account_service()->clear_cache();
+			$is_live = 'live' === $mode || $this->get_response_bool( $response, array( 'is_live', 'isLive' ), false );
+			if ( ! $this->sync_account_cache_from_response( $response, $is_live, false, true ) ) {
+				$this->get_account_service()->clear_cache();
 			}
 
-			$this->apply_native_kyc_connection( $is_live );
-			$this->clear_native_onboarding_data();
+			$this->apply_kyc_connection( $is_live );
+			$this->clear_onboarding_data();
 
 			$response['params'] = array(
 				'promo'                    => isset( $response['promotion_id'] ) && is_scalar( $response['promotion_id'] ) ? (string) $response['promotion_id'] : '',
@@ -412,7 +412,7 @@ class WooPaymentsOnboardingService {
 				'wcpay-connection-success' => '1',
 			);
 
-			$this->refresh_native_account_after_finalization();
+			$this->refresh_account_after_kyc();
 		}
 
 		return $response;
@@ -429,10 +429,10 @@ class WooPaymentsOnboardingService {
 	 * @param bool $is_kyc_complete Whether the merchant finished KYC rather than leaving it early.
 	 */
 	public function finish_hosted_kyc_connection( bool $is_live, bool $is_kyc_complete ): void {
-		$this->apply_native_kyc_connection( $is_live );
+		$this->apply_kyc_connection( $is_live );
 
 		if ( $is_kyc_complete ) {
-			$this->clear_native_onboarding_data();
+			$this->clear_onboarding_data();
 		}
 	}
 
@@ -441,9 +441,9 @@ class WooPaymentsOnboardingService {
 	 *
 	 * @param bool $is_live Whether the finalized account is live.
 	 */
-	private function apply_native_kyc_connection( bool $is_live ): void {
-		$this->enable_native_gateway_after_kyc_finalization( $is_live );
-		$this->restore_native_test_drive_payment_methods();
+	private function apply_kyc_connection( bool $is_live ): void {
+		$this->enable_gateway_after_kyc( $is_live );
+		$this->restore_test_drive_payment_methods();
 
 		// Flag the new connection for the Overview's wcpay_stripe_connected Tracks event, as the plugin does.
 		$this->proxy->call_function( 'update_option', '_wcpay_onboarding_stripe_connected', array( 'is_existing_stripe_account' => false ), false );
@@ -459,9 +459,9 @@ class WooPaymentsOnboardingService {
 	 *
 	 * The client also drops its business types cache, which native never fills.
 	 */
-	private function clear_native_onboarding_data(): void {
+	private function clear_onboarding_data(): void {
 		wc_get_container()->get( WooPaymentsDatabaseCache::class )->delete( WooPaymentsDatabaseCache::RECOMMENDED_PAYMENT_METHODS_KEY );
-		$this->get_native_account_service()->clear_onboarding_fields_cache();
+		$this->get_account_service()->clear_onboarding_fields_cache();
 	}
 
 	/**
@@ -471,17 +471,17 @@ class WooPaymentsOnboardingService {
 	 *
 	 * @param bool $is_live Whether the finalized account is live.
 	 */
-	private function enable_native_gateway_after_kyc_finalization( bool $is_live ): void {
+	private function enable_gateway_after_kyc( bool $is_live ): void {
 		$settings              = $this->proxy->call_function( 'get_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
 		$settings              = is_array( $settings ) ? $settings : array();
 		$settings['enabled']   = 'yes';
 		$settings['test_mode'] = $is_live ? 'no' : 'yes';
 
-		$projection = wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class )->persist( $settings );
-		if ( ! $projection['persisted'] ) {
-			$this->log_native_onboarding_error(
+		$persist_result = wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class )->persist( $settings );
+		if ( ! $persist_result['persisted'] ) {
+			$this->log_onboarding_error(
 				'Native WooPayments could not enable the gateway after KYC finalization.',
-				array( 'failed_options' => $projection['failed_option_names'] )
+				array( 'failed_options' => $persist_result['failed_option_names'] )
 			);
 		}
 	}
@@ -490,16 +490,16 @@ class WooPaymentsOnboardingService {
 	 * Merge the saved test-drive payment methods back into the enabled set, like client 11.1.0
 	 * restore_test_drive_enabled_payment_methods(): no capability or availability check, and a restored Link turns WooPay off.
 	 */
-	private function restore_native_test_drive_payment_methods(): void {
+	private function restore_test_drive_payment_methods(): void {
 		$test_drive_settings = $this->proxy->call_function( 'get_transient', self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
 		if ( ! is_array( $test_drive_settings ) || empty( $test_drive_settings['enabled_payment_methods'] ) || ! is_array( $test_drive_settings['enabled_payment_methods'] ) ) {
 			return;
 		}
 
 		$restored_ids = $this->get_test_drive_enabled_payment_method_ids();
-		if ( ! empty( $restored_ids ) && ! $this->enable_native_payment_methods( $restored_ids ) ) {
+		if ( ! empty( $restored_ids ) && ! $this->add_enabled_payment_methods( $restored_ids ) ) {
 			// Keep the Test Drive selection until the transient expires, so it is not lost with the failed write.
-			$this->log_native_onboarding_error( 'Native WooPayments could not restore the Test Drive payment methods after KYC finalization.' );
+			$this->log_onboarding_error( 'Native WooPayments could not restore the Test Drive payment methods after KYC finalization.' );
 			return;
 		}
 
@@ -513,14 +513,14 @@ class WooPaymentsOnboardingService {
 	 * @param array<mixed> $picks NOX picks keyed by payment method ID.
 	 * @return bool Whether the canonical settings and split gateways were persisted.
 	 */
-	private function apply_native_onboarding_payment_method_picks( array $picks ): bool {
-		$wallets_picked = $this->is_native_onboarding_pick_selected( $picks['apple_google'] ?? false )
-			|| $this->is_native_onboarding_pick_selected( $picks['apple_pay'] ?? false )
-			|| $this->is_native_onboarding_pick_selected( $picks['google_pay'] ?? false );
+	private function apply_payment_method_picks( array $picks ): bool {
+		$wallets_picked = $this->is_pick_selected( $picks['apple_google'] ?? false )
+			|| $this->is_pick_selected( $picks['apple_pay'] ?? false )
+			|| $this->is_pick_selected( $picks['google_pay'] ?? false );
 
-		return $this->enable_native_payment_methods(
-			$this->get_native_picked_payment_method_ids( $picks ),
-			$this->is_native_onboarding_pick_selected( $picks['woopay'] ?? false ),
+		return $this->add_enabled_payment_methods(
+			$this->get_picked_payment_method_ids( $picks ),
+			$this->is_pick_selected( $picks['woopay'] ?? false ),
 			$wallets_picked,
 			true
 		);
@@ -537,7 +537,7 @@ class WooPaymentsOnboardingService {
 	 *                                           update_enabled_payment_methods_ids() does for every method in the list.
 	 * @return bool Whether the canonical settings and split gateways were persisted.
 	 */
-	private function enable_native_payment_methods( array $payment_method_ids, ?bool $woopay_picked = null, ?bool $payment_request_enabled = null, bool $enable_card_gateway = false ): bool {
+	private function add_enabled_payment_methods( array $payment_method_ids, ?bool $woopay_picked = null, ?bool $payment_request_enabled = null, bool $enable_card_gateway = false ): bool {
 		$settings           = $this->proxy->call_function( 'get_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
 		$settings           = is_array( $settings ) ? $settings : array();
 		$enabled_ids        = is_array( $settings['upe_enabled_payment_method_ids'] ?? null ) ? $settings['upe_enabled_payment_method_ids'] : array( 'card' );
@@ -558,15 +558,15 @@ class WooPaymentsOnboardingService {
 		}
 
 		// The canonical write also enables each method's split gateway and syncs its duplicated list.
-		$projection = wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class )->persist( $settings, $payment_request_enabled );
+		$persist_result = wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class )->persist( $settings, $payment_request_enabled );
 		if ( $is_woopay_enabled !== $was_woopay_enabled ) {
 			wc_get_container()->get( WooPaymentsFrontendTrackingController::class )->record_woopay_admin_event(
 				$is_woopay_enabled ? 'woopay_enabled' : 'woopay_disabled',
-				array( 'test_mode' => $this->get_native_account_service()->is_test_mode_enabled() ? 1 : 0 )
+				array( 'test_mode' => $this->get_account_service()->is_test_mode_enabled() ? 1 : 0 )
 			);
 		}
 
-		return $projection['persisted'];
+		return $persist_result['persisted'];
 	}
 
 	/**
@@ -588,9 +588,9 @@ class WooPaymentsOnboardingService {
 	/**
 	 * Refresh account data after finalization without invalidating the non-replayable success.
 	 */
-	private function refresh_native_account_after_finalization(): void {
+	private function refresh_account_after_kyc(): void {
 		try {
-			$this->get_native_account_service()->refresh_account_data();
+			$this->get_account_service()->refresh_account_data();
 		} catch ( \Throwable $e ) {
 			return;
 		}
@@ -602,12 +602,12 @@ class WooPaymentsOnboardingService {
 	 * @param array<mixed> $picks NOX picks keyed by payment method ID.
 	 * @return string[]
 	 */
-	private function get_native_picked_payment_method_ids( array $picks ): array {
+	private function get_picked_payment_method_ids( array $picks ): array {
 		$registry   = new WooPaymentsPaymentMethodRegistry();
 		$picked_ids = array();
 
 		foreach ( $picks as $payment_method_id => $selected ) {
-			if ( ! is_string( $payment_method_id ) || ! $this->is_native_onboarding_pick_selected( $selected ) ) {
+			if ( ! is_string( $payment_method_id ) || ! $this->is_pick_selected( $selected ) ) {
 				continue;
 			}
 
@@ -628,7 +628,7 @@ class WooPaymentsOnboardingService {
 	 * @param mixed $selected Stored pick value.
 	 * @return bool
 	 */
-	private function is_native_onboarding_pick_selected( $selected ): bool {
+	private function is_pick_selected( $selected ): bool {
 		if ( is_bool( $selected ) ) {
 			return $selected;
 		}
@@ -639,7 +639,7 @@ class WooPaymentsOnboardingService {
 	/**
 	 * Save enabled native test-drive payment methods before deleting the account.
 	 */
-	private function save_native_test_drive_settings_for_live_account(): void {
+	private function save_test_drive_settings_for_live_account(): void {
 		$settings                = $this->proxy->call_function( 'get_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
 		$enabled_payment_methods = is_array( $settings ) && is_array( $settings['upe_enabled_payment_method_ids'] ?? null )
 			? $this->normalize_test_drive_payment_method_ids( $settings['upe_enabled_payment_method_ids'] )
@@ -722,7 +722,7 @@ class WooPaymentsOnboardingService {
 	 * @param string              $message Log message.
 	 * @param array<string,mixed> $context Log context.
 	 */
-	private function log_native_onboarding_error( string $message, array $context = array() ): void {
+	private function log_onboarding_error( string $message, array $context = array() ): void {
 		try {
 			wc_get_container()->get( WooPaymentsLogger::class )->log_always( $message, 'error', $context );
 		} catch ( \Throwable $e ) {
@@ -737,21 +737,21 @@ class WooPaymentsOnboardingService {
 	 * @return array
 	 * @throws WooPaymentsApiException When account deletion fails.
 	 */
-	private function delete_native_onboarding_account( bool $test_mode ): array {
-		$this->get_native_account_service()->overwrite_cache_with_no_account();
+	private function delete_account( bool $test_mode ): array {
+		$this->get_account_service()->overwrite_cache_with_no_account();
 
 		try {
-			$response = $this->get_native_api_client()->delete_account( $test_mode );
+			$response = $this->get_api_client()->delete_account( $test_mode );
 		} catch ( WooPaymentsApiException $e ) {
-			$this->get_native_account_service()->clear_cache();
+			$this->get_account_service()->clear_cache();
 			throw $e;
 		}
 
 		$success = 'success' === ( $response['result'] ?? '' );
 		if ( $success ) {
-			$this->set_native_onboarding_test_mode( false );
+			$this->set_onboarding_test_mode( false );
 		} else {
-			$this->get_native_account_service()->clear_cache();
+			$this->get_account_service()->clear_cache();
 		}
 
 		return array_merge(
@@ -767,7 +767,7 @@ class WooPaymentsOnboardingService {
 	 *
 	 * @return WooPaymentsApiClient
 	 */
-	private function get_native_api_client(): WooPaymentsApiClient {
+	private function get_api_client(): WooPaymentsApiClient {
 		if ( null === $this->api_client ) {
 			$this->api_client = wc_get_container()->get( WooPaymentsApiClient::class );
 		}
@@ -780,7 +780,7 @@ class WooPaymentsOnboardingService {
 	 *
 	 * @return WooPaymentsAccountService
 	 */
-	private function get_native_account_service(): WooPaymentsAccountService {
+	private function get_account_service(): WooPaymentsAccountService {
 		if ( null === $this->account_service ) {
 			$this->account_service = wc_get_container()->get( WooPaymentsAccountService::class );
 		}
@@ -793,7 +793,7 @@ class WooPaymentsOnboardingService {
 	 *
 	 * @return array
 	 */
-	private function get_native_onboarding_site_data(): array {
+	private function get_onboarding_site_data(): array {
 		return array(
 			'site_username' => wp_get_current_user()->user_login,
 			'site_locale'   => get_locale(),
@@ -805,7 +805,7 @@ class WooPaymentsOnboardingService {
 	 *
 	 * @return string
 	 */
-	private function get_native_onboarding_return_url(): string {
+	private function get_onboarding_return_url(): string {
 		return Utils::wc_payments_settings_url( WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH );
 	}
 
@@ -814,7 +814,7 @@ class WooPaymentsOnboardingService {
 	 *
 	 * @return array
 	 */
-	private function get_native_onboarding_user_data(): array {
+	private function get_onboarding_user_data(): array {
 		return array(
 			'user_id'           => get_current_user_id(),
 			'ip_address'        => \WC_Geolocation::get_ip_address(),
@@ -836,7 +836,7 @@ class WooPaymentsOnboardingService {
 	 *
 	 * @return string[]
 	 */
-	private function get_native_onboarding_actioned_notes(): array {
+	private function get_actioned_inbox_notes(): array {
 		$add_like_clause = static function ( $where_clause ) {
 			return $where_clause . " AND name LIKE 'wcpay-promo-%'";
 		};
@@ -894,7 +894,7 @@ class WooPaymentsOnboardingService {
 	 * @param array  $capabilities         Requested payment method capabilities.
 	 * @return array
 	 */
-	private function get_native_onboarding_account_data( string $setup_mode, array $self_assessment_data, array $capabilities ): array {
+	private function build_account_creation_data( string $setup_mode, array $self_assessment_data, array $capabilities ): array {
 		$home_url          = get_home_url();
 		$home_is_localhost = 'localhost' === wp_parse_url( $home_url, PHP_URL_HOST );
 		$fallback_url      = ( 'live' !== $setup_mode || $home_is_localhost ) ? 'https://wcpay.test' : null;
@@ -984,7 +984,7 @@ class WooPaymentsOnboardingService {
 	 * @param array $session Native KYC session.
 	 * @return array
 	 */
-	private function normalize_native_kyc_session_response( array $session ): array {
+	private function normalize_kyc_session_response( array $session ): array {
 		return array(
 			'clientSecret'   => $session['clientSecret'] ?? $session['client_secret'] ?? '',
 			'expiresAt'      => $session['expiresAt'] ?? $session['expires_at'] ?? 0,
@@ -1002,8 +1002,8 @@ class WooPaymentsOnboardingService {
 	 * @param array $response Native API response.
 	 * @return bool
 	 */
-	private function native_response_account_created( array $response ): bool {
-		return $this->get_native_response_bool( $response, array( 'account_created', 'accountCreated' ), false );
+	private function is_account_created_response( array $response ): bool {
+		return $this->get_response_bool( $response, array( 'account_created', 'accountCreated' ), false );
 	}
 
 	/**
@@ -1015,9 +1015,9 @@ class WooPaymentsOnboardingService {
 	 * @param bool  $default_ready Default readiness when the response omits readiness fields.
 	 * @return bool Whether account data was cached.
 	 */
-	private function sync_native_account_cache_from_response( array $response, bool $is_live, bool $is_test_drive, bool $default_ready ): bool {
-		$existing_cache  = $this->get_native_account_service()->get_cached_account_data();
-		$publishable_key = $this->get_native_response_scalar(
+	private function sync_account_cache_from_response( array $response, bool $is_live, bool $is_test_drive, bool $default_ready ): bool {
+		$existing_cache  = $this->get_account_service()->get_cached_account_data();
+		$publishable_key = $this->get_response_scalar(
 			$response,
 			array(
 				'publishable_key',
@@ -1026,7 +1026,7 @@ class WooPaymentsOnboardingService {
 			),
 			$existing_cache[ $is_live ? 'live_publishable_key' : 'test_publishable_key' ] ?? ''
 		);
-		$account_id      = $this->get_native_response_scalar(
+		$account_id      = $this->get_response_scalar(
 			$response,
 			array(
 				'account_id',
@@ -1050,7 +1050,7 @@ class WooPaymentsOnboardingService {
 		$account_data[ $publishable_key_name ] = $publishable_key;
 		$account_data['is_live']               = $is_live;
 		$account_data['is_test_drive']         = $is_test_drive;
-		$account_data['payments_enabled']      = $this->get_native_response_bool(
+		$account_data['payments_enabled']      = $this->get_response_bool(
 			$response,
 			array(
 				'payments_enabled',
@@ -1058,7 +1058,7 @@ class WooPaymentsOnboardingService {
 			),
 			$readiness_default['payments_enabled'] ?? $default_ready
 		);
-		$account_data['details_submitted']     = $this->get_native_response_bool(
+		$account_data['details_submitted']     = $this->get_response_bool(
 			$response,
 			array(
 				'details_submitted',
@@ -1067,8 +1067,8 @@ class WooPaymentsOnboardingService {
 			$readiness_default['details_submitted'] ?? $default_ready
 		);
 
-		$this->get_native_account_service()->cache_account_data_until_refreshed( $account_data );
-		$this->set_native_gateway_test_mode( ! $is_live );
+		$this->get_account_service()->cache_account_data_until_refreshed( $account_data );
+		$this->set_gateway_test_mode( ! $is_live );
 
 		return true;
 	}
@@ -1081,7 +1081,7 @@ class WooPaymentsOnboardingService {
 	 * @param mixed    $default_value Default value.
 	 * @return string
 	 */
-	private function get_native_response_scalar( array $response, array $keys, $default_value = '' ): string {
+	private function get_response_scalar( array $response, array $keys, $default_value = '' ): string {
 		foreach ( $keys as $key ) {
 			if ( array_key_exists( $key, $response ) && is_scalar( $response[ $key ] ) ) {
 				return (string) $response[ $key ];
@@ -1099,7 +1099,7 @@ class WooPaymentsOnboardingService {
 	 * @param mixed    $default_value Default value.
 	 * @return bool
 	 */
-	private function get_native_response_bool( array $response, array $keys, $default_value ): bool {
+	private function get_response_bool( array $response, array $keys, $default_value ): bool {
 		foreach ( $keys as $key ) {
 			if ( array_key_exists( $key, $response ) ) {
 				return filter_var( $response[ $key ], FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE ) ?? false;
@@ -1115,7 +1115,7 @@ class WooPaymentsOnboardingService {
 	 * @param bool $test_mode Whether test-mode onboarding is enabled.
 	 * @return void
 	 */
-	private function set_native_onboarding_test_mode( bool $test_mode ): void {
+	private function set_onboarding_test_mode( bool $test_mode ): void {
 		$this->proxy->call_function( 'update_option', 'wcpay_onboarding_test_mode', $test_mode ? 'yes' : 'no', true );
 	}
 
@@ -1125,7 +1125,7 @@ class WooPaymentsOnboardingService {
 	 * @param bool $test_mode Whether gateway test mode is enabled.
 	 * @return void
 	 */
-	private function set_native_gateway_test_mode( bool $test_mode ): void {
+	private function set_gateway_test_mode( bool $test_mode ): void {
 		$settings              = $this->proxy->call_function( 'get_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
 		$settings              = is_array( $settings ) ? $settings : array();
 		$settings['test_mode'] = $test_mode ? 'yes' : 'no';
@@ -1139,7 +1139,7 @@ class WooPaymentsOnboardingService {
 	 *
 	 * @return bool
 	 */
-	private function is_native_onboarding_test_mode_enabled(): bool {
+	private function is_onboarding_test_mode_enabled(): bool {
 		return in_array( $this->proxy->call_function( 'get_option', 'wcpay_onboarding_test_mode', 'no' ), array( 'yes', '1' ), true );
 	}
 
@@ -1150,18 +1150,18 @@ class WooPaymentsOnboardingService {
 	 * @param array $response     Native API response.
 	 * @return void
 	 */
-	private function update_native_gateway_settings_after_test_account_init( array $capabilities, array $response ): void {
+	private function update_gateway_settings_after_test_account_init( array $capabilities, array $response ): void {
 		$settings              = $this->proxy->call_function( 'get_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
 		$settings              = is_array( $settings ) ? $settings : array();
 		$settings['enabled']   = 'yes';
-		$settings['test_mode'] = $this->get_native_response_bool( $response, array( 'is_live', 'isLive' ), false ) ? 'no' : 'yes';
+		$settings['test_mode'] = $this->get_response_bool( $response, array( 'is_live', 'isLive' ), false ) ? 'no' : 'yes';
 
 		// Keep the gateway settings autoloaded: the gateway reads them on every front-end request via WC_Payment_Gateway::init_settings().
 		$this->proxy->call_function( 'update_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, $settings );
 
 		// Client 11.1.0 init_test_drive_account() applies the picks once the test-drive account exists.
 		if ( ! empty( $capabilities ) ) {
-			$this->apply_native_onboarding_payment_method_picks( $capabilities );
+			$this->apply_payment_method_picks( $capabilities );
 		}
 
 		$this->proxy->call_function( 'update_option', '_wcpay_onboarding_stripe_connected', array( 'is_existing_stripe_account' => true ), false );

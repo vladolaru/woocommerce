@@ -2167,10 +2167,10 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should autoload the onboarding test-mode option when persisting it, since storefront renders read it.
 	 */
-	public function test_set_native_onboarding_test_mode_autoloads_option(): void {
+	public function test_set_onboarding_test_mode_autoloads_option(): void {
 		delete_option( 'wcpay_onboarding_test_mode' );
 
-		$this->invoke_private_method( 'set_native_onboarding_test_mode', array( true ) );
+		$this->invoke_private_method( 'set_onboarding_test_mode', array( true ) );
 
 		$this->assertSame( 'yes', get_option( 'wcpay_onboarding_test_mode' ) );
 		$this->assertArrayHasKey( 'wcpay_onboarding_test_mode', wp_load_alloptions( true ), 'Client 11.1.0 autoloads it (onboarding service :1086).' );
@@ -2179,11 +2179,11 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should not autoload the Stripe-connected onboarding marker when persisting it.
 	 */
-	public function test_update_native_gateway_settings_after_test_account_init_does_not_autoload_stripe_connected_marker(): void {
+	public function test_update_gateway_settings_after_test_account_init_does_not_autoload_stripe_connected_marker(): void {
 		delete_option( '_wcpay_onboarding_stripe_connected' );
 
 		$this->invoke_private_method(
-			'update_native_gateway_settings_after_test_account_init',
+			'update_gateway_settings_after_test_account_init',
 			array( array( 'card_payments' => true ), array( 'is_live' => false ) )
 		);
 
