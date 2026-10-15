@@ -87,4 +87,39 @@ class WooPaymentsApiExceptionTest extends WC_Unit_Test_Case {
 			'no code'          => array( '', 404, 'wcpay_api_error', 404 ),
 		);
 	}
+
+	/**
+	 * The extension's REST base answers the in-person payment routes with the failure's code and message and no status
+	 * (includes/admin/class-wc-payments-rest-controller.php:48-57), which WordPress sends as 500; it keeps no error for an
+	 * empty code.
+	 *
+	 * @testdox A failure with code "$error_code" and status $http_code converts to the REST error "$expected_code" without a status.
+	 * @dataProvider rest_error_without_status_provider
+	 *
+	 * @param string $error_code       Provider error code.
+	 * @param int    $http_code        Provider HTTP code.
+	 * @param string $expected_code    Expected REST error code.
+	 * @param string $expected_message Expected REST error message.
+	 */
+	public function test_to_wp_error_without_status_keeps_the_code_and_message( string $error_code, int $http_code, string $expected_code, string $expected_message ): void {
+		$error = ( new WooPaymentsApiException( 'Request failed.', $error_code, $http_code ) )->to_wp_error_without_status();
+
+		$this->assertSame( $expected_code, $error->get_error_code() );
+		$this->assertSame( $expected_message, $error->get_error_message() );
+		$this->assertNull( $error->get_error_data() );
+	}
+
+	/**
+	 * Provide a platform refusal, a missing resource, an unreadable 200 answer and a failure without a code.
+	 *
+	 * @return array<string,array{string,int,string,string}>
+	 */
+	public function rest_error_without_status_provider(): array {
+		return array(
+			'refused request'  => array( 'invalid_request_error', 400, 'invalid_request_error', 'Request failed.' ),
+			'missing resource' => array( 'resource_missing', 404, 'resource_missing', 'Request failed.' ),
+			'unreadable 200'   => array( 'wcpay_unparseable_or_null_body', 200, 'wcpay_unparseable_or_null_body', 'Request failed.' ),
+			'no code'          => array( '', 404, '', '' ),
+		);
+	}
 }

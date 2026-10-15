@@ -194,8 +194,8 @@ class WooPaymentsApiException extends RuntimeException {
 
 	/**
 	 * Convert the failure to the REST error the WooPayments admin routes answer: the error code and message, with the HTTP
-	 * status when it is 400-599 and 500 otherwise. The mobile routes, and routes whose extension controller chooses its own
-	 * answer, convert at the route.
+	 * status when it is 400-599 and 500 otherwise. The in-person payment routes answer to_wp_error_without_status(); routes
+	 * whose extension controller chooses its own answer convert at the route.
 	 *
 	 * @return WP_Error
 	 *
@@ -210,5 +210,17 @@ class WooPaymentsApiException extends RuntimeException {
 			$this->getMessage(),
 			array( 'status' => $status )
 		);
+	}
+
+	/**
+	 * Convert the failure to the REST error the in-person payment routes answer: the error code and message with no status,
+	 * which WordPress sends as 500, as the extension's REST base does (includes/admin/class-wc-payments-rest-controller.php:48-57).
+	 *
+	 * @return WP_Error
+	 *
+	 * @since 11.2.0
+	 */
+	public function to_wp_error_without_status(): WP_Error {
+		return new WP_Error( $this->get_error_code(), $this->getMessage() );
 	}
 }

@@ -13,7 +13,6 @@ use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
-use Automattic\WooCommerce\Internal\Utilities\ArrayUtil;
 use RuntimeException;
 use Throwable;
 use WC_Order;
@@ -333,7 +332,7 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 
 			return new WP_REST_Response( $data );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error_without_status();
 		}
 	}
 
@@ -682,16 +681,16 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 		try {
 			$readers = array_map(
 				array( $this, 'extract_reader' ),
-				$this->extract_list( $this->api_client->get_terminal_readers() )
+				WooPaymentsTerminalListResponses::items( $this->api_client->get_terminal_readers() )
 			);
-			$summary = $this->extract_list( $this->api_client->get_readers_charge_summary( gmdate( 'Y-m-d' ) ) );
+			$summary = WooPaymentsTerminalListResponses::items( $this->api_client->get_readers_charge_summary( gmdate( 'Y-m-d' ) ) );
 			$readers = $this->annotate_active_readers( $readers, $summary );
 
 			set_transient( self::STORE_READERS_TRANSIENT_KEY, $readers, self::READER_CACHE_TTL );
 
 			return new WP_REST_Response( $readers );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error_without_status();
 		}
 	}
 
@@ -794,7 +793,7 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 				throw new \RuntimeException( __( 'Invalid payment intent', 'woocommerce' ) );
 			}
 
-			$charge = $this->get_latest_charge( $intent );
+			$charge = WooPaymentsIntentCodec::latest_charge( $intent );
 			if ( isset( $charge['id'] ) ) {
 				$charge = array_merge( $charge, $this->api_client->get_charge( (string) $charge['id'] ) );
 			}
@@ -857,7 +856,7 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 				return new WP_Error( 'store_address_is_incomplete', admin_url( 'admin.php?page=wc-settings&tab=general' ) );
 			}
 
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error_without_status();
 		}
 	}
 
@@ -874,7 +873,7 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 		try {
 			return new WP_REST_Response( array_map( array( $this, 'extract_location' ), $this->get_cached_terminal_locations() ) );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error_without_status();
 		}
 	}
 
@@ -900,7 +899,7 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 
 			return new WP_REST_Response( $this->extract_location( $location ) );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error_without_status();
 		}
 	}
 
@@ -925,7 +924,7 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 
 			return new WP_REST_Response( $this->extract_location( $location ) );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error_without_status();
 		}
 	}
 
@@ -950,7 +949,7 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 
 			return new WP_REST_Response( $this->extract_location( $location ) );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error_without_status();
 		}
 	}
 
@@ -968,7 +967,7 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 
 			return new WP_REST_Response( $result );
 		} catch ( WooPaymentsApiException $exception ) {
-			return $this->api_exception_to_wp_error( $exception );
+			return $exception->to_wp_error_without_status();
 		}
 	}
 
@@ -1148,7 +1147,7 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 	 * @param bool                $already_captured   Whether the reader captured the payment itself, so completion is a payment rather than a capture.
 	 */
 	private function apply_terminal_lifecycle_event( WC_Order $order, array $intent, string $intent_id, string $status, bool $already_captured = false ): void {
-		$charge                 = $this->get_latest_charge( $intent );
+		$charge                 = WooPaymentsIntentCodec::latest_charge( $intent );
 		$charge_id              = isset( $charge['id'] ) ? (string) $charge['id'] : '';
 		$balance_transaction_id = WooPaymentsIntentCodec::balance_transaction_id( $charge['balance_transaction'] ?? null );
 
@@ -1194,7 +1193,7 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 	 */
 	private function mark_terminal_payment_completed( WC_Order $order, array $intent, string $intent_id ): void {
 		$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
-		$charge = $this->get_latest_charge( $intent );
+		$charge = WooPaymentsIntentCodec::latest_charge( $intent );
 
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$order->set_payment_method_title( __( 'WooCommerce In-Person Payments', 'woocommerce' ) );
@@ -1260,7 +1259,7 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 	 * @throws RuntimeException When the generated card cannot be saved for a registered customer.
 	 */
 	private function save_generated_card_for_subscriptions( WC_Order $order, array $intent ): void {
-		$generated_card = $this->get_latest_charge( $intent )['payment_method_details']['card_present']['generated_card'] ?? null;
+		$generated_card = WooPaymentsIntentCodec::latest_charge( $intent )['payment_method_details']['card_present']['generated_card'] ?? null;
 		if ( ! is_string( $generated_card ) || '' === $generated_card ) {
 			return;
 		}
@@ -1470,19 +1469,6 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get the latest charge from an intent.
-	 *
-	 * @param array<string,mixed> $intent Intent.
-	 * @return array<string,mixed>
-	 */
-	private function get_latest_charge( array $intent ): array {
-		$charges = isset( $intent['charges']['data'] ) && is_array( $intent['charges']['data'] ) ? $intent['charges']['data'] : array();
-		$charge  = empty( $charges ) ? array() : end( $charges );
-
-		return is_array( $charge ) ? $charge : array();
-	}
-
-	/**
 	 * Get cached terminal locations.
 	 *
 	 * @return array<int,array<string,mixed>>
@@ -1494,7 +1480,7 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 			return $cached;
 		}
 
-		$locations = array_map( array( $this, 'extract_location' ), $this->extract_list( $this->api_client->get_terminal_locations() ) );
+		$locations = array_map( array( $this, 'extract_location' ), WooPaymentsTerminalListResponses::items( $this->api_client->get_terminal_locations() ) );
 		set_transient( self::STORE_LOCATIONS_TRANSIENT_KEY, $locations, self::LOCATION_CACHE_TTL );
 
 		return $locations;
@@ -1540,39 +1526,6 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 					'display_name',
 					'livemode',
 				)
-			)
-		);
-	}
-
-	/**
-	 * Extract a list from common WPCOM collection envelopes.
-	 *
-	 * @param array<string,mixed> $response Response.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private function extract_list( array $response ): array {
-		foreach ( array( 'data', 'readers', 'locations', 'terminal_locations' ) as $key ) {
-			if ( isset( $response[ $key ] ) && is_array( $response[ $key ] ) ) {
-				return $this->normalize_list( $response[ $key ] );
-			}
-		}
-
-		return ArrayUtil::array_is_list( $response ) ? $this->normalize_list( $response ) : array();
-	}
-
-	/**
-	 * Normalize list items to arrays.
-	 *
-	 * @param array<mixed> $items Items.
-	 * @return array<int,array<string,mixed>>
-	 */
-	private function normalize_list( array $items ): array {
-		return array_values(
-			array_filter(
-				$items,
-				static function ( $item ): bool {
-					return is_array( $item );
-				}
 			)
 		);
 	}
@@ -1806,7 +1759,7 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 		$order_id = isset( $charge['order']['number'] ) ? (int) $charge['order']['number'] : 0;
 		if ( 0 >= $order_id ) {
 			$charge_metadata = isset( $charge['metadata'] ) && is_array( $charge['metadata'] ) ? $charge['metadata'] : array();
-			$intent_metadata = $this->get_intent_metadata( $intent );
+			$intent_metadata = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
 			$order_id        = isset( $charge_metadata['order_id'] ) ? (int) $charge_metadata['order_id'] : (int) ( $intent_metadata['order_id'] ?? 0 );
 		}
 
@@ -2007,7 +1960,7 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 			return array();
 		}
 
-		return $this->normalize_list( $data[ $key ] );
+		return WooPaymentsTerminalListResponses::array_items( $data[ $key ] );
 	}
 
 	/**
@@ -2032,16 +1985,6 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 	 */
 	private function is_valid_provider_id( string $id ): bool {
 		return '' !== $id && (bool) preg_match( '/^[^\/\\\\%]+$/', $id );
-	}
-
-	/**
-	 * Convert an API exception to a REST error with no status (500), as the mobile apps get it from the client (class-wc-payments-rest-controller.php:48-57).
-	 *
-	 * @param WooPaymentsApiException $exception API exception.
-	 * @return WP_Error
-	 */
-	private function api_exception_to_wp_error( WooPaymentsApiException $exception ): WP_Error {
-		return new WP_Error( $exception->get_error_code(), $exception->getMessage() );
 	}
 
 	/**
