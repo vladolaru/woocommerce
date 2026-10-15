@@ -87,6 +87,7 @@ final class WooPaymentsAdminRestRouteRegistrar implements RegisterHooksInterface
 		return array(
 			WooPaymentsMerchantRestController::class,
 			WooPaymentsWebhookRestController::class,
+			WooPaymentsTerminalPaymentsRestController::class,
 			WooPaymentsMobileRestController::class,
 			WooPaymentsAccountSessionRestController::class,
 			WooPaymentsCustomersRestController::class,

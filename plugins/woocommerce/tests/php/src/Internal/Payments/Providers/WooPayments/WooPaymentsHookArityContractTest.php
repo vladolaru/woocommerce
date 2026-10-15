@@ -49,7 +49,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsFraudOutcomeTransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMobileRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTerminalPaymentsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderSuccessPage;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransactionsListRequest;
@@ -809,7 +809,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 */
 	private function probe_terminal_payment(): void {
 		$order      = new WC_Order();
-		$controller = wc_get_container()->get( WooPaymentsMobileRestController::class );
+		$controller = wc_get_container()->get( WooPaymentsTerminalPaymentsRestController::class );
 
 		$this->builtin_invoke(
 			$controller,
@@ -836,7 +836,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_customer' );
 		$request->set_param( 'order_id', $order->get_id() );
 
-		$controller = wc_get_container()->get( WooPaymentsMobileRestController::class );
+		$controller = wc_get_container()->get( WooPaymentsTerminalPaymentsRestController::class );
 		$this->run_ignoring_non_probe_errors( static fn() => $controller->create_customer( $request ) );
 	}
 
