@@ -73,7 +73,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 */
 	private const ADOPTED_OPERATIONAL_QUEUE_HOOKS = array(
 		WooPaymentsStoreSetupReportController::STORE_SETUP_SYNC_ACTION,
-		WooPaymentsOperationalQueueService::POST_KYC_ACTIVATION_EMAIL_SEND_ACTION,
+		WooPaymentsAccountMilestonesController::POST_KYC_ACTIVATION_EMAIL_SEND_ACTION,
 		WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK,
 		WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK,
 		'wcpay_schedule_subscription_migrations',

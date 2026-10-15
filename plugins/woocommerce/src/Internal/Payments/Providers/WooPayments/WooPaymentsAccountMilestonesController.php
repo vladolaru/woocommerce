@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsOperationalQueueService class file.
+ * WooPaymentsAccountMilestonesController class file.
  */
 
 declare( strict_types = 1 );
@@ -17,8 +17,9 @@ use Throwable;
 use WC_Order;
 
 /**
- * Runs the WooPayments account jobs: the Instant Deposits note, the post-KYC activation emails, go-live records and the
- * test-mode date.
+ * Follows the WooPayments account through its milestones: KYC completion and the post-KYC activation emails, the
+ * Instant Deposits note, the store's first live sale and the date test mode was turned on. It adds the WooPayments
+ * emails, the post-KYC activation email and the in-person payment receipt, to WooCommerce's email list.
  *
  * Their hooks, options, transients and notes keep the WooPayments extension's names, so jobs it queued and state it
  * stored carry over after the switch.
@@ -26,7 +27,7 @@ use WC_Order;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
+class WooPaymentsAccountMilestonesController implements RegisterHooksInterface {
 
 	/**
 	 * Action Scheduler hook of the Instant Deposits eligibility reminder.
@@ -186,7 +187,7 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register the account job handlers.
+	 * Register the account milestone hooks.
 	 */
 	public function register() {
 		add_action( 'woocommerce_payments_account_refreshed', array( $this, 'handle_wcpay_instant_deposits_inbox_note' ) );
@@ -671,10 +672,10 @@ class WooPaymentsOperationalQueueService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Log an operational queue exception without fataling the request.
+	 * Log a failed Instant Deposits note job without fataling the request.
 	 *
-	 * The exception's message is left out: most of these jobs call the platform, whose errors carry its text. The class,
-	 * code, trace and, for a platform error, its status and code are logged instead.
+	 * The exception's message is left out. The class, code, trace and, for a platform error, its status and code are
+	 * logged instead.
 	 *
 	 * @param string              $message   Log message.
 	 * @param Throwable           $exception Exception thrown.

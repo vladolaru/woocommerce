@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountMilestonesController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStoreSetupReportController;
 use WC_Unit_Test_Case;
 
@@ -105,7 +105,7 @@ class WooPaymentsPersistedDataContractTest extends WC_Unit_Test_Case {
 	private const KNOWN_GAPS = array(
 		'_woopay_has_subscription'    => 'plan.md T.7 Step 6 (e): blocked for the owner as O10 (renewal money path).',
 		'is_attached_to_subscription' => 'plan.md T.7 Step 6 (e): blocked for the owner as O10 (renewal money path).',
-		'wcpay_activation_timestamp'  => 'Client 11.1.0 adds it on activation (class-wc-payments.php:1589); native only reads it (WooPaymentsOperationalQueueService). Reported to the monitor 2026-09-29 (T.13, V482) for a decision.',
+		'wcpay_activation_timestamp'  => 'Client 11.1.0 adds it on activation (class-wc-payments.php:1589); native only reads it (WooPaymentsStoreSetupReportController). Reported to the monitor 2026-09-29 (T.13, V482) for a decision.',
 	);
 
 	/**
@@ -203,7 +203,7 @@ class WooPaymentsPersistedDataContractTest extends WC_Unit_Test_Case {
 	 */
 	public function test_builtin_handles_preserved_action_scheduler_hooks(): void {
 		wc_get_container()->get( WooPaymentsStoreSetupReportController::class )->register();
-		wc_get_container()->get( WooPaymentsOperationalQueueService::class )->register();
+		wc_get_container()->get( WooPaymentsAccountMilestonesController::class )->register();
 		wc_get_container()->get( WooPaymentsCanceledAuthorizationFeeRemediationService::class )->register();
 
 		$missing = array();
@@ -229,7 +229,7 @@ class WooPaymentsPersistedDataContractTest extends WC_Unit_Test_Case {
 	public function test_preserved_action_scheduler_hooks_use_the_woopayments_extension_groups(): void {
 		$builtin_groups               = array(
 			'wcpay_store_setup_sync'                      => WooPaymentsActionSchedulerService::GROUP_ID,
-			'wcpay_post_kyc_activation_email_send'        => WooPaymentsOperationalQueueService::POST_KYC_ACTIVATION_EMAIL_GROUP,
+			'wcpay_post_kyc_activation_email_send'        => WooPaymentsAccountMilestonesController::POST_KYC_ACTIVATION_EMAIL_GROUP,
 			'wcpay_remediate_canceled_authorization_fees' => WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID,
 			'wcpay_remediate_canceled_authorization_fees_dry_run' => WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID,
 		);

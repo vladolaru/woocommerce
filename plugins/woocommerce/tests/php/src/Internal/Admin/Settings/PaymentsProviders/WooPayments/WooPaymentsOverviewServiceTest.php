@@ -248,7 +248,7 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 				'is_test_drive'     => false,
 			)
 		);
-		// Written by `WooPaymentsOperationalQueueService` once the account is eligible, like the plugin's `handle_instant_deposits_inbox_note()`.
+		// Written by `WooPaymentsAccountMilestonesController` once the account is eligible, like the WooPayments extension's `handle_instant_deposits_inbox_note()`.
 		update_option( 'wcpay_instant_deposits_previously_eligible', true );
 		// Saved by the Overview when the merchant dismisses the instant payout offer.
 		update_option( 'wcpay_instant_deposit_notice_dismissed', true );

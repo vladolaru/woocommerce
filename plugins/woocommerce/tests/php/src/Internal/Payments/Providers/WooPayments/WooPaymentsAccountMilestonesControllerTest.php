@@ -10,23 +10,23 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminNoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOperationalQueueService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountMilestonesController;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Data_Store;
 use WC_Order;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsOperationalQueueService class.
+ * Tests for the WooPaymentsAccountMilestonesController class.
  */
-class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
+class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 
 	use ProviderTextLogAssertions;
 
 	/**
 	 * Created services whose hooks must be removed after each test.
 	 *
-	 * @var WooPaymentsOperationalQueueService[]
+	 * @var WooPaymentsAccountMilestonesController[]
 	 */
 	private array $services = array();
 
@@ -69,7 +69,7 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Operational queue hooks are registered when the built-in WooPayments owns the runtime.
+	 * @testdox Account milestone hooks are registered when the built-in WooPayments owns the runtime.
 	 */
 	public function test_registers_preserved_operational_hooks_when_builtin_owns_runtime(): void {
 		$service = $this->create_service();
@@ -707,17 +707,17 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create an operational queue service.
+	 * Create an account milestones controller.
 	 *
 	 * @param WooPaymentsActionSchedulerService|null $scheduler       Scheduler service.
 	 * @param WooPaymentsAccountService|null         $account_service Account service.
-	 * @return WooPaymentsOperationalQueueService
+	 * @return WooPaymentsAccountMilestonesController
 	 */
 	private function create_service(
 		?WooPaymentsActionSchedulerService $scheduler = null,
 		?WooPaymentsAccountService $account_service = null
-	): WooPaymentsOperationalQueueService {
-		$service = new WooPaymentsOperationalQueueService();
+	): WooPaymentsAccountMilestonesController {
+		$service = new WooPaymentsAccountMilestonesController();
 		$service->init(
 			$scheduler ?? new RecordingActionSchedulerService(),
 			$account_service ?? $this->create_account_service()
@@ -758,11 +758,11 @@ class WooPaymentsOperationalQueueServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Remove registered operational hooks for a service.
+	 * Remove the hooks a controller registered.
 	 *
-	 * @param WooPaymentsOperationalQueueService $service Service instance.
+	 * @param WooPaymentsAccountMilestonesController $service Controller instance.
 	 */
-	private function remove_operational_hooks( WooPaymentsOperationalQueueService $service ): void {
+	private function remove_operational_hooks( WooPaymentsAccountMilestonesController $service ): void {
 		remove_action( 'wcpay_instant_deposit_reminder', array( $service, 'handle_wcpay_instant_deposit_reminder' ) );
 		remove_action( 'add_option_wcpay_kyc_completion_date', array( $service, 'handle_add_option_wcpay_kyc_completion_date' ) );
 		remove_action( 'wcpay_post_kyc_activation_email_send', array( $service, 'handle_wcpay_post_kyc_activation_email_send' ) );

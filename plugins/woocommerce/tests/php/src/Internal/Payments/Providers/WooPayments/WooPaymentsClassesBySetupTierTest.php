@@ -33,10 +33,10 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 	private const WCPAY = 'Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\\';
 
 	/**
-	 * @testdox The Fee details job's handler, the store setup report and the operational queue load on the same requests.
+	 * @testdox The Fee details job's handler, the store setup report and the account milestones load on the same requests.
 	 */
-	public function test_fee_details_note_controller_loads_wherever_the_operational_queue_does(): void {
-		$handlers = array( 'WooPaymentsFeeDetailsNoteController', 'WooPaymentsStoreSetupReportController', 'WooPaymentsOperationalQueueService' );
+	public function test_scheduled_job_handlers_load_on_the_same_requests(): void {
+		$handlers = array( 'WooPaymentsFeeDetailsNoteController', 'WooPaymentsStoreSetupReportController', 'WooPaymentsAccountMilestonesController' );
 		foreach ( WooPaymentsProvider::get_classes_by_setup_tier() as $state => $requests ) {
 			foreach ( $requests as $request => $roots ) {
 				$present = array_values( array_filter( $handlers, static fn( string $handler ): bool => in_array( self::WCPAY . $handler, $roots, true ) ) );
@@ -188,7 +188,7 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 				self::WCPAY . 'WooPaymentsApplePayDomainService',
 				self::WCPAY . 'WooPaymentsFraudOrderTrackingService',
 				self::WCPAY . 'WooPaymentsStoreSetupReportController',
-				self::WCPAY . 'WooPaymentsOperationalQueueService',
+				self::WCPAY . 'WooPaymentsAccountMilestonesController',
 			) as $observer
 		) {
 			$this->assertContains( $observer, $connected_rest, $observer . ' must observe connected REST mutations.' );
