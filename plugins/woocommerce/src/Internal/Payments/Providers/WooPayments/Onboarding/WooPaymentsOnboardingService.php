@@ -21,7 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendTrackingController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTracks;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -165,7 +165,7 @@ class WooPaymentsOnboardingService {
 	 */
 	public function activate_woopay_enabled_by_default(): void {
 		$this->enable_native_payment_methods( array(), true );
-		$this->proxy->call_function( 'delete_transient', WooPaymentsOnboardingAdapter::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT );
+		$this->proxy->call_function( 'delete_transient', WooPaymentsPaymentsSettingsAdapter::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT );
 	}
 
 	/**
@@ -303,7 +303,7 @@ class WooPaymentsOnboardingService {
 
 		// Client 11.1.0 init_test_drive_account() remembers the platform's WooPay default only when should_enable_woopay() agrees.
 		if ( $this->should_enable_woopay_by_default( filter_var( $response['woopay_enabled_by_default'] ?? false, FILTER_VALIDATE_BOOLEAN ), $capabilities ) ) {
-			$this->proxy->call_function( 'set_transient', WooPaymentsOnboardingAdapter::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT, true, DAY_IN_SECONDS );
+			$this->proxy->call_function( 'set_transient', WooPaymentsPaymentsSettingsAdapter::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT, true, DAY_IN_SECONDS );
 		}
 
 		$success = ! empty( $response['success'] ) || ( array_key_exists( 'url', $response ) && false === $response['url'] );
@@ -363,7 +363,7 @@ class WooPaymentsOnboardingService {
 		// Client 11.1.0 create_embedded_kyc_session() remembers whether the platform wants WooPay on after KYC.
 		$this->proxy->call_function(
 			'set_transient',
-			WooPaymentsOnboardingAdapter::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT,
+			WooPaymentsPaymentsSettingsAdapter::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT,
 			filter_var( $session['woopay_enabled_by_default'] ?? false, FILTER_VALIDATE_BOOLEAN ),
 			DAY_IN_SECONDS
 		);
@@ -806,7 +806,7 @@ class WooPaymentsOnboardingService {
 	 * @return string
 	 */
 	private function get_native_onboarding_return_url(): string {
-		return Utils::wc_payments_settings_url( WooPaymentsOnboardingAdapter::OVERVIEW_PATH );
+		return Utils::wc_payments_settings_url( WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH );
 	}
 
 	/**

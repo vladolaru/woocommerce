@@ -26,7 +26,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\Wo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Testing\Tools\DependencyManagement\MockableLegacyProxy;
@@ -288,14 +288,14 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * container consumers untouched. The adapter it gets answers the account questions through the test's adapter and
 	 * runs the built-in onboarding through an onboarding service built on the same doubles.
 	 *
-	 * @param PaymentsProviders            $providers          The providers service.
-	 * @param LegacyProxy                  $proxy              The legacy proxy.
-	 * @param WooPaymentsOnboardingAdapter $onboarding_adapter The onboarding adapter.
-	 * @param WooPaymentsExtensionRuntime  $extension_runtime     The extension runtime.
-	 * @param WooPaymentsApiClient         $api_client         The API client.
-	 * @param WooPaymentsAccountService    $account_service    The account service.
+	 * @param PaymentsProviders                  $providers          The providers service.
+	 * @param LegacyProxy                        $proxy              The legacy proxy.
+	 * @param WooPaymentsPaymentsSettingsAdapter $onboarding_adapter The onboarding adapter.
+	 * @param WooPaymentsExtensionRuntime        $extension_runtime     The extension runtime.
+	 * @param WooPaymentsApiClient               $api_client         The API client.
+	 * @param WooPaymentsAccountService          $account_service    The account service.
 	 */
-	private function init_sut( PaymentsProviders $providers, LegacyProxy $proxy, WooPaymentsOnboardingAdapter $onboarding_adapter, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
+	private function init_sut( PaymentsProviders $providers, LegacyProxy $proxy, WooPaymentsPaymentsSettingsAdapter $onboarding_adapter, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
 		$this->sut->init( $providers, $proxy );
 
 		$onboarding_service = new WooPaymentsOnboardingService();
@@ -311,8 +311,8 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$collaborators = array(
-			'onboarding_adapter' => new DelegatingOnboardingAdapter( $onboarding_adapter, $api_client, $extension_runtime, $account_service, $onboarding_service ),
-			'extension_runtime'  => $extension_runtime,
+			'settings_adapter'  => new DelegatingPaymentsSettingsAdapter( $onboarding_adapter, $api_client, $extension_runtime, $account_service, $onboarding_service ),
+			'extension_runtime' => $extension_runtime,
 		);
 		foreach ( $collaborators as $property => $collaborator ) {
 			$reflection = new \ReflectionProperty( WooPaymentsService::class, $property );
@@ -386,12 +386,12 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$adapter       = $this->getMockBuilder( WooPaymentsOnboardingAdapter::class )
+		$adapter       = $this->getMockBuilder( WooPaymentsPaymentsSettingsAdapter::class )
 			->disableOriginalConstructor()
 			->onlyMethods(
 				array(
 					'is_onboarding_runtime_available',
-					'is_native_onboarding_available',
+					'is_builtin_onboarding_available',
 					'get_payment_gateway',
 					'has_account',
 					'has_valid_account',
@@ -405,7 +405,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			->getMock();
 
 		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
-		$adapter->method( 'is_native_onboarding_available' )->willReturn( true );
+		$adapter->method( 'is_builtin_onboarding_available' )->willReturn( true );
 		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
 		$adapter->method( 'has_account' )->willReturn( false );
 		$adapter->method( 'has_valid_account' )->willReturn( false );
@@ -1607,12 +1607,12 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$adapter       = $this->getMockBuilder( WooPaymentsOnboardingAdapter::class )
+		$adapter       = $this->getMockBuilder( WooPaymentsPaymentsSettingsAdapter::class )
 			->disableOriginalConstructor()
 			->onlyMethods(
 				array(
 					'is_onboarding_runtime_available',
-					'is_native_onboarding_available',
+					'is_builtin_onboarding_available',
 					'get_payment_gateway',
 					'has_account',
 					'has_valid_account',
@@ -1626,7 +1626,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			->getMock();
 
 		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
-		$adapter->method( 'is_native_onboarding_available' )->willReturn( true );
+		$adapter->method( 'is_builtin_onboarding_available' )->willReturn( true );
 		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
 		$adapter->method( 'has_account' )->willReturn( false );
 		$adapter->method( 'has_valid_account' )->willReturn( false );
@@ -1809,12 +1809,12 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$adapter       = $this->getMockBuilder( WooPaymentsOnboardingAdapter::class )
+		$adapter       = $this->getMockBuilder( WooPaymentsPaymentsSettingsAdapter::class )
 			->disableOriginalConstructor()
 			->onlyMethods(
 				array(
 					'is_onboarding_runtime_available',
-					'is_native_onboarding_available',
+					'is_builtin_onboarding_available',
 					'get_payment_gateway',
 					'has_account',
 					'has_valid_account',
@@ -1827,7 +1827,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			->getMock();
 
 		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
-		$adapter->method( 'is_native_onboarding_available' )->willReturn( true );
+		$adapter->method( 'is_builtin_onboarding_available' )->willReturn( true );
 		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
 		$adapter->method( 'has_account' )->willReturn( false );
 		$adapter->method( 'has_valid_account' )->willReturn( false );
@@ -2051,12 +2051,12 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$adapter           = $this->getMockBuilder( WooPaymentsOnboardingAdapter::class )
+		$adapter           = $this->getMockBuilder( WooPaymentsPaymentsSettingsAdapter::class )
 			->disableOriginalConstructor()
 			->onlyMethods(
 				array(
 					'is_onboarding_runtime_available',
-					'is_native_onboarding_available',
+					'is_builtin_onboarding_available',
 					'get_payment_gateway',
 					'has_account',
 					'has_valid_account',
@@ -2069,7 +2069,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			->getMock();
 
 		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
-		$adapter->method( 'is_native_onboarding_available' )->willReturn( true );
+		$adapter->method( 'is_builtin_onboarding_available' )->willReturn( true );
 		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
 		$adapter->method( 'has_account' )->willReturn( true );
 		$adapter->method( 'has_valid_account' )->willReturn( true );
@@ -2220,15 +2220,15 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an adapter exposing the native finalization path.
 	 *
-	 * @return WooPaymentsOnboardingAdapter|MockObject
+	 * @return WooPaymentsPaymentsSettingsAdapter|MockObject
 	 */
 	private function create_native_finalize_adapter() {
-		$adapter = $this->getMockBuilder( WooPaymentsOnboardingAdapter::class )
+		$adapter = $this->getMockBuilder( WooPaymentsPaymentsSettingsAdapter::class )
 			->disableOriginalConstructor()
 			->onlyMethods(
 				array(
 					'is_onboarding_runtime_available',
-					'is_native_onboarding_available',
+					'is_builtin_onboarding_available',
 					'get_payment_gateway',
 					'has_account',
 					'has_valid_account',
@@ -2240,7 +2240,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			)
 			->getMock();
 		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
-		$adapter->method( 'is_native_onboarding_available' )->willReturn( true );
+		$adapter->method( 'is_builtin_onboarding_available' )->willReturn( true );
 		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
 		$adapter->method( 'has_account' )->willReturn( true );
 		$adapter->method( 'has_valid_account' )->willReturn( true );
@@ -2256,9 +2256,9 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * Create an onboarding adapter wired to this test's mockable legacy proxy.
 	 *
 	 * @param bool $native_onboarding_available Whether native onboarding is available.
-	 * @return WooPaymentsOnboardingAdapter
+	 * @return WooPaymentsPaymentsSettingsAdapter
 	 */
-	private function create_onboarding_adapter( bool $native_onboarding_available = true ): WooPaymentsOnboardingAdapter {
+	private function create_onboarding_adapter( bool $native_onboarding_available = true ): WooPaymentsPaymentsSettingsAdapter {
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments', 'can_manage_onboarding' ) )
@@ -2270,7 +2270,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			->method( 'can_manage_onboarding' )
 			->willReturn( $native_onboarding_available );
 
-		$adapter         = new WooPaymentsOnboardingAdapter();
+		$adapter         = new WooPaymentsPaymentsSettingsAdapter();
 		$account_service = new WooPaymentsAccountService();
 		$database_cache  = new WooPaymentsDatabaseCache();
 		$database_cache->init( $this->mockable_proxy );
@@ -2350,23 +2350,23 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * The adapter resolves them on first use, so the test doubles are set on the instance after init.
 	 *
-	 * @param WooPaymentsOnboardingAdapter $adapter         The adapter.
-	 * @param WooPaymentsExtensionRuntime  $extension_runtime  The extension runtime.
-	 * @param WooPaymentsProvider          $provider        The native provider.
-	 * @param WooPaymentsGateway           $native_gateway  The native gateway.
-	 * @param WooPaymentsAccountService    $account_service The native account service.
-	 * @param WooPaymentsRuntimeArbiter    $arbiter         The runtime arbiter.
+	 * @param WooPaymentsPaymentsSettingsAdapter $adapter         The adapter.
+	 * @param WooPaymentsExtensionRuntime        $extension_runtime  The extension runtime.
+	 * @param WooPaymentsProvider                $provider        The native provider.
+	 * @param WooPaymentsGateway                 $native_gateway  The native gateway.
+	 * @param WooPaymentsAccountService          $account_service The native account service.
+	 * @param WooPaymentsRuntimeArbiter          $arbiter         The runtime arbiter.
 	 */
-	private function init_adapter( WooPaymentsOnboardingAdapter $adapter, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsProvider $provider, WooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter ): void {
+	private function init_adapter( WooPaymentsPaymentsSettingsAdapter $adapter, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsProvider $provider, WooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter ): void {
 		$adapter->init( $extension_runtime, $arbiter );
 
 		$collaborators = array(
 			'provider'        => $provider,
-			'native_gateway'  => $native_gateway,
+			'builtin_gateway' => $native_gateway,
 			'account_service' => $account_service,
 		);
 		foreach ( $collaborators as $property => $collaborator ) {
-			$reflection = new \ReflectionProperty( WooPaymentsOnboardingAdapter::class, $property );
+			$reflection = new \ReflectionProperty( WooPaymentsPaymentsSettingsAdapter::class, $property );
 			$reflection->setAccessible( true );
 			$reflection->setValue( $adapter, $collaborator );
 		}
@@ -2763,12 +2763,12 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$adapter    = $this->getMockBuilder( WooPaymentsOnboardingAdapter::class )
+		$adapter    = $this->getMockBuilder( WooPaymentsPaymentsSettingsAdapter::class )
 			->disableOriginalConstructor()
 			->onlyMethods(
 				array(
 					'is_onboarding_runtime_available',
-					'is_native_onboarding_available',
+					'is_builtin_onboarding_available',
 					'get_payment_gateway',
 					'has_account',
 					'has_valid_account',
@@ -2780,7 +2780,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			)
 			->getMock();
 		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
-		$adapter->method( 'is_native_onboarding_available' )->willReturn( true );
+		$adapter->method( 'is_builtin_onboarding_available' )->willReturn( true );
 		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
 		foreach ( array( 'has_account', 'has_valid_account', 'has_working_account', 'has_test_account', 'has_sandbox_account', 'has_live_account' ) as $method ) {
 			$adapter->method( $method )->willReturn( false );
@@ -3500,9 +3500,9 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsController
 	 */
 	private function create_trunk_controller(): WooPaymentsController {
-		$reflection = new \ReflectionProperty( WooPaymentsService::class, 'onboarding_adapter' );
+		$reflection = new \ReflectionProperty( WooPaymentsService::class, 'settings_adapter' );
 		$reflection->setAccessible( true );
-		wc_get_container()->replace( WooPaymentsOnboardingAdapter::class, $reflection->getValue( $this->sut ) );
+		wc_get_container()->replace( WooPaymentsPaymentsSettingsAdapter::class, $reflection->getValue( $this->sut ) );
 		$controller = new WooPaymentsController();
 		$controller->init( $this->getMockBuilder( Payments::class )->getMock(), $this->sut );
 

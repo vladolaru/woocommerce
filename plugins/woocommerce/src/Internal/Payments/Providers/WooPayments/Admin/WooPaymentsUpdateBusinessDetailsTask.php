@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Admin\Features\OnboardingTasks\TaskList;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -158,7 +158,7 @@ class WooPaymentsUpdateBusinessDetailsTask extends Task {
 	 */
 	public function get_action_url() {
 		if ( count( $this->get_error_messages() ) > 1 ) {
-			return Utils::wc_payments_settings_url( WooPaymentsOnboardingAdapter::OVERVIEW_PATH );
+			return Utils::wc_payments_settings_url( WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH );
 		}
 
 		if ( ! $this->is_details_submitted() ) {
@@ -173,12 +173,12 @@ class WooPaymentsUpdateBusinessDetailsTask extends Task {
 
 		// Test-drive accounts have no dashboard access (client `get_account_status_data()` `accountLink`).
 		if ( ! empty( $this->get_account_data()['is_test_drive'] ) ) {
-			return Utils::wc_payments_settings_url( WooPaymentsOnboardingAdapter::OVERVIEW_PATH );
+			return Utils::wc_payments_settings_url( WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH );
 		}
 
 		// The login link that `LegacyAdminLinkHandler::handle_login_request()` serves, with the client's attribution args.
 		return Utils::wc_payments_settings_url(
-			WooPaymentsOnboardingAdapter::OVERVIEW_PATH,
+			WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH,
 			array(
 				'wcpay-login' => '1',
 				'_wpnonce'    => wp_create_nonce( 'wcpay-login' ),

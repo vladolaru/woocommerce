@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\Wo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingSource;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCapitalRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTrackingInfoService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTracks;
@@ -176,7 +176,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 		// The plugin continues with from=WCPAY_KYC_REMINDER (11.1.0 `redirect_to_wcpay_connect()`), which native onboarding keeps for attribution.
 		$from         = array( 'from' => 'WCPAY_KYC_REMINDER' );
 		$redirect_url = $this->navigation->get_legacy_payment_path_redirect_url( $connect_page + $from );
-		wp_safe_redirect( '' !== $redirect_url ? $redirect_url : Utils::wc_payments_settings_url( WooPaymentsOnboardingAdapter::OVERVIEW_PATH, $from ) );
+		wp_safe_redirect( '' !== $redirect_url ? $redirect_url : Utils::wc_payments_settings_url( WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH, $from ) );
 		exit;
 	}
 
@@ -217,7 +217,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 		}
 
 		$params['wcpay-connection-success'] = '1';
-		wp_safe_redirect( Utils::wc_payments_settings_url( WooPaymentsOnboardingAdapter::OVERVIEW_PATH, $params ) );
+		wp_safe_redirect( Utils::wc_payments_settings_url( WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH, $params ) );
 		exit;
 	}
 
@@ -234,7 +234,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 				'path' => '/payments/connect',
 			) + $params
 		);
-		wp_safe_redirect( '' !== $redirect_url ? $redirect_url : Utils::wc_payments_settings_url( WooPaymentsOnboardingAdapter::OVERVIEW_PATH, $params ) );
+		wp_safe_redirect( '' !== $redirect_url ? $redirect_url : Utils::wc_payments_settings_url( WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH, $params ) );
 		exit;
 	}
 
@@ -287,7 +287,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 		try {
 			// Like the plugin, drop the account cache so details edited on the dashboard show on return.
 			$this->account_service->clear_cache();
-			$login = $this->api_client->create_login_link( Utils::wc_payments_settings_url( WooPaymentsOnboardingAdapter::OVERVIEW_PATH ) );
+			$login = $this->api_client->create_login_link( Utils::wc_payments_settings_url( WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH ) );
 			$url   = isset( $login['url'] ) && is_string( $login['url'] ) ? $login['url'] : '';
 		} catch ( WooPaymentsApiException $exception ) {
 			unset( $exception );
@@ -296,7 +296,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 		wp_safe_redirect(
 			'' !== $url
 				? $url
-				: Utils::wc_payments_settings_url( WooPaymentsOnboardingAdapter::OVERVIEW_PATH, array( 'wcpay-login-error' => '1' ) )
+				: Utils::wc_payments_settings_url( WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH, array( 'wcpay-login-error' => '1' ) )
 		);
 		exit;
 	}
@@ -322,7 +322,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 		if ( ! $manager->is_connected() ) {
 			$result = $manager->try_registration();
 			if ( is_wp_error( $result ) ) {
-				wp_safe_redirect( Utils::wc_payments_settings_url( WooPaymentsOnboardingAdapter::OVERVIEW_PATH, array( 'wcpay-server-link-error' => '1' ) ) );
+				wp_safe_redirect( Utils::wc_payments_settings_url( WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH, array( 'wcpay-server-link-error' => '1' ) ) );
 				exit;
 			}
 		}
@@ -415,7 +415,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 
 		wp_safe_redirect(
 			Utils::wc_payments_settings_url(
-				WooPaymentsOnboardingAdapter::OVERVIEW_PATH,
+				WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH,
 				array( 'wcpay-server-link-error' => '1' )
 			)
 		);

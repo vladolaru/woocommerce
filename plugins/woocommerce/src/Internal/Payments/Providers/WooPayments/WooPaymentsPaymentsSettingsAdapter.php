@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsOnboardingAdapter class file.
+ * WooPaymentsPaymentsSettingsAdapter class file.
  */
 
 declare( strict_types = 1 );
@@ -21,12 +21,13 @@ use WC_Payment_Gateway;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Bridges WooPayments onboarding/admin state to the native payments provider seam.
+ * Answers the Payments settings about the WooPayments account, gateway and onboarding for whichever WooPayments
+ * runtime owns the store.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
-class WooPaymentsOnboardingAdapter {
+class WooPaymentsPaymentsSettingsAdapter {
 
 	/**
 	 * The extension's `WC_Payments_Account::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT`: the platform asked to turn WooPay on after KYC.
@@ -55,14 +56,14 @@ class WooPaymentsOnboardingAdapter {
 	private ?WooPaymentsProvider $provider = null;
 
 	/**
-	 * Native WooPayments gateway.
+	 * The built-in WooPayments gateway.
 	 *
 	 * @var WooPaymentsGateway|null
 	 */
-	private ?WooPaymentsGateway $native_gateway = null;
+	private ?WooPaymentsGateway $builtin_gateway = null;
 
 	/**
-	 * Native WooPayments account service.
+	 * The built-in WooPayments account service.
 	 *
 	 * @var WooPaymentsAccountService|null
 	 */
@@ -119,15 +120,15 @@ class WooPaymentsOnboardingAdapter {
 	 * @return bool
 	 */
 	public function is_onboarding_runtime_available(): bool {
-		return $this->is_extension_active() || $this->is_native_onboarding_available();
+		return $this->is_extension_active() || $this->is_builtin_onboarding_available();
 	}
 
 	/**
-	 * Tell whether the native WooPayments provider can manage onboarding/admin account operations.
+	 * Tell whether the built-in WooPayments provider can manage onboarding/admin account operations.
 	 *
 	 * @return bool
 	 */
-	public function is_native_onboarding_available(): bool {
+	public function is_builtin_onboarding_available(): bool {
 		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return false;
 		}
@@ -154,8 +155,8 @@ class WooPaymentsOnboardingAdapter {
 			}
 		}
 
-		if ( $this->is_native_onboarding_available() ) {
-			return $this->get_native_gateway();
+		if ( $this->is_builtin_onboarding_available() ) {
+			return $this->get_builtin_gateway();
 		}
 
 		throw new \RuntimeException( 'WooPayments gateway is not available.' );
@@ -173,7 +174,7 @@ class WooPaymentsOnboardingAdapter {
 		}
 
 		if ( ! $this->is_extension_active() ) {
-			return $this->get_native_account_service()->has_account();
+			return $this->get_account_service()->has_account();
 		}
 
 		try {
@@ -195,10 +196,10 @@ class WooPaymentsOnboardingAdapter {
 		}
 
 		if ( ! $this->is_extension_active() ) {
-			return $this->get_native_account_service()->can_process_payments();
+			return $this->get_account_service()->can_process_payments();
 		}
 
-		$account_service = $this->get_account_service();
+		$account_service = $this->get_extension_account_service();
 
 		return is_object( $account_service ) &&
 			is_callable( array( $account_service, 'is_stripe_account_valid' ) ) &&
@@ -217,7 +218,7 @@ class WooPaymentsOnboardingAdapter {
 		}
 
 		if ( ! $this->is_extension_active() ) {
-			return $this->get_native_account_service()->has_working_account();
+			return $this->get_account_service()->has_working_account();
 		}
 
 		$account_status = $this->get_account_status_data();
@@ -237,7 +238,7 @@ class WooPaymentsOnboardingAdapter {
 		}
 
 		if ( ! $this->is_extension_active() ) {
-			return $this->get_native_account_service()->has_test_account();
+			return $this->get_account_service()->has_test_account();
 		}
 
 		$account_status = $this->get_account_status_data();
@@ -257,7 +258,7 @@ class WooPaymentsOnboardingAdapter {
 		}
 
 		if ( ! $this->is_extension_active() ) {
-			return $this->get_native_account_service()->has_sandbox_account();
+			return $this->get_account_service()->has_sandbox_account();
 		}
 
 		$account_status = $this->get_account_status_data();
@@ -277,7 +278,7 @@ class WooPaymentsOnboardingAdapter {
 		}
 
 		if ( ! $this->is_extension_active() ) {
-			return $this->get_native_account_service()->has_live_account();
+			return $this->get_account_service()->has_live_account();
 		}
 
 		$account_status = $this->get_account_status_data();
@@ -315,7 +316,7 @@ class WooPaymentsOnboardingAdapter {
 	 * @return WooPaymentsOnboardingService|null
 	 */
 	public function get_builtin_onboarding(): ?WooPaymentsOnboardingService {
-		if ( $this->get_api_client()->is_available() && ! $this->is_extension_active() && $this->is_native_onboarding_available() ) {
+		if ( $this->get_api_client()->is_available() && ! $this->is_extension_active() && $this->is_builtin_onboarding_available() ) {
 			return $this->get_onboarding_service();
 		}
 
@@ -334,7 +335,7 @@ class WooPaymentsOnboardingAdapter {
 			return null;
 		}
 
-		$fields = $this->get_native_account_service()->get_onboarding_fields_data( $locale );
+		$fields = $this->get_account_service()->get_onboarding_fields_data( $locale );
 		if ( null === $fields ) {
 			// The extension's fields route answers the same message.
 			throw new Exception( esc_html__( 'Failed to retrieve the onboarding fields.', 'woocommerce' ) );
@@ -388,7 +389,7 @@ class WooPaymentsOnboardingAdapter {
 			return;
 		}
 
-		$this->get_native_account_service()->clear_onboarding_fields_cache();
+		$this->get_account_service()->clear_onboarding_fields_cache();
 	}
 
 	/**
@@ -414,11 +415,11 @@ class WooPaymentsOnboardingAdapter {
 	}
 
 	/**
-	 * Get the WooPayments account service.
+	 * Get the WooPayments extension's account service.
 	 *
 	 * @return object|null
 	 */
-	private function get_account_service(): ?object {
+	private function get_extension_account_service(): ?object {
 		return $this->get_extension_runtime()->get_account_service();
 	}
 
@@ -428,7 +429,7 @@ class WooPaymentsOnboardingAdapter {
 	 * @return array<string,mixed>
 	 */
 	private function get_account_status_data(): array {
-		$account_service = $this->get_account_service();
+		$account_service = $this->get_extension_account_service();
 
 		if ( ! is_object( $account_service ) || ! is_callable( array( $account_service, 'get_account_status_data' ) ) ) {
 			return array();
@@ -449,11 +450,11 @@ class WooPaymentsOnboardingAdapter {
 	}
 
 	/**
-	 * Get the native WooPayments account service.
+	 * Get the built-in WooPayments account service.
 	 *
 	 * @return WooPaymentsAccountService
 	 */
-	private function get_native_account_service(): WooPaymentsAccountService {
+	private function get_account_service(): WooPaymentsAccountService {
 		if ( null === $this->account_service ) {
 			$this->account_service = wc_get_container()->get( WooPaymentsAccountService::class );
 		}
@@ -475,16 +476,16 @@ class WooPaymentsOnboardingAdapter {
 	}
 
 	/**
-	 * Get the native WooPayments gateway.
+	 * Get the built-in WooPayments gateway.
 	 *
 	 * @return WooPaymentsGateway
 	 */
-	private function get_native_gateway(): WooPaymentsGateway {
-		if ( null === $this->native_gateway ) {
-			$this->native_gateway = wc_get_container()->get( WooPaymentsGateway::class );
+	private function get_builtin_gateway(): WooPaymentsGateway {
+		if ( null === $this->builtin_gateway ) {
+			$this->builtin_gateway = wc_get_container()->get( WooPaymentsGateway::class );
 		}
 
-		return $this->native_gateway;
+		return $this->builtin_gateway;
 	}
 
 	/**

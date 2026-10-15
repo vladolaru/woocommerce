@@ -41,7 +41,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\PaymentsExtensionSuggestions as ExtensionSuggestions;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Exception;
 use WC_Payment_Gateway;
@@ -546,7 +546,7 @@ class PaymentsProviders {
 
 				return $service;
 			},
-			$container->get( WooPaymentsOnboardingAdapter::class )
+			$container->get( WooPaymentsPaymentsSettingsAdapter::class )
 		);
 
 		return $provider;

@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 
 defined( 'ABSPATH' ) || exit;
@@ -106,7 +106,7 @@ class WooPaymentsOverviewService {
 				'country'                => $account_service->get_account_country(),
 			),
 			'urls'      => array(
-				'overview_page' => Utils::wc_payments_settings_url( WooPaymentsOnboardingAdapter::OVERVIEW_PATH ),
+				'overview_page' => Utils::wc_payments_settings_url( WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH ),
 				// Client 11.1.0's Activate payments modal sends a test or sandbox account to onboarding (`sandbox-mode-switch-to-live-notice/modal/index.tsx:39-45`).
 				'setup'         => Utils::wc_payments_settings_url( WooPaymentsService::ONBOARDING_PATH_BASE ),
 			),

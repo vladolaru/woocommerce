@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNoticeService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Testing\Tools\DependencyManagement\MockableLegacyProxy;
@@ -226,7 +226,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	private function set_notice_service_resolver( callable $notice_resolver ): void {
 		$extension_runtime = new WooPaymentsExtensionRuntime();
 		$extension_runtime->init( $this->mockable_proxy );
-		$adapter = $this->createMock( WooPaymentsOnboardingAdapter::class );
+		$adapter = $this->createMock( WooPaymentsPaymentsSettingsAdapter::class );
 		$adapter->method( 'refresh_settings_notice_for_current_user' )->willReturnCallback( static fn() => $notice_resolver()->refresh_notice_for_current_user() );
 		$this->sut->set_admin_runtime_collaborators(
 			$extension_runtime,
@@ -1447,7 +1447,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_is_in_test_mode_onboarding_uses_native_onboarding_adapter_account_state(): void {
 		$fake_gateway = new FakePaymentGateway( 'woocommerce_payments', array() );
-		$adapter      = $this->getMockBuilder( WooPaymentsOnboardingAdapter::class )
+		$adapter      = $this->getMockBuilder( WooPaymentsPaymentsSettingsAdapter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'has_test_account', 'has_sandbox_account' ) )
 			->getMock();

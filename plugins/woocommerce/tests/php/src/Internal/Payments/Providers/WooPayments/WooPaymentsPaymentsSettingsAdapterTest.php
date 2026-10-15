@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsOnboardingAdapter tests.
+ * WooPaymentsPaymentsSettingsAdapter tests.
  */
 
 declare( strict_types = 1 );
@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNoticeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Testing\Tools\DependencyManagement\MockableLegacyProxy;
@@ -27,14 +27,14 @@ use WC_Unit_Test_Case;
 /**
  * Tests for the WooPayments onboarding adapter used by native admin surfaces.
  */
-class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
+class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 
 	/**
 	 * System under test.
 	 *
-	 * @var WooPaymentsOnboardingAdapter
+	 * @var WooPaymentsPaymentsSettingsAdapter
 	 */
-	private WooPaymentsOnboardingAdapter $adapter;
+	private WooPaymentsPaymentsSettingsAdapter $adapter;
 
 	/**
 	 * Mockable legacy proxy.
@@ -126,7 +126,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		$extension_runtime = new WooPaymentsExtensionRuntime();
 		$extension_runtime->init( $this->legacy_proxy );
 
-		$this->adapter = new WooPaymentsOnboardingAdapter();
+		$this->adapter = new WooPaymentsPaymentsSettingsAdapter();
 		$this->init_adapter( $this->adapter, $extension_runtime, $this->provider, $this->native_gateway, $this->native_account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 	}
 
@@ -376,7 +376,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$adapter = new WooPaymentsOnboardingAdapter();
+		$adapter = new WooPaymentsPaymentsSettingsAdapter();
 		$this->init_adapter( $adapter, $runtime, $this->provider, new WooPaymentsGateway(), $this->native_account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		$this->provider->method( 'can_process_payments' )->willReturn( false );
@@ -407,11 +407,11 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 	public function test_init_resolves_no_native_collaborator(): void {
 		$extension_runtime = new WooPaymentsExtensionRuntime();
 		$extension_runtime->init( $this->legacy_proxy );
-		$adapter = new WooPaymentsOnboardingAdapter();
+		$adapter = new WooPaymentsPaymentsSettingsAdapter();
 		$adapter->init( $extension_runtime, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
-		foreach ( array( 'provider', 'native_gateway', 'account_service', 'api_client', 'onboarding_service' ) as $property ) {
-			$reflection = new \ReflectionProperty( WooPaymentsOnboardingAdapter::class, $property );
+		foreach ( array( 'provider', 'builtin_gateway', 'account_service', 'api_client', 'onboarding_service' ) as $property ) {
+			$reflection = new \ReflectionProperty( WooPaymentsPaymentsSettingsAdapter::class, $property );
 			$reflection->setAccessible( true );
 			$this->assertNull( $reflection->getValue( $adapter ), $property . ' must be resolved on first use, not when the adapter is initialized.' );
 		}
@@ -532,7 +532,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
 		if ( $asked ) {
-			set_transient( WooPaymentsOnboardingAdapter::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT, true, DAY_IN_SECONDS );
+			set_transient( WooPaymentsPaymentsSettingsAdapter::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT, true, DAY_IN_SECONDS );
 		}
 		$onboarding = $this->createMock( WooPaymentsOnboardingService::class );
 		$onboarding->expects( $expect_activate ? $this->once() : $this->never() )->method( 'activate_woopay_enabled_by_default' );
@@ -544,8 +544,8 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		$this->adapter->maybe_activate_woopay_enabled_by_default();
 
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
-		delete_transient( WooPaymentsOnboardingAdapter::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT );
-		$reflection = new \ReflectionProperty( WooPaymentsOnboardingAdapter::class, 'api_client' );
+		delete_transient( WooPaymentsPaymentsSettingsAdapter::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT );
+		$reflection = new \ReflectionProperty( WooPaymentsPaymentsSettingsAdapter::class, 'api_client' );
 		$reflection->setAccessible( true );
 		// Without a stored answer the landing page resolves no API client.
 		$this->assertSame( $asked, null !== $reflection->getValue( $this->adapter ) );
@@ -625,7 +625,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 	 * @param object $collaborator The collaborator.
 	 */
 	private function set_adapter_property( string $property, object $collaborator ): void {
-		$reflection = new \ReflectionProperty( WooPaymentsOnboardingAdapter::class, $property );
+		$reflection = new \ReflectionProperty( WooPaymentsPaymentsSettingsAdapter::class, $property );
 		$reflection->setAccessible( true );
 		$reflection->setValue( $this->adapter, $collaborator );
 	}
@@ -635,23 +635,23 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 	 *
 	 * The adapter resolves them on first use, so the test doubles are set on the instance after init.
 	 *
-	 * @param WooPaymentsOnboardingAdapter $adapter         The adapter.
-	 * @param WooPaymentsExtensionRuntime  $extension_runtime  The extension runtime.
-	 * @param WooPaymentsProvider          $provider        The native provider.
-	 * @param WooPaymentsGateway           $native_gateway  The native gateway.
-	 * @param WooPaymentsAccountService    $account_service The native account service.
-	 * @param WooPaymentsRuntimeArbiter    $arbiter         The runtime arbiter.
+	 * @param WooPaymentsPaymentsSettingsAdapter $adapter         The adapter.
+	 * @param WooPaymentsExtensionRuntime        $extension_runtime  The extension runtime.
+	 * @param WooPaymentsProvider                $provider        The native provider.
+	 * @param WooPaymentsGateway                 $native_gateway  The native gateway.
+	 * @param WooPaymentsAccountService          $account_service The native account service.
+	 * @param WooPaymentsRuntimeArbiter          $arbiter         The runtime arbiter.
 	 */
-	private function init_adapter( WooPaymentsOnboardingAdapter $adapter, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsProvider $provider, WooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter ): void {
+	private function init_adapter( WooPaymentsPaymentsSettingsAdapter $adapter, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsProvider $provider, WooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter ): void {
 		$adapter->init( $extension_runtime, $arbiter );
 
 		$collaborators = array(
 			'provider'        => $provider,
-			'native_gateway'  => $native_gateway,
+			'builtin_gateway' => $native_gateway,
 			'account_service' => $account_service,
 		);
 		foreach ( $collaborators as $property => $collaborator ) {
-			$reflection = new \ReflectionProperty( WooPaymentsOnboardingAdapter::class, $property );
+			$reflection = new \ReflectionProperty( WooPaymentsPaymentsSettingsAdapter::class, $property );
 			$reflection->setAccessible( true );
 			$reflection->setValue( $adapter, $collaborator );
 		}

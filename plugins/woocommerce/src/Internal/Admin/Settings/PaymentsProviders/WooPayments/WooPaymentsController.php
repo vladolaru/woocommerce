@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPa
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsOnboardingRedirect;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -42,7 +42,7 @@ class WooPaymentsController {
 		// Fire only when the Settings or WC Admin page loads, before any output; WC Admin carries the client's legacy links.
 		add_action( 'load-woocommerce_page_wc-settings', array( $this, 'maybe_redirect_to_onboarding' ) );
 		add_action( 'load-woocommerce_page_wc-admin', array( $this, 'maybe_redirect_to_onboarding' ) );
-		add_action( 'woocommerce_updated', array( $this, 'clear_native_onboarding_fields_cache' ) );
+		add_action( 'woocommerce_updated', array( $this, 'clear_onboarding_fields_cache' ) );
 	}
 
 	/**
@@ -69,8 +69,8 @@ class WooPaymentsController {
 	 *
 	 * @return void
 	 */
-	public function clear_native_onboarding_fields_cache(): void {
-		$this->get_onboarding_adapter()->clear_builtin_onboarding_fields_cache();
+	public function clear_onboarding_fields_cache(): void {
+		$this->get_settings_adapter()->clear_builtin_onboarding_fields_cache();
 	}
 
 	/**
@@ -89,7 +89,7 @@ class WooPaymentsController {
 			return;
 		}
 
-		$this->get_onboarding_adapter()->maybe_redirect_to_onboarding();
+		$this->get_settings_adapter()->maybe_redirect_to_onboarding();
 	}
 
 	/**
@@ -105,7 +105,7 @@ class WooPaymentsController {
 			return;
 		}
 
-		$this->get_onboarding_adapter()->maybe_activate_woopay_enabled_by_default();
+		$this->get_settings_adapter()->maybe_activate_woopay_enabled_by_default();
 	}
 
 	/**
@@ -128,12 +128,12 @@ class WooPaymentsController {
 	}
 
 	/**
-	 * Get the WooPayments onboarding adapter, the Payments settings' way into the WooPayments runtime.
+	 * Get the WooPayments Payments settings adapter, the Payments settings' way into the WooPayments runtime.
 	 *
-	 * @return WooPaymentsOnboardingAdapter
+	 * @return WooPaymentsPaymentsSettingsAdapter
 	 */
-	private function get_onboarding_adapter(): WooPaymentsOnboardingAdapter {
-		return wc_get_container()->get( WooPaymentsOnboardingAdapter::class );
+	private function get_settings_adapter(): WooPaymentsPaymentsSettingsAdapter {
+		return wc_get_container()->get( WooPaymentsPaymentsSettingsAdapter::class );
 	}
 
 	/**

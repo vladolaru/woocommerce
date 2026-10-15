@@ -174,7 +174,7 @@ class WooPaymentsCapitalRestController extends RestApiControllerBase {
 	 * @return string
 	 */
 	private function get_overview_url( array $query = array() ): string {
-		return Utils::wc_payments_settings_url( WooPaymentsOnboardingAdapter::OVERVIEW_PATH, $query );
+		return Utils::wc_payments_settings_url( WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH, $query );
 	}
 
 	/**

@@ -10,7 +10,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Exceptions\ApiException;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Exception;
 use WP_Error;
@@ -151,11 +151,11 @@ class WooPaymentsService {
 	private PaymentsProviders\PaymentGateway $provider;
 
 	/**
-	 * The WooPayments onboarding adapter.
+	 * The WooPayments Payments settings adapter.
 	 *
-	 * @var WooPaymentsOnboardingAdapter|null
+	 * @var WooPaymentsPaymentsSettingsAdapter|null
 	 */
-	private ?WooPaymentsOnboardingAdapter $onboarding_adapter = null;
+	private ?WooPaymentsPaymentsSettingsAdapter $settings_adapter = null;
 
 	/**
 	 * The WooPayments extension runtime.
@@ -178,7 +178,7 @@ class WooPaymentsService {
 	final public function init( PaymentsProviders $payment_providers, LegacyProxy $proxy ): void {
 		$this->payments_providers = $payment_providers;
 		$this->proxy              = $proxy;
-		$this->onboarding_adapter = null;
+		$this->settings_adapter   = null;
 		$this->extension_runtime  = null;
 
 		$this->wpcom_connection_manager = $this->proxy->get_instance_of( WPCOM_Connection_Manager::class, 'woocommerce' );
@@ -1301,7 +1301,7 @@ class WooPaymentsService {
 		$this->set_onboarding_lock();
 
 		try {
-			$onboarding = $this->get_onboarding_adapter()->get_builtin_onboarding();
+			$onboarding = $this->get_settings_adapter()->get_builtin_onboarding();
 			if ( null !== $onboarding ) {
 				$response = $onboarding->init_test_account( $location, (array) $configured_payment_methods );
 			} else {
@@ -1465,7 +1465,7 @@ class WooPaymentsService {
 		$this->set_onboarding_lock();
 
 		try {
-			$onboarding = $this->get_onboarding_adapter()->get_builtin_onboarding();
+			$onboarding = $this->get_settings_adapter()->get_builtin_onboarding();
 			if ( null !== $onboarding ) {
 				$response = $onboarding->create_kyc_session( $this->provider->is_in_dev_mode( $this->get_payment_gateway() ), $self_assessment, (array) $selected_payment_methods );
 			} else {
@@ -1578,7 +1578,7 @@ class WooPaymentsService {
 		$this->set_onboarding_lock();
 
 		try {
-			$onboarding = $this->get_onboarding_adapter()->get_builtin_onboarding();
+			$onboarding = $this->get_settings_adapter()->get_builtin_onboarding();
 			if ( null !== $onboarding ) {
 				$response = $onboarding->finish_kyc_session( $source );
 			} else {
@@ -1748,7 +1748,7 @@ class WooPaymentsService {
 
 			if ( $this->has_account() ) {
 				// Call the WooPayments API to reset onboarding.
-				$onboarding = $this->get_onboarding_adapter()->get_builtin_onboarding();
+				$onboarding = $this->get_settings_adapter()->get_builtin_onboarding();
 				if ( null !== $onboarding ) {
 					$response = $onboarding->reset_onboarding();
 				} else {
@@ -1868,7 +1868,7 @@ class WooPaymentsService {
 			);
 
 			if ( $had_test_account ) {
-				$onboarding = $this->get_onboarding_adapter()->get_builtin_onboarding();
+				$onboarding = $this->get_settings_adapter()->get_builtin_onboarding();
 				if ( null !== $onboarding ) {
 					$response = $onboarding->disable_test_account( true );
 				} else {
@@ -1876,7 +1876,7 @@ class WooPaymentsService {
 					$endpoint = '/wc/v3/payments/onboarding/test_drive_account/disable';
 				}
 			} elseif ( $had_sandbox_account ) {
-				$onboarding = $this->get_onboarding_adapter()->get_builtin_onboarding();
+				$onboarding = $this->get_settings_adapter()->get_builtin_onboarding();
 				if ( null !== $onboarding ) {
 					$response = $onboarding->disable_test_account( false );
 				} else {
@@ -2060,7 +2060,7 @@ class WooPaymentsService {
 			return $this->get_overview_page_url();
 		}
 
-		if ( '' === $this->get_onboarding_adapter()->store_referral_code( $referral_code ) ) {
+		if ( '' === $this->get_settings_adapter()->store_referral_code( $referral_code ) ) {
 			return Utils::wc_payments_settings_url( self::ONBOARDING_PATH_BASE );
 		}
 
@@ -2927,7 +2927,7 @@ class WooPaymentsService {
 	 * @return boolean
 	 */
 	private function is_onboarding_runtime_available(): bool {
-		return $this->get_onboarding_adapter()->is_onboarding_runtime_available();
+		return $this->get_settings_adapter()->is_onboarding_runtime_available();
 	}
 
 	/**
@@ -2936,7 +2936,7 @@ class WooPaymentsService {
 	 * @return \WC_Payment_Gateway The main payment gateway instance.
 	 */
 	private function get_payment_gateway(): \WC_Payment_Gateway {
-		return $this->get_onboarding_adapter()->get_payment_gateway();
+		return $this->get_settings_adapter()->get_payment_gateway();
 	}
 
 	/**
@@ -2945,7 +2945,7 @@ class WooPaymentsService {
 	 * @return bool Whether WooPayments has an account set up.
 	 */
 	private function has_account(): bool {
-		return $this->get_onboarding_adapter()->has_account( $this->provider );
+		return $this->get_settings_adapter()->has_account( $this->provider );
 	}
 
 	/**
@@ -2954,7 +2954,7 @@ class WooPaymentsService {
 	 * @return bool Whether WooPayments has a valid, fully onboarded account set up.
 	 */
 	private function has_valid_account(): bool {
-		return $this->get_onboarding_adapter()->has_valid_account( $this->provider );
+		return $this->get_settings_adapter()->has_valid_account( $this->provider );
 	}
 
 	/**
@@ -2965,7 +2965,7 @@ class WooPaymentsService {
 	 * @return bool Whether WooPayments has a working account set up.
 	 */
 	private function has_working_account(): bool {
-		return $this->get_onboarding_adapter()->has_working_account( $this->provider );
+		return $this->get_settings_adapter()->has_working_account( $this->provider );
 	}
 
 	/**
@@ -2974,7 +2974,7 @@ class WooPaymentsService {
 	 * @return bool Whether WooPayments has a test account set up.
 	 */
 	private function has_test_account(): bool {
-		return $this->get_onboarding_adapter()->has_test_account( $this->provider );
+		return $this->get_settings_adapter()->has_test_account( $this->provider );
 	}
 
 	/**
@@ -2983,7 +2983,7 @@ class WooPaymentsService {
 	 * @return bool Whether WooPayments has a sandbox account set up.
 	 */
 	private function has_sandbox_account(): bool {
-		return $this->get_onboarding_adapter()->has_sandbox_account( $this->provider );
+		return $this->get_settings_adapter()->has_sandbox_account( $this->provider );
 	}
 
 	/**
@@ -2992,7 +2992,7 @@ class WooPaymentsService {
 	 * @return bool Whether WooPayments has a test account set up.
 	 */
 	private function has_live_account(): bool {
-		return $this->get_onboarding_adapter()->has_live_account( $this->provider );
+		return $this->get_settings_adapter()->has_live_account( $this->provider );
 	}
 
 	/**
@@ -3006,7 +3006,7 @@ class WooPaymentsService {
 	 */
 	private function get_onboarding_kyc_fields( string $location ): array {
 		// The built-in WooPayments answers the fields unless the extension is active or the platform is unreachable.
-		$fields = $this->get_onboarding_adapter()->get_onboarding_fields( (string) $this->proxy->call_function( 'get_user_locale' ) );
+		$fields = $this->get_settings_adapter()->get_onboarding_fields( (string) $this->proxy->call_function( 'get_user_locale' ) );
 		if ( null !== $fields ) {
 			return $this->prepare_onboarding_kyc_fields( $fields, $location );
 		}
@@ -3111,7 +3111,7 @@ class WooPaymentsService {
 	 * @return string The fallback URL for the embedded KYC flow.
 	 */
 	private function get_onboarding_kyc_fallback_url(): string {
-		return add_query_arg( 'wcpay-connection-error', '1', $this->get_onboarding_adapter()->get_onboarding_kyc_fallback_url( $this->provider ) );
+		return add_query_arg( 'wcpay-connection-error', '1', $this->get_settings_adapter()->get_onboarding_kyc_fallback_url( $this->provider ) );
 	}
 
 	/**
@@ -3120,20 +3120,20 @@ class WooPaymentsService {
 	 * @return string The WooPayments Overview page URL.
 	 */
 	private function get_overview_page_url(): string {
-		return $this->get_onboarding_adapter()->get_overview_page_url();
+		return $this->get_settings_adapter()->get_overview_page_url();
 	}
 
 	/**
-	 * Get the WooPayments onboarding adapter.
+	 * Get the WooPayments Payments settings adapter.
 	 *
-	 * @return WooPaymentsOnboardingAdapter
+	 * @return WooPaymentsPaymentsSettingsAdapter
 	 */
-	private function get_onboarding_adapter(): WooPaymentsOnboardingAdapter {
-		if ( null === $this->onboarding_adapter ) {
-			$this->onboarding_adapter = wc_get_container()->get( WooPaymentsOnboardingAdapter::class );
+	private function get_settings_adapter(): WooPaymentsPaymentsSettingsAdapter {
+		if ( null === $this->settings_adapter ) {
+			$this->settings_adapter = wc_get_container()->get( WooPaymentsPaymentsSettingsAdapter::class );
 		}
 
-		return $this->onboarding_adapter;
+		return $this->settings_adapter;
 	}
 
 	/**

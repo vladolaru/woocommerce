@@ -8,7 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
 use Exception;
 use WC_Payment_Gateway;
 
@@ -16,14 +16,14 @@ use WC_Payment_Gateway;
  * An onboarding adapter for the Payments settings tests: account questions go to the test's adapter, and the built-in
  * onboarding is the test's onboarding service, chosen with the test's API client and extension runtime.
  */
-class DelegatingOnboardingAdapter extends WooPaymentsOnboardingAdapter {
+class DelegatingPaymentsSettingsAdapter extends WooPaymentsPaymentsSettingsAdapter {
 
 	/**
 	 * The test's adapter, which answers the account questions.
 	 *
-	 * @var WooPaymentsOnboardingAdapter
+	 * @var WooPaymentsPaymentsSettingsAdapter
 	 */
-	private WooPaymentsOnboardingAdapter $inner;
+	private WooPaymentsPaymentsSettingsAdapter $inner;
 
 	/**
 	 * The test's API client.
@@ -56,13 +56,13 @@ class DelegatingOnboardingAdapter extends WooPaymentsOnboardingAdapter {
 	/**
 	 * Constructor.
 	 *
-	 * @param WooPaymentsOnboardingAdapter $inner           The test's adapter.
-	 * @param WooPaymentsApiClient         $api_client      The test's API client.
-	 * @param WooPaymentsExtensionRuntime  $extension_runtime The test's extension runtime.
-	 * @param WooPaymentsAccountService    $account_service The test's account service.
-	 * @param WooPaymentsOnboardingService $onboarding      The test's onboarding service.
+	 * @param WooPaymentsPaymentsSettingsAdapter $inner           The test's adapter.
+	 * @param WooPaymentsApiClient               $api_client      The test's API client.
+	 * @param WooPaymentsExtensionRuntime        $extension_runtime The test's extension runtime.
+	 * @param WooPaymentsAccountService          $account_service The test's account service.
+	 * @param WooPaymentsOnboardingService       $onboarding      The test's onboarding service.
 	 */
-	public function __construct( WooPaymentsOnboardingAdapter $inner, WooPaymentsApiClient $api_client, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsAccountService $account_service, WooPaymentsOnboardingService $onboarding ) {
+	public function __construct( WooPaymentsPaymentsSettingsAdapter $inner, WooPaymentsApiClient $api_client, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsAccountService $account_service, WooPaymentsOnboardingService $onboarding ) {
 		$this->inner                  = $inner;
 		$this->test_api_client        = $api_client;
 		$this->test_extension_runtime = $extension_runtime;
@@ -77,7 +77,7 @@ class DelegatingOnboardingAdapter extends WooPaymentsOnboardingAdapter {
 	 * @return WooPaymentsOnboardingService|null
 	 */
 	public function get_builtin_onboarding(): ?WooPaymentsOnboardingService {
-		if ( $this->test_api_client->is_available() && ! $this->test_extension_runtime->is_loaded() && $this->inner->is_native_onboarding_available() ) {
+		if ( $this->test_api_client->is_available() && ! $this->test_extension_runtime->is_loaded() && $this->inner->is_builtin_onboarding_available() ) {
 			return $this->test_onboarding;
 		}
 
@@ -151,8 +151,8 @@ class DelegatingOnboardingAdapter extends WooPaymentsOnboardingAdapter {
 	 *
 	 * @return bool
 	 */
-	public function is_native_onboarding_available(): bool {
-		return $this->inner->is_native_onboarding_available();
+	public function is_builtin_onboarding_available(): bool {
+		return $this->inner->is_builtin_onboarding_available();
 	}
 
 	/**

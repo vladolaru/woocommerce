@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Logging\SafeGlobalFunctionProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOnboardingAdapter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
 use Throwable;
 use WC_Abstract_Order;
 use WC_Payment_Gateway;
@@ -40,11 +40,11 @@ class WooPayments extends PaymentGateway {
 	private ?WooPaymentsExtensionRuntime $extension_runtime = null;
 
 	/**
-	 * The WooPayments onboarding adapter.
+	 * The WooPayments Payments settings adapter.
 	 *
-	 * @var WooPaymentsOnboardingAdapter|null
+	 * @var WooPaymentsPaymentsSettingsAdapter|null
 	 */
-	private ?WooPaymentsOnboardingAdapter $onboarding_adapter = null;
+	private ?WooPaymentsPaymentsSettingsAdapter $settings_adapter = null;
 
 	/**
 	 * The lazy WooPayments REST controller resolver.
@@ -65,16 +65,16 @@ class WooPayments extends PaymentGateway {
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param WooPaymentsExtensionRuntime       $extension_runtime           The WooPayments extension runtime.
-	 * @param callable                          $rest_controller_resolver The lazy WooPayments REST controller resolver.
-	 * @param callable                          $service_resolver         The lazy WooPayments service resolver.
-	 * @param WooPaymentsOnboardingAdapter|null $onboarding_adapter       Optional WooPayments onboarding adapter.
+	 * @param WooPaymentsExtensionRuntime             $extension_runtime           The WooPayments extension runtime.
+	 * @param callable                                $rest_controller_resolver The lazy WooPayments REST controller resolver.
+	 * @param callable                                $service_resolver         The lazy WooPayments service resolver.
+	 * @param WooPaymentsPaymentsSettingsAdapter|null $settings_adapter       Optional WooPayments Payments settings adapter.
 	 */
-	public function set_admin_runtime_collaborators( WooPaymentsExtensionRuntime $extension_runtime, callable $rest_controller_resolver, callable $service_resolver, ?WooPaymentsOnboardingAdapter $onboarding_adapter = null ): void {
+	public function set_admin_runtime_collaborators( WooPaymentsExtensionRuntime $extension_runtime, callable $rest_controller_resolver, callable $service_resolver, ?WooPaymentsPaymentsSettingsAdapter $settings_adapter = null ): void {
 		$this->extension_runtime        = $extension_runtime;
 		$this->rest_controller_resolver = $rest_controller_resolver;
 		$this->service_resolver         = $service_resolver;
-		$this->onboarding_adapter       = $onboarding_adapter;
+		$this->settings_adapter         = $settings_adapter;
 	}
 
 	/**
@@ -229,8 +229,8 @@ class WooPayments extends PaymentGateway {
 			}
 		}
 
-		if ( null !== $this->onboarding_adapter && 0 < get_current_user_id() ) {
-			$notice = $this->onboarding_adapter->refresh_settings_notice_for_current_user();
+		if ( null !== $this->settings_adapter && 0 < get_current_user_id() ) {
+			$notice = $this->settings_adapter->refresh_settings_notice_for_current_user();
 			if ( ! empty( $details['state']['enabled'] ) && ! empty( $details['state']['account_connected'] ) && null !== $notice ) {
 				$details['_admin_notice'] = $notice;
 			}
@@ -665,7 +665,7 @@ class WooPayments extends PaymentGateway {
 	 * @return bool True if the account is a test account, false otherwise.
 	 */
 	private function has_test_account(): bool {
-		if ( null !== $this->onboarding_adapter && $this->onboarding_adapter->has_test_account( $this ) ) {
+		if ( null !== $this->settings_adapter && $this->settings_adapter->has_test_account( $this ) ) {
 			return true;
 		}
 
@@ -685,7 +685,7 @@ class WooPayments extends PaymentGateway {
 	 * @return bool True if the account is a sandbox account, false otherwise.
 	 */
 	private function has_sandbox_account(): bool {
-		if ( null !== $this->onboarding_adapter && $this->onboarding_adapter->has_sandbox_account( $this ) ) {
+		if ( null !== $this->settings_adapter && $this->settings_adapter->has_sandbox_account( $this ) ) {
 			return true;
 		}
 
