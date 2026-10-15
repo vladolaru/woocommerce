@@ -442,7 +442,7 @@ class WooPaymentsAdminNoticeService {
 			return new WP_Error( 'woocommerce_woopayments_notice_user_required', __( 'Sign in to change this notice.', 'woocommerce' ) );
 		}
 		if ( $this->runtime_arbiter->is_extension_owner() ) {
-			return new WP_Error( 'woocommerce_woopayments_notice_plugin_owned', __( 'The WooPayments plugin manages this notice.', 'woocommerce' ) );
+			return new WP_Error( 'woocommerce_woopayments_notice_extension_owned', __( 'The WooPayments extension manages this notice.', 'woocommerce' ) );
 		}
 		if ( 'test_to_live' === $notice_id && 'cta' === $action ) {
 			// Client 11.1.0 test-to-live handle_cta() records without a dismissal marker: the notice clears once live.
