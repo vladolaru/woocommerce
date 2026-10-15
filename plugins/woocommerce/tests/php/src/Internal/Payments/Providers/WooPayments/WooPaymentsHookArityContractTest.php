@@ -845,7 +845,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 */
 	private function probe_tracking(): void {
 		$controller = wc_get_container()->get( WooPaymentsFrontendTrackingController::class );
-		$controller->is_shopper_tracking_enabled();
+		$controller->is_woopay_event_tracking_enabled();
 		$controller->record_user_event( 'hook_shape', array( 'source' => 'hook_shape' ) );
 	}
 

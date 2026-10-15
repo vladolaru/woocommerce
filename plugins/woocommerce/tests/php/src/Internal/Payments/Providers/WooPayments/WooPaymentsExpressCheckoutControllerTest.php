@@ -754,9 +754,9 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 
 		$tracking_controller = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_shopper_tracking_enabled' ) )
+			->onlyMethods( array( 'is_shopper_event_tracking_enabled' ) )
 			->getMock();
-		$tracking_controller->method( 'is_shopper_tracking_enabled' )->willReturn( true );
+		$tracking_controller->method( 'is_shopper_event_tracking_enabled' )->willReturn( true );
 
 		$service = new WooPaymentsExpressCheckoutService();
 		$service->init( $account_service, $provider, $tracking_controller );

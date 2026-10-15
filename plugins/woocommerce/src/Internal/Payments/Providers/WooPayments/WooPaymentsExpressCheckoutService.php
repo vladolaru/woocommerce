@@ -126,7 +126,7 @@ class WooPaymentsExpressCheckoutService {
 		$context_currency = $this->get_context_currency( $context );
 		$currency         = strtolower( '' === $context_currency ? get_woocommerce_currency() : $context_currency );
 		$decimals         = wc_get_price_decimals();
-		$tracking_enabled = $this->frontend_tracking_controller->is_shopper_tracking_enabled( false, true );
+		$tracking_enabled = $this->frontend_tracking_controller->is_shopper_event_tracking_enabled();
 
 		$params = array(
 			'ajax_url'                    => admin_url( 'admin-ajax.php' ),

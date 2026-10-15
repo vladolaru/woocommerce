@@ -425,7 +425,7 @@ class WooPaymentsCheckoutAssets {
 			'isWooPayEmailInputEnabled'                => false,
 			'isWooPayDirectCheckoutEnabled'            => false,
 			'isWooPayGlobalThemeSupportEnabled'        => false,
-			'isShopperTrackingEnabled'                 => $this->get_frontend_tracking_controller()->is_shopper_tracking_enabled( false, true ),
+			'isShopperTrackingEnabled'                 => $this->get_frontend_tracking_controller()->is_shopper_event_tracking_enabled(),
 			'platformTrackerNonce'                     => wp_create_nonce( 'platform_tracks_nonce' ),
 			'tracksUrl'                                => $this->get_frontend_tracking_controller()->get_tracks_rest_url(),
 			'tracksRestNonce'                          => wp_create_nonce( 'wp_rest' ),

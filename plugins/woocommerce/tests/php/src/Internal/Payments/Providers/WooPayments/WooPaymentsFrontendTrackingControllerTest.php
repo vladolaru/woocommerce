@@ -429,7 +429,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		$sut->queue_user_event( 'order_success_page_view', array( 'theme_type' => 'blocks' ) );
 
 		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) ) );
-		$this->assertFalse( $sut->is_shopper_tracking_enabled( false, true ) );
+		$this->assertFalse( $sut->is_shopper_event_tracking_enabled() );
 	}
 
 	/**
@@ -458,7 +458,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		} finally {
 			remove_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) );
 		}
-		$this->assertTrue( $sut->is_shopper_tracking_enabled( false, true ) );
+		$this->assertTrue( $sut->is_shopper_event_tracking_enabled() );
 	}
 
 	/**
@@ -534,7 +534,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		$sut->queue_user_event( 'product_page_view', array( 'theme_type' => 'short_code' ) );
 
 		$this->assertSame( 10, has_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) ) );
-		$this->assertFalse( $sut->is_shopper_tracking_enabled( false, true ) );
+		$this->assertFalse( $sut->is_shopper_event_tracking_enabled() );
 	}
 
 	/**
@@ -706,6 +706,20 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not record a WooPay admin event for a visitor who opted out of Tracks.
+	 */
+	public function test_woopay_admin_event_respects_the_tracks_opt_out_cookie(): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$_COOKIE['tk_opt-out'] = '1';
+		$sut                   = $this->create_controller( $this->create_account_service( true ) );
+		\WC_Tracks_Footer_Pixel::clear_events();
+
+		$this->assertFalse( $sut->record_woopay_admin_event( 'woopay_enabled', array( 'test_mode' => 1 ) ) );
+		$this->assertSame( array(), \WC_Tracks_Footer_Pixel::get_events() );
+	}
+
+	/**
 	 * Client 11.1.0 sends `wcpay_proceed_to_checkout_button_click` (cart/index.js:10) and its recorder adds `wcpay_`
 	 * again; native records the single-prefixed name (the event source scheme the owner approved on 2026-10-07). A page
 	 * cached before the change still sends the doubled name, which records under the corrected one.
@@ -782,9 +796,9 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		// The emitters are mocked: this pins which events the funnel hooks send, and the emitter tests pin how they record.
 		$sut = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_shopper_tracking_enabled', 'queue_user_event' ) )
+			->onlyMethods( array( 'is_shopper_event_tracking_enabled', 'queue_user_event' ) )
 			->getMock();
-		$sut->method( 'is_shopper_tracking_enabled' )->willReturn( true );
+		$sut->method( 'is_shopper_event_tracking_enabled' )->willReturn( true );
 		$sut->method( 'queue_user_event' )->willReturnCallback(
 			static function ( string $event_name, array $properties ) use ( &$recorded_events ): void {
 				$recorded_events[] = array( $event_name, $properties );
@@ -1036,9 +1050,9 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		// The emitters are mocked: this pins which events the funnel hooks send, and the emitter tests pin how they record.
 		$sut = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_shopper_tracking_enabled', 'record_user_event' ) )
+			->onlyMethods( array( 'is_shopper_event_tracking_enabled', 'record_user_event' ) )
 			->getMock();
-		$sut->method( 'is_shopper_tracking_enabled' )->willReturn( true );
+		$sut->method( 'is_shopper_event_tracking_enabled' )->willReturn( true );
 		$sut->method( 'record_user_event' )->willReturnCallback(
 			static function ( string $event_name, array $properties ) use ( &$recorded_events ): bool {
 				$recorded_events[] = array( $event_name, $properties );

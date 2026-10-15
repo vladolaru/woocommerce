@@ -2581,15 +2581,11 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	private function create_frontend_tracking_controller() {
 		$controller = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_shopper_tracking_enabled', 'record_user_event' ) )
+			->onlyMethods( array( 'is_shopper_event_tracking_enabled', 'record_user_event' ) )
 			->getMock();
 
-		// The page flag asks the store-level question only: not an admin event, recorded on every store.
-		$controller->method( 'is_shopper_tracking_enabled' )->willReturnCallback(
-			static function ( bool $is_admin_event = false, bool $track_on_all_stores = false ): bool {
-				return ! $is_admin_event && $track_on_all_stores;
-			}
-		);
+		// The page flag asks the every-store question, not the WooPay one.
+		$controller->method( 'is_shopper_event_tracking_enabled' )->willReturn( true );
 
 		return $controller;
 	}

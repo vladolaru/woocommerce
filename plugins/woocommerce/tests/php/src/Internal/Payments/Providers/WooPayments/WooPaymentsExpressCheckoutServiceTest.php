@@ -2259,14 +2259,10 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 
 		$tracking_controller = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_shopper_tracking_enabled' ) )
+			->onlyMethods( array( 'is_shopper_event_tracking_enabled' ) )
 			->getMock();
-		// The page flag asks the store-level question only: not an admin event, recorded on every store.
-		$tracking_controller->method( 'is_shopper_tracking_enabled' )->willReturnCallback(
-			static function ( bool $is_admin_event = false, bool $track_on_all_stores = false ) use ( $shopper_tracking ): bool {
-				return ! $is_admin_event && $track_on_all_stores && $shopper_tracking;
-			}
-		);
+		// The page flag asks the every-store question, not the WooPay one.
+		$tracking_controller->method( 'is_shopper_event_tracking_enabled' )->willReturn( $shopper_tracking );
 
 		$sut = new WooPaymentsExpressCheckoutService();
 		$sut->init( $account_service, $provider, $tracking_controller );

@@ -676,7 +676,7 @@ class WooPaymentsWooPaySessionService {
 			'platformTrackerNonce'              => wp_create_nonce( 'platform_tracks_nonce' ),
 			'tracksUrl'                         => $this->frontend_tracking_controller->get_tracks_rest_url(),
 			'tracksRestNonce'                   => wp_create_nonce( 'wp_rest' ),
-			'isShopperTrackingEnabled'          => $this->frontend_tracking_controller->is_shopper_tracking_enabled(),
+			'isShopperTrackingEnabled'          => $this->frontend_tracking_controller->is_woopay_event_tracking_enabled(),
 			'woopayHost'                        => self::get_woopay_url(),
 			'testMode'                          => $this->account_service->is_test_mode_enabled(),
 			'wcpayVersionNumber'                => WooPaymentsClientVersion::VERSION,

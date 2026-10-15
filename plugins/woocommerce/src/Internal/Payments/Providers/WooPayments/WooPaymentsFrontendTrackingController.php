@@ -519,39 +519,56 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether shopper tracking is enabled for native WooPayments.
+	 * Tell whether a shopper event recorded on every store may be recorded for this request: the store allows tracking,
+	 * and the visitor has not opted out, is not loading a wp-admin page and is not an administrator.
 	 *
-	 * @param bool $is_admin_event      Whether the event is emitted from the admin area.
-	 * @param bool $track_on_all_stores Whether the event should ignore WooPay eligibility.
 	 * @return bool
 	 */
-	public function is_shopper_tracking_enabled( bool $is_admin_event = false, bool $track_on_all_stores = false ): bool {
-		if ( ! $this->is_store_tracking_enabled() ) {
-			return false;
-		}
+	public function is_shopper_event_tracking_enabled(): bool {
+		return $this->is_store_tracking_enabled() && ! $this->has_tracking_opt_out_cookie() && $this->is_tracked_shopper_request();
+	}
 
-		if ( ! empty( $_COOKIE['tk_opt-out'] ) ) {
-			return false;
-		}
+	/**
+	 * Tell whether a WooPay event may be recorded for this request: a shopper event while WooPay is on and the account
+	 * is eligible for it.
+	 *
+	 * @return bool
+	 */
+	public function is_woopay_event_tracking_enabled(): bool {
+		return $this->is_shopper_event_tracking_enabled() && $this->is_woopay_tracking_enabled();
+	}
 
-		if ( $is_admin_event ) {
-			return true;
-		}
+	/**
+	 * Tell whether a WooPay admin event may be recorded: the store allows tracking and the visitor has not opted out.
+	 *
+	 * @return bool
+	 */
+	private function is_admin_event_tracking_enabled(): bool {
+		return $this->is_store_tracking_enabled() && ! $this->has_tracking_opt_out_cookie();
+	}
 
+	/**
+	 * Tell whether the visitor opted out of Tracks with the `tk_opt-out` cookie.
+	 *
+	 * @return bool
+	 */
+	private function has_tracking_opt_out_cookie(): bool {
+		return ! empty( $_COOKIE['tk_opt-out'] );
+	}
+
+	/**
+	 * Tell whether the request is a shopper's: not a wp-admin page load (AJAX counts) and not a logged-in administrator.
+	 *
+	 * @return bool
+	 */
+	private function is_tracked_shopper_request(): bool {
 		if ( is_admin() && ! wp_doing_ajax() ) {
 			return false;
 		}
 
 		$user = wp_get_current_user();
-		if ( $user instanceof WP_User && is_user_logged_in() && in_array( 'administrator', $user->roles, true ) ) {
-			return false;
-		}
 
-		if ( $track_on_all_stores ) {
-			return true;
-		}
-
-		return $this->is_woopay_tracking_enabled();
+		return ! ( $user instanceof WP_User && is_user_logged_in() && in_array( 'administrator', $user->roles, true ) );
 	}
 
 	/**
@@ -691,15 +708,22 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 			$properties = (array) $properties;
 		}
 
-		$is_admin_event      = false;
-		$track_on_all_stores = false;
+		$is_admin_event  = false;
+		$is_woopay_event = true;
 		if ( isset( $properties['record_event_data'] ) && is_array( $properties['record_event_data'] ) ) {
-			$is_admin_event      = ! empty( $properties['record_event_data']['is_admin_event'] );
-			$track_on_all_stores = ! empty( $properties['record_event_data']['track_on_all_stores'] );
+			$is_admin_event  = ! empty( $properties['record_event_data']['is_admin_event'] );
+			$is_woopay_event = empty( $properties['record_event_data']['track_on_all_stores'] );
 			unset( $properties['record_event_data'] );
 		}
 
-		if ( ! $this->is_shopper_tracking_enabled( $is_admin_event, $track_on_all_stores ) ) {
+		if ( $is_admin_event ) {
+			$is_tracking_enabled = $this->is_admin_event_tracking_enabled();
+		} elseif ( $is_woopay_event ) {
+			$is_tracking_enabled = $this->is_woopay_event_tracking_enabled();
+		} else {
+			$is_tracking_enabled = $this->is_shopper_event_tracking_enabled();
+		}
+		if ( ! $is_tracking_enabled ) {
 			return false;
 		}
 
@@ -726,7 +750,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 */
 	private function send_other_gateway_order_counter(): void {
 		try {
-			if ( ! $this->is_shopper_tracking_enabled( false, true ) || $this->get_account_service()->is_test_mode_enabled() ) {
+			if ( ! $this->is_shopper_event_tracking_enabled() || $this->get_account_service()->is_test_mode_enabled() ) {
 				return;
 			}
 
