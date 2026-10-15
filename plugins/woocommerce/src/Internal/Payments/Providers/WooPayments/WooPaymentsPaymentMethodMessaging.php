@@ -15,10 +15,13 @@ use WC_AJAX;
 use WC_Product;
 
 /**
- * Native WooPayments BNPL payment method messaging callbacks.
+ * Shows the buy now, pay later message (Stripe's payment method messaging element) on product and cart pages, and
+ * answers its cart total and availability AJAX calls.
+ *
+ * No message shows for a subscription product or a cart with a subscription.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 
@@ -140,7 +143,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Handle the preserved cart-total AJAX callback.
+	 * Answer the messaging element's cart total AJAX call.
 	 *
 	 * @internal
 	 */
@@ -151,8 +154,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 
 		check_ajax_referer( 'wcpay-get-cart-total', 'security' );
 
-		// Recalculate before answering so the widget never receives a stale session
-		// figure, as the plugin's ajax_get_cart_total() does.
+		// Recalculate before answering so the widget never receives a stale session figure.
 		if ( WC()->cart ) {
 			wc_maybe_define_constant( 'WOOCOMMERCE_CART', true );
 			wc_maybe_define_constant( 'WOOCOMMERCE_CHECKOUT', true );
@@ -163,7 +165,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Handle the preserved BNPL availability AJAX callback.
+	 * Answer the messaging element's availability AJAX call.
 	 *
 	 * @internal
 	 */
@@ -180,7 +182,8 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the BNPL availability response from native amount limits.
+	 * Get the availability answer: whether an enabled buy now, pay later method's amount limits for the currency and
+	 * country include the price.
 	 *
 	 * @param array<string,mixed> $request Request data.
 	 * @return array{success:bool,data:array{is_available:bool}}

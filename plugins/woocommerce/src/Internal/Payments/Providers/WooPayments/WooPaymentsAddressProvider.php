@@ -15,15 +15,16 @@ use WC_Address_Provider;
 use WP_Error;
 
 /**
- * Native WooPayments address autocomplete provider.
+ * Offers WooPayments address autocomplete to WooCommerce's address fields while the gateway is on and the account is
+ * neither rejected nor under review, with a token the platform issues.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider implements RegisterHooksInterface {
 
 	/**
-	 * Placeholder value used by the extension when token retrieval fails.
+	 * A value never accepted as a token.
 	 */
 	private const INVALID_TOKEN = 'INVALID_TOKEN';
 
@@ -134,8 +135,8 @@ class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider imple
 			$response = $this->api_client->get_address_autocomplete_token();
 			$token    = $response['token'] ?? null;
 		} catch ( Throwable $e ) {
-			// Client 11.1.0 address-provider:102 logs this through its gated Logger, with the platform's message; native logs
-			// its status and code instead.
+			// Client 11.1.0 logs the platform's message here when logging is on (`includes/class-wc-payments-address-provider.php:102`);
+			// only its status and code are logged.
 			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Unexpected error getting address service JWT.', $e );
 
 			$token = null;
@@ -189,7 +190,8 @@ class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider imple
 	}
 
 	/**
-	 * Clear native and preserved extension JWT cache entries.
+	 * Clear the cached token: the address provider's own cache and the `wcpay_address_autocomplete_jwt` option the
+	 * WooPayments extension's cache wrote.
 	 */
 	private function clear_cached_jwt(): void {
 		// @phpstan-ignore-next-line argument.type (the parent implementation accepts null to clear cached JWT data).

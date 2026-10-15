@@ -13,10 +13,12 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WP_User;
 
 /**
- * Collects extension data adapted for WooPay checkout sessions.
+ * Collects what the extensions WooPay has adapted need in a WooPay session: Points and Rewards and Gift Cards account
+ * data for a verified email, the Multi-Currency, Affiliate and AutomateWoo referral data, and the affiliate conversion
+ * after a WooPay order.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsWooPayAdaptedExtensions extends IntegrationRegistry {
 
@@ -31,7 +33,8 @@ class WooPaymentsWooPayAdaptedExtensions extends IntegrationRegistry {
 	private const GIFT_CARDS_BLOCKS = 'wc-gift-cards-blocks';
 
 	/**
-	 * Register adapted checkout integrations through the preserved Blocks hook.
+	 * Collect the adapted extensions' checkout block integrations by firing `woocommerce_blocks_checkout_block_registration`
+	 * on this registry.
 	 */
 	public function register_integrations(): void {
 		$registry = $this;
@@ -197,7 +200,7 @@ class WooPaymentsWooPayAdaptedExtensions extends IntegrationRegistry {
 	 * @param int $order_id The completed WooPay order ID.
 	 */
 	public function update_order_extension_data( int $order_id ): void {
-		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- WooPay server-to-store request; the order is authenticated upstream.
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- WooPay Store API request, whose blog-token signature determine_current_user_for_woopay() checked.
 		if ( empty( $_GET['affiliate'] ) || ! is_scalar( $_GET['affiliate'] ) || ! $this->is_affiliate_for_woocommerce_enabled() ) {
 			return;
 		}

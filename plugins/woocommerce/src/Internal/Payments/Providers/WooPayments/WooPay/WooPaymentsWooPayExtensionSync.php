@@ -14,57 +14,59 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 
 /**
- * Syncs WooPay extension compatibility state.
+ * Keeps the store's WooPay compatibility data in step with the platform: once a day it stores which extensions WooPay
+ * cannot run with, which it has adapted and which countries it serves, and a plugin's activation or deactivation
+ * updates the incompatibility warning.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 
 	/**
-	 * Preserved WooPay compatibility validation hook.
+	 * Action Scheduler hook of the daily compatibility sync.
 	 *
 	 * @var string
 	 */
 	public const VALIDATE_COMPATIBILITY_ACTION = 'validate_woopay_compatibility';
 
 	/**
-	 * The WooPay incompatible-extension validation hook the extension retired; core only clears it.
+	 * A retired WooPay validation hook whose leftover schedules are cleared.
 	 *
 	 * @var string
 	 */
 	private const RETIRED_INCOMPATIBLE_EXTENSIONS_ACTION = 'validate_incompatible_extensions';
 
 	/**
-	 * Preserved invalid-extension warning option.
+	 * Option set while an active plugin is one WooPay cannot run with; it turns on the warning.
 	 *
 	 * @var string
 	 */
 	private const INVALID_EXTENSIONS_FOUND_OPTION_NAME = 'woopay_invalid_extension_found';
 
 	/**
-	 * Preserved incompatible extensions option.
+	 * Extensions WooPay cannot run with, from the platform.
 	 *
 	 * @var string
 	 */
 	private const INCOMPATIBLE_EXTENSIONS_LIST_OPTION_NAME = 'woopay_incompatible_extensions';
 
 	/**
-	 * Preserved enabled adapted extensions option.
+	 * Active extensions WooPay has adapted.
 	 *
 	 * @var string
 	 */
 	private const ENABLED_ADAPTED_EXTENSIONS_OPTION_NAME = 'woopay_enabled_adapted_extensions';
 
 	/**
-	 * Preserved adapted extensions option.
+	 * Extensions WooPay has adapted, from the platform.
 	 *
 	 * @var string
 	 */
 	private const ADAPTED_EXTENSIONS_LIST_OPTION_NAME = 'woopay_adapted_extensions';
 
 	/**
-	 * Preserved available countries option.
+	 * Countries WooPay is available in, from the platform.
 	 *
 	 * @var string
 	 */
@@ -155,7 +157,8 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 			$this->update_enabled_adapted_extensions( $active_plugins, $adapted_extensions );
 			$this->update_available_countries( $available_countries );
 		} catch ( Throwable $e ) {
-			// The client appends the platform's message; native logs its status and code.
+			// The platform's message is free text, so the line carries only the failure context; written whatever the logging
+			// setting.
 			wc_get_logger()->error(
 				'Failed to update WooPay compatibility data.',
 				array_merge( WooPaymentsLogger::get_failure_context( $e ), array( 'source' => WooPaymentsLogger::SOURCE ) )

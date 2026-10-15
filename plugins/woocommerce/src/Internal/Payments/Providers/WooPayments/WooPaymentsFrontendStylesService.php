@@ -10,10 +10,11 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Shared frontend styling helpers for native WooPayments checkout surfaces.
+ * Keeps the styles cache version that stamps the stored checkout appearance, the card form's and WooPay's, and starts
+ * a new version when the theme, its global styles, templates or Customizer settings change, or WooCommerce updates.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsFrontendStylesService implements RegisterHooksInterface {
 

@@ -10,10 +10,11 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\Jetpack\Constants;
 
 /**
- * Registers frontend assets shared by native WooPayments surfaces.
+ * Registers the scripts the WooPayments checkout surfaces share, Stripe.js and the Stripe Elements appearance utility,
+ * and tells which blocks and shortcodes the current page carries.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 final class WooPaymentsFrontendAssets {
 
@@ -35,7 +36,7 @@ final class WooPaymentsFrontendAssets {
 	private const PHONE_VALIDATION_SCRIPT_PATH = 'assets/client/blocks/wc-woopayments-phone-validation.js';
 
 	/**
-	 * Register Stripe.js for every native WooPayments surface that needs it, unless the handle is already registered.
+	 * Register Stripe.js for the WooPayments surfaces that need it, unless the `stripe` handle is already registered.
 	 *
 	 * @since 11.2.0
 	 */
@@ -67,8 +68,8 @@ final class WooPaymentsFrontendAssets {
 	}
 
 	/**
-	 * Get the post the current request renders: the global post, which has_block() reads when given no post, as client
-	 * 11.1.0's surface checks call it. On a singular page it is the queried post; on an archive, the loop's first post.
+	 * Get the post the current request renders: the global post, which has_block() reads when given no post. On a
+	 * singular page it is the queried post; on an archive, the loop's first post.
 	 *
 	 * Blocks a pattern or reusable block references are not resolved, as has_block() does not resolve them.
 	 *

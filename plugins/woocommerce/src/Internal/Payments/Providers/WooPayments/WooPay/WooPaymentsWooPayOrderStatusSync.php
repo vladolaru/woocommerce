@@ -19,22 +19,26 @@ use WC_Order;
 use WC_Webhook;
 
 /**
- * Restores WooPay platform checkout order-status webhook compatibility.
+ * Keeps one WooCommerce webhook that sends WooPay orders' status changes to WooPay, with its secret registered on the
+ * platform.
+ *
+ * It creates the webhook on an admin page while WooPay is on for a valid account, gives it a new secret after an account
+ * refresh, and removes it when WooPay turns off.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 
 	/**
-	 * Preserved WooPay order-status webhook action.
+	 * Action fired when a WooPay order's status changes; the webhook's topic runs on it.
 	 *
 	 * @var string
 	 */
 	public const WEBHOOK_ACTION = 'wcpay_webhook_platform_checkout_order_status_changed';
 
 	/**
-	 * Preserved WooPay order-status webhook topic.
+	 * The webhook's topic.
 	 *
 	 * @var string
 	 */
@@ -116,7 +120,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register WooPay order-status webhook compatibility hooks.
+	 * Register the webhook's resource, event, topic and payload filters, and its create, refresh and settings hooks.
 	 */
 	public function register() {
 		add_filter( 'woocommerce_valid_webhook_resources', array( $this, 'add_resource' ) );
@@ -131,7 +135,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 
 		add_action( 'admin_init', array( $this, 'maybe_create_woopay_order_webhook' ) );
 
-		// Client 11.1.0 removes the webhook on account refresh and on the WooPay-disable settings change, not per admin page; native rotates the secret after a refresh instead.
+		// Client 11.1.0 removes the webhook on account refresh and on the WooPay-disable settings change, not per admin page; here an account refresh gives it a new secret instead.
 		add_action( 'woocommerce_payments_account_refreshed', array( $this, 'reconcile_webhook' ) );
 
 		add_action( 'update_option_' . WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( $this, 'handle_settings_update' ), 10, 2 );
@@ -202,10 +206,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Add the order webhook resource.
-	 *
-	 * The resource is a default WooCommerce resource, but the extension also
-	 * registered it. Keeping the filter preserves the old extension surface.
+	 * Add `order` to the webhook resources when it is missing; WooCommerce lists it by default.
 	 *
 	 * @param mixed $resources List of available resources.
 	 * @return mixed
@@ -320,14 +321,14 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 		 * @param int    $order_id    Order ID.
 		 * @param string $next_status New order status.
 		 */
-		do_action( self::WEBHOOK_ACTION, $order_id, $next_status ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Preserved hook name is stored in a class constant for reuse.
+		do_action( self::WEBHOOK_ACTION, $order_id, $next_status ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- The hook name is a class constant, documented above.
 	}
 
 	/**
 	 * Create the WooPay webhook unless exactly one already exists, and rotate its secret when an account refresh asked for it.
 	 *
-	 * The row is the state the plugin and native share, so it is identified by what it is, not by who wrote it: a
-	 * store switching from the plugin keeps the plugin's row, whose secret WooPay already holds. Several rows are
+	 * The row is shared with the WooPayments extension, so it is found by what it is, not by who wrote it: a store
+	 * switching from the extension keeps its row, whose secret WooPay already holds. Several rows are
 	 * replaced by one, since WooPay holds at most one of their secrets and nothing tells which.
 	 */
 	private function maybe_create_webhook(): void {
@@ -460,16 +461,16 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the webhook name: the plugin's own, in the plugin's text domain.
+	 * Get the webhook name: the WooPayments extension's, in its text domain.
 	 *
-	 * The plugin finds its row by this translated name (client 11.1.0 class-woopay-order-status-sync.php:69-71, :102-113), and
-	 * WordPress loads an inactive plugin's installed language pack just in time, so a reactivated plugin finds the row
-	 * native wrote in every locale instead of creating a second one.
+	 * The WooPayments extension finds its row by this translated name (client 11.1.0 class-woopay-order-status-sync.php:69-71, :102-113), and
+	 * WordPress loads an inactive plugin's installed language pack just in time, so the reactivated extension finds the
+	 * row written here in every locale instead of creating a second one.
 	 *
 	 * @return string
 	 */
 	private function get_webhook_name(): string {
-		return __( 'WooPayments woopay order status sync', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Backward compatibility: a reactivated WooPayments plugin finds this row by its own translated name, loaded just in time from its language pack.
+		return __( 'WooPayments woopay order status sync', 'woocommerce-payments' ); // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- Backward compatibility: a reactivated WooPayments extension finds this row by its own translated name, loaded just in time from its language pack.
 	}
 
 	/**
@@ -497,7 +498,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Remove every active WooPay order-status webhook, the plugin's included.
+	 * Remove every active WooPay order-status webhook, the WooPayments extension's included.
 	 */
 	private function remove_woopay_webhooks(): void {
 		$this->delete_webhooks( $this->find_woopay_webhook_ids() );
@@ -523,7 +524,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Log a safe WooPay webhook reconciliation error.
+	 * Log a webhook reconciliation error, with no platform text; written whatever the logging setting.
 	 *
 	 * @param string $message Error message.
 	 */

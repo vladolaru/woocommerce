@@ -169,7 +169,7 @@ class WooPaymentsWooPayAppearanceStore {
 	}
 
 	/**
-	 * Validate WooPay appearance data against the preserved schema.
+	 * Check that the appearance uses only the keys, themes, labels, variables and rules WooPay accepts.
 	 *
 	 * @param array<string,mixed> $appearance Appearance data.
 	 * @return bool

@@ -28,10 +28,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 
 /**
- * Native WooPay session helpers.
+ * Starts and serves the shopper's WooPay session: builds, encrypts and signs the session data WooPay's checkout loads,
+ * keeps the shopper's WooPay details in the WooCommerce session, and builds the WooPay config the checkout scripts read.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsWooPaySessionService {
 
@@ -170,11 +171,10 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
-	 * Resolve the WooPay session email through the plugin's fallback chain.
+	 * Resolve the WooPay session email: the email passed in, the verified WooPay identity, the WooCommerce customer's
+	 * billing or account email, then the logged-in user's email.
 	 *
-	 * Mirrors WooPay_Session::get_user_email() minus the request-parameter reads because native
-	 * entry points pass them explicitly: supplied email, verified encrypted identity, the
-	 * WooCommerce customer's billing/account email, then the logged-in user's email.
+	 * Callers pass the request's email and identity; nothing is read from the request here.
 	 *
 	 * @param string|null              $email          Email supplied with the request, if any.
 	 * @param array<string,mixed>|null $encrypted_data Encrypted WooPay identity envelope, if any.
@@ -293,11 +293,8 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
-	 * Get (or create) the platform customer id for the current shopper.
-	 *
-	 * The plugin resolves the merchant-account customer for the session — creating one when
-	 * missing, guests included — so WooPay can surface saved payment methods and attach the
-	 * charge to the right customer.
+	 * Get the platform customer ID of the current shopper, creating the customer when missing, guests included, so WooPay
+	 * can show saved payment methods and charge the right customer.
 	 *
 	 * @return string The platform customer id.
 	 */
@@ -409,9 +406,8 @@ class WooPaymentsWooPaySessionService {
 					'checkout' => $this->get_checkout_data( $woopay_request ),
 				),
 			'tracks_user_identity' => $this->frontend_tracking_controller->get_or_create_tracks_identity_for_current_user(),
-			// Server-stored appearance and font rules back-fill the session only while global
-			// theme support is enabled — the plugin gates both fallbacks the same way, so a
-			// merchant who turns the setting off stops pushing stale theme data into WooPay.
+			// The stored appearance and font rules fill in only while global theme support is on, so a merchant who turns the
+			// setting off stops sending old theme data to WooPay.
 			'appearance'           => null === $appearance
 				? ( $this->woopay_eligibility->is_woopay_global_theme_support_enabled() ? $this->appearance_store->get_woopay_appearance_or_null() : null )
 				: $this->appearance_store->sanitize_array_recursive( $appearance ),
@@ -666,8 +662,8 @@ class WooPaymentsWooPaySessionService {
 			// config's isWooPayEnabled (class-wc-payments-checkout.php:198), read by its email inputs and the Blocks button
 			// registration (client/checkout/blocks/index.js:123-134), which carries the rule through shouldShowWooPayButton on
 			// both sides (class-wc-payments-woopay-button-handler.php:300-320; should_show_woopay_button_for_enabled_state()).
-			// Native's isWooPayEnabled also gates the save-user section, which the client does not exclude, so the rule goes on
-			// the email input flag.
+			// isWooPayEnabled also turns on the save-user section here, which client 11.1.0 does not hide from those shoppers,
+			// so the rule goes on the email input flag.
 			'isWooPayEmailInputEnabled'         => $this->woopay_eligibility->is_woopay_email_input_enabled() && $this->woopay_eligibility->should_enable_woopay_on_guest_checkout(),
 			'isWooPayDirectCheckoutEnabled'     => $this->woopay_eligibility->is_woopay_direct_checkout_enabled(),
 			'isWooPayGlobalThemeSupportEnabled' => $is_global_theme_enabled,
@@ -852,7 +848,7 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
-	 * Get a string gateway setting while preserving empty string values.
+	 * Get a string gateway setting, keeping an empty string as it is.
 	 *
 	 * @param string $key      Setting key.
 	 * @param string $fallback Fallback value.
@@ -867,8 +863,7 @@ class WooPaymentsWooPaySessionService {
 	/**
 	 * Tell whether the shopper opted to save their details in WooPay.
 	 *
-	 * Reads the posted save_user_in_woopay field or the stored WooPay session flag —
-	 * the same pair the plugin's WooPay_Utilities::should_save_platform_customer() checks.
+	 * Reads the posted save_user_in_woopay field, else the flag stored in the WooPay session data.
 	 *
 	 * @return bool
 	 *
@@ -1016,7 +1011,7 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
-	 * Get native store data for WooPay session initialization.
+	 * Get the store data a WooPay session starts with.
 	 *
 	 * @param int|null $order_id Pay-for-order order ID.
 	 * @return array<string,mixed>

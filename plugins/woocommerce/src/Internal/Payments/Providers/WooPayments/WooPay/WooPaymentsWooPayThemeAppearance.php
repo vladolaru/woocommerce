@@ -17,7 +17,7 @@ use WP_Block_Patterns_Registry;
  * (class-wc-payments-styles-cache.php:153-338, :525-1219).
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsWooPayThemeAppearance {
 

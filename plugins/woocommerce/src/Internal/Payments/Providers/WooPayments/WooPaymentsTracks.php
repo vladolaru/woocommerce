@@ -12,8 +12,8 @@ use WC_Tracks;
 /**
  * Marks WooPayments Tracks events as sent by WooCommerce core, and records the server-side admin ones.
  *
- * Event names stay the client's; the `payments_runtime` property tells native events from the WooPayments
- * plugin's, and no plugin version is sent (core's `wc_version` names the release).
+ * Event names are the WooPayments extension's, so the `payments_runtime` property tells the built-in WooPayments' events
+ * from the extension's, and no `wcpay_version` is sent (core's `wc_version` names the release).
  *
  * @since 11.2.0
  * @internal
@@ -26,12 +26,12 @@ final class WooPaymentsTracks {
 	public const RUNTIME_PROPERTY = 'payments_runtime';
 
 	/**
-	 * The runtime value on every native WooPayments event.
+	 * The `payments_runtime` value of every event sent here.
 	 */
 	public const RUNTIME = 'woocommerce_core';
 
 	/**
-	 * Mark event properties as native, dropping the plugin version property the client sends.
+	 * Mark event properties with the runtime and drop `wcpay_version`, the WooPayments extension's version property.
 	 *
 	 * @param array<string,mixed> $properties Event properties.
 	 * @return array<string,mixed>

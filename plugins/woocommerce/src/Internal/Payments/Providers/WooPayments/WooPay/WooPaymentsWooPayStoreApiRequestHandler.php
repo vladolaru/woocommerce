@@ -36,12 +36,11 @@ use WP_Error;
 class WooPaymentsWooPayStoreApiRequestHandler {
 
 	/**
-	 * Platform-synced list of adapted extensions active on the store. Written by
-	 * WooPaymentsWooPayExtensionSync; byte-identical to the WooPayments plugin option name.
+	 * Active extensions WooPay has adapted, synced from the platform by WooPaymentsWooPayExtensionSync.
 	 */
 	private const ENABLED_ADAPTED_EXTENSIONS_OPTION = 'woopay_enabled_adapted_extensions';
 	/**
-	 * Accepted Store API issuers on inbound cart tokens; matches the WooPayments plugin pattern.
+	 * Store API namespaces a cart token may name as its issuer.
 	 */
 	private const STORE_API_NAMESPACE_PATTERN = '@^(wc/store(/v[\d]+)?|store-api)$@';
 	/**
@@ -49,7 +48,8 @@ class WooPaymentsWooPayStoreApiRequestHandler {
 	 */
 	private const MERCHANT_CUSTOMER_ID_META = 'woopay_merchant_customer_id';
 	/**
-	 * Scheduled-event hook restoring a detached order customer id; byte-identical to the plugin hook.
+	 * Scheduled event that restores a detached order's customer ID (WooPaymentsWooPayVerifiedEmailRestoreService); the
+	 * WooPayments extension schedules the same event.
 	 */
 	private const RESTORE_CUSTOMER_ID_HOOK = 'woopay_restore_order_customer_id';
 	/**
@@ -100,10 +100,9 @@ class WooPaymentsWooPayStoreApiRequestHandler {
 	/**
 	 * Resolve the current user for WooPay-originated Store API requests.
 	 *
-	 * Mirrors the WooPayments plugin's WooPay_Session::determine_current_user_for_woopay():
-	 * WooPay callbacks must be signed with the connected blog token (hard 401 otherwise),
-	 * are flagged through the wcpay_is_woopay_store_api_request filter, and resolve to the
-	 * shopper account carried by the Cart-Token session so orders keep their customer linkage.
+	 * The request must be signed with the store's blog token (a 401 otherwise); it is marked through the
+	 * `wcpay_is_woopay_store_api_request` filter and resolves to the shopper of its Cart-Token session, so the order keeps
+	 * its customer.
 	 *
 	 * @param int|bool $user Current user ID resolved so far, or false.
 	 * @return int|bool
@@ -204,8 +203,8 @@ class WooPaymentsWooPayStoreApiRequestHandler {
 		$enabled_adapted_extensions    = get_option( self::ENABLED_ADAPTED_EXTENSIONS_OPTION, array() );
 
 		// A WooPay-verified email matching the cart-token session's email resolves to the matching
-		// store account without authentication, but only while an adapted extension is active —
-		// the same gate the plugin applies before honoring the verified-email flow.
+		// store account without authentication, but only while an adapted extension is active: the verified-email flow
+		// serves those extensions' account data (points, gift cards).
 		if ( ( is_countable( $enabled_adapted_extensions ) ? count( $enabled_adapted_extensions ) : 0 ) > 0 && null !== $woopay_verified_email_address && ! empty( $customer['email'] ) ) {
 			$user = get_user_by( 'email', $woopay_verified_email_address );
 
@@ -281,8 +280,9 @@ class WooPaymentsWooPayStoreApiRequestHandler {
 	 * Credit an AutomateWoo Refer a Friend link referral on a WooPay order.
 	 *
 	 * The WooPay checkout runs without the shopper's cookies, so AutomateWoo cannot find the advocate it stores there;
-	 * WooPay returns the advocate this store sent it as the `automatewoo_referral_id` query parameter. Ported from client
-	 * 11.1.0 `WooPay_Session::automatewoo_refer_a_friend_referral_from_parameter()` (class-woopay-session.php:273-289).
+	 * WooPay returns the advocate this store sent it as the `automatewoo_referral_id` query parameter, as in
+	 * client 11.1.0 `WooPay_Session::automatewoo_refer_a_friend_referral_from_parameter()`
+	 * (`includes/woopay/class-woopay-session.php:273-289`).
 	 *
 	 * @since 11.2.0
 	 *
@@ -362,9 +362,8 @@ class WooPaymentsWooPayStoreApiRequestHandler {
 	/**
 	 * Arm fatal-error capture for a WooPay-originated Store API checkout.
 	 *
-	 * Mirrors the plugin's WooPay_Session::catch_woopay_checkout_errors(): a shutdown
-	 * handler logs the fatal and leaves an order note so the merchant gets a diagnostic
-	 * trail instead of an order stuck in an intermediate state.
+	 * A shutdown handler logs a fatal error and notes it on the order, so the merchant can see why the order stopped part
+	 * way.
 	 *
 	 * @param mixed $order Order the Store API checkout is processing.
 	 *
@@ -479,14 +478,14 @@ class WooPaymentsWooPayStoreApiRequestHandler {
 	 * Let the classic checkout resume the Store API draft order a WooPay checkout left in the session.
 	 *
 	 * WooPay's Store API requests share the shopper's session, so a WooPay checkout that did not finish leaves its draft
-	 * (and that draft's stock hold) as `store_api_draft_order`, which core's classic checkout never resumes. Ported from
+	 * (and that draft's stock hold) as `store_api_draft_order`, which core's classic checkout never resumes. As in
 	 * client 11.1.0 `WC_Payments_WooPay_Direct_Checkout::maybe_use_store_api_draft_order_id()`
 	 * (class-wc-payments-woopay-direct-checkout.php:56-79): the draft becomes the pending order core resumes. Unlike the client,
 	 * a stored `false` counts as no order awaiting payment (WC_Session::__isset() reports it as set; core writes it after a
 	 * payment or a cancellation), and only a draft or failed order is resumed: pending is the status WooPay's Store API
 	 * checkout sets before it pays, so a pending order may be paying right now. The takeover holds the order payment lock and
 	 * reads the order again under it, so it never changes an order another request is paying. While another request holds
-	 * that lock, checkout stops with a notice instead of placing and paying a second order (the client never refuses).
+	 * that lock, checkout stops with a notice instead of placing and paying a second order.
 	 *
 	 * @since 11.2.0
 	 *

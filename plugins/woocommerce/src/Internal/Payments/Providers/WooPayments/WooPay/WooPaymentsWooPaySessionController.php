@@ -19,10 +19,13 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderPayAccess;
 
 /**
- * Native WooPay session REST and AJAX callbacks.
+ * Registers WooPay's hooks: the `payments/woopay/session` route WooPay's servers call, the Store API request hooks,
+ * and, while WooPay is on, its AJAX actions, frontend assets, checkout email section and order metadata.
+ *
+ * WooPay's own hooks are decided on `init` (see register()).
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 
@@ -95,9 +98,8 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	 * Register WooPay REST and AJAX hooks.
 	 */
 	public function register() {
-		// Inbound WooPay identity hooks stay registered regardless of the enabled/eligibility
-		// snapshot — the plugin registers them unconditionally and every WooPay-specific check
-		// runs per request inside the callbacks themselves.
+		// The Store API request hooks are added whatever WooPay's state, which is not known yet while plugins load; each
+		// callback checks WooPay per request.
 		add_filter( 'determine_current_user', array( $this->store_api_request_handler, 'determine_current_user_for_woopay' ), 20 );
 
 		add_action( 'woocommerce_order_payment_status_changed', array( $this->store_api_request_handler, 'woopay_order_payment_status_changed' ) );
@@ -111,17 +113,17 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		// After the Store API session handler saves the session on shutdown (priority 20, StoreApi\SessionHandler::init()).
 		add_action( 'shutdown', array( $this->store_api_request_handler, 'refresh_woopay_browser_session_cache' ), 21 );
 
-		// The session route stays registered whenever native owns the runtime: the plugin
-		// registers it unconditionally and answers ineligible or unsigned callers through the
-		// permission callback (401), so a disabled/ineligible state must not turn into a 404
-		// that makes WooPay's bootstrap fail opaquely. It registers on its own rest_api_init
+		// The session route is registered whatever WooPay's state: an unsigned or ineligible caller gets a 401 from the
+		// permission callback, never a 404 that would make WooPay's bootstrap fail without a reason. It registers on its
+		// own rest_api_init
 		// callback, as in client 11.1.0 (class-wc-payments.php:860, :2451-2452), so a plugin that
 		// empties WooCommerce's list of REST controllers does not remove it.
 		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 
-		// WooCommerce registers this controller while plugins load, before Jetpack can confirm the connection
-		// owner, so WooPay would read as disabled. Decide on init instead. Client 11.1.0 decides in a setup_theme
-		// callback (class-wc-payments.php:680-689); every hook added here fires after init.
+		// WooPay's hooks depend on the account, so they are decided on init: while plugins load, Jetpack cannot confirm the
+		// connection owner yet and the account read serves only the cache, so a store without a cached account would read
+		// WooPay as disabled. Client 11.1.0 decides in a setup_theme callback (class-wc-payments.php:680-689); every hook
+		// added here fires after init.
 		if ( did_action( 'init' ) ) {
 			$this->register_woopay_hooks();
 		} elseif ( false === has_action( 'init', array( $this, 'register_woopay_hooks' ) ) ) {
@@ -155,8 +157,8 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			add_filter( 'wcpay_metadata_from_order', array( $this, 'maybe_add_woopay_user_metadata' ), 10, 2 );
 		}
 
-		// With WooPay on, the plugin moves the classic billing email into a "Contact
-		// information" section above the billing fields so the OTP popover anchors to it.
+		// With WooPay on, the classic billing email moves into a "Contact information" section above the billing fields,
+		// so the OTP popover anchors to it.
 		if ( false === has_action( 'woocommerce_checkout_billing', array( $this, 'woopay_fields_before_billing_details' ) ) ) {
 			add_action( 'woocommerce_checkout_billing', array( $this, 'woopay_fields_before_billing_details' ), -50 );
 		}
@@ -182,10 +184,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	/**
 	 * Reject a classic checkout that asks to save the shopper in WooPay without a phone number.
 	 *
-	 * Mirrors the plugin's WC_Payments::maybe_show_woopay_phone_number_error(). The plugin
-	 * validates the `no-country-code` half its intl-tel-input field posts; the native save-user
-	 * form posts a single `full` number (see set_woopay_phone_session_data()), so that is the
-	 * value validated here.
+	 * The save-user form posts one `full` number (see set_woopay_phone_session_data()), so that is the value checked.
 	 */
 	public function maybe_show_woopay_phone_number_error(): void {
 		// phpcs:disable WordPress.Security.NonceVerification.Missing -- WooCommerce verifies the checkout nonce before firing woocommerce_checkout_process.
@@ -205,8 +204,6 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 
 	/**
 	 * Render the WooPay contact section carrying the billing email above the billing fields.
-	 *
-	 * Mirrors the plugin's WC_Payments::woopay_fields_before_billing_details().
 	 */
 	public function woopay_fields_before_billing_details(): void {
 		$checkout = WC()->checkout();
@@ -236,8 +233,6 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 
 	/**
 	 * Hide the core billing email field on checkout: the WooPay contact section renders it.
-	 *
-	 * Mirrors the plugin's WC_Payments::filter_woocommerce_form_field_woopay_email().
 	 *
 	 * @param string $field         The rendered field markup.
 	 * @param string $key           The field key.
@@ -421,7 +416,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Enqueue Core-owned WooPay frontend assets on supported shopper surfaces.
+	 * Enqueue the WooPay script, style and config on the pages that show WooPay.
 	 */
 	public function enqueue_frontend_assets(): void {
 		if ( $this->has_enqueued_frontend_assets ) {
@@ -903,9 +898,9 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			array(
 				'wcAjaxUrl'                => \WC_AJAX::get_endpoint( '%%endpoint%%' ),
 				'confirmationErrorMessage' => __( 'There was a problem processing the payment. Please try again.', 'woocommerce' ),
-				// The save-user source URL is the checkout page permalink the client sends from
-				// wcSettings.storePages.checkout.permalink (checkout-page-save-user.js:118-124, :355-360), built the
-				// way core's Blocks settings build it (AssetDataRegistry::get_store_pages()); never the browser URL.
+				// The save-user source URL is the checkout page permalink, which client 11.1.0 sends from
+				// wcSettings.storePages.checkout.permalink (`client/components/woopay/save-user/checkout-page-save-user.js:118-124, :355-360`),
+				// built the way core's Blocks settings build it (AssetDataRegistry::get_store_pages()); never the browser URL.
 				'woopaySourceUrl'          => (string) get_permalink( wc_get_page_id( 'checkout' ) ),
 			),
 			$config,

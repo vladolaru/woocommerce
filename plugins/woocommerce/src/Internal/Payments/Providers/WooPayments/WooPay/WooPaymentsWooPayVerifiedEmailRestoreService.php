@@ -17,14 +17,18 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Restores customer IDs detached during WooPay verified-email requests.
+ * Gives a WooPay verified-email order its customer back: the scheduled event restores one order ten minutes after
+ * checkout, and every detached order on the blog is restored once no WooPayments runtime owns payments.
+ *
+ * WooCommerce registers it on every request, whatever the setup tier, so an event scheduled before the built-in
+ * WooPayments stopped owning payments still runs; it does nothing while the WooPayments extension owns them.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInterface {
 
-	/** Scheduled event used to restore a detached order customer ID. */
+	/** Scheduled event that restores a detached order's customer ID. */
 	private const RESTORE_CUSTOMER_ID_HOOK = 'woopay_restore_order_customer_id';
 
 	/** Hook fired once WooCommerce order CRUD is ready. */
@@ -113,7 +117,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 	}
 
 	/**
-	 * Restore every detached order on the current blog once no runtime owns payments (native ownership was lost); otherwise do nothing.
+	 * Restore every detached order on the current blog when no WooPayments runtime owns payments; otherwise do nothing.
 	 *
 	 * Before the order CRUD hook has fired, it defers to that hook and runs there.
 	 *

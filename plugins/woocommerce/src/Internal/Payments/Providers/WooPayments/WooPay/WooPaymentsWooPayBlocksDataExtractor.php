@@ -16,10 +16,12 @@ use Throwable;
 use WP_Post;
 
 /**
- * Extracts WooPay checkout block extension data.
+ * Collects the checkout block data WooPay's checkout shows: the script data of the marketing opt-in integrations it
+ * supports (AutomateWoo, Mailchimp, the `WCK` checkout integration and MailPoet), the Store API checkout schema
+ * namespaces, and the checkout's optional field, terms and privacy settings.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsWooPayBlocksDataExtractor {
 

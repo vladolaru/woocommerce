@@ -25,12 +25,12 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
 class WooPaymentsWooPayEligibility {
 
 	/**
-	 * Platform-synced list of WooPay-available countries. Written by
-	 * WooPaymentsWooPayExtensionSync; byte-identical to the WooPayments plugin option name.
+	 * Countries WooPay is available in, synced from the platform by WooPaymentsWooPayExtensionSync under the option name
+	 * the WooPayments extension also writes.
 	 */
 	private const AVAILABLE_COUNTRIES_OPTION = 'woocommerce_woocommerce_payments_woopay_available_countries';
 	/**
-	 * Default WooPay country list when the platform has not synced one; matches the plugin.
+	 * Default WooPay country list when the platform has not synced one.
 	 */
 	private const AVAILABLE_COUNTRIES_DEFAULT = '["US"]';
 
@@ -65,7 +65,7 @@ class WooPaymentsWooPayEligibility {
 	}
 
 	/**
-	 * Tell whether WooPay and its express button are enabled, like the client's WooPay button handler.
+	 * Tell whether WooPay and its express button are enabled, as the `wcpay_woopay_enabled` filter answers.
 	 *
 	 * Client 11.1.0 `WC_Payments_WooPay_Button_Handler::is_woopay_enabled()` (class-wc-payments-woopay-button-handler.php:94-102).
 	 *
@@ -122,6 +122,11 @@ class WooPaymentsWooPayEligibility {
 
 	/**
 	 * Tell whether the WooPay button should show for a known global enabled state.
+	 *
+	 * Applies `wcpay_woopay_enabled` too, so on a page that also builds the button config through is_woopay_button_enabled()
+	 * the filter runs twice.
+	 * Client 11.1.0 also applies it in two places on a page: `is_woopay_enabled()` (`includes/class-wc-payments-woopay-button-handler.php:101`)
+	 * runs from its `init()` (`:120`) and from `should_show_woopay_button()` (`:253`).
 	 *
 	 * @param string $context            Express checkout context.
 	 * @param bool   $is_woopay_enabled Whether WooPay is globally enabled.
@@ -220,7 +225,7 @@ class WooPaymentsWooPayEligibility {
 	 *
 	 * Reads the gateway's enabled setting rather than resolving gateway availability, like client 11.1.0
 	 * `WC_Payments_Features::is_woopay_direct_checkout_enabled()`: its caller on `init` at priority 15, the draft-order
-	 * hook, runs too early to resolve the available gateways, and the extension reverted two changes that did.
+	 * hook, runs too early to resolve the available gateways.
 	 * should_run_woopay_direct_checkout() adds gateway availability, at page render.
 	 *
 	 * @return bool

@@ -11,10 +11,12 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WP_REST_Request;
 
 /**
- * Suppresses checkout side effects during a WooPay preflight request.
+ * Runs WooPay's preflight request to the Store API checkout without side effects: for that request only it empties the
+ * order meta, order processed, pending status and registration-required hooks and lifts coupon usage limits, then
+ * restores them.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsWooPayPreflightGuard implements RegisterHooksInterface {
 

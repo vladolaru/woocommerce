@@ -21,10 +21,14 @@ use WP_User;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 
 /**
- * Native WooPayments shopper frontend Tracks callbacks.
+ * Records the WooPayments shopper Tracks events: the checkout funnel page views on every store, the WooPay events while
+ * WooPay is on, and the events the checkout scripts send to the `wc/v3/payments/tracks` route or the `platform_tracks`
+ * AJAX action.
+ *
+ * It also counts a checkout order paid with another gateway on the WordPress.com stats pixel.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 
@@ -131,8 +135,8 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	/**
 	 * Names the browser may still send for a declared event, mapped to the event.
 	 *
-	 * Client 11.1.0 sends `wcpay_proceed_to_checkout_button_click` and records it with a second `wcpay_` prefix; native
-	 * records the single-prefixed name, and a page cached before the change still sends the old one.
+	 * Client 11.1.0 sends `wcpay_proceed_to_checkout_button_click` and records it with a second `wcpay_` prefix; the
+	 * single-prefixed name is recorded here, and a page cached while the WooPayments extension ran still sends the old one.
 	 */
 	private const SHOPPER_EVENT_ALIASES = array(
 		'wcpay_proceed_to_checkout_button_click' => 'proceed_to_checkout_button_click',
@@ -222,7 +226,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	/**
 	 * Record the client 11.1.0 WooPay_Tracker shopper funnel event for the current hook (`class-woopay-tracker.php:73-81,496-532,608`).
 	 *
-	 * Page views are queued for the footer script, as the client does; the WooPay sign-up records at once, as in the client.
+	 * Page views are queued for the footer script; the WooPay sign-up records at once.
 	 * Cart pages also arm the footer script's "Proceed to checkout" click tracking, the client's `client/cart/index.js`.
 	 *
 	 * @internal
@@ -328,7 +332,8 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register the shopper Tracks REST route the native scripts post to; `platform_tracks` stays as an AJAX alias.
+	 * Register the shopper Tracks REST route the checkout scripts post to; the `platform_tracks` AJAX action takes the same
+	 * requests.
 	 *
 	 * @internal
 	 */
@@ -360,7 +365,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the shopper Tracks REST route URL the native scripts post to.
+	 * Get the shopper Tracks REST route URL the checkout scripts post to.
 	 *
 	 * @return string
 	 */
@@ -402,7 +407,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Handle the preserved platform Tracks AJAX action.
+	 * Answer the `platform_tracks` AJAX action, which records a shopper event.
 	 */
 	public function handle_tracks(): void {
 		$response = $this->record_tracks_request( wp_unslash( $_REQUEST ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
@@ -415,7 +420,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Handle the preserved Tracks identity AJAX action.
+	 * Answer the `get_identity` AJAX action with the shopper's Tracks identity.
 	 */
 	public function handle_tracks_identity(): void {
 		$response = $this->get_tracks_identity_response();
@@ -572,7 +577,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Queue a shopper page view for the footer script, like the plugin's `maybe_record_wcpay_shopper_event()` (11.1.0).
+	 * Queue a shopper page view for the footer script to record.
 	 *
 	 * Nothing is recorded during render, so no Tracks identity cookie or outbound request touches a cacheable page.
 	 * Only store-wide checks run here; the AJAX recorder applies the per-visitor ones. Page views are recorded on every
@@ -599,7 +604,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Have the footer script record cart "Proceed to checkout" clicks, like the plugin's cart script (11.1.0 `client/cart/index.js`).
+	 * Have the footer script record cart "Proceed to checkout" clicks, like client 11.1.0's cart script (`client/cart/index.js`).
 	 *
 	 * Armed only when the AJAX recorder would keep the event: the store-wide checks and WooPay, since the event is not
 	 * recorded on every store and the recorder drops it while WooPay is off.
@@ -669,11 +674,11 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Record a WooPayments admin event, like the plugin's `WooPay_Tracker::maybe_record_admin_event()` (11.1.0).
+	 * Record a WooPay admin event under the WooPay tracking checks.
 	 *
-	 * The WooPay settings events (enabled, disabled, global theme support, express button locations) stay on this
-	 * recorder, not `WC_Tracks::record_event()`: they are WooPay events and keep the client's gate, including the
-	 * US-only store check (client `class-woopay-tracker.php:228-290`, since client PR #8161; WooPay is US-only).
+	 * The WooPay settings events (enabled, disabled, global theme support, express button locations) go through this
+	 * recorder, not `WC_Tracks::record_event()`: they are WooPay events, so they keep the WooPay checks, including the
+	 * US-only store check (client `class-woopay-tracker.php:228-290`, since client PR #8161, which records shopper Tracks only on US stores).
 	 *
 	 * @param string              $event_name Event name without the wcadmin_ prefix.
 	 * @param array<string,mixed> $properties Event properties.
@@ -743,9 +748,9 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Count an order paid with another gateway on the WordPress.com stats pixel, like the client's `bump_stats()`.
+	 * Count an order paid with another gateway on the WordPress.com stats pixel.
 	 *
-	 * Under the client's gates (client 11.1.0 `includes/class-woopay-tracker.php:545-555`). Unlike the client, checkout does
+	 * Under the same checks as client 11.1.0 (`includes/class-woopay-tracker.php:545-555`). Checkout does
 	 * not wait for the answer beyond a one-second timeout; the request is never retried and a failure is ignored.
 	 */
 	private function send_other_gateway_order_counter(): void {
@@ -849,7 +854,8 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the WooPayments-compatible Tracks identity.
+	 * Get the shopper's Tracks identity: the linked WordPress.com user, stored once read, else an anonymous ID created and
+	 * stored on first use.
 	 *
 	 * @param int $user_id User ID.
 	 * @return array{_ut:string,_ui:string}
