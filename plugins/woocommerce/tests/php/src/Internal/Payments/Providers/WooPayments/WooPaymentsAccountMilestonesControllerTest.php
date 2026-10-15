@@ -377,6 +377,7 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 
 		$service->handle_wcpay_instant_deposits_inbox_note(
 			array(
+				// Client 11.1.0 reads this flag in is_instant_deposits_eligible() (includes/class-wc-payments-account.php:2842-2847).
 				'instant_deposits_eligible' => true,
 			)
 		);
@@ -398,6 +399,7 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 
 		$service->handle_wcpay_instant_deposits_inbox_note(
 			array(
+				// Client 11.1.0 reads this flag in is_instant_deposits_eligible() (includes/class-wc-payments-account.php:2842-2847).
 				'instant_deposits_eligible' => false,
 			)
 		);
@@ -414,6 +416,7 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 		$scheduler       = new RecordingActionSchedulerService();
 		$account_service = $this->create_account_service(
 			array(
+				// Client 11.1.0 reads this flag in is_instant_deposits_eligible() (includes/class-wc-payments-account.php:2842-2847).
 				'instant_deposits_eligible' => true,
 			),
 			false
@@ -553,6 +556,7 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 		do_action(
 			'woocommerce_payments_account_refreshed',
 			array(
+				// The fields client 11.1.0 maybe_record_kyc_completion_date() checks (includes/class-wc-payments-account.php:2683-2710).
 				'payments_enabled' => true,
 				'is_live'          => true,
 				'is_test_drive'    => false,
@@ -586,6 +590,7 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_kyc_completion_date', $existing_kyc_date, false );
 		$service->maybe_record_kyc_completion_date(
 			array(
+				// The fields client 11.1.0 maybe_record_kyc_completion_date() checks (includes/class-wc-payments-account.php:2683-2710).
 				'payments_enabled' => true,
 				'is_live'          => true,
 				'is_test_drive'    => false,

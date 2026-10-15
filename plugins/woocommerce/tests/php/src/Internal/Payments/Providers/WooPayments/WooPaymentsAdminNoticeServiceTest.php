@@ -1366,7 +1366,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		try {
 			$this->assertNotNull( $sut->get_notice_for_current_user() );
 			$this->assertNotNull( $sut->get_notice_for_current_user() );
-			$this->assertSame( 1, $queries, 'Cold combined selection should run the shared live-order query once.' );
+			$this->assertSame( 1, $queries, 'The live-sale query runs once; the second call reads the cached eligibility.' );
 			$this->assertSame( '1', get_transient( 'wcpay_post_kyc_activation_eligible' ) );
 			$this->assertFalse( get_option( 'wcpay_has_live_sale' ) );
 			$this->assertGreaterThan( time(), (int) get_option( '_transient_timeout_wcpay_post_kyc_activation_eligible' ) );
