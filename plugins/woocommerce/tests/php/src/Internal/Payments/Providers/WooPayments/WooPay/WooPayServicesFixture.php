@@ -15,6 +15,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAppearanceStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayStoreApiRequestHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayBlocksDataExtractor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 
 /**
  * Shared fixture for the WooPay session family tests: the account and tracking doubles and the WooPay services built
@@ -528,11 +530,12 @@ trait WooPayServicesFixture {
 		$this->appearance_store = new WooPaymentsWooPayAppearanceStore();
 		$this->appearance_store->init( new WooPaymentsFrontendStylesService() );
 
+		$adapted_extensions              = $adapted_extensions ?? new WooPaymentsWooPayAdaptedExtensions();
 		$this->store_api_request_handler = new WooPaymentsWooPayStoreApiRequestHandler();
-		$this->store_api_request_handler->init( $this->woopay_eligibility, $adapted_extensions ?? new WooPaymentsWooPayAdaptedExtensions() );
+		$this->store_api_request_handler->init( $this->woopay_eligibility, $adapted_extensions );
 
 		$sut = new WooPaymentsWooPaySessionService();
-		$sut->init( $account_service, $this->woopay_eligibility, $this->appearance_store, $tracking_controller, null, $adapted_extensions, $customer_service );
+		$sut->init( $account_service, $this->woopay_eligibility, $this->appearance_store, $tracking_controller, wc_get_container()->get( WooPaymentsWooPayBlocksDataExtractor::class ), $adapted_extensions, $customer_service ?? $this->create_customer_service_without_platform_customer(), wc_get_container()->get( WooPaymentsLogger::class ) );
 
 		return $sut;
 	}
@@ -718,5 +721,20 @@ trait WooPayServicesFixture {
 			 */
 			public function set_customer_session_cookie( bool $set ): void {}
 		};
+	}
+
+	/**
+	 * Create a customer service that answers no platform customer, for tests that do not look at it.
+	 *
+	 * @return WooPaymentsCustomerService
+	 */
+	private function create_customer_service_without_platform_customer(): WooPaymentsCustomerService {
+		$customer_service = $this->getMockBuilder( WooPaymentsCustomerService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_or_create_customer_id_for_user' ) )
+			->getMock();
+		$customer_service->method( 'get_or_create_customer_id_for_user' )->willReturn( '' );
+
+		return $customer_service;
 	}
 }

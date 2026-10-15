@@ -79,38 +79,46 @@ class WooPaymentsWooPaySessionService {
 	/**
 	 * WooPay blocks data extractor.
 	 *
-	 * @var WooPaymentsWooPayBlocksDataExtractor|null
+	 * @var WooPaymentsWooPayBlocksDataExtractor
 	 */
-	private ?WooPaymentsWooPayBlocksDataExtractor $blocks_data_extractor = null;
+	private WooPaymentsWooPayBlocksDataExtractor $blocks_data_extractor;
 
 	/**
 	 * WooPay adapted extensions registry.
 	 *
-	 * @var WooPaymentsWooPayAdaptedExtensions|null
+	 * @var WooPaymentsWooPayAdaptedExtensions
 	 */
-	private ?WooPaymentsWooPayAdaptedExtensions $adapted_extensions = null;
+	private WooPaymentsWooPayAdaptedExtensions $adapted_extensions;
 
 	/**
 	 * WooPayments customer service.
 	 *
-	 * @var WooPaymentsCustomerService|null
+	 * @var WooPaymentsCustomerService
 	 */
-	private ?WooPaymentsCustomerService $customer_service = null;
+	private WooPaymentsCustomerService $customer_service;
+
+	/**
+	 * WooPayments logger, which writes only when debug logging is on (client 11.1.0 `src/Internal/Logger.php:64-91`).
+	 *
+	 * @var WooPaymentsLogger
+	 */
+	private WooPaymentsLogger $logger;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsAccountService                 $account_service              WooPayments account service.
-	 * @param WooPaymentsWooPayEligibility              $woopay_eligibility           WooPay eligibility rules.
-	 * @param WooPaymentsWooPayAppearanceStore          $appearance_store             WooPay checkout appearance store.
-	 * @param WooPaymentsFrontendTrackingController     $frontend_tracking_controller Frontend tracking controller.
-	 * @param WooPaymentsWooPayBlocksDataExtractor|null $blocks_data_extractor        WooPay blocks data extractor.
-	 * @param WooPaymentsWooPayAdaptedExtensions|null   $adapted_extensions           WooPay adapted extensions registry.
-	 * @param WooPaymentsCustomerService|null           $customer_service             WooPayments customer service.
+	 * @param WooPaymentsAccountService             $account_service              WooPayments account service.
+	 * @param WooPaymentsWooPayEligibility          $woopay_eligibility           WooPay eligibility rules.
+	 * @param WooPaymentsWooPayAppearanceStore      $appearance_store             WooPay checkout appearance store.
+	 * @param WooPaymentsFrontendTrackingController $frontend_tracking_controller Frontend tracking controller.
+	 * @param WooPaymentsWooPayBlocksDataExtractor  $blocks_data_extractor        WooPay blocks data extractor.
+	 * @param WooPaymentsWooPayAdaptedExtensions    $adapted_extensions           WooPay adapted extensions registry.
+	 * @param WooPaymentsCustomerService            $customer_service             WooPayments customer service.
+	 * @param WooPaymentsLogger                     $logger                       WooPayments logger.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsWooPayAppearanceStore $appearance_store, WooPaymentsFrontendTrackingController $frontend_tracking_controller, ?WooPaymentsWooPayBlocksDataExtractor $blocks_data_extractor = null, ?WooPaymentsWooPayAdaptedExtensions $adapted_extensions = null, ?WooPaymentsCustomerService $customer_service = null ): void {
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsWooPayAppearanceStore $appearance_store, WooPaymentsFrontendTrackingController $frontend_tracking_controller, WooPaymentsWooPayBlocksDataExtractor $blocks_data_extractor, WooPaymentsWooPayAdaptedExtensions $adapted_extensions, WooPaymentsCustomerService $customer_service, WooPaymentsLogger $logger ): void {
 		$this->account_service              = $account_service;
 		$this->woopay_eligibility           = $woopay_eligibility;
 		$this->appearance_store             = $appearance_store;
@@ -118,6 +126,7 @@ class WooPaymentsWooPaySessionService {
 		$this->blocks_data_extractor        = $blocks_data_extractor;
 		$this->adapted_extensions           = $adapted_extensions;
 		$this->customer_service             = $customer_service;
+		$this->logger                       = $logger;
 	}
 
 	/**
@@ -289,13 +298,9 @@ class WooPaymentsWooPaySessionService {
 	 * missing, guests included — so WooPay can surface saved payment methods and attach the
 	 * charge to the right customer.
 	 *
-	 * @return string|int The platform customer id, or 0 when no customer service is available.
+	 * @return string The platform customer id.
 	 */
 	private function get_platform_customer_id() {
-		if ( null === $this->customer_service ) {
-			return 0;
-		}
-
 		return $this->customer_service->get_or_create_customer_id_for_user( get_current_user_id() );
 	}
 
@@ -402,7 +407,7 @@ class WooPaymentsWooPaySessionService {
 					'cart'     => $this->get_cart_data( false, null, null, null, $woopay_request ),
 					'checkout' => $this->get_checkout_data( $woopay_request ),
 				),
-			'tracks_user_identity' => $this->get_frontend_tracking_controller()->get_tracks_identity_for_current_user(),
+			'tracks_user_identity' => $this->frontend_tracking_controller->get_tracks_identity_for_current_user(),
 			// Server-stored appearance and font rules back-fill the session only while global
 			// theme support is enabled — the plugin gates both fallbacks the same way, so a
 			// merchant who turns the setting off stops pushing stale theme data into WooPay.
@@ -414,7 +419,7 @@ class WooPaymentsWooPaySessionService {
 				: $this->appearance_store->sanitize_woopay_font_rules( $font_rules ),
 		);
 
-		$adapted_extensions        = $this->get_adapted_extensions();
+		$adapted_extensions        = $this->adapted_extensions;
 		$request['extension_data'] = $adapted_extensions->get_extension_data();
 		if ( '' === $email ) {
 			return $request;
@@ -449,7 +454,7 @@ class WooPaymentsWooPaySessionService {
 		$blog_token = $this->get_store_blog_token();
 
 		if ( '' === $blog_id ) {
-			$this->get_logger()->log( 'WooPay blog_id is missing, so the WooPay session data cannot be signed.' );
+			$this->logger->log( 'WooPay blog_id is missing, so the WooPay session data cannot be signed.' );
 		}
 
 		if ( '' === $blog_id || '' === $blog_token || ! function_exists( 'openssl_encrypt' ) ) {
@@ -529,15 +534,15 @@ class WooPaymentsWooPaySessionService {
 		// Client 11.1.0 logs the whole failed request and every response body (class-woopay-session.php:707-715). The init
 		// answer's URL carries the WooPay session key, so only the result, the HTTP status and the error code are logged.
 		if ( $response instanceof WP_Error || ! is_array( $response ) ) {
-			$this->get_logger()->error( 'HTTP_REQUEST_ERROR: WooPay session init request failed.', $this->get_request_error_log_context( $response ) );
-			$this->get_logger()->log( 'WooPay session init response.', 'info', array( 'result' => 'failure' ) );
+			$this->logger->error( 'HTTP_REQUEST_ERROR: WooPay session init request failed.', $this->get_request_error_log_context( $response ) );
+			$this->logger->log( 'WooPay session init response.', 'info', array( 'result' => 'failure' ) );
 
 			return array( 'result' => 'failure' );
 		}
 
 		$data = json_decode( wp_remote_retrieve_body( $response ), true );
 		$data = is_array( $data ) ? $data : array( 'result' => 'failure' );
-		$this->get_logger()->log(
+		$this->logger->log(
 			'WooPay session init response.',
 			'info',
 			array(
@@ -665,14 +670,14 @@ class WooPaymentsWooPaySessionService {
 			'isWooPayEmailInputEnabled'         => $this->woopay_eligibility->is_woopay_email_input_enabled() && $this->woopay_eligibility->should_enable_woopay_on_guest_checkout(),
 			'isWooPayDirectCheckoutEnabled'     => $this->woopay_eligibility->is_woopay_direct_checkout_enabled(),
 			'isWooPayGlobalThemeSupportEnabled' => $is_global_theme_enabled,
-			'forceNetworkSavedCards'            => $this->get_account_service()->is_network_saved_cards_enabled() || $this->woopay_eligibility->should_use_stripe_platform_on_checkout_page(),
+			'forceNetworkSavedCards'            => $this->account_service->is_network_saved_cards_enabled() || $this->woopay_eligibility->should_use_stripe_platform_on_checkout_page(),
 			'ajaxUrl'                           => admin_url( 'admin-ajax.php' ),
 			'platformTrackerNonce'              => wp_create_nonce( 'platform_tracks_nonce' ),
-			'tracksUrl'                         => $this->get_frontend_tracking_controller()->get_tracks_rest_url(),
+			'tracksUrl'                         => $this->frontend_tracking_controller->get_tracks_rest_url(),
 			'tracksRestNonce'                   => wp_create_nonce( 'wp_rest' ),
-			'isShopperTrackingEnabled'          => $this->get_frontend_tracking_controller()->is_shopper_tracking_enabled(),
+			'isShopperTrackingEnabled'          => $this->frontend_tracking_controller->is_shopper_tracking_enabled(),
 			'woopayHost'                        => self::get_woopay_url(),
-			'testMode'                          => $this->get_account_service()->is_test_mode_enabled(),
+			'testMode'                          => $this->account_service->is_test_mode_enabled(),
 			'wcpayVersionNumber'                => WooPaymentsClientVersion::VERSION,
 			'woopayMerchantId'                  => $this->get_store_blog_id(),
 			'initWooPayNonce'                   => wp_create_nonce( 'wcpay_init_woopay_nonce' ),
@@ -733,7 +738,7 @@ class WooPaymentsWooPaySessionService {
 	public function get_woopay_direct_checkout_config(): array {
 		return array(
 			'woopayHost'                    => self::get_woopay_url(),
-			'testMode'                      => $this->get_account_service()->is_test_mode_enabled(),
+			'testMode'                      => $this->account_service->is_test_mode_enabled(),
 			'woopaySessionNonce'            => wp_create_nonce( 'woopay_session_nonce' ),
 			'woopayMerchantId'              => $this->get_store_blog_id(),
 			'isWooPayDirectCheckoutEnabled' => $this->woopay_eligibility->is_woopay_direct_checkout_enabled(),
@@ -749,7 +754,7 @@ class WooPaymentsWooPaySessionService {
 	 * @return array<string,bool|string>
 	 */
 	public function get_save_user_checkout_data(): array {
-		$account_data = $this->get_account_service()->get_cached_account_data();
+		$account_data = $this->account_service->get_cached_account_data();
 
 		return array(
 			'PRE_CHECK_SAVE_MY_INFO'         => ! empty( $account_data['pre_check_save_my_info'] ),
@@ -833,8 +838,8 @@ class WooPaymentsWooPaySessionService {
 	 */
 	private function get_string_gateway_setting( string $key, ?string $fallback = null ): string {
 		$value = null === $fallback
-			? $this->get_account_service()->get_gateway_setting( $key )
-			: $this->get_account_service()->get_gateway_setting( $key, $fallback );
+			? $this->account_service->get_gateway_setting( $key )
+			: $this->account_service->get_gateway_setting( $key, $fallback );
 
 		if ( is_scalar( $value ) && '' !== (string) $value ) {
 			return sanitize_text_field( (string) $value );
@@ -853,7 +858,7 @@ class WooPaymentsWooPaySessionService {
 	 * @return string
 	 */
 	private function get_string_gateway_setting_allow_empty( string $key, string $fallback ): string {
-		$value = $this->get_account_service()->get_gateway_setting( $key, $fallback );
+		$value = $this->account_service->get_gateway_setting( $key, $fallback );
 
 		return is_scalar( $value ) ? sanitize_text_field( (string) $value ) : $fallback;
 	}
@@ -975,7 +980,7 @@ class WooPaymentsWooPaySessionService {
 
 		if ( '' === $blog_token ) {
 			// Client 11.1.0 class-woopay-utilities.php:297.
-			$this->get_logger()->log( 'WooPay blog_token is currently misconfigured.' );
+			$this->logger->log( 'WooPay blog_token is currently misconfigured.' );
 		}
 
 		return $blog_token;
@@ -1021,15 +1026,15 @@ class WooPaymentsWooPaySessionService {
 			$shop_url = home_url( '/' );
 		}
 
-		$manual_capture = 'yes' === $this->get_account_service()->get_gateway_setting( 'manual_capture' );
+		$manual_capture = 'yes' === $this->account_service->get_gateway_setting( 'manual_capture' );
 		$order          = $order_id ? wc_get_order( $order_id ) : false;
 		$checkout_url   = function_exists( 'wc_get_checkout_url' ) ? wc_get_checkout_url() : home_url( '/' );
-		$custom_message = (string) $this->get_account_service()->get_gateway_setting( 'platform_checkout_custom_message' );
-		$blocks_data    = $this->get_blocks_data_extractor();
+		$custom_message = (string) $this->account_service->get_gateway_setting( 'platform_checkout_custom_message' );
+		$blocks_data    = $this->blocks_data_extractor;
 		if ( $order instanceof \WC_Order ) {
 			$checkout_url = $order->get_checkout_payment_url();
 		}
-		$store_logo_file_id = (string) $this->get_account_service()->get_gateway_setting( 'platform_checkout_store_logo', '' );
+		$store_logo_file_id = (string) $this->account_service->get_gateway_setting( 'platform_checkout_store_logo', '' );
 		$store_logo         = $this->get_theme_store_logo_url();
 		if ( '' !== $store_logo_file_id ) {
 			$store_logo = get_rest_url( null, 'wc/v3/payments/file/' . $store_logo_file_id );
@@ -1045,8 +1050,8 @@ class WooPaymentsWooPaySessionService {
 			'blog_shop_url'                  => $shop_url,
 			'blog_timezone'                  => wp_timezone_string(),
 			'store_api_url'                  => $this->get_store_api_url(),
-			'account_id'                     => $this->get_account_service()->get_account_id(),
-			'test_mode'                      => $this->get_account_service()->is_test_mode_enabled(),
+			'account_id'                     => $this->account_service->get_account_id(),
+			'test_mode'                      => $this->account_service->is_test_mode_enabled(),
 			'capture_method'                 => $manual_capture ? 'manual' : 'automatic',
 			'is_subscriptions_plugin_active' => WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active(),
 			'woocommerce_tax_display_cart'   => get_option( 'woocommerce_tax_display_cart' ),
@@ -1072,36 +1077,6 @@ class WooPaymentsWooPaySessionService {
 		}
 
 		return get_rest_url( null, $namespace );
-	}
-
-	/**
-	 * Get the WooPay blocks data extractor.
-	 *
-	 * @return WooPaymentsWooPayBlocksDataExtractor
-	 */
-	private function get_blocks_data_extractor(): WooPaymentsWooPayBlocksDataExtractor {
-		if ( ! $this->blocks_data_extractor instanceof WooPaymentsWooPayBlocksDataExtractor ) {
-			$blocks_data_extractor = wc_get_container()->get( WooPaymentsWooPayBlocksDataExtractor::class );
-
-			$this->blocks_data_extractor = $blocks_data_extractor instanceof WooPaymentsWooPayBlocksDataExtractor
-				? $blocks_data_extractor
-				: new WooPaymentsWooPayBlocksDataExtractor();
-		}
-
-		return $this->blocks_data_extractor;
-	}
-
-	/**
-	 * Get the WooPay adapted extensions registry.
-	 *
-	 * @return WooPaymentsWooPayAdaptedExtensions
-	 */
-	private function get_adapted_extensions(): WooPaymentsWooPayAdaptedExtensions {
-		if ( ! $this->adapted_extensions instanceof WooPaymentsWooPayAdaptedExtensions ) {
-			$this->adapted_extensions = new WooPaymentsWooPayAdaptedExtensions();
-		}
-
-		return $this->adapted_extensions;
 	}
 
 	/**
@@ -1311,40 +1286,5 @@ class WooPaymentsWooPaySessionService {
 		}
 
 		return is_array( $font_rules ) ? $this->appearance_store->sanitize_woopay_font_rules( $font_rules ) : array();
-	}
-
-	/**
-	 * Get the WooPayments account service.
-	 *
-	 * @return WooPaymentsAccountService
-	 */
-	private function get_account_service(): WooPaymentsAccountService {
-		if ( ! isset( $this->account_service ) ) {
-			$this->account_service = wc_get_container()->get( WooPaymentsAccountService::class );
-		}
-
-		return $this->account_service;
-	}
-
-	/**
-	 * Get the WooPayments logger, which writes only when debug logging is on (client 11.1.0 `src/Internal/Logger.php:64-91`).
-	 *
-	 * @return WooPaymentsLogger
-	 */
-	private function get_logger(): WooPaymentsLogger {
-		return wc_get_container()->get( WooPaymentsLogger::class );
-	}
-
-	/**
-	 * Get the frontend tracking controller.
-	 *
-	 * @return WooPaymentsFrontendTrackingController
-	 */
-	private function get_frontend_tracking_controller(): WooPaymentsFrontendTrackingController {
-		if ( ! isset( $this->frontend_tracking_controller ) ) {
-			$this->frontend_tracking_controller = wc_get_container()->get( WooPaymentsFrontendTrackingController::class );
-		}
-
-		return $this->frontend_tracking_controller;
 	}
 }

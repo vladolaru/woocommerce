@@ -27,6 +27,9 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeB
 use WC_Unit_Test_Case;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAppearanceStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayBlocksDataExtractor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 
 /**
  * Tests for the WooPaymentsCheckoutAssets class.
@@ -1720,7 +1723,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$real_appearance_store = new WooPaymentsWooPayAppearanceStore();
 		$real_appearance_store->init( new WooPaymentsFrontendStylesService() );
 		$real_woopay_service = new WooPaymentsWooPaySessionService();
-		$real_woopay_service->init( $real_account_service, $real_eligibility, $real_appearance_store, $this->create_frontend_tracking_controller() );
+		$real_woopay_service->init( $real_account_service, $real_eligibility, $real_appearance_store, $this->create_frontend_tracking_controller(), wc_get_container()->get( WooPaymentsWooPayBlocksDataExtractor::class ), new WooPaymentsWooPayAdaptedExtensions(), $this->createMock( WooPaymentsCustomerService::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
 		$woopay_config = array_merge(
 			array_fill_keys( array_keys( $real_woopay_service->get_woopay_frontend_config( 'checkout' ) ), '' ),
 			array(
