@@ -506,8 +506,11 @@ class WooPaymentsFraudRulesetService {
 	 *
 	 * The settings page and its fraud settings save, WooCommerce > Status, the selling-locations sync and the AVS check of a
 	 * declined card payment read the ruleset through it, so each can create the Basic ruleset on the platform.
-	 * Client 11.1.0 does the same, its Status page included
+	 * Client 11.1.0 also creates Basic through ruleset reads, including its Status page
 	 * (`includes/class-wc-payments-status.php:552-562`, `includes/class-wc-payment-gateway-wcpay.php:3108-3111,3792-3805`).
+	 * Its settings save sends the requested ruleset without reading it first
+	 * (`includes/admin/class-wc-rest-payments-settings-controller.php:1257-1306`); the read before the save here is the
+	 * built-in WooPayments' own.
 	 *
 	 * @return void
 	 */
