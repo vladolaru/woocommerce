@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsMobileRestController class file.
+ * WooPaymentsTerminalLocationsRestController class file.
  */
 
 declare( strict_types = 1 );
@@ -16,12 +16,14 @@ use WP_REST_Response;
 use WP_REST_Server;
 
 /**
- * Native WooPayments mobile and In-Person Payments REST controller.
+ * Serves the terminal location routes the WooCommerce mobile apps call: the store's location, created from the store
+ * address when none matches, and the account's locations. The extension serves them from
+ * includes/admin/class-wc-rest-payments-terminal-locations-controller.php.
  *
- * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @since 11.2.0
+ * @internal
  */
-class WooPaymentsMobileRestController extends RestApiControllerBase {
+class WooPaymentsTerminalLocationsRestController extends RestApiControllerBase {
 
 	private const STORE_LOCATIONS_TRANSIENT_KEY = 'wcpay_store_terminal_locations';
 
@@ -51,11 +53,11 @@ class WooPaymentsMobileRestController extends RestApiControllerBase {
 	 * @return string
 	 */
 	protected function get_rest_api_namespace(): string {
-		return 'woopayments-mobile';
+		return 'woopayments-terminal-locations';
 	}
 
 	/**
-	 * Register WooPayments-compatible mobile and IPP routes.
+	 * Register the terminal location routes.
 	 */
 	public function register_routes(): void {
 		register_rest_route(

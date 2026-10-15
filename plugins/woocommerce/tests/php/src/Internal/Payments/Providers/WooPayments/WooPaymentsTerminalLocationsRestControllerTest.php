@@ -4,8 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMobileRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTerminalLocationsRestController;
 use WC_Helper_Order;
 use WC_REST_Unit_Test_Case;
 use WP_Error;
@@ -13,14 +12,14 @@ use WP_REST_Request;
 use WP_REST_Response;
 
 /**
- * Tests for the native WooPayments mobile and IPP REST controller.
+ * Tests for the WooPaymentsTerminalLocationsRestController class.
  */
-class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
+class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_Case {
 
 	/**
 	 * The System Under Test.
 	 *
-	 * @var WooPaymentsMobileRestController
+	 * @var WooPaymentsTerminalLocationsRestController
 	 */
 	private $sut;
 
@@ -32,39 +31,14 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	private RecordingTerminalApiClient $api_client;
 
 	/**
-	 * Mocked WooPayments gateway settings.
-	 *
-	 * @var array<string,mixed>
-	 */
-	private array $gateway_settings = array();
-
-	/**
-	 * Cached account data the account service double answers.
-	 *
-	 * @var array<string,mixed>
-	 */
-	private array $account_data = array();
-
-	/**
-	 * Number of account-data refreshes requested from the account service.
-	 *
-	 * @var int
-	 */
-	private int $account_refresh_calls = 0;
-
-	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
 		parent::setUp();
 
-		$this->api_client            = new RecordingTerminalApiClient();
-		$this->gateway_settings      = array();
-		$this->account_data          = array();
-		$this->account_refresh_calls = 0;
-		$this->sut                   = $this->create_controller();
+		$this->api_client = new RecordingTerminalApiClient();
+		$this->sut        = $this->create_controller();
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
-		delete_transient( 'wcpay_store_terminal_readers' );
 		delete_transient( 'wcpay_store_terminal_locations' );
 	}
 
@@ -72,13 +46,7 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		delete_transient( 'wcpay_store_terminal_readers' );
 		delete_transient( 'wcpay_store_terminal_locations' );
-		unset( $_GET['change_payment_method'], $GLOBALS['wcpay_test_subscription_ids'] );
-		// Guest customer creation stores the customer in the shared session; leave none for later classes.
-		if ( WC()->session ) {
-			WC()->session->set( 'wcpay_customer_id', null );
-		}
 		wc_get_container()->reset_all_replacements();
 		parent::tearDown();
 	}
@@ -283,38 +251,12 @@ class WooPaymentsMobileRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a native mobile REST controller.
+	 * Create the controller over the recording API client.
 	 *
-	 * @param bool                                 $test_mode  Whether the account runs in test mode.
-	 * @param WooPaymentsMobileRestController|null $controller Controller instance to initialize, a new one when null.
-	 * @return WooPaymentsMobileRestController
+	 * @return WooPaymentsTerminalLocationsRestController
 	 */
-	private function create_controller( bool $test_mode = true, ?WooPaymentsMobileRestController $controller = null ): WooPaymentsMobileRestController {
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_test_mode_enabled', 'get_mode', 'get_gateway_setting', 'refresh_account_data', 'get_cached_account_data' ) )
-			->getMock();
-		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
-		$account_service->method( 'get_cached_account_data' )->willReturnCallback(
-			function (): array {
-				return $this->account_data;
-			}
-		);
-		$account_service->method( 'refresh_account_data' )->willReturnCallback(
-			function (): array {
-				++$this->account_refresh_calls;
-
-				return array();
-			}
-		);
-		$account_service->method( 'get_mode' )->willReturn( $test_mode ? 'test' : 'live' );
-		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
-			function ( string $key, $fallback = null ) {
-				return array_key_exists( $key, $this->gateway_settings ) ? $this->gateway_settings[ $key ] : $fallback;
-			}
-		);
-
-		$controller = $controller ?? new WooPaymentsMobileRestController();
+	private function create_controller(): WooPaymentsTerminalLocationsRestController {
+		$controller = new WooPaymentsTerminalLocationsRestController();
 		$controller->init( $this->api_client );
 
 		return $controller;

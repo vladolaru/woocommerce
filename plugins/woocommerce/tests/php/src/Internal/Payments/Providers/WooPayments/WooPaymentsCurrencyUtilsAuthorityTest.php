@@ -6,7 +6,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsDisputeEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCardReadersRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsMobileRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTerminalPaymentsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffects;
@@ -30,7 +29,6 @@ class WooPaymentsCurrencyUtilsAuthorityTest extends WC_Unit_Test_Case {
 			WooPaymentsOrderDataService::class,
 			WooPaymentsTerminalPaymentsRestController::class,
 			WooPaymentsCardReadersRestController::class,
-			WooPaymentsMobileRestController::class,
 			WooPaymentsPaymentDetailsRestController::class,
 			WooPaymentsOrderEffects::class,
 			WooPaymentsDuplicatePaymentPreventionService::class,
