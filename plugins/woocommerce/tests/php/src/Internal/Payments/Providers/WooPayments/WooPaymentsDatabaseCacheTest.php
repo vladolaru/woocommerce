@@ -91,6 +91,7 @@ class WooPaymentsDatabaseCacheTest extends WC_Unit_Test_Case {
 			'recommended, after a day'             => array( $methods, 'dashboard', 'after a day', false, 0, DAY_IN_SECONDS + 60, true ),
 			'recommended, 1 error, 1 minute'       => array( $methods, 'dashboard', '1 error, 1 minute', true, 1, 60, false ),
 			'recommended, 1 error, 3 minutes'      => array( $methods, 'dashboard', '1 error, 3 minutes', true, 1, 180, true ),
+			'recommended, 4 errors, 14 minutes'    => array( $methods, 'dashboard', '4 errors, 14 minutes', true, 4, 840, false ),
 			'recommended, 4 errors, 16 minutes'    => array( $methods, 'dashboard', '4 errors, 16 minutes', true, 4, 960, true ),
 			'tracking, before a month'             => array( $track, 'front', 'before a month', false, 0, MONTH_IN_SECONDS - 60, false ),
 			'tracking, after a month'              => array( $track, 'front', 'after a month', false, 0, MONTH_IN_SECONDS + 60, true ),

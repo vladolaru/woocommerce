@@ -394,7 +394,13 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should report whether each active plugin declares WooCommerce support in its headers.
 	 */
 	public function test_store_setup_sync_reports_woocommerce_awareness_of_active_plugins(): void {
-		// Both files exist in the test install, so WordPress keeps them as active and valid.
+		// WordPress keeps an active plugin only when its file exists. hello.php ships with the test install; the sample
+		// plugin is there only after another test copied it, so this test adds it when missing and removes what it added.
+		$sample_file       = WP_PLUGIN_DIR . '/sample-woo-plugin.php';
+		$added_sample_file = ! file_exists( $sample_file );
+		if ( $added_sample_file ) {
+			copy( \WC_Unit_Tests_Bootstrap::instance()->tests_dir . '/data/sample-woo-plugin.php', $sample_file );
+		}
 		update_option( 'active_plugins', array( 'hello.php', 'sample-woo-plugin.php' ) );
 		// get_plugins() answers from this cache, so the headers are the test's own: WordPress keeps it as the 'plugins' entry
 		// of the 'plugins' cache group, keyed by plugin folder, '' for the plugins root (wp-admin/includes/plugin.php
@@ -421,6 +427,9 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 			$snapshot = $this->send_store_setup_snapshot();
 		} finally {
 			wp_cache_delete( 'plugins', 'plugins' );
+			if ( $added_sample_file ) {
+				wp_delete_file( $sample_file );
+			}
 		}
 
 		$this->assertSame(
