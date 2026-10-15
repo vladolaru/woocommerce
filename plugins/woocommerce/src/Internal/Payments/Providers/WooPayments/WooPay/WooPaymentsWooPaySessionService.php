@@ -34,6 +34,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsDefaults;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStoreApiRequestUtils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
 
 /**
  * Native WooPay session helpers.
@@ -2055,7 +2056,7 @@ class WooPaymentsWooPaySessionService {
 			'height'  => $this->get_woopay_button_height(),
 			'radius'  => $this->get_string_gateway_setting_allow_empty( 'payment_request_button_border_radius', '' ),
 			'size'    => $this->get_string_gateway_setting( 'payment_request_button_size' ),
-			'context' => $this->normalize_button_context( $context ),
+			'context' => WooPaymentsExpressPaymentMethodTypes::normalize_context( $context ),
 		);
 	}
 
@@ -2079,18 +2080,6 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
-	 * Normalize an express checkout context.
-	 *
-	 * @param string $context Context.
-	 * @return string
-	 */
-	private function normalize_button_context( string $context ): string {
-		$context = sanitize_key( $context );
-
-		return in_array( $context, array( 'product', 'cart', 'checkout', 'pay_for_order' ), true ) ? $context : 'checkout';
-	}
-
-	/**
 	 * Get the express checkout location whose settings apply to a context.
 	 *
 	 * The order-pay page is a checkout page for the location settings, as in client 11.1.0, where is_checkout() holds there
@@ -2100,7 +2089,7 @@ class WooPaymentsWooPaySessionService {
 	 * @return string
 	 */
 	private function get_button_location( string $context ): string {
-		$context = $this->normalize_button_context( $context );
+		$context = WooPaymentsExpressPaymentMethodTypes::normalize_context( $context );
 
 		return 'pay_for_order' === $context ? 'checkout' : $context;
 	}
