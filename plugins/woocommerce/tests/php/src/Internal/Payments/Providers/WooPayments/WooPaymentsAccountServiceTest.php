@@ -148,8 +148,8 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_service();
 
-		$this->assertTrue( method_exists( $sut, 'is_native_eligible' ), 'Native eligibility should be part of the account service contract.' );
-		$this->assertSame( $expected_eligible, $sut->is_native_eligible() );
+		$this->assertTrue( method_exists( $sut, 'is_builtin_eligible' ), 'Native eligibility should be part of the account service contract.' );
+		$this->assertSame( $expected_eligible, $sut->is_builtin_eligible() );
 	}
 
 	/**
@@ -2010,7 +2010,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $api_client->calls );
 		$this->assertSame( $cache_before, get_option( 'wcpay_account_data' ), 'No errored entry may replace the cache.' );
 		$this->assertFalse( $sut->has_account_or_is_connection_indeterminate(), 'Without a connection the state is known: not connected, like the client is_stripe_connected( true ).' );
-		$this->assertSame( $expected_eligible, $sut->is_native_eligible(), 'Native eligibility keeps the cached platform decision while disconnected.' );
+		$this->assertSame( $expected_eligible, $sut->is_builtin_eligible(), 'Native eligibility keeps the cached platform decision while disconnected.' );
 	}
 
 	/**
@@ -2194,7 +2194,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should expose the preserved account data snapshot without refreshing expired cache data.
 	 */
-	public function test_get_preserved_account_data_snapshot_does_not_refresh_expired_cache(): void {
+	public function test_get_stored_account_data_does_not_refresh_expired_cache(): void {
 		$stale_account = $this->get_valid_live_account_payload(
 			array(
 				'account_id' => 'acct_stale',
@@ -2218,7 +2218,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertSame( $stale_account, $sut->get_preserved_account_data_snapshot() );
+		$this->assertSame( $stale_account, $sut->get_stored_account_data() );
 		$this->assertSame( 0, $api_client->calls );
 	}
 

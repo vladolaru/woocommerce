@@ -230,7 +230,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool True when durable work already exists or was scheduled.
 	 */
 	private function enqueue_with_context( string $source, ?string $origin_plugin_file, ?string $origin_plugin_scope ): bool {
-		if ( ! $this->arbiter->is_builtin_enabled() || ! $this->account_service->is_native_eligible() ) {
+		if ( ! $this->arbiter->is_builtin_enabled() || ! $this->account_service->is_builtin_eligible() ) {
 			return false;
 		}
 		if ( is_multisite() && ( 'network' === $origin_plugin_scope || $this->preflight_service->is_woopayments_network_active() ) ) {
@@ -943,7 +943,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				$this->close_held_claim( $claimed );
 				return;
 			}
-			if ( ! $this->account_service->is_native_eligible() ) {
+			if ( ! $this->account_service->is_builtin_eligible() ) {
 				$this->hold_ineligible_claim( $claimed );
 				return;
 			}

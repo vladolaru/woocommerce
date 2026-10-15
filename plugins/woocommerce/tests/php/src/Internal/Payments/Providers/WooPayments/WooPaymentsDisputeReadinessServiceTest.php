@@ -251,9 +251,9 @@ class WooPaymentsDisputeReadinessServiceTest extends WC_Unit_Test_Case {
 	private function create_account_service( array $account_data ): WooPaymentsAccountService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_preserved_account_data_snapshot', 'get_cached_account_data', 'refresh_account_data' ) )
+			->onlyMethods( array( 'get_stored_account_data', 'get_cached_account_data', 'refresh_account_data' ) )
 			->getMock();
-		$account_service->method( 'get_preserved_account_data_snapshot' )->willReturnCallback(
+		$account_service->method( 'get_stored_account_data' )->willReturnCallback(
 			function () use ( &$account_data ): array {
 				return $account_data;
 			}

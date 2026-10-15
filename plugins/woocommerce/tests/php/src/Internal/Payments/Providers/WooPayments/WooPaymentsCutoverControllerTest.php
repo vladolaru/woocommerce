@@ -1738,7 +1738,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			}
 
 			/** Return the controlled eligibility answer. */
-			public function is_native_eligible(): bool {
+			public function is_builtin_eligible(): bool {
 				return $this->native_eligible;
 			}
 		};
@@ -1756,7 +1756,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	private function create_eligible_account_service(): WooPaymentsAccountService {
 		return new class() extends WooPaymentsAccountService {
 			/** Return an eligible platform account. */
-			public function is_native_eligible(): bool {
+			public function is_builtin_eligible(): bool {
 				return true;
 			}
 		};

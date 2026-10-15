@@ -224,7 +224,7 @@ class WooPaymentsDisputesTask extends Task {
 	 * @return bool
 	 */
 	private function is_account_valid(): bool {
-		$account = $this->account_service->get_preserved_account_data_snapshot();
+		$account = $this->account_service->get_stored_account_data();
 
 		return ! empty( $account )
 			&& ! empty( $account['details_submitted'] )

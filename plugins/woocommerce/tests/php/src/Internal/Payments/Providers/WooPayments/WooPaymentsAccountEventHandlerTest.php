@@ -167,10 +167,10 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 	public function test_account_deleted_cleans_state_refreshes_account_data_and_clears_payment_method_caches(): void {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'cleanup_after_account_reset', 'refresh_account_data', 'get_preserved_account_id' ) )
+			->onlyMethods( array( 'cleanup_after_account_reset', 'refresh_account_data', 'get_stored_account_id' ) )
 			->getMock();
 		$account_service->expects( $this->once() )
-			->method( 'get_preserved_account_id' )
+			->method( 'get_stored_account_id' )
 			->willReturn( 'acct_123' );
 		$account_service->expects( $this->once() )
 			->method( 'cleanup_after_account_reset' );
@@ -196,10 +196,10 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 	public function test_account_deleted_ignores_stale_delete_for_different_account(): void {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'cleanup_after_account_reset', 'refresh_account_data', 'get_preserved_account_id' ) )
+			->onlyMethods( array( 'cleanup_after_account_reset', 'refresh_account_data', 'get_stored_account_id' ) )
 			->getMock();
 		$account_service->expects( $this->once() )
-			->method( 'get_preserved_account_id' )
+			->method( 'get_stored_account_id' )
 			->willReturn( 'acct_current' );
 		$account_service->expects( $this->never() )
 			->method( 'cleanup_after_account_reset' );
@@ -305,10 +305,10 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 	public function test_account_deleted_fails_closed_when_gateway_enabled_without_local_account(): void {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'cleanup_after_account_reset', 'refresh_account_data', 'get_preserved_account_id', 'get_gateway_setting' ) )
+			->onlyMethods( array( 'cleanup_after_account_reset', 'refresh_account_data', 'get_stored_account_id', 'get_gateway_setting' ) )
 			->getMock();
 		$account_service->expects( $this->once() )
-			->method( 'get_preserved_account_id' )
+			->method( 'get_stored_account_id' )
 			->willReturn( '' );
 		$account_service->expects( $this->once() )
 			->method( 'get_gateway_setting' )

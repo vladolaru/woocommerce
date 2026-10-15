@@ -1396,7 +1396,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** The account is native-eligible. */
-			public function is_native_eligible(): bool {
+			public function is_builtin_eligible(): bool {
 				return true;
 			}
 
@@ -5904,7 +5904,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** Return the controlled eligibility answer. */
-			public function is_native_eligible(): bool {
+			public function is_builtin_eligible(): bool {
 				return $this->native_eligible;
 			}
 		};

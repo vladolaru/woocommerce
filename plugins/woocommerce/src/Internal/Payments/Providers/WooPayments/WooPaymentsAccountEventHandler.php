@@ -114,7 +114,7 @@ class WooPaymentsAccountEventHandler {
 	 * @throws RuntimeException When local account identity is missing while the gateway appears enabled.
 	 */
 	private function should_process_deleted_account( string $event_account_id ): bool {
-		$current_account_id = $this->account_service->get_preserved_account_id();
+		$current_account_id = $this->account_service->get_stored_account_id();
 
 		if ( '' === $current_account_id ) {
 			if ( 'yes' === $this->account_service->get_gateway_setting( 'enabled', 'no' ) ) {

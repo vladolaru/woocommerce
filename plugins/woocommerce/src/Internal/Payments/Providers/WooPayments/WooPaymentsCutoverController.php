@@ -279,7 +279,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return bool True when reconciliation was queued.
 	 */
 	public function disable_woopayments_plugin(): bool {
-		if ( ! $this->arbiter->is_builtin_enabled() || ! $this->account_service->is_native_eligible() || ! $this->arbiter->is_extension_owner() || ! $this->current_user_can_cutover() ) {
+		if ( ! $this->arbiter->is_builtin_enabled() || ! $this->account_service->is_builtin_eligible() || ! $this->arbiter->is_extension_owner() || ! $this->current_user_can_cutover() ) {
 			return false;
 		}
 		if ( $this->reconciliation_job->enqueue( 'merchant' ) ) {
@@ -619,7 +619,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_start_eligible(): bool {
-		return $this->account_service->is_native_eligible() && $this->is_soft_cutover_enabled() && $this->arbiter->is_extension_owner() && $this->current_user_can_cutover();
+		return $this->account_service->is_builtin_eligible() && $this->is_soft_cutover_enabled() && $this->arbiter->is_extension_owner() && $this->current_user_can_cutover();
 	}
 
 	/**

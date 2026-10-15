@@ -98,7 +98,7 @@ class WooPaymentsGoLiveTask extends Task {
 			return false;
 		}
 
-		if ( empty( $this->account_service->get_preserved_account_data_snapshot()['account_id'] ) ) {
+		if ( empty( $this->account_service->get_stored_account_data()['account_id'] ) ) {
 			return false;
 		}
 

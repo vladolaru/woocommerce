@@ -22,6 +22,12 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
  */
 class WooPaymentsAccountService implements RegisterHooksInterface {
 
+	/**
+	 * The platform's account field, in the platform's own name, that says whether the store may run the WooPayments
+	 * built into WooCommerce: `{eligible, cohort, reason}`.
+	 */
+	public const BUILTIN_ELIGIBILITY_FIELD = 'native_payments';
+
 	private const REPORTS_AREA_FLAG_OPTION = '_wcpay_feature_reports_area';
 
 	private const ONBOARDING_TEST_MODE_OPTION = 'wcpay_onboarding_test_mode';
@@ -387,12 +393,12 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the account ID currently preserved in the local account cache without forcing a refresh.
+	 * Get the account ID stored in the local account cache without forcing a refresh.
 	 *
 	 * @since 11.0.0
 	 * @return string
 	 */
-	public function get_preserved_account_id(): string {
+	public function get_stored_account_id(): string {
 		$cache = $this->get_account_cache();
 		$data  = is_array( $cache ) && isset( $cache['data'] ) && is_array( $cache['data'] ) ? $cache['data'] : array();
 
@@ -402,12 +408,12 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the account data currently preserved in the local account cache without forcing a refresh.
+	 * Get the account data stored in the local account cache without forcing a refresh.
 	 *
 	 * @since 11.0.0
 	 * @return array<string,mixed>
 	 */
-	public function get_preserved_account_data_snapshot(): array {
+	public function get_stored_account_data(): array {
 		$cache = $this->get_account_cache();
 		$data  = is_array( $cache ) && array_key_exists( 'data', $cache ) ? $cache['data'] : null;
 
@@ -577,7 +583,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( ! $this->runtime_arbiter->is_builtin_enabled() || ( is_array( $account_data ) && ! $this->is_native_eligible_account_data( $account_data ) ) ) {
+		if ( ! $this->runtime_arbiter->is_builtin_enabled() || ( is_array( $account_data ) && ! $this->is_builtin_eligible_account_data( $account_data ) ) ) {
 			$this->setup_tier->write_tier( WooPaymentsSetupTier::DISABLED );
 			return;
 		}
@@ -654,39 +660,39 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the platform account is eligible for native payments.
+	 * Tell whether the platform lets this store run the WooPayments built into WooCommerce.
 	 *
-	 * Older platform payloads that do not include native eligibility remain eligible.
+	 * Older platform payloads without the eligibility field remain eligible.
 	 *
 	 * @since 11.2.0
 	 * @return bool
 	 */
-	public function is_native_eligible(): bool {
-		return $this->is_native_eligible_account_data( $this->get_native_payments_account_data() );
+	public function is_builtin_eligible(): bool {
+		return $this->is_builtin_eligible_account_data( $this->get_builtin_eligibility_account_data() );
 	}
 
 	/**
-	 * Get the account data that native eligibility reads.
+	 * Get the account data that built-in eligibility reads.
 	 *
 	 * These flags have no client counterpart. Without a platform connection they keep the cached platform decision,
 	 * because the account read then returns no account, which would read as eligible.
 	 *
 	 * @return array<string,mixed>
 	 */
-	private function get_native_payments_account_data(): array {
-		return $this->is_platform_connected() ? $this->get_cached_account_data() : $this->get_preserved_account_data_snapshot();
+	private function get_builtin_eligibility_account_data(): array {
+		return $this->is_platform_connected() ? $this->get_cached_account_data() : $this->get_stored_account_data();
 	}
 
 	/**
-	 * Parse native eligibility from account data.
+	 * Parse built-in eligibility from account data.
 	 *
 	 * @param array<string,mixed> $account_data Account payload.
 	 * @return bool
 	 */
-	private function is_native_eligible_account_data( array $account_data ): bool {
-		$native_payments = $account_data['native_payments'] ?? null;
+	private function is_builtin_eligible_account_data( array $account_data ): bool {
+		$eligibility = $account_data[ self::BUILTIN_ELIGIBILITY_FIELD ] ?? null;
 
-		return ! is_array( $native_payments ) || false !== ( $native_payments['eligible'] ?? null );
+		return ! is_array( $eligibility ) || false !== ( $eligibility['eligible'] ?? null );
 	}
 
 	/**
@@ -1065,7 +1071,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	public function is_reports_enabled(): bool {
-		$account_data = $this->get_preserved_account_data_snapshot();
+		$account_data = $this->get_stored_account_data();
 		if ( array_key_exists( 'reports_area_enabled', $account_data ) && null !== $account_data['reports_area_enabled'] ) {
 			return (bool) $account_data['reports_area_enabled'];
 		}
@@ -1588,6 +1594,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @param mixed $account_data Account data.
 	 */
 	private function ensure_onboarding_test_mode_for_dev_mode( $account_data ): void {
+		// The same early exits as is_valid_cached_account(); keep the two in step.
 		if ( ! is_array( $account_data ) || array() === $account_data || $this->is_truthy( $account_data['is_live'] ?? false ) ) {
 			return;
 		}

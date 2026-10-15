@@ -148,7 +148,7 @@ class WooPaymentsDisputeReadinessService {
 	 * @return array<string,mixed> Updated overview payload.
 	 */
 	public function confirm_statement_descriptor(): array {
-		$descriptor = $this->get_statement_descriptor( $this->get_preserved_account_data() );
+		$descriptor = $this->get_statement_descriptor( $this->get_stored_account_data() );
 
 		update_option(
 			self::STATEMENT_DESCRIPTOR_CONFIRMATION_OPTION,
@@ -170,7 +170,7 @@ class WooPaymentsDisputeReadinessService {
 	 * @return array<int,array<string,mixed>>
 	 */
 	private function get_signals(): array {
-		$account_data = $this->get_preserved_account_data();
+		$account_data = $this->get_stored_account_data();
 
 		return array(
 			$this->get_statement_descriptor_signal( $account_data ),
@@ -282,12 +282,12 @@ class WooPaymentsDisputeReadinessService {
 	}
 
 	/**
-	 * Returns preserved account data without forcing a platform refresh.
+	 * Returns the stored account data without forcing a platform refresh.
 	 *
 	 * @return array<string,mixed>
 	 */
-	private function get_preserved_account_data(): array {
-		return $this->account_service->get_preserved_account_data_snapshot();
+	private function get_stored_account_data(): array {
+		return $this->account_service->get_stored_account_data();
 	}
 
 	/**

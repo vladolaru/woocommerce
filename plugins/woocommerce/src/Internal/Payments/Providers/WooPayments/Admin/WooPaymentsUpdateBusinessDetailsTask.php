@@ -226,7 +226,7 @@ class WooPaymentsUpdateBusinessDetailsTask extends Task {
 	 */
 	private function get_account_data(): array {
 		if ( null === $this->account_data ) {
-			$this->account_data = $this->account_service->get_preserved_account_data_snapshot();
+			$this->account_data = $this->account_service->get_stored_account_data();
 		}
 
 		return $this->account_data;

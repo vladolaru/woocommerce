@@ -52,7 +52,7 @@ class WooPaymentsOverviewService {
 	public function get_overview(): array {
 		$this->prime_overview_option_caches();
 
-		$account_data = $this->account_service->get_preserved_account_data_snapshot();
+		$account_data = $this->account_service->get_stored_account_data();
 
 		return array(
 			'account'                               => $this->get_account_projection( $account_data ),

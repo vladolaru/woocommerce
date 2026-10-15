@@ -144,9 +144,9 @@ class WooPaymentsGoLiveTaskTest extends WC_Unit_Test_Case {
 	private function create_account_service( array $account, bool $test_mode_onboarding ): WooPaymentsAccountService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_preserved_account_data_snapshot', 'is_test_mode_onboarding_enabled' ) )
+			->onlyMethods( array( 'get_stored_account_data', 'is_test_mode_onboarding_enabled' ) )
 			->getMock();
-		$account_service->method( 'get_preserved_account_data_snapshot' )->willReturn( $account );
+		$account_service->method( 'get_stored_account_data' )->willReturn( $account );
 		$account_service->method( 'is_test_mode_onboarding_enabled' )->willReturn( $test_mode_onboarding );
 
 		return $account_service;
