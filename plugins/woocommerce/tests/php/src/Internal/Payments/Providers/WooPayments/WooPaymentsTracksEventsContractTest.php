@@ -70,7 +70,7 @@ class WooPaymentsTracksEventsContractTest extends WC_Unit_Test_Case {
 			'object' => true,
 			'prefix' => 'wcpay_',
 		),
-		'record_admin_event'           => array(
+		'record_woopay_admin_event'    => array(
 			'object' => true,
 			'prefix' => 'wcadmin_',
 		),

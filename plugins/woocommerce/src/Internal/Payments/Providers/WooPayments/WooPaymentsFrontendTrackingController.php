@@ -396,7 +396,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * @return WP_REST_Response
 	 */
 	public function handle_rest_tracks( WP_REST_Request $request ): WP_REST_Response {
-		$response = $this->get_tracks_response( $request->get_params() );
+		$response = $this->record_tracks_request( $request->get_params() );
 
 		return new WP_REST_Response( $response['data'], $response['status_code'] );
 	}
@@ -405,7 +405,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * Handle the preserved platform Tracks AJAX action.
 	 */
 	public function handle_tracks(): void {
-		$response = $this->get_tracks_response( wp_unslash( $_REQUEST ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$response = $this->record_tracks_request( wp_unslash( $_REQUEST ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 
 		if ( $response['success'] ) {
 			wp_send_json_success( $response['data'], $response['status_code'] );
@@ -424,12 +424,12 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Build the platform Tracks response.
+	 * Record a shopper event the browser posted, after checking its nonce and declared schema, and return the response.
 	 *
 	 * @param array<string,mixed> $request Request data.
 	 * @return array{success:bool,status_code:int,data:mixed}
 	 */
-	public function get_tracks_response( array $request ): array {
+	public function record_tracks_request( array $request ): array {
 		if (
 			empty( $request['tracksNonce'] )
 			|| ! is_scalar( $request['tracksNonce'] )
@@ -514,7 +514,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 		return array(
 			'success'     => true,
 			'status_code' => 200,
-			'data'        => $this->get_tracks_identity( get_current_user_id() ),
+			'data'        => $this->get_or_create_tracks_identity( get_current_user_id() ),
 		);
 	}
 
@@ -662,7 +662,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * @param array<string,mixed> $properties Event properties.
 	 * @return bool|\WP_Error
 	 */
-	public function record_admin_event( string $event_name, array $properties = array() ) {
+	public function record_woopay_admin_event( string $event_name, array $properties = array() ) {
 		$properties['record_event_data'] = array( 'is_admin_event' => true );
 
 		return $this->record_prefixed_event( 'wcadmin_' . $event_name, $properties );
@@ -788,7 +788,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 		$event = array_merge(
 			$properties,
 			$server_details,
-			$this->get_tracks_identity( $user->ID ),
+			$this->get_or_create_tracks_identity( $user->ID ),
 			$blog_details,
 			array(
 				'_en'       => $event_name,
@@ -820,8 +820,8 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 *
 	 * @since 11.0.0
 	 */
-	public function get_tracks_identity_for_current_user(): array {
-		return $this->get_tracks_identity( get_current_user_id() );
+	public function get_or_create_tracks_identity_for_current_user(): array {
+		return $this->get_or_create_tracks_identity( get_current_user_id() );
 	}
 
 	/**
@@ -830,7 +830,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * @param int $user_id User ID.
 	 * @return array{_ut:string,_ui:string}
 	 */
-	private function get_tracks_identity( int $user_id ): array {
+	private function get_or_create_tracks_identity( int $user_id ): array {
 		$wpcom_id = get_user_meta( $user_id, 'jetpack_tracks_wpcom_id', true );
 		if ( is_string( $wpcom_id ) && '' !== $wpcom_id && $this->is_user_connected( $user_id ) ) {
 			return array(

@@ -560,7 +560,7 @@ class WooPaymentsOnboardingService {
 		// The canonical write also enables each method's split gateway and syncs its duplicated list.
 		$projection = wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class )->persist( $settings, $payment_request_enabled );
 		if ( $is_woopay_enabled !== $was_woopay_enabled ) {
-			wc_get_container()->get( WooPaymentsFrontendTrackingController::class )->record_admin_event(
+			wc_get_container()->get( WooPaymentsFrontendTrackingController::class )->record_woopay_admin_event(
 				$is_woopay_enabled ? 'woopay_enabled' : 'woopay_disabled',
 				array( 'test_mode' => $this->get_native_account_service()->is_test_mode_enabled() ? 1 : 0 )
 			);

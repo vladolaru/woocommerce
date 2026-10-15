@@ -588,23 +588,23 @@ class WooPaymentsSettingsService {
 		$is_enabled  = $this->is_yes( $settings['platform_checkout'] ?? 'no' );
 		$was_enabled = $this->is_yes( $previous['platform_checkout'] ?? 'no' );
 		if ( $is_enabled && ! $was_enabled ) {
-			$tracking->record_admin_event( 'woopay_enabled', $properties );
+			$tracking->record_woopay_admin_event( 'woopay_enabled', $properties );
 		} elseif ( ! $is_enabled && $was_enabled ) {
-			$tracking->record_admin_event( 'woopay_disabled', $properties );
+			$tracking->record_woopay_admin_event( 'woopay_disabled', $properties );
 		}
 		$theme_support     = $this->is_yes( $settings['is_woopay_global_theme_support_enabled'] ?? 'no' );
 		$had_theme_support = $this->is_yes( $previous['is_woopay_global_theme_support_enabled'] ?? 'no' );
 		if ( $theme_support && ! $had_theme_support ) {
-			$tracking->record_admin_event( 'woopay_global_theme_support_enabled', $properties );
+			$tracking->record_woopay_admin_event( 'woopay_global_theme_support_enabled', $properties );
 		} elseif ( ! $theme_support && $had_theme_support ) {
-			$tracking->record_admin_event( 'woopay_global_theme_support_disabled', $properties );
+			$tracking->record_woopay_admin_event( 'woopay_global_theme_support_disabled', $properties );
 		}
 		$locations = array();
 		foreach ( array( 'product', 'cart', 'checkout' ) as $location ) {
 			$locations[ $location . '_enabled' ] = in_array( 'woopay', $this->get_array_setting( $settings, 'express_checkout_' . $location . '_methods' ), true );
 		}
 		if ( $is_enabled && array() !== array_intersect_key( $params, array_flip( array( 'express_checkout_product_methods', 'express_checkout_cart_methods', 'express_checkout_checkout_methods' ) ) ) ) {
-			$tracking->record_admin_event( 'woopay_express_button_locations_updated', $locations );
+			$tracking->record_woopay_admin_event( 'woopay_express_button_locations_updated', $locations );
 		}
 	}
 
