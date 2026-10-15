@@ -17,10 +17,11 @@ use WP_REST_Response;
 use WP_REST_Server;
 
 /**
- * Native WooPayments embedded account-session REST controller.
+ * Serves the WooPayments account data and the embedded account session on `payments/accounts` and
+ * `payments/accounts/session` to the WooPayments admin pages and the mobile apps.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsAccountSessionRestController extends RestApiControllerBase {
 
@@ -61,15 +62,13 @@ class WooPaymentsAccountSessionRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Register WooPayments-compatible account-session routes.
+	 * Register the account and account session routes.
 	 */
 	public function register_routes(): void {
 		register_rest_route( $this->route_namespace, '/payments/accounts', $this->get_readable_route( 'get_account_data' ) );
 
-		// NOTE: Registered as READABLE (GET) deliberately for backward compatibility
-		// with the WooPayments client and mobile app, which call this endpoint as GET.
-		// Do not change to CREATABLE/POST without a coordinated client + mobile migration.
-		// See review finding 3eece18f.
+		// GET although it creates a session: the WooPayments Overview page and the mobile apps call it with GET, so the
+		// method changes only after both do.
 		register_rest_route( $this->route_namespace, '/payments/accounts/session', $this->get_readable_route( 'create_embedded_account_session' ) );
 	}
 
@@ -83,7 +82,8 @@ class WooPaymentsAccountSessionRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get WooPayments account data.
+	 * Get the cached account data, or a no-account answer built from the store's country and currency, with the test-mode
+	 * flags added.
 	 *
 	 * @return WP_REST_Response
 	 */

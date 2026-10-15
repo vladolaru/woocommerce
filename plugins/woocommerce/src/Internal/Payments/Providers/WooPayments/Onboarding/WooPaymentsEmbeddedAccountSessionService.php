@@ -12,15 +12,16 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 
 /**
- * Creates sanitized WooPayments embedded account sessions for native admin surfaces.
+ * Creates the platform session the embedded account components on the WooPayments admin pages load with, passing on
+ * only the fields they need.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsEmbeddedAccountSessionService {
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
@@ -31,7 +32,7 @@ class WooPaymentsEmbeddedAccountSessionService {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient $api_client Native WooPayments API client.
+	 * @param WooPaymentsApiClient $api_client WooPayments API client.
 	 */
 	final public function init( WooPaymentsApiClient $api_client ): void {
 		$this->api_client = $api_client;
@@ -43,8 +44,8 @@ class WooPaymentsEmbeddedAccountSessionService {
 	 * @return array<string,mixed>
 	 */
 	public function create_session(): array {
-		// Like the client, a failure answers an empty session (client 11.1.0 `includes/class-wc-payments-account.php:3248-3258`);
-		// native also logs it, since the merchant only sees the embedded component fail to load.
+		// A failure answers an empty session (client 11.1.0 `includes/class-wc-payments-account.php:3248-3258`) and is logged,
+		// since the merchant only sees the embedded component fail to load.
 		try {
 			$session = $this->api_client->create_embedded_account_session();
 		} catch ( WooPaymentsApiException $exception ) {

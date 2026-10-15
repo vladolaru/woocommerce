@@ -171,8 +171,8 @@ class WooPaymentsOnboardingService {
 	/**
 	 * Store a partner's referral code for the KYC session and record the referral.
 	 *
-	 * Like the extension's `normalize_and_store_referral_code()`, the code is cut to 50 characters, lowercased and
-	 * trimmed, and kept for 30 days. An empty code stores nothing.
+	 * The code is cut to 50 characters, lowercased and trimmed, and kept for 30 days (client 11.1.0
+	 * `includes/class-wc-payments-onboarding-service.php:1580-1587`). An empty code stores nothing.
 	 *
 	 * @param string $referral_code The sanitized code from the referral link.
 	 * @return string The stored code, or an empty string when there is none.
@@ -274,7 +274,7 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Initialize a native test-drive account.
+	 * Create a test-drive account and store the account the platform answers with.
 	 *
 	 * @param string $location     Account country.
 	 * @param array  $capabilities Requested payment method capabilities.
@@ -324,7 +324,7 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Create a native embedded KYC session.
+	 * Create an embedded KYC session.
 	 *
 	 * @param bool  $is_dev_mode          Whether the gateway is in dev mode.
 	 * @param array $self_assessment_data Self assessment data.
@@ -379,7 +379,7 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Finalize a native embedded KYC session, like client 11.1.0 finalize_embedded_connection(), which applies no NOX picks.
+	 * Finish the embedded KYC session; like client 11.1.0 finalize_embedded_connection(), it applies no NOX picks.
 	 *
 	 * @param string $source Onboarding source.
 	 * @return array
@@ -445,7 +445,7 @@ class WooPaymentsOnboardingService {
 		$this->enable_gateway_after_kyc( $is_live );
 		$this->restore_test_drive_payment_methods();
 
-		// Flag the new connection for the Overview's wcpay_stripe_connected Tracks event, as the plugin does.
+		// Flag the new connection for the Overview's wcpay_stripe_connected Tracks event.
 		$this->proxy->call_function( 'update_option', '_wcpay_onboarding_stripe_connected', array( 'is_existing_stripe_account' => false ), false );
 
 		// Stamp a live KYC submission once, for the post-KYC nudge clock.
@@ -457,7 +457,7 @@ class WooPaymentsOnboardingService {
 	/**
 	 * Drop the data only the initial onboarding uses, like client 11.1.0 cleanup_on_account_onboarded().
 	 *
-	 * The client also drops its business types cache, which native never fills.
+	 * The business types cache is left alone: nothing here writes it.
 	 */
 	private function clear_onboarding_data(): void {
 		wc_get_container()->get( WooPaymentsDatabaseCache::class )->delete( WooPaymentsDatabaseCache::RECOMMENDED_PAYMENT_METHODS_KEY );
@@ -467,7 +467,8 @@ class WooPaymentsOnboardingService {
 	/**
 	 * Enable the gateway in the finalized account's mode, as client 11.1.0 finalize_embedded_connection() does.
 	 *
-	 * The canonical settings write projects split gateways and moves a connected native tier to active.
+	 * The write through the settings synchronizer also turns on each method's own gateway and moves a `connected` setup
+	 * tier to `active`.
 	 *
 	 * @param bool $is_live Whether the finalized account is live.
 	 */
@@ -533,8 +534,9 @@ class WooPaymentsOnboardingService {
 	 * @param string[]  $payment_method_ids      Payment method IDs to enable.
 	 * @param bool|null $woopay_picked           WooPay pick, or null to keep the stored WooPay setting.
 	 * @param bool|null $payment_request_enabled Apple Pay / Google Pay pick, or null to keep the stored wallet state.
-	 * @param bool      $enable_card_gateway     Whether an enabled card method also enables the card gateway, as the client's
-	 *                                           update_enabled_payment_methods_ids() does for every method in the list.
+	 * @param bool      $enable_card_gateway     Whether an enabled card method also turns the card gateway on (client 11.1.0
+	 *                                           `includes/class-wc-payments-onboarding-service.php:1530-1537` enables
+	 *                                           every listed method's gateway).
 	 * @return bool Whether the canonical settings and split gateways were persisted.
 	 */
 	private function add_enabled_payment_methods( array $payment_method_ids, ?bool $woopay_picked = null, ?bool $payment_request_enabled = null, bool $enable_card_gateway = false ): bool {
@@ -543,7 +545,7 @@ class WooPaymentsOnboardingService {
 		$enabled_ids        = is_array( $settings['upe_enabled_payment_method_ids'] ?? null ) ? $settings['upe_enabled_payment_method_ids'] : array( 'card' );
 		$enabled_ids        = array_values( array_unique( array_merge( $enabled_ids, $payment_method_ids ) ) );
 		$was_woopay_enabled = 'yes' === ( $settings['platform_checkout'] ?? 'no' );
-		// WooPay and Link are mutually exclusive in the client, and Link wins.
+		// WooPay and Link are never both on, and Link wins.
 		$is_woopay_enabled = ( $woopay_picked ?? $was_woopay_enabled ) && ! in_array( 'link', $enabled_ids, true );
 
 		$settings['upe_enabled_payment_method_ids'] = $enabled_ids;
@@ -637,7 +639,7 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Save enabled native test-drive payment methods before deleting the account.
+	 * Save the test-drive account's enabled payment methods for an hour, so the live account gets them back after KYC.
 	 */
 	private function save_test_drive_settings_for_live_account(): void {
 		$settings                = $this->proxy->call_function( 'get_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
@@ -657,7 +659,7 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Read normalized payment method IDs from the current site's transition snapshot.
+	 * Get the saved test-drive payment method IDs, normalized.
 	 *
 	 * @return string[]
 	 */
@@ -671,7 +673,7 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Normalize payment method IDs against the native registry vocabulary.
+	 * Keep the lowercased payment method IDs the payment method registry knows.
 	 *
 	 * @param array<int,mixed> $payment_method_ids Payment method IDs.
 	 * @return string[]
@@ -697,7 +699,7 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Build client-compatible capability requests for captured payment methods.
+	 * Build the platform's capability requests for the saved payment methods.
 	 *
 	 * @param string[] $payment_method_ids Payment method IDs.
 	 * @return array<string,array{requested:string}>
@@ -717,7 +719,7 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Log a native onboarding failure whatever the logging setting.
+	 * Log an onboarding failure whatever the logging setting.
 	 *
 	 * @param string              $message Log message.
 	 * @param array<string,mixed> $context Log context.
@@ -731,7 +733,7 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Delete a native connected account.
+	 * Delete the connected account, reading as no account while the platform deletes it.
 	 *
 	 * @param bool $test_mode Whether to delete a test-mode account.
 	 * @return array
@@ -763,7 +765,7 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Get the native WooPayments API client.
+	 * Get the WooPayments API client, resolved on first use.
 	 *
 	 * @return WooPaymentsApiClient
 	 */
@@ -776,7 +778,7 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Get the native WooPayments account service.
+	 * Get the WooPayments account service, resolved on first use.
 	 *
 	 * @return WooPaymentsAccountService
 	 */
@@ -789,7 +791,7 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Get site data for native onboarding requests.
+	 * Get the site data sent with onboarding requests.
 	 *
 	 * @return array
 	 */
@@ -801,7 +803,7 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Get the return URL for native non-embedded onboarding requests.
+	 * Get the URL the platform returns the merchant to after the test-drive account request.
 	 *
 	 * @return string
 	 */
@@ -810,7 +812,7 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Get user data for native onboarding requests.
+	 * Get the user and browser data sent with onboarding requests.
 	 *
 	 * @return array
 	 */
@@ -863,7 +865,7 @@ class WooPaymentsOnboardingService {
 			}
 		} catch ( \Throwable $e ) {
 			try {
-				// Gated like the client's Logger::error() (client 11.1.0 `includes/class-wc-payments-onboarding-service.php:1029-1032`); a PHP Error is always logged.
+				// Logged only while WooPayments logging is on (client 11.1.0 `includes/class-wc-payments-onboarding-service.php:1029-1032`); a PHP Error is always logged.
 				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'WooPayments could not read the actioned promotion notes for onboarding.', $e );
 			} catch ( \Throwable $logging_error ) {
 				unset( $logging_error );
@@ -887,7 +889,7 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Get account data for native onboarding requests.
+	 * Build the account data sent with an account creation request.
 	 *
 	 * @param string $setup_mode           Setup mode.
 	 * @param array  $self_assessment_data Self assessment data.
@@ -979,9 +981,9 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Normalize native embedded KYC responses to the settings frontend shape.
+	 * Shape the embedded KYC session for the Payments settings page.
 	 *
-	 * @param array $session Native KYC session.
+	 * @param array $session The platform's KYC session.
 	 * @return array
 	 */
 	private function normalize_kyc_session_response( array $session ): array {
@@ -997,9 +999,9 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Tell whether a native onboarding response created an account.
+	 * Tell whether an onboarding response created an account.
 	 *
-	 * @param array $response Native API response.
+	 * @param array $response Platform response.
 	 * @return bool
 	 */
 	private function is_account_created_response( array $response ): bool {
@@ -1007,9 +1009,10 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Sync preserved native account cache from a response when it has enough checkout material.
+	 * Cache the account from an onboarding response that carries an account ID and a publishable key, and set the
+	 * gateway's test mode from it.
 	 *
-	 * @param array $response      Native API response.
+	 * @param array $response      Platform response.
 	 * @param bool  $is_live       Whether the account is live.
 	 * @param bool  $is_test_drive Whether the account is a test-drive account.
 	 * @param bool  $default_ready Default readiness when the response omits readiness fields.
@@ -1074,9 +1077,9 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Read the first scalar native response value for the given keys.
+	 * Read the first scalar response value among the given keys.
 	 *
-	 * @param array    $response      Native API response.
+	 * @param array    $response      Platform response.
 	 * @param string[] $keys          Candidate keys.
 	 * @param mixed    $default_value Default value.
 	 * @return string
@@ -1092,9 +1095,9 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Read the first native response boolean for the given keys.
+	 * Read the first response boolean among the given keys.
 	 *
-	 * @param array    $response      Native API response.
+	 * @param array    $response      Platform response.
 	 * @param string[] $keys          Candidate keys.
 	 * @param mixed    $default_value Default value.
 	 * @return bool
@@ -1110,7 +1113,7 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Set native onboarding test-mode state.
+	 * Write the onboarding test-mode option, autoloaded.
 	 *
 	 * @param bool $test_mode Whether test-mode onboarding is enabled.
 	 * @return void
@@ -1120,7 +1123,7 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Set native WooPayments gateway test-mode state.
+	 * Write the gateway's test mode setting.
 	 *
 	 * @param bool $test_mode Whether gateway test mode is enabled.
 	 * @return void
@@ -1135,7 +1138,7 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Determine if native onboarding test mode is enabled.
+	 * Tell whether the onboarding test-mode option is on.
 	 *
 	 * @return bool
 	 */
@@ -1144,10 +1147,10 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Update native gateway settings after a successful test account initialization.
+	 * Enable the gateway in the test-drive account's mode and apply the payment method picks.
 	 *
 	 * @param array $capabilities Capability request map.
-	 * @param array $response     Native API response.
+	 * @param array $response     Platform response.
 	 * @return void
 	 */
 	private function update_gateway_settings_after_test_account_init( array $capabilities, array $response ): void {
@@ -1212,9 +1215,9 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Convert a native API exception to a WP_Error compatible with existing onboarding handlers.
+	 * Turn a platform error into the WP_Error the Payments settings onboarding routes return.
 	 *
-	 * The data carries the error code and error type the plugin's onboarding controller forwards
+	 * The data carries the platform's error code and error type
 	 * (client 11.1.0 `includes/admin/class-wc-rest-payments-onboarding-controller.php:370-385`), so callers
 	 * can tell non-recoverable errors from transient ones.
 	 *

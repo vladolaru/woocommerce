@@ -21,8 +21,8 @@ use WC_Payment_Gateway;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Answers the Payments settings about the WooPayments account, gateway and onboarding for whichever WooPayments
- * runtime owns the store.
+ * Answers the Payments settings about the WooPayments account, gateway and onboarding: from the WooPayments extension
+ * while it is loaded and owns payments, from the built-in WooPayments otherwise.
  *
  * @since 11.0.0
  * @internal
@@ -30,7 +30,7 @@ defined( 'ABSPATH' ) || exit;
 class WooPaymentsPaymentsSettingsAdapter {
 
 	/**
-	 * The extension's `WC_Payments_Account::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT`: the platform asked to turn WooPay on after KYC.
+	 * The WooPayments extension's `WC_Payments_Account::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT`: the platform asked to turn WooPay on after KYC.
 	 *
 	 * Declared here because this class loads on every request, so reading the name loads no other file.
 	 */
@@ -93,7 +93,8 @@ class WooPaymentsPaymentsSettingsAdapter {
 	/**
 	 * Initialize the class instance.
 	 *
-	 * The native collaborators are resolved on first use, so a plugin-owned store's onboarding surfaces load only the plugin path.
+	 * The built-in WooPayments classes are resolved on first use, so a store where the WooPayments extension owns payments
+	 * loads none of them for its onboarding pages.
 	 *
 	 * @internal
 	 *
@@ -106,7 +107,7 @@ class WooPaymentsPaymentsSettingsAdapter {
 	}
 
 	/**
-	 * Tell whether the standalone WooPayments extension is active.
+	 * Tell whether the WooPayments extension is loaded and owns payments.
 	 *
 	 * @return bool
 	 */
@@ -115,7 +116,7 @@ class WooPaymentsPaymentsSettingsAdapter {
 	}
 
 	/**
-	 * Tell whether any WooPayments runtime can support onboarding/admin state.
+	 * Tell whether the WooPayments extension or the built-in WooPayments can run onboarding.
 	 *
 	 * @return bool
 	 */
@@ -124,7 +125,7 @@ class WooPaymentsPaymentsSettingsAdapter {
 	}
 
 	/**
-	 * Tell whether the built-in WooPayments provider can manage onboarding/admin account operations.
+	 * Tell whether the built-in WooPayments owns payments and can run onboarding.
 	 *
 	 * @return bool
 	 */
@@ -141,7 +142,8 @@ class WooPaymentsPaymentsSettingsAdapter {
 	}
 
 	/**
-	 * Get the active WooPayments gateway.
+	 * Get the WooPayments extension's gateway while it is active, otherwise the built-in gateway when its onboarding is
+	 * available.
 	 *
 	 * @return WC_Payment_Gateway
 	 * @throws \RuntimeException When the WooPayments gateway is not available.
@@ -311,7 +313,7 @@ class WooPaymentsPaymentsSettingsAdapter {
 	 * Get the onboarding built into WooCommerce, when it runs this store's onboarding.
 	 *
 	 * It does while the platform connection is available, the WooPayments extension is not active and the built-in
-	 * WooPayments owns the store. Otherwise the extension's onboarding routes answer.
+	 * WooPayments owns the store. Otherwise the WooPayments extension's onboarding routes answer.
 	 *
 	 * @return WooPaymentsOnboardingService|null
 	 */
@@ -327,7 +329,7 @@ class WooPaymentsPaymentsSettingsAdapter {
 	 * Get the KYC fields from the platform, through the account service's cache.
 	 *
 	 * @param string $locale The user's locale.
-	 * @return array|null The fields, or null while the extension is active or the platform connection is unavailable.
+	 * @return array|null The fields, or null while the WooPayments extension is active or the platform connection is unavailable.
 	 * @throws Exception When the platform answers no fields.
 	 */
 	public function get_onboarding_fields( string $locale ): ?array {
@@ -337,7 +339,7 @@ class WooPaymentsPaymentsSettingsAdapter {
 
 		$fields = $this->get_account_service()->get_onboarding_fields_data( $locale );
 		if ( null === $fields ) {
-			// The extension's fields route answers the same message.
+			// The WooPayments extension's fields route answers the same message.
 			throw new Exception( esc_html__( 'Failed to retrieve the onboarding fields.', 'woocommerce' ) );
 		}
 
@@ -380,7 +382,7 @@ class WooPaymentsPaymentsSettingsAdapter {
 	}
 
 	/**
-	 * Drop the onboarding fields cache while the built-in WooPayments owns payments; the extension keeps its own.
+	 * Drop the onboarding fields cache while the built-in WooPayments owns payments; the WooPayments extension keeps its own.
 	 *
 	 * @return void
 	 */
@@ -405,7 +407,7 @@ class WooPaymentsPaymentsSettingsAdapter {
 	 * Store a partner's referral code with the built-in onboarding.
 	 *
 	 * A referral link can arrive before the store connects to the platform, so this does not ask whether the built-in
-	 * onboarding runs; the caller has already checked that the extension is not active.
+	 * onboarding runs; the caller has already checked that the WooPayments extension is not active.
 	 *
 	 * @param string $referral_code The sanitized code from the referral link.
 	 * @return string The stored code, or an empty string when there is none.
@@ -424,7 +426,7 @@ class WooPaymentsPaymentsSettingsAdapter {
 	}
 
 	/**
-	 * Get account status data from the active WooPayments account service.
+	 * Get the account status data from the WooPayments extension's account service.
 	 *
 	 * @return array<string,mixed>
 	 */

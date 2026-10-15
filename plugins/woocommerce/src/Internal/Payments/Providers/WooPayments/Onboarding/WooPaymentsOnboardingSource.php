@@ -13,12 +13,13 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 defined( 'ABSPATH' ) || exit;
 
 /**
- * WooPayments onboarding `from` and `source` vocabulary, and their referrer-based detection.
+ * Names where a WooPayments onboarding started (`source`) and the step before it (`from`), from the URL params or the
+ * referer; both are tracking values.
  *
- * Ports client 11.1.0 `WC_Payments_Onboarding_Service` constants, `get_from()` and `get_source()`. Both are tracking values.
+ * The values and both methods are client 11.1.0's `WC_Payments_Onboarding_Service` constants, `get_from()` and `get_source()`.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 final class WooPaymentsOnboardingSource {
 
@@ -98,7 +99,7 @@ final class WooPaymentsOnboardingSource {
 	 * Determine the immediately previous onboarding step from the URL params, falling back to the referer.
 	 *
 	 * Client 11.1.0 `WC_Payments_Onboarding_Service::get_from()` (class-wc-payments-onboarding-service.php:1143-1241), with the
-	 * native Overview and Payouts pages recognized before the generic Settings > Payments referer, as get_source() does.
+	 * Overview and Payouts pages under Settings > Payments recognized before the rest of Settings > Payments, as in get_source().
 	 *
 	 * @since 11.2.0
 	 *
@@ -136,7 +137,7 @@ final class WooPaymentsOnboardingSource {
 			if ( false !== strpos( $referer, 'path=/woopayments/onboarding' ) ) {
 				return self::FROM_WCADMIN_NOX_IN_CONTEXT;
 			}
-			// Native Overview and Payouts; the client matches `page=wc-admin&path=/payments/overview` and `/payments/payouts`.
+			// The WooPayments Overview and Payouts pages.
 			if ( false !== strpos( $referer, 'path=/woopayments/overview' ) ) {
 				return self::FROM_OVERVIEW_PAGE;
 			}
@@ -175,7 +176,8 @@ final class WooPaymentsOnboardingSource {
 	 * Determine the initial onboarding source from the referer and URL params.
 	 *
 	 * Client 11.1.0 `WC_Payments_Onboarding_Service::get_source()` (class-wc-payments-onboarding-service.php:1256-1458),
-	 * with the native `path=/woopayments/*` pages recognized where the client recognizes its own `/payments/*` pages.
+	 * with the WooPayments pages under Settings > Payments (`path=/woopayments/*`) recognized where it recognizes the
+	 * `/payments/*` pages.
 	 *
 	 * @since 11.2.0
 	 *
@@ -185,7 +187,7 @@ final class WooPaymentsOnboardingSource {
 	 */
 	public static function get_source( ?string $referer = null, ?array $get_params = null ): string {
 		$referer = $referer ?? wp_get_raw_referer();
-		// wp_get_raw_referer() returns false without a referer; the client passes that to urldecode() as ''.
+		// wp_get_raw_referer() returns false without a referer, which reads as no referer.
 		$referer    = urldecode( is_string( $referer ) ? $referer : '' );
 		$get_params = $get_params ?? $_GET; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 
@@ -243,7 +245,7 @@ final class WooPaymentsOnboardingSource {
 		$referer_params = array();
 		wp_parse_str( (string) wp_parse_url( $referer, PHP_URL_QUERY ), $referer_params );
 
-		// An array `source` sanitizes to '' in the client, so only a string can match.
+		// An array `source` counts as none, as sanitize_text_field() would make it ''.
 		$source_param = isset( $referer_params['source'] ) && is_string( $referer_params['source'] ) ? sanitize_text_field( wp_unslash( $referer_params['source'] ) ) : '';
 		if ( ! empty( $source_param ) && in_array( $source_param, self::VALID_SOURCES, true ) ) {
 			return $source_param;
@@ -275,7 +277,7 @@ final class WooPaymentsOnboardingSource {
 	}
 
 	/**
-	 * Resolve the source for a Settings > Payments referer, where native WooPayments admin pages live.
+	 * Resolve the source for a Settings > Payments referer, where the WooPayments admin pages live.
 	 *
 	 * @param array<mixed> $referer_params Referer query params.
 	 * @return string
@@ -283,27 +285,27 @@ final class WooPaymentsOnboardingSource {
 	private static function get_payments_settings_referer_source( array $referer_params ): string {
 		$path = isset( $referer_params['path'] ) && is_string( $referer_params['path'] ) ? $referer_params['path'] : '';
 
-		// Client branch: discriminate the NOX in-context onboarding from the settings page.
+		// The in-context (NOX) onboarding, apart from the rest of the settings page.
 		if ( '' !== $path && 0 === strpos( $path, '/woopayments/onboarding' ) ) {
 			return self::SOURCE_WCADMIN_NOX_IN_CONTEXT;
 		}
 
-		// Native Overview; the client matches `page=wc-admin&path=/payments/overview`.
+		// The Overview page.
 		if ( '/woopayments/overview' === $path ) {
 			return self::SOURCE_WCPAY_OVERVIEW_PAGE;
 		}
 
-		// Native Payouts; the client matches `page=wc-admin&path=/payments/deposits` or `/payments/payouts`.
+		// The Payouts page.
 		if ( '/woopayments/payouts' === $path ) {
 			return self::SOURCE_WCPAY_PAYOUTS_PAGE;
 		}
 
-		// Native settings; the client settings and express checkout pages are `page=wc-settings&tab=checkout&section=woocommerce_payments`.
+		// The settings page and its express checkout pages.
 		if ( '/woopayments/settings' === $path || 0 === strpos( $path, '/woopayments/settings/express-checkout/' ) ) {
 			return self::SOURCE_WCADMIN_SETTINGS_PAGE;
 		}
 
-		// Other native pages are `page=wc-admin&path=/payments/*` pages in the client, which match no source branch.
+		// Other WooPayments pages name no source.
 		if ( 0 === strpos( $path, '/woopayments/' ) ) {
 			return self::SOURCE_UNKNOWN;
 		}
@@ -312,7 +314,7 @@ final class WooPaymentsOnboardingSource {
 	}
 
 	/**
-	 * Tell whether a referer has the given `page` and one other query param, like the client's `array_intersect_assoc()` checks.
+	 * Tell whether a referer has the given `page` and one other query param.
 	 *
 	 * @param array<mixed> $referer_params Referer query params.
 	 * @param string       $page           Expected `page` value.
