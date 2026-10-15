@@ -1,11 +1,12 @@
 <?php
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Onboarding;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountSessionRestController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEmbeddedAccountSessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsAccountSessionRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsEmbeddedAccountSessionService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Response;

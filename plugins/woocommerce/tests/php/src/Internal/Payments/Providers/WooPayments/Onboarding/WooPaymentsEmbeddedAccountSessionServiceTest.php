@@ -1,11 +1,12 @@
 <?php
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Onboarding;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEmbeddedAccountSessionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsEmbeddedAccountSessionService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use WC_Unit_Test_Case;
 
 /**

@@ -5,10 +5,11 @@
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 
 /**
  * Creates sanitized WooPayments embedded account sessions for native admin surfaces.

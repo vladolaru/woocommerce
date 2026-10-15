@@ -5,8 +5,10 @@
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\RestApiControllerBase;
 use Throwable;
 use WP_Error;
