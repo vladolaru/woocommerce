@@ -307,7 +307,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			$email = $request->get_param( 'email' );
 
 			return new WP_REST_Response(
-				$this->session_service->get_init_session_request( is_scalar( $email ) ? sanitize_email( (string) $email ) : null, null, $request ),
+				$this->session_service->start_init_session_request( is_scalar( $email ) ? sanitize_email( (string) $email ) : null, null, $request ),
 				200
 			);
 		} catch ( Throwable $exception ) {

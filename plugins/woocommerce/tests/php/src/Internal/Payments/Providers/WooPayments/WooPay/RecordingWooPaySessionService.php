@@ -193,7 +193,7 @@ class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
 	}
 
 	/**
-	 * Build the WooPay init-session request body.
+	 * Record the email and REST request a WooPay session request starts with.
 	 *
 	 * @param string|null                     $email          Shopper email.
 	 * @param string|null                     $user_session   WooPay user session.
@@ -205,7 +205,7 @@ class RecordingWooPaySessionService extends WooPaymentsWooPaySessionService {
 	 * @param array<int,array<string,string>> $font_rules     WooPay font rules.
 	 * @return array<string,string>
 	 */
-	public function get_init_session_request(
+	public function start_init_session_request(
 		?string $email = null,
 		?string $user_session = null,
 		?WP_REST_Request $woopay_request = null,

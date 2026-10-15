@@ -278,7 +278,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_preserves_string_user_session_in_init_payloads(): void {
 		$sut    = $this->create_service();
-		$result = $sut->get_init_session_request( 'shopper@example.com', 'qwerty123' );
+		$result = $sut->start_init_session_request( 'shopper@example.com', 'qwerty123' );
 
 		$this->assertSame( 'qwerty123', $result['user_session'] );
 	}
@@ -300,7 +300,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 
 		try {
 			$sut    = $this->create_service();
-			$result = $sut->get_init_session_request( 'shopper@example.com', 'qwerty123' );
+			$result = $sut->start_init_session_request( 'shopper@example.com', 'qwerty123' );
 
 			$this->assertSame( 'https://example.test/theme-logo.png', $result['store_data']['store_logo'] );
 		} finally {
@@ -318,7 +318,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$result = $sut->get_init_session_request( 'shopper@example.com', 'qwerty123' );
+		$result = $sut->start_init_session_request( 'shopper@example.com', 'qwerty123' );
 
 		$this->assertSame( get_rest_url( null, 'wc/v3/payments/file/file_logo' ), $result['store_data']['store_logo'] );
 	}
@@ -329,7 +329,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 class-woopay-session.php:908-919 sends the Store API cart route's namespace.
 	 */
 	public function test_init_session_request_sends_the_versioned_store_api_url(): void {
-		$result = $this->create_service()->get_init_session_request( 'shopper@example.com' );
+		$result = $this->create_service()->start_init_session_request( 'shopper@example.com' );
 
 		$this->assertSame( get_rest_url( null, 'wc/store/v1' ), $result['store_data']['store_api_url'] );
 	}
@@ -338,7 +338,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox WooPay session data reports WooCommerce Subscriptions inactive while its class is not loaded.
 	 */
 	public function test_init_session_request_reports_woocommerce_subscriptions_inactive(): void {
-		$result = $this->create_service()->get_init_session_request( 'shopper@example.com' );
+		$result = $this->create_service()->start_init_session_request( 'shopper@example.com' );
 
 		$this->assertFalse( $result['store_data']['is_subscriptions_plugin_active'] );
 	}
@@ -353,7 +353,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		require_once dirname( __DIR__ ) . '/Fixtures/LateLoadedSubscriptions.php';
 		class_alias( LateLoadedSubscriptions::class, 'WC_Subscriptions' );
 
-		$result = $this->create_service()->get_init_session_request( 'shopper@example.com' );
+		$result = $this->create_service()->start_init_session_request( 'shopper@example.com' );
 
 		$this->assertTrue( $result['store_data']['is_subscriptions_plugin_active'] );
 	}
@@ -373,7 +373,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		WC()->cart->add_to_cart( $product->get_id(), 1 );
 
 		$sut     = $this->create_service();
-		$result  = $sut->get_init_session_request( 'shopper@example.com', 'qwerty123' );
+		$result  = $sut->start_init_session_request( 'shopper@example.com', 'qwerty123' );
 		$preload = $result['preloaded_requests'];
 
 		$this->assertSame( 1, $preload['cart']['items_count'] );
@@ -388,7 +388,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	public function test_init_session_request_uses_the_order_pay_url_with_the_order_key(): void {
 		$order = \WC_Helper_Order::create_order( 0 );
 
-		$result = $this->create_service()->get_init_session_request( null, null, null, $order->get_id(), $order->get_order_key(), $order->get_billing_email() );
+		$result = $this->create_service()->start_init_session_request( null, null, null, $order->get_id(), $order->get_order_key(), $order->get_billing_email() );
 
 		$this->assertSame( $order->get_checkout_payment_url(), $result['store_data']['blog_checkout_url'] );
 		$this->assertSame( $order->get_checkout_payment_url(), $result['store_data']['return_url'] );
@@ -416,7 +416,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		wc_empty_cart();
 		WC()->cart->add_to_cart( $cart_product->get_id(), 1 );
 
-		$result  = $this->create_service()->get_init_session_request( null, null, null, $order->get_id(), $order->get_order_key(), $order->get_billing_email() );
+		$result  = $this->create_service()->start_init_session_request( null, null, null, $order->get_id(), $order->get_order_key(), $order->get_billing_email() );
 		$preload = $result['preloaded_requests'];
 
 		$this->assertSame( $order->get_checkout_payment_url(), $result['store_data']['blog_checkout_url'] );
@@ -446,7 +446,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			"another customer's order" => $order->get_order_key(),
 		)[ $scenario ];
 
-		$result = $this->create_service()->get_init_session_request( null, null, null, $order->get_id(), $key, $order->get_billing_email() );
+		$result = $this->create_service()->start_init_session_request( null, null, null, $order->get_id(), $key, $order->get_billing_email() );
 
 		$this->assertStringNotContainsString( $order->get_order_key(), (string) wp_json_encode( $result['store_data'] ) );
 		$this->assertSame( wc_get_checkout_url(), $result['store_data']['blog_checkout_url'] );
@@ -491,7 +491,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$request->set_header( 'Cart-Token', 'cart-token-123' );
 
 		$sut     = $this->create_service();
-		$result  = $sut->get_init_session_request( 'shopper@example.com', null, $request );
+		$result  = $sut->start_init_session_request( 'shopper@example.com', null, $request );
 		$preload = $result['preloaded_requests'];
 
 		$this->assertSame( 'cart-token-123', $seen_headers['/wc/store/v1/cart'] );
@@ -702,7 +702,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		try {
 			switch_theme( 'storefront' );
 			$config  = $sut->get_woopay_frontend_config( 'checkout' );
-			$request = $sut->get_init_session_request( 'shopper@example.com' );
+			$request = $sut->start_init_session_request( 'shopper@example.com' );
 		} finally {
 			switch_theme( $original_theme );
 		}
@@ -1403,7 +1403,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_checkout_page_id' );
 
 		$sut     = $this->create_service();
-		$request = $sut->get_init_session_request( 'shopper@example.com' );
+		$request = $sut->start_init_session_request( 'shopper@example.com' );
 
 		$this->assertArrayHasKey( 'mailchimp-newsletter_data', $request['store_data']['blocks_data'] );
 		$this->assertSame(
@@ -1445,7 +1445,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$adapted_extensions->register( new FakeWooPayPointsRewardsBlocksIntegration() );
 
 		$sut     = $this->create_service( array(), array(), $adapted_extensions );
-		$request = $sut->get_init_session_request( 'points-shopper@example.com' );
+		$request = $sut->start_init_session_request( 'points-shopper@example.com' );
 
 		$this->assertSame( array(), $request['extension_data'] );
 		$this->assertSame(
@@ -1486,7 +1486,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		$request = $this->create_service( array(), array(), $adapted_extensions )->get_init_session_request( 'shopper@example.com' );
+		$request = $this->create_service( array(), array(), $adapted_extensions )->start_init_session_request( 'shopper@example.com' );
 
 		$this->assertSame( array( 'affiliate-for-woocommerce' => array( 'affiliate-user' => 42 ) ), $request['extension_data'] );
 	}
@@ -1497,7 +1497,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	public function test_init_session_request_falls_back_to_customer_billing_email(): void {
 		WC()->customer->set_billing_email( 'billing-fallback@example.com' );
 
-		$request = $this->create_service()->get_init_session_request( null );
+		$request = $this->create_service()->start_init_session_request( null );
 
 		$this->assertSame( 'billing-fallback@example.com', $request['email'] );
 	}
@@ -1511,7 +1511,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		WC()->customer->set_billing_email( '' );
 		WC()->customer->set_email( '' );
 
-		$request = $this->create_service()->get_init_session_request( null );
+		$request = $this->create_service()->start_init_session_request( null );
 
 		$this->assertSame( 'account-fallback@example.com', $request['email'] );
 	}
@@ -1522,7 +1522,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	public function test_init_session_request_prefers_supplied_email(): void {
 		WC()->customer->set_billing_email( 'billing-fallback@example.com' );
 
-		$request = $this->create_service()->get_init_session_request( 'supplied@example.com' );
+		$request = $this->create_service()->start_init_session_request( 'supplied@example.com' );
 
 		$this->assertSame( 'supplied@example.com', $request['email'] );
 	}
@@ -1537,7 +1537,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$captured_user_id = null;
 		$customer_service = $this->create_recording_customer_service( 'cus_test_123', $captured_user_id );
 
-		$request = $this->create_service( array(), array(), null, null, $customer_service )->get_init_session_request( 'shopper@example.com' );
+		$request = $this->create_service( array(), array(), null, null, $customer_service )->start_init_session_request( 'shopper@example.com' );
 
 		$this->assertSame( 'cus_test_123', $request['customer_id'] );
 		$this->assertSame( $user_id, $captured_user_id );
@@ -1550,7 +1550,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$captured_user_id = null;
 		$customer_service = $this->create_recording_customer_service( 'cus_guest_456', $captured_user_id );
 
-		$request = $this->create_service( array(), array(), null, null, $customer_service )->get_init_session_request( 'guest@example.com' );
+		$request = $this->create_service( array(), array(), null, null, $customer_service )->start_init_session_request( 'guest@example.com' );
 
 		$this->assertSame( 'cus_guest_456', $request['customer_id'] );
 		$this->assertSame( 0, $captured_user_id );
@@ -1582,7 +1582,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$expected = \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion::VERSION;
 
 		$this->assertSame( $expected, $sut->get_minimum_session_data()['wcpay_version'] );
-		$this->assertSame( $expected, $sut->get_init_session_request( 'shopper@example.com' )['wcpay_version'] );
+		$this->assertSame( $expected, $sut->start_init_session_request( 'shopper@example.com' )['wcpay_version'] );
 		$this->assertSame( $expected, $sut->get_woopay_frontend_config( 'checkout' )['wcpayVersionNumber'] );
 	}
 
@@ -1620,7 +1620,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		);
 		$this->appearance_store->save_woopay_appearance( array( 'theme' => 'night' ), array( array( 'src' => 'https://example.com/font.woff2' ) ) );
 
-		$request = $sut->get_init_session_request( 'shopper@example.com' );
+		$request = $sut->start_init_session_request( 'shopper@example.com' );
 
 		$this->assertNull( $request['appearance'] );
 		$this->assertSame( array(), $request['font_rules'] );
@@ -1636,7 +1636,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		);
 		$this->appearance_store->save_woopay_appearance( array( 'theme' => 'night' ), array() );
 
-		$request = $sut->get_init_session_request( 'shopper@example.com' );
+		$request = $sut->start_init_session_request( 'shopper@example.com' );
 
 		$this->assertSame( array( 'theme' => 'night' ), $request['appearance'] );
 	}
@@ -1645,7 +1645,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should carry the shopper's Tracks identity in the init-session request.
 	 */
 	public function test_init_session_request_carries_tracks_user_identity(): void {
-		$request = $this->create_service()->get_init_session_request( 'shopper@example.com' );
+		$request = $this->create_service()->start_init_session_request( 'shopper@example.com' );
 
 		$this->assertIsArray( $request['tracks_user_identity'] );
 		$this->assertSame( 'anon', $request['tracks_user_identity']['_ut'] );

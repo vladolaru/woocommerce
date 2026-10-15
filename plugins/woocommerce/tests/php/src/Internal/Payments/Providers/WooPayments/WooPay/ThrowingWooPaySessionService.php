@@ -32,7 +32,7 @@ class ThrowingWooPaySessionService extends RecordingWooPaySessionService {
 	 * @param array<int,array<string,string>> $font_rules     WooPay font rules.
 	 * @throws \Throwable Always, to exercise the controller's failure path.
 	 */
-	public function get_init_session_request(
+	public function start_init_session_request(
 		?string $email = null,
 		?string $user_session = null,
 		?WP_REST_Request $woopay_request = null,

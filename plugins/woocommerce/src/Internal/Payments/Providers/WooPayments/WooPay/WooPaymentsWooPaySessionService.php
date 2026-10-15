@@ -301,7 +301,7 @@ class WooPaymentsWooPaySessionService {
 	 *
 	 * @return string The platform customer id.
 	 */
-	private function get_platform_customer_id() {
+	private function get_or_create_platform_customer_id() {
 		return $this->customer_service->get_or_create_customer_id_for_user( get_current_user_id() );
 	}
 
@@ -342,7 +342,7 @@ class WooPaymentsWooPaySessionService {
 		$email          = $this->resolve_session_email( $email, $encrypted_data );
 
 		return $this->encrypt_and_sign_data(
-			$this->get_init_session_request(
+			$this->start_init_session_request(
 				$email,
 				$this->get_request_string( $request, 'user_session' ),
 				null,
@@ -356,7 +356,7 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
-	 * Build the WooPay init-session request body.
+	 * Start a WooPay session request: build its body and, for a known email, save it as the shopper's billing email and register the adapted extensions.
 	 *
 	 * @param string|null                     $email           Shopper email.
 	 * @param string|null                     $user_session    WooPay user session.
@@ -369,7 +369,7 @@ class WooPaymentsWooPaySessionService {
 	 * @phpstan-param WP_REST_Request<array<string,mixed>>|null $woopay_request
 	 * @return array<string,mixed>
 	 */
-	public function get_init_session_request(
+	public function start_init_session_request(
 		?string $email = null,
 		?string $user_session = null,
 		?WP_REST_Request $woopay_request = null,
@@ -391,7 +391,7 @@ class WooPaymentsWooPaySessionService {
 		$request = array(
 			'wcpay_version'        => WooPaymentsClientVersion::VERSION,
 			'user_id'              => get_current_user_id(),
-			'customer_id'          => $this->get_platform_customer_id(),
+			'customer_id'          => $this->get_or_create_platform_customer_id(),
 			'session_nonce'        => $this->create_woopay_nonce( get_current_user_id() ),
 			'store_api_token'      => $this->get_store_api_token(),
 			'email'                => $email,
@@ -503,7 +503,7 @@ class WooPaymentsWooPaySessionService {
 	 */
 	public function init_woopay_session( array $request ): array {
 		$body = wp_json_encode(
-			$this->get_init_session_request(
+			$this->start_init_session_request(
 				$this->get_request_string( $request, 'email' ),
 				$this->get_request_string( $request, 'user_session' ),
 				null,
