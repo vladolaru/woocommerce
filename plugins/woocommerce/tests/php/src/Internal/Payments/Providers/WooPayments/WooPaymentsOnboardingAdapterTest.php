@@ -481,6 +481,7 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		);
 		$this->set_adapter_api_client( $api_available );
 		$account_service = $this->createMock( WooPaymentsAccountService::class );
+		// Synthetic fields answer: only its pass-through is checked (client 11.1.0's business types fixture is tests/unit/test-class-wc-payments-onboarding-service.php:50).
 		$account_service->method( 'get_onboarding_fields_data' )->with( 'de_DE' )->willReturn( array( 'business_types' => array() ) );
 		$this->set_adapter_property( 'account_service', $account_service );
 
@@ -546,6 +547,18 @@ class WooPaymentsOnboardingAdapterTest extends WC_Unit_Test_Case {
 		$reflection->setAccessible( true );
 		// Without a stored answer the landing page resolves no API client.
 		$this->assertSame( $asked, null !== $reflection->getValue( $this->adapter ) );
+	}
+
+	/**
+	 * @testdox A partner's referral code is stored before the store connects to the platform.
+	 */
+	public function test_referral_code_is_stored_without_a_platform_connection(): void {
+		$this->set_adapter_api_client( false );
+
+		$stored = $this->adapter->store_referral_code( '  Partner-CODE ' );
+
+		$this->assertSame( 'partner-code', $stored );
+		$this->assertSame( 'partner-code', get_transient( 'woopayments_referral_code' ) );
 	}
 
 	/**

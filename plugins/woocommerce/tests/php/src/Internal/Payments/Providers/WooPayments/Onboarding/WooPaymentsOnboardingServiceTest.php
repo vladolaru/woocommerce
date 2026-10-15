@@ -3094,6 +3094,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			->onlyMethods( array( 'is_available', 'delete_account' ) )
 			->getMock();
 		$api_client->method( 'is_available' )->willReturn( true );
+		// The success body client 11.1.0 reads after delete_account() (includes/class-wc-payments-onboarding-service.php:831-832).
 		$api_client->expects( $this->once() )->method( 'delete_account' )->with( $expected_test_mode )->willReturn( array( 'result' => 'success' ) );
 		$this->set_onboarding_collaborators( $api_client );
 
@@ -3118,6 +3119,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			->onlyMethods( array( 'is_available', 'delete_account' ) )
 			->getMock();
 		$api_client->method( 'is_available' )->willReturn( true );
+		// The success body client 11.1.0 reads after delete_account() (includes/class-wc-payments-onboarding-service.php:831-832).
 		$api_client->expects( $this->once() )->method( 'delete_account' )->with( $expected_test_mode )->willReturn( array( 'result' => 'success' ) );
 		$this->set_onboarding_collaborators( $api_client );
 
@@ -3185,6 +3187,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_recommended_payment_methods' ) )
 			->getMock();
+		// Synthetic recommendations in the platform's shape (id, title, type, priority), as in client 11.1.0 tests/unit/test-class-wc-payments-account.php:3661-3739.
 		$api_client
 			->expects( $this->once() )
 			->method( 'get_recommended_payment_methods' )
@@ -3232,6 +3235,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_recommended_payment_methods' ) )
 			->getMock();
+		// Synthetic recommendations in the platform's shape (id, title, type, priority), as in client 11.1.0 tests/unit/test-class-wc-payments-account.php:3661-3739.
 		$api_client
 			->expects( $this->once() )
 			->method( 'get_recommended_payment_methods' )
@@ -3283,6 +3287,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_recommended_payment_methods' ) )
 			->getMock();
+		// Synthetic recommendations in the platform's shape (id, title, type, priority), as in client 11.1.0 tests/unit/test-class-wc-payments-account.php:3661-3739.
 		$api_client
 			->expects( $this->once() )
 			->method( 'get_recommended_payment_methods' )
