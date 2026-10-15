@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Shapes WooCommerce's payment gateway list around the WooPayments gateways, as the client does.
+ * Shapes WooCommerce's payment gateway list around the WooPayments gateways.
  *
  * The settings page lists only the card gateway; the split gateways stay registered for checkout
  * (client 11.1.0 `includes/class-wc-payments.php:742,1024-1031`). All WooPayments gateways keep one
@@ -22,12 +22,12 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 class WooPaymentsGatewayListController implements RegisterHooksInterface {
 
 	/**
-	 * Runs before other listeners so they see the list without split gateways, as in the client.
+	 * Runs before other listeners so they see the list without split gateways.
 	 */
 	private const PAYMENT_GATEWAYS_DISPLAY_HOOK_PRIORITY = 5;
 
 	/**
-	 * The client's priorities for the saved and default gateway order filters.
+	 * Priorities of the saved and default gateway order filters (client 11.1.0 `includes/class-wc-payments.php:731-732`).
 	 */
 	private const GATEWAY_ORDER_OPTION_PRIORITY = 2;
 
@@ -67,7 +67,7 @@ class WooPaymentsGatewayListController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Keep only the canonical native WooPayments gateway in settings displays.
+	 * Keep only the card gateway in the settings page's gateway list.
 	 *
 	 * Split gateways remain registered for checkout and payment processing. This callback only
 	 * changes the request-local collection after the settings display hook fires.
@@ -136,7 +136,7 @@ class WooPaymentsGatewayListController implements RegisterHooksInterface {
 	/**
 	 * Place the WooPayments gateways as one block at the card gateway's position, or first when it has none.
 	 *
-	 * Ports the client's `WC_Payments::order_woopayments_gateways()`: WooPayments gateways saved before the card gateway keep their place, and those saved after it join the block.
+	 * WooPayments gateways saved before the card gateway keep their place, and those saved after it join the block.
 	 *
 	 * @internal
 	 *

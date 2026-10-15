@@ -47,7 +47,7 @@ class WooPaymentsFraudRulesetService {
 	private WooPaymentsLogger $logger;
 
 	/**
-	 * Whether fraud protection settings were refreshed for this service instance.
+	 * Whether this request already ran fetch_or_create_fraud_ruleset().
 	 *
 	 * @var bool
 	 */
@@ -141,9 +141,10 @@ class WooPaymentsFraudRulesetService {
 	}
 
 	/**
-	 * Keep account-level fraud mitigation flags aligned with the just-saved ruleset.
+	 * Set the cached account's AVS check flag from the ruleset just saved.
 	 *
-	 * Runs for every protection level like the plugin's unconditional cache write: the built-in rulesets never contain avs_verification, so stepping down from an AVS-bearing advanced ruleset must overwrite the cached true.
+	 * Runs for every protection level: the built-in rulesets never contain avs_verification, so stepping down from an
+	 * advanced ruleset with AVS must overwrite the cached true.
 	 *
 	 * @param array{protection_level:string,ruleset_config:array<int|string,mixed>} $fraud_settings Saved fraud settings.
 	 * @return void
@@ -449,9 +450,8 @@ class WooPaymentsFraudRulesetService {
 	/**
 	 * Rebuild the advanced ruleset's international IP rule from the current selling locations; can fetch the ruleset from the platform, and create the Basic ruleset there, when none is cached.
 	 *
-	 * Ports the plugin's update_fraud_rules_based_on_general_options() (client 11.1.0
-	 * `includes/class-wc-payment-gateway-wcpay.php:3818-3853`): only an advanced ruleset carries the
-	 * merchant's country check, and the platform is called only when that check changed.
+	 * Only an advanced ruleset carries the merchant's country check, and the platform is called only when that check
+	 * changed (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:3818-3853`).
 	 *
 	 * @since 11.2.0
 	 *
@@ -489,7 +489,7 @@ class WooPaymentsFraudRulesetService {
 			$this->api_client->save_fraud_ruleset( $ruleset );
 			set_transient( 'wcpay_fraud_protection_settings', $ruleset, DAY_IN_SECONDS );
 		} catch ( WooPaymentsApiException $e ) {
-			// The client lets this failure surface from the settings save; native runs it at shutdown, so it always logs it.
+			// The only caller runs at shutdown, after the response is sent, so a failure can only be logged.
 			$this->logger->log_always(
 				'WooPayments fraud ruleset update for new selling locations failed.',
 				'warning',
@@ -504,8 +504,9 @@ class WooPaymentsFraudRulesetService {
 	/**
 	 * Fetch the fraud ruleset from the platform when none is cached, or create the Basic ruleset there when the platform has none; runs once per request.
 	 *
-	 * When the platform has no ruleset yet, saves the Basic ruleset to the platform, as the client does
-	 * (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:3792-3804`).
+	 * The settings page, WooCommerce > Status and the AVS check of a declined card payment read the ruleset through it, so
+	 * each can create the Basic ruleset on the platform. Client 11.1.0 does the same, its Status page included
+	 * (`includes/class-wc-payments-status.php:552-562`, `includes/class-wc-payment-gateway-wcpay.php:3108-3111,3792-3805`).
 	 *
 	 * @return void
 	 */

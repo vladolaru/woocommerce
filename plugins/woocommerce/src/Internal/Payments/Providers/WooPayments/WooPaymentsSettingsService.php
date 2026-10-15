@@ -17,10 +17,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPay
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAppearanceStore;
 
 /**
- * Provides the native WooPayments settings contract consumed by the hoisted settings store.
+ * Builds the data the WooPayments settings page shows and saves the page's changes: account and fraud settings on the
+ * platform, the gateway settings, payment method capability requests and the page's own options.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native WooPayments settings runtime.
+ * @internal
  */
 class WooPaymentsSettingsService {
 
@@ -118,8 +119,6 @@ class WooPaymentsSettingsService {
 
 	/**
 	 * Settings fields whose platform rejections the settings UI can render inline under the field.
-	 *
-	 * Mirrors the WooPayments plugin's INLINE_ERROR_SETTING_KEYS.
 	 */
 	private const INLINE_ERROR_SETTING_KEYS = array(
 		'account_statement_descriptor',
@@ -129,14 +128,14 @@ class WooPaymentsSettingsService {
 	);
 
 	/**
-	 * Native WooPayments account service.
+	 * WooPayments account service.
 	 *
 	 * @var WooPaymentsAccountService
 	 */
 	private WooPaymentsAccountService $account_service;
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
@@ -262,13 +261,13 @@ class WooPaymentsSettingsService {
 	 * @return bool
 	 */
 	public static function is_dynamic_checkout_place_order_button_enabled(): bool {
-		// An absent flag counts as OFF, matching the reference client's default;
-		// the platform delivering '1' with the account payload turns it on.
+		// Off unless the option holds '1'. WooCommerce always meets the 10.6.0 requirement client 11.1.0 adds
+		// (`includes/class-wc-payments-features.php:399-411`).
 		return '1' === (string) get_option( self::DYNAMIC_CHECKOUT_PLACE_ORDER_BUTTON_FLAG_OPTION, '0' );
 	}
 
 	/**
-	 * Get the native WooPayments settings contract.
+	 * Get the data the settings page shows.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -385,7 +384,7 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
-	 * Get feature flags consumed by the native WooPayments settings UI.
+	 * Get the feature flags the settings page reads.
 	 *
 	 * @return array<string,bool>
 	 */
@@ -430,7 +429,8 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
-	 * Update native WooPayments settings.
+	 * Save a settings page update: account and fraud settings on the platform first, then the gateway settings in one
+	 * write; answers the stored settings.
 	 *
 	 * @param array<string,mixed> $params Request parameters.
 	 * @return array<string,mixed>|WP_Error
@@ -505,8 +505,8 @@ class WooPaymentsSettingsService {
 				WooPaymentsTracks::record_wcadmin_event( 'wcpay_payment_method_enabled', $tracks_properties( $payment_method_id ) );
 				$this->pm_promotions_service->maybe_activate_promotion_for_payment_method( $payment_method_id );
 			}
-			// Card's gateway is the WooPayments gateway: adding or removing card turns it on or off, as the client enables and
-			// disables each changed method's gateway (class-wc-rest-payments-settings-controller.php:766-790).
+			// Card's gateway is the WooPayments gateway, so adding or removing card turns it on or off; persist() sets the other
+			// methods' gateways (client 11.1.0 `includes/admin/class-wc-rest-payments-settings-controller.php:766-790`).
 			if ( in_array( 'card', $added_payment_method_ids, true ) ) {
 				$settings['enabled'] = 'yes';
 			} elseif ( in_array( 'card', $removed_payment_method_ids, true ) ) {
@@ -546,7 +546,7 @@ class WooPaymentsSettingsService {
 			$settings[ $request_key ] = $params[ $request_key ];
 		}
 
-		// Persist every setting in one canonical write, then project enabled state to split gateways.
+		// Save every setting in one write; persist() then copies each method's enabled state to its gateway.
 		$result = $this->gateway_settings_synchronizer->persist( $settings, $payment_request_enabled );
 		if ( ! $result['persisted'] ) {
 			// Account and fraud settings in this request already reached the platform; say which local option did not save.
@@ -565,7 +565,7 @@ class WooPaymentsSettingsService {
 		$settings = $result['settings'];
 		$this->record_woopay_settings_events( $params, $previous_settings, $settings );
 		/**
-		 * Fires after native WooPayments settings are updated so operational mirrors can sync setup state.
+		 * Fires the store setup sync after a settings save, so the platform gets the store setup report now.
 		 *
 		 * @since 11.0.0
 		 */
@@ -575,8 +575,9 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
-	 * Record the WooPay settings Tracks events of plugin 11.1.0 (`update_is_woopay_enabled()`,
-	 * `update_is_woopay_global_theme_support_enabled()`, `track_woopay_enabled_locations()`).
+	 * Record the WooPay settings Tracks events: WooPay turned on or off, its global theme support turned on or off, and its
+	 * button locations when WooPay is on and a location list was sent (client 11.1.0
+	 * `includes/class-wc-payment-gateway-wcpay.php:3147-3184`, `includes/admin/class-wc-rest-payments-settings-controller.php:1187-1229`).
 	 *
 	 * @param array<string,mixed> $params   Request parameters.
 	 * @param array<string,mixed> $previous Settings before the update.
@@ -645,7 +646,7 @@ class WooPaymentsSettingsService {
 	/**
 	 * Validate a requested enabled-payment-methods update against the account's live availability.
 	 *
-	 * Runs before any platform mutation so a rejected save is fully atomic, like the plugin's REST-boundary enum. An unknown availability (no fee-backed methods, e.g. a cold or errored account cache) rejects every enabled-methods save — including an empty list, which a settings-screen round-trip would otherwise persist, silently wiping the store's enabled methods without self-healing when the cache returns.
+	 * Runs before any platform mutation so a rejected save is fully atomic. An unknown availability (no fee-backed methods, e.g. a cold or errored account cache) rejects every enabled-methods save — including an empty list, which a settings-screen round-trip would otherwise persist, silently wiping the store's enabled methods without self-healing when the cache returns.
 	 *
 	 * @param array<string,mixed> $params   Request parameters.
 	 * @param array<string,mixed> $settings Current gateway settings.
@@ -673,7 +674,7 @@ class WooPaymentsSettingsService {
 
 		$unavailable_payment_method_ids = array_values( array_diff( $requested_payment_method_ids, $available_payment_method_ids ) );
 		if ( ! empty( $unavailable_payment_method_ids ) ) {
-			// The plugin's REST enum is the live available set, so an unavailable method is a hard 400 there — never a silent discard.
+			// An unavailable method fails the save with a 400 instead of being dropped.
 			return $this->enabled_payment_method_ids_error(
 				sprintf(
 					/* translators: %s: comma-separated payment method IDs. */
@@ -724,7 +725,8 @@ class WooPaymentsSettingsService {
 	 * @return string[]
 	 */
 	private function get_available_payment_method_ids(): array {
-		// Availability comes from the account's live fee structures only, like the plugin: no locally stored list and no card fallback. Empty fees (no account, or a genuinely feeless cache) means nothing is available — the plugin's settings enum is empty in the same state.
+		// Availability comes from the account's fees only: no stored list and no card fallback. No fees (no account, or a cache
+		// without fees) means nothing is available.
 		$available_ids = $this->payment_method_registry->get_available_payment_method_ids_for_account( $this->account_service );
 
 		return array_values(
@@ -848,7 +850,7 @@ class WooPaymentsSettingsService {
 				: ( $settings['deposit_schedule_interval'] ?? '' );
 		}
 
-		// A payout-schedule change must re-arm the next-deposit notice, like the plugin does before its account update. Core renders no such notice yet, but the dismissal flag is already writable through the settings option route.
+		// A payout schedule change clears the next-payout notice's dismissal, so the Payouts page shows the notice again.
 		if ( preg_grep( '/^deposit_schedule_/', array_keys( $account_settings ) ) ) {
 			delete_option( 'wcpay_next_deposit_notice_dismissed' );
 		}
@@ -949,7 +951,7 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
-	 * Get platform fraud protection settings projected from cached account data.
+	 * Get the AVS and CVC checks from the cached account, on when missing, and whether the fraud welcome tour was dismissed.
 	 *
 	 * @return array<string,bool>
 	 */
@@ -987,7 +989,8 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
-	 * Convert native API exceptions into REST-safe errors.
+	 * Convert a platform error from the fraud ruleset save or a capability request to a REST error with the platform's
+	 * code, message and HTTP status.
 	 *
 	 * @param WooPaymentsApiException $exception API exception.
 	 * @return WP_Error
@@ -1003,7 +1006,9 @@ class WooPaymentsSettingsService {
 	/**
 	 * Convert a platform account-update rejection into the error shape the settings UI consumes.
 	 *
-	 * The platform names the rejected account field in the error's `param`. When that field has an inline error slot in the settings UI, emit the plugin's `wcpay_server_error` envelope so the message renders under the field; otherwise mark the error for the legacy `server_error` body the REST controller emits.
+	 * The platform names the rejected account field in the error's `param`. A field the settings page shows errors under
+	 * gets the `wcpay_server_error` error with its message in `details`; any other gets the `server_error` body the
+	 * merchant controller sends, which the page shows as a notice.
 	 *
 	 * @param WooPaymentsApiException $exception API exception from the account update.
 	 * @return WP_Error
@@ -1092,7 +1097,8 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
-	 * Get settings fields projected from cached account data.
+	 * Get the account fields of the settings: the cached account's values, or the stored settings where the account has
+	 * none.
 	 *
 	 * @param array<string,mixed> $settings Gateway settings.
 	 * @return array<string,mixed>

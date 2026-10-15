@@ -11,10 +11,14 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Persists canonical WooPayments settings and projects them to split gateways.
+ * Saves the WooPayments gateway settings and copies each payment method's enabled state to its own gateway's settings
+ * option.
+ *
+ * It also moves the setup tier between connected and active as the gateway is turned on or off, however the option is
+ * written.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInterface {
 
@@ -40,14 +44,14 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	private WooPaymentsPaymentMethodRegistry $registry;
 
 	/**
-	 * Durable native payments state store.
+	 * Setup tier store.
 	 *
 	 * @var WooPaymentsSetupTier|null
 	 */
 	private ?WooPaymentsSetupTier $setup_tier = null;
 
 	/**
-	 * Native payments runtime arbiter.
+	 * Runtime arbiter.
 	 *
 	 * @var WooPaymentsRuntimeArbiter|null
 	 */
@@ -73,7 +77,10 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	}
 
 	/**
-	 * Persist canonical settings and project their enabled state to split gateways.
+	 * Save the gateway settings and copy each payment method's enabled state to its gateway.
+	 *
+	 * The Apple Pay and Google Pay switch waits in a pending option until both wallet gateways are written, so a failed
+	 * write is retried on the next save.
 	 *
 	 * @param array<string,mixed> $settings                Canonical gateway settings.
 	 * @param bool|null           $payment_request_enabled Optional explicit wallet enablement.
@@ -172,7 +179,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	}
 
 	/**
-	 * Keep the durable tier in step with the gateway's enabled setting, however the setting is written.
+	 * Keep the setup tier in step with the gateway's enabled setting, however the setting is written.
 	 *
 	 * The classic toggle and the payment gateways REST route write the option directly, without `persist()`.
 	 */
@@ -208,9 +215,9 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	}
 
 	/**
-	 * Recompute the tier after a direct settings write, only while native owns payments.
+	 * Recompute the setup tier after a direct settings write, only while the built-in WooPayments owns payments.
 	 *
-	 * The plugin writes the same option, and the recompute writes `disabled` when native is off.
+	 * The WooPayments extension writes the same option while it owns payments, and a recompute then would write `disabled`.
 	 *
 	 * @param mixed $value New settings.
 	 */
@@ -223,7 +230,8 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	}
 
 	/**
-	 * Synchronize durable state without affecting canonical settings persistence.
+	 * Set the setup tier from the settings just written: `disabled` when the built-in WooPayments is off, else `active` or
+	 * `connected` by the enabled setting, and only from those two tiers.
 	 *
 	 * @param array<string,mixed> $settings Persisted canonical settings.
 	 */
@@ -365,7 +373,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	}
 
 	/**
-	 * Log split gateway settings that diverged from an unchanged canonical projection.
+	 * Log the payment method gateways whose settings changed although the stored gateway settings did not.
 	 *
 	 * Logging is best-effort and must not affect settings persistence.
 	 *

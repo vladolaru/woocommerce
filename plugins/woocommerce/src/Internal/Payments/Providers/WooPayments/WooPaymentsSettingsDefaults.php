@@ -8,13 +8,13 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 /**
- * WooPayments gateway form-field defaults.
+ * The WooPayments gateway settings' form defaults: a key never saved reads as its default.
  *
- * Defaults are copied from the WooPayments client repository's `11.1.0` tag,
- * `includes/class-wc-payment-gateway-wcpay.php::get_form_fields()`.
+ * They are the WooPayments extension's, which writes the same settings option (client 11.1.0
+ * `includes/class-wc-payment-gateway-wcpay.php:379-549`, `get_form_fields()`).
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 final class WooPaymentsSettingsDefaults {
 
@@ -24,7 +24,7 @@ final class WooPaymentsSettingsDefaults {
 	 * @since 11.2.0
 	 *
 	 * @param string $key Gateway setting key.
-	 * @return mixed The source default, or null when the plugin has no form-field default.
+	 * @return mixed The default, or null when the key has none.
 	 */
 	public static function get( string $key ) {
 		$defaults = self::get_defaults();
@@ -44,7 +44,7 @@ final class WooPaymentsSettingsDefaults {
 	}
 
 	/**
-	 * Get WooPayments 11.1.0 gateway form-field defaults for the current locale.
+	 * Get the form defaults, with their labels translated for the current locale.
 	 *
 	 * @return array<string,mixed> WooPayments form-field defaults.
 	 */

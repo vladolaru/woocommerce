@@ -13,10 +13,12 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 
 /**
- * Native WooPayments Apple Pay domain registration.
+ * Registers the site's domain with Apple Pay through the platform, and shows the merchant why a registration failed.
+ *
+ * It registers when Apple Pay is turned on, when the site's host changes, and again an hour after a failure.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 
@@ -49,14 +51,14 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	private const APPLE_PAY_STATUSES = array( 'active', 'inactive' );
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
 	private WooPaymentsApiClient $api_client;
 
 	/**
-	 * Native WooPayments account service.
+	 * WooPayments account service.
 	 *
 	 * @var WooPaymentsAccountService
 	 */
@@ -95,8 +97,8 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient                       $api_client      Native WooPayments API client.
-	 * @param WooPaymentsAccountService                  $account_service Native WooPayments account service.
+	 * @param WooPaymentsApiClient                       $api_client      WooPayments API client.
+	 * @param WooPaymentsAccountService                  $account_service WooPayments account service.
 	 * @param WooPaymentsActionSchedulerService          $scheduler                   Action Scheduler wrapper.
 	 * @param WooPaymentsFrontendTrackingController|null $frontend_tracking_controller Optional frontend tracking controller.
 	 */
@@ -129,7 +131,7 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Verify the Apple Pay domain after native gateway settings are first stored.
+	 * Verify the Apple Pay domain after the gateway settings are first stored.
 	 *
 	 * @param mixed $_option  Option name.
 	 * @param mixed $settings New settings.
@@ -166,7 +168,7 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Verify the Apple Pay domain after native gateway settings become Apple Pay capable.
+	 * Verify the Apple Pay domain after a gateway settings change turns Apple Pay on.
 	 *
 	 * @param array<string,mixed> $previous_settings Previous settings.
 	 * @param array<string,mixed> $settings          New settings.
@@ -269,9 +271,8 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 		);
 		update_option( self::ERROR_OPTION, $error );
 		$this->schedule_retry();
-		// The client logs the error text, which Apple or the platform writes; native logs why the registration failed, with
-		// Stripe's documented status or the platform's status and code. The stored error option is shown to the merchant in
-		// the Apple Pay settings, as on the client.
+		// The log line says why the registration failed (Stripe's documented status, or the platform's status and code), not
+		// the error text Apple or the platform wrote; that text is stored for the merchant's notice.
 		$this->log( 'Error registering domain with Apple.', 'error', $error_context );
 		$this->record_registration_event(
 			'apple_pay_domain_registration_failure',
@@ -465,7 +466,8 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Read the domain error a notice should show, with the client's checks.
+	 * Read the domain error a notice should show: only while Apple Pay is on and the account is live, and only when the
+	 * domain flag says registration failed.
 	 *
 	 * @return string|null The stored error ('' when only the domain flag failed), or null when no notice is due.
 	 */
@@ -474,7 +476,7 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 			return null;
 		}
 
-		// The error is only ever stored together with the 'no' flag (client register_domain()),
+		// The error is only ever stored together with the 'no' flag (see register_domain()),
 		// so skip the option read on healthy stores; this runs on every Payments tab load.
 		if ( 'no' !== (string) $this->get_gateway_setting( 'apple_pay_domain_set', '' ) ) {
 			return null;
@@ -577,7 +579,7 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get native WooPayments gateway settings.
+	 * Get the stored gateway settings.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -601,7 +603,7 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Update gateway settings while preserving unrelated settings.
+	 * Update some gateway settings, keeping the others.
 	 *
 	 * @param array<string,mixed> $updates Settings to update.
 	 */
@@ -621,7 +623,7 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the Apple Pay Tracks mode value used by the standalone integration.
+	 * Get the Tracks `mode` property: `dev` in dev mode, else the account mode.
 	 *
 	 * @return string
 	 */

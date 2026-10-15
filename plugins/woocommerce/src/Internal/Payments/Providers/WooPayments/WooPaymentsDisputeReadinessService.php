@@ -10,10 +10,12 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 
 /**
- * Builds the native WooPayments dispute readiness overview payload.
+ * Scores how ready the store is to answer disputes (refund policy and terms pages, a recognizable statement descriptor,
+ * a support contact) for the Overview page's dispute readiness card, and stores the merchant's dismissal and descriptor
+ * confirmation.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsDisputeReadinessService {
 
@@ -221,7 +223,7 @@ class WooPaymentsDisputeReadinessService {
 	/**
 	 * Returns the statement descriptor signal.
 	 *
-	 * @param array<string,mixed> $account_data Preserved account data.
+	 * @param array<string,mixed> $account_data Stored account data.
 	 * @return array<string,mixed>
 	 */
 	private function get_statement_descriptor_signal( array $account_data ): array {
@@ -262,7 +264,7 @@ class WooPaymentsDisputeReadinessService {
 	/**
 	 * Returns the support contact signal.
 	 *
-	 * @param array<string,mixed> $account_data Preserved account data.
+	 * @param array<string,mixed> $account_data Stored account data.
 	 * @return array<string,mixed>
 	 */
 	private function get_support_contact_signal( array $account_data ): array {
@@ -355,7 +357,7 @@ class WooPaymentsDisputeReadinessService {
 	}
 
 	/**
-	 * Returns the native WooPayments settings URL.
+	 * Returns the WooPayments settings page URL.
 	 *
 	 * @return string
 	 */
@@ -412,7 +414,7 @@ class WooPaymentsDisputeReadinessService {
 	/**
 	 * Returns the current account statement descriptor.
 	 *
-	 * @param array<string,mixed> $account_data Preserved account data.
+	 * @param array<string,mixed> $account_data Stored account data.
 	 * @return string
 	 */
 	private function get_statement_descriptor( array $account_data ): string {
@@ -443,7 +445,7 @@ class WooPaymentsDisputeReadinessService {
 	 * Determines whether a descriptor looks recognizable enough to complete automatically.
 	 *
 	 * @param string              $descriptor   Statement descriptor.
-	 * @param array<string,mixed> $account_data Preserved account data.
+	 * @param array<string,mixed> $account_data Stored account data.
 	 * @return bool
 	 */
 	private function looks_like_recognizable_descriptor( string $descriptor, array $account_data ): bool {
@@ -486,7 +488,7 @@ class WooPaymentsDisputeReadinessService {
 	/**
 	 * Returns possible store-specific descriptor comparison values.
 	 *
-	 * @param array<string,mixed> $account_data Preserved account data.
+	 * @param array<string,mixed> $account_data Stored account data.
 	 * @return string[]
 	 */
 	private function get_store_descriptor_candidates( array $account_data ): array {

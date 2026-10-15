@@ -12,10 +12,13 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 
 /**
- * Provider-level business rules for native WooPayments payment method promotions.
+ * Fetches the platform's payment method promotions for the settings page, keeps the ones the merchant can still use,
+ * and activates or dismisses them.
+ *
+ * Activating a promotion also enables its payment method's gateway.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native WooPayments settings runtime.
+ * @internal
  */
 class WooPaymentsPmPromotionsService {
 
@@ -61,14 +64,14 @@ class WooPaymentsPmPromotionsService {
 	);
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient|null
 	 */
 	private ?WooPaymentsApiClient $api_client = null;
 
 	/**
-	 * Native WooPayments account service.
+	 * WooPayments account service.
 	 *
 	 * @var WooPaymentsAccountService|null
 	 */
@@ -173,7 +176,7 @@ class WooPaymentsPmPromotionsService {
 	}
 
 	/**
-	 * Activate a visible promotion and enable its native payment method.
+	 * Activate a visible promotion on the platform, mark it dismissed and enable its payment method's gateway.
 	 *
 	 * @param string $id Promotion instance ID.
 	 * @return bool
@@ -355,7 +358,7 @@ class WooPaymentsPmPromotionsService {
 
 		$this->promotions_memo = $this->sanitize_raw_promotions_list( $response['promotions'] );
 
-		// The platform's cache-for header sets the cache lifetime; 0 means do not cache, as in the client
+		// The platform's cache-for header sets the cache lifetime; 0 means do not cache
 		// (client 11.1.0 `includes/class-wc-payments-pm-promotions-service.php:224-254`).
 		if ( '0' === $response['cache_for'] ) {
 			if ( false !== $cache ) {
@@ -421,7 +424,8 @@ class WooPaymentsPmPromotionsService {
 	}
 
 	/**
-	 * Filter promotions by native eligibility and local dismissal state.
+	 * Keep the promotions for available payment methods that are not enabled, not dismissed and have no active discount,
+	 * one promotion per payment method.
 	 *
 	 * @param array<int,array<string,mixed>> $promotions Promotions.
 	 * @return array<int,array<string,mixed>>
@@ -732,7 +736,7 @@ class WooPaymentsPmPromotionsService {
 	}
 
 	/**
-	 * Read native WooPayments gateway settings.
+	 * Read the stored gateway settings.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -743,7 +747,7 @@ class WooPaymentsPmPromotionsService {
 	}
 
 	/**
-	 * Get enabled native payment method IDs from persisted gateway settings.
+	 * Get the enabled payment method IDs from the stored gateway settings.
 	 *
 	 * @return string[]
 	 */
@@ -782,7 +786,7 @@ class WooPaymentsPmPromotionsService {
 	}
 
 	/**
-	 * Sanitize payment method IDs against the native supported set.
+	 * Sanitize payment method IDs against the payment methods the settings page supports.
 	 *
 	 * @param array<int|string,mixed> $payment_method_ids Payment method IDs.
 	 * @return string[]
@@ -806,7 +810,7 @@ class WooPaymentsPmPromotionsService {
 	}
 
 	/**
-	 * Get account fees from the cached native account data.
+	 * Get the account fees from the cached account data.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -928,7 +932,7 @@ class WooPaymentsPmPromotionsService {
 	}
 
 	/**
-	 * Get the API client, resolving lazily when possible.
+	 * Get the API client set by init(), or the container's when init() did not run.
 	 *
 	 * @return WooPaymentsApiClient
 	 * @throws WooPaymentsApiException When the service is unavailable.
@@ -955,7 +959,7 @@ class WooPaymentsPmPromotionsService {
 	}
 
 	/**
-	 * Get the account service, resolving lazily when possible.
+	 * Get the account service set by init(), or the container's when init() did not run.
 	 *
 	 * @return WooPaymentsAccountService|null
 	 */

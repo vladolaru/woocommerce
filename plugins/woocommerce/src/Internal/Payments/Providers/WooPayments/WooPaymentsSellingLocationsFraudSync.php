@@ -14,11 +14,11 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  * Keeps the advanced fraud ruleset's country check in step with the store's selling locations.
  *
  * The client refreshes the rule on the classic general settings form save (client 11.1.0
- * `includes/class-wc-payment-gateway-wcpay.php:582`). Native watches the three selling-location options
+ * `includes/class-wc-payment-gateway-wcpay.php:582`). This class watches the three selling-location options
  * instead, so REST and WP-CLI writes are covered too, and runs one refresh per request at shutdown.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsSellingLocationsFraudSync implements RegisterHooksInterface {
 
@@ -34,7 +34,7 @@ class WooPaymentsSellingLocationsFraudSync implements RegisterHooksInterface {
 	);
 
 	/**
-	 * Fraud ruleset service, resolved only when a refresh runs so admin, REST and WP-CLI requests that change no selling location never build it.
+	 * Fraud ruleset service, resolved on first use when a refresh runs.
 	 *
 	 * @var WooPaymentsFraudRulesetService|null
 	 */

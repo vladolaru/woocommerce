@@ -29,7 +29,8 @@ class WooPaymentsDuplicateGatewayMethodsService {
 
 	/**
 	 * Gateway ID keywords per payment method, checked in order; the first match wins.
-	 * Keywords and order follow the client's payment method definitions and their registry order.
+	 * Keywords and order follow client 11.1.0, which reads each payment method definition's keywords in registry order
+	 * (`includes/class-duplicates-detection-service.php:85-111`).
 	 */
 	private const DUPLICATE_PAYMENT_METHOD_KEYWORDS = array(
 		'card'              => array( 'credit_card', 'creditcard', 'cc', 'card' ),
@@ -102,7 +103,7 @@ class WooPaymentsDuplicateGatewayMethodsService {
 	/**
 	 * Get payment methods enabled by WooPayments and another gateway.
 	 *
-	 * Public so the operational store-setup snapshot can report real duplicates to the platform.
+	 * Public so the store setup report can send the duplicates to the platform.
 	 *
 	 * @return array<string,string[]>
 	 */
