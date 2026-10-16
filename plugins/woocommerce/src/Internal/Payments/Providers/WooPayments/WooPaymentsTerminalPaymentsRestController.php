@@ -748,19 +748,12 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 		$status = isset( $intent['status'] ) ? (string) $intent['status'] : '';
 		$charge = WooPaymentsIntentCodec::latest_charge( $intent );
 
-		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
-		$order->set_payment_method_title( __( 'WooCommerce In-Person Payments', 'woocommerce' ) );
 		$order->set_transaction_id( $intent_id );
 		$order->update_meta_data( '_intent_id', $intent_id );
 		$order->update_meta_data( '_intention_status', $status );
 		$order->update_meta_data( '_wcpay_mode', $this->account_service->get_order_mode() );
 		$order->update_meta_data( 'receipt_url', get_rest_url( null, $this->route_namespace . '/payments/readers/receipts/' . $intent_id ) );
 		$order->update_meta_data( '_wcpay_fraud_meta_box_type', 'terminal_payment' );
-
-		$ipp_channel = $this->get_ipp_channel_from_intent( $intent );
-		if ( '' !== $ipp_channel ) {
-			$order->update_meta_data( '_wcpay_ipp_channel', $ipp_channel );
-		}
 
 		if ( isset( $intent['currency'] ) ) {
 			// Plugin 11.1.0 stores the intent model's uppercased currency (class-wc-rest-payments-orders-controller.php:215, class-wc-payments-api-payment-intention.php:93).
