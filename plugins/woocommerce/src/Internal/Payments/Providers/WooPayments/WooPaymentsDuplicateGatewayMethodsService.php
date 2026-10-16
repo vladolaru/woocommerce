@@ -175,7 +175,7 @@ class WooPaymentsDuplicateGatewayMethodsService {
 	 * @return object[]
 	 */
 	private function get_registered_payment_gateways(): array {
-		if ( ! function_exists( 'WC' ) || ! WC()->payment_gateways() ) {
+		if ( ! WC()->payment_gateways() ) {
 			return array();
 		}
 

@@ -211,7 +211,7 @@ class WooPaymentsWooPayEligibility {
 	 * @return bool
 	 */
 	public function is_woopay_gateway_available(): bool {
-		if ( ! function_exists( 'WC' ) || ! WC() ) {
+		if ( ! WC() ) {
 			return false;
 		}
 
@@ -335,7 +335,7 @@ class WooPaymentsWooPayEligibility {
 			return $product;
 		}
 
-		$product = function_exists( 'wc_get_product' ) ? wc_get_product() : null;
+		$product = wc_get_product();
 
 		return $product instanceof \WC_Product ? $product : null;
 	}
@@ -554,19 +554,15 @@ class WooPaymentsWooPayEligibility {
 			return false;
 		}
 
-		if (
-			! ( function_exists( 'is_checkout' ) && is_checkout() )
-			&& ! ( function_exists( 'has_block' ) && has_block( 'woocommerce/checkout' ) )
-		) {
+		if ( ! is_checkout() && ! has_block( 'woocommerce/checkout' ) ) {
 			return false;
 		}
 
-		if ( function_exists( 'is_wc_endpoint_url' ) && is_wc_endpoint_url( 'order-pay' ) ) {
+		if ( is_wc_endpoint_url( 'order-pay' ) ) {
 			return false;
 		}
 
-		return function_exists( 'WC' ) &&
-			WC() &&
+		return WC() &&
 			WC()->cart instanceof \WC_Cart &&
 			! WC()->cart->is_empty() &&
 			WC()->cart->needs_payment();
@@ -590,10 +586,6 @@ class WooPaymentsWooPayEligibility {
 	 * @return bool
 	 */
 	public function is_woopay_eligible(): bool {
-		if ( ! class_exists( 'Automattic\WooCommerce\StoreApi\Routes\V1\AbstractCartRoute' ) ) {
-			return false;
-		}
-
 		$account_service = $this->account_service;
 		$account_data    = $account_service->get_cached_account_data();
 
