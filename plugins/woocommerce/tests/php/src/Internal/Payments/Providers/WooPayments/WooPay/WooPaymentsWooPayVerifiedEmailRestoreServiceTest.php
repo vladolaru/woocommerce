@@ -51,11 +51,11 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	private $plugin_active = false;
 
 	/**
-	 * Optional final override for the real arbiter's native-enabled filter.
+	 * Optional final override for the real arbiter's built-in enabled filter.
 	 *
 	 * @var bool|null
 	 */
-	private $native_enabled_override;
+	private $builtin_enabled_override;
 
 	/**
 	 * Original site-option values.
@@ -119,7 +119,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	public function setUp(): void {
 		parent::setUp();
 
-		$this->native_enabled_override   = null;
+		$this->builtin_enabled_override  = null;
 		$this->original_blog_id          = get_current_blog_id();
 		$this->original_hpos_enabled     = OrderUtil::custom_orders_table_usage_is_enabled();
 		$this->original_options          = array(
@@ -139,7 +139,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 		add_filter( 'wc_allow_changing_orders_storage_while_sync_is_pending', '__return_true' );
 		remove_filter( 'query', array( $this, '_create_temporary_tables' ) );
 		remove_filter( 'query', array( $this, '_drop_temporary_tables' ) );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, array( $this, 'override_native_runtime_enabled' ), PHP_INT_MAX );
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, array( $this, 'override_builtin_enabled' ), PHP_INT_MAX );
 
 		$this->arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		$this->control_plugin_detection();
@@ -154,7 +154,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	public function tearDown(): void {
 		try {
 			$this->remove_service_hooks();
-			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, array( $this, 'override_native_runtime_enabled' ), PHP_INT_MAX );
+			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, array( $this, 'override_builtin_enabled' ), PHP_INT_MAX );
 
 			if ( is_multisite() && function_exists( 'ms_is_switched' ) ) {
 				while ( ms_is_switched() ) {
@@ -237,13 +237,13 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * Apply the test's optional final native-enabled result.
+	 * Apply the test's optional final built-in enabled result.
 	 *
 	 * @param mixed $enabled Native-enabled state resolved before this test filter.
 	 * @return bool
 	 */
-	public function override_native_runtime_enabled( $enabled ): bool {
-		return null === $this->native_enabled_override ? (bool) $enabled : $this->native_enabled_override;
+	public function override_builtin_enabled( $enabled ): bool {
+		return null === $this->builtin_enabled_override ? (bool) $enabled : $this->builtin_enabled_override;
 	}
 
 	/**
@@ -253,9 +253,9 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	 */
 	public function runtime_owner_provider(): array {
 		return array(
-			'native owner' => array( WooPaymentsRuntimeArbiter::OWNER_BUILTIN ),
-			'no owner'     => array( WooPaymentsRuntimeArbiter::OWNER_NONE ),
-			'plugin owner' => array( WooPaymentsRuntimeArbiter::OWNER_EXTENSION ),
+			'built-in owner'  => array( WooPaymentsRuntimeArbiter::OWNER_BUILTIN ),
+			'no owner'        => array( WooPaymentsRuntimeArbiter::OWNER_NONE ),
+			'extension owner' => array( WooPaymentsRuntimeArbiter::OWNER_EXTENSION ),
 		);
 	}
 
@@ -415,8 +415,8 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 		global $wp_actions;
 
 		update_option( self::ENABLED_OPTION, 'yes' );
-		$first_fixture  = $this->create_marked_order_for_owner_transition();
-		$second_fixture = $this->create_marked_order_for_owner_transition();
+		$first_fixture  = $this->create_marked_order_for_owner_change();
+		$second_fixture = $this->create_marked_order_for_owner_change();
 		$this->arbiter->invalidate();
 		$this->sut->register();
 		$this->assert_arbiter_is_cold();
@@ -477,7 +477,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox A deferred drain rechecks ownership and preserves recovery state when native ownership returns before order CRUD readiness.
+	 * @testdox A deferred drain rechecks ownership and preserves recovery state when built-in ownership returns before order CRUD readiness.
 	 */
 	public function test_deferred_drain_rechecks_owner_when_order_crud_becomes_ready(): void {
 		global $wp_actions;
@@ -486,7 +486,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 		delete_option( self::KILL_SWITCH_OPTION );
 		$this->arbiter->invalidate();
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->arbiter->get_runtime_owner(), 'The fixture must begin with no runtime owner.' );
-		$fixture = $this->create_marked_order_for_owner_transition();
+		$fixture = $this->create_marked_order_for_owner_change();
 		$this->arbiter->invalidate();
 		$this->sut->register();
 		$this->assert_arbiter_is_cold();
@@ -535,49 +535,49 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox Enabling the kill switch drains when native ownership is lost.
+	 * @testdox Enabling the kill switch drains when built-in ownership is lost.
 	 */
-	public function test_kill_switch_update_drains_on_native_owner_loss(): void {
+	public function test_kill_switch_update_drains_on_builtin_owner_loss(): void {
 		update_option( self::ENABLED_OPTION, 'yes' );
 		update_option( self::KILL_SWITCH_OPTION, '0' );
-		$fixture = $this->create_marked_order_for_owner_transition();
+		$fixture = $this->create_marked_order_for_owner_change();
 		$this->arbiter->invalidate();
 		$this->sut->register();
 		$this->assert_arbiter_is_cold();
 
 		update_option( self::KILL_SWITCH_OPTION, '1' );
 
-		$this->assert_restored_owner_transition_order( $fixture['order_id'], $fixture['customer_id'] );
+		$this->assert_restored_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
 	}
 
 	/**
-	 * @testdox Disabling the native-enabled option drains when ownership becomes none.
+	 * @testdox Disabling the built-in enabled option drains when ownership becomes none.
 	 */
-	public function test_native_enabled_option_update_drains_on_owner_loss(): void {
+	public function test_builtin_enabled_option_update_drains_on_owner_loss(): void {
 		update_option( self::ENABLED_OPTION, 'yes' );
-		$fixture = $this->create_marked_order_for_owner_transition();
+		$fixture = $this->create_marked_order_for_owner_change();
 		$this->arbiter->invalidate();
 		$this->sut->register();
 		$this->assert_arbiter_is_cold();
 
 		update_option( self::ENABLED_OPTION, 'no' );
 
-		$this->assert_restored_owner_transition_order( $fixture['order_id'], $fixture['customer_id'] );
+		$this->assert_restored_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
 	}
 
 	/**
-	 * @testdox Deleting the native-enabled option drains when ownership becomes none.
+	 * @testdox Deleting the built-in enabled option drains when ownership becomes none.
 	 */
-	public function test_native_enabled_option_delete_drains_on_owner_loss(): void {
+	public function test_builtin_enabled_option_delete_drains_on_owner_loss(): void {
 		update_option( self::ENABLED_OPTION, 'yes' );
-		$fixture = $this->create_marked_order_for_owner_transition();
+		$fixture = $this->create_marked_order_for_owner_change();
 		$this->arbiter->invalidate();
 		$this->sut->register();
 		$this->assert_arbiter_is_cold();
 
 		delete_option( self::ENABLED_OPTION );
 
-		$this->assert_restored_owner_transition_order( $fixture['order_id'], $fixture['customer_id'] );
+		$this->assert_restored_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
 	}
 
 	/**
@@ -586,14 +586,14 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	public function test_kill_switch_option_add_drains_on_owner_loss(): void {
 		update_option( self::ENABLED_OPTION, 'yes' );
 		delete_option( self::KILL_SWITCH_OPTION );
-		$fixture = $this->create_marked_order_for_owner_transition();
+		$fixture = $this->create_marked_order_for_owner_change();
 		$this->arbiter->invalidate();
 		$this->sut->register();
 		$this->assert_arbiter_is_cold();
 
 		add_option( self::KILL_SWITCH_OPTION, '1' );
 
-		$this->assert_restored_owner_transition_order( $fixture['order_id'], $fixture['customer_id'] );
+		$this->assert_restored_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
 	}
 
 	/**
@@ -609,7 +609,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 		} else {
 			update_option( self::KILL_SWITCH_OPTION, '0' );
 		}
-		$fixture         = $this->create_marked_order_for_owner_transition();
+		$fixture         = $this->create_marked_order_for_owner_change();
 		$stateful_filter = static function (): bool {
 			return ! (bool) get_option( self::KILL_SWITCH_OPTION, false );
 		};
@@ -631,7 +631,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 
 			$this->assertTrue( (bool) get_option( self::KILL_SWITCH_OPTION, false ), 'The real option write must persist the active kill switch before the post-change callback completes.' );
 			$this->assertFalse( $this->arbiter->is_builtin_enabled(), 'The stateful filter must read the post-write database state as disabled.' );
-			$this->assert_restored_owner_transition_order( $fixture['order_id'], $fixture['customer_id'] );
+			$this->assert_restored_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
 		} finally {
 			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $stateful_filter, PHP_INT_MAX - 1 );
 		}
@@ -650,12 +650,12 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox A native-to-plugin ownership change never drains plugin-owned recovery data.
+	 * @testdox A built-in to extension ownership change never drains extension-owned recovery data.
 	 */
-	public function test_native_to_plugin_owner_change_does_not_drain(): void {
+	public function test_builtin_to_extension_owner_change_does_not_drain(): void {
 		update_option( self::ENABLED_OPTION, 'yes' );
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->arbiter->get_runtime_owner(), 'The fixture must begin under native ownership.' );
-		$fixture             = $this->create_marked_order_for_owner_transition();
+		$fixture             = $this->create_marked_order_for_owner_change();
 		$this->plugin_active = true;
 		$this->arbiter->invalidate();
 		$this->sut->register();
@@ -663,33 +663,33 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 
 		$this->sut->drain_current_blog();
 
-		$this->assert_detached_owner_transition_order( $fixture['order_id'], $fixture['customer_id'] );
+		$this->assert_detached_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
 	}
 
 	/**
-	 * @testdox An option transition while the plugin owns the runtime does not drain.
+	 * @testdox An option change while the WooPayments extension owns the runtime does not drain.
 	 */
-	public function test_option_transition_while_plugin_owned_does_not_drain(): void {
+	public function test_option_change_while_extension_owned_does_not_drain(): void {
 		$this->plugin_active = true;
 		update_option( self::ENABLED_OPTION, 'yes' );
 		update_option( self::KILL_SWITCH_OPTION, '0' );
-		$fixture = $this->create_marked_order_for_owner_transition();
+		$fixture = $this->create_marked_order_for_owner_change();
 		$this->arbiter->invalidate();
 		$this->sut->register();
 		$this->assert_arbiter_is_cold();
 
 		update_option( self::KILL_SWITCH_OPTION, '1' );
 
-		$this->assert_detached_owner_transition_order( $fixture['order_id'], $fixture['customer_id'] );
+		$this->assert_detached_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
 	}
 
 	/**
-	 * @testdox Relevant option updates do not drain while the resulting owner remains native.
+	 * @testdox Relevant option updates do not drain while the resulting owner remains the built-in WooPayments.
 	 */
-	public function test_relevant_option_updates_while_owner_native_do_not_drain(): void {
+	public function test_relevant_option_updates_while_owner_builtin_do_not_drain(): void {
 		update_option( self::ENABLED_OPTION, 'yes' );
 		update_option( self::KILL_SWITCH_OPTION, '0' );
-		$fixture = $this->create_marked_order_for_owner_transition();
+		$fixture = $this->create_marked_order_for_owner_change();
 		$this->arbiter->invalidate();
 		$this->sut->register();
 		$this->assert_arbiter_is_cold();
@@ -697,7 +697,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 		update_option( self::KILL_SWITCH_OPTION, '' );
 		update_option( self::KILL_SWITCH_OPTION, '0' );
 
-		$this->assert_detached_owner_transition_order( $fixture['order_id'], $fixture['customer_id'] );
+		$this->assert_detached_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
 	}
 
 	/**
@@ -735,7 +735,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 		try {
 			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->arbiter->get_runtime_owner(), 'The fixture must begin with no runtime owner.' );
 			$post_write_owner_recomputation_count = 0;
-			$fixture                              = $this->create_marked_order_for_owner_transition();
+			$fixture                              = $this->create_marked_order_for_owner_change();
 			$this->sut->register();
 
 			if ( 'add' === $operation ) {
@@ -748,7 +748,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 
 			$this->assertGreaterThan( 0, $post_write_owner_recomputation_count, 'Every relevant post-write action must recompute the current-blog owner after persistence.' );
 			$this->assert_arbiter_cached_owner( WooPaymentsRuntimeArbiter::OWNER_NONE );
-			$this->assert_restored_owner_transition_order( $fixture['order_id'], $fixture['customer_id'] );
+			$this->assert_restored_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
 		} finally {
 			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $count_post_write_owner_recomputations, PHP_INT_MAX - 1 );
 		}
@@ -761,28 +761,28 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	 */
 	public function owner_none_option_write_provider(): array {
 		return array(
-			'native-enabled add'        => array( 'add', self::ENABLED_OPTION, null, 'no' ),
-			'native-enabled update'     => array( 'update', self::ENABLED_OPTION, 'no', '0' ),
-			'native-enabled delete'     => array( 'delete', self::ENABLED_OPTION, 'no', null ),
-			'native-kill-switch add'    => array( 'add', self::KILL_SWITCH_OPTION, null, '1' ),
-			'native-kill-switch update' => array( 'update', self::KILL_SWITCH_OPTION, '0', '1' ),
-			'native-kill-switch delete' => array( 'delete', self::KILL_SWITCH_OPTION, '1', null ),
+			'builtin-enabled add'        => array( 'add', self::ENABLED_OPTION, null, 'no' ),
+			'builtin-enabled update'     => array( 'update', self::ENABLED_OPTION, 'no', '0' ),
+			'builtin-enabled delete'     => array( 'delete', self::ENABLED_OPTION, 'no', null ),
+			'builtin-kill-switch add'    => array( 'add', self::KILL_SWITCH_OPTION, null, '1' ),
+			'builtin-kill-switch update' => array( 'update', self::KILL_SWITCH_OPTION, '0', '1' ),
+			'builtin-kill-switch delete' => array( 'delete', self::KILL_SWITCH_OPTION, '1', null ),
 		);
 	}
 
 	/**
-	 * @testdox The permanent restore hook does not consume a plugin-owned marker.
+	 * @testdox The permanent restore hook does not consume an extension-owned marker.
 	 */
-	public function test_restore_hook_does_not_consume_plugin_owned_marker(): void {
+	public function test_restore_hook_does_not_consume_extension_owned_marker(): void {
 		$this->plugin_active = true;
-		$fixture             = $this->create_marked_order_for_owner_transition();
+		$fixture             = $this->create_marked_order_for_owner_change();
 		$this->arbiter->invalidate();
 		$this->sut->register();
 		$this->assert_arbiter_is_cold();
 
 		do_action( self::RESTORE_HOOK, $fixture['order_id'] );
 
-		$this->assert_detached_owner_transition_order( $fixture['order_id'], $fixture['customer_id'] );
+		$this->assert_detached_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
 	}
 
 	/**
@@ -792,7 +792,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 		update_option( self::ENABLED_OPTION, 'yes' );
 		$this->arbiter->invalidate();
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->arbiter->get_runtime_owner(), 'The fixture must warm a native owner before the underlying signal changes.' );
-		$fixture = $this->create_marked_order_for_owner_transition();
+		$fixture = $this->create_marked_order_for_owner_change();
 		$this->sut->register();
 		$query_count = 0;
 		add_filter(
@@ -802,7 +802,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 				return $query_args;
 			}
 		);
-		$this->native_enabled_override = false;
+		$this->builtin_enabled_override = false;
 		$this->assertFalse( $this->arbiter->is_builtin_enabled(), 'The mutable signal must now resolve native enablement to false without changing the warmed owner cache.' );
 		$this->assert_arbiter_cached_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 
@@ -816,7 +816,7 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 		$this->assertSame( 0, $query_count, 'Deleting an unrelated option must not query orders.' );
 		$this->assert_arbiter_cached_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 
-		$this->assert_detached_owner_transition_order( $fixture['order_id'], $fixture['customer_id'] );
+		$this->assert_detached_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
 	}
 
 	/**
@@ -1382,11 +1382,11 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * Create a marked order used by owner-transition tests.
+	 * Create a marked order used by owner-change tests.
 	 *
 	 * @return array{order_id:int,customer_id:int}
 	 */
-	private function create_marked_order_for_owner_transition(): array {
+	private function create_marked_order_for_owner_change(): array {
 		$customer_id = self::factory()->user->create();
 		return array(
 			'order_id'    => $this->create_order( 0, $customer_id, true, true ),
@@ -1395,12 +1395,12 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * Assert that an owner-transition order was restored.
+	 * Assert that an owner-change order was restored.
 	 *
 	 * @param int $order_id Order ID.
 	 * @param int $expected_customer_id Expected customer ID.
 	 */
-	private function assert_restored_owner_transition_order( int $order_id, int $expected_customer_id ): void {
+	private function assert_restored_owner_change_order( int $order_id, int $expected_customer_id ): void {
 		$order = $this->reload_order( $order_id );
 		$this->assertSame( $expected_customer_id, $order->get_customer_id(), 'Owner loss must restore the exact marker customer ID.' );
 		$this->assertFalse( $order->meta_exists( self::MARKER_META ), 'Owner loss must remove the durable marker.' );
@@ -1408,12 +1408,12 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * Assert that an owner-transition order remains detached.
+	 * Assert that an owner-change order remains detached.
 	 *
 	 * @param int $order_id Order ID.
 	 * @param int $expected_customer_id Expected marker customer ID.
 	 */
-	private function assert_detached_owner_transition_order( int $order_id, int $expected_customer_id ): void {
+	private function assert_detached_owner_change_order( int $order_id, int $expected_customer_id ): void {
 		$order = $this->reload_order( $order_id );
 		$this->assertSame( 0, $order->get_customer_id(), 'Plugin ownership or retained native ownership must not restore the order.' );
 		$this->assertTrue( $order->meta_exists( self::MARKER_META ), 'Plugin ownership or retained native ownership must preserve the marker.' );

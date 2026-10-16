@@ -170,7 +170,7 @@ class WooPaymentsWooPayEligibilityTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should preserve the observable WooPay eligibility guard order.
 	 */
-	public function test_woopay_button_preserves_oracle_guard_order(): void {
+	public function test_woopay_button_keeps_the_guard_order(): void {
 		$events = array();
 		add_filter(
 			'woocommerce_available_payment_gateways',
@@ -618,7 +618,7 @@ class WooPaymentsWooPayEligibilityTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should decide direct checkout from the gateway's enabled setting without resolving the available gateways, like client 11.1.0.
+	 * @testdox Should decide direct checkout from the gateway's enabled setting without resolving the available gateways.
 	 */
 	public function test_direct_checkout_check_does_not_resolve_available_gateways(): void {
 		$resolutions      = 0;

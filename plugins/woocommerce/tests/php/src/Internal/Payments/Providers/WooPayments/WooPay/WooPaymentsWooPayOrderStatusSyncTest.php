@@ -19,15 +19,15 @@ use WC_Webhook;
  */
 class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 
-	private const WEBHOOK_NAME        = 'WooPayments woopay order status sync';
-	private const WOOPAY_URL          = 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification';
-	private const CLAIM_OPTION        = '_transient_woocommerce_woopayments_woopay_webhook_claim';
-	private const CLAIM_EXPIRY        = '_transient_timeout_woocommerce_woopayments_woopay_webhook_claim';
-	private const SETTINGS_OPTION     = 'woocommerce_woocommerce_payments_settings';
-	private const PLUGIN_SECRET       = 'plugin-secret';
-	private const TRANSLATED_NAME     = 'Synchronisation du statut des commandes WooPay';
-	private const PLUGIN_TEXT_DOMAIN  = 'woocommerce-payments';
-	private const ROTATION_DUE_OPTION = 'woocommerce_woopayments_woopay_webhook_rotation_due';
+	private const WEBHOOK_NAME                 = 'WooPayments woopay order status sync';
+	private const WOOPAY_URL                   = 'https://pay.woo.com/wp-json/platform-checkout/v1/merchant-notification';
+	private const CLAIM_OPTION                 = '_transient_woocommerce_woopayments_woopay_webhook_claim';
+	private const CLAIM_EXPIRY                 = '_transient_timeout_woocommerce_woopayments_woopay_webhook_claim';
+	private const SETTINGS_OPTION              = 'woocommerce_woocommerce_payments_settings';
+	private const WOOPAYMENTS_EXTENSION_SECRET = 'plugin-secret';
+	private const TRANSLATED_NAME              = 'Synchronisation du statut des commandes WooPay';
+	private const PLUGIN_TEXT_DOMAIN           = 'woocommerce-payments';
+	private const ROTATION_DUE_OPTION          = 'woocommerce_woopayments_woopay_webhook_rotation_due';
 
 	/**
 	 * Created sync instances whose hooks must be removed after each test.
@@ -39,16 +39,16 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	/**
 	 * Most recently created mutable WooPayments account service.
 	 *
-	 * @var Task25WooPayAccountService|null
+	 * @var StubWooPayAccountService|null
 	 */
-	private ?Task25WooPayAccountService $account_service = null;
+	private ?StubWooPayAccountService $account_service = null;
 
 	/**
 	 * Most recently created recording WooPay API client.
 	 *
-	 * @var Task25WooPayApiClient|null
+	 * @var StubWooPayApiClient|null
 	 */
-	private ?Task25WooPayApiClient $api_client = null;
+	private ?StubWooPayApiClient $api_client = null;
 
 	/**
 	 * Administrator running the admin pages.
@@ -89,25 +89,25 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	 * @testdox WooPay order-status hooks are registered.
 	 */
 	public function test_registers_hooks(): void {
-		$native_sync = $this->create_sync( true );
+		$builtin_sync = $this->create_sync( true );
 
-		$native_sync->register();
+		$builtin_sync->register();
 
-		$this->assertSame( 10, has_filter( 'woocommerce_valid_webhook_resources', array( $native_sync, 'add_resource' ) ) );
-		$this->assertSame( 10, has_filter( 'woocommerce_valid_webhook_events', array( $native_sync, 'add_event' ) ) );
-		$this->assertSame( 20, has_filter( 'woocommerce_webhook_topic_hooks', array( $native_sync, 'add_topics' ) ) );
-		$this->assertSame( 10, has_filter( 'woocommerce_webhook_payload', array( $native_sync, 'create_payload' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_order_status_changed', array( $native_sync, 'send_webhook' ) ) );
-		$this->assertSame( 10, has_action( 'admin_init', array( $native_sync, 'maybe_create_woopay_order_webhook' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_payments_account_refreshed', array( $native_sync, 'reconcile_webhook' ) ) );
-		$this->assertSame( 10, has_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $native_sync, 'handle_settings_update' ) ) );
-		$this->assertFalse( has_action( 'wcpay_store_setup_sync', array( $native_sync, 'reconcile_webhook' ) ), 'Client 11.1.0 does not touch the webhook on the store setup sync.' );
+		$this->assertSame( 10, has_filter( 'woocommerce_valid_webhook_resources', array( $builtin_sync, 'add_resource' ) ) );
+		$this->assertSame( 10, has_filter( 'woocommerce_valid_webhook_events', array( $builtin_sync, 'add_event' ) ) );
+		$this->assertSame( 20, has_filter( 'woocommerce_webhook_topic_hooks', array( $builtin_sync, 'add_topics' ) ) );
+		$this->assertSame( 10, has_filter( 'woocommerce_webhook_payload', array( $builtin_sync, 'create_payload' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_order_status_changed', array( $builtin_sync, 'send_webhook' ) ) );
+		$this->assertSame( 10, has_action( 'admin_init', array( $builtin_sync, 'maybe_create_woopay_order_webhook' ) ) );
+		$this->assertSame( 10, has_action( 'woocommerce_payments_account_refreshed', array( $builtin_sync, 'reconcile_webhook' ) ) );
+		$this->assertSame( 10, has_action( 'update_option_woocommerce_woocommerce_payments_settings', array( $builtin_sync, 'handle_settings_update' ) ) );
+		$this->assertFalse( has_action( 'wcpay_store_setup_sync', array( $builtin_sync, 'reconcile_webhook' ) ), 'Client 11.1.0 does not touch the webhook on the store setup sync.' );
 	}
 
 	/**
-	 * @testdox Enabled native WooPay creates the exact WooCommerce webhook row and registers its secret.
+	 * @testdox Enabled WooPay creates the exact WooCommerce webhook row and registers its secret.
 	 */
-	public function test_enabled_native_woopay_creates_exact_webhook(): void {
+	public function test_enabled_woopay_creates_exact_webhook(): void {
 		$sync = $this->create_sync( true, true );
 		$sync->register();
 
@@ -130,14 +130,14 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A store switching from the plugin keeps the plugin's webhook: one delivery per status change, the plugin's secret, no platform call.
+	 * @testdox A store switching from the WooPayments extension keeps its webhook: one delivery per status change, its secret, no platform call.
 	 *
 	 * Fails when the webhook is identified by anything the plugin's row lacks, such as an option only native writes: native then
 	 * creates a second row, rotates WooPay's secret and every status change is delivered twice.
 	 */
-	public function test_switch_with_woopay_on_adopts_the_plugin_webhook(): void {
-		$plugin_webhook = $this->create_plugin_webhook();
-		$sync           = $this->create_sync( true, true );
+	public function test_switch_with_woopay_on_adopts_the_woopayments_extension_webhook(): void {
+		$woopayments_extension_webhook = $this->create_woopayments_extension_webhook();
+		$sync                          = $this->create_sync( true, true );
 		$sync->register();
 
 		$this->run_admin_init_for( $sync );
@@ -147,29 +147,29 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$order->save();
 		$deliveries = $this->count_deliveries_of_a_status_change( $order );
 
-		$this->assertSame( array( $plugin_webhook->get_id() ), $deliveries, 'Exactly one webhook, the plugin\'s, must deliver the status change.' );
-		$this->assertSame( self::PLUGIN_SECRET, wc_get_webhook( $plugin_webhook->get_id() )->get_secret(), 'WooPay already holds the plugin row\'s secret.' );
+		$this->assertSame( array( $woopayments_extension_webhook->get_id() ), $deliveries, 'Exactly one webhook, the plugin\'s, must deliver the status change.' );
+		$this->assertSame( self::WOOPAYMENTS_EXTENSION_SECRET, wc_get_webhook( $woopayments_extension_webhook->get_id() )->get_secret(), 'WooPay already holds the plugin row\'s secret.' );
 		$this->assertSame( array(), $this->api_client->woopay_updates, 'Adopting the plugin row must not call the platform.' );
 	}
 
 	/**
-	 * @testdox Turning WooPay off removes every WooPay webhook, the plugin's included, and leaves other webhooks alone.
+	 * @testdox Turning WooPay off removes every WooPay webhook, the WooPayments extension's included, and leaves other webhooks alone.
 	 *
 	 * Fails when removal is limited to rows native created: the plugin's row keeps delivering to WooPay.
 	 */
-	public function test_turning_woopay_off_removes_the_plugin_webhook(): void {
-		$plugin_webhook   = $this->create_plugin_webhook();
-		$other_url        = $this->create_webhook_row( self::WEBHOOK_NAME, 'https://example.com/webhook', 'order.status_changed', 'active' );
-		$other_topic      = $this->create_webhook_row( 'WooPay order updates', self::WOOPAY_URL, 'order.updated', 'active' );
-		$disabled_webhook = $this->create_webhook_row( self::WEBHOOK_NAME, self::WOOPAY_URL, 'order.status_changed', 'disabled' );
-		$sync             = $this->create_sync( true, true );
+	public function test_turning_woopay_off_removes_the_woopayments_extension_webhook(): void {
+		$woopayments_extension_webhook = $this->create_woopayments_extension_webhook();
+		$other_url                     = $this->create_webhook_row( self::WEBHOOK_NAME, 'https://example.com/webhook', 'order.status_changed', 'active' );
+		$other_topic                   = $this->create_webhook_row( 'WooPay order updates', self::WOOPAY_URL, 'order.updated', 'active' );
+		$disabled_webhook              = $this->create_webhook_row( self::WEBHOOK_NAME, self::WOOPAY_URL, 'order.status_changed', 'disabled' );
+		$sync                          = $this->create_sync( true, true );
 		$sync->register();
 		update_option( self::SETTINGS_OPTION, array( 'platform_checkout' => 'yes' ) );
 		wp_set_current_user( 0 );
 
 		update_option( self::SETTINGS_OPTION, array( 'platform_checkout' => 'no' ) );
 
-		$this->assertNull( wc_get_webhook( $plugin_webhook->get_id() ) );
+		$this->assertNull( wc_get_webhook( $woopayments_extension_webhook->get_id() ) );
 		$this->assertSame( array(), $this->find_woopay_webhook_ids() );
 		$this->assertInstanceOf( WC_Webhook::class, wc_get_webhook( $other_url->get_id() ), 'A webhook to another URL is not WooPay\'s.' );
 		$this->assertInstanceOf( WC_Webhook::class, wc_get_webhook( $other_topic->get_id() ), 'A webhook on another topic is not WooPay\'s.' );
@@ -183,8 +183,8 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	 * their secrets, so the others' deliveries fail verification.
 	 */
 	public function test_several_woopay_webhooks_collapse_to_one_known_pair(): void {
-		$first  = $this->create_plugin_webhook();
-		$second = $this->create_plugin_webhook();
+		$first  = $this->create_woopayments_extension_webhook();
+		$second = $this->create_woopayments_extension_webhook();
 		$sync   = $this->create_sync( true, true );
 		$sync->register();
 
@@ -238,12 +238,12 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A reactivated plugin finds native's webhook with its own translated name lookup.
+	 * @testdox A reactivated WooPayments extension finds the built-in webhook with its own translated name lookup.
 	 *
 	 * Fails when the name or its text domain changes: the plugin then misses native's row, creates a second one and rotates
 	 * WooPay's secret.
 	 */
-	public function test_reactivated_plugin_finds_native_webhook_in_its_locale(): void {
+	public function test_reactivated_woopayments_extension_finds_the_builtin_webhook_in_its_locale(): void {
 		$translate = static function ( $translation, $text, $domain ) {
 			return self::PLUGIN_TEXT_DOMAIN === $domain && self::WEBHOOK_NAME === $text ? self::TRANSLATED_NAME : $translation;
 		};
@@ -253,7 +253,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->run_admin_init_for( $sync );
 
 		// The plugin's own lookup, client 11.1.0 WooPay_Order_Status_Sync::get_webhook().
-		$plugin_lookup = \WC_Data_Store::load( 'webhook' )->search_webhooks(
+		$woopayments_extension_lookup = \WC_Data_Store::load( 'webhook' )->search_webhooks(
 			array(
 				'search' => __( 'WooPayments woopay order status sync', 'woocommerce-payments' ), // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- The plugin's lookup, in its text domain.
 				'status' => 'active',
@@ -262,8 +262,8 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		);
 		remove_filter( 'gettext', $translate, 10 );
 
-		$this->assertSame( $this->find_woopay_webhook_ids(), array_map( 'intval', $plugin_lookup ) );
-		$this->assertCount( 1, $plugin_lookup );
+		$this->assertSame( $this->find_woopay_webhook_ids(), array_map( 'intval', $woopayments_extension_lookup ) );
+		$this->assertCount( 1, $woopayments_extension_lookup );
 	}
 
 	/**
@@ -272,7 +272,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	 * Fails when the rollback goes (WooPay would not hold the secret of an active row) or when the lock is not released on failure.
 	 */
 	public function test_failed_secret_registration_rolls_back_and_the_next_admin_page_retries(): void {
-		$logger = new Task25RecordingLogger();
+		$logger = new RecordingWooPayLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
 		$sync = $this->create_sync( true, true );
 		$sync->register();
@@ -302,22 +302,22 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	 * the row), when it deletes the row (no webhook until the next admin page), or when it calls the platform itself.
 	 */
 	public function test_account_refresh_rotates_the_secret_in_place(): void {
-		$plugin_webhook = $this->create_plugin_webhook();
-		$sync           = $this->create_sync( true, true );
+		$woopayments_extension_webhook = $this->create_woopayments_extension_webhook();
+		$sync                          = $this->create_sync( true, true );
 		$sync->register();
 		wp_set_current_user( 0 );
 
 		do_action( 'woocommerce_payments_account_refreshed', array() );
 
-		$this->assertSame( array( $plugin_webhook->get_id() ), $this->find_woopay_webhook_ids(), 'The webhook must stay in place across the refresh.' );
+		$this->assertSame( array( $woopayments_extension_webhook->get_id() ), $this->find_woopay_webhook_ids(), 'The webhook must stay in place across the refresh.' );
 		$this->assertSame( array(), $this->api_client->woopay_updates, 'The refresh itself must not call the platform.' );
 
 		wp_set_current_user( $this->admin_id );
 		$this->run_admin_init_for( $sync );
 
-		$secret = wc_get_webhook( $plugin_webhook->get_id() )->get_secret();
-		$this->assertSame( array( $plugin_webhook->get_id() ), $this->find_woopay_webhook_ids(), 'The secret must change on the same row.' );
-		$this->assertNotSame( self::PLUGIN_SECRET, $secret );
+		$secret = wc_get_webhook( $woopayments_extension_webhook->get_id() )->get_secret();
+		$this->assertSame( array( $woopayments_extension_webhook->get_id() ), $this->find_woopay_webhook_ids(), 'The secret must change on the same row.' );
+		$this->assertNotSame( self::WOOPAYMENTS_EXTENSION_SECRET, $secret );
 		$this->assertSame( 50, strlen( $secret ) );
 		$this->assertSame( array( array( 'webhook_secret' => $secret ) ), $this->api_client->woopay_updates );
 
@@ -333,10 +333,10 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	 * on failure.
 	 */
 	public function test_failed_secret_rotation_keeps_the_secret_and_retries(): void {
-		$logger = new Task25RecordingLogger();
+		$logger = new RecordingWooPayLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$plugin_webhook = $this->create_plugin_webhook();
-		$sync           = $this->create_sync( true, true );
+		$woopayments_extension_webhook = $this->create_woopayments_extension_webhook();
+		$sync                          = $this->create_sync( true, true );
 		$sync->register();
 		do_action( 'woocommerce_payments_account_refreshed', array() );
 		// The platform answers an update it cannot apply with Bad_Request_Exception, code wcpay_bad_request, status 400.
@@ -344,15 +344,15 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 
 		$this->run_admin_init_for( $sync );
 
-		$this->assertSame( self::PLUGIN_SECRET, wc_get_webhook( $plugin_webhook->get_id() )->get_secret() );
+		$this->assertSame( self::WOOPAYMENTS_EXTENSION_SECRET, wc_get_webhook( $woopayments_extension_webhook->get_id() )->get_secret() );
 		$this->assertSame( array( 'Unable to rotate the WooPay order-status webhook secret with the platform.' ), array_column( $logger->error_calls, 'message' ) );
 		$this->assertNull( $this->read_option_row( self::CLAIM_OPTION ), 'The lock must be released after a failure.' );
 
 		$this->api_client->update_woopay_exception = null;
 		$this->run_admin_init_for( $sync );
 
-		$secret = wc_get_webhook( $plugin_webhook->get_id() )->get_secret();
-		$this->assertNotSame( self::PLUGIN_SECRET, $secret );
+		$secret = wc_get_webhook( $woopayments_extension_webhook->get_id() )->get_secret();
+		$this->assertNotSame( self::WOOPAYMENTS_EXTENSION_SECRET, $secret );
 		$this->assertCount( 2, $this->api_client->woopay_updates );
 		$this->assertSame( array( 'webhook_secret' => $secret ), $this->api_client->woopay_updates[1] );
 	}
@@ -364,10 +364,10 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	 * so a failed write is invisible to save(). Fails when the flag is cleared although WooPay holds a secret the row lacks.
 	 */
 	public function test_rotated_secret_the_row_did_not_save_is_rotated_again(): void {
-		$logger = new Task25RecordingLogger();
+		$logger = new RecordingWooPayLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$plugin_webhook = $this->create_plugin_webhook();
-		$sync           = $this->create_sync( true, true );
+		$woopayments_extension_webhook = $this->create_woopayments_extension_webhook();
+		$sync                          = $this->create_sync( true, true );
 		$sync->register();
 		do_action( 'woocommerce_payments_account_refreshed', array() );
 		// The database refuses the row update: an empty query makes $wpdb->query() return false, as a failed write does.
@@ -383,7 +383,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertCount( 1, $this->api_client->woopay_updates, 'WooPay got the new secret.' );
-		$this->assertSame( self::PLUGIN_SECRET, $this->read_webhook_secret( $plugin_webhook->get_id() ), 'The row kept the old secret.' );
+		$this->assertSame( self::WOOPAYMENTS_EXTENSION_SECRET, $this->read_webhook_secret( $woopayments_extension_webhook->get_id() ), 'The row kept the old secret.' );
 		$this->assertSame( 'yes', $this->read_option_row( self::ROTATION_DUE_OPTION ), 'The next admin page must rotate again.' );
 		$this->assertSame( array( 'Unable to save the rotated WooPay order-status webhook secret.' ), array_column( $logger->error_calls, 'message' ) );
 		$this->assertNull( $this->read_option_row( self::CLAIM_OPTION ), 'The lock must be released.' );
@@ -391,7 +391,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->run_admin_init_for( $sync );
 
 		$this->assertCount( 2, $this->api_client->woopay_updates );
-		$this->assertSame( array( 'webhook_secret' => $this->read_webhook_secret( $plugin_webhook->get_id() ) ), $this->api_client->woopay_updates[1] );
+		$this->assertSame( array( 'webhook_secret' => $this->read_webhook_secret( $woopayments_extension_webhook->get_id() ) ), $this->api_client->woopay_updates[1] );
 		$this->assertSame( 'no', $this->read_option_row( self::ROTATION_DUE_OPTION ) );
 	}
 
@@ -402,8 +402,8 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	 * trusts that copy: two requests right after a refresh then both call the platform.
 	 */
 	public function test_request_with_a_stale_rotation_flag_does_not_rotate_again(): void {
-		$plugin_webhook = $this->create_plugin_webhook();
-		$sync           = $this->create_sync( true, true );
+		$woopayments_extension_webhook = $this->create_woopayments_extension_webhook();
+		$sync                          = $this->create_sync( true, true );
 		$sync->register();
 		do_action( 'woocommerce_payments_account_refreshed', array() );
 		// The second request's copy of the autoloaded options, taken while the flag was still set.
@@ -411,12 +411,12 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'yes', $stale_alloptions[ self::ROTATION_DUE_OPTION ] ?? null );
 
 		$this->run_admin_init_for( $sync );
-		$rotated_secret = $this->read_webhook_secret( $plugin_webhook->get_id() );
+		$rotated_secret = $this->read_webhook_secret( $woopayments_extension_webhook->get_id() );
 		wp_cache_set( 'alloptions', $stale_alloptions, 'options' );
 		$this->run_admin_init_for( $sync );
 
 		$this->assertCount( 1, $this->api_client->woopay_updates, 'One refresh asks for one new secret.' );
-		$this->assertSame( $rotated_secret, $this->read_webhook_secret( $plugin_webhook->get_id() ) );
+		$this->assertSame( $rotated_secret, $this->read_webhook_secret( $woopayments_extension_webhook->get_id() ) );
 		$this->assertNull( $this->read_option_row( self::CLAIM_OPTION ), 'The lock must be released.' );
 	}
 
@@ -427,7 +427,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	 * merchant-notification endpoint, which client 11.1.0 never does.
 	 */
 	public function test_secret_rotation_sends_no_ping_to_woopay(): void {
-		$this->create_plugin_webhook();
+		$this->create_woopayments_extension_webhook();
 		$sync = $this->create_sync( true, true );
 		$sync->register();
 		do_action( 'woocommerce_payments_account_refreshed', array() );
@@ -480,7 +480,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Admin pages run no query while WooPay is off, like client 11.1.0, which registers nothing then.
+	 * @testdox Admin pages run no query while WooPay is off.
 	 */
 	public function test_admin_init_runs_no_query_while_woopay_is_off(): void {
 		global $wpdb;
@@ -497,8 +497,8 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	 * @testdox A gateway settings save that keeps WooPay on keeps the webhook, whatever else it changes.
 	 */
 	public function test_settings_save_that_keeps_woopay_on_keeps_the_webhook(): void {
-		$plugin_webhook = $this->create_plugin_webhook();
-		$sync           = $this->create_sync( true, true );
+		$woopayments_extension_webhook = $this->create_woopayments_extension_webhook();
+		$sync                          = $this->create_sync( true, true );
 		$sync->register();
 		update_option(
 			self::SETTINGS_OPTION,
@@ -516,14 +516,14 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertSame( array( $plugin_webhook->get_id() ), $this->find_woopay_webhook_ids() );
+		$this->assertSame( array( $woopayments_extension_webhook->get_id() ), $this->find_woopay_webhook_ids() );
 	}
 
 	/**
 	 * @testdox An account refresh that leaves WooPay unavailable removes every WooPay webhook, without a current administrator.
 	 */
 	public function test_account_refresh_removes_the_webhooks_when_woopay_is_unavailable(): void {
-		$this->create_plugin_webhook();
+		$this->create_woopayments_extension_webhook();
 		$sync = $this->create_sync( true, true );
 		$sync->register();
 		$this->run_admin_init_for( $sync );
@@ -536,17 +536,17 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Plugin-owned runtime never touches WooPay webhook rows.
+	 * @testdox While the WooPayments extension owns the runtime, WooPay webhook rows are never touched.
 	 */
-	public function test_plugin_owned_runtime_does_not_touch_webhooks(): void {
-		$plugin_webhook = $this->create_plugin_webhook();
-		$sync           = $this->create_sync( false, false );
+	public function test_extension_owned_runtime_does_not_touch_webhooks(): void {
+		$woopayments_extension_webhook = $this->create_woopayments_extension_webhook();
+		$sync                          = $this->create_sync( false, false );
 
 		$sync->maybe_create_woopay_order_webhook();
 		$sync->reconcile_webhook();
 		$sync->handle_settings_update( array( 'platform_checkout' => 'yes' ), array( 'platform_checkout' => 'no' ) );
 
-		$this->assertSame( array( $plugin_webhook->get_id() ), $this->find_woopay_webhook_ids() );
+		$this->assertSame( array( $woopayments_extension_webhook->get_id() ), $this->find_woopay_webhook_ids() );
 		$this->assertSame( array(), $this->api_client->woopay_updates );
 	}
 
@@ -575,10 +575,10 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->run_admin_init_for( $sync );
 		$this->assertSame( array(), $this->find_woopay_webhook_ids() );
 
-		$plugin_webhook = $this->create_plugin_webhook();
+		$woopayments_extension_webhook = $this->create_woopayments_extension_webhook();
 		do_action( 'woocommerce_payments_account_refreshed', array() );
 
-		$this->assertNull( wc_get_webhook( $plugin_webhook->get_id() ) );
+		$this->assertNull( wc_get_webhook( $woopayments_extension_webhook->get_id() ) );
 	}
 
 	/**
@@ -598,17 +598,17 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->run_admin_init_for( $sync );
 		$this->assertSame( array(), $this->find_woopay_webhook_ids() );
 
-		$plugin_webhook = $this->create_plugin_webhook();
+		$woopayments_extension_webhook = $this->create_woopayments_extension_webhook();
 		do_action( 'woocommerce_payments_account_refreshed', array() );
 
-		$this->assertNull( wc_get_webhook( $plugin_webhook->get_id() ) );
+		$this->assertNull( wc_get_webhook( $woopayments_extension_webhook->get_id() ) );
 	}
 
 	/**
 	 * @testdox A failed webhook save is logged, leaves no row, makes no platform call and releases the lock.
 	 */
 	public function test_failed_webhook_save_is_logged(): void {
-		$logger = new Task25RecordingLogger();
+		$logger = new RecordingWooPayLogger();
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
 		$sync = $this->create_sync( true, true );
 		$sync->register();
@@ -654,9 +654,9 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox WooPay status changes fire the preserved delivery action only for WooPay orders.
+	 * @testdox WooPay status changes fire the delivery action only for WooPay orders.
 	 */
-	public function test_status_change_fires_preserved_action_only_for_woopay_orders(): void {
+	public function test_status_change_fires_the_delivery_action_only_for_woopay_orders(): void {
 		$sync = $this->create_sync( true );
 		$sync->register();
 
@@ -693,7 +693,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$sync = $this->create_sync( true );
 		$sync->register();
 
-		$woopay_webhook            = $this->create_plugin_webhook();
+		$woopay_webhook            = $this->create_woopayments_extension_webhook();
 		$non_woopay_webhook        = $this->create_webhook_row( self::WEBHOOK_NAME, 'https://example.com/webhook', 'order.status_changed', 'active' );
 		$pre_processing_payload    = array(
 			'status' => 'processing',
@@ -718,22 +718,22 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a sync instance.
 	 *
-	 * @param bool                $native_register Whether native should register.
-	 * @param bool                $woopay_enabled  Whether WooPay is on in the gateway settings.
-	 * @param string              $account_status  Account status.
-	 * @param array<string,mixed> $account_data    Account data overrides.
+	 * @param bool                $builtin_owner  Whether the built-in WooPayments owns the runtime.
+	 * @param bool                $woopay_enabled Whether WooPay is on in the gateway settings.
+	 * @param string              $account_status Account status.
+	 * @param array<string,mixed> $account_data   Account data overrides.
 	 * @return WooPaymentsWooPayOrderStatusSync
 	 */
-	private function create_sync( bool $native_register, bool $woopay_enabled = true, string $account_status = '', array $account_data = array() ): WooPaymentsWooPayOrderStatusSync {
-		$this->account_service                         = new Task25WooPayAccountService();
+	private function create_sync( bool $builtin_owner, bool $woopay_enabled = true, string $account_status = '', array $account_data = array() ): WooPaymentsWooPayOrderStatusSync {
+		$this->account_service                         = new StubWooPayAccountService();
 		$this->account_service->woopay_enabled         = $woopay_enabled;
 		$this->account_service->account_status         = $account_status;
 		$this->account_service->account_data_overrides = $account_data;
 		$woopay_eligibility                            = new WooPaymentsWooPayEligibility();
 		$woopay_eligibility->init( $this->account_service );
-		$this->api_client = new Task25WooPayApiClient();
+		$this->api_client = new StubWooPayApiClient();
 		$sync             = new WooPaymentsWooPayOrderStatusSync();
-		$sync->init( new StaticWooPaymentsRuntimeArbiter( $native_register ), $woopay_eligibility, $this->api_client, new TransientRowLock(), $this->account_service );
+		$sync->init( new StaticWooPaymentsRuntimeArbiter( $builtin_owner ), $woopay_eligibility, $this->api_client, new TransientRowLock(), $this->account_service );
 
 		$this->syncs[] = $sync;
 
@@ -741,12 +741,12 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a WooPay webhook row the way client 11.1.0 WooPay_Order_Status_Sync::register_webhook() does.
+	 * Create a WooPay webhook row the way the WooPayments extension's WooPay_Order_Status_Sync::register_webhook() does.
 	 *
 	 * @return WC_Webhook
 	 */
-	private function create_plugin_webhook(): WC_Webhook {
-		return $this->create_webhook_row( self::WEBHOOK_NAME, self::WOOPAY_URL, 'order.status_changed', 'active', self::PLUGIN_SECRET );
+	private function create_woopayments_extension_webhook(): WC_Webhook {
+		return $this->create_webhook_row( self::WEBHOOK_NAME, self::WOOPAY_URL, 'order.status_changed', 'active', self::WOOPAYMENTS_EXTENSION_SECRET );
 	}
 
 	/**
@@ -916,7 +916,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 /**
  * Recording WooPay API client.
  */
-class Task25WooPayApiClient extends WooPaymentsApiClient {
+class StubWooPayApiClient extends WooPaymentsApiClient {
 	/**
 	 * Recorded update_woopay payloads.
 	 *
@@ -948,7 +948,7 @@ class Task25WooPayApiClient extends WooPaymentsApiClient {
 /**
  * Mutable WooPayments account service.
  */
-class Task25WooPayAccountService extends WooPaymentsAccountService {
+class StubWooPayAccountService extends WooPaymentsAccountService {
 	/**
 	 * Whether WooPay is on in the gateway settings.
 	 *
@@ -997,7 +997,7 @@ class Task25WooPayAccountService extends WooPaymentsAccountService {
 /**
  * Recording logger for webhook lifecycle failures.
  */
-class Task25RecordingLogger implements \WC_Logger_Interface {
+class RecordingWooPayLogger implements \WC_Logger_Interface {
 	/** @var array<int,array{message:mixed,context:array<string,mixed>}> */
 	public array $error_calls = array();
 

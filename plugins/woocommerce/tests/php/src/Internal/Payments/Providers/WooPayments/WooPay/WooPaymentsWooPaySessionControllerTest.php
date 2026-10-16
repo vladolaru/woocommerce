@@ -115,9 +115,9 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register WooPay route and AJAX hooks when native owns runtime and WooPay is enabled.
+	 * @testdox Should register WooPay route and AJAX hooks when the built-in WooPayments owns the runtime and WooPay is enabled.
 	 */
-	public function test_registers_woopay_route_and_ajax_hooks_when_native_owns_runtime_and_woopay_is_enabled(): void {
+	public function test_registers_woopay_route_and_ajax_hooks_when_builtin_owns_runtime_and_woopay_is_enabled(): void {
 		$service   = new RecordingWooPaySessionService();
 		$this->sut = $this->create_controller( true, $service );
 
@@ -140,9 +140,9 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register WooPay frontend hooks when native owns runtime and WooPay is enabled.
+	 * @testdox Should register WooPay frontend hooks when the built-in WooPayments owns the runtime and WooPay is enabled.
 	 */
-	public function test_registers_woopay_frontend_hooks_when_native_owns_runtime_and_woopay_is_enabled(): void {
+	public function test_registers_woopay_frontend_hooks_when_builtin_owns_runtime_and_woopay_is_enabled(): void {
 		$this->sut = $this->create_controller( true );
 
 		$this->sut->register();
@@ -392,12 +392,12 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should enqueue direct checkout assets for a legacy mini-cart on an ordinary page at footer time.
+	 * @testdox Should enqueue direct checkout assets for a classic mini-cart on an ordinary page at footer time.
 	 *
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_enqueue_frontend_assets_for_direct_checkout_legacy_mini_cart(): void {
+	public function test_enqueue_frontend_assets_for_direct_checkout_classic_mini_cart(): void {
 		$service                                      = new RecordingWooPaySessionService();
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
@@ -567,7 +567,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should run direct checkout on a classic checkout page where a Mini-Cart block renders, as client 11.1.0.
+	 * @testdox Should run direct checkout on a classic checkout page where a Mini-Cart block renders.
 	 *
 	 * Client 11.1.0 should_enqueue_scripts() loads direct checkout wherever woocommerce_blocks_cart_enqueue_data fired, the
 	 * checkout page included (class-wc-payments-woopay-direct-checkout.php:130-134).
@@ -618,7 +618,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not enqueue direct checkout assets for the classic cart widget on checkout pages, as client 11.1.0.
+	 * @testdox Should not enqueue direct checkout assets for the classic cart widget on checkout pages.
 	 *
 	 * Runs in its own process: WOOCOMMERCE_CART, once an earlier test defines it (WC_Form_Handler::update_cart_action() does),
 	 * makes is_cart() true for the rest of the run, and this page must not be a cart page.
@@ -1182,7 +1182,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Offers no WooPay on the Subscriptions change-payment page, as client 11.1.0 (class-wc-payments-woopay-button-handler.php:124-126).
+	 * @testdox Offers no WooPay on the Subscriptions change-payment page (the WooPayments extension class-wc-payments-woopay-button-handler.php:124-126).
 	 *
 	 * @testWith ["[woocommerce_checkout]"]
 	 *           ["<!-- wp:woocommerce/checkout --><div class=\"wp-block-woocommerce-checkout\"></div><!-- /wp:woocommerce/checkout -->"]
@@ -1577,7 +1577,7 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return the preserved WooPay signature AJAX success envelope.
+	 * @testdox Should return the WooPayments extension's WooPay signature AJAX success envelope.
 	 */
 	public function test_signature_ajax_handler_returns_success_envelope(): void {
 		$service   = new RecordingWooPaySessionService();

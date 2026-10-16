@@ -76,7 +76,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox WooPay compatibility validation is scheduled as a preserved recurring Action Scheduler hook.
+	 * @testdox WooPay compatibility validation is scheduled as the WooPayments extension's recurring Action Scheduler hook.
 	 */
 	public function test_schedule_creates_recurring_compatibility_action(): void {
 		$sync = $this->create_sync();
@@ -153,7 +153,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Legacy incompatible-extension cron hook is cleared on WooPayments updates.
+	 * @testdox The retired incompatible-extension cron hook is cleared on WooPayments updates.
 	 */
 	public function test_remove_retired_validation_schedule_clears_wp_cron_hook(): void {
 		$sync = $this->create_sync();

@@ -477,7 +477,7 @@ class WooPaymentsWooPayStoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should ignore Store API routes outside the plugin's WooPay allowlist.
+	 * @testdox Should ignore Store API routes outside the WooPayments extension's WooPay allowlist.
 	 */
 	public function test_determine_current_user_ignores_store_api_routes_outside_the_allowlist(): void {
 		$_SERVER['HTTP_USER_AGENT'] = 'WooPay';

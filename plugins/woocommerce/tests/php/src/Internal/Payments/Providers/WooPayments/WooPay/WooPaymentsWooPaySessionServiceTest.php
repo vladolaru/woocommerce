@@ -141,7 +141,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The checkout config's WooPay email lookup for a $shopper is $expected, as client 11.1.0's guest rule decides.
+	 * @testdox The checkout config's WooPay email lookup for a $shopper is $expected, as the guest rule decides.
 	 *
 	 * Client 11.1.0 ANDs should_enable_woopay_on_guest_checkout() into the checkout config's isWooPayEnabled
 	 * (class-wc-payments-checkout.php:198, class-woopay-utilities.php:46-62); its only readers are the email input on Blocks and
@@ -845,9 +845,9 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve legacy flat WooPay phone values while accepting the frontend payload shape.
+	 * @testdox Should keep flat WooPay phone values while accepting the frontend payload shape.
 	 */
-	public function test_persists_legacy_flat_woopay_phone_session_data(): void {
+	public function test_persists_flat_woopay_phone_session_data(): void {
 		$this->original_session = WC()->session;
 		WC()->session           = $this->create_session();
 		$sut                    = $this->create_service();
@@ -914,7 +914,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should build the preserved WooPay checkout frontend config.
+	 * @testdox Should build the WooPay checkout frontend config.
 	 */
 	public function test_builds_woopay_checkout_frontend_config(): void {
 		\Jetpack_Options::update_option( 'id', 12345 );
@@ -1601,7 +1601,7 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should let the wcpay_is_woopay_email_input_enabled filter switch the email-input flow off.
 	 */
-	public function test_email_input_flag_honors_plugin_filter(): void {
+	public function test_email_input_flag_honors_the_woopayments_extension_filter(): void {
 		add_filter( 'wcpay_is_woopay_email_input_enabled', '__return_false' );
 
 		$sut = $this->create_service();

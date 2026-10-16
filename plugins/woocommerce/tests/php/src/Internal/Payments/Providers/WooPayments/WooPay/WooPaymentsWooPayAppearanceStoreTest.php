@@ -34,9 +34,9 @@ class WooPaymentsWooPayAppearanceStoreTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should store WooPay checkout appearance in the preserved option shape.
+	 * @testdox Should store WooPay checkout appearance in the WooPayments extension's option shape.
 	 */
-	public function test_stores_appearance_in_preserved_option_shape(): void {
+	public function test_stores_appearance_in_the_woopayments_extension_option_shape(): void {
 		$sut        = $this->create_appearance_store();
 		$appearance = $this->get_valid_appearance();
 		$font_rules = array(
