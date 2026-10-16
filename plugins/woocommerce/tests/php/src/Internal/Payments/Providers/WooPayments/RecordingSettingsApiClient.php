@@ -54,6 +54,13 @@ class RecordingSettingsApiClient extends WooPaymentsApiClient {
 	public ?WooPaymentsApiException $update_account_exception = null;
 
 	/**
+	 * Exception a capability request throws, when set.
+	 *
+	 * @var WooPaymentsApiException|null
+	 */
+	public ?WooPaymentsApiException $request_capability_exception = null;
+
+	/**
 	 * Fraud ruleset save count.
 	 *
 	 * @var int
@@ -97,12 +104,17 @@ class RecordingSettingsApiClient extends WooPaymentsApiClient {
 	 * @param string $capability_id Capability ID.
 	 * @param bool   $requested Whether the capability is requested.
 	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When the test fixture is configured to fail.
 	 */
 	public function request_capability( string $capability_id, bool $requested ): array {
 		$this->capability_requests[] = array(
 			'capability_id' => $capability_id,
 			'requested'     => $requested,
 		);
+
+		if ( $this->request_capability_exception instanceof WooPaymentsApiException ) {
+			throw $this->request_capability_exception;
+		}
 
 		return array( 'status' => 'active' );
 	}

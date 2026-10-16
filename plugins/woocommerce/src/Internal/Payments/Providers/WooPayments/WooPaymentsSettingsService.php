@@ -429,8 +429,8 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
-	 * Save a settings page update: fraud and account settings on the platform first, then the gateway settings in one
-	 * write; answers the stored settings.
+	 * Save a settings page update: capability requests for newly enabled methods, then the fraud and account settings on
+	 * the platform, then the gateway settings in one write; answers the stored settings.
 	 *
 	 * @param array<string,mixed> $params Request parameters.
 	 * @return array<string,mixed>|WP_Error
@@ -445,6 +445,13 @@ class WooPaymentsSettingsService {
 		$enabled_methods_update  = $this->prepare_enabled_payment_method_ids_update( $params, $settings );
 		if ( is_wp_error( $enabled_methods_update ) ) {
 			return $enabled_methods_update;
+		}
+
+		if ( null !== $enabled_methods_update ) {
+			$capability_error = $this->request_unrequested_payment_methods( $enabled_methods_update['requested'] );
+			if ( is_wp_error( $capability_error ) ) {
+				return $capability_error;
+			}
 		}
 
 		$error = $this->update_provider_backed_settings( $params, $settings );
@@ -477,11 +484,6 @@ class WooPaymentsSettingsService {
 		}
 
 		if ( null !== $enabled_methods_update ) {
-			$capability_error = $this->request_unrequested_payment_methods( $enabled_methods_update['requested'] );
-			if ( is_wp_error( $capability_error ) ) {
-				return $capability_error;
-			}
-
 			// The stored list as it is, whatever is available now, so a removed method is seen even when the availability
 			// filter hides it (client 11.1.0 class-wc-rest-payments-settings-controller.php:738-740).
 			$previous_enabled_payment_method_ids = $this->normalize_payment_method_ids(

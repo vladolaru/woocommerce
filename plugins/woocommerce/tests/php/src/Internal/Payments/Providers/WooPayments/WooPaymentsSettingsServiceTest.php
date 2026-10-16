@@ -3006,6 +3006,59 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 requests the capabilities of newly enabled methods before the fraud save and the account update, so a
+	 * failed request ends the save before either (includes/admin/class-wc-rest-payments-settings-controller.php:615, :736,
+	 * :805-827, then :633 and :636).
+	 *
+	 * @testdox Should make no fraud save and no account update when a capability request fails.
+	 */
+	public function test_update_settings_requests_capabilities_before_the_fraud_and_account_calls(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+				'account_business_name'          => 'Old Name',
+			)
+		);
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id'   => 'acct_capability_test',
+					'is_live'      => true,
+					'capabilities' => array(
+						'card_payments' => 'active',
+						'link_payments' => 'unrequested',
+					),
+					'fees'         => array(
+						'card' => array(),
+						'link' => array(),
+					),
+				),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+		update_option( 'current_protection_level', 'standard' );
+		$this->api_client->request_capability_exception = new WooPaymentsApiException( 'Platform unavailable.', 'wcpay_server_error', 500 );
+
+		$result = $this->sut->update_settings(
+			array(
+				'enabled_payment_method_ids'         => array( 'card', 'link' ),
+				'account_business_name'              => 'New Name',
+				'current_protection_level'           => 'high',
+				'advanced_fraud_protection_settings' => array(),
+			)
+		);
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertCount( 1, $this->api_client->capability_requests );
+		$this->assertSame( 0, $this->api_client->fraud_ruleset_saves, 'A failed capability request saves no fraud ruleset.' );
+		$this->assertSame( 'standard', get_option( 'current_protection_level' ) );
+		$this->assertNull( $this->api_client->last_account_settings, 'A failed capability request makes no account update.' );
+	}
+
+	/**
 	 * @testdox Should request missing payment method capabilities when enabling methods.
 	 */
 	public function test_update_settings_requests_missing_payment_method_capabilities(): void {
