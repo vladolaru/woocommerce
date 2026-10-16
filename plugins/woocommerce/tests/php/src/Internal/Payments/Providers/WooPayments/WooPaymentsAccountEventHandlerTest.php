@@ -52,11 +52,12 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox account.updated refreshes account data and clears the payment method caches.
+	 * @testdox account.updated refreshes account data and clears the payment method caches, even when the refresh returns nothing.
 	 *
 	 * Mirrors client 11.1.0's non-strict `account.updated` handling
 	 * (`includes/class-wc-payments-webhook-processing-service.php:205-208`), which never
 	 * fails the webhook on a refresh failure. See C25 (verification-ledger.md V435).
+	 * The caches are cleared whatever the refresh returns, so the refresh here returns nothing.
 	 */
 	public function test_account_updated_refreshes_account_data_and_clears_payment_method_caches(): void {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
@@ -65,7 +66,7 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 			->getMock();
 		$account_service->expects( $this->once() )
 			->method( 'refresh_account_data' )
-			->willReturn( array( 'account_id' => 'acct_123' ) );
+			->willReturn( array() );
 
 		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
 			->disableOriginalConstructor()
@@ -76,6 +77,8 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_ingestor_with_account_services( $account_service, $token_service );
 
+		// No exception: the webhook controller only turns a thrown exception into a 500,
+		// so completing process() without one is what acknowledges the webhook.
 		$sut->process( $this->create_account_event( 'account.updated' ) );
 	}
 

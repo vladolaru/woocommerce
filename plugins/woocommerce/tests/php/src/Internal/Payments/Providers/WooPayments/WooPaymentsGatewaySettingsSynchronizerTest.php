@@ -133,7 +133,9 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 
 		$this->assertCount( 1, $logger->lines, 'The drift is logged once.' );
 		$this->assertSame( array( 'warning', 'woopayments' ), array( $logger->lines[0][0], $logger->lines[0][2] ) );
+		$this->assertSame( 'split_gateway_settings_drift', $logger->contexts[0]['event'] ?? null );
 		$this->assertSame( array( $option_name ), $logger->contexts[0]['drifted_option_names'] ?? null );
+		$this->assertSame( array(), $logger->contexts[0]['failed_option_names'] ?? null );
 		$this->assertTrue( $second['persisted'] );
 		$this->assertSame( array( $option_name ), $second['updated_split_options'] );
 		$this->assertSame(

@@ -377,6 +377,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'acct_native', $cached['data']['account_id'] );
 		$this->assertSame( 'pk_live_native', $cached['data']['live_publishable_key'] );
 		$this->assertTrue( $cached['data']['is_live'] );
+		$this->assertFalse( $cached['data']['payments_enabled'] );
 		$this->assertFalse( $cached['data']['details_submitted'] );
 	}
 

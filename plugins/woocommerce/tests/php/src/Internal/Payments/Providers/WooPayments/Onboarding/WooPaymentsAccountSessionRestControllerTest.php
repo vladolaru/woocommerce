@@ -199,6 +199,9 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'ONBOARDING_DISABLED', $response->get_data()['status'] );
+		// A live store reports both test mode flags off (client includes/admin/class-wc-rest-payments-accounts-controller.php:84-85).
+		$this->assertFalse( $response->get_data()['test_mode'] );
+		$this->assertFalse( $response->get_data()['test_mode_onboarding'] );
 	}
 
 	/**

@@ -265,6 +265,11 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_get_deposits_summary_forwards_filter_parameters(): void {
 		$this->sut->register_routes();
+		$this->api_client->deposits_summary_response = array(
+			'count'    => 1,
+			'total'    => 2500,
+			'currency' => 'usd',
+		);
 
 		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/deposits/summary' );
 		$request->set_query_params(
@@ -291,6 +296,7 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 			),
 			$this->api_client->last_deposits_summary_query
 		);
+		$this->assertSame( $this->api_client->deposits_summary_response, $response->get_data() );
 	}
 
 	/**

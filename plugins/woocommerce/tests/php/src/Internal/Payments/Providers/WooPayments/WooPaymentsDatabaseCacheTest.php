@@ -100,6 +100,7 @@ class WooPaymentsDatabaseCacheTest extends WC_Unit_Test_Case {
 			'tracking, no error count, 1 minute'   => array( $track, 'front', 'no error count, 1 minute', true, null, 60, false ),
 			'tracking, no error count, 3 min'      => array( $track, 'front', 'no error count, 3 minutes', true, null, 180, true ),
 			'other keys, errored before a day'     => array( $counts, 'dashboard', 'errored, no backoff', true, 1, DAY_IN_SECONDS - 60, false ),
+			'other keys, errored after a day'      => array( $counts, 'dashboard', 'errored, after a day', true, 1, DAY_IN_SECONDS + 60, true ),
 			'other keys, after a day'              => array( $counts, 'dashboard', 'after a day', false, 0, DAY_IN_SECONDS + 60, true ),
 		);
 	}
