@@ -21,23 +21,23 @@ class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should resolve the previous onboarding step like client 11.1.0 get_from().
-	 * @dataProvider provider_client_get_from_cases
+	 * @testdox Should resolve the previous onboarding step.
+	 * @dataProvider provider_get_from_cases
 	 *
 	 * @param string              $expected   Expected from value.
 	 * @param string              $referer    Referer URL.
 	 * @param array<string,mixed> $get_params GET params.
 	 */
-	public function test_get_from_matches_client( string $expected, string $referer, array $get_params ): void {
+	public function test_get_from_resolves_the_previous_step( string $expected, string $referer, array $get_params ): void {
 		$this->assertSame( $expected, WooPaymentsOnboardingSource::get_from( $referer, $get_params ) );
 	}
 
 	/**
-	 * Client 11.1.0 `WC_Payments_Onboarding_Service_Test::data_get_from()` cases (tests/unit/test-class-wc-payments-onboarding-service.php:529-682), unchanged.
+	 * The WooPayments extension's `WC_Payments_Onboarding_Service_Test::data_get_from()` cases (tests/unit/test-class-wc-payments-onboarding-service.php:529-682), unchanged.
 	 *
 	 * @return array<string,array{0:string,1:string,2:array<string,string>}>
 	 */
-	public function provider_client_get_from_cases(): array {
+	public function provider_get_from_cases(): array {
 		return array(
 			'Unknown from'                                 => array(
 				'',
@@ -193,37 +193,37 @@ class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map the native Overview and Payouts referers to the client's from values.
+	 * @testdox Should map the Overview and Payouts referers to the WooPayments extension's from values.
 	 */
-	public function test_get_from_maps_native_referers(): void {
+	public function test_get_from_maps_builtin_page_referers(): void {
 		$this->assertSame( WooPaymentsOnboardingSource::FROM_OVERVIEW_PAGE, WooPaymentsOnboardingSource::get_from( '/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Foverview', array() ) );
 		$this->assertSame( WooPaymentsOnboardingSource::FROM_PAYOUTS, WooPaymentsOnboardingSource::get_from( '/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/payouts', array() ) );
 		$this->assertSame( WooPaymentsOnboardingSource::FROM_WCADMIN_PAYMENTS_SETTINGS, WooPaymentsOnboardingSource::get_from( '/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/settings', array() ) );
 	}
 
 	/**
-	 * @testdox Should resolve the onboarding source like client 11.1.0 get_source().
-	 * @dataProvider provider_client_get_source_cases
+	 * @testdox Should resolve the onboarding source.
+	 * @dataProvider provider_get_source_cases
 	 *
 	 * @param string              $expected   Expected source.
 	 * @param string              $referer    Referer URL.
 	 * @param array<string,mixed> $get_params GET params.
 	 */
-	public function test_get_source_matches_client( string $expected, string $referer, array $get_params ): void {
+	public function test_get_source_resolves_the_onboarding_source( string $expected, string $referer, array $get_params ): void {
 		$this->assertSame( $expected, WooPaymentsOnboardingSource::get_source( $referer, $get_params ) );
 	}
 
 	/**
-	 * Client 11.1.0 `WC_Payments_Onboarding_Service_Test::data_get_source()` cases (tests/unit/test-class-wc-payments-onboarding-service.php:696-826).
+	 * The WooPayments extension's `WC_Payments_Onboarding_Service_Test::data_get_source()` cases (tests/unit/test-class-wc-payments-onboarding-service.php:696-826).
 	 *
-	 * Expected values are the client's. Only the Overview and Payouts referers are adapted to native URLs; the rows
-	 * prefixed "Legacy" keep the client URLs, whose branches are ported unchanged.
+	 * Expected values are the WooPayments extension's. Only the Overview and Payouts referers are adapted to built-in URLs; the rows
+	 * prefixed "WooPayments extension" keep its URLs, whose branches are kept unchanged.
 	 *
 	 * @return array<string,array{0:string,1:string,2:array<string,string>}>
 	 */
-	public function provider_client_get_source_cases(): array {
+	public function provider_get_source_cases(): array {
 		return array(
-			'Valid source GET param trumps everything'     => array(
+			'Valid source GET param trumps everything'    => array(
 				'wcpay-connect-page',
 				'/wp-admin/admin.php?page=wc-settings&tab=checkout',
 				array(
@@ -233,7 +233,7 @@ class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
 					'from'                               => 'WCADMIN_PAYMENT_INCENTIVE',
 				),
 			),
-			'Invalid source GET param is ignored'          => array(
+			'Invalid source GET param is ignored'         => array(
 				'wcadmin-payment-task',
 				'',
 				array(
@@ -241,7 +241,7 @@ class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
 					'wcpay-connect' => 'WCADMIN_PAYMENT_TASK',
 				),
 			),
-			'unknown source GET param is ignored'          => array(
+			'unknown source GET param is ignored'         => array(
 				'wcadmin-payment-task',
 				'',
 				array(
@@ -249,12 +249,12 @@ class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
 					'wcpay-connect' => 'WCADMIN_PAYMENT_TASK',
 				),
 			),
-			'Unknown source'                               => array(
+			'Unknown source'                              => array(
 				'unknown',
 				'',
 				array(),
 			),
-			'Via the wcpay-connect value'                  => array(
+			'Via the wcpay-connect value'                 => array(
 				'wcadmin-payment-task',
 				'any',
 				array( 'wcpay-connect' => 'WCADMIN_PAYMENT_TASK' ),
@@ -269,47 +269,47 @@ class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
 				'/wp-admin/admin.php?page=wc-admin&task=payments&source=bogus',
 				array( 'wcpay-connect' => '1' ),
 			),
-			'Via the referer URL - payments task'          => array(
+			'Via the referer URL - payments task'         => array(
 				'wcadmin-payment-task',
 				'/wp-admin/admin.php?page=wc-admin&task=payments',
 				array( 'wcpay-connect' => '1' ),
 			),
-			'Via the referer URL - settings page'          => array(
+			'Via the referer URL - settings page'         => array(
 				'wcadmin-settings-page',
 				'/wp-admin/admin.php?page=wc-settings&tab=checkout',
 				array( 'wcpay-connect' => '1' ),
 			),
-			'Via the referer URL - incentive page'         => array(
+			'Via the referer URL - incentive page'        => array(
 				'wcadmin-incentive-page',
 				'/wp-admin/admin.php?page=wc-admin&path=%2Fwc-pay-welcome-page',
 				array( 'wcpay-connect' => '1' ),
 			),
-			'Legacy - Via the referer URL - Connect page'  => array(
+			'WooPayments extension - Via the referer URL - Connect page' => array(
 				'wcpay-connect-page',
 				'/wp-admin/admin.php?page=wc-admin&path=%2Fpayments%2Fconnect',
 				array( 'wcpay-connect' => '1' ),
 			),
-			'Via the referer URL - Overview page'          => array(
+			'Via the referer URL - Overview page'         => array(
 				'wcpay-overview-page',
 				'/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Foverview',
 				array( 'wcpay-connect' => '1' ),
 			),
-			'Legacy - Via the referer URL - Overview page' => array(
+			'WooPayments extension - Via the referer URL - Overview page' => array(
 				'wcpay-overview-page',
 				'/wp-admin/admin.php?page=wc-admin&path=%2Fpayments%2Foverview',
 				array( 'wcpay-connect' => '1' ),
 			),
-			'Via the referer URL - Deposits/Payouts page'  => array(
+			'Via the referer URL - Deposits/Payouts page' => array(
 				'wcpay-payouts-page',
 				'/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fpayouts',
 				array( 'wcpay-connect' => '1' ),
 			),
-			'Legacy - Via the referer URL - Deposits/Payouts page' => array(
+			'WooPayments extension - Via the referer URL - Deposits/Payouts page' => array(
 				'wcpay-payouts-page',
 				'/wp-admin/admin.php?page=wc-admin&path=%2Fpayments%2Fdeposits',
 				array( 'wcpay-connect' => '1' ),
 			),
-			'Via test to live param'                       => array(
+			'Via test to live param'                      => array(
 				'wcpay-setup-live-payments',
 				'any',
 				array(
@@ -317,7 +317,7 @@ class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
 					'wcpay-disable-onboarding-test-mode' => 'true',
 				),
 			),
-			'test to live param takes precedence'          => array(
+			'test to live param takes precedence'         => array(
 				'wcpay-setup-live-payments',
 				'/wp-admin/admin.php?page=wc-admin&path=%2Fpayments%2Fconnect',
 				array(
@@ -326,7 +326,7 @@ class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
 					'from'                               => 'WCADMIN_PAYMENT_INCENTIVE',
 				),
 			),
-			'Via reset account param'                      => array(
+			'Via reset account param'                     => array(
 				'wcpay-reset-account',
 				'any',
 				array(
@@ -334,7 +334,7 @@ class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
 					'wcpay-reset-account' => 'true',
 				),
 			),
-			'reset account param takes precedence'         => array(
+			'reset account param takes precedence'        => array(
 				'wcpay-reset-account',
 				'/wp-admin/admin.php?page=wc-admin&path=%2Fpayments%2Fconnect',
 				array(
@@ -351,7 +351,7 @@ class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
 					'from'          => 'WCADMIN_PAYMENT_INCENTIVE',
 				),
 			),
-			'from value takes precedence over referer'     => array(
+			'from value takes precedence over referer'    => array(
 				'wcadmin-incentive-page',
 				'/wp-admin/admin.php?page=wc-settings&tab=checkout',
 				array(
@@ -363,22 +363,22 @@ class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should resolve native WooPayments page referers the way the client resolves its matching pages.
-	 * @dataProvider provider_native_referer_mappings
+	 * @testdox Should resolve built-in WooPayments page referers as their matching WooPayments extension pages resolve.
+	 * @dataProvider provider_builtin_page_referer_mappings
 	 *
 	 * @param string $expected Expected source, from the client's result for the matching client page.
 	 * @param string $referer  Native referer URL.
 	 */
-	public function test_get_source_maps_native_referers( string $expected, string $referer ): void {
+	public function test_get_source_maps_builtin_page_referers( string $expected, string $referer ): void {
 		$this->assertSame( $expected, WooPaymentsOnboardingSource::get_source( $referer, array() ) );
 	}
 
 	/**
-	 * Native referers and the client page each one stands for.
+	 * Built-in page referers and the WooPayments extension page each one stands for.
 	 *
 	 * @return array<string,array{0:string,1:string}>
 	 */
-	public function provider_native_referer_mappings(): array {
+	public function provider_builtin_page_referer_mappings(): array {
 		$base = '/wp-admin/admin.php?page=wc-settings&tab=checkout&path=';
 
 		return array(

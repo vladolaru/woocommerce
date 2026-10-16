@@ -64,9 +64,9 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox Account session route is registered under wc/v3 when native owns runtime.
+	 * @testdox Account session route is registered under wc/v3 when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_route_when_native_owns_runtime(): void {
+	public function test_registers_route_when_builtin_owns_runtime(): void {
 		// WooCommerce's REST server registers the routes of the instance the container holds.
 		wc_get_container()->replace( WooPaymentsAccountSessionRestController::class, $this->sut );
 		$this->sut->register();
@@ -108,7 +108,7 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox Accounts route returns cached account data with plugin-compatible flags.
+	 * @testdox Accounts route returns cached account data with the WooPayments extension's flags.
 	 */
 	public function test_accounts_route_returns_cached_account_payload(): void {
 		$this->account_service->account_data = array(
@@ -146,7 +146,7 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox Accounts route returns the plugin fallback shape when no account data exists.
+	 * @testdox Accounts route returns the WooPayments extension's fallback shape when no account data exists.
 	 */
 	public function test_accounts_route_returns_no_account_fallback_payload(): void {
 		update_option( 'woocommerce_currency', 'USD' );
@@ -181,7 +181,7 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox Accounts route preserves the plugin onboarding-disabled status when no account data exists.
+	 * @testdox Accounts route preserves the WooPayments extension's onboarding-disabled status when no account data exists.
 	 */
 	public function test_accounts_route_returns_onboarding_disabled_fallback_status(): void {
 		$this->account_service->account_data        = array();

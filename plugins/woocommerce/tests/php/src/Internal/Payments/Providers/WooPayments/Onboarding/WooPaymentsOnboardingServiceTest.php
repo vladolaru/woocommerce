@@ -255,10 +255,10 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$this->init_sut(
 			$this->mock_providers,
 			$this->mockable_proxy,
-			$this->create_onboarding_adapter(),
+			$this->create_settings_adapter(),
 			$this->create_extension_runtime(),
 			$this->create_unavailable_api_client(),
-			$this->create_native_account_service()
+			$this->create_account_service()
 		);
 	}
 
@@ -288,14 +288,14 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * container consumers untouched. The adapter it gets answers the account questions through the test's adapter and
 	 * runs the built-in onboarding through an onboarding service built on the same doubles.
 	 *
-	 * @param PaymentsProviders                  $providers          The providers service.
-	 * @param LegacyProxy                        $proxy              The legacy proxy.
-	 * @param WooPaymentsPaymentsSettingsAdapter $onboarding_adapter The onboarding adapter.
-	 * @param WooPaymentsExtensionRuntime        $extension_runtime     The extension runtime.
-	 * @param WooPaymentsApiClient               $api_client         The API client.
-	 * @param WooPaymentsAccountService          $account_service    The account service.
+	 * @param PaymentsProviders                  $providers         The providers service.
+	 * @param LegacyProxy                        $proxy             The legacy proxy.
+	 * @param WooPaymentsPaymentsSettingsAdapter $settings_adapter  The Payments settings adapter.
+	 * @param WooPaymentsExtensionRuntime        $extension_runtime The extension runtime.
+	 * @param WooPaymentsApiClient               $api_client        The API client.
+	 * @param WooPaymentsAccountService          $account_service   The account service.
 	 */
-	private function init_sut( PaymentsProviders $providers, LegacyProxy $proxy, WooPaymentsPaymentsSettingsAdapter $onboarding_adapter, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
+	private function init_sut( PaymentsProviders $providers, LegacyProxy $proxy, WooPaymentsPaymentsSettingsAdapter $settings_adapter, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
 		$this->sut->init( $providers, $proxy );
 
 		$onboarding_service = new WooPaymentsOnboardingService();
@@ -311,7 +311,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$collaborators = array(
-			'settings_adapter'  => new DelegatingPaymentsSettingsAdapter( $onboarding_adapter, $api_client, $extension_runtime, $account_service, $onboarding_service ),
+			'settings_adapter'  => new DelegatingPaymentsSettingsAdapter( $settings_adapter, $api_client, $extension_runtime, $account_service, $onboarding_service ),
 			'extension_runtime' => $extension_runtime,
 		);
 		foreach ( $collaborators as $property => $collaborator ) {
@@ -326,7 +326,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @return void
 	 */
-	public function test_get_onboarding_kyc_session_uses_native_api_when_legacy_onboarding_route_is_unavailable(): void {
+	public function test_get_onboarding_kyc_session_uses_the_api_client_when_the_woopayments_extension_onboarding_route_is_unavailable(): void {
 		$location      = 'US';
 		$captured_call = array();
 		$api_client    = new class( $captured_call ) extends WooPaymentsApiClient {
@@ -467,7 +467,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			$adapter,
 			$this->create_extension_runtime(),
 			$api_client,
-			$this->create_native_account_service()
+			$this->create_account_service()
 		);
 		update_option(
 			'wcpay_account_data',
@@ -536,14 +536,14 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * the picked methods, turns WooPay on from the `woopay` pick (:1545-1548, update_is_woopay_enabled() records `woopay_enabled`)
 	 * and enables the Apple Pay and Google Pay gateways from the `apple_google` pick (:1553-1562).
 	 *
-	 * @testdox The NOX route applies the WooPay and Apple Pay / Google Pay picks turned on, like client 11.1.0.
+	 * @testdox The NOX route applies the WooPay and Apple Pay / Google Pay picks turned on.
 	 * @dataProvider provide_nox_pick_routes_with_platform_call_state
 	 *
 	 * @param string   $route_suffix             Route below the onboarding step base.
 	 * @param string[] $enabled_at_platform_call Enabled payment methods stored when the platform is called.
 	 */
 	public function test_nox_route_applies_woopay_and_wallet_picks_turned_on( string $route_suffix, array $enabled_at_platform_call ): void {
-		$fixture = $this->arrange_native_nox_picks(
+		$fixture = $this->arrange_nox_picks(
 			array(
 				'card'         => true,
 				'ideal'        => true,
@@ -575,13 +575,13 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * stamps `platform_checkout_last_disable_date` and records `woopay_disabled`, class-wc-payment-gateway-wcpay.php:3147-3165)
 	 * and disables the Apple Pay and Google Pay gateways when `apple_google` is off (:1563-1570).
 	 *
-	 * @testdox The NOX route applies the WooPay and Apple Pay / Google Pay picks turned off, like client 11.1.0.
+	 * @testdox The NOX route applies the WooPay and Apple Pay / Google Pay picks turned off.
 	 * @dataProvider provide_nox_pick_routes
 	 *
 	 * @param string $route_suffix Route below the onboarding step base.
 	 */
 	public function test_nox_route_applies_woopay_and_wallet_picks_turned_off( string $route_suffix ): void {
-		$fixture = $this->arrange_native_nox_picks(
+		$fixture = $this->arrange_nox_picks(
 			array(
 				'card'         => true,
 				'woopay'       => false,
@@ -610,10 +610,10 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * (includes/class-wc-payments-onboarding-service.php:1532-1538). For `card` that gateway is the main WooPayments gateway
 	 * (class-wc-payments.php:631), so creating the embedded KYC session turns the card gateway on before any KYC.
 	 *
-	 * @testdox Creating the embedded KYC session enables the card gateway when card is enabled, like client 11.1.0.
+	 * @testdox Creating the embedded KYC session enables the card gateway when card is enabled.
 	 */
-	public function test_kyc_session_creation_enables_card_gateway_like_client(): void {
-		$fixture = $this->arrange_native_nox_picks(
+	public function test_kyc_session_creation_enables_card_gateway(): void {
+		$fixture = $this->arrange_nox_picks(
 			array(
 				'card'  => true,
 				'ideal' => true,
@@ -645,7 +645,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$state = wc_get_container()->get( WooPaymentsSetupTier::class );
 		$state->invalidate();
 		$this->assertTrue( $state->write_tier( WooPaymentsSetupTier::AVAILABLE ), 'The store starts native-owned without an account.' );
-		$fixture = $this->arrange_native_nox_picks(
+		$fixture = $this->arrange_nox_picks(
 			array( 'card' => true ),
 			array( 'upe_enabled_payment_method_ids' => array( 'card' ) ),
 			'no'
@@ -663,10 +663,10 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 update_enabled_payment_methods_ids() only enables gateways of methods in the merged list (:1532-1538),
 	 * so the card gateway stays as it was when card is neither stored nor picked.
 	 *
-	 * @testdox Creating the embedded KYC session leaves the card gateway alone when card is not enabled, like client 11.1.0.
+	 * @testdox Creating the embedded KYC session leaves the card gateway alone when card is not enabled.
 	 */
 	public function test_kyc_session_creation_leaves_card_gateway_without_card(): void {
-		$fixture = $this->arrange_native_nox_picks(
+		$fixture = $this->arrange_nox_picks(
 			array(
 				'ideal' => true,
 			),
@@ -688,10 +688,10 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Client 11.1.0 update_enabled_payment_methods_ids() keeps WooPay off when Link is enabled, even when WooPay is picked (:1540-1548).
 	 *
-	 * @testdox A NOX WooPay pick leaves WooPay off when Link is picked too, like client 11.1.0.
+	 * @testdox A NOX WooPay pick leaves WooPay off when Link is picked too.
 	 */
 	public function test_nox_woopay_pick_leaves_woopay_off_when_link_is_picked(): void {
-		$fixture = $this->arrange_native_nox_picks(
+		$fixture = $this->arrange_nox_picks(
 			array(
 				'card'   => true,
 				'link'   => true,
@@ -732,15 +732,15 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * page that carries `wcpay-connection-success`, turns WooPay on through update_is_woopay_enabled() and forgets the
 	 * answer (:2231-2247).
 	 *
-	 * @testdox The platform's WooPay default turns WooPay on when the merchant lands after KYC, like client 11.1.0.
+	 * @testdox The platform's WooPay default turns WooPay on when the merchant lands after KYC.
 	 * @dataProvider provide_platform_woopay_defaults
 	 *
 	 * @param array<string,mixed> $session_extras Platform session fields.
 	 * @param string              $landed_woopay  Stored WooPay setting after the landing page.
 	 */
-	public function test_platform_woopay_default_turns_woopay_on_after_kyc_like_client( array $session_extras, string $landed_woopay ): void {
-		$this->arrange_native_finalize_projection(
-			array( $this->get_native_finalize_projection_account() ),
+	public function test_platform_woopay_default_turns_woopay_on_after_kyc( array $session_extras, string $landed_woopay ): void {
+		$this->arrange_kyc_finalize(
+			array( $this->get_finalized_account_data() ),
 			array( 'card' => true ),
 			null,
 			$session_extras
@@ -769,10 +769,10 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 maybe_activate_woopay() keeps WooPay off when Link is enabled and still forgets the answer
 	 * (includes/class-wc-payments-account.php:2238-2245; client test test_maybe_activate_woopay_does_not_enable_when_link_is_enabled).
 	 *
-	 * @testdox The platform's WooPay default leaves WooPay off when Link is enabled, like client 11.1.0.
+	 * @testdox The platform's WooPay default leaves WooPay off when Link is enabled.
 	 */
 	public function test_platform_woopay_default_leaves_woopay_off_when_link_is_enabled(): void {
-		$this->arrange_native_finalize_projection( array( $this->get_native_finalize_projection_account() ), array( 'card' => true ) );
+		$this->arrange_kyc_finalize( array( $this->get_finalized_account_data() ), array( 'card' => true ) );
 		$recorder   = $this->record_wcpay_tracks_event_names();
 		$controller = $this->create_trunk_controller();
 		update_option(
@@ -817,14 +817,14 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * (includes/class-wc-payments-onboarding-service.php:763-772). That helper returns the platform answer when no picks
 	 * were sent, and otherwise reads only a `woopay_payments` pick (:291-302), which NOX picks never carry.
 	 *
-	 * @testdox Test-drive init stores the platform's WooPay default only when no picks were sent, like client 11.1.0.
+	 * @testdox Test-drive init stores the platform's WooPay default only when no picks were sent.
 	 * @dataProvider provide_test_drive_picks_for_woopay_default
 	 *
 	 * @param array<string,mixed> $picks         Persisted NOX payment-method picks.
 	 * @param bool                $default_saved Whether the platform answer is stored.
 	 */
-	public function test_test_drive_init_stores_platform_woopay_default_like_client( array $picks, bool $default_saved ): void {
-		$fixture = $this->arrange_native_nox_picks(
+	public function test_test_drive_init_stores_platform_woopay_default( array $picks, bool $default_saved ): void {
+		$fixture = $this->arrange_nox_picks(
 			$picks,
 			array(
 				'platform_checkout'              => 'no',
@@ -845,12 +845,12 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * feeds test-drive init (:760), the embedded session (:356) and finalize (includes/admin/class-wc-rest-payments-onboarding-controller.php:278).
 	 * The platform picks the accepted promotion only from these note names.
 	 *
-	 * @testdox The $call onboarding request sends only actioned, not-deleted wcpay-promo note names, like client 11.1.0.
+	 * @testdox The $call onboarding request sends only actioned, not-deleted wcpay-promo note names.
 	 * @dataProvider provide_actioned_notes_onboarding_calls
 	 *
 	 * @param string $call API client method the route calls.
 	 */
-	public function test_onboarding_request_sends_actioned_promo_notes_like_client( string $call ): void {
+	public function test_onboarding_request_sends_actioned_promo_notes( string $call ): void {
 		$this->create_admin_note( 'wcpay-promo-accepted', Note::E_WC_ADMIN_NOTE_ACTIONED );
 		$this->create_admin_note( 'wcpay-promo-not-accepted', Note::E_WC_ADMIN_NOTE_UNACTIONED );
 		$this->create_admin_note( 'wcpay-promo-deleted', Note::E_WC_ADMIN_NOTE_ACTIONED, 0, true );
@@ -864,9 +864,9 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Client 11.1.0 get_actioned_notes() asks the note store for 10 notes in its default order, newest `date_created` first.
 	 *
-	 * @testdox The onboarding request sends the 10 newest actioned wcpay-promo notes, newest first, like client 11.1.0.
+	 * @testdox The onboarding request sends the 10 newest actioned wcpay-promo notes, newest first.
 	 */
-	public function test_onboarding_request_sends_ten_newest_actioned_promo_notes_like_client(): void {
+	public function test_onboarding_request_sends_ten_newest_actioned_promo_notes(): void {
 		// Created out of date order, so the note ID order differs from the date order.
 		foreach ( array( 7, 2, 11, 0, 5, 9, 1, 10, 4, 8, 3, 6 ) as $hours_after_start ) {
 			$this->create_admin_note( sprintf( 'wcpay-promo-%02d', $hours_after_start ), Note::E_WC_ADMIN_NOTE_ACTIONED, $hours_after_start );
@@ -881,7 +881,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Client 11.1.0 get_actioned_notes() logs a note store failure and returns no notes, so onboarding goes on (:1027-1034).
 	 *
-	 * @testdox The $call onboarding request goes on with no notes and logs an error when the note store fails, like client 11.1.0.
+	 * @testdox The $call onboarding request goes on with no notes and logs an error when the note store fails.
 	 * @dataProvider provide_actioned_notes_onboarding_calls
 	 *
 	 * @param string $call API client method the route calls.
@@ -933,11 +933,11 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 finalize_embedded_connection() (includes/class-wc-payments-account.php:2296-2345) applies no NOX picks:
 	 * create_embedded_kyc_session() already applied them (includes/class-wc-payments-onboarding-service.php:357-371).
 	 *
-	 * @testdox Native KYC finalization applies no NOX picks and returns the same response each time, like client 11.1.0.
+	 * @testdox KYC finalization applies no NOX picks and returns the same response each time.
 	 */
-	public function test_finish_native_onboarding_kyc_session_applies_no_picks_like_client(): void {
-		$fresh_account  = $this->get_native_finalize_projection_account();
-		$fixture        = $this->arrange_native_finalize_projection(
+	public function test_finish_onboarding_kyc_session_applies_no_picks(): void {
+		$fresh_account  = $this->get_finalized_account_data();
+		$fixture        = $this->arrange_kyc_finalize(
 			array( $fresh_account, $fresh_account ),
 			array(
 				'card'         => true,
@@ -979,7 +979,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * @return array<string,array{0:array<int,array<string,mixed>|\Throwable>}>
 	 */
 	public function provide_finalize_refresh_outcomes(): array {
-		$account = $this->get_native_finalize_projection_account();
+		$account = $this->get_finalized_account_data();
 
 		return array(
 			'finalize refresh succeeds' => array( array( $account, $account ) ),
@@ -992,13 +992,13 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * and finalize_embedded_connection() applies none (includes/class-wc-payments-account.php:2296-2345), so a picked method the
 	 * merchant turns off in between stays off.
 	 *
-	 * @testdox A picked method the merchant turns off after session creation stays off through finalization and a later account refresh, like client 11.1.0.
+	 * @testdox A picked method the merchant turns off after session creation stays off through finalization and a later account refresh.
 	 * @dataProvider provide_finalize_refresh_outcomes
 	 *
 	 * @param array<int,array<string,mixed>|\Throwable> $account_responses Account refresh results in request order.
 	 */
 	public function test_merchant_change_after_session_creation_survives_finalize_and_refresh( array $account_responses ): void {
-		$fixture = $this->arrange_native_finalize_projection(
+		$fixture = $this->arrange_kyc_finalize(
 			$account_responses,
 			array(
 				'card'  => true,
@@ -1025,9 +1025,9 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Client 11.1.0 finalize_embedded_connection() restores the test-drive methods and runs no settings save that could drop them.
 	 *
-	 * @testdox Native KYC finalization keeps a restored test-drive method without a fee entry next to the picks applied at session creation.
+	 * @testdox KYC finalization keeps a restored test-drive method without a fee entry next to the picks applied at session creation.
 	 */
-	public function test_finish_native_onboarding_kyc_session_keeps_restored_test_drive_method_without_fee_entry(): void {
+	public function test_finish_onboarding_kyc_session_keeps_restored_test_drive_method_without_fee_entry(): void {
 		$fresh_account = array(
 			'account_id'        => 'acct_finalized_native',
 			'is_live'           => true,
@@ -1043,7 +1043,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 				'ideal' => array(),
 			),
 		);
-		$this->arrange_native_finalize_projection(
+		$this->arrange_kyc_finalize(
 			array( $fresh_account ),
 			array(
 				'card'  => true,
@@ -1069,9 +1069,9 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native KYC finalization flags a new Stripe connection for the wcpay_stripe_connected Tracks event, like client 11.1.0 finalize_embedded_connection().
+	 * @testdox KYC finalization flags a new Stripe connection for the wcpay_stripe_connected Tracks event.
 	 */
-	public function test_finish_native_onboarding_kyc_session_flags_new_stripe_connection_for_tracks(): void {
+	public function test_finish_onboarding_kyc_session_flags_new_stripe_connection_for_tracks(): void {
 		update_option( '_wcpay_onboarding_stripe_connected', array( 'is_existing_stripe_account' => true ), false );
 		$fresh_account = array(
 			'account_id'        => 'acct_finalized_native',
@@ -1081,7 +1081,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			'capabilities'      => array( 'card_payments' => 'active' ),
 			'fees'              => array( 'card' => array() ),
 		);
-		$this->arrange_native_finalize_projection( array( $fresh_account ), array( 'card' => true ) );
+		$this->arrange_kyc_finalize( array( $fresh_account ), array( 'card' => true ) );
 
 		$this->sut->finish_onboarding_kyc_session( 'US' );
 
@@ -1090,9 +1090,9 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native embedded KYC finalization drops the cached recommended payment methods, like client 11.1.0 cleanup_on_account_onboarded().
+	 * @testdox Embedded KYC finalization drops the cached recommended payment methods.
 	 */
-	public function test_finish_native_onboarding_kyc_session_clears_recommended_payment_methods_cache(): void {
+	public function test_finish_onboarding_kyc_session_clears_recommended_payment_methods_cache(): void {
 		$this->seed_recommended_payment_methods_cache( array( 'payment_methods' => array( array( 'id' => 'card' ) ) ) );
 		update_option( 'wcpay_onboarding_fields_data', array( 'data' => array( '__locale' => 'en_US' ) ) );
 		$fresh_account = array(
@@ -1103,7 +1103,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			'capabilities'      => array( 'card_payments' => 'active' ),
 			'fees'              => array( 'card' => array() ),
 		);
-		$this->arrange_native_finalize_projection( array( $fresh_account ), array( 'card' => true ) );
+		$this->arrange_kyc_finalize( array( $fresh_account ), array( 'card' => true ) );
 
 		$this->sut->finish_onboarding_kyc_session( 'US' );
 
@@ -1113,9 +1113,9 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A completed native hosted KYC return drops the cached recommended payment methods, like client 11.1.0 finalize_connection().
+	 * @testdox A completed hosted KYC return drops the cached recommended payment methods.
 	 */
-	public function test_finalize_native_hosted_kyc_connection_clears_recommended_payment_methods_cache(): void {
+	public function test_finish_hosted_kyc_connection_clears_recommended_payment_methods_cache(): void {
 		$this->seed_recommended_payment_methods_cache( array( 'payment_methods' => array( array( 'id' => 'card' ) ) ) );
 
 		$this->onboarding_service->finish_hosted_kyc_connection( false, true );
@@ -1129,9 +1129,9 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @return array<string,array{0:array<string,mixed>,1:bool,2:string}>
 	 */
-	public function provide_native_finalize_modes(): array {
+	public function provide_kyc_finalize_modes(): array {
 		return array(
-			// Native's live finalize fixture, the default of arrange_native_finalize_projection().
+			// The live finalize fixture, the default of arrange_kyc_finalize().
 			'live mode' => array(
 				array(
 					'success'           => true,
@@ -1161,21 +1161,21 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 finalize_embedded_connection() (includes/class-wc-payments-account.php:2296-2345) enables the
 	 * gateway, sets its mode, stamps a live KYC submission once, and returns the connection-success redirect params.
 	 *
-	 * @testdox Native KYC finalization through the REST route enables the gateway in the finalized mode and activates the native tier, like client 11.1.0.
-	 * @dataProvider provide_native_finalize_modes
+	 * @testdox KYC finalization through the REST route enables the gateway in the finalized mode and activates the setup tier.
+	 * @dataProvider provide_kyc_finalize_modes
 	 *
 	 * @param array<string,mixed> $finalize_response Provider finalize response.
 	 * @param bool                $is_live           Whether the finalized account is live.
 	 * @param string              $promo             Expected promo redirect param.
 	 */
-	public function test_native_kyc_finalize_route_enables_gateway_like_client( array $finalize_response, bool $is_live, string $promo ): void {
+	public function test_kyc_finalize_route_enables_gateway( array $finalize_response, bool $is_live, string $promo ): void {
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$state = wc_get_container()->get( WooPaymentsSetupTier::class );
 		$state->invalidate();
 		$this->assertTrue( $state->write_tier( WooPaymentsSetupTier::CONNECTED ), 'The store starts native-owned and connected.' );
-		$this->arrange_native_finalize_projection(
-			array( $this->get_native_finalize_projection_account( array( 'is_live' => $is_live ) ) ),
+		$this->arrange_kyc_finalize(
+			array( $this->get_finalized_account_data( array( 'is_live' => $is_live ) ) ),
 			array( 'card' => true ),
 			$finalize_response
 		);
@@ -1217,12 +1217,12 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native live KYC finalization never overwrites an existing KYC submission date, like client 11.1.0.
+	 * @testdox Live KYC finalization never overwrites an existing KYC submission date.
 	 */
-	public function test_native_kyc_finalize_keeps_existing_kyc_submitted_date(): void {
+	public function test_kyc_finalize_keeps_existing_kyc_submitted_date(): void {
 		update_option( 'wcpay_kyc_submitted_date', self::TEST_EPOCH - DAY_IN_SECONDS, false );
-		$this->arrange_native_finalize_projection(
-			array( $this->get_native_finalize_projection_account() ),
+		$this->arrange_kyc_finalize(
+			array( $this->get_finalized_account_data() ),
 			array( 'card' => true )
 		);
 
@@ -1235,15 +1235,15 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 ignores both writes (class-wc-payments-account.php:2272, :2288, :2306-2307); native logs them, and keeps
 	 * the Test Drive selection when restoring it did not persist.
 	 *
-	 * @testdox Native KYC finalization logs a gateway enable or Test Drive restore that did not persist and still answers success.
+	 * @testdox KYC finalization logs a gateway enable or Test Drive restore that did not persist and still answers success.
 	 * @testWith ["gateway enable"]
 	 *           ["test drive restore"]
 	 *
 	 * @param string $refused_write Settings write the store refuses.
 	 */
-	public function test_native_kyc_finalize_logs_settings_writes_that_did_not_persist( string $refused_write ): void {
+	public function test_kyc_finalize_logs_settings_writes_that_did_not_persist( string $refused_write ): void {
 		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( 'enabled' => 'no' ) );
-		$this->arrange_native_finalize_projection( array( $this->get_native_finalize_projection_account() ), array( 'card' => true ) );
+		$this->arrange_kyc_finalize( array( $this->get_finalized_account_data() ), array( 'card' => true ) );
 		set_transient(
 			self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
 			array(
@@ -1260,7 +1260,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 				2
 			);
 		} else {
-			$this->refuse_native_settings_writes_enabling( 'link' );
+			$this->refuse_settings_writes_enabling( 'link' );
 		}
 		$logger = RecordingWcLogger::install();
 
@@ -1278,10 +1278,10 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native KYC finalization restores test-drive payment methods and keeps Link mutually exclusive with WooPay.
+	 * @testdox KYC finalization restores test-drive payment methods and keeps Link mutually exclusive with WooPay.
 	 */
-	public function test_finish_native_onboarding_kyc_session_restores_test_drive_payment_methods(): void {
-		$fresh_account = $this->get_native_finalize_projection_account(
+	public function test_finish_onboarding_kyc_session_restores_test_drive_payment_methods(): void {
+		$fresh_account = $this->get_finalized_account_data(
 			array(
 				'capabilities' => array(
 					'card_payments' => 'active',
@@ -1293,7 +1293,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		$this->arrange_native_finalize_projection( array( $fresh_account ), array( 'card' => true ) );
+		$this->arrange_kyc_finalize( array( $fresh_account ), array( 'card' => true ) );
 		set_transient(
 			self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
 			array(
@@ -1326,10 +1326,10 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 restore_test_drive_enabled_payment_methods() (includes/class-wc-payments-account.php:2258-2289) merges
 	 * the saved test-drive methods back without checking the new live account's capabilities.
 	 *
-	 * @testdox Native KYC finalization restores test-drive payment methods whose live capabilities are still pending, like client 11.1.0.
+	 * @testdox KYC finalization restores test-drive payment methods whose live capabilities are still pending.
 	 */
-	public function test_finish_native_onboarding_kyc_session_restores_test_drive_payment_methods_with_pending_capabilities(): void {
-		$fresh_account = $this->get_native_finalize_projection_account(
+	public function test_finish_onboarding_kyc_session_restores_test_drive_payment_methods_with_pending_capabilities(): void {
+		$fresh_account = $this->get_finalized_account_data(
 			array(
 				'capabilities' => array(
 					'card_payments'  => 'active',
@@ -1343,7 +1343,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		$this->arrange_native_finalize_projection( array( $fresh_account ), array( 'card' => true ) );
+		$this->arrange_kyc_finalize( array( $fresh_account ), array( 'card' => true ) );
 		set_transient(
 			self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
 			array(
@@ -1376,11 +1376,11 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native KYC finalization leaves WooPay enabled when no restored method conflicts with it.
+	 * @testdox KYC finalization leaves WooPay enabled when no restored method conflicts with it.
 	 */
-	public function test_finish_native_onboarding_kyc_session_preserves_woopay_without_link(): void {
-		$this->arrange_native_finalize_projection(
-			array( $this->get_native_finalize_projection_account() ),
+	public function test_finish_onboarding_kyc_session_preserves_woopay_without_link(): void {
+		$this->arrange_kyc_finalize(
+			array( $this->get_finalized_account_data() ),
 			array( 'card' => true )
 		);
 		update_option(
@@ -1397,12 +1397,12 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native KYC finalization ignores and consumes malformed test-drive payment-method state.
+	 * @testdox KYC finalization ignores and consumes malformed test-drive payment-method state.
 	 */
-	public function test_finish_native_onboarding_kyc_session_ignores_malformed_test_drive_payment_methods(): void {
-		$this->arrange_native_finalize_projection(
+	public function test_finish_onboarding_kyc_session_ignores_malformed_test_drive_payment_methods(): void {
+		$this->arrange_kyc_finalize(
 			array(
-				$this->get_native_finalize_projection_account(
+				$this->get_finalized_account_data(
 					array(
 						'capabilities' => array( 'link_payments' => 'active' ),
 						'fees'         => array( 'link' => array() ),
@@ -1437,10 +1437,10 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Client 11.1.0 finalize_embedded_connection() restores the test-drive methods before, and independently of, any account refresh.
 	 *
-	 * @testdox Native KYC finalization restores test-drive methods even when the account refresh fails.
+	 * @testdox KYC finalization restores test-drive methods even when the account refresh fails.
 	 */
-	public function test_finish_native_onboarding_kyc_session_restores_test_drive_payment_methods_despite_refresh_failure(): void {
-		$fresh_account = $this->get_native_finalize_projection_account(
+	public function test_finish_onboarding_kyc_session_restores_test_drive_payment_methods_despite_refresh_failure(): void {
+		$fresh_account = $this->get_finalized_account_data(
 			array(
 				'capabilities' => array(
 					'card_payments' => 'active',
@@ -1452,7 +1452,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
-		$fixture       = $this->arrange_native_finalize_projection(
+		$fixture       = $this->arrange_kyc_finalize(
 			array(
 				new \RuntimeException( 'Temporary account refresh failure.' ),
 				$fresh_account,
@@ -1499,14 +1499,14 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_refused_session_pick_write_is_logged_once_and_not_applied_again( array $account_responses ): void {
 		$logger   = RecordingWcLogger::install();
-		$fixture  = $this->arrange_native_finalize_projection(
+		$fixture  = $this->arrange_kyc_finalize(
 			$account_responses,
 			array(
 				'card'  => true,
 				'ideal' => true,
 			)
 		);
-		$attempts = $this->refuse_native_settings_writes_enabling( 'ideal', 1 );
+		$attempts = $this->refuse_settings_writes_enabling( 'ideal', 1 );
 
 		$session = $this->sut->get_onboarding_kyc_session( 'US' );
 		$this->sut->finish_onboarding_kyc_session( 'US' );
@@ -1522,11 +1522,11 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native KYC finalization ignores malformed NOX selections without updating settings.
+	 * @testdox KYC finalization ignores malformed NOX selections without updating settings.
 	 */
-	public function test_finish_native_onboarding_kyc_session_ignores_malformed_payment_method_selections(): void {
-		$this->arrange_native_finalize_projection(
-			array( $this->get_native_finalize_projection_account() ),
+	public function test_finish_onboarding_kyc_session_ignores_malformed_payment_method_selections(): void {
+		$this->arrange_kyc_finalize(
+			array( $this->get_finalized_account_data() ),
 			array(
 				'ideal'      => array( 'malformed' ),
 				'bancontact' => (object) array( 'malformed' => true ),
@@ -1545,7 +1545,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @return void
 	 */
-	public function test_live_native_kyc_switches_gateway_out_of_test_mode_after_test_drive(): void {
+	public function test_live_kyc_switches_gateway_out_of_test_mode_after_test_drive(): void {
 		$location      = 'US';
 		$captured_call = array();
 		$api_client    = new class( $captured_call ) extends WooPaymentsApiClient {
@@ -1690,7 +1690,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			$adapter,
 			$this->create_extension_runtime(),
 			$api_client,
-			$this->create_native_account_service()
+			$this->create_account_service()
 		);
 		update_option(
 			'wcpay_account_data',
@@ -1729,7 +1729,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$settings        = get_option( 'woocommerce_woocommerce_payments_settings' );
-		$account_service = $this->create_native_account_service();
+		$account_service = $this->create_account_service();
 
 		$this->assertSame( 'accs_secret_live', $result['clientSecret'] );
 		$this->assertTrue( $captured_call['live_account'] );
@@ -1746,7 +1746,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @return void
 	 */
-	public function test_onboarding_test_account_init_uses_native_api_and_writes_usable_account_cache(): void {
+	public function test_onboarding_test_account_init_uses_the_api_client_and_writes_usable_account_cache(): void {
 		$captured_call = array();
 		$api_client    = new class( $captured_call ) extends WooPaymentsApiClient {
 			/**
@@ -1877,12 +1877,12 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			$adapter,
 			$this->create_extension_runtime(),
 			$api_client,
-			$this->create_native_account_service()
+			$this->create_account_service()
 		);
 
 		$result          = $this->sut->onboarding_test_account_init( 'US' );
 		$cached          = get_option( 'wcpay_account_data' );
-		$account_service = $this->create_native_account_service();
+		$account_service = $this->create_account_service();
 
 		$this->assertTrue( $result['success'] );
 		$this->assertFalse( $captured_call['live_account'] );
@@ -1902,9 +1902,9 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native test-drive disable captures enabled payment methods before account deletion.
+	 * @testdox Test-drive disable captures enabled payment methods before account deletion.
 	 */
-	public function test_disable_test_account_captures_native_test_drive_payment_methods_before_delete(): void {
+	public function test_disable_test_account_captures_test_drive_payment_methods_before_delete(): void {
 		$snapshot_at_delete = false;
 		$api_client         = new class( $snapshot_at_delete ) extends WooPaymentsApiClient {
 			/**
@@ -1983,10 +1983,10 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$this->init_sut(
 			$this->mock_providers,
 			$this->mockable_proxy,
-			$this->create_native_finalize_adapter(),
+			$this->create_kyc_finalize_adapter(),
 			$this->create_extension_runtime(),
 			$api_client,
-			$this->create_native_account_service()
+			$this->create_account_service()
 		);
 
 		$response = $this->sut->disable_test_account( 'US' );
@@ -2009,7 +2009,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @return void
 	 */
-	public function test_reset_onboarding_uses_native_api_and_overwrites_stale_account_cache(): void {
+	public function test_reset_onboarding_uses_the_api_client_and_overwrites_stale_account_cache(): void {
 		$deleted_test_mode = null;
 		$api_client        = new class( $deleted_test_mode ) extends WooPaymentsApiClient {
 			/**
@@ -2117,7 +2117,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			$adapter,
 			$this->create_extension_runtime(),
 			$api_client,
-			$this->create_native_account_service()
+			$this->create_account_service()
 		);
 
 		$result = $this->sut->reset_onboarding( 'US' );
@@ -2132,10 +2132,10 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native test-drive payment-method snapshots remain scoped to the active multisite blog.
+	 * @testdox Test-drive payment-method snapshots remain scoped to the active multisite blog.
 	 * @group ms-required
 	 */
-	public function test_native_test_drive_payment_method_snapshot_is_site_scoped(): void {
+	public function test_test_drive_payment_method_snapshot_is_site_scoped(): void {
 		if ( ! is_multisite() ) {
 			$this->markTestSkipped( 'This assertion requires the multisite test configuration.' );
 		}
@@ -2204,11 +2204,11 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a native account service wired to this test's mockable legacy proxy.
+	 * Create an account service wired to this test's mockable legacy proxy.
 	 *
 	 * @return WooPaymentsAccountService
 	 */
-	private function create_native_account_service(): WooPaymentsAccountService {
+	private function create_account_service(): WooPaymentsAccountService {
 		$account_service = new WooPaymentsAccountService();
 		$database_cache  = new WooPaymentsDatabaseCache();
 		$database_cache->init( $this->mockable_proxy );
@@ -2218,11 +2218,11 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create an adapter exposing the native finalization path.
+	 * Create an adapter exposing the KYC finalization path.
 	 *
 	 * @return WooPaymentsPaymentsSettingsAdapter|MockObject
 	 */
-	private function create_native_finalize_adapter() {
+	private function create_kyc_finalize_adapter() {
 		$adapter = $this->getMockBuilder( WooPaymentsPaymentsSettingsAdapter::class )
 			->disableOriginalConstructor()
 			->onlyMethods(
@@ -2253,12 +2253,12 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create an onboarding adapter wired to this test's mockable legacy proxy.
+	 * Create a Payments settings adapter wired to this test's mockable legacy proxy.
 	 *
-	 * @param bool $native_onboarding_available Whether native onboarding is available.
+	 * @param bool $builtin_onboarding_available Whether built-in onboarding is available.
 	 * @return WooPaymentsPaymentsSettingsAdapter
 	 */
-	private function create_onboarding_adapter( bool $native_onboarding_available = true ): WooPaymentsPaymentsSettingsAdapter {
+	private function create_settings_adapter( bool $builtin_onboarding_available = true ): WooPaymentsPaymentsSettingsAdapter {
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'can_process_payments', 'can_manage_onboarding' ) )
@@ -2268,7 +2268,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			->willReturn( false );
 		$provider
 			->method( 'can_manage_onboarding' )
-			->willReturn( $native_onboarding_available );
+			->willReturn( $builtin_onboarding_available );
 
 		$adapter         = new WooPaymentsPaymentsSettingsAdapter();
 		$account_service = new WooPaymentsAccountService();
@@ -2350,19 +2350,19 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * The adapter resolves them on first use, so the test doubles are set on the instance after init.
 	 *
-	 * @param WooPaymentsPaymentsSettingsAdapter $adapter         The adapter.
-	 * @param WooPaymentsExtensionRuntime        $extension_runtime  The extension runtime.
-	 * @param WooPaymentsProvider                $provider        The native provider.
-	 * @param WooPaymentsGateway                 $native_gateway  The native gateway.
-	 * @param WooPaymentsAccountService          $account_service The native account service.
-	 * @param WooPaymentsRuntimeArbiter          $arbiter         The runtime arbiter.
+	 * @param WooPaymentsPaymentsSettingsAdapter $adapter           The adapter.
+	 * @param WooPaymentsExtensionRuntime        $extension_runtime The extension runtime.
+	 * @param WooPaymentsProvider                $provider          The native provider.
+	 * @param WooPaymentsGateway                 $builtin_gateway   The built-in gateway.
+	 * @param WooPaymentsAccountService          $account_service   The native account service.
+	 * @param WooPaymentsRuntimeArbiter          $arbiter           The runtime arbiter.
 	 */
-	private function init_adapter( WooPaymentsPaymentsSettingsAdapter $adapter, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsProvider $provider, WooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter ): void {
+	private function init_adapter( WooPaymentsPaymentsSettingsAdapter $adapter, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsProvider $provider, WooPaymentsGateway $builtin_gateway, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter ): void {
 		$adapter->init( $extension_runtime, $arbiter );
 
 		$collaborators = array(
 			'provider'        => $provider,
-			'builtin_gateway' => $native_gateway,
+			'builtin_gateway' => $builtin_gateway,
 			'account_service' => $account_service,
 		);
 		foreach ( $collaborators as $property => $collaborator ) {
@@ -2409,7 +2409,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Arrange the public native finalize path with configurable account refresh results.
+	 * Arrange the public KYC finalize path with configurable account refresh results.
 	 *
 	 * @param array<int,array<string,mixed>|\Throwable> $account_responses Account refresh results in request order.
 	 * @param array<string,mixed>                       $selected_methods  Persisted NOX payment-method selections.
@@ -2417,7 +2417,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed>                       $session_extras    Extra fields the platform adds to the embedded KYC session.
 	 * @return array{api_client:WooPaymentsApiClient,account_service:WooPaymentsAccountService}
 	 */
-	private function arrange_native_finalize_projection(
+	private function arrange_kyc_finalize(
 		array $account_responses,
 		array $selected_methods,
 		?array $finalize_response = null,
@@ -2590,7 +2590,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$database_cache->init( $this->mockable_proxy );
 		$account_service->init( $this->mockable_proxy, $database_cache );
 
-		$adapter = $this->create_native_finalize_adapter();
+		$adapter = $this->create_kyc_finalize_adapter();
 
 		$this->mock_wpcom_connection_manager->method( 'is_connected' )->willReturn( true );
 		$this->mock_wpcom_connection_manager->method( 'has_connected_owner' )->willReturn( true );
@@ -2654,7 +2654,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Arrange the native NOX routes that create a KYC session or a test-drive account for a store without an account.
+	 * Arrange the NOX routes that create a KYC session or a test-drive account for a store without an account.
 	 *
 	 * @param array<string,mixed> $picks             Persisted NOX payment-method picks.
 	 * @param array<string,mixed> $settings          Stored gateway settings.
@@ -2662,7 +2662,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $platform_response Extra fields the platform adds to its session and test-drive responses.
 	 * @return array{server:\WP_REST_Server,api_client:WooPaymentsApiClient,recorder:object}
 	 */
-	private function arrange_native_nox_picks( array $picks, array $settings, string $wallets_enabled, array $platform_response = array() ): array {
+	private function arrange_nox_picks( array $picks, array $settings, string $wallets_enabled, array $platform_response = array() ): array {
 		$api_client = new class( $platform_response ) extends WooPaymentsApiClient {
 			/**
 			 * Enabled payment method IDs stored when the platform was called.
@@ -2823,7 +2823,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			$adapter,
 			$this->create_extension_runtime(),
 			$api_client,
-			$this->create_native_account_service()
+			$this->create_account_service()
 		);
 		$controller = new WooPaymentsRestController();
 		$controller->init( $this->getMockBuilder( Payments::class )->getMock(), $this->sut );
@@ -2909,7 +2909,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function dispatch_onboarding_route_for_actioned_notes( string $call ): array {
 		if ( 'finalize_onboarding_embedded_kyc' === $call ) {
-			$fixture    = $this->arrange_native_finalize_projection( array( $this->get_native_finalize_projection_account() ), array( 'card' => true ) );
+			$fixture    = $this->arrange_kyc_finalize( array( $this->get_finalized_account_data() ), array( 'card' => true ) );
 			$controller = new WooPaymentsRestController();
 			$controller->init( $this->getMockBuilder( Payments::class )->getMock(), $this->sut );
 			$server  = $this->create_rest_server_with_routes(
@@ -2923,7 +2923,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			$request = $this->create_nox_pick_request( WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION . '/kyc_session/finish' );
 			$request->set_param( 'source', WooPaymentsService::SESSION_ENTRY_LYS );
 		} else {
-			$fixture = $this->arrange_native_nox_picks( array( 'card' => true ), array( 'upe_enabled_payment_method_ids' => array( 'card' ) ), 'no' );
+			$fixture = $this->arrange_nox_picks( array( 'card' => true ), array( 'upe_enabled_payment_method_ids' => array( 'card' ) ), 'no' );
 			$server  = $fixture['server'];
 			$request = $this->create_nox_pick_request(
 				'initialize_onboarding' === $call
@@ -2941,12 +2941,12 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Get a fresh account payload for native finalize projection tests.
+	 * Get a fresh account payload for KYC finalize tests.
 	 *
 	 * @param array<string,mixed> $overrides Account data overrides.
 	 * @return array<string,mixed>
 	 */
-	private function get_native_finalize_projection_account( array $overrides = array() ): array {
+	private function get_finalized_account_data( array $overrides = array() ): array {
 		return array_replace_recursive(
 			array(
 				'account_id'        => 'acct_finalized_native',
@@ -3006,7 +3006,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * @param \Throwable|null $exception         Exception to throw instead of refusing the write.
 	 * @return \stdClass Attempt counter, in its `count` property.
 	 */
-	private function refuse_native_settings_writes_enabling( string $payment_method_id, ?int $failures = null, ?\Throwable $exception = null ): \stdClass {
+	private function refuse_settings_writes_enabling( string $payment_method_id, ?int $failures = null, ?\Throwable $exception = null ): \stdClass {
 		$attempts        = new \stdClass();
 		$attempts->count = 0;
 		add_filter(
@@ -3212,7 +3212,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The platform's recommendations are stored as client 11.1.0 stores them: the raw answer with its country and locale, in a non-autoloaded cache option.
+	 * @testdox The platform's recommendations are stored as the raw answer with its country and locale, in a non-autoloaded cache option.
 	 *
 	 * Source: client 11.1.0 `includes/class-wc-payments-onboarding-service.php:185-217`, `includes/class-database-cache.php:23`.
 	 */
@@ -3247,7 +3247,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A stored answer for the same country and locale, as client 11.1.0 writes it, is served without asking the platform.
+	 * @testdox A stored answer for the same country and locale is served without asking the platform.
 	 */
 	public function test_recommended_payment_methods_come_from_a_stored_entry(): void {
 		$this->seed_recommended_payment_methods_cache(
@@ -3311,7 +3311,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A platform error keeps the last good answer and waits out the cache lifetime before asking again, as client 11.1.0's database cache does.
+	 * @testdox A platform error keeps the last good answer and waits out the cache lifetime before asking again.
 	 */
 	public function test_recommended_payment_methods_keep_the_last_good_answer_after_a_platform_error(): void {
 		$this->seed_recommended_payment_methods_cache(
@@ -3517,7 +3517,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	private function set_onboarding_collaborators( WooPaymentsApiClient $api_client ): void {
 		$collaborators = array(
 			'api_client'      => $api_client,
-			'account_service' => $this->create_native_account_service(),
+			'account_service' => $this->create_account_service(),
 		);
 		foreach ( $collaborators as $property => $collaborator ) {
 			$reflection = new \ReflectionProperty( WooPaymentsOnboardingService::class, $property );
