@@ -54,9 +54,9 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Deposits routes are registered under wc/v3 when native owns runtime.
+	 * @testdox Deposits routes are registered under wc/v3 when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_deposits_routes_when_native_owns_runtime(): void {
+	public function test_registers_deposits_routes_when_builtin_owns_runtime(): void {
 		// WooCommerce's REST server registers the routes of the instance the container holds.
 		wc_get_container()->replace( WooPaymentsDepositsRestController::class, $this->sut );
 		$this->sut->register();
@@ -156,7 +156,7 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Deposits list forwards only preserved platform query parameters.
+	 * @testdox Deposits list forwards only the known platform query parameters.
 	 */
 	public function test_get_deposits_forwards_allow_listed_query_parameters(): void {
 		$this->sut->register_routes();
@@ -203,9 +203,9 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Deposits list preserves the legacy request filter contract.
+	 * @testdox Deposits list preserves the WooPayments extension request filter contract.
 	 */
-	public function test_get_deposits_preserves_legacy_request_filter_contract(): void {
+	public function test_get_deposits_preserves_the_woopayments_extension_request_filter_contract(): void {
 		$this->sut->register_routes();
 		$observed_page_size = null;
 		$observed_api       = null;
@@ -261,7 +261,7 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Deposits summary forwards only preserved filter parameters.
+	 * @testdox Deposits summary forwards only the known filter parameters.
 	 */
 	public function test_get_deposits_summary_forwards_filter_parameters(): void {
 		$this->sut->register_routes();

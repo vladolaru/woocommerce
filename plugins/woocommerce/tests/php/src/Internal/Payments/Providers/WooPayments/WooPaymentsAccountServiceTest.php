@@ -61,7 +61,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		delete_option( '_wcpay_feature_reports_area' );
 		delete_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments' );
 		delete_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version' );
-		foreach ( $this->get_preserved_database_cache_keys() as $cache_key ) {
+		foreach ( $this->get_database_cache_keys() as $cache_key ) {
 			delete_option( $cache_key );
 		}
 		delete_transient( 'wcpay_stripe_onboarding_state' );
@@ -89,7 +89,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose account ID, mode-specific publishable key, and readiness from the preserved account cache.
+	 * @testdox Should expose account ID, mode-specific publishable key, and readiness from the stored account cache.
 	 */
 	public function test_exposes_account_keys_and_readiness_from_account_cache(): void {
 		update_option(
@@ -125,17 +125,17 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native eligibility should follow eligible, ineligible, and older-platform account payloads.
-	 * @dataProvider native_payments_payload_provider
+	 * @testdox Eligibility should follow eligible, ineligible, and older-platform account payloads.
+	 * @dataProvider builtin_eligibility_payload_provider
 	 *
-	 * @param array<string,mixed> $native_payments Native payments payload, or an empty array when the field is absent.
-	 * @param bool                $include_field   Whether to include the native payments field.
-	 * @param bool                $expected_eligible Expected native eligibility.
+	 * @param array<string,mixed> $builtin_eligibility Built-in eligibility payload, or an empty array when the field is absent.
+	 * @param bool                $include_field       Whether to include the native payments field.
+	 * @param bool                $expected_eligible   Expected native eligibility.
 	 */
-	public function test_exposes_native_payments_eligibility( array $native_payments, bool $include_field, bool $expected_eligible ): void {
+	public function test_exposes_builtin_eligibility( array $builtin_eligibility, bool $include_field, bool $expected_eligible ): void {
 		$account_data = array( 'is_live' => true );
 		if ( $include_field ) {
-			$account_data['native_payments'] = $native_payments;
+			$account_data['native_payments'] = $builtin_eligibility;
 		}
 		update_option(
 			'wcpay_account_data',
@@ -153,11 +153,11 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Native payments account payload fixtures.
+	 * Built-in eligibility account payload fixtures.
 	 *
 	 * @return array<string,array{array<string,mixed>,bool,bool}>
 	 */
-	public static function native_payments_payload_provider(): array {
+	public static function builtin_eligibility_payload_provider(): array {
 		return array(
 			'eligible cohort'            => array(
 				array(
@@ -182,7 +182,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Account readiness reads each multisite blog's preserved cache after switching.
+	 * @testdox Account readiness reads each multisite blog's stored cache after switching.
 	 * @group multisite
 	 */
 	public function test_account_cache_is_isolated_across_multisite_blog_switches(): void {
@@ -203,7 +203,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Reports availability reads the preserved server flag for each multisite blog.
+	 * @testdox Reports availability reads the stored server flag for each multisite blog.
 	 * @group multisite
 	 */
 	public function test_reports_availability_is_isolated_across_multisite_blog_switches(): void {
@@ -226,7 +226,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose whether the native WooPayments gateway is enabled.
+	 * @testdox Should expose whether the WooPayments gateway is enabled.
 	 */
 	public function test_exposes_gateway_enabled_state_from_gateway_settings(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
@@ -241,7 +241,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fail closed when the native WooPayments gateway enabled setting is absent.
+	 * @testdox Should fail closed when the WooPayments gateway enabled setting is absent.
 	 */
 	public function test_gateway_enabled_state_defaults_to_disabled_when_setting_is_absent(): void {
 		$sut = $this->create_service();
@@ -301,7 +301,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose the account default currency from the preserved account cache.
+	 * @testdox Should expose the account default currency from the stored account cache.
 	 */
 	public function test_exposes_account_default_currency_from_account_cache(): void {
 		update_option(
@@ -324,7 +324,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fall back to USD when the preserved account cache does not include a default currency.
+	 * @testdox Should fall back to USD when the stored account cache does not include a default currency.
 	 */
 	public function test_account_default_currency_falls_back_to_usd_when_account_cache_omits_currency(): void {
 		update_option(
@@ -402,7 +402,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose live, test-drive, and sandbox account state from the preserved account cache.
+	 * @testdox Should expose live, test-drive, and sandbox account state from the stored account cache.
 	 */
 	public function test_exposes_account_type_state_from_account_cache(): void {
 		update_option( 'wcpay_onboarding_test_mode', 'yes' );
@@ -697,9 +697,9 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Network saved cards should be off by default and opt-in via the parity filter.
+	 * @testdox Network saved cards should be off by default and opt-in via the force filter.
 	 */
-	public function test_is_network_saved_cards_enabled_follows_the_parity_filter(): void {
+	public function test_is_network_saved_cards_enabled_follows_the_force_filter(): void {
 		$sut = $this->create_service();
 
 		$this->assertFalse( $sut->is_network_saved_cards_enabled() );
@@ -709,7 +709,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should autoload the onboarding test-mode option when enabling it on the dev-mode cache path, like the client.
+	 * @testdox Should autoload the onboarding test-mode option when enabling it on the dev-mode cache path.
 	 */
 	public function test_dev_mode_cache_path_autoloads_onboarding_test_mode_option(): void {
 		// Arrange the write in ensure_onboarding_test_mode_for_dev_mode(): dev mode on, the
@@ -780,7 +780,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose rejected and under-review account state from the preserved account cache.
+	 * @testdox Should expose rejected and under-review account state from the stored account cache.
 	 */
 	public function test_exposes_rejected_and_under_review_account_state_from_account_cache(): void {
 		update_option(
@@ -1151,7 +1151,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose details-submitted and admin-navigation validity from the preserved account cache.
+	 * @testdox Should expose details-submitted and admin-navigation validity from the stored account cache.
 	 */
 	public function test_exposes_details_submitted_and_admin_navigation_validity_from_account_cache(): void {
 		update_option(
@@ -1209,7 +1209,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose card-reader and Capital visibility flags from the preserved account cache.
+	 * @testdox Should expose card-reader and Capital visibility flags from the stored account cache.
 	 */
 	public function test_exposes_card_reader_and_capital_visibility_flags_from_account_cache(): void {
 		update_option(
@@ -1248,7 +1248,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose Documents eligibility and VAT submission flags from the preserved account cache.
+	 * @testdox Should expose Documents eligibility and VAT submission flags from the stored account cache.
 	 */
 	public function test_exposes_document_flags_from_account_cache(): void {
 		update_option(
@@ -1311,7 +1311,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Reports availability follows preserved server values before the local fallback without a refresh.
+	 * @testdox Reports availability follows stored server values before the local fallback without a refresh.
 	 * @dataProvider reports_availability_provider
 	 *
 	 * @param mixed  $server_value Server Reports flag.
@@ -1319,7 +1319,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	 * @param string $local_value Local Reports fallback value.
 	 * @param bool   $expected Whether Reports should be available.
 	 */
-	public function test_reports_availability_follows_preserved_server_values_before_local_fallback( $server_value, bool $include_server_value, string $local_value, bool $expected ): void {
+	public function test_reports_availability_follows_stored_server_values_before_local_fallback( $server_value, bool $include_server_value, string $local_value, bool $expected ): void {
 		$account_data = $this->get_valid_live_account_payload();
 		if ( $include_server_value ) {
 			$account_data['reports_area_enabled'] = $server_value;
@@ -1364,7 +1364,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Reports availability does not refresh account data when no server flag is preserved.
+	 * @testdox Reports availability does not refresh account data when no server flag is stored.
 	 */
 	public function test_reports_availability_does_not_refresh_account_data_without_a_server_flag(): void {
 		$api_client = $this->create_counting_account_api_client( $this->get_valid_live_account_payload() );
@@ -1377,9 +1377,9 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should clear the preserved account cache so the next account read can refresh from the provider.
+	 * @testdox Should clear the stored account cache so the next account read can refresh from the provider.
 	 */
-	public function test_clear_cache_deletes_preserved_account_cache(): void {
+	public function test_clear_cache_deletes_stored_account_cache(): void {
 		update_option(
 			'wcpay_account_data',
 			array(
@@ -1397,9 +1397,9 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should immediately overwrite the preserved account cache with a connected-no-account payload.
+	 * @testdox Should immediately overwrite the stored account cache with a connected-no-account payload.
 	 */
-	public function test_overwrite_cache_with_no_account_updates_preserved_account_cache(): void {
+	public function test_overwrite_cache_with_no_account_updates_stored_account_cache(): void {
 		update_option(
 			'wcpay_account_data',
 			array(
@@ -1424,9 +1424,9 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should reset preserved gateway, onboarding, and NOX state after an account deletion.
+	 * @testdox Should reset stored gateway, onboarding, and NOX state after an account deletion.
 	 */
-	public function test_cleanup_after_account_reset_resets_preserved_state(): void {
+	public function test_cleanup_after_account_reset_resets_stored_state(): void {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
@@ -1545,10 +1545,10 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should clear all preserved WooPayments database cache keys after an account reset.
+	 * @testdox Should clear all WooPayments database cache keys after an account reset.
 	 */
-	public function test_cleanup_after_account_reset_clears_preserved_database_cache_keys(): void {
-		foreach ( $this->get_preserved_database_cache_keys() as $cache_key ) {
+	public function test_cleanup_after_account_reset_clears_database_cache_keys(): void {
+		foreach ( $this->get_database_cache_keys() as $cache_key ) {
 			update_option( $cache_key, array( 'stale' => true ), false );
 			wp_cache_set( $cache_key, array( 'stale' => true ), 'options' );
 		}
@@ -1556,7 +1556,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$sut = $this->create_service();
 		$sut->cleanup_after_account_reset();
 
-		foreach ( $this->get_preserved_database_cache_keys() as $cache_key ) {
+		foreach ( $this->get_database_cache_keys() as $cache_key ) {
 			$this->assertFalse( get_option( $cache_key, false ), "Expected {$cache_key} option to be deleted." );
 			$this->assertFalse( wp_cache_get( $cache_key, 'options' ), "Expected {$cache_key} object-cache entry to be deleted." );
 		}
@@ -1621,7 +1621,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should refresh account data from the native API client and persist the full account payload.
+	 * @testdox Should refresh account data from the API client and persist the full account payload.
 	 */
 	public function test_refresh_account_data_fetches_and_caches_full_account_payload(): void {
 		update_option( 'woocommerce_store_id', 'store_123' );
@@ -2020,7 +2020,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_disconnected_account_caches(): array {
 		return array(
-			'account the platform keeps off native' => array(
+			'account the platform keeps off the built-in WooPayments' => array(
 				array(
 					'account_id'           => 'acct_stale',
 					'live_publishable_key' => 'pk_live_stale',
@@ -2032,7 +2032,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 				false,
 				false,
 			),
-			'errored entry from the old read'       => array( null, true, true ),
+			'errored entry from the old read' => array( null, true, true ),
 		);
 	}
 
@@ -2192,7 +2192,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose the preserved account data snapshot without refreshing expired cache data.
+	 * @testdox Should expose the stored account data without refreshing expired cache data.
 	 */
 	public function test_get_stored_account_data_does_not_refresh_expired_cache(): void {
 		$stale_account = $this->get_valid_live_account_payload(
@@ -2223,7 +2223,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should let onboarding test mode and the legacy test-mode filter override persisted gateway settings.
+	 * @testdox Should let onboarding test mode and the WooPayments extension's test-mode filter override persisted gateway settings.
 	 */
 	public function test_mode_follows_onboarding_option_and_test_mode_filter(): void {
 		update_option(
@@ -2290,9 +2290,9 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fetch the onboarding fields once and store them in the client's database cache shape, locale marker included.
+	 * @testdox Should fetch the onboarding fields once and store them in the WooPayments extension's database cache shape, locale marker included.
 	 */
-	public function test_onboarding_fields_data_is_fetched_once_and_stored_in_the_client_cache_shape(): void {
+	public function test_onboarding_fields_data_is_fetched_once_and_stored_in_the_woopayments_extension_cache_shape(): void {
 		$api_client = $this->create_counting_fields_api_client( $this->get_onboarding_fields_payload() );
 		$expected   = array_merge( $this->get_onboarding_fields_payload(), array( '__locale' => 'en_US' ) );
 
@@ -2782,11 +2782,11 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Get preserved WooPayments database cache keys cleared on account reset.
+	 * Get the WooPayments database cache keys cleared on account reset.
 	 *
 	 * @return string[]
 	 */
-	private function get_preserved_database_cache_keys(): array {
+	private function get_database_cache_keys(): array {
 		return array(
 			'wcpay_account_data',
 			'wcpay_address_autocomplete_jwt',

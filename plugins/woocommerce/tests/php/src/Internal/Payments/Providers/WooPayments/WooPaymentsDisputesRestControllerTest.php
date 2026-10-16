@@ -139,7 +139,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Disputes list adds legacy compact order context and keeps missing orders explicit.
+	 * @testdox Disputes list adds the WooPayments extension's compact order context and keeps missing orders explicit.
 	 */
 	public function test_disputes_list_enriches_order_context(): void {
 		$order = $this->create_order_with_charge( 'ch_dispute', 'pi_dispute' );
@@ -297,7 +297,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Dispute update and close forward preserved payloads.
+	 * @testdox Dispute update and close forward payloads unchanged.
 	 */
 	public function test_dispute_update_and_close_forward_payloads(): void {
 		$this->create_disputes_controller()->register_routes();
@@ -499,7 +499,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Dispute detail adds legacy detail order context and formatted charge addresses.
+	 * @testdox Dispute detail adds the WooPayments extension's detail order context and formatted charge addresses.
 	 */
 	public function test_dispute_detail_enriches_order_and_charge_address(): void {
 		$order = $this->create_order_with_charge( 'ch_detail', 'pi_detail' );

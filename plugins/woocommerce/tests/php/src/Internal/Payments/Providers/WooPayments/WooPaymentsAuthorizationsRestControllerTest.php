@@ -164,7 +164,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox Authorizations list preserves reference query names and the legacy request filter.
+	 * @testdox Authorizations list preserves reference query names and the WooPayments extension request filter.
 	 */
 	public function test_authorizations_list_preserves_filter_contract(): void {
 		$this->create_authorizations_controller()->register_routes();
@@ -281,7 +281,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox An unexpected error during an authorization capture or cancel is logged and answers the client's generic error.
+	 * @testdox An unexpected error during an authorization capture or cancel is logged and answers the WooPayments extension's generic error.
 	 *
 	 * Client 11.1.0 logs and answers wcpay_server_error (class-wc-rest-payments-orders-controller.php:434-436, :667-669).
 	 *
@@ -495,7 +495,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox A failed authorization capture or cancel answers the client's code, message and status, and keeps the merchant's audit entry.
+	 * @testdox A failed authorization capture or cancel answers the WooPayments extension's code, message and status, and keeps the merchant's audit entry.
 	 *
 	 * Client 11.1.0 class-wc-rest-payments-orders-controller.php:403-425 (capture) and :645-656 (cancel).
 	 *
@@ -505,7 +505,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	 * @param array<string,mixed> $data     Failed outcome data, as WooPaymentsIntentCodec::failed_transport_outcome() builds it.
 	 * @param array<string,mixed> $expected Expected code, message and error data.
 	 */
-	public function test_failed_authorization_action_answers_the_client_error( string $action, array $data, array $expected ): void {
+	public function test_failed_authorization_action_answers_the_woopayments_extension_error( string $action, array $data, array $expected ): void {
 		$processing_service = new class( $data ) extends PaymentProcessingService {
 			/**
 			 * Failed outcome data.
@@ -718,7 +718,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox Authorization actions validate order state before delegating to native payment processing.
+	 * @testdox Authorization actions validate order state before delegating to payment processing.
 	 */
 	public function test_authorization_actions_validate_order_state_before_processing(): void {
 		$processing_service = new class() extends PaymentProcessingService {
@@ -855,7 +855,7 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox Cancel authorization requires payment_intent_id like the reference client.
+	 * @testdox Cancel authorization requires payment_intent_id.
 	 *
 	 * Mirrors client 11.1.0 `cancel_authorization`'s route registration
 	 * (`includes/admin/class-wc-rest-payments-orders-controller.php:122-133`), which declares
@@ -1073,14 +1073,14 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox Capture and cancel authorization actions delegate through native payment processing.
+	 * @testdox Capture and cancel authorization actions delegate through payment processing.
 	 *
 	 * Mirrors client 11.1.0's `add_fraud_outcome_manual_entry()`
 	 * (`includes/admin/class-wc-rest-payments-orders-controller.php:679-691`), called with
 	 * `'approve'` on capture (`:404`) and `'block'` on cancel (`:643`); both write the same
 	 * `type`/`user`/`action` shape to the `_wcpay_fraud_outcome_manual_entry` order meta.
 	 */
-	public function test_authorization_actions_delegate_through_native_processing(): void {
+	public function test_authorization_actions_delegate_through_payment_processing(): void {
 		$processing_service = new class() extends PaymentProcessingService {
 			/**
 			 * Last capture context.

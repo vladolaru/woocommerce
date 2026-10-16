@@ -104,7 +104,7 @@ class WooPaymentsVatDetailsRedirectTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Leaves AJAX requests alone, as the client does.
+	 * @testdox Leaves AJAX requests alone.
 	 */
 	public function test_ignores_ajax_requests(): void {
 		$_GET['woopayments-vat-details-redirect'] = '1';

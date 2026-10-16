@@ -82,9 +82,9 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox ToS routes are registered under wc/v3 when native owns runtime.
+	 * @testdox ToS routes are registered under wc/v3 when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_routes_when_native_owns_runtime(): void {
+	public function test_registers_routes_when_builtin_owns_runtime(): void {
 		$this->sut = $this->create_controller();
 		// WooCommerce's REST server registers the routes of the instance the container holds.
 		wc_get_container()->replace( WooPaymentsTosRestController::class, $this->sut );
@@ -133,7 +133,7 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox ToS route treats a null accept as missing and leaves an enabled gateway on, like client 11.1.0 isset().
+	 * @testdox ToS route treats a null accept as missing and leaves an enabled gateway on.
 	 */
 	public function test_tos_route_rejects_null_accept_without_disabling_the_gateway(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );

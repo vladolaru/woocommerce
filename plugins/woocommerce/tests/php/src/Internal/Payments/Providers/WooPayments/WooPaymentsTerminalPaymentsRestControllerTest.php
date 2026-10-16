@@ -550,7 +550,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox Terminal capture on a live account stores the client's live order mode.
+	 * @testdox Terminal capture on a live account stores the WooPayments extension's live order mode.
 	 *
 	 * Plugin 11.1.0 stores `Order_Mode::PRODUCTION` (`prod`), not the account mode `live` (class-order-mode.php:21).
 	 */
@@ -592,7 +592,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	 * @param string   $intent_status Status of the intent the app sends.
 	 * @param string[] $note_kinds    Notes the client writes, in order.
 	 */
-	public function test_capture_terminal_payment_writes_client_notes_and_schedules_fee_details_job( string $intent_status, array $note_kinds ): void {
+	public function test_capture_terminal_payment_writes_woopayments_extension_notes_and_schedules_fee_details_job( string $intent_status, array $note_kinds ): void {
 		$order                                        = $this->create_order( 12.34, 'USD' );
 		$intent                                       = array(
 			'id'       => 'pi_terminal_notes',
@@ -643,7 +643,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	 * @param string      $intent_status Status of the intent the app sends.
 	 * @param string|null $expected_fee  Fee meta the client stores, or null for none.
 	 */
-	public function test_capture_terminal_payment_stores_the_client_fee_meta( string $intent_status, ?string $expected_fee ): void {
+	public function test_capture_terminal_payment_stores_the_woopayments_extension_fee_meta( string $intent_status, ?string $expected_fee ): void {
 		$order                                        = $this->create_order( 12.34, 'USD' );
 		$charge                                       = array(
 			'id'                     => 'ch_terminal_fee',
@@ -744,7 +744,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox Terminal capture merges order-derived metadata under the intent's own, like the reference client.
+	 * @testdox Terminal capture merges order-derived metadata under the intent's own.
 	 */
 	public function test_capture_terminal_payment_merges_order_metadata_with_intent_metadata(): void {
 		$order = $this->create_order( 12.34, 'USD' );
@@ -790,7 +790,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox Terminal capture does not write an IPP channel the plugin does not recognize.
+	 * @testdox Terminal capture does not write an IPP channel the WooPayments extension does not recognize.
 	 */
 	public function test_capture_terminal_payment_ignores_unrecognized_ipp_channel(): void {
 		$order                                        = $this->create_order( 12.34, 'USD' );
@@ -825,7 +825,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox An amount-too-small capture failure in $currency notes the provider minimum like the reference client.
+	 * @testdox An amount-too-small capture failure in $currency notes the provider minimum.
 	 *
 	 * Client 11.1.0 appends the minimum with WC_Payments_Utils::format_explicit_currency( interpret_stripe_amount( ... ) )
 	 * (includes/class-wc-payment-gateway-wcpay.php:4003-4009): wc_price() in the currency's locale-info format, then the code
@@ -1006,7 +1006,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox capture_terminal_payment reaches the handler through the registered REST route with the client's payment_intent_id argument name.
+	 * @testdox capture_terminal_payment reaches the handler through the registered REST route with the WooPayments extension's payment_intent_id argument name.
 	 *
 	 * Dispatches through `WP_REST_Server` (not by calling the controller method directly), so the
 	 * route's `args` schema is exercised too: a `payment_intent_id` rename in that schema would fail
@@ -1265,7 +1265,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox A failure after the platform captured a terminal payment is logged even with logging off, and the app gets the client's generic error.
+	 * @testdox A failure after the platform captured a terminal payment is logged even with logging off, and the app gets the WooPayments extension's generic error.
 	 *
 	 * Client 11.1.0 logs every throwable before answering wcpay_server_error (class-wc-rest-payments-orders-controller.php:289-290).
 	 */
@@ -1339,7 +1339,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox Customer creation and terminal intent creation log an unexpected PHP error before the client's generic answer.
+	 * @testdox Customer creation and terminal intent creation log an unexpected PHP error before the WooPayments extension's generic answer.
 	 *
 	 * Client 11.1.0 logs both before answering wcpay_server_error (class-wc-rest-payments-orders-controller.php:502-503, :544-545).
 	 *
@@ -1471,7 +1471,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox Terminal preparation logs an unexpected PHP error and answers the client's generic error.
+	 * @testdox Terminal preparation logs an unexpected PHP error and answers the WooPayments extension's generic error.
 	 *
 	 * Client 11.1.0 logs it before answering wcpay_server_error (class-wc-rest-payments-orders-controller.php:355-356).
 	 */
@@ -1488,9 +1488,9 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox Terminal preparation answers the client's fallback code and status for a platform error that carries neither.
+	 * @testdox Terminal preparation answers the WooPayments extension's fallback code and status for a platform error that carries neither.
 	 */
-	public function test_prepare_terminal_payment_falls_back_to_the_client_error_code(): void {
+	public function test_prepare_terminal_payment_falls_back_to_the_woopayments_extension_error_code(): void {
 		$order = $this->create_order( 12.34, 'USD' );
 		// A platform error envelope without a code or HTTP status (client class-wc-rest-payments-orders-controller.php:346-353).
 		$this->api_client->prepare_terminal_payment_exception = new WooPaymentsApiException( 'Prepare failed.', '', 0 );
@@ -1502,7 +1502,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox Terminal capture refuses an order whose stored payment is already processed, with the client's answer and no capture.
+	 * @testdox Terminal capture refuses an order whose stored payment is already processed, with the WooPayments extension's answer and no capture.
 	 *
 	 * Client 11.1.0 checks the stored intent status before reading the intent (class-wc-rest-payments-orders-controller.php:181-194).
 	 *
@@ -1538,7 +1538,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox Terminal capture refuses an intent that is not authorized, with the client's answer and no capture.
+	 * @testdox Terminal capture refuses an intent that is not authorized, with the WooPayments extension's answer and no capture.
 	 */
 	public function test_capture_terminal_payment_refuses_an_intent_that_is_not_authorized(): void {
 		$order = $this->create_order( 12.34, 'USD' );
@@ -1554,7 +1554,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox Terminal capture sends a processing intent to the capture call, as the client's authorized check does.
+	 * @testdox Terminal capture sends a processing intent to the capture call, as the WooPayments extension's authorized check does.
 	 */
 	public function test_capture_terminal_payment_sends_a_processing_intent_to_the_capture_call(): void {
 		$order = $this->create_order( 12.34, 'USD' );
@@ -1567,7 +1567,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox Terminal capture and preparation refuse a partially refunded order with the client's answers and no platform call.
+	 * @testdox Terminal capture and preparation refuse a partially refunded order with the WooPayments extension's answers and no platform call.
 	 *
 	 * Client 11.1.0 class-wc-rest-payments-orders-controller.php:172-179 and :321-327.
 	 */
@@ -1594,7 +1594,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox A zero-amount refund row does not stop terminal capture or preparation, as the client checks the refunded total.
+	 * @testdox A zero-amount refund row does not stop terminal capture or preparation, since the check reads the refunded total.
 	 *
 	 * Client 11.1.0 class-wc-rest-payments-orders-controller.php:173 and :322 read get_total_refunded().
 	 */
@@ -1754,7 +1754,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox A generated card that cannot be saved for a registered customer fails the request and is logged, as on the client.
+	 * @testdox A generated card that cannot be saved for a registered customer fails the request and is logged.
 	 *
 	 * Client 11.1.0 fetches the payment method without a catch (class-wc-payments-token-service.php:135-138), so the
 	 * failure reaches the route's catch and answers wcpay_server_error (class-wc-rest-payments-orders-controller.php:289-291).

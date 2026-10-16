@@ -108,7 +108,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fetch the address service JWT from the native API client.
+	 * @testdox Should fetch the address service JWT from the API client.
 	 */
 	public function test_get_address_service_jwt_fetches_token_from_api_client(): void {
 		$api_client = new class() extends WooPaymentsApiClient {
@@ -261,7 +261,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 		};
 
 		update_option( 'woocommerce_address_autocomplete_enabled', 'yes' );
-		$preserved_jwt = JsonWebToken::create(
+		$stored_jwt = JsonWebToken::create(
 			array(
 				'iss' => 'test-issuer',
 				'aud' => 'test-audience',
@@ -270,7 +270,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 			),
 			'test-secret'
 		);
-		update_option( 'wcpay_address_autocomplete_jwt', $preserved_jwt );
+		update_option( 'wcpay_address_autocomplete_jwt', $stored_jwt );
 
 		$provider = new WooPaymentsAddressProvider();
 		$provider->init( $token_api_client, $account_service );
@@ -283,7 +283,7 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 		$this->assertTrue( JsonWebToken::shallow_validate( $result ) );
 		$this->assertSame( 1, $account_api_client->request_count, 'The account service should make one transient refresh attempt.' );
 		$this->assertSame( 1, $token_api_client->request_count, 'The address provider should attempt one token request after an indeterminate account refresh.' );
-		$this->assertSame( $preserved_jwt, get_option( 'wcpay_address_autocomplete_jwt' ), 'An indeterminate account refresh must not delete the preserved client JWT.' );
+		$this->assertSame( $stored_jwt, get_option( 'wcpay_address_autocomplete_jwt' ), 'An indeterminate account refresh must not delete the preserved client JWT.' );
 		$this->assertIsArray( $cached_jwt );
 		$this->assertSame( $result, $cached_jwt['data'], 'A valid replacement JWT should be cached by the Core provider.' );
 		$this->assertFalse( get_option( 'woocommerce_payments_jwt_retry_data' ), 'A successful token request should not leave retry metadata.' );

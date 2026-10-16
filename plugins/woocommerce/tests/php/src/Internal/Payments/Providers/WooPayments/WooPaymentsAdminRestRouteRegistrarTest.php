@@ -45,7 +45,7 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register native routes when an admin page dispatches an internal REST request.
+	 * @testdox Should register routes when an admin page dispatches an internal REST request.
 	 */
 	public function test_registers_routes_for_internal_requests_with_admin_screen(): void {
 		global $current_screen;
@@ -86,7 +86,7 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should resolve only route controllers for the effective native state.
+	 * @testdox Should resolve only route controllers for the effective state.
 	 * @dataProvider effective_state_provider
 	 *
 	 * @param string $state Effective native state.

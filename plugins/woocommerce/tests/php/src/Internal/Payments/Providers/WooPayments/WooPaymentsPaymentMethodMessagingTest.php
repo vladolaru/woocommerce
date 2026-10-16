@@ -475,9 +475,9 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report BNPL availability from native amount limits.
+	 * @testdox Should report BNPL availability from amount limits.
 	 */
-	public function test_reports_bnpl_availability_from_native_amount_limits(): void {
+	public function test_reports_bnpl_availability_from_amount_limits(): void {
 		$controller = $this->create_controller( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
 
 		$this->assertSame(

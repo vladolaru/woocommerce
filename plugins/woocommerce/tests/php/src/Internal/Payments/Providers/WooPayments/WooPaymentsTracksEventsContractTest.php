@@ -37,13 +37,13 @@ class WooPaymentsTracksEventsContractTest extends WC_Unit_Test_Case {
 	);
 
 	/**
-	 * Native client (JS/TS) scan roots. Two are glob prefixes rather than whole directories
+	 * Script (JS/TS) scan roots. Two are glob prefixes rather than whole directories
 	 * (the WooPay order-status admin script and the legacy frontend bundle share their parent
-	 * directory with unrelated files), expanded in `client_scan_paths()`.
+	 * directory with unrelated files), expanded in `script_scan_paths()`.
 	 *
 	 * @var array<int,string>
 	 */
-	private const CLIENT_SCAN_ROOTS = array(
+	private const SCRIPT_SCAN_ROOTS = array(
 		'client/admin/client/woopayments',
 		'client/admin/client/settings-payments',
 		'client/admin/client/wp-admin-scripts/woopayments-*',
@@ -246,7 +246,7 @@ class WooPaymentsTracksEventsContractTest extends WC_Unit_Test_Case {
 		foreach ( $this->builtin_php_tracks_wire_names( $this->source_collect_files( $php_roots, array( 'php' ) ), array( 'queue_user_event' => self::PHP_RECORDERS['queue_user_event'] ) ) as $name ) {
 			$sent[ $name ] = true;
 		}
-		foreach ( $this->client_scan_paths( $plugin_path ) as $file ) {
+		foreach ( $this->script_scan_paths( $plugin_path ) as $file ) {
 			$path = str_replace( '\\', '/', $file );
 			if ( false === strpos( $path, '/client/legacy/js/frontend/' ) && false === strpos( $path, '/client/blocks/' ) ) {
 				continue;
@@ -333,7 +333,7 @@ class WooPaymentsTracksEventsContractTest extends WC_Unit_Test_Case {
 			$names[ $name ] = true;
 		}
 
-		foreach ( $this->client_scan_paths( $plugin_path ) as $file ) {
+		foreach ( $this->script_scan_paths( $plugin_path ) as $file ) {
 			foreach ( $this->builtin_js_tracks_wire_names( $file ) as $name ) {
 				$names[ $name ] = true;
 			}
@@ -343,16 +343,16 @@ class WooPaymentsTracksEventsContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Resolve `CLIENT_SCAN_ROOTS` (two of which are glob prefixes) to concrete JS/TS files.
+	 * Resolve `SCRIPT_SCAN_ROOTS` (two of which are glob prefixes) to concrete JS/TS files.
 	 *
 	 * @param string $plugin_path Absolute plugin directory.
 	 * @return array<int,string> Absolute file paths.
 	 */
-	private function client_scan_paths( string $plugin_path ): array {
+	private function script_scan_paths( string $plugin_path ): array {
 		$files      = array();
 		$extensions = array( 'js', 'jsx', 'ts', 'tsx' );
 
-		foreach ( self::CLIENT_SCAN_ROOTS as $root ) {
+		foreach ( self::SCRIPT_SCAN_ROOTS as $root ) {
 			$absolute = $plugin_path . '/' . $root;
 			if ( false === strpos( $absolute, '*' ) ) {
 				$files = array_merge( $files, $this->source_collect_files( array( $absolute ), $extensions ) );

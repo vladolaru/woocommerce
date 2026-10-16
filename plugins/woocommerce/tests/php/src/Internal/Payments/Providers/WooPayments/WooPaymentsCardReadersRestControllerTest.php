@@ -77,7 +77,7 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Reader registration forwards app-supplied metadata verbatim like the reference client.
+	 * @testdox Reader registration forwards app-supplied metadata verbatim.
 	 */
 	public function test_register_reader_forwards_metadata_verbatim(): void {
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/readers' );
@@ -103,7 +103,7 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Registering a reader refreshes the cached account data like the reference client.
+	 * @testdox Registering a reader refreshes the cached account data.
 	 */
 	public function test_register_reader_refreshes_account_data(): void {
 		$this->api_client->terminal_reader_response = array(
@@ -143,9 +143,9 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Reader listing uses the preserved transient and annotates the active reader.
+	 * @testdox Reader listing uses the stored transient and annotates the active reader.
 	 */
-	public function test_get_readers_uses_preserved_transient_and_active_status(): void {
+	public function test_get_readers_uses_the_stored_transient_and_active_status(): void {
 		$this->api_client->terminal_readers_response      = array(
 			'data' => array(
 				array(
@@ -177,7 +177,7 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An empty cached reader list is treated as a miss and re-fetched, like the reference client.
+	 * @testdox An empty cached reader list is treated as a miss and re-fetched.
 	 */
 	public function test_get_readers_refetches_when_cached_list_is_empty(): void {
 		set_transient( 'wcpay_store_terminal_readers', array() );
@@ -250,9 +250,9 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Receipt preview accepts the preserved camelCase settings payload.
+	 * @testdox Receipt preview accepts the camelCase settings payload.
 	 */
-	public function test_preview_print_receipt_uses_preserved_settings_payload(): void {
+	public function test_preview_print_receipt_uses_the_camel_case_settings_payload(): void {
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/readers/receipts/preview' );
 		$request->set_body_params(
 			array(
@@ -350,7 +350,7 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Generated receipts embed the account branding logo like the reference client.
+	 * @testdox Generated receipts embed the account branding logo.
 	 */
 	public function test_generate_print_receipt_embeds_account_branding_logo(): void {
 		$order = $this->create_order( 12.34, 'USD' );
@@ -619,9 +619,9 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Generated receipts keep the preserved error envelope when the payment intent is invalid.
+	 * @testdox Generated receipts keep the WooPayments extension's error envelope when the payment intent is invalid.
 	 */
-	public function test_generate_print_receipt_wraps_invalid_intent_in_preserved_error(): void {
+	public function test_generate_print_receipt_wraps_invalid_intent_in_the_woopayments_extension_error(): void {
 		$this->api_client->payment_intention_response = array(
 			'id'     => 'pi_receipt',
 			'status' => 'requires_payment_method',

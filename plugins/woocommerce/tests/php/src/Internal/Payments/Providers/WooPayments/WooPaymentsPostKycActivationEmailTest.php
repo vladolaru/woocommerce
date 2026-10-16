@@ -57,14 +57,14 @@ class WooPaymentsPostKycActivationEmailTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Sends each stage to the store admin with the client's copy and a CTA naming the stage.
+	 * @testdox Sends each stage to the store admin with its copy and a CTA naming the stage.
 	 * @dataProvider provide_stages
 	 *
 	 * @param int    $stage   Stage day.
 	 * @param string $heading The client's stage heading.
 	 * @param string $body    The client's stage body.
 	 */
-	public function test_sends_each_stage_with_the_client_copy( int $stage, string $heading, string $body ): void {
+	public function test_sends_each_stage_with_its_copy( int $stage, string $heading, string $body ): void {
 		$email             = new WooPaymentsPostKycActivationEmail();
 		$email->email_type = 'html';
 
@@ -87,18 +87,18 @@ class WooPaymentsPostKycActivationEmailTest extends WC_Unit_Test_Case {
 			}
 		}
 		$this->assertNotNull( $cta, 'The CTA is a link labelled Promote my store.' );
-		$this->assertSame( $this->get_client_cta_url( $stage ), $cta->getAttribute( 'href' ) );
+		$this->assertSame( $this->get_expected_cta_url( $stage ), $cta->getAttribute( 'href' ) );
 	}
 
 	/**
-	 * @testdox The plain text email carries the client's stage copy and the CTA link.
+	 * @testdox The plain text email carries the stage copy and the CTA link.
 	 * @dataProvider provide_stages
 	 *
 	 * @param int    $stage   Stage day.
 	 * @param string $heading The client's stage heading.
 	 * @param string $body    The client's stage body.
 	 */
-	public function test_plain_email_carries_the_client_copy( int $stage, string $heading, string $body ): void {
+	public function test_plain_email_carries_the_stage_copy( int $stage, string $heading, string $body ): void {
 		$email             = new WooPaymentsPostKycActivationEmail();
 		$email->email_type = 'plain';
 
@@ -108,16 +108,16 @@ class WooPaymentsPostKycActivationEmailTest extends WC_Unit_Test_Case {
 		$text = (string) preg_replace( '/\s+/', ' ', (string) $this->mails[0]['message'] );
 		$this->assertStringContainsString( $heading, $text );
 		$this->assertStringContainsString( $body, $text );
-		$this->assertStringContainsString( 'Promote my store: ' . $this->get_client_cta_url( $stage ), $text );
+		$this->assertStringContainsString( 'Promote my store: ' . $this->get_expected_cta_url( $stage ), $text );
 	}
 
 	/**
-	 * The CTA destination the client builds (client 11.1.0 `includes/emails/class-wc-payments-email-post-kyc-activation.php:125-134`).
+	 * The expected CTA destination (the WooPayments extension `includes/emails/class-wc-payments-email-post-kyc-activation.php:125-134`).
 	 *
 	 * @param int $stage Stage day.
 	 * @return string
 	 */
-	private function get_client_cta_url( int $stage ): string {
+	private function get_expected_cta_url( int $stage ): string {
 		return admin_url( 'admin.php' ) . '?page=wc-admin&path=/marketing&wcpay_referrer=post_kyc_email&wcpay_referrer_stage=' . $stage;
 	}
 
@@ -135,7 +135,7 @@ class WooPaymentsPostKycActivationEmailTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Sends nothing for a stage outside the client's 7, 14 and 30 day sequence.
+	 * @testdox Sends nothing for a stage outside the 7, 14 and 30 day sequence.
 	 */
 	public function test_sends_nothing_for_an_unknown_stage(): void {
 		$email = new WooPaymentsPostKycActivationEmail();
@@ -145,9 +145,9 @@ class WooPaymentsPostKycActivationEmailTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The default heading is the client's.
+	 * @testdox Uses the expected default heading.
 	 */
-	public function test_default_heading_is_the_client_heading(): void {
+	public function test_default_heading(): void {
 		$this->assertSame( 'Your store is ready — let’s make your first sale', ( new WooPaymentsPostKycActivationEmail() )->get_default_heading() );
 	}
 }

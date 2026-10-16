@@ -38,7 +38,7 @@ class WooPaymentsWooCommerceUpdateListenerTest extends WC_Unit_Test_Case {
 	 *
 	 * @var WooPaymentsStoreSetupReportController&MockObject
 	 */
-	private $operational_queue;
+	private $store_setup_report;
 
 	/**
 	 * WooPay extension sync double.
@@ -53,10 +53,10 @@ class WooPaymentsWooCommerceUpdateListenerTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 		$this->account_service       = $this->createMock( WooPaymentsAccountService::class );
-		$this->operational_queue     = $this->createMock( WooPaymentsStoreSetupReportController::class );
+		$this->store_setup_report    = $this->createMock( WooPaymentsStoreSetupReportController::class );
 		$this->woopay_extension_sync = $this->createMock( WooPaymentsWooPayExtensionSync::class );
 		wc_get_container()->replace( WooPaymentsAccountService::class, $this->account_service );
-		wc_get_container()->replace( WooPaymentsStoreSetupReportController::class, $this->operational_queue );
+		wc_get_container()->replace( WooPaymentsStoreSetupReportController::class, $this->store_setup_report );
 		wc_get_container()->replace( WooPaymentsWooPayExtensionSync::class, $this->woopay_extension_sync );
 		$this->sut = new WooPaymentsWooCommerceUpdateListener();
 	}
@@ -73,13 +73,13 @@ class WooPaymentsWooCommerceUpdateListenerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A WooCommerce update refreshes the account, queues a store setup sync and drops the retired WooPay schedule, as a client update does.
+	 * @testdox A WooCommerce update refreshes the account, queues a store setup sync and drops the retired WooPay schedule.
 	 */
-	public function test_woocommerce_update_runs_the_client_update_duties(): void {
+	public function test_woocommerce_update_runs_the_update_duties(): void {
 		// Client 11.1.0 runs these on its own update action: class-wc-payments-account.php:143,147 and
 		// woopay/class-woopay-scheduler.php:50.
 		$this->account_service->expects( $this->once() )->method( 'clear_cache' );
-		$this->operational_queue->expects( $this->once() )->method( 'queue_store_setup_sync' );
+		$this->store_setup_report->expects( $this->once() )->method( 'queue_store_setup_sync' );
 		$this->woopay_extension_sync->expects( $this->once() )->method( 'remove_retired_validation_schedule' );
 		$this->sut->register();
 
@@ -91,7 +91,7 @@ class WooPaymentsWooCommerceUpdateListenerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_registration_runs_no_update_duty(): void {
 		$this->account_service->expects( $this->never() )->method( 'clear_cache' );
-		$this->operational_queue->expects( $this->never() )->method( 'queue_store_setup_sync' );
+		$this->store_setup_report->expects( $this->never() )->method( 'queue_store_setup_sync' );
 		$this->woopay_extension_sync->expects( $this->never() )->method( 'remove_retired_validation_schedule' );
 
 		$this->sut->register();

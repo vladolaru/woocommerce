@@ -38,9 +38,9 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register platform Tracks AJAX hooks when native owns runtime.
+	 * @testdox Should register platform Tracks AJAX hooks when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_platform_tracks_ajax_hooks_when_native_owns_runtime(): void {
+	public function test_registers_platform_tracks_ajax_hooks_when_builtin_owns_runtime(): void {
 		$sut = $this->create_controller();
 
 		$sut->register();
@@ -278,9 +278,9 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	 * on 2026-10-07): `payments_runtime` is `woocommerce_core`, and `wcpay_version`, which client 11.1.0 fills with the
 	 * plugin version (`class-woopay-tracker.php:380`), is not sent; `wc_version` from core's blog details stays.
 	 *
-	 * @testdox Should mark a recorded shopper event as native WooCommerce core, whatever the browser sends.
+	 * @testdox Should mark a recorded shopper event as WooCommerce core, whatever the browser sends.
 	 */
-	public function test_shopper_event_names_the_native_runtime_and_no_plugin_version(): void {
+	public function test_shopper_event_names_the_builtin_runtime_and_no_plugin_version(): void {
 		$captured_url = '';
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 		add_filter( 'wp_doing_ajax', '__return_true' );
@@ -327,7 +327,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should still record the event when a property filter returns null, as the client does.
+	 * @testdox Should still record the event when a property filter returns null.
 	 *
 	 * Client 11.1.0 `includes/class-woopay-tracker.php:372-380` adds its properties to the null result, which PHP turns into
 	 * an array, and `:400` merges `(array) $properties`.
@@ -462,7 +462,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should arm no cart click tracking, and not ask about direct checkout, when WooPay is off, as client 11.1.0's recorder drops the event then.
+	 * @testdox Should arm no cart click tracking, and not ask about direct checkout, when WooPay is off.
 	 */
 	public function test_proceed_to_checkout_tracking_is_a_no_op_when_woopay_is_off(): void {
 		update_option( 'woocommerce_default_country', 'US:CA' );
@@ -561,7 +561,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	 * schema the owner decided on 2026-10-07; client 11.1.0 `class-woopay-tracker.php:93-120` forwards any name and any
 	 * property).
 	 *
-	 * @testdox Should refuse an event name no native script sends, and record nothing.
+	 * @testdox Should refuse an event name no script sends, and record nothing.
 	 */
 	public function test_tracks_request_refuses_an_unknown_event(): void {
 		update_option( 'woocommerce_default_country', 'US:CA' );
@@ -841,7 +841,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should track the client 11.1.0 shopper funnel on the cart, product and pay-for-order hooks and on WooPay sign-up.
+	 * @testdox Should track the WooPayments extension's shopper funnel on the cart, product and pay-for-order hooks and on WooPay sign-up.
 	 */
 	public function test_tracks_shopper_funnel_events_on_their_hooks(): void {
 		$recorded_events = array();
@@ -897,7 +897,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should queue guest page views for the footer script instead of recording them during render, like client 11.1.0.
+	 * @testdox Should queue guest page views for the footer script instead of recording them during render.
 	 */
 	public function test_page_views_render_without_recording_and_queue_for_the_footer_script(): void {
 		update_option( 'woocommerce_allow_tracking', 'yes' );
@@ -990,7 +990,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should arm the Blocks cart Proceed to checkout click in the footer script without building the WooPay config, like client 11.1.0 cart/index.js.
+	 * @testdox Should arm the Blocks cart Proceed to checkout click in the footer script without building the WooPay config (the WooPayments extension cart/index.js).
 	 * @dataProvider direct_checkout_provider
 	 *
 	 * @param bool $direct_checkout_enabled Whether WooPay direct checkout is enabled.
@@ -1394,7 +1394,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	 * @param string $error_code      Error code the platform answers with, or '' to return the account.
 	 * @param bool   $expected_sent   Whether the shopper events are sent.
 	 */
-	public function test_shopper_events_follow_a_connected_account_like_the_client( bool $earlier_account, string $error_code, bool $expected_sent ): void {
+	public function test_shopper_events_follow_a_connected_account( bool $earlier_account, string $error_code, bool $expected_sent ): void {
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );

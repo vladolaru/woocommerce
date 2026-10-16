@@ -54,9 +54,9 @@ class WooPaymentsDisputeReadinessRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox Dispute readiness routes are registered under wc/v3 when native owns runtime.
+	 * @testdox Dispute readiness routes are registered under wc/v3 when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_routes_when_native_owns_runtime(): void {
+	public function test_registers_routes_when_builtin_owns_runtime(): void {
 		// WooCommerce's REST server registers the routes of the instance the container holds.
 		wc_get_container()->replace( WooPaymentsDisputeReadinessRestController::class, $this->sut );
 		$this->sut->register();

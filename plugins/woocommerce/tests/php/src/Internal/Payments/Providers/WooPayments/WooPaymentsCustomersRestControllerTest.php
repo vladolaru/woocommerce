@@ -60,9 +60,9 @@ class WooPaymentsCustomersRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Customer payment methods route is registered under wc/v3 when native owns runtime.
+	 * @testdox Customer payment methods route is registered under wc/v3 when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_route_when_native_owns_runtime(): void {
+	public function test_registers_route_when_builtin_owns_runtime(): void {
 		// WooCommerce's REST server registers the routes of the instance the container holds.
 		wc_get_container()->replace( WooPaymentsCustomersRestController::class, $this->sut );
 		$this->sut->register();
@@ -89,7 +89,7 @@ class WooPaymentsCustomersRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Customer payment methods route fans out over enabled payment method types and returns plugin-compatible items.
+	 * @testdox Customer payment methods route fans out over enabled payment method types and returns the WooPayments extension's item shape.
 	 */
 	public function test_route_returns_payment_methods_for_enabled_types(): void {
 		$this->account_service->gateway_settings         = array(

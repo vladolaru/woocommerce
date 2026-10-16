@@ -63,7 +63,7 @@ class WooPaymentsFrontendAssetsTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * @testdox Inside a secondary loop the loop's post answers, as client 11.1.0's has_block() without a post does.
+	 * @testdox Inside a secondary loop the loop's post answers, as the WooPayments extension's has_block() without a post does.
 	 */
 	public function test_secondary_loop_post_answers_like_has_block(): void {
 		$host_id = self::factory()->post->create( array( 'post_type' => 'page' ) );

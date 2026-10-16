@@ -72,7 +72,7 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox account.updated refreshes account data and clears preserved payment method caches.
+	 * @testdox account.updated refreshes account data and clears the payment method caches.
 	 *
 	 * Mirrors client 11.1.0's non-strict `account.updated` handling
 	 * (`includes/class-wc-payments-webhook-processing-service.php:205-208`), which never
@@ -162,7 +162,7 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox account.deleted resets account state, refreshes account data, and clears preserved payment method caches.
+	 * @testdox account.deleted resets account state, refreshes account data, and clears the payment method caches.
 	 */
 	public function test_account_deleted_cleans_state_refreshes_account_data_and_clears_payment_method_caches(): void {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )

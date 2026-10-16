@@ -35,7 +35,7 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		foreach ( $this->services as $service ) {
-			$this->remove_operational_hooks( $service );
+			$this->remove_account_milestone_hooks( $service );
 		}
 
 		remove_all_filters( 'wcpay_test_mode' );
@@ -71,7 +71,7 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Account milestone hooks are registered when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_preserved_operational_hooks_when_builtin_owns_runtime(): void {
+	public function test_registers_account_milestone_hooks_when_builtin_owns_runtime(): void {
 		$service = $this->create_service();
 
 		$service->register();
@@ -369,7 +369,7 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Instant deposit eligibility refresh creates the preserved inbox note and reminder.
+	 * @testdox Instant deposit eligibility refresh creates the inbox note and reminder.
 	 */
 	public function test_instant_deposit_eligibility_refresh_creates_note_and_reminder(): void {
 		$scheduler = new RecordingActionSchedulerService();
@@ -767,7 +767,7 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param WooPaymentsAccountMilestonesController $service Controller instance.
 	 */
-	private function remove_operational_hooks( WooPaymentsAccountMilestonesController $service ): void {
+	private function remove_account_milestone_hooks( WooPaymentsAccountMilestonesController $service ): void {
 		remove_action( 'wcpay_instant_deposit_reminder', array( $service, 'handle_wcpay_instant_deposit_reminder' ) );
 		remove_action( 'add_option_wcpay_kyc_completion_date', array( $service, 'handle_add_option_wcpay_kyc_completion_date' ) );
 		remove_action( 'wcpay_post_kyc_activation_email_send', array( $service, 'handle_wcpay_post_kyc_activation_email_send' ) );

@@ -65,11 +65,11 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	private FakePaymentGateway $gateway;
 
 	/**
-	 * Native gateway test double.
+	 * Built-in gateway test double.
 	 *
 	 * @var WooPaymentsGateway
 	 */
-	private WooPaymentsGateway $native_gateway;
+	private WooPaymentsGateway $builtin_gateway;
 
 	/**
 	 * Account service mock.
@@ -79,11 +79,11 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	private $account_service;
 
 	/**
-	 * Native WooPayments account service.
+	 * Built-in WooPayments account service.
 	 *
 	 * @var WooPaymentsAccountService
 	 */
-	private WooPaymentsAccountService $native_account_service;
+	private WooPaymentsAccountService $builtin_account_service;
 
 	/**
 	 * Set up test fixtures.
@@ -101,14 +101,14 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 
 		$this->payment_gateway_provider = new PaymentGateway( $this->legacy_proxy );
 		$this->gateway                  = new FakePaymentGateway( 'woocommerce_payments' );
-		$this->native_gateway           = new WooPaymentsGateway();
+		$this->builtin_gateway          = new WooPaymentsGateway();
 		$this->account_service          = $this->getMockBuilder( \stdClass::class )
 			->addMethods( array( 'is_stripe_account_valid', 'get_account_status_data' ) )
 			->getMock();
-		$this->native_account_service   = new WooPaymentsAccountService();
+		$this->builtin_account_service  = new WooPaymentsAccountService();
 		$database_cache                 = new WooPaymentsDatabaseCache();
 		$database_cache->init( $this->legacy_proxy );
-		$this->native_account_service->init( $this->legacy_proxy, $database_cache );
+		$this->builtin_account_service->init( $this->legacy_proxy, $database_cache );
 
 		$this->legacy_proxy->register_static_mocks(
 			array(
@@ -127,7 +127,7 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 		$extension_runtime->init( $this->legacy_proxy );
 
 		$this->adapter = new WooPaymentsPaymentsSettingsAdapter();
-		$this->init_adapter( $this->adapter, $extension_runtime, $this->provider, $this->native_gateway, $this->native_account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
+		$this->init_adapter( $this->adapter, $extension_runtime, $this->provider, $this->builtin_gateway, $this->builtin_account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 	}
 
 	/**
@@ -145,9 +145,9 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The legacy extension makes onboarding runtime available during the transition.
+	 * @testdox The WooPayments extension makes the onboarding runtime available while it is active.
 	 */
-	public function test_runtime_available_when_legacy_extension_is_active(): void {
+	public function test_runtime_available_when_the_woopayments_extension_is_active(): void {
 		$this->legacy_proxy->register_function_mocks(
 			array(
 				'class_exists' => fn( $class_to_check ) => 'WC_Payments' === ltrim( (string) $class_to_check, '\\' ),
@@ -159,9 +159,9 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A future native provider transport can make onboarding available without the plugin class.
+	 * @testdox A future built-in provider transport can make onboarding available without the WooPayments extension class.
 	 */
-	public function test_runtime_available_when_native_provider_can_process_without_plugin(): void {
+	public function test_runtime_available_when_builtin_can_process_without_the_woopayments_extension(): void {
 		$this->legacy_proxy->register_function_mocks(
 			array(
 				'class_exists' => fn() => false,
@@ -175,9 +175,9 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native onboarding is unavailable when the plugin is absent and the native runtime is disabled.
+	 * @testdox Onboarding is unavailable when the WooPayments extension is absent and the built-in WooPayments is disabled.
 	 */
-	public function test_runtime_unavailable_when_plugin_absent_and_native_runtime_disabled(): void {
+	public function test_runtime_unavailable_when_the_woopayments_extension_is_absent_and_builtin_is_disabled(): void {
 		$this->legacy_proxy->register_function_mocks(
 			array(
 				'class_exists' => fn() => false,
@@ -191,9 +191,9 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native onboarding runtime is available with transport even before the account can process payments.
+	 * @testdox Built-in onboarding is available with transport even before the account can process payments.
 	 */
-	public function test_runtime_available_when_native_transport_exists_before_account_can_process(): void {
+	public function test_runtime_available_when_builtin_transport_exists_before_account_can_process(): void {
 		$this->legacy_proxy->register_function_mocks(
 			array(
 				'class_exists' => fn() => false,
@@ -207,9 +207,9 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The injected native gateway is returned when native processing is available without the plugin.
+	 * @testdox The injected built-in gateway is returned when built-in processing is available without the WooPayments extension.
 	 */
-	public function test_native_gateway_is_returned_when_native_provider_can_process_without_plugin(): void {
+	public function test_builtin_gateway_is_returned_when_builtin_can_process_without_the_woopayments_extension(): void {
 		$this->legacy_proxy->register_function_mocks(
 			array(
 				'class_exists' => fn() => false,
@@ -219,13 +219,13 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
 		$this->provider->method( 'can_process_payments' )->willReturn( true );
 
-		self::assertSame( $this->native_gateway, $this->adapter->get_payment_gateway() );
+		self::assertSame( $this->builtin_gateway, $this->adapter->get_payment_gateway() );
 	}
 
 	/**
-	 * @testdox The injected native gateway is returned when onboarding is available before the account can process payments.
+	 * @testdox The injected built-in gateway is returned when onboarding is available before the account can process payments.
 	 */
-	public function test_native_gateway_is_returned_when_onboarding_is_available_before_account_can_process(): void {
+	public function test_builtin_gateway_is_returned_when_onboarding_is_available_before_account_can_process(): void {
 		$this->legacy_proxy->register_function_mocks(
 			array(
 				'class_exists' => fn() => false,
@@ -235,13 +235,13 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
 		$this->provider->method( 'can_process_payments' )->willReturn( false );
 
-		self::assertSame( $this->native_gateway, $this->adapter->get_payment_gateway() );
+		self::assertSame( $this->builtin_gateway, $this->adapter->get_payment_gateway() );
 	}
 
 	/**
-	 * @testdox Native gateway is not returned when native onboarding is unavailable.
+	 * @testdox The built-in gateway is not returned when built-in onboarding is unavailable.
 	 */
-	public function test_native_gateway_is_not_returned_when_native_onboarding_is_unavailable(): void {
+	public function test_builtin_gateway_is_not_returned_when_builtin_onboarding_is_unavailable(): void {
 		$this->legacy_proxy->register_function_mocks(
 			array(
 				'class_exists' => fn() => false,
@@ -258,9 +258,9 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Legacy gateway wins when both legacy and native runtimes are available.
+	 * @testdox The WooPayments extension's gateway wins when both runtimes are available.
 	 */
-	public function test_legacy_gateway_wins_when_both_legacy_and_native_are_available(): void {
+	public function test_woopayments_extension_gateway_wins_when_both_runtimes_are_available(): void {
 		$this->legacy_proxy->register_function_mocks(
 			array(
 				'class_exists' => fn( $class_to_check ) => 'WC_Payments' === ltrim( (string) $class_to_check, '\\' ),
@@ -272,7 +272,7 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Account state fails closed when neither plugin nor native provider can operate.
+	 * @testdox Account state fails closed when neither the WooPayments extension nor the built-in provider can operate.
 	 */
 	public function test_account_state_is_fail_closed_when_no_runtime_is_available(): void {
 		$this->legacy_proxy->register_function_mocks(
@@ -288,9 +288,9 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Legacy account state is normalized through the adapter.
+	 * @testdox The WooPayments extension's account state is normalized through the adapter.
 	 */
-	public function test_legacy_account_state_is_normalized(): void {
+	public function test_woopayments_extension_account_state_is_normalized(): void {
 		$this->legacy_proxy->register_function_mocks(
 			array(
 				'class_exists' => fn( $class_to_check ) => 'WC_Payments' === ltrim( (string) $class_to_check, '\\' ),
@@ -319,9 +319,9 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native account state is normalized from the preserved account cache.
+	 * @testdox Built-in account state is normalized from the stored account cache.
 	 */
-	public function test_native_account_state_is_normalized_from_account_cache(): void {
+	public function test_builtin_account_state_is_normalized_from_account_cache(): void {
 		$this->legacy_proxy->register_function_mocks(
 			array(
 				'class_exists' => fn() => false,
@@ -377,7 +377,7 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 		);
 
 		$adapter = new WooPaymentsPaymentsSettingsAdapter();
-		$this->init_adapter( $adapter, $runtime, $this->provider, new WooPaymentsGateway(), $this->native_account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
+		$this->init_adapter( $adapter, $runtime, $this->provider, new WooPaymentsGateway(), $this->builtin_account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
 		$this->provider->method( 'can_process_payments' )->willReturn( false );
 		$this->account_service
@@ -402,9 +402,9 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Onboarding adapter should resolve no native collaborator when initialized.
+	 * @testdox The settings adapter should resolve no built-in collaborator when initialized.
 	 */
-	public function test_init_resolves_no_native_collaborator(): void {
+	public function test_init_resolves_no_builtin_collaborator(): void {
 		$extension_runtime = new WooPaymentsExtensionRuntime();
 		$extension_runtime->init( $this->legacy_proxy );
 		$adapter = new WooPaymentsPaymentsSettingsAdapter();
@@ -635,19 +635,19 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	 *
 	 * The adapter resolves them on first use, so the test doubles are set on the instance after init.
 	 *
-	 * @param WooPaymentsPaymentsSettingsAdapter $adapter         The adapter.
-	 * @param WooPaymentsExtensionRuntime        $extension_runtime  The extension runtime.
-	 * @param WooPaymentsProvider                $provider        The native provider.
-	 * @param WooPaymentsGateway                 $native_gateway  The native gateway.
-	 * @param WooPaymentsAccountService          $account_service The native account service.
-	 * @param WooPaymentsRuntimeArbiter          $arbiter         The runtime arbiter.
+	 * @param WooPaymentsPaymentsSettingsAdapter $adapter           The adapter.
+	 * @param WooPaymentsExtensionRuntime        $extension_runtime The extension runtime.
+	 * @param WooPaymentsProvider                $provider          The native provider.
+	 * @param WooPaymentsGateway                 $builtin_gateway   The built-in gateway.
+	 * @param WooPaymentsAccountService          $account_service   The native account service.
+	 * @param WooPaymentsRuntimeArbiter          $arbiter           The runtime arbiter.
 	 */
-	private function init_adapter( WooPaymentsPaymentsSettingsAdapter $adapter, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsProvider $provider, WooPaymentsGateway $native_gateway, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter ): void {
+	private function init_adapter( WooPaymentsPaymentsSettingsAdapter $adapter, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsProvider $provider, WooPaymentsGateway $builtin_gateway, WooPaymentsAccountService $account_service, WooPaymentsRuntimeArbiter $arbiter ): void {
 		$adapter->init( $extension_runtime, $arbiter );
 
 		$collaborators = array(
 			'provider'        => $provider,
-			'builtin_gateway' => $native_gateway,
+			'builtin_gateway' => $builtin_gateway,
 			'account_service' => $account_service,
 		);
 		foreach ( $collaborators as $property => $collaborator ) {

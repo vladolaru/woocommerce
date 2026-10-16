@@ -61,9 +61,9 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Capital routes are registered under wc/v3 when native owns runtime.
+	 * @testdox Capital routes are registered under wc/v3 when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_capital_routes_when_native_owns_runtime(): void {
+	public function test_registers_capital_routes_when_builtin_owns_runtime(): void {
 		// WooCommerce's REST server registers the routes of the instance the container holds.
 		wc_get_container()->replace( WooPaymentsCapitalRestController::class, $this->sut );
 		$this->sut->register();
@@ -155,7 +155,7 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Legacy loan offer query arg redirects to a fresh Capital link.
+	 * @testdox The WooPayments extension's loan offer query arg redirects to a fresh Capital link.
 	 */
 	public function test_loan_offer_query_arg_redirects_to_returned_capital_link_url(): void {
 		$this->api_client->capital_link_response = array(
@@ -178,7 +178,7 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Legacy loan offer query arg is ignored during AJAX requests.
+	 * @testdox The WooPayments extension's loan offer query arg is ignored during AJAX requests.
 	 */
 	public function test_loan_offer_query_arg_does_not_redirect_during_ajax_requests(): void {
 		$_GET['wcpay-loan-offer'] = '';
@@ -190,7 +190,7 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Loan offer link redirects any manage_woocommerce user to the Capital link, with no Capital eligibility check (plugin 11.1.0).
+	 * @testdox Loan offer link redirects any manage_woocommerce user to the Capital link, with no Capital eligibility check.
 	 */
 	public function test_loan_offer_query_arg_redirects_shop_manager_to_capital_link(): void {
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'shop_manager' ) ) );
@@ -241,9 +241,9 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Loan offer link is ignored when native does not own the runtime.
+	 * @testdox Loan offer link is ignored when the built-in WooPayments does not own the runtime.
 	 */
-	public function test_loan_offer_query_arg_is_ignored_when_native_does_not_own_runtime(): void {
+	public function test_loan_offer_query_arg_is_ignored_when_builtin_does_not_own_runtime(): void {
 		$this->sut                = $this->create_controller( false );
 		$_GET['wcpay-loan-offer'] = '';
 
@@ -395,15 +395,15 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * Create a native Capital REST controller.
 	 *
-	 * @param bool $native_register Whether native should own route registration.
+	 * @param bool $builtin_owner Whether the built-in WooPayments owns the runtime.
 	 * @return WooPaymentsCapitalRestController
 	 */
-	private function create_controller( bool $native_register ): WooPaymentsCapitalRestController {
+	private function create_controller( bool $builtin_owner ): WooPaymentsCapitalRestController {
 		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_owner );
 
 		$controller = new WooPaymentsCapitalRestController();
 		$controller->init( $arbiter, $this->api_client );

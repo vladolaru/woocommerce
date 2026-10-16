@@ -51,7 +51,7 @@ class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_C
 	}
 
 	/**
-	 * @testdox Terminal location creation does not forward metadata, like the reference client.
+	 * @testdox Terminal location creation does not forward metadata.
 	 */
 	public function test_create_terminal_location_does_not_forward_metadata(): void {
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/terminal/locations' );
@@ -66,7 +66,7 @@ class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_C
 	}
 
 	/**
-	 * @testdox An empty cached location list is treated as a miss and re-fetched, like the reference client.
+	 * @testdox An empty cached location list is treated as a miss and re-fetched.
 	 */
 	public function test_get_terminal_locations_refetches_when_cached_list_is_empty(): void {
 		set_transient( 'wcpay_store_terminal_locations', array() );
@@ -111,7 +111,7 @@ class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_C
 	}
 
 	/**
-	 * @testdox Store-location address honors the woocommerce_countries_base_* filters like the reference client.
+	 * @testdox Store-location address honors the woocommerce_countries_base_* filters.
 	 */
 	public function test_get_or_create_store_location_address_honors_base_address_filters(): void {
 		update_option( 'woocommerce_default_country', 'US:CA' );
@@ -143,7 +143,7 @@ class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_C
 	}
 
 	/**
-	 * @testdox Store-location lookup reuses hostname-named locations created by the reference client.
+	 * @testdox Store-location lookup reuses hostname-named locations created by the WooPayments extension.
 	 */
 	public function test_get_or_create_store_location_reuses_matching_hostname_location(): void {
 		update_option( 'woocommerce_default_country', 'US:CA' );

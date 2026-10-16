@@ -100,7 +100,7 @@ class WooPaymentsDisputeReadinessServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should build complete enabled overview signals from Core pages and preserved account data.
+	 * @testdox Should build complete enabled overview signals from Core pages and stored account data.
 	 */
 	public function test_get_overview_payload_marks_all_signals_complete(): void {
 		update_option( 'woocommerce_refund_returns_page_id', $this->create_published_page( 'Refunds are available within 30 days.' ) );

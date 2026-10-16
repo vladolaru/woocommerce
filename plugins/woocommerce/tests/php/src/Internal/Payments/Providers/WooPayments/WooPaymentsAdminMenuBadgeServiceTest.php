@@ -127,7 +127,7 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep an errored badge cache for the full TTL, like the client database cache, so admin pages do not refetch.
+	 * @testdox Should keep an errored badge cache for the full TTL, so admin pages do not refetch.
 	 */
 	public function test_get_disputes_awaiting_response_count_keeps_cold_failure_for_the_full_ttl(): void {
 		update_option(
@@ -170,7 +170,7 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should count errors in a row on the $key cache and reset the count on success, as client 11.1.0 `class-database-cache.php:364-382`.
+	 * @testdox Should count errors in a row on the $key cache and reset the count on success (the WooPayments extension `class-database-cache.php:364-382`).
 	 *
 	 * @testWith ["wcpay_dispute_status_counts_cache"]
 	 *           ["wcpay_authorization_summary_cache"]
@@ -210,7 +210,7 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not refresh an expired badge cache while an Action Scheduler job runs, as client 11.1.0 `class-database-cache.php:295-301`.
+	 * @testdox Should not refresh an expired badge cache while an Action Scheduler job runs (the WooPayments extension `class-database-cache.php:295-301`).
 	 */
 	public function test_does_not_refresh_the_badge_caches_while_refresh_is_disabled(): void {
 		update_option(
@@ -231,7 +231,7 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fetch the badge counts once per request even when storing them fails, as client 11.1.0 `class-database-cache.php:101-109,340-353`.
+	 * @testdox Should fetch the badge counts once per request even when storing them fails (the WooPayments extension `class-database-cache.php:101-109,340-353`).
 	 */
 	public function test_fetches_the_badge_counts_once_per_request_when_the_write_fails(): void {
 		add_filter(
@@ -252,7 +252,7 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should drop the object-cache entry after storing badge counts, so other processes read the new row, as client 11.1.0 `class-database-cache.php:387-398`.
+	 * @testdox Should drop the object-cache entry after storing badge counts, so other processes read the new row (the WooPayments extension `class-database-cache.php:387-398`).
 	 */
 	public function test_drops_the_object_cache_entry_after_storing_badge_counts(): void {
 		$this->create_service( $this->create_api_client( array( 'needs_response' => 2 ) ) )->get_disputes_awaiting_response_count();

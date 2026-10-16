@@ -162,7 +162,7 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A rejected canonical write fails before split gateway projection starts.
+	 * @testdox A rejected canonical write fails before the split gateway writes start.
 	 */
 	public function test_persist_reports_canonical_write_failure_before_projecting_split_settings(): void {
 		$original_settings = array(
@@ -192,7 +192,7 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A rejected split gateway write is returned as a verified projection failure.
+	 * @testdox A rejected split gateway write is returned as a verified write failure.
 	 */
 	public function test_persist_reports_split_gateway_write_failure(): void {
 		$settings       = array( 'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ) );
@@ -252,9 +252,9 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A partially failed legacy wallet projection retains its target and completes on retry.
+	 * @testdox A partially failed wallet write retains its target and completes on retry.
 	 */
-	public function test_persist_retries_partially_failed_payment_request_projection(): void {
+	public function test_persist_retries_partially_failed_payment_request_write(): void {
 		$google_option = 'woocommerce_woocommerce_payments_google_pay_settings';
 		$reject_update = static fn( $value, $old_value ) => $old_value;
 		add_filter( 'pre_update_option_' . $google_option, $reject_update, 10, 2 );
@@ -289,9 +289,9 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A completed wallet projection is not replayed after an unrelated split gateway failure.
+	 * @testdox A completed wallet write is not replayed after an unrelated split gateway failure.
 	 */
-	public function test_persist_clears_completed_payment_request_projection_before_retrying_unrelated_failure(): void {
+	public function test_persist_clears_completed_payment_request_write_before_retrying_unrelated_failure(): void {
 		$giropay_option = 'woocommerce_woocommerce_payments_giropay_settings';
 		update_option( $giropay_option, array( 'enabled' => 'yes' ) );
 
@@ -326,9 +326,9 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Persisting stale legacy wallet state preserves authoritative split gateway choices.
+	 * @testdox Persisting stale combined wallet state preserves authoritative split gateway choices.
 	 */
-	public function test_persist_ignores_legacy_payment_request_when_split_options_exist(): void {
+	public function test_persist_ignores_the_combined_payment_request_setting_when_split_options_exist(): void {
 		update_option( 'woocommerce_woocommerce_payments_google_pay_settings', array( 'enabled' => 'yes' ) );
 		update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', array( 'enabled' => 'no' ) );
 

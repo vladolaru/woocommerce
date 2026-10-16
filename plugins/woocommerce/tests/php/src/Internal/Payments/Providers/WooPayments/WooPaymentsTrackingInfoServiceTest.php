@@ -115,7 +115,7 @@ class WooPaymentsTrackingInfoServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A missing cache is fetched from the platform and stored in the plugin's cache shape.
+	 * @testdox A missing cache is fetched from the platform and stored in the WooPayments extension's cache shape.
 	 */
 	public function test_fetches_and_stores_missing_cache(): void {
 		$this->assertSame( array( 'hosting_provider' => 'fixture-host-3' ), $this->sut->get_tracking_info() );
@@ -163,7 +163,7 @@ class WooPaymentsTrackingInfoServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An errored cache is retried on the plugin's 2/5/10/15 minute backoff ladder.
+	 * @testdox An errored cache is retried on the WooPayments extension's 2/5/10/15 minute backoff ladder.
 	 *
 	 * @testWith [1, 180, 1]
 	 *           [2, 180, 0]
@@ -211,7 +211,7 @@ class WooPaymentsTrackingInfoServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An expired cache is not refreshed while an Action Scheduler job runs, as client 11.1.0 `class-database-cache.php:295-301`.
+	 * @testdox An expired cache is not refreshed while an Action Scheduler job runs (the WooPayments extension `class-database-cache.php:295-301`).
 	 */
 	public function test_action_scheduler_jobs_do_not_refresh(): void {
 		$this->seed( array( 'hosting_provider' => 'cached-host' ), time() - 2 * MONTH_IN_SECONDS, false );
@@ -222,7 +222,7 @@ class WooPaymentsTrackingInfoServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The tracking info is fetched once per request even when storing it fails, as client 11.1.0 `class-database-cache.php:101-109,340-353`.
+	 * @testdox The tracking info is fetched once per request even when storing it fails (the WooPayments extension `class-database-cache.php:101-109,340-353`).
 	 */
 	public function test_fetches_once_per_request_when_the_write_fails(): void {
 		add_filter(

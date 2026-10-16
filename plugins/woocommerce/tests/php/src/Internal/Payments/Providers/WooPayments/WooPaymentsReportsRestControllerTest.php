@@ -58,9 +58,9 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Reports routes are registered when native owns runtime.
+	 * @testdox Reports routes are registered when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_routes_when_native_owns_runtime(): void {
+	public function test_registers_routes_when_builtin_owns_runtime(): void {
 		$controller = $this->create_controller( true );
 		// WooCommerce's REST server registers the routes of the instance the container holds.
 		wc_get_container()->replace( WooPaymentsReportsRestController::class, $controller );
@@ -195,7 +195,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Report collection routes reject malformed input before calling the platform, as the client's argument schema does.
+	 * @testdox Report collection routes reject malformed input before calling the platform.
 	 *
 	 * Client 11.1.0 class-wc-rest-payments-reports-transactions-controller.php:161-254 and the Fees variant :233-269.
 	 *
@@ -217,7 +217,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The Fees routes accept the dates the admin UI sends: day boundaries as UTC "Y-m-d H:i:s", like the client's formatDateValue().
+	 * @testdox The Fees routes accept the dates the admin UI sends: day boundaries as UTC "Y-m-d H:i:s", like the WooPayments extension's formatDateValue().
 	 */
 	public function test_fees_routes_accept_the_admin_ui_dates(): void {
 		$this->create_controller( true )->register_routes();
@@ -372,7 +372,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Fees list, summary, and export map legacy order search tokens to charge IDs.
+	 * @testdox Fees list, summary, and export map the WooPayments extension's order search tokens to charge IDs.
 	 */
 	public function test_fees_routes_map_order_search_tokens_to_charge_ids(): void {
 		$order = $this->create_order_with_charge( 'ch_reports_order' );

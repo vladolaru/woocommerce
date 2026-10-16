@@ -92,12 +92,12 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should retain the canonical and unrelated gateways while removing native split gateways from settings.
+	 * @testdox Should retain the canonical and unrelated gateways while removing split gateways from settings.
 	 */
-	public function test_projects_only_the_canonical_native_gateway_for_settings_display(): void {
-		$canonical = $this->create_native_gateway( 'woocommerce_payments' );
-		$afterpay  = $this->create_native_gateway( 'woocommerce_payments_afterpay_clearpay' );
-		$klarna    = $this->create_native_gateway( 'woocommerce_payments_klarna' );
+	public function test_projects_only_the_canonical_gateway_for_settings_display(): void {
+		$canonical = $this->create_gateway( 'woocommerce_payments' );
+		$afterpay  = $this->create_gateway( 'woocommerce_payments_afterpay_clearpay' );
+		$klarna    = $this->create_gateway( 'woocommerce_payments_klarna' );
 		$unrelated = $this->create_unrelated_gateway( 'bacs' );
 		$sut       = $this->create_controller( true );
 
@@ -120,10 +120,10 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not change the settings collection when the canonical native gateway is absent.
+	 * @testdox Should not change the settings collection when the canonical gateway is absent.
 	 */
 	public function test_does_not_change_settings_collection_when_canonical_gateway_is_absent(): void {
-		$afterpay  = $this->create_native_gateway( 'woocommerce_payments_afterpay_clearpay' );
+		$afterpay  = $this->create_gateway( 'woocommerce_payments_afterpay_clearpay' );
 		$unrelated = $this->create_unrelated_gateway( 'bacs' );
 		$sut       = $this->create_controller( true );
 		$gateways  = array(
@@ -139,12 +139,12 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave the settings collection alone when native does not own payments.
+	 * @testdox Should leave the settings collection alone when the built-in WooPayments does not own payments.
 	 */
-	public function test_does_not_change_settings_collection_when_native_does_not_own_payments(): void {
+	public function test_does_not_change_settings_collection_when_builtin_does_not_own_payments(): void {
 		$gateways = array(
-			2 => $this->create_native_gateway( 'woocommerce_payments' ),
-			7 => $this->create_native_gateway( 'woocommerce_payments_klarna' ),
+			2 => $this->create_gateway( 'woocommerce_payments' ),
+			7 => $this->create_gateway( 'woocommerce_payments_klarna' ),
 		);
 		$sut      = $this->create_controller( false );
 
@@ -156,10 +156,10 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The Settings > Payments providers REST route of an active native store lists the WooPayments card gateway and none of its split gateways, as the client does.
+	 * @testdox The Settings > Payments providers REST route of an active store lists the WooPayments card gateway and none of its split gateways.
 	 */
 	public function test_providers_rest_route_lists_only_the_main_woopayments_gateway(): void {
-		$this->arrange_native_owner( WooPaymentsSetupTier::ACTIVE );
+		$this->arrange_builtin_owner( WooPaymentsSetupTier::ACTIVE );
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		$this->run_bootstrap( '__return_true' );
 		$this->reload_payment_gateways();
@@ -175,10 +175,10 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Checkout lists every WooPayments gateway at the saved position of the card gateway, in the provider's order, as the client does.
+	 * @testdox Checkout lists every WooPayments gateway at the saved position of the card gateway, in the provider's order.
 	 */
 	public function test_checkout_places_the_woopayments_block_at_the_saved_card_gateway_position(): void {
-		$this->arrange_native_owner( WooPaymentsSetupTier::ACTIVE );
+		$this->arrange_builtin_owner( WooPaymentsSetupTier::ACTIVE );
 		$this->run_bootstrap( '__return_false' );
 		update_option(
 			'woocommerce_gateway_order',
@@ -199,10 +199,10 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Checkout lists the WooPayments gateways first when no gateway order is saved, as the client does.
+	 * @testdox Checkout lists the WooPayments gateways first when no gateway order is saved.
 	 */
 	public function test_checkout_lists_the_woopayments_block_first_without_a_saved_order(): void {
-		$this->arrange_native_owner( WooPaymentsSetupTier::ACTIVE );
+		$this->arrange_builtin_owner( WooPaymentsSetupTier::ACTIVE );
 		$this->run_bootstrap( '__return_false' );
 		delete_option( 'woocommerce_gateway_order' );
 
@@ -215,10 +215,10 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Checkout lists the WooPayments gateways before the saved gateways when the saved order lacks the card gateway, as the client does.
+	 * @testdox Checkout lists the WooPayments gateways before the saved gateways when the saved order lacks the card gateway.
 	 */
 	public function test_checkout_lists_the_woopayments_block_first_when_the_saved_order_lacks_the_card_gateway(): void {
-		$this->arrange_native_owner( WooPaymentsSetupTier::ACTIVE );
+		$this->arrange_builtin_owner( WooPaymentsSetupTier::ACTIVE );
 		$this->run_bootstrap( '__return_false' );
 		update_option(
 			'woocommerce_gateway_order',
@@ -236,7 +236,7 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Orders the WooPayments gateways as the client's order_woopayments_gateways() does.
+	 * @testdox Orders the WooPayments gateways as the WooPayments extension's order_woopayments_gateways() does.
 	 * @testWith [{"bacs": 0, "cheque": 1}, {"woocommerce_payments": 0, "woocommerce_payments_klarna": 1, "woocommerce_payments_ideal": 2, "bacs": 3, "cheque": 4}]
 	 *           [{"bacs": 0, "woocommerce_payments": 1, "cheque": 2}, {"bacs": 0, "woocommerce_payments": 1, "woocommerce_payments_klarna": 2, "woocommerce_payments_ideal": 3, "cheque": 4}]
 	 *           [[], {"woocommerce_payments": 0, "woocommerce_payments_klarna": 1, "woocommerce_payments_ideal": 2}]
@@ -249,7 +249,7 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	 * @param mixed             $ordering Saved or default gateway order.
 	 * @param array<string,int> $expected Expected gateway order.
 	 */
-	public function test_orders_woopayments_gateways_like_the_client( $ordering, array $expected ): void {
+	public function test_orders_woopayments_gateways( $ordering, array $expected ): void {
 		$result = WooPaymentsGatewayListController::order_woopayments_gateways(
 			$ordering,
 			array( 'woocommerce_payments', 'woocommerce_payments_klarna', 'woocommerce_payments_ideal' )
@@ -271,9 +271,9 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return the gateway order unchanged when native does not own payments or the provider publishes no gateways.
+	 * @testdox Should return the gateway order unchanged when the built-in WooPayments does not own payments or the provider publishes no gateways.
 	 */
-	public function test_returns_the_gateway_order_unchanged_without_native_ownership_or_provider_gateways(): void {
+	public function test_returns_the_gateway_order_unchanged_without_builtin_ownership_or_provider_gateways(): void {
 		$ordering = array(
 			'bacs'   => 0,
 			'cheque' => 1,
@@ -326,11 +326,11 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Make native the payments owner with the given stored tier.
+	 * Make the built-in WooPayments the payments owner with the given stored tier.
 	 *
 	 * @param string $state Stored native tier.
 	 */
-	private function arrange_native_owner( string $state ): void {
+	private function arrange_builtin_owner( string $state ): void {
 		update_option( 'active_plugins', array_values( array_diff( (array) get_option( 'active_plugins', array() ), array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ) ) );
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		update_option( WooPaymentsSetupTier::OPTION_NAME, $state, true );
@@ -354,15 +354,15 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the controller under test.
 	 *
-	 * @param bool $native_register Whether native owns payments.
+	 * @param bool $builtin_owner Whether the built-in WooPayments owns payments.
 	 * @return WooPaymentsGatewayListController
 	 */
-	private function create_controller( bool $native_register ): WooPaymentsGatewayListController {
+	private function create_controller( bool $builtin_owner ): WooPaymentsGatewayListController {
 		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_owner );
 
 		$controller = new WooPaymentsGatewayListController();
 		$controller->init( $arbiter );
@@ -371,12 +371,12 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a constructor-free native gateway identity.
+	 * Create a constructor-free gateway identity.
 	 *
 	 * @param string $gateway_id Gateway ID.
 	 * @return WooPaymentsGateway
 	 */
-	private function create_native_gateway( string $gateway_id ): WooPaymentsGateway {
+	private function create_gateway( string $gateway_id ): WooPaymentsGateway {
 		$gateway     = $this->getMockBuilder( WooPaymentsGateway::class )
 			->disableOriginalConstructor()
 			->getMock();

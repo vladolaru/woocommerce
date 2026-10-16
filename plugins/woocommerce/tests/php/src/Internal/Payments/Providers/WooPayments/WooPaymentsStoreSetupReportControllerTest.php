@@ -126,7 +126,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report the Stripe Billing toggle in the store setup snapshot while WooCommerce Subscriptions is active (client `class-wc-payments-account.php:2977`).
+	 * @testdox Should report the Stripe Billing toggle in the store setup snapshot while WooCommerce Subscriptions is active (the WooPayments extension `class-wc-payments-account.php:2977`).
 	 * @testWith ["1", true]
 	 *           ["0", false]
 	 *
@@ -163,7 +163,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report WooCommerce Subscriptions as active when its class is loaded, whatever folder holds it (client 11.1.0 `class-wc-payments-account.php:3001`).
+	 * @testdox Should report WooCommerce Subscriptions as active when its class is loaded, whatever folder holds it (the WooPayments extension `class-wc-payments-account.php:3001`).
 	 */
 	public function test_store_setup_sync_reports_subscriptions_active_by_its_loaded_class(): void {
 		// WooCommerce Subscriptions as WooCommerce.com installs it, outside the woocommerce-subscriptions folder.
@@ -192,7 +192,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report no WooCommerce Subscriptions version while the plugin is installed but not loaded (client 11.1.0 `class-wc-payments-account.php:3002`).
+	 * @testdox Should report no WooCommerce Subscriptions version while the plugin is installed but not loaded (the WooPayments extension `class-wc-payments-account.php:3002`).
 	 */
 	public function test_store_setup_sync_reports_no_subscriptions_version_while_not_loaded(): void {
 		update_option( 'active_plugins', array() );
@@ -221,7 +221,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report the loaded WooCommerce Subscriptions class's version (client 11.1.0 `trait-wc-payments-subscriptions-utilities.php:129-131`, sent at `class-wc-payments-account.php:3002`).
+	 * @testdox Should report the loaded WooCommerce Subscriptions class's version (the WooPayments extension `trait-wc-payments-subscriptions-utilities.php:129-131`, sent at `class-wc-payments-account.php:3002`).
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
@@ -237,7 +237,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report the available payment methods as the registered methods the account has fees for (client 11.1.0 `class-wc-payment-gateway-wcpay.php:4848-4879`, sent at `class-wc-payments-account.php:2908-2909`).
+	 * @testdox Should report the available payment methods as the registered methods the account has fees for (the WooPayments extension `class-wc-payment-gateway-wcpay.php:4848-4879`, sent at `class-wc-payments-account.php:2908-2909`).
 	 */
 	public function test_store_setup_sync_reports_available_methods_from_account_fees(): void {
 		// The account's `fees` is keyed by payment method ID, as in the recorded Fixtures/platform-test-drive-account.json `account.fees`.
@@ -268,7 +268,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report Amazon Pay as available only while its feature flag is on (client 11.1.0 `PaymentMethodDefinitionRegistry.php:102-104` registers it only then).
+	 * @testdox Should report Amazon Pay as available only while its feature flag is on (the WooPayments extension `PaymentMethodDefinitionRegistry.php:102-104` registers it only then).
 	 * @testWith ["1", true]
 	 *           ["0", false]
 	 *
@@ -297,7 +297,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report a stored empty list of enabled payment methods as empty (client 11.1.0 `get_upe_enabled_payment_method_ids()`, `class-wc-payment-gateway-wcpay.php:4682-4689`, sent at `class-wc-payments-account.php:2909`).
+	 * @testdox Should report a stored empty list of enabled payment methods as empty (the WooPayments extension `get_upe_enabled_payment_method_ids()`, `class-wc-payment-gateway-wcpay.php:4682-4689`, sent at `class-wc-payments-account.php:2909`).
 	 */
 	public function test_store_setup_sync_reports_a_stored_empty_enabled_list_as_empty(): void {
 		// The account's `fees` is keyed by payment method ID, as in the recorded Fixtures/platform-test-drive-account.json `account.fees`.
@@ -816,7 +816,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Compatibility updates are scheduled two minutes out through the preserved Action Scheduler hook.
+	 * @testdox Compatibility updates are scheduled two minutes out through the WooPayments extension's Action Scheduler hook.
 	 */
 	public function test_schedule_compatibility_data_update_schedules_delayed_job(): void {
 		$scheduler = new RecordingActionSchedulerService();

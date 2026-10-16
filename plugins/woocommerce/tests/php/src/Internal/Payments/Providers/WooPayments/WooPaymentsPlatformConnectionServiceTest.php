@@ -17,7 +17,7 @@ use WC_Unit_Test_Case;
 class WooPaymentsPlatformConnectionServiceTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Should report no cutover failures when the native platform transport is ready.
+	 * @testdox Should report no cutover failures when the platform transport is ready.
 	 */
 	public function test_get_cutover_preflight_failures_returns_empty_for_ready_transport(): void {
 		$manager = $this->create_connection_manager( true, 1, true );

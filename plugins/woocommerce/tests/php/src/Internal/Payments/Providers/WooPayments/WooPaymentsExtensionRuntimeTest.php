@@ -27,9 +27,9 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not report a plugin runtime when the native runtime owns payments.
+	 * @testdox Should not report the WooPayments extension runtime as loaded when the built-in WooPayments owns payments.
 	 */
-	public function test_reports_not_loaded_when_native_runtime_owns_payments(): void {
+	public function test_reports_not_loaded_when_builtin_owns_payments(): void {
 		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
 		$arbiter->expects( $this->once() )
 			->method( 'is_extension_owner' )

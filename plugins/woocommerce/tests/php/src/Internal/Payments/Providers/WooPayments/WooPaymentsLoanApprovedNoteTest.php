@@ -46,16 +46,16 @@ class WooPaymentsLoanApprovedNoteTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Registers the account refresh hook when native owns the runtime.
+	 * @testdox Registers the account refresh hook when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_account_refresh_hook_when_native_owns_runtime(): void {
+	public function test_registers_account_refresh_hook_when_builtin_owns_runtime(): void {
 		$this->sut->register();
 
 		$this->assertSame( 10, has_action( 'woocommerce_payments_account_refreshed', array( $this->sut, 'handle_loan_approved_inbox_note' ) ) );
 	}
 
 	/**
-	 * @testdox Adds the loan note with the client's name, copy, data and action for an active loan.
+	 * @testdox Adds the loan note with its name, copy, data and action for an active loan.
 	 */
 	public function test_adds_note_for_active_loan(): void {
 		$paid_out_at = time();

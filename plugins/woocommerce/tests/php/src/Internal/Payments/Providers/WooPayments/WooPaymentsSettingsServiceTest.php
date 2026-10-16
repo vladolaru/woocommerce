@@ -135,7 +135,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return the native WooPayments settings contract, with the Stripe Billing fields as the plugin reports them without WooCommerce Subscriptions (client `class-wc-rest-payments-settings-controller.php:530-600`).
+	 * @testdox Should return the WooPayments settings contract, with the Stripe Billing fields as the WooPayments extension reports them without WooCommerce Subscriptions (the WooPayments extension `class-wc-rest-payments-settings-controller.php:530-600`).
 	 */
 	public function test_get_settings_returns_reference_shaped_contract(): void {
 		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
@@ -583,7 +583,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report ECE confirmation tokens and Amazon Pay as off while no account is cached (client 11.1.0 `WC_Payments_Features::is_ece_confirmation_tokens_enabled()`, `class-wc-payments-features.php:438-442`).
+	 * @testdox Should report ECE confirmation tokens and Amazon Pay as off while no account is cached (the WooPayments extension `WC_Payments_Features::is_ece_confirmation_tokens_enabled()`, `class-wc-payments-features.php:438-442`).
 	 */
 	public function test_get_settings_reports_ece_confirmation_tokens_off_without_a_cached_account(): void {
 		delete_option( 'wcpay_account_data' );
@@ -595,7 +595,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should list Amazon Pay as available on the settings screen only while its feature is on (client 11.1.0 `PaymentMethodDefinitionRegistry.php:102-104`, read by the settings controller's `get_settings()` at `class-wc-rest-payments-settings-controller.php:516`).
+	 * @testdox Should list Amazon Pay as available on the settings screen only while its feature is on (the WooPayments extension `PaymentMethodDefinitionRegistry.php:102-104`, read by the settings controller's `get_settings()` at `class-wc-rest-payments-settings-controller.php:516`).
 	 * @testWith ["1", true]
 	 *           ["0", false]
 	 *
@@ -613,7 +613,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave Amazon Pay out of the catalog the availability filter receives while its feature is off (client 11.1.0 `PaymentMethodDefinitionRegistry.php:97-105` registers it only while the feature is on, and `class-wc-payment-gateway-wcpay.php:4851-4864` filters that catalog).
+	 * @testdox Should leave Amazon Pay out of the catalog the availability filter receives while its feature is off (the WooPayments extension `PaymentMethodDefinitionRegistry.php:97-105` registers it only while the feature is on, and `class-wc-payment-gateway-wcpay.php:4851-4864` filters that catalog).
 	 */
 	public function test_availability_filter_receives_no_amazon_pay_while_its_feature_is_off(): void {
 		update_option( '_wcpay_feature_amazon_pay', '0' );
@@ -637,7 +637,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep Amazon Pay available when an availability filter callback adds it while its feature is off (client 11.1.0 `class-wc-payment-gateway-wcpay.php:4864-4879` keeps what the filter returns, then intersects with the fees).
+	 * @testdox Should keep Amazon Pay available when an availability filter callback adds it while its feature is off (the WooPayments extension `class-wc-payment-gateway-wcpay.php:4864-4879` keeps what the filter returns, then intersects with the fees).
 	 */
 	public function test_availability_filter_can_add_amazon_pay_while_its_feature_is_off(): void {
 		update_option( '_wcpay_feature_amazon_pay', '0' );
@@ -749,7 +749,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should default the dynamic place-order feature flag off like the reference client
+	 * @testdox Should default the dynamic place-order feature flag off
 	 */
 	public function test_dynamic_checkout_place_order_button_flag_defaults_off(): void {
 		delete_option( '_wcpay_feature_dynamic_checkout_place_order_button' );
@@ -890,7 +890,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report WooPay as off for an ineligible account whatever the saved setting, like the client.
+	 * @testdox Should report WooPay as off for an ineligible account whatever the saved setting.
 	 *
 	 * Client 11.1.0 reports `is_woo_pay_eligible() && platform_checkout` (includes/admin/class-wc-rest-payments-settings-controller.php:585).
 	 */
@@ -931,9 +931,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose native fraud-protection environment fields consumed by Core-owned settings surfaces.
+	 * @testdox Should expose the fraud-protection environment fields that core's settings surfaces read.
 	 */
-	public function test_get_settings_exposes_native_fraud_protection_environment_fields(): void {
+	public function test_get_settings_exposes_fraud_protection_environment_fields(): void {
 		update_option( 'woocommerce_currency', 'EUR' );
 		update_option( 'woocommerce_allowed_countries', 'specific' );
 		update_option( 'woocommerce_specific_allowed_countries', array( 'US', 'CA' ) );
@@ -1015,7 +1015,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose Apple Pay and Google Pay duplicate clusters when native payment request is enabled.
+	 * @testdox Should expose Apple Pay and Google Pay duplicate clusters when payment request is enabled.
 	 */
 	public function test_get_settings_exposes_apple_pay_google_pay_duplicate_cluster_when_payment_request_is_enabled(): void {
 		update_option(
@@ -1078,7 +1078,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should omit Apple Pay and Google Pay duplicate clusters when native payment request is disabled.
+	 * @testdox Should omit Apple Pay and Google Pay duplicate clusters when payment request is disabled.
 	 */
 	public function test_get_settings_omits_apple_pay_google_pay_duplicate_cluster_when_payment_request_is_disabled(): void {
 		update_option(
@@ -1204,18 +1204,18 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should cluster the Stripe gateway's express checkout option with native Apple Pay and Google Pay only when the native wallets are on.
+	 * @testdox Should cluster the Stripe gateway's express checkout option with Apple Pay and Google Pay only when the wallets are on.
 	 * @testWith ["yes", true]
 	 *           ["no", false]
 	 *
-	 * @param string $native_payment_request Native WooPayments payment request setting.
-	 * @param bool   $expect_cluster         Whether the Apple Pay and Google Pay cluster is expected.
+	 * @param string $payment_request_setting WooPayments payment request setting.
+	 * @param bool   $expect_cluster          Whether the Apple Pay and Google Pay cluster is expected.
 	 */
-	public function test_get_settings_clusters_stripe_express_checkout_option_with_native_payment_request( string $native_payment_request, bool $expect_cluster ): void {
+	public function test_get_settings_clusters_stripe_express_checkout_option_with_the_payment_request_setting( string $payment_request_setting, bool $expect_cluster ): void {
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
-				'payment_request' => $native_payment_request,
+				'payment_request' => $payment_request_setting,
 			)
 		);
 		// WooCommerce Stripe Gateway 11 stores its Apple Pay / Google Pay switch as `express_checkout`, not `payment_request`.
@@ -1628,7 +1628,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should record the plugin 11.1.0 WooPay admin Tracks events when a save changes WooPay settings.
+	 * @testdox Should record the WooPayments extension's WooPay admin Tracks events when a save changes WooPay settings.
 	 *
 	 * Expected names and properties: plugin 11.1.0 `WC_Payment_Gateway_WCPay::update_is_woopay_enabled()`,
 	 * `update_is_woopay_global_theme_support_enabled()` and `WooPay_Tracker::woopay_locations_updated()`.
@@ -1659,7 +1659,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should record plugin 11.1.0 per-method Tracks events when a save enables one method and disables another.
+	 * @testdox Should record the WooPayments extension's per-method Tracks events when a save enables one method and disables another.
 	 *
 	 * Expected names and properties: plugin 11.1.0 `class-wc-rest-payments-settings-controller.php:740-760`.
 	 */
@@ -1805,7 +1805,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should propagate provider-backed account settings through the native API client.
+	 * @testdox Should propagate provider-backed account settings through the API client.
 	 */
 	public function test_update_settings_persists_provider_backed_account_settings_through_api_client(): void {
 		update_option(
@@ -1907,7 +1907,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should mark a platform rejection without an inline-capable field for the legacy server_error shape.
+	 * @testdox Should mark a platform rejection without an inline-capable field for the WooPayments extension's server_error shape.
 	 * @dataProvider provider_unmapped_platform_rejections
 	 *
 	 * @param array<string,mixed> $error_data Platform error data carried by the exception.
@@ -2750,7 +2750,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report no available payment methods when the account has no fees, like the plugin.
+	 * @testdox Should report no available payment methods when the account has no fees.
 	 */
 	public function test_get_settings_reports_no_available_methods_without_account_fees(): void {
 		update_option(
@@ -3014,7 +3014,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Removing card through the settings route disables the WooPayments gateway (client 11.1.0 `class-wc-rest-payments-settings-controller.php:781-790`).
+	 * @testdox Removing card through the settings route disables the WooPayments gateway (the WooPayments extension `class-wc-rest-payments-settings-controller.php:781-790`).
 	 */
 	public function test_settings_route_disables_the_gateway_when_card_is_removed(): void {
 		$this->store_card_and_ideal_enabled();
@@ -3032,7 +3032,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Removing card disables the WooPayments gateway even while card is filtered out of the available methods (client 11.1.0 `class-wc-rest-payments-settings-controller.php:738-740,782-789` compares with the stored list).
+	 * @testdox Removing card disables the WooPayments gateway even while card is filtered out of the available methods (the WooPayments extension `class-wc-rest-payments-settings-controller.php:738-740,782-789` compares with the stored list).
 	 */
 	public function test_settings_route_disables_the_gateway_when_an_unavailable_card_is_removed(): void {
 		$this->store_card_and_ideal_enabled();
@@ -3053,7 +3053,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Card is no longer offered at checkout once the settings route removes it (client 11.1.0 `class-wc-payment-gateway-wcpay.php:897-906`).
+	 * @testdox Card is no longer offered at checkout once the settings route removes it (the WooPayments extension `class-wc-payment-gateway-wcpay.php:897-906`).
 	 */
 	public function test_card_is_not_offered_after_the_settings_route_removes_it(): void {
 		$this->store_card_and_ideal_enabled();
@@ -3071,7 +3071,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Adding card back through the settings route enables the WooPayments gateway (client 11.1.0 `class-wc-rest-payments-settings-controller.php:766-780`).
+	 * @testdox Adding card back through the settings route enables the WooPayments gateway (the WooPayments extension `class-wc-rest-payments-settings-controller.php:766-780`).
 	 */
 	public function test_settings_route_enables_the_gateway_when_card_is_added(): void {
 		update_option(

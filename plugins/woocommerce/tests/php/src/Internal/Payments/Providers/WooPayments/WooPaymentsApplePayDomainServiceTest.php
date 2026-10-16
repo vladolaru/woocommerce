@@ -193,7 +193,7 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A registration answered with $_dataName logs a native reason and Stripe's documented status, never the answer's text.
+	 * @testdox A registration answered with $_dataName logs a reason and Stripe's documented status, never the answer's text.
 	 *
 	 * The stored error keeps the answer's text for the merchant's Apple Pay notice, as on the client.
 	 *

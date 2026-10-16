@@ -169,7 +169,7 @@ class WooPaymentsSellingLocationsFraudSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should give the rebuilt rule the review outcome when the review feature is on, as the client does.
+	 * @testdox Should give the rebuilt rule the review outcome when the review feature is on.
 	 */
 	public function test_rebuilt_rule_uses_review_outcome_when_review_feature_is_on(): void {
 		update_option( 'wcpay_frt_review_feature_active', '1' );

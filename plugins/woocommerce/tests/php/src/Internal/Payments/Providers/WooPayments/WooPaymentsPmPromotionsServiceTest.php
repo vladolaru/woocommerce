@@ -116,7 +116,7 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should promote only payment methods the store offers: $scenario (client 11.1.0 `get_valid_payment_method_ids()` is `get_upe_available_payment_methods()`, `class-wc-payments-pm-promotions-service.php:686-697`).
+	 * @testdox Should promote only payment methods the store offers: $scenario (the WooPayments extension `get_valid_payment_method_ids()` is `get_upe_available_payment_methods()`, `class-wc-payments-pm-promotions-service.php:686-697`).
 	 * @testWith ["a method the availability filter removes", "klarna", "1", true]
 	 *           ["Amazon Pay while its feature is off", "amazon_pay", "0", false]
 	 *           ["JCB, which is not a registered payment method", "jcb", "1", false]

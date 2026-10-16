@@ -18,7 +18,7 @@ class WooPaymentsTracksTest extends WC_Unit_Test_Case {
 	 *
 	 * @testdox Should record a server-side admin event as sent by WooCommerce core, without a plugin version.
 	 */
-	public function test_records_admin_event_with_the_native_runtime_and_no_plugin_version(): void {
+	public function test_records_admin_event_with_the_builtin_runtime_and_no_plugin_version(): void {
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 		$recorded = array();
 		$capture  = static function ( $properties, $event_name ) use ( &$recorded ) {

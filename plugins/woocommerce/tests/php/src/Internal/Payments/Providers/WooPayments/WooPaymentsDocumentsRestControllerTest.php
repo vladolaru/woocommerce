@@ -69,9 +69,9 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Documents and VAT routes are registered only when native owns runtime and Documents are enabled.
+	 * @testdox Documents and VAT routes are registered only when the built-in WooPayments owns the runtime and Documents are enabled.
 	 */
-	public function test_registers_routes_when_native_owns_runtime_and_documents_are_enabled(): void {
+	public function test_registers_routes_when_builtin_owns_runtime_and_documents_are_enabled(): void {
 		// WooCommerce's REST server registers the routes of the instance the container holds.
 		wc_get_container()->replace( WooPaymentsDocumentsRestController::class, $this->sut );
 		$this->sut->register();
@@ -199,7 +199,7 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Documents list forwards only preserved platform query parameters.
+	 * @testdox Documents list forwards only the known platform query parameters.
 	 */
 	public function test_get_documents_forwards_allow_listed_query_parameters(): void {
 		$this->sut->register_routes();
@@ -243,9 +243,9 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Documents list leaves the preserved request-object filter to the API client boundary.
+	 * @testdox Documents list leaves the request-object filter to the API client boundary.
 	 */
-	public function test_get_documents_does_not_apply_legacy_request_filter_in_controller(): void {
+	public function test_get_documents_does_not_apply_the_woopayments_extension_request_filter_in_controller(): void {
 		$filter_count = 0;
 		add_filter(
 			'wcpay_list_documents_request',
@@ -386,11 +386,11 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A document the platform cannot serve shows the client's error page naming the document.
+	 * @testdox A document the platform cannot serve shows an error page naming the document.
 	 *
 	 * The merchant opens the download URL in a browser window; client 11.1.0 answers a failure with wp_die() (documents controller :91-98).
 	 */
-	public function test_get_document_failure_shows_the_client_error_page(): void {
+	public function test_get_document_failure_shows_the_document_error_page(): void {
 		// The platform's answer for a missing document (wpcom class-documents-controller.php:259-263), with markup a message could carry.
 		$this->api_client->exception = new WooPaymentsApiException( 'Document <b>not</b> found.', 'wcpay_document_not_found', 404 );
 		$request                     = new WP_REST_Request( 'GET', '/wc/v3/payments/documents/vat_invoice-123' );
@@ -460,7 +460,7 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Successful document downloads record the preserved Tracks event.
+	 * @testdox Successful document downloads record the WooPayments extension's Tracks event.
 	 */
 	public function test_get_document_records_tracks_event_after_successful_download(): void {
 		if ( ! function_exists( 'wc_admin_record_tracks_event' ) && defined( 'WC_ABSPATH' ) ) {
@@ -595,7 +595,7 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * @testdox API exceptions are converted to REST errors with their status.
 	 */
-	public function test_api_exceptions_preserve_legacy_error_envelope(): void {
+	public function test_api_exceptions_preserve_the_woopayments_extension_error_envelope(): void {
 		$this->api_client->exception = new WooPaymentsApiException( 'Provider unavailable.', 'provider_unavailable', 503 );
 
 		$response = $this->sut->get_documents( new WP_REST_Request( 'GET', '/wc/v3/payments/documents' ) );
