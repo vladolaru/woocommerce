@@ -160,6 +160,18 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_get_deposits_forwards_allow_listed_query_parameters(): void {
 		$this->sut->register_routes();
+		// The platform's payout list (wpcom class-deposits-controller.php:493-503 at d761f9d3d85), trimmed to one paid payout.
+		$this->api_client->deposits_response = array(
+			'data'        => array(
+				array(
+					'id'       => 'po_paid',
+					'status'   => 'paid',
+					'amount'   => 2500,
+					'currency' => 'usd',
+				),
+			),
+			'total_count' => 1,
+		);
 
 		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/deposits' );
 		$request->set_query_params(
@@ -265,6 +277,7 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_get_deposits_summary_forwards_filter_parameters(): void {
 		$this->sut->register_routes();
+		// The platform's payout summary (wpcom core/data-transfer-objects/class-deposits-summary.php:24-43 at d761f9d3d85), trimmed.
 		$this->api_client->deposits_summary_response = array(
 			'count'    => 1,
 			'total'    => 2500,
