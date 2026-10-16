@@ -7,8 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
-use WP_REST_Request;
-
 /**
  * The documents list request, filtered by `wcpay_list_documents_request`; documents sort by date by default.
  *
@@ -30,29 +28,6 @@ class WooPaymentsDocumentsListRequest extends WooPaymentsPaginatedListRequest {
 		'direction' => 'desc',
 		'limit'     => 100,
 	);
-
-	/**
-	 * Create a request from REST request data.
-	 *
-	 * @param WP_REST_Request $request REST request.
-	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
-	 * @return static
-	 */
-	public static function from_rest_request( WP_REST_Request $request ) {
-		$documents_request = parent::from_rest_request( $request );
-		$documents_request->set_filters(
-			array(
-				'match'        => $request->get_param( 'match' ),
-				'date_before'  => $request->get_param( 'date_before' ),
-				'date_after'   => $request->get_param( 'date_after' ),
-				'date_between' => (array) $request->get_param( 'date_between' ),
-				'type_is'      => $request->get_param( 'type_is' ),
-				'type_is_not'  => $request->get_param( 'type_is_not' ),
-			)
-		);
-
-		return $documents_request;
-	}
 
 	/**
 	 * Create a request from normalized params.
