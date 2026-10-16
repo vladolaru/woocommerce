@@ -196,7 +196,6 @@ const setHookDefaults = () => {
 		saveSettings: mockSaveSettings,
 	} );
 	mockUseGetSettings.mockReturnValue( {
-		is_express_checkout_in_payment_methods_list_supported: true,
 		is_woopay_global_theme_support_eligible: true,
 		feature_flags: DEFAULT_FEATURE_FLAGS,
 		available_payment_method_ids: [
@@ -644,30 +643,8 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		).toBeChecked();
 	} );
 
-	it( 'hides Apple Pay and Google Pay payment-methods-list mode when native settings do not support it', async () => {
-		mockUseGetSettings.mockReturnValue( {
-			is_express_checkout_in_payment_methods_list_supported: false,
-		} );
-
-		render(
-			<WooPaymentsExpressCheckoutSettings methodId="payment_request" />
-		);
-
-		expect(
-			await screen.findByRole( 'checkbox', {
-				name: 'Enable Apple Pay / Google Pay as express payment buttons',
-			} )
-		).toBeInTheDocument();
-		expect(
-			screen.queryByRole( 'checkbox', {
-				name: 'Enable express checkout methods as options in the payment methods list',
-			} )
-		).not.toBeInTheDocument();
-	} );
-
 	it( 'hides payment-methods-list mode when dynamic checkout placement is feature-disabled', async () => {
 		mockUseGetSettings.mockReturnValue( {
-			is_express_checkout_in_payment_methods_list_supported: true,
 			feature_flags: {
 				...DEFAULT_FEATURE_FLAGS,
 				isDynamicCheckoutPlaceOrderButtonEnabled: false,
@@ -737,7 +714,6 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 
 	it( 'omits Amazon Pay from Apple Pay and Google Pay payment-methods-list help when Amazon Pay is feature-disabled', async () => {
 		mockUseGetSettings.mockReturnValue( {
-			is_express_checkout_in_payment_methods_list_supported: true,
 			feature_flags: {
 				...DEFAULT_FEATURE_FLAGS,
 				amazonPay: false,
@@ -890,7 +866,6 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		mockUseWooPayEnabledSettings.mockReturnValue( [ true, noop ] );
 		mockUseAmazonPayEnabledSettings.mockReturnValue( [ true, noop ] );
 		mockUseGetSettings.mockReturnValue( {
-			is_express_checkout_in_payment_methods_list_supported: true,
 			feature_flags: {
 				...DEFAULT_FEATURE_FLAGS,
 				woopay: false,
@@ -920,7 +895,6 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		mockUseWooPayEnabledSettings.mockReturnValue( [ true, noop ] );
 		mockUseAmazonPayEnabledSettings.mockReturnValue( [ true, noop ] );
 		mockUseGetSettings.mockReturnValue( {
-			is_express_checkout_in_payment_methods_list_supported: true,
 			feature_flags: {
 				...DEFAULT_FEATURE_FLAGS,
 				amazonPay: false,
@@ -949,7 +923,6 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		mockUseWooPayEnabledSettings.mockReturnValue( [ true, noop ] );
 		mockUseAmazonPayEnabledSettings.mockReturnValue( [ true, noop ] );
 		mockUseGetSettings.mockReturnValue( {
-			is_express_checkout_in_payment_methods_list_supported: true,
 			feature_flags: {
 				...DEFAULT_FEATURE_FLAGS,
 				woopay: false,
@@ -1232,24 +1205,8 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 		expect( screen.getByText( 'Button size' ) ).toBeInTheDocument();
 	} );
 
-	it( 'hides Amazon Pay payment-methods-list mode when native settings do not support it', async () => {
-		mockUseGetSettings.mockReturnValue( {
-			is_express_checkout_in_payment_methods_list_supported: false,
-		} );
-
-		render( <WooPaymentsExpressCheckoutSettings methodId="amazon_pay" /> );
-
-		await screen.findByRole( 'heading', { level: 1, name: 'Amazon Pay' } );
-		expect(
-			screen.queryByRole( 'checkbox', {
-				name: 'Enable express checkout methods as options in the payment methods list',
-			} )
-		).not.toBeInTheDocument();
-	} );
-
 	it( 'does not render writable WooPay controls when the WooPay feature is unavailable', async () => {
 		mockUseGetSettings.mockReturnValue( {
-			is_express_checkout_in_payment_methods_list_supported: true,
 			feature_flags: {
 				...DEFAULT_FEATURE_FLAGS,
 				woopay: false,
@@ -1279,7 +1236,6 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 	// Client 11.1.0 express-checkout-settings/index.js:183-191 drops only the 'general' section.
 	it( 'shows the WooPay enable and appearance sections without the general section when WooPay Express Checkout is off', async () => {
 		mockUseGetSettings.mockReturnValue( {
-			is_express_checkout_in_payment_methods_list_supported: true,
 			feature_flags: {
 				...DEFAULT_FEATURE_FLAGS,
 				woopayExpressCheckout: false,
@@ -1304,7 +1260,6 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 
 	it( 'does not render writable Amazon Pay controls when the Amazon Pay feature is unavailable', async () => {
 		mockUseGetSettings.mockReturnValue( {
-			is_express_checkout_in_payment_methods_list_supported: true,
 			feature_flags: {
 				...DEFAULT_FEATURE_FLAGS,
 				amazonPay: false,
@@ -1335,7 +1290,6 @@ describe( 'WooPaymentsExpressCheckoutSettings', () => {
 
 	it( 'does not render writable Amazon Pay controls when Amazon Pay is unavailable for the account', async () => {
 		mockUseGetSettings.mockReturnValue( {
-			is_express_checkout_in_payment_methods_list_supported: true,
 			feature_flags: DEFAULT_FEATURE_FLAGS,
 			available_payment_method_ids: [ 'apple_pay', 'google_pay' ],
 		} );

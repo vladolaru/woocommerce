@@ -46,28 +46,6 @@ class WooPaymentsSettingsService {
 		'link',
 	);
 
-	private const PAYMENT_METHOD_CAPABILITY_KEY_MAP = array(
-		'alipay'            => 'alipay_payments',
-		'amazon_pay'        => 'amazon_pay_payments',
-		'apple_pay'         => 'card_payments',
-		'au_becs_debit'     => 'au_becs_debit_payments',
-		'bancontact'        => 'bancontact_payments',
-		'card'              => 'card_payments',
-		'eps'               => 'eps_payments',
-		'google_pay'        => 'card_payments',
-		'grabpay'           => 'grabpay_payments',
-		'ideal'             => 'ideal_payments',
-		'jcb'               => 'jcb_payments',
-		'klarna'            => 'klarna_payments',
-		'link'              => 'link_payments',
-		'multibanco'        => 'multibanco_payments',
-		'p24'               => 'p24_payments',
-		'sepa_debit'        => 'sepa_debit_payments',
-		'wechat_pay'        => 'wechat_pay_payments',
-		'affirm'            => 'affirm_payments',
-		'afterpay_clearpay' => 'afterpay_clearpay_payments',
-	);
-
 	private const ALLOWED_OPTIONS = array(
 		'wcpay_multi_currency_setup_completed'             => 'bool',
 		'woocommerce_dismissed_todo_tasks'                 => 'array',
@@ -316,7 +294,6 @@ class WooPaymentsSettingsService {
 			'account_communications_email'               => $account_fields['account_communications_email'],
 			'is_payment_request_enabled'                 => $this->account_service->is_payment_request_enabled(),
 			'is_express_checkout_in_payment_methods_enabled' => $this->is_yes( $settings['express_checkout_in_payment_methods'] ?? 'no' ),
-			'is_express_checkout_in_payment_methods_list_supported' => true,
 			'is_debug_log_enabled'                       => $this->is_yes( $settings['enable_logging'] ),
 			'payment_request_button_size'                => $this->get_string_setting( $settings, 'payment_request_button_size' ),
 			'payment_request_button_type'                => $this->get_string_setting( $settings, 'payment_request_button_type' ),
@@ -393,22 +370,11 @@ class WooPaymentsSettingsService {
 
 		return array(
 			'woopay'                                   => $is_woopay_eligible,
-			'woopayExpressCheckout'                    => $this->is_feature_flag_enabled( self::WOOPAY_EXPRESS_CHECKOUT_FLAG_OPTION, true ),
+			'woopayExpressCheckout'                    => '1' === (string) get_option( self::WOOPAY_EXPRESS_CHECKOUT_FLAG_OPTION, '1' ),
 			'isDynamicCheckoutPlaceOrderButtonEnabled' => self::is_dynamic_checkout_place_order_button_enabled(),
 			'amazonPay'                                => $this->payment_method_registry->is_amazon_pay_enabled( $this->account_service ),
 			'isEceUsingConfirmationTokens'             => $this->account_service->is_ece_confirmation_tokens_enabled(),
 		);
-	}
-
-	/**
-	 * Tell whether a WooPayments feature flag option is enabled.
-	 *
-	 * @param string $option_name Feature flag option name.
-	 * @param bool   $default_value Default flag value.
-	 * @return bool
-	 */
-	private function is_feature_flag_enabled( string $option_name, bool $default_value ): bool {
-		return '1' === (string) get_option( $option_name, $default_value ? '1' : '0' );
 	}
 
 	/**
@@ -417,9 +383,9 @@ class WooPaymentsSettingsService {
 	 * @return string
 	 */
 	private function get_site_logo_url(): string {
-		$logo_id = function_exists( 'get_theme_mod' ) ? get_theme_mod( 'custom_logo' ) : 0;
+		$logo_id = get_theme_mod( 'custom_logo' );
 
-		if ( ! $logo_id || ! function_exists( 'wp_get_attachment_image_url' ) ) {
+		if ( ! $logo_id ) {
 			return '';
 		}
 
@@ -496,10 +462,14 @@ class WooPaymentsSettingsService {
 			$removed_payment_method_ids          = array_diff( $previous_enabled_payment_method_ids, $enabled_payment_method_ids );
 			$added_payment_method_ids            = array_diff( $enabled_payment_method_ids, $previous_enabled_payment_method_ids );
 			// Client 11.1.0 records these before saving (class-wc-rest-payments-settings-controller.php:740-760).
-			$tracks_properties = static fn( string $payment_method_id ): array => array(
-				'payment_method_id' => $payment_method_id,
-				'capability_id'     => self::PAYMENT_METHOD_CAPABILITY_KEY_MAP[ $payment_method_id ] ?? null,
-			);
+			$tracks_properties = function ( string $payment_method_id ): array {
+				$definition = $this->payment_method_registry->get( $payment_method_id );
+
+				return array(
+					'payment_method_id' => $payment_method_id,
+					'capability_id'     => null !== $definition ? $definition->get_account_capability_key() : null,
+				);
+			};
 			foreach ( $removed_payment_method_ids as $payment_method_id ) {
 				WooPaymentsTracks::record_wcadmin_event( 'wcpay_payment_method_disabled', $tracks_properties( $payment_method_id ) );
 			}
@@ -787,10 +757,6 @@ class WooPaymentsSettingsService {
 			return false;
 		}
 
-		if ( ! function_exists( 'WC' ) || ! WC()->payment_gateways() ) {
-			return false;
-		}
-
 		return isset( WC()->payment_gateways()->get_available_payment_gateways()['cod'] );
 	}
 
@@ -922,7 +888,8 @@ class WooPaymentsSettingsService {
 
 		try {
 			foreach ( $payment_method_ids as $payment_method_id ) {
-				$capability_id = self::PAYMENT_METHOD_CAPABILITY_KEY_MAP[ $payment_method_id ] ?? null;
+				$definition    = $this->payment_method_registry->get( $payment_method_id );
+				$capability_id = null !== $definition ? $definition->get_account_capability_key() : null;
 				if ( null === $capability_id || 'unrequested' !== ( $payment_method_statuses[ $capability_id ]['status'] ?? 'unrequested' ) ) {
 					continue;
 				}
@@ -947,7 +914,7 @@ class WooPaymentsSettingsService {
 	 * @return string
 	 */
 	private function get_store_currency(): string {
-		$currency = function_exists( 'get_woocommerce_currency' ) ? get_woocommerce_currency() : get_option( 'woocommerce_currency', 'USD' );
+		$currency = get_woocommerce_currency();
 
 		return is_scalar( $currency ) ? strtoupper( (string) $currency ) : 'USD';
 	}
@@ -1099,8 +1066,8 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
-	 * Get the account fields of the settings: the cached account's values, or the stored settings where the account has
-	 * none.
+	 * Get the account fields of the settings: the cached account's values, or, for the keys a settings save stores, the
+	 * stored settings where the account has none.
 	 *
 	 * @param array<string,mixed> $settings Gateway settings.
 	 * @return array<string,mixed>
@@ -1109,7 +1076,7 @@ class WooPaymentsSettingsService {
 		$account_data = $this->account_service->get_cached_account_data();
 
 		return array(
-			'account_country'                    => $this->get_account_string_setting( $account_data, array( 'country' ), $this->get_string_setting( $settings, 'account_country' ) ),
+			'account_country'                    => $this->get_account_string_setting( $account_data, array( 'country' ) ),
 			'account_statement_descriptor'       => $this->get_account_string_setting( $account_data, array( 'statement_descriptor' ), $this->get_string_setting( $settings, 'account_statement_descriptor' ) ),
 			'account_statement_descriptor_kanji' => $this->get_account_string_setting( $account_data, array( 'statement_descriptor_kanji' ), $this->get_string_setting( $settings, 'account_statement_descriptor_kanji' ) ),
 			'account_statement_descriptor_kana'  => $this->get_account_string_setting( $account_data, array( 'statement_descriptor_kana' ), $this->get_string_setting( $settings, 'account_statement_descriptor_kana' ) ),
@@ -1127,10 +1094,10 @@ class WooPaymentsSettingsService {
 			'deposit_schedule_interval'          => $this->get_account_string_setting( $account_data, array( 'deposits', 'interval' ), $this->get_string_setting( $settings, 'deposit_schedule_interval' ) ),
 			'deposit_schedule_monthly_anchor'    => $this->get_account_nullable_int_setting( $account_data, array( 'deposits', 'monthly_anchor' ), $this->get_nullable_int_setting( $settings, 'deposit_schedule_monthly_anchor' ) ),
 			'deposit_schedule_weekly_anchor'     => $this->get_account_string_setting( $account_data, array( 'deposits', 'weekly_anchor' ), $this->get_string_setting( $settings, 'deposit_schedule_weekly_anchor' ) ),
-			'deposit_delay_days'                 => $this->get_account_nullable_int_setting( $account_data, array( 'deposits', 'delay_days' ), $this->get_nullable_int_setting( $settings, 'deposit_delay_days' ) ),
-			'deposit_status'                     => $this->get_account_string_setting( $account_data, array( 'deposits', 'status' ), $this->get_string_setting( $settings, 'deposit_status' ) ),
-			'deposit_restrictions'               => $this->get_account_string_setting( $account_data, array( 'deposits', 'restrictions' ), $this->get_string_setting( $settings, 'deposit_restrictions' ) ),
-			'deposit_completed_waiting_period'   => $this->get_account_bool_setting( $account_data, array( 'deposits', 'completed_waiting_period' ), (bool) ( $settings['deposit_completed_waiting_period'] ?? false ) ),
+			'deposit_delay_days'                 => $this->get_account_nullable_int_setting( $account_data, array( 'deposits', 'delay_days' ) ),
+			'deposit_status'                     => $this->get_account_string_setting( $account_data, array( 'deposits', 'status' ) ),
+			'deposit_restrictions'               => $this->get_account_string_setting( $account_data, array( 'deposits', 'restrictions' ) ),
+			'deposit_completed_waiting_period'   => $this->get_account_bool_setting( $account_data, array( 'deposits', 'completed_waiting_period' ) ),
 		);
 	}
 

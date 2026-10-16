@@ -86,7 +86,6 @@ export const isAmazonPayExpressCheckoutAvailable = (
 export const isExpressCheckoutInPaymentMethodsListSupported = (
 	settings: SettingsRecord
 ) =>
-	settings.is_express_checkout_in_payment_methods_list_supported !== false &&
 	isExpressFeatureEnabled(
 		settings,
 		'isDynamicCheckoutPlaceOrderButtonEnabled'

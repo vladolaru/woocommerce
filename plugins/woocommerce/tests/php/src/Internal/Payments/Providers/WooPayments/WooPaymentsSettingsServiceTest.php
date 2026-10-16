@@ -316,7 +316,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( '2026-06-13', $settings['woopay_last_disable_date'] );
 		$this->assertTrue( $settings['is_woopay_global_theme_support_enabled'] );
 		$this->assertTrue( $settings['is_woopay_global_theme_support_eligible'] );
-		$this->assertTrue( $settings['is_express_checkout_in_payment_methods_list_supported'] );
 		$this->assertSame(
 			array(
 				'woopay'                                   => true,
@@ -4005,7 +4004,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			'account_communications_email',
 			'is_payment_request_enabled',
 			'is_express_checkout_in_payment_methods_enabled',
-			'is_express_checkout_in_payment_methods_list_supported',
 			'is_debug_log_enabled',
 			'payment_request_button_size',
 			'payment_request_button_type',
