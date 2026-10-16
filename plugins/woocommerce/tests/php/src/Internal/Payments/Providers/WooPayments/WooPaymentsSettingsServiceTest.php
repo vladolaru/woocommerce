@@ -2360,22 +2360,91 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should ignore the fraud error sentinel when saving unrelated settings.
+	 * Client 11.1.0 saves the requested ruleset on every settings save that sends both fraud fields, without reading the
+	 * current one first, then caches it, so the response read finds the cache
+	 * (includes/admin/class-wc-rest-payments-settings-controller.php:645, :1257-1306).
+	 *
+	 * @testdox Saving the $level level with $label sends that ruleset to the platform once and never reads the platform ruleset.
+	 * @dataProvider provide_fraud_ruleset_saves
+	 *
+	 * @param string      $label        Case.
+	 * @param string|null $cached       Cached ruleset (a level name), or null for none.
+	 * @param string|null $platform     Platform ruleset (a level name), or a failure code.
+	 * @param string      $level        Requested protection level.
+	 * @param string      $submitted    Submitted advanced ruleset: "error", "avs", or "none" for an empty array.
+	 * @param string      $saved        Expected saved ruleset: a level name or "avs".
 	 */
-	public function test_update_settings_ignores_fraud_error_sentinel_on_unrelated_save(): void {
+	public function test_update_settings_saves_the_requested_fraud_ruleset_without_reading_the_platform_first( string $label, ?string $cached, ?string $platform, string $level, string $submitted, string $saved ): void {
+		unset( $label );
 		$this->set_connected_account_data();
 		update_option( 'current_protection_level', 'standard' );
+		if ( null !== $cached ) {
+			set_transient( 'wcpay_fraud_protection_settings', $this->get_fraud_ruleset_case_fixture( $cached ), DAY_IN_SECONDS );
+		}
+		if ( in_array( $platform, array( 'wcpay_fraud_ruleset_not_found', 'wcpay_server_error' ), true ) ) {
+			$this->api_client->latest_fraud_ruleset_exception = new WooPaymentsApiException( 'Platform answer.', $platform, 'wcpay_server_error' === $platform ? 500 : 404 );
+		} elseif ( null !== $platform ) {
+			$this->api_client->latest_fraud_ruleset_response = array( 'ruleset_config' => $this->get_fraud_ruleset_case_fixture( $platform ) );
+		}
+		$submitted_ruleset = 'error' === $submitted ? 'error' : $this->get_fraud_ruleset_case_fixture( $submitted );
+
+		$result = $this->sut->update_settings(
+			array(
+				'current_protection_level'           => $level,
+				'advanced_fraud_protection_settings' => $submitted_ruleset,
+			)
+		);
+
+		$expected       = $this->get_fraud_ruleset_case_fixture( $saved );
+		$cached_account = get_option( 'wcpay_account_data' );
+		$this->assertIsArray( $result );
+		$this->assertSame( 0, $this->api_client->latest_fraud_ruleset_requests, 'Neither the save nor the response read asks the platform for its ruleset.' );
+		$this->assertSame( 1, $this->api_client->fraud_ruleset_saves, 'The requested ruleset is saved once, with no Basic ruleset before it.' );
+		$this->assertSame( $expected, $this->api_client->last_fraud_ruleset );
+		$this->assertSame( $expected, get_transient( 'wcpay_fraud_protection_settings' ) );
+		$this->assertSame( $level, get_option( 'current_protection_level' ) );
+		$this->assertSame( 'avs' === $saved, $cached_account['data']['fraud_mitigation_settings']['avs_check_enabled'] );
+		$this->assertSame( $level, $result['current_protection_level'] );
+	}
+
+	/**
+	 * Fraud ruleset saves: cached ruleset, platform ruleset, request and the ruleset the platform must receive.
+	 *
+	 * @return array<string,array{0:string,1:string|null,2:string|null,3:string,4:string,5:string}>
+	 */
+	public function provide_fraud_ruleset_saves(): array {
+		return array(
+			'platform holds another'          => array( 'no cached ruleset and another one on the platform', null, 'standard', 'high', 'none', 'high' ),
+			'platform holds the requested'    => array( 'no cached ruleset and the requested one on the platform', null, 'standard', 'standard', 'none', 'standard' ),
+			'platform has none'               => array( 'no cached ruleset and none on the platform', null, 'wcpay_fraud_ruleset_not_found', 'standard', 'none', 'standard' ),
+			'platform read fails'             => array( 'no cached ruleset and a failing platform read', null, 'wcpay_server_error', 'standard', 'none', 'standard' ),
+			'advanced with AVS'               => array( 'no cached ruleset and an advanced ruleset holding the AVS rule', null, 'standard', 'advanced', 'avs', 'avs' ),
+			'cache holds the requested'       => array( 'the requested ruleset already cached', 'standard', null, 'standard', 'none', 'standard' ),
+			'error sentinel, unchanged level' => array( 'the error sentinel and the stored level', null, 'wcpay_server_error', 'standard', 'error', 'standard' ),
+		);
+	}
+
+	/**
+	 * An advanced level sent with the error sentinel (the ruleset read failed when the page loaded) saves no ruleset;
+	 * client 11.1.0 throws there (includes/admin/class-wc-rest-payments-settings-controller.php:1281-1284).
+	 *
+	 * @testdox Should save the other settings and no fraud ruleset for an advanced level sent with the error sentinel.
+	 */
+	public function test_update_settings_saves_no_fraud_ruleset_for_advanced_level_with_error_sentinel(): void {
+		$this->set_connected_account_data();
+		update_option( 'current_protection_level', 'advanced' );
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
 				'enable_logging' => 'no',
 			)
 		);
+		$this->api_client->latest_fraud_ruleset_exception = new WooPaymentsApiException( 'Platform unavailable.', 'wcpay_server_error', 500 );
 
 		$result = $this->sut->update_settings(
 			array(
 				'is_debug_log_enabled'               => true,
-				'current_protection_level'           => 'standard',
+				'current_protection_level'           => 'advanced',
 				'advanced_fraud_protection_settings' => 'error',
 			)
 		);
@@ -2384,7 +2453,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $result );
 		$this->assertIsArray( $stored );
 		$this->assertSame( 'yes', $stored['enable_logging'] );
-		$this->assertNull( $this->api_client->last_fraud_ruleset );
+		$this->assertSame( 0, $this->api_client->fraud_ruleset_saves );
+		$this->assertSame( 'advanced', get_option( 'current_protection_level' ) );
+		$this->assertSame( 'error', $result['advanced_fraud_protection_settings'] );
 	}
 
 	/**
@@ -3523,6 +3594,26 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				$this->get_fraud_check_fixture( 'ip_billing_country_same', 'equals', false )
 			),
 		);
+	}
+
+	/**
+	 * Get a fraud ruleset fixture by name: standard, high, "avs" for an advanced ruleset holding the AVS rule as
+	 * client 11.1.0's tests store it (tests/unit/test-class-wc-payment-gateway-wcpay.php:4374-4386), or an empty array.
+	 *
+	 * @param string $name Ruleset name.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_fraud_ruleset_case_fixture( string $name ): array {
+		switch ( $name ) {
+			case 'standard':
+				return $this->get_standard_fraud_ruleset_fixture();
+			case 'high':
+				return $this->get_high_fraud_ruleset_fixture();
+			case 'avs':
+				return array( $this->get_fraud_rule_fixture( 'avs_verification', 'block', $this->get_fraud_check_fixture( 'avs_mismatch', 'equals', true ) ) );
+		}
+
+		return array();
 	}
 
 	/**
