@@ -61,7 +61,6 @@ describe( 'WooPayments Overview Stripe notifications banner chunk failure', () =
 			account: {
 				connected: true,
 				working: false,
-				can_process_payments: true,
 				test_mode_onboarding: false,
 			},
 			account_status: {

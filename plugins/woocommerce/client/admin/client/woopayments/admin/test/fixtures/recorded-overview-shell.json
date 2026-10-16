@@ -1,7 +1,7 @@
 {
 	"_meta": {
 		"recording": "GET wp-json/wc-admin/settings/payments/woopayments/overview on the native :8889 store (Transact platform via wpcom-local, Stripe test mode, test-drive account), 2026-09-30, with the account_status.deposits projection in place",
-		"sanitized": "account id replaced with acct_test; store host replaced with store.example.com; every other value verbatim",
+		"sanitized": "account id replaced with acct_test; store host replaced with store.example.com; can_process_payments removed (no longer sent); every other value verbatim",
 		"notes": "account_link is empty because the account is a test drive (client 11.1.0 class-wc-payments-account.php:382); minimum_scheduled_deposit_amounts is the platform list keyed by lowercase currency"
 	},
 	"response": {
@@ -10,7 +10,6 @@
 			"mode": "test",
 			"connected": true,
 			"working": true,
-			"can_process_payments": true,
 			"details_submitted": true,
 			"test_mode": true,
 			"test_mode_onboarding": true,

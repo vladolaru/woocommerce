@@ -104,10 +104,10 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 					'has_active_loan' => true,
 					'loans'           => array( 'flxln_paid|paid', 'flxln_123456|active', array( 'not-a-loan' ) ),
 				),
+				'status'               => 'restricted_soon',
+				'current_deadline'     => 1781740800,
 				'requirements'         => array(
-					'currently_due'    => array( 'representative.verification.document' ),
-					'current_deadline' => 1781740800,
-					'errors'           => array(
+					'errors' => array(
 						array(
 							'code'   => 'verification_document_missing_front',
 							'reason' => 'Document front is missing.',
@@ -148,7 +148,6 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'test', $overview['account']['mode'] );
 		$this->assertTrue( $overview['account']['connected'] );
 		$this->assertTrue( $overview['account']['working'] );
-		$this->assertTrue( $overview['account']['can_process_payments'] );
 		$this->assertTrue( $overview['account']['details_submitted'] );
 		$this->assertTrue( $overview['account']['test_mode'] );
 		$this->assertTrue( $overview['account']['test_mode_onboarding'] );
@@ -221,7 +220,6 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $overview['account']['id'] );
 		$this->assertFalse( $overview['account']['connected'] );
 		$this->assertFalse( $overview['account']['working'] );
-		$this->assertFalse( $overview['account']['can_process_payments'] );
 		$this->assertFalse( $overview['account']['details_submitted'] );
 		$this->assertSame( 'not_connected', $overview['account_status']['status'] );
 		$this->assertNull( $overview['account_status']['current_deadline'] );
@@ -321,7 +319,7 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function account_status_data(): array {
 		return array(
-			'explicit status wins'                 => array(
+			'explicit status wins'       => array(
 				array(
 					'status'       => 'under_review',
 					'requirements' => array(
@@ -330,64 +328,13 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 				),
 				'under_review',
 			),
-			'pending verification disabled reason' => array(
+			'overdue requirements'       => array(
 				array(
-					'requirements' => array(
-						'disabled_reason' => 'requirements.pending_verification',
-					),
-				),
-				'pending_verification',
-			),
-			'fields needed disabled reason'        => array(
-				array(
-					'requirements' => array(
-						'disabled_reason' => 'requirements.fields_needed',
-					),
-				),
-				'restricted_partially',
-			),
-			'rejected disabled reason'             => array(
-				array(
-					'requirements' => array(
-						'disabled_reason' => 'rejected.fraud',
-					),
-				),
-				'rejected.fraud',
-			),
-			'other disabled reason'                => array(
-				array(
-					'requirements' => array(
-						'disabled_reason' => 'listed',
-					),
+					'has_overdue_requirements' => true,
 				),
 				'restricted',
 			),
-			'past due requirements'                => array(
-				array(
-					'requirements' => array(
-						'past_due' => array( 'business_profile.url' ),
-					),
-				),
-				'restricted',
-			),
-			'currently due with deadline'          => array(
-				array(
-					'requirements' => array(
-						'currently_due'    => array( 'representative.verification.document' ),
-						'current_deadline' => 1781740800,
-					),
-				),
-				'restricted_soon',
-			),
-			'eventually due without deadline'      => array(
-				array(
-					'requirements' => array(
-						'eventually_due' => array( 'company.tax_id' ),
-					),
-				),
-				'enabled',
-			),
-			'complete connected account'           => array(
+			'complete connected account' => array(
 				array(),
 				'complete',
 			),
@@ -470,13 +417,7 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 			wc_get_container()->reset_replacement( WooPaymentsApiClient::class );
 		}
 
-		$this->assertSame( 'acct_native_test', $summary['account']['id'] );
-		$this->assertSame( 'test', $summary['account']['mode'] );
-		$this->assertSame( 'eur', $summary['account']['default_currency'] );
 		$this->assertTrue( $summary['account']['connected'] );
-		$this->assertTrue( $summary['account']['working'] );
-		$this->assertTrue( $summary['account']['can_process_payments'] );
-		$this->assertTrue( $summary['account']['test_mode'] );
 		$this->assertTrue( $summary['account']['test_drive'] );
 		$this->assertFalse( $summary['account']['sandbox'] );
 		$this->assertFalse( $summary['account']['live'] );
@@ -488,9 +429,6 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 			),
 			$summary['documents']
 		);
-		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview', $summary['urls']['overview_page'] );
-		$this->assertStringNotContainsString( 'wcpay-connection-success', $summary['urls']['overview_page'] );
-		$this->assertStringNotContainsString( 'wcpay-connection-error', $summary['urls']['overview_page'] );
 		// Client 11.1.0 `sandbox-mode-switch-to-live-notice/modal/index.tsx:39-45`: Activate payments goes to the onboarding route.
 		$this->assertSame( Utils::wc_payments_settings_url( '/woopayments/onboarding' ), $summary['urls']['setup'] );
 		$this->assertArrayNotHasKey( 'test_publishable_key', $summary['account'] );
@@ -507,13 +445,7 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 
 		$summary = $this->sut->get_account_summary();
 
-		$this->assertSame( '', $summary['account']['id'] );
-		$this->assertSame( 'live', $summary['account']['mode'] );
-		$this->assertSame( 'usd', $summary['account']['default_currency'] );
 		$this->assertFalse( $summary['account']['connected'] );
-		$this->assertFalse( $summary['account']['working'] );
-		$this->assertFalse( $summary['account']['can_process_payments'] );
-		$this->assertFalse( $summary['account']['test_mode'] );
 		$this->assertFalse( $summary['account']['test_drive'] );
 		$this->assertFalse( $summary['account']['sandbox'] );
 		$this->assertFalse( $summary['account']['live'] );
@@ -525,9 +457,6 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 			),
 			$summary['documents']
 		);
-		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview', $summary['urls']['overview_page'] );
-		$this->assertStringNotContainsString( 'wcpay-connection-success', $summary['urls']['overview_page'] );
-		$this->assertStringNotContainsString( 'wcpay-connection-error', $summary['urls']['overview_page'] );
 		$this->assertSame( Utils::wc_payments_settings_url( '/woopayments/onboarding' ), $summary['urls']['setup'] );
 	}
 

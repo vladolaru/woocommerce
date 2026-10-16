@@ -307,13 +307,7 @@ const getDefaultAccountResponse = ( {
 	country?: string;
 } = {} ) => ( {
 	account: {
-		id: 'acct_live',
-		mode: 'live',
-		default_currency: 'usd',
 		connected: true,
-		working: true,
-		can_process_payments: true,
-		test_mode: false,
 		test_drive: false,
 		sandbox: false,
 		live: true,
@@ -3798,13 +3792,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
 				return Promise.resolve( {
 					account: {
-						id: 'acct_test',
-						mode: 'test',
-						default_currency: 'usd',
 						connected: true,
-						working: true,
-						can_process_payments: true,
-						test_mode: true,
 						test_drive: true,
 						sandbox: false,
 						live: false,
@@ -3902,13 +3890,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
 				return Promise.resolve( {
 					account: {
-						id: 'acct_test',
-						mode: 'test',
-						default_currency: 'usd',
 						connected: true,
-						working: true,
-						can_process_payments: true,
-						test_mode: true,
 						test_drive: true,
 						sandbox: false,
 						live: false,
@@ -3962,13 +3944,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
 				return Promise.resolve( {
 					account: {
-						id: 'acct_test',
-						mode: 'test',
-						default_currency: 'usd',
 						connected: true,
-						working: true,
-						can_process_payments: true,
-						test_mode: true,
 						test_drive: true,
 						sandbox: false,
 						live: false,
@@ -4014,13 +3990,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
 				return Promise.resolve( {
 					account: {
-						id: 'acct_test',
-						mode: 'test',
-						default_currency: 'usd',
 						connected: true,
-						working: true,
-						can_process_payments: true,
-						test_mode: true,
 						test_drive: true,
 						sandbox: false,
 						live: false,
@@ -4063,13 +4033,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
 				return Promise.resolve( {
 					account: {
-						id: 'acct_test',
-						mode: 'test',
-						default_currency: 'usd',
 						connected: true,
-						working: true,
-						can_process_payments: true,
-						test_mode: true,
 						test_drive: true,
 						sandbox: false,
 						live: false,
@@ -4144,13 +4108,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
 				return Promise.resolve( {
 					account: {
-						id: 'acct_live',
-						mode: 'live',
-						default_currency: 'usd',
 						connected: true,
-						working: true,
-						can_process_payments: true,
-						test_mode: false,
 						test_drive: false,
 						sandbox: false,
 						live: true,
@@ -4232,13 +4190,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
 				return Promise.resolve( {
 					account: {
-						id: 'acct_live',
-						mode: 'live',
-						default_currency: 'usd',
 						connected: true,
-						working: true,
-						can_process_payments: true,
-						test_mode: false,
 						test_drive: false,
 						sandbox: false,
 						live: true,
@@ -4295,13 +4247,7 @@ describe( 'WooPaymentsSettingsPage', () => {
 			if ( path === '/wc-admin/settings/payments/woopayments/account' ) {
 				return Promise.resolve( {
 					account: {
-						id: 'acct_live',
-						mode: 'live',
-						default_currency: 'usd',
 						connected: true,
-						working: true,
-						can_process_payments: true,
-						test_mode: false,
 						test_drive: false,
 						sandbox: false,
 						live: true,

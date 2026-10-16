@@ -23,7 +23,6 @@ const createAccount = (
 	mode: 'live',
 	connected: true,
 	working: true,
-	can_process_payments: true,
 	details_submitted: true,
 	test_mode: false,
 	test_mode_onboarding: false,

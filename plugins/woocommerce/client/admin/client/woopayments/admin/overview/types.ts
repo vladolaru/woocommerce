@@ -106,7 +106,6 @@ export interface WooPaymentsOverviewAccount {
 	mode: string;
 	connected: boolean;
 	working: boolean;
-	can_process_payments: boolean;
 	details_submitted: boolean;
 	test_mode: boolean;
 	test_mode_onboarding: boolean;

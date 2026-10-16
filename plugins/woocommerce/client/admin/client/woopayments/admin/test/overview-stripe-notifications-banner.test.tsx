@@ -92,7 +92,6 @@ const createShell = ( connected = true, status = 'restricted' ) =>
 		account: {
 			connected,
 			working: false,
-			can_process_payments: true,
 			test_mode_onboarding: false,
 		},
 		account_status: {

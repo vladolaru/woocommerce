@@ -36,7 +36,6 @@ export const createRecordedOverviewShell = (
 		mode: 'test',
 		connected: true,
 		working: true,
-		can_process_payments: true,
 		details_submitted: true,
 		test_mode: true,
 		test_mode_onboarding: false,

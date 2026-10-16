@@ -151,19 +151,13 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	public function test_get_account_summary_by_manager() {
 		$summary = array(
 			'account' => array(
-				'id'                   => 'acct_native_test',
-				'mode'                 => 'test',
-				'default_currency'     => 'usd',
-				'connected'            => true,
-				'working'              => true,
-				'can_process_payments' => true,
-				'test_mode'            => true,
-				'test_drive'           => true,
-				'sandbox'              => false,
-				'live'                 => false,
+				'connected'  => true,
+				'test_drive' => true,
+				'sandbox'    => false,
+				'live'       => false,
 			),
 			'urls'    => array(
-				'overview_page' => 'https://example.com/overview',
+				'setup' => 'https://example.com/setup',
 			),
 		);
 

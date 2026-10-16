@@ -13,7 +13,6 @@ use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 
 defined( 'ABSPATH' ) || exit;
@@ -84,8 +83,7 @@ class WooPaymentsOverviewService {
 	}
 
 	/**
-	 * Get the account summary the WooPayments pages read: the account's mode and state, its Documents fields and the
-	 * Overview and setup links.
+	 * Get the account summary the WooPayments pages read: the account's state, its Documents fields and the setup link.
 	 *
 	 * @return array<string,array<string,mixed>>
 	 */
@@ -94,16 +92,10 @@ class WooPaymentsOverviewService {
 
 		return array(
 			'account'   => array(
-				'id'                   => $account_service->get_account_id(),
-				'mode'                 => $account_service->get_mode(),
-				'default_currency'     => $account_service->get_account_default_currency(),
-				'connected'            => $account_service->has_account(),
-				'working'              => $account_service->has_working_account(),
-				'can_process_payments' => $account_service->can_process_payments(),
-				'test_mode'            => $account_service->is_test_mode_enabled(),
-				'test_drive'           => $account_service->has_test_account(),
-				'sandbox'              => $account_service->has_sandbox_account(),
-				'live'                 => $account_service->has_live_account(),
+				'connected'  => $account_service->has_account(),
+				'test_drive' => $account_service->has_test_account(),
+				'sandbox'    => $account_service->has_sandbox_account(),
+				'live'       => $account_service->has_live_account(),
 			),
 			'documents' => array(
 				'enabled'                => $account_service->is_documents_enabled(),
@@ -111,9 +103,8 @@ class WooPaymentsOverviewService {
 				'country'                => $account_service->get_account_country(),
 			),
 			'urls'      => array(
-				'overview_page' => Utils::wc_payments_settings_url( WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH ),
 				// Client 11.1.0's Activate payments modal sends a test or sandbox account to onboarding (`sandbox-mode-switch-to-live-notice/modal/index.tsx:39-45`).
-				'setup'         => Utils::wc_payments_settings_url( WooPaymentsService::ONBOARDING_PATH_BASE ),
+				'setup' => Utils::wc_payments_settings_url( WooPaymentsService::ONBOARDING_PATH_BASE ),
 			),
 		);
 	}
@@ -133,7 +124,6 @@ class WooPaymentsOverviewService {
 			'mode'                 => $test_mode ? 'test' : 'live',
 			'connected'            => '' !== $account_id,
 			'working'              => '' !== $account_id && $this->is_truthy( $account_data['payments_enabled'] ?? false ),
-			'can_process_payments' => $this->can_snapshot_process_payments( $account_data, $test_mode ),
 			'details_submitted'    => $this->is_truthy( $account_data['details_submitted'] ?? false ),
 			'test_mode'            => $test_mode,
 			'test_mode_onboarding' => in_array( get_option( 'wcpay_onboarding_test_mode', 'no' ), array( 'yes', '1' ), true ),
@@ -302,35 +292,8 @@ class WooPaymentsOverviewService {
 			return 'restricted';
 		}
 
-		$requirements    = $this->get_requirements( $account_data );
-		$disabled_reason = $this->get_scalar( $requirements['disabled_reason'] ?? '' );
-
-		if ( 'requirements.pending_verification' === $disabled_reason ) {
-			return 'pending_verification';
-		}
-
-		if ( 'requirements.fields_needed' === $disabled_reason ) {
-			return 'restricted_partially';
-		}
-
-		if ( str_starts_with( $disabled_reason, 'rejected' ) ) {
-			return $disabled_reason;
-		}
-
-		if ( '' !== $disabled_reason ) {
-			return 'restricted';
-		}
-
 		if ( $this->has_past_due_requirements( $account_data ) ) {
 			return 'restricted';
-		}
-
-		if ( $this->has_non_empty_array( $requirements['currently_due'] ?? array() ) && null !== $this->get_current_deadline( $account_data ) ) {
-			return 'restricted_soon';
-		}
-
-		if ( $this->has_non_empty_array( $requirements['eventually_due'] ?? array() ) && null === $this->get_current_deadline( $account_data ) ) {
-			return 'enabled';
 		}
 
 		return 'complete';
@@ -343,8 +306,7 @@ class WooPaymentsOverviewService {
 	 * @return int|null
 	 */
 	private function get_current_deadline( array $account_data ): ?int {
-		$requirements = $this->get_requirements( $account_data );
-		$deadline     = $requirements['current_deadline'] ?? $account_data['current_deadline'] ?? null;
+		$deadline = $account_data['current_deadline'] ?? null;
 
 		if ( ! is_numeric( $deadline ) ) {
 			return null;
@@ -362,10 +324,7 @@ class WooPaymentsOverviewService {
 	 * @return bool
 	 */
 	private function has_past_due_requirements( array $account_data ): bool {
-		$requirements = $this->get_requirements( $account_data );
-
-		return $this->has_non_empty_array( $requirements['past_due'] ?? array() )
-			|| $this->is_truthy( $account_data['has_overdue_requirements'] ?? false );
+		return $this->is_truthy( $account_data['has_overdue_requirements'] ?? false );
 	}
 
 	/**
@@ -482,10 +441,8 @@ class WooPaymentsOverviewService {
 	 * @return string[]
 	 */
 	private function get_enabled_payment_method_ids(): array {
-		$settings    = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
-		$enabled_ids = is_array( $settings ) && is_array( $settings['upe_enabled_payment_method_ids'] ?? null )
-			? $settings['upe_enabled_payment_method_ids']
-			: ( is_array( $settings ) && is_array( $settings['enabled_payment_method_ids'] ?? null ) ? $settings['enabled_payment_method_ids'] : array( 'card' ) );
+		$enabled_ids = $this->account_service->get_gateway_setting( 'upe_enabled_payment_method_ids' );
+		$enabled_ids = is_array( $enabled_ids ) ? $enabled_ids : array( 'card' );
 
 		$sanitized_ids = array();
 		foreach ( $enabled_ids as $enabled_id ) {
@@ -543,27 +500,7 @@ class WooPaymentsOverviewService {
 	 * @return string
 	 */
 	private function get_account_id( array $account_data ): string {
-		return $this->get_scalar( $account_data['account_id'] ?? $account_data['id'] ?? '' );
-	}
-
-	/**
-	 * Tell whether the stored account data can take payments.
-	 *
-	 * The Overview reads every account field from the stored data, so this does not call WooPaymentsAccountService::can_process_payments(),
-	 * which can refresh the account and reads none without a platform connection.
-	 *
-	 * @param array<string,mixed> $account_data Stored account data.
-	 * @param bool                $test_mode    Whether WooPayments is currently in test mode.
-	 * @return bool
-	 */
-	private function can_snapshot_process_payments( array $account_data, bool $test_mode ): bool {
-		$key_name        = $test_mode ? 'test_publishable_key' : 'live_publishable_key';
-		$publishable_key = $this->get_scalar( $account_data[ $key_name ] ?? '' );
-
-		return '' !== $this->get_account_id( $account_data )
-			&& '' !== $publishable_key
-			&& $this->is_truthy( $account_data['payments_enabled'] ?? false )
-			&& $this->is_truthy( $account_data['details_submitted'] ?? false );
+		return $this->get_scalar( $account_data['account_id'] ?? '' );
 	}
 
 	/**
@@ -597,7 +534,7 @@ class WooPaymentsOverviewService {
 	 * @return array<int,array<string,string>>
 	 */
 	private function get_requirement_errors( array $account_data ): array {
-		$requirements = $this->get_requirements( $account_data );
+		$requirements = is_array( $account_data['requirements'] ?? null ) ? $account_data['requirements'] : array();
 		$errors       = is_array( $requirements['errors'] ?? null ) ? $requirements['errors'] : array();
 		$normalized   = array();
 
@@ -620,16 +557,6 @@ class WooPaymentsOverviewService {
 		}
 
 		return $normalized;
-	}
-
-	/**
-	 * Get account requirements from cached account data.
-	 *
-	 * @param array<string,mixed> $account_data Cached account data.
-	 * @return array<string,mixed>
-	 */
-	private function get_requirements( array $account_data ): array {
-		return is_array( $account_data['requirements'] ?? null ) ? $account_data['requirements'] : array();
 	}
 
 	/**

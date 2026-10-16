@@ -84,20 +84,6 @@ describe( 'WooPayments Overview connection-success modal conditions', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'follows payments_enabled, not the stricter can_process_payments', async () => {
-		const shell = createRecordedOverviewShell();
-		( getWooPaymentsOverviewShell as jest.Mock ).mockResolvedValue( {
-			...shell,
-			account: { ...shell.account, can_process_payments: false },
-		} );
-
-		render( <WooPaymentsOverviewPage /> );
-
-		expect(
-			await screen.findByRole( 'heading', { name: MODAL_HEADING } )
-		).toBeInTheDocument();
-	} );
-
 	it( 'hides the modal when payments are disabled', async () => {
 		( getWooPaymentsOverviewShell as jest.Mock ).mockResolvedValue(
 			createRecordedOverviewShell( { payments_enabled: false } )

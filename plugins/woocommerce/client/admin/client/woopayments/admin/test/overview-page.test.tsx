@@ -196,7 +196,6 @@ const createShell = ( overrides: Record< string, unknown > = {} ) => ( {
 		mode: 'live',
 		connected: true,
 		working: true,
-		can_process_payments: true,
 		details_submitted: true,
 		test_mode: false,
 		test_mode_onboarding: false,
@@ -1045,7 +1044,6 @@ describe( 'WooPaymentsOverviewPage', () => {
 			createShell( {
 				account: {
 					...createShell().account,
-					can_process_payments: true,
 				},
 				account_status: {
 					...createShell().account_status,
@@ -1097,7 +1095,6 @@ describe( 'WooPaymentsOverviewPage', () => {
 				account: {
 					...createShell().account,
 					test_mode_onboarding: true,
-					can_process_payments: true,
 				},
 				account_status: {
 					...createShell().account_status,

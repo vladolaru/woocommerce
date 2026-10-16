@@ -683,7 +683,6 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 			null,
 			array(
 				'account'   => array(
-					'id'         => 'acct_test',
 					'connected'  => true,
 					'live'       => false,
 					'test_drive' => true,
@@ -691,8 +690,7 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 				),
 				'documents' => array( 'enabled' => false ),
 				'urls'      => array(
-					'overview_page' => 'https://example.com/overview',
-					'setup'         => 'https://example.com/setup',
+					'setup' => 'https://example.com/setup',
 				),
 			)
 		);
