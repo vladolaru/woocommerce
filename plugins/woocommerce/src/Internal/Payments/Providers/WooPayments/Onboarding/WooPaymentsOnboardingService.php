@@ -1017,7 +1017,7 @@ class WooPaymentsOnboardingService {
 	 *
 	 * Readiness the response omits comes from the same account's cached record. Payments otherwise read as disabled until
 	 * the next account read succeeds: client 11.1.0 clears its cache here, so a failed read leaves it no account to take
-	 * payments with (includes/class-wc-payments-onboarding-service.php:451, :796).
+	 * payments with (includes/class-wc-payments-onboarding-service.php:451, :796; and :405 for a new account's KYC session).
 	 *
 	 * @param array $response                  Platform response.
 	 * @param bool  $is_live                   Whether the account is live.

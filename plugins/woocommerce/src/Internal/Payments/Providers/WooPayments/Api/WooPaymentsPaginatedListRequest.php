@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 use WP_REST_Request;
 
 /**
- * A paginated platform list request: page, page size, sort and the date and match filters the list routes share.
+ * A paginated platform list request: page, page size and sort, with setters for the `match` and `date_*` filters the lists that take them use.
  *
  * @since 11.0.0
  * @internal

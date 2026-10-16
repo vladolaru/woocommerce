@@ -397,9 +397,9 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	 * intent, which keeps the lock well under a second, and the merchant is waiting at the counter. Four attempts
 	 * 500 ms apart, all before the platform capture starts.
 	 *
-	 * @param OrderPaymentLock                 $order_payment_lock Order payment store.
+	 * @param OrderPaymentLock                 $order_payment_lock Order payment lock.
 	 * @param WC_Order                         $order              Order.
-	 * @param WooPaymentsPersistenceVocabulary $vocabulary         Persistence profile.
+	 * @param WooPaymentsPersistenceVocabulary $vocabulary         Persistence vocabulary, which names the order payment lock.
 	 * @param string                           $intent_id          Intent ID, the lock value.
 	 * @return string|null Lock token, or null when the lock stayed held.
 	 */

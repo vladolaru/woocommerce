@@ -21,8 +21,8 @@ if ( ! function_exists( 'wcpay_format_price_helper' ) ) {
 	/**
 	 * Helper to generate markup to render a price.
 	 *
-	 * Kept under the name the WooPayments plugin's receipt template uses so
-	 * theme overrides written against the plugin keep working unchanged.
+	 * Kept under the name the WooPayments extension's receipt template uses so
+	 * theme overrides written against the extension keep working unchanged.
 	 *
 	 * @param  array  $product  The product to display.
 	 * @param  string $currency The currency to display.

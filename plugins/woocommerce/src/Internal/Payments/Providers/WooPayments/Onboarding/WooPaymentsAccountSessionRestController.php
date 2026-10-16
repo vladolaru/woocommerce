@@ -134,7 +134,8 @@ class WooPaymentsAccountSessionRestController extends RestApiControllerBase {
 		try {
 			return new WP_REST_Response( $this->session_service->create_session() );
 		} catch ( Throwable $exception ) {
-			// The session comes from the platform, whose errors carry its text; log the status and code instead.
+			// Platform failures are answered inside the session service; anything else it throws lands here and goes through
+			// log_throwable(), which writes its class and code, never its message.
 			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'Failed to create embedded account session.', $exception );
 
 			return new WP_Error(

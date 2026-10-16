@@ -565,7 +565,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * Queue a shopper page view for the footer script to record.
 	 *
 	 * Nothing is recorded during render, so no Tracks identity cookie or outbound request touches a cacheable page.
-	 * Only store-wide checks run here; the AJAX recorder applies the per-visitor ones. Page views are recorded on every
+	 * Only store-wide checks run here; the Tracks route's recorder applies the per-visitor ones. Page views are recorded on every
 	 * store (client PR 6870, PR 8821), so WooPay is not checked here, unlike client 11.1.0 since PR 11199.
 	 *
 	 * @param string              $event_name Event name without the wcpay_ prefix.
@@ -587,7 +587,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	/**
 	 * Have the footer script record cart "Proceed to checkout" clicks, like client 11.1.0's cart script (`client/cart/index.js`).
 	 *
-	 * Armed only when the AJAX recorder would keep the event: the store-wide checks and WooPay, since the event is not
+	 * Armed only when the Tracks route's recorder would keep the event: the store-wide checks and WooPay, since the event is not
 	 * recorded on every store and the recorder drops it while WooPay is off.
 	 *
 	 * @param callable $is_woopay_direct_checkout_enabled Returns whether WooPay direct checkout is enabled; called only once armed.
@@ -611,7 +611,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Enqueue the footer script that sends the queued page views through the platform Tracks AJAX action.
+	 * Enqueue the footer script that posts the queued page views to the shopper Tracks REST route.
 	 *
 	 * @internal
 	 */
@@ -655,11 +655,12 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Record a WooPay admin event under the WooPay tracking checks.
+	 * Record a WooPay admin event under the WooPayments store tracking checks.
 	 *
 	 * The WooPay settings events (enabled, disabled, global theme support, express button locations) go through this
-	 * recorder, not `WC_Tracks::record_event()`: they are WooPay events, so they keep the WooPay checks, including the
-	 * US-only store check (client `class-woopay-tracker.php:228-290`, since client PR #8161, which records shopper Tracks only on US stores).
+	 * recorder, not `WC_Tracks::record_event()`, so they keep the WooPayments store checks, including the US-only store
+	 * check and the opt-out cookie. An admin event does not need WooPay to be on (client 11.1.0
+	 * `includes/class-woopay-tracker.php:254-266`).
 	 *
 	 * @param string              $event_name Event name without the wcadmin_ prefix.
 	 * @param array<string,mixed> $properties Event properties.

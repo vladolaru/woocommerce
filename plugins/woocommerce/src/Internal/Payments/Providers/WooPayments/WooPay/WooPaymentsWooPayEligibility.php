@@ -272,7 +272,7 @@ class WooPaymentsWooPayEligibility {
 	}
 
 	/**
-	 * Tell whether WooPay is available for the connected account country.
+	 * Tell whether WooPay is available in the visitor's country, geolocated from the IP address; always true in test mode.
 	 *
 	 * @return bool
 	 */

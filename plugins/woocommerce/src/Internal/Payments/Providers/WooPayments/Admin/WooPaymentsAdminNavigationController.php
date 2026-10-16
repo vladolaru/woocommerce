@@ -547,7 +547,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the current admin request is the Core Payments settings page.
+	 * Tell whether the current admin request is the Payments settings page.
 	 *
 	 * @internal
 	 * @return bool
@@ -836,7 +836,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Append one submenu item under the Core Payments parent.
+	 * Append one submenu item under the Payments menu.
 	 *
 	 * @param string               $title       Menu title.
 	 * @param string               $path        Payments settings route path.
@@ -878,7 +878,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the Core Payments parent menu slug.
+	 * Get the Payments menu's slug.
 	 *
 	 * @return string
 	 */

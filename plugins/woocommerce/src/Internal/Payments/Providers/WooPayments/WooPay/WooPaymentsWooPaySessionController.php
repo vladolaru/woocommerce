@@ -560,15 +560,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			}
 		}
 
-		/**
-		 * Filters whether WooCommerce should add the WooPay product to the cart.
-		 *
-		 * @param bool $passed     Whether validation passed.
-		 * @param int  $product_id Product ID.
-		 * @param int|float $quantity   Quantity.
-		 *
-		 * @since 11.0.0
-		 */
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WooCommerce's add-to-cart validation filter, fired as WC_Form_Handler::add_to_cart_handler_simple() fires it.
 		if ( ! apply_filters( 'woocommerce_add_to_cart_validation', true, $product_id, $quantity ) ) {
 			wp_send_json(
 				array(

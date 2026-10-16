@@ -976,8 +976,9 @@ class WooPaymentsSettingsService {
 	 * Convert a platform account-update rejection into the error shape the settings UI consumes.
 	 *
 	 * The platform names the rejected account field in the error's `param`. A field the settings page shows errors under
-	 * gets the `wcpay_server_error` error with its message in `details`; any other gets the `server_error` body the
-	 * merchant controller sends, which the page shows as a notice.
+	 * gets the `wcpay_server_error` error with its message in `details`; any other field gets a
+	 * `woocommerce_woopayments_account_update_rejected` error (status 400) with the platform's message, which the merchant
+	 * controller answers as the `server_error` body the page shows as a notice.
 	 *
 	 * @param WooPaymentsApiException $exception API exception from the account update.
 	 * @return WP_Error
