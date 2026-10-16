@@ -289,7 +289,7 @@ class WooPayments extends PaymentGateway {
 			$extension_suggestion['_native'] = true;
 		}
 		if ( $is_builtin_suggestion && ! empty( $extension_suggestion['_incentive'] ) && is_array( $extension_suggestion['_incentive'] ) ) {
-			$extension_suggestion['_incentive']['cta_label'] = __( 'Get started', 'woocommerce' );
+			$extension_suggestion['_incentive']['cta_label'] = $this->get_builtin_incentive_cta_label( $extension_suggestion );
 		}
 
 		// We only add the preload link if we don't have a working WPCOM connection.
