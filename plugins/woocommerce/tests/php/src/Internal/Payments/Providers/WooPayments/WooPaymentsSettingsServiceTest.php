@@ -61,6 +61,13 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	private RecordingSettingsApiClient $api_client;
 
 	/**
+	 * Recording store setup report controller.
+	 *
+	 * @var RecordingStoreSetupReportController
+	 */
+	private RecordingStoreSetupReportController $store_setup_report;
+
+	/**
 	 * Mock WooPay session service.
 	 *
 	 * @var RecordingWooPaySessionService
@@ -94,9 +101,10 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->api_client             = new RecordingSettingsApiClient();
 		$this->woopay_session_service = new RecordingWooPaySessionService();
 		$this->pm_promotions_service  = new RecordingPmPromotionsService();
+		$this->store_setup_report     = new RecordingStoreSetupReportController();
 		$account_service              = $this->create_account_service();
 		$this->sut                    = new WooPaymentsSettingsService();
-		$this->sut->init( $account_service, $this->api_client, $this->pm_promotions_service, wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), $this->create_fraud_ruleset_service( $account_service ), $this->create_duplicate_gateway_methods_service( $account_service ), $this->create_woopay_eligibility( $account_service ), new RecordingWooPayAppearanceStore( $this->woopay_session_service ), wc_get_container()->get( WooPaymentsFrontendTrackingController::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
+		$this->sut->init( $account_service, $this->api_client, $this->pm_promotions_service, wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ), wc_get_container()->get( WooPaymentsPaymentMethodRegistry::class ), wc_get_container()->get( WooPaymentsStripeBillingModule::class ), $this->create_fraud_ruleset_service( $account_service ), $this->create_duplicate_gateway_methods_service( $account_service ), $this->create_woopay_eligibility( $account_service ), new RecordingWooPayAppearanceStore( $this->woopay_session_service ), wc_get_container()->get( WooPaymentsFrontendTrackingController::class ), wc_get_container()->get( WooPaymentsLogger::class ), $this->store_setup_report );
 	}
 
 	/**
@@ -1488,7 +1496,8 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( '0', get_option( '_wcpay_feature_subscriptions' ) );
 		$this->assertSame( '0', get_option( '_wcpay_feature_stripe_billing' ), 'Turning Stripe Billing off is saved, as the plugin does.' );
 		$this->assertSame( $stored['upe_enabled_payment_method_ids'], $result['enabled_payment_method_ids'] );
-		$this->assertSame( $store_setup_sync_count + 1, did_action( 'wcpay_store_setup_sync' ) );
+		$this->assertSame( 1, $this->store_setup_report->sync_count, 'The save sends the store setup report once.' );
+		$this->assertSame( $store_setup_sync_count, did_action( 'wcpay_store_setup_sync' ), 'The save calls the sync directly; callbacks on the scheduled sync hook do not run.' );
 	}
 
 	/**
@@ -1524,6 +1533,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( $option_name ), $logger->contexts[0]['failed_options'] );
 		$this->assertStringNotContainsString( 'merchant@example.com', (string) wp_json_encode( $logger->contexts ), 'Request keys stay out of the always-on line.' );
 		$this->assertSame( $original_settings, get_option( $option_name ) );
+		$this->assertSame( 0, $this->store_setup_report->sync_count );
 		$this->assertSame( $store_setup_sync_count, did_action( 'wcpay_store_setup_sync' ) );
 	}
 

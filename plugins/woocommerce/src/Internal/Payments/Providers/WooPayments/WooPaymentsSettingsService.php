@@ -190,6 +190,13 @@ class WooPaymentsSettingsService {
 	private WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service;
 
 	/**
+	 * Store setup report controller.
+	 *
+	 * @var WooPaymentsStoreSetupReportController
+	 */
+	private WooPaymentsStoreSetupReportController $store_setup_report_controller;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -206,8 +213,9 @@ class WooPaymentsSettingsService {
 	 * @param WooPaymentsWooPayAppearanceStore          $appearance_store                  WooPay checkout appearance store.
 	 * @param WooPaymentsFrontendTrackingController     $frontend_tracking_controller      Frontend tracking controller.
 	 * @param WooPaymentsLogger                         $logger                            WooPayments logger.
+	 * @param WooPaymentsStoreSetupReportController     $store_setup_report_controller     Store setup report controller.
 	 */
-	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsStripeBillingModule $stripe_billing_module, WooPaymentsFraudRulesetService $fraud_ruleset_service, WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsWooPayAppearanceStore $appearance_store, WooPaymentsFrontendTrackingController $frontend_tracking_controller, WooPaymentsLogger $logger ): void {
+	final public function init( WooPaymentsAccountService $account_service, WooPaymentsApiClient $api_client, WooPaymentsPmPromotionsService $pm_promotions_service, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer, WooPaymentsPaymentMethodRegistry $payment_method_registry, WooPaymentsStripeBillingModule $stripe_billing_module, WooPaymentsFraudRulesetService $fraud_ruleset_service, WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsWooPayAppearanceStore $appearance_store, WooPaymentsFrontendTrackingController $frontend_tracking_controller, WooPaymentsLogger $logger, WooPaymentsStoreSetupReportController $store_setup_report_controller ): void {
 		$this->account_service                   = $account_service;
 		$this->api_client                        = $api_client;
 		$this->pm_promotions_service             = $pm_promotions_service;
@@ -220,6 +228,7 @@ class WooPaymentsSettingsService {
 		$this->appearance_store                  = $appearance_store;
 		$this->frontend_tracking_controller      = $frontend_tracking_controller;
 		$this->logger                            = $logger;
+		$this->store_setup_report_controller     = $store_setup_report_controller;
 	}
 
 	/**
@@ -536,12 +545,9 @@ class WooPaymentsSettingsService {
 		}
 		$settings = $result['settings'];
 		$this->record_woopay_settings_events( $params, $previous_settings, $settings );
-		/**
-		 * Fires the store setup sync after a settings save, so the platform gets the store setup report now.
-		 *
-		 * @since 11.0.0
-		 */
-		do_action( WooPaymentsStoreSetupReportController::STORE_SETUP_SYNC_ACTION );
+		// The platform gets the store setup report now, inside the save (client 11.1.0
+		// includes/admin/class-wc-rest-payments-settings-controller.php:642-643); the scheduled sync hook does not fire here.
+		$this->store_setup_report_controller->handle_wcpay_store_setup_sync();
 
 		return $this->get_settings();
 	}
