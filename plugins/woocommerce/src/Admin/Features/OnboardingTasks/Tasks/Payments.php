@@ -203,7 +203,7 @@ class Payments extends Task {
 	 * @return array
 	 */
 	public function get_additional_data() {
-		$native = array(
+		$additional_data = array(
 			'wooPaymentsIsActive'                   => $this->is_woopayments_active(),
 			'wooPaymentsIsInstalled'                => $this->is_woopayments_installed(),
 			'wooPaymentsSettingsCountryIsSupported' => $this->is_woopayments_supported_country( $this->get_payments_settings_country() ),
@@ -231,10 +231,10 @@ class Payments extends Task {
 
 		if ( is_array( $deprecated ) ) {
 			// This task's values take precedence; the deprecated filter may only add keys.
-			return array_merge( $deprecated, $native );
+			return array_merge( $deprecated, $additional_data );
 		}
 
-		return $native;
+		return $additional_data;
 	}
 
 	/**

@@ -197,7 +197,7 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 			self::OFFLINE_SECTION_NAME,
 		);
 
-		$native_owns_payments_runtime = wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner();
+		$is_builtin_owner = wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner();
 
 		// These sections are optional and can be modified by plugins or themes.
 		$optional_reactified_sections = array(
@@ -205,7 +205,7 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 			self::BACS_SECTION_NAME,
 			self::CHEQUE_SECTION_NAME,
 		);
-		if ( $native_owns_payments_runtime ) {
+		if ( $is_builtin_owner ) {
 			$optional_reactified_sections[] = self::WOOPAYMENTS_SECTION_NAME;
 		}
 
@@ -229,7 +229,7 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 			// Enforce a list format and string-only values for section identifiers.
 			$optional_reactified_sections = array_values( array_filter( $optional_reactified_sections, 'is_string' ) );
 		}
-		if ( ! $native_owns_payments_runtime ) {
+		if ( ! $is_builtin_owner ) {
 			$optional_reactified_sections = array_values( array_diff( $optional_reactified_sections, array( self::WOOPAYMENTS_SECTION_NAME ) ) );
 		}
 
