@@ -4,7 +4,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAdaptedExtensions;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
 use WC_Unit_Test_Case;
@@ -965,17 +964,6 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( admin_url( 'admin-ajax.php' ), $config['ajaxUrl'] );
 		$this->assertArrayHasKey( 'isShopperTrackingEnabled', $config );
 		$this->assertArrayNotHasKey( 'is_shopper_tracking_enabled', $config );
-	}
-
-	/**
-	 * @testdox Should include the current frontend style extractor schema in the cache version.
-	 */
-	public function test_frontend_styles_cache_version_includes_current_extractor_schema(): void {
-		update_option( 'wcpay_styles_cache_version', 'version-one' );
-
-		$service = new WooPaymentsFrontendStylesService();
-
-		$this->assertSame( 'version-one|appearance-extractor-v4', $service->get_or_create_styles_cache_version() );
 	}
 
 	/**

@@ -42,13 +42,25 @@ class WooPaymentsFrontendStylesServiceTest extends WC_Unit_Test_Case {
 		$second = $service->get_or_create_styles_cache_version();
 
 		$this->assertSame( $first, $second );
-		$this->assertStringEndsWith( '|appearance-extractor-v4', $first );
 
 		$service->invalidate_styles_cache_version();
 		$third = $service->get_or_create_styles_cache_version();
 
 		$this->assertNotSame( $first, $third );
-		$this->assertStringEndsWith( '|appearance-extractor-v4', $third );
+	}
+
+	/**
+	 * Client 11.1.0 returns the stored version as it is (includes/class-wc-payments-styles-cache.php:45-53); a new
+	 * extractor ships in a WooCommerce release, whose woocommerce_updated hook starts a new version.
+	 *
+	 * @testdox Should return the stored styles cache version unchanged.
+	 */
+	public function test_returns_the_stored_version_unchanged(): void {
+		update_option( 'wcpay_styles_cache_version', 'version-one' );
+
+		$service = new WooPaymentsFrontendStylesService();
+
+		$this->assertSame( 'version-one', $service->get_or_create_styles_cache_version() );
 	}
 
 	/**

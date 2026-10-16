@@ -20,8 +20,6 @@ class WooPaymentsFrontendStylesService implements RegisterHooksInterface {
 
 	private const STYLES_CACHE_VERSION_OPTION = 'wcpay_styles_cache_version';
 
-	private const STYLES_CACHE_SCHEMA_VERSION = 'appearance-extractor-v4';
-
 	/**
 	 * Register shared frontend style lifecycle hooks.
 	 */
@@ -44,13 +42,13 @@ class WooPaymentsFrontendStylesService implements RegisterHooksInterface {
 		$version = get_option( self::STYLES_CACHE_VERSION_OPTION );
 
 		if ( is_scalar( $version ) && '' !== (string) $version ) {
-			return $this->append_schema_version( sanitize_text_field( (string) $version ) );
+			return sanitize_text_field( (string) $version );
 		}
 
 		$version = md5( wp_generate_uuid4() . '|' . (string) wp_get_theme()->get_stylesheet() . '|' . ( defined( 'WC_VERSION' ) ? WC_VERSION : '' ) );
 		update_option( self::STYLES_CACHE_VERSION_OPTION, $version, true );
 
-		return $this->append_schema_version( $version );
+		return $version;
 	}
 
 	/**
@@ -81,15 +79,5 @@ class WooPaymentsFrontendStylesService implements RegisterHooksInterface {
 			'save_post_wp_template',
 			'woocommerce_updated',
 		);
-	}
-
-	/**
-	 * Append the frontend style extractor schema version.
-	 *
-	 * @param string $version Theme/WooCommerce style cache version.
-	 * @return string
-	 */
-	private function append_schema_version( string $version ): string {
-		return $version . '|' . self::STYLES_CACHE_SCHEMA_VERSION;
 	}
 }

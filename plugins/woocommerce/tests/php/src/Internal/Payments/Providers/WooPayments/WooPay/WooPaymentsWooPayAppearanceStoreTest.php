@@ -90,9 +90,12 @@ class WooPaymentsWooPayAppearanceStoreTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should ignore appearance stored before the current frontend style extractor schema.
+	 * An appearance the WooPayments extension stored for the current styles cache version is still valid, as client 11.1.0
+	 * reads it (includes/class-wc-payments-styles-cache.php:69-75), so a store moving from the extension keeps it.
+	 *
+	 * @testdox Should keep an appearance stored for the current styles cache version.
 	 */
-	public function test_ignores_appearance_stored_before_current_frontend_style_extractor_schema(): void {
+	public function test_keeps_appearance_stored_for_the_current_styles_cache_version(): void {
 		$sut        = $this->create_appearance_store();
 		$appearance = $this->get_valid_appearance();
 
@@ -106,7 +109,7 @@ class WooPaymentsWooPayAppearanceStoreTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertSame( array(), $sut->get_woopay_appearance() );
+		$this->assertSame( $appearance, $sut->get_woopay_appearance() );
 		$this->assertSame( array(), $sut->get_woopay_font_rules() );
 	}
 
