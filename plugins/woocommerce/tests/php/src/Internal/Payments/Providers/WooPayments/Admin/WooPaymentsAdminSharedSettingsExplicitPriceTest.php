@@ -65,54 +65,62 @@ class WooPaymentsAdminSharedSettingsExplicitPriceTest extends WC_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox Should preload shouldUseExplicitPrice as true when Multi-Currency is on with an additional enabled currency.
+	 * @testdox Should preload shouldUseExplicitPrice as true only when Multi-Currency is on with an additional enabled currency.
+	 * @dataProvider provide_explicit_price_flag_cases
+	 *
+	 * @param bool                               $multi_currency_enabled Whether Multi-Currency is on.
+	 * @param array<string,string|string[]|null> $options               Currency options to set; null deletes the option.
+	 * @param bool                               $expected               The preloaded flag.
+	 * @param string                             $message                Failure message.
 	 */
-	public function test_preloads_explicit_price_flag_on_with_an_additional_currency(): void {
-		$this->set_multi_currency_enabled( true );
-		$this->enable_manual_rate_currency( 'EUR', '0.9' );
-
-		$settings = $this->sut->preload_shared_settings( array() );
-
-		$this->assertTrue( $settings['woopaymentsSettings']['shouldUseExplicitPrice'], 'A second enabled currency should turn on explicit currency codes.' );
-	}
-
-	/**
-	 * @testdox Should preload shouldUseExplicitPrice as false when Multi-Currency is on with only the store currency.
-	 */
-	public function test_preloads_explicit_price_flag_off_with_only_the_store_currency(): void {
-		$this->set_multi_currency_enabled( true );
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD' ) );
+	public function test_preloads_explicit_price_flag( bool $multi_currency_enabled, array $options, bool $expected, string $message ): void {
+		$this->set_multi_currency_enabled( $multi_currency_enabled );
+		foreach ( $options as $option => $value ) {
+			if ( null === $value ) {
+				delete_option( $option );
+			} else {
+				update_option( $option, $value );
+			}
+		}
 
 		$settings = $this->sut->preload_shared_settings( array() );
 
 		$this->assertArrayHasKey( 'shouldUseExplicitPrice', $settings['woopaymentsSettings'] );
-		$this->assertFalse( $settings['woopaymentsSettings']['shouldUseExplicitPrice'], 'The store currency alone should not add currency codes.' );
+		$this->assertSame( $expected, $settings['woopaymentsSettings']['shouldUseExplicitPrice'], $message );
 	}
 
 	/**
-	 * @testdox Should preload shouldUseExplicitPrice as false when a configured currency has no rate, like the WooPayments extension's enabled currencies.
+	 * Multi-Currency states and the explicit price flag they preload.
+	 *
+	 * @return array<string,array{0:bool,1:array<string,string|string[]|null>,2:bool,3:string}>
 	 */
-	public function test_preloads_explicit_price_flag_off_when_the_additional_currency_is_unavailable(): void {
-		$this->set_multi_currency_enabled( true );
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
-		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
-		delete_option( 'wcpay_multi_currency_manual_rate_eur' );
+	public function provide_explicit_price_flag_cases(): array {
+		$eur_at_manual_rate = array(
+			'wcpay_multi_currency_enabled_currencies' => array( 'USD', 'EUR' ),
+			'wcpay_multi_currency_exchange_rate_eur'  => 'manual',
+			'wcpay_multi_currency_manual_rate_eur'    => '0.9',
+		);
 
-		$settings = $this->sut->preload_shared_settings( array() );
-
-		$this->assertFalse( $settings['woopaymentsSettings']['shouldUseExplicitPrice'], 'A currency without a rate is not an enabled currency.' );
-	}
-
-	/**
-	 * @testdox Should preload shouldUseExplicitPrice as false when Multi-Currency is disabled, even with a configured currency.
-	 */
-	public function test_preloads_explicit_price_flag_off_when_multi_currency_is_disabled(): void {
-		$this->set_multi_currency_enabled( false );
-		$this->enable_manual_rate_currency( 'EUR', '0.9' );
-
-		$settings = $this->sut->preload_shared_settings( array() );
-
-		$this->assertFalse( $settings['woopaymentsSettings']['shouldUseExplicitPrice'], 'Disabled Multi-Currency should never add currency codes by default.' );
+		return array(
+			'on with an additional currency'          => array( true, $eur_at_manual_rate, true, 'A second enabled currency should turn on explicit currency codes.' ),
+			'on with only the store currency'         => array(
+				true,
+				array( 'wcpay_multi_currency_enabled_currencies' => array( 'USD' ) ),
+				false,
+				'The store currency alone should not add currency codes.',
+			),
+			'on with an additional currency, no rate' => array(
+				true,
+				array(
+					'wcpay_multi_currency_enabled_currencies' => array( 'USD', 'EUR' ),
+					'wcpay_multi_currency_exchange_rate_eur' => 'manual',
+					'wcpay_multi_currency_manual_rate_eur' => null,
+				),
+				false,
+				'A currency without a rate is not an enabled currency.',
+			),
+			'off with an additional currency'         => array( false, $eur_at_manual_rate, false, 'Disabled Multi-Currency should never add currency codes by default.' ),
+		);
 	}
 
 	/**

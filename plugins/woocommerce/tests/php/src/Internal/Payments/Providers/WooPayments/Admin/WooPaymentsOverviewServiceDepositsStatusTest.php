@@ -38,33 +38,24 @@ class WooPaymentsOverviewServiceDepositsStatusTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report payouts enabled from the cached account's deposits status.
-	 */
-	public function test_reports_deposits_enabled_from_the_recorded_cached_account_shape(): void {
-		$this->cache_account_data( $this->get_recorded_account_data() );
-
-		$overview = $this->sut->get_overview();
-
-		$this->assertTrue( $overview['account_status']['deposits_enabled'], 'A cached account with deposits.status "enabled" has payouts enabled.' );
-	}
-
-	/**
-	 * @testdox Should report payouts disabled when the deposits status is "$status".
+	 * @testdox Should report payouts enabled only when the cached account's deposits status is "enabled": "$status".
 	 *
-	 * @testWith ["disabled"]
-	 *           ["blocked"]
-	 *           [""]
+	 * @testWith ["enabled", true]
+	 *           ["disabled", false]
+	 *           ["blocked", false]
+	 *           ["", false]
 	 *
-	 * @param string $status Platform deposits status.
+	 * @param string $status   Platform deposits status.
+	 * @param bool   $expected Whether payouts are enabled.
 	 */
-	public function test_reports_deposits_disabled_for_other_statuses( string $status ): void {
+	public function test_reports_deposits_enabled_from_the_deposits_status( string $status, bool $expected ): void {
 		$account_data                       = $this->get_recorded_account_data();
 		$account_data['deposits']['status'] = $status;
 		$this->cache_account_data( $account_data );
 
 		$overview = $this->sut->get_overview();
 
-		$this->assertFalse( $overview['account_status']['deposits_enabled'] );
+		$this->assertSame( $expected, $overview['account_status']['deposits_enabled'], "A cached account with deposits.status \"{$status}\"." );
 	}
 
 	/**

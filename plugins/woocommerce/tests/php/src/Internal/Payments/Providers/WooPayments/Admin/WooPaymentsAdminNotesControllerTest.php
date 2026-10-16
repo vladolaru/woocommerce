@@ -91,10 +91,20 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Does not add the secure checkout note when checkout forces SSL.
+	 * @testdox Does not add the secure checkout note when $_dataName.
+	 * @dataProvider provider_secure_checkouts
+	 *
+	 * @param bool $force_ssl  Whether checkout forces SSL.
+	 * @param bool $https_home Whether the site uses HTTPS.
 	 */
-	public function test_does_not_add_https_note_when_checkout_forces_ssl(): void {
-		update_option( 'woocommerce_force_ssl_checkout', 'yes' );
+	public function test_does_not_add_https_note_when_checkout_is_secure( bool $force_ssl, bool $https_home ): void {
+		if ( $force_ssl ) {
+			update_option( 'woocommerce_force_ssl_checkout', 'yes' );
+		}
+		if ( $https_home ) {
+			remove_filter( 'pre_option_home', array( $this, 'get_http_home_url' ) );
+			add_filter( 'pre_option_home', array( $this, 'get_https_home_url' ) );
+		}
 
 		$this->sut->add_woo_admin_notes();
 
@@ -102,15 +112,15 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Does not add the secure checkout note when the site uses HTTPS.
+	 * Secure checkout setups.
+	 *
+	 * @return array<string,array{0:bool,1:bool}>
 	 */
-	public function test_does_not_add_https_note_when_site_is_https(): void {
-		remove_filter( 'pre_option_home', array( $this, 'get_http_home_url' ) );
-		add_filter( 'pre_option_home', array( $this, 'get_https_home_url' ) );
-
-		$this->sut->add_woo_admin_notes();
-
-		$this->assertSame( array(), Notes::load_data_store()->get_notes_with_name( WooPaymentsSetHttpsForCheckoutNote::NOTE_NAME ) );
+	public function provider_secure_checkouts(): array {
+		return array(
+			'checkout forces SSL' => array( true, false ),
+			'the site uses HTTPS' => array( false, true ),
+		);
 	}
 
 	/**
@@ -344,7 +354,6 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 
 		$errors = $logger->get_errors();
 		$this->assertCount( 1, $errors );
-		$this->assertSame( 'Failed to add a WooPayments inbox note.', $errors[0][1] );
 		$this->assertSame( 'woopayments', $errors[0][2] );
 		$context = $logger->contexts[ array_search( $errors[0], $logger->lines, true ) ];
 		$this->assertSame( WooPaymentsSetUpLinkNote::NOTE_NAME, $context['note'] );

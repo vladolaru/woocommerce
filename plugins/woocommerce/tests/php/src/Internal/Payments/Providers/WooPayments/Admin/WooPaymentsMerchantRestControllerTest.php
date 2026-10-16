@@ -69,6 +69,11 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	private $mock_api_client;
 
 	/**
+	 * @var MockObject|WooPaymentsAdminNoticeService
+	 */
+	private $mock_notice_service;
+
+	/**
 	 * The ID of the store admin user.
 	 *
 	 * @var int
@@ -125,8 +130,10 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 			->onlyMethods( array( 'upload_file', 'get_file', 'get_file_contents' ) )
 			->getMock();
 
+		$this->mock_notice_service = $this->createMock( WooPaymentsAdminNoticeService::class );
+
 		$this->sut = new WooPaymentsMerchantRestController();
-		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $this->createMock( WooPaymentsAdminNoticeService::class ), new WooPaymentsApplePayDomainService(), $this->mock_api_client );
+		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $this->mock_notice_service, new WooPaymentsApplePayDomainService(), $this->mock_api_client );
 		$this->server = $this->create_rest_server_with_routes(
 			array(
 				function () {
@@ -193,15 +200,20 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The connected merchant controller should expose the notice route when resolved by the container.
+	 * @testdox The container-resolved merchant controller should expose the settings notice and Apple Pay notice shown routes.
 	 */
-	public function test_container_resolved_merchant_controller_registers_notice_route(): void {
+	public function test_container_resolved_merchant_controller_registers_the_notice_routes(): void {
 		$controller = wc_get_container()->get( WooPaymentsMerchantRestController::class );
 		$controller->register_routes( true );
 
-		$response = $this->server->dispatch( new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/test_to_live/shown' ) );
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( array( 'success' => true ), $response->get_data() );
+		$notice_response   = $this->server->dispatch( new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/test_to_live/shown' ) );
+		$apple_pay_request = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/apple_pay_domain_error/shown' );
+		$apple_pay_request->set_param( 'error_id', hash( 'sha256', 'Test error message' ) );
+		$apple_pay_response = $this->server->dispatch( $apple_pay_request );
+
+		$this->assertSame( 200, $notice_response->get_status() );
+		$this->assertSame( array( 'success' => true ), $notice_response->get_data() );
+		$this->assertSame( 200, $apple_pay_response->get_status() );
 	}
 
 	/**
@@ -272,11 +284,15 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep the Apple Pay domain error when a user without store management permission reports it shown.
+	 * @testdox Should keep the Apple Pay domain error when a $_dataName reports it shown.
+	 * @dataProvider provider_apple_pay_domain_error_shown_refusals
+	 *
+	 * @param string|null $role            Role of the reporting user, or null for a logged-out visitor.
+	 * @param int         $expected_status Expected response status.
 	 */
-	public function test_apple_pay_domain_error_shown_rejects_non_manager(): void {
+	public function test_apple_pay_domain_error_shown_refuses_users_without_manager_permission( ?string $role, int $expected_status ): void {
 		update_option( 'wcpay_apple_pay_domain_error', 'Test error message' );
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'subscriber' ) ) );
+		wp_set_current_user( null === $role ? 0 : $this->factory->user->create( array( 'role' => $role ) ) );
 
 		try {
 			$response     = $this->dispatch_apple_pay_domain_error_shown( hash( 'sha256', 'Test error message' ) );
@@ -285,26 +301,20 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 			delete_option( 'wcpay_apple_pay_domain_error' );
 		}
 
-		$this->assertSame( 403, $response->get_status() );
+		$this->assertSame( $expected_status, $response->get_status() );
 		$this->assertSame( 'Test error message', $stored_error );
 	}
 
 	/**
-	 * @testdox Should keep the Apple Pay domain error when a logged-out visitor reports it shown.
+	 * Users refused by the Apple Pay notice shown route.
+	 *
+	 * @return array<string,array{?string,int}>
 	 */
-	public function test_apple_pay_domain_error_shown_rejects_anonymous_user(): void {
-		update_option( 'wcpay_apple_pay_domain_error', 'Test error message' );
-		wp_set_current_user( 0 );
-
-		try {
-			$response     = $this->dispatch_apple_pay_domain_error_shown( hash( 'sha256', 'Test error message' ) );
-			$stored_error = get_option( 'wcpay_apple_pay_domain_error' );
-		} finally {
-			delete_option( 'wcpay_apple_pay_domain_error' );
-		}
-
-		$this->assertSame( 401, $response->get_status() );
-		$this->assertSame( 'Test error message', $stored_error );
+	public function provider_apple_pay_domain_error_shown_refusals(): array {
+		return array(
+			'logged-out visitor'                       => array( null, 401 ),
+			'user without store management permission' => array( 'subscriber', 403 ),
+		);
 	}
 
 	/**
@@ -323,49 +333,6 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 		}
 
 		return $this->server->dispatch( $request );
-	}
-
-	/**
-	 * @testdox The container-resolved merchant controller should expose the Apple Pay notice shown route.
-	 */
-	public function test_container_resolved_merchant_controller_registers_apple_pay_notice_route(): void {
-		$controller = wc_get_container()->get( WooPaymentsMerchantRestController::class );
-		$controller->register_routes( true );
-
-		$request = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/apple_pay_domain_error/shown' );
-		$request->set_param( 'error_id', hash( 'sha256', 'Test error message' ) );
-		$response = $this->server->dispatch( $request );
-		$this->assertSame( 200, $response->get_status() );
-	}
-
-	/**
-	 * @testdox Should reject an anonymous settings notice action before reaching the service.
-	 */
-	public function test_record_admin_notice_action_rejects_anonymous_user(): void {
-		$notice_service = $this->createMock( WooPaymentsAdminNoticeService::class );
-		$notice_service->expects( $this->never() )->method( 'record_action' );
-		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service, new WooPaymentsApplePayDomainService(), $this->mock_api_client );
-		$this->sut->register_routes( true );
-		wp_set_current_user( 0 );
-
-		$request  = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/test_to_live/shown' );
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 401, $response->get_status() );
-	}
-
-	/**
-	 * @testdox Should reject a notice action from a logged-in user without store management permission.
-	 */
-	public function test_record_admin_notice_action_rejects_non_manager(): void {
-		$notice_service = $this->createMock( WooPaymentsAdminNoticeService::class );
-		$notice_service->expects( $this->never() )->method( 'record_action' );
-		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service, new WooPaymentsApplePayDomainService(), $this->mock_api_client );
-		$this->sut->register_routes( true );
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'subscriber' ) ) );
-
-		$response = $this->server->dispatch( new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/test_to_live/shown' ) );
-		$this->assertSame( 403, $response->get_status() );
 	}
 
 	/**
@@ -424,43 +391,84 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should block the WooPayments account summary for users without permission.
+	 * @testdox Should refuse the $_dataName read route to a user without payment gateway management permission.
+	 * @dataProvider provider_read_route_refusals
+	 *
+	 * @param string      $route          Route path.
+	 * @param string|null $role           Role to log in with, or null to keep the administrator with manage_woocommerce filtered off.
+	 * @param string      $service        Property holding the service mock the route reads.
+	 * @param string      $service_method Service method that must not run.
 	 */
-	public function test_get_account_summary_by_user_without_caps() {
-		// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
-		$filter_callback = fn( $caps ) => array(
-			'manage_woocommerce' => false,
-			'install_plugins'    => true,
-		);
-		add_filter( 'user_has_cap', $filter_callback );
+	public function test_read_routes_refuse_users_without_manager_permission( string $route, ?string $role, string $service, string $service_method ): void {
+		if ( null === $role ) {
+			// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
+			$filter_callback = fn( $caps ) => array(
+				'manage_woocommerce' => false,
+				'install_plugins'    => true,
+			);
+			add_filter( 'user_has_cap', $filter_callback );
+		} else {
+			wp_set_current_user( $this->factory->user->create( array( 'role' => $role ) ) );
+		}
 
-		$this->mock_overview_service
+		$this->{$service}
 			->expects( $this->never() )
-			->method( 'get_account_summary' );
+			->method( $service_method );
 
-		$request  = new WP_REST_Request( 'GET', self::ENDPOINT . '/account' );
-		$response = $this->server->dispatch( $request );
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', $route ) );
 
 		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
-
-		remove_filter( 'user_has_cap', $filter_callback );
 	}
 
 	/**
-	 * @testdox Should return an account summary error when the service throws.
+	 * Read routes and the users they refuse.
+	 *
+	 * The settings row: client 11.1.0 class-wc-payments-rest-controller.php:63-64 requires `manage_woocommerce`, which the
+	 * stock Editor role lacks. The error code differs from the client's generic `rest_forbidden` and is not asserted.
+	 *
+	 * @return array<string,array{string,?string,string,string}>
 	 */
-	public function test_get_account_summary_with_exception() {
+	public function provider_read_route_refusals(): array {
+		return array(
+			'account'                   => array( self::ENDPOINT . '/account', null, 'mock_overview_service', 'get_account_summary' ),
+			'overview'                  => array( self::ENDPOINT . '/overview', null, 'mock_overview_service', 'get_overview' ),
+			'payment method promotions' => array( '/wc/v3/payments/pm-promotions', 'subscriber', 'mock_pm_promotions_service', 'get_visible_promotions' ),
+			'settings'                  => array( '/wc/v3/payments/settings', 'editor', 'mock_settings_service', 'get_settings' ),
+		);
+	}
+
+	/**
+	 * @testdox Should answer the $_dataName read route with an error when the service throws.
+	 * @dataProvider provider_read_route_service_errors
+	 *
+	 * @param string $route          Route path.
+	 * @param string $service_method Overview service method that throws.
+	 * @param string $code           Expected error code.
+	 * @param string $message        Exception message the error carries.
+	 */
+	public function test_read_routes_answer_service_errors( string $route, string $service_method, string $code, string $message ): void {
 		$this->mock_overview_service
 			->expects( $this->once() )
-			->method( 'get_account_summary' )
-			->willThrowException( new \Exception( 'Account summary unavailable.' ) );
+			->method( $service_method )
+			->willThrowException( new \Exception( $message ) );
 
-		$request  = new WP_REST_Request( 'GET', self::ENDPOINT . '/account' );
-		$response = $this->server->dispatch( $request );
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', $route ) );
 
 		$this->assertSame( 500, $response->get_status() );
-		$this->assertSame( 'woocommerce_rest_woopayments_account_error', $response->get_data()['code'] );
-		$this->assertSame( 'Account summary unavailable.', $response->get_data()['message'] );
+		$this->assertSame( $code, $response->get_data()['code'] );
+		$this->assertSame( $message, $response->get_data()['message'] );
+	}
+
+	/**
+	 * Read routes whose service throws.
+	 *
+	 * @return array<string,array{string,string,string,string}>
+	 */
+	public function provider_read_route_service_errors(): array {
+		return array(
+			'account'  => array( self::ENDPOINT . '/account', 'get_account_summary', 'woocommerce_rest_woopayments_account_error', 'Account summary unavailable.' ),
+			'overview' => array( self::ENDPOINT . '/overview', 'get_overview', 'woocommerce_rest_woopayments_overview_error', 'Overview unavailable.' ),
+		);
 	}
 
 	/**
@@ -500,46 +508,6 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should block the WooPayments Overview fields for users without permission.
-	 */
-	public function test_get_overview_by_user_without_caps(): void {
-		// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
-		$filter_callback = fn( $caps ) => array(
-			'manage_woocommerce' => false,
-			'install_plugins'    => true,
-		);
-		add_filter( 'user_has_cap', $filter_callback );
-
-		$this->mock_overview_service
-			->expects( $this->never() )
-			->method( 'get_overview' );
-
-		$request  = new WP_REST_Request( 'GET', self::ENDPOINT . '/overview' );
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
-
-		remove_filter( 'user_has_cap', $filter_callback );
-	}
-
-	/**
-	 * @testdox Should return an error for the Overview fields when the service throws.
-	 */
-	public function test_get_overview_with_exception(): void {
-		$this->mock_overview_service
-			->expects( $this->once() )
-			->method( 'get_overview' )
-			->willThrowException( new \Exception( 'Overview unavailable.' ) );
-
-		$request  = new WP_REST_Request( 'GET', self::ENDPOINT . '/overview' );
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 500, $response->get_status() );
-		$this->assertSame( 'woocommerce_rest_woopayments_overview_error', $response->get_data()['code'] );
-		$this->assertSame( 'Overview unavailable.', $response->get_data()['message'] );
-	}
-
-	/**
 	 * @testdox Should expose the WooPayments settings GET route.
 	 */
 	public function test_get_settings_contract_by_manager(): void {
@@ -558,31 +526,6 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( $settings, $response->get_data() );
-	}
-
-	/**
-	 * @testdox Should deny an editor without payment-gateway management capability on the WooPayments settings GET route.
-	 *
-	 * N-085: client 11.1.0 class-wc-payments-rest-controller.php:63-64 requires
-	 * `manage_woocommerce`, which the stock Editor role lacks, so the client denies this
-	 * request too. `check_permissions()` (WooPaymentsMerchantRestController.php:1239) delegates
-	 * to `wc_rest_check_manager_permissions( 'payment_gateways', 'read' )` and denies with the
-	 * authorization-required status. The exact error code differs from the client (native's
-	 * `woocommerce_rest_cannot_view` vs. the client's `check_permission()` returning a plain
-	 * `false`, which core's REST server turns into its own generic `rest_forbidden`); that
-	 * difference is not asserted here and is left as a T.7 finding.
-	 */
-	public function test_get_settings_denies_editor_without_payment_gateway_capability(): void {
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'editor' ) ) );
-
-		$this->mock_settings_service
-			->expects( $this->never() )
-			->method( 'get_settings' );
-
-		$request  = new WP_REST_Request( 'GET', '/wc/v3/payments/settings' );
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
 	}
 
 	/**
@@ -621,178 +564,209 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The settings route forwards manual-capture and WooPay choices without changing their booleans.
+	 * @testdox Should forward the accepted settings POST "$_dataName" to settings persistence unchanged.
+	 * @dataProvider provider_accepted_settings_updates
+	 *
+	 * @param array      $body            Posted settings.
+	 * @param string     $account_country Account country.
+	 * @param array|null $answer          Settings the service answers and the route returns, or null for a row that answers an empty array and does not check the response.
 	 */
-	public function test_update_settings_forwards_manual_capture_and_woopay_choices(): void {
-		$settings = array(
-			'is_manual_capture_enabled' => true,
-			'is_woopay_enabled'         => false,
-		);
+	public function test_update_settings_forwards_accepted_settings( array $body, string $account_country, ?array $answer ): void {
+		$this->account_country = $account_country;
 		$this->mock_settings_service
 			->expects( $this->once() )
 			->method( 'update_settings' )
-			->with( $settings )
-			->willReturn( $settings );
+			->with( $this->identicalTo( $body ) )
+			->willReturn( $answer ?? array() );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params( $settings );
+		$request->set_body_params( $body );
 		$response = $this->server->dispatch( $request );
 
 		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( $settings, $response->get_data() );
+		if ( null !== $answer ) {
+			$this->assertSame( $answer, $response->get_data() );
+		}
 	}
 
 	/**
-	 * @testdox Should round-trip the fraud settings error sentinel through the settings POST route.
+	 * Settings POST bodies the route accepts.
+	 *
+	 * @return array<string,array{array<string,mixed>,string,?array<string,mixed>}>
 	 */
-	public function test_update_settings_accepts_fraud_error_sentinel(): void {
-		$settings = array(
+	public function provider_accepted_settings_updates(): array {
+		$manual_capture = array(
+			'is_manual_capture_enabled' => true,
+			'is_woopay_enabled'         => false,
+		);
+		$fraud_sentinel = array(
 			'is_debug_log_enabled'               => true,
 			'advanced_fraud_protection_settings' => 'error',
 		);
 
-		$this->mock_settings_service
-			->expects( $this->once() )
-			->method( 'update_settings' )
-			->with(
-				$this->callback(
-					static function ( array $params ): bool {
-						return true === $params['is_debug_log_enabled']
-							&& 'error' === $params['advanced_fraud_protection_settings'];
-					}
-				)
-			)
-			->willReturn( $settings );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'is_debug_log_enabled'               => true,
-				'advanced_fraud_protection_settings' => 'error',
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( $settings, $response->get_data() );
-	}
-
-	/**
-	 * @testdox Should reject unknown fraud settings strings before settings persistence.
-	 */
-	public function test_update_settings_rejects_unknown_fraud_settings_string(): void {
-		$this->mock_settings_service
-			->expects( $this->never() )
-			->method( 'update_settings' );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'advanced_fraud_protection_settings' => 'not_a_ruleset',
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 400, $response->get_status() );
-		$this->assertSame( 'rest_invalid_param', $response->get_data()['code'] );
-		$this->assertArrayHasKey( 'advanced_fraud_protection_settings', $response->get_data()['data']['params'] );
-	}
-
-	/**
-	 * @testdox Should reject a structurally invalid advanced fraud ruleset before settings persistence.
-	 */
-	public function test_update_settings_rejects_invalid_advanced_fraud_ruleset(): void {
-		$this->mock_settings_service
-			->expects( $this->never() )
-			->method( 'update_settings' );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'current_protection_level'           => 'advanced',
-				'advanced_fraud_protection_settings' => array( array( 'bogus' => true ) ),
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 400, $response->get_status() );
-		$this->assertSame( 'rest_invalid_param', $response->get_data()['code'] );
-		$this->assertSame( 'rest_invalid_pattern', $response->get_data()['data']['details']['advanced_fraud_protection_settings']['code'] );
-	}
-
-	/**
-	 * @testdox Should accept a structurally valid advanced fraud ruleset.
-	 */
-	public function test_update_settings_accepts_valid_advanced_fraud_ruleset(): void {
-		$ruleset = array(
-			array(
-				'key'     => 'international_ip_address',
-				'outcome' => 'block',
-				'check'   => array(
-					'key'      => 'ip_country',
-					'operator' => 'in',
-					'value'    => 'US',
+		return array(
+			'manual capture and WooPay choices'       => array( $manual_capture, 'US', $manual_capture ),
+			'fraud settings error sentinel'           => array( $fraud_sentinel, 'US', $fraud_sentinel ),
+			'valid advanced fraud ruleset'            => array(
+				array(
+					'current_protection_level'           => 'advanced',
+					'advanced_fraud_protection_settings' => array(
+						array(
+							'key'     => 'international_ip_address',
+							'outcome' => 'block',
+							'check'   => array(
+								'key'      => 'ip_country',
+								'operator' => 'in',
+								'value'    => 'US',
+							),
+						),
+					),
 				),
+				'US',
+				null,
+			),
+			'invalid fraud ruleset at a non-advanced level' => array(
+				array(
+					'current_protection_level'           => 'standard',
+					'advanced_fraud_protection_settings' => array( array( 'bogus' => true ) ),
+				),
+				'US',
+				null,
+			),
+			'valid statement descriptor'              => array( array( 'account_statement_descriptor' => 'WOO STORE' ), 'US', null ),
+			'valid communications email'              => array( array( 'account_communications_email' => 'merchant@example.com' ), 'US', null ),
+			'valid hex branding color and empty secondary color' => array(
+				array(
+					'account_branding_primary_color'   => '#123ABC',
+					'account_branding_secondary_color' => '',
+				),
+				'US',
+				null,
+			),
+			'scheme-less business URL'                => array( array( 'account_business_url' => 'example.test/store' ), 'US', null ),
+			'empty business support email'            => array( array( 'account_business_support_email' => '' ), 'US', null ),
+			'empty support phone on a non-Japanese account' => array( array( 'account_business_support_phone' => '' ), 'US', null ),
+			'+81 support phone on a Japanese account' => array( array( 'account_business_support_phone' => '+81312345678' ), 'JP', null ),
+			'allowlisted support address'             => array(
+				array(
+					'account_business_support_address' => array(
+						'city'        => 'Portland',
+						'country'     => 'US',
+						'line1'       => '123 Main St',
+						'line2'       => '',
+						'postal_code' => '97201',
+						'state'       => 'OR',
+					),
+				),
+				'US',
+				null,
+			),
+			'nullable monthly anchor and keyed support address' => array(
+				array(
+					'deposit_schedule_monthly_anchor'  => null,
+					'account_business_support_address' => array(
+						'city'        => 'San Francisco',
+						'country'     => 'US',
+						'line1'       => '60 29th Street',
+						'postal_code' => '94110',
+					),
+				),
+				'US',
+				array( 'deposit_schedule_monthly_anchor' => null ),
 			),
 		);
-
-		$this->mock_settings_service
-			->expects( $this->once() )
-			->method( 'update_settings' )
-			->willReturn( array() );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'current_protection_level'           => 'advanced',
-				'advanced_fraud_protection_settings' => $ruleset,
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 200, $response->get_status() );
 	}
 
 	/**
-	 * @testdox Should not structurally validate the fraud ruleset when the protection level is not advanced.
+	 * @testdox Should reject the settings POST "$_dataName" before settings persistence.
+	 * @dataProvider provider_rejected_settings_updates
+	 *
+	 * @param array       $body            Posted settings.
+	 * @param string      $account_country Account country.
+	 * @param string      $field           Rejected field.
+	 * @param string|null $code            Expected error code, or null for a row that does not check it.
+	 * @param bool        $field_in_params Whether the row checks that the error lists the field in its params.
+	 * @param string|null $detail_code     Expected error code in the field's details, or null for a row that does not check it.
 	 */
-	public function test_update_settings_skips_fraud_ruleset_validation_for_non_advanced_level(): void {
-		$this->mock_settings_service
-			->expects( $this->once() )
-			->method( 'update_settings' )
-			->willReturn( array() );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'current_protection_level'           => 'standard',
-				'advanced_fraud_protection_settings' => array( array( 'bogus' => true ) ),
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 200, $response->get_status() );
-	}
-
-	/**
-	 * @testdox Should reject invalid payment method IDs before settings persistence.
-	 */
-	public function test_update_settings_rejects_invalid_payment_method_ids(): void {
+	public function test_update_settings_rejects_invalid_settings( array $body, string $account_country, string $field, ?string $code, bool $field_in_params, ?string $detail_code ): void {
+		$this->account_country = $account_country;
 		$this->mock_settings_service
 			->expects( $this->never() )
 			->method( 'update_settings' );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'enabled_payment_method_ids' => array( 'card', 'not_a_payment_method' ),
-			)
-		);
+		$request->set_body_params( $body );
 		$response = $this->server->dispatch( $request );
 
 		$this->assertSame( 400, $response->get_status() );
-		$this->assertSame( 'rest_invalid_param', $response->get_data()['code'] );
-		$this->assertArrayHasKey( 'enabled_payment_method_ids', $response->get_data()['data']['params'] );
+		if ( null !== $code ) {
+			$this->assertSame( $code, $response->get_data()['code'] );
+		}
+		if ( $field_in_params ) {
+			$this->assertArrayHasKey( $field, $response->get_data()['data']['params'] );
+		}
+		if ( null !== $detail_code ) {
+			$this->assertSame( $detail_code, $response->get_data()['data']['details'][ $field ]['code'] );
+		}
+	}
+
+	/**
+	 * Settings POST bodies the route rejects. The statement descriptor, communications email and Japanese support phone
+	 * vectors mirror the WooPayments plugin's validators.
+	 *
+	 * @return array<string,array{array<string,mixed>,string,string,?string,bool,?string}>
+	 */
+	public function provider_rejected_settings_updates(): array {
+		$descriptor = 'account_statement_descriptor';
+		$email      = 'account_communications_email';
+		$phone      = 'account_business_support_phone';
+
+		return array(
+			'unknown fraud settings string'                => array( array( 'advanced_fraud_protection_settings' => 'not_a_ruleset' ), 'US', 'advanced_fraud_protection_settings', 'rest_invalid_param', true, null ),
+			'invalid advanced fraud ruleset'               => array(
+				array(
+					'current_protection_level'           => 'advanced',
+					'advanced_fraud_protection_settings' => array( array( 'bogus' => true ) ),
+				),
+				'US',
+				'advanced_fraud_protection_settings',
+				'rest_invalid_param',
+				false,
+				'rest_invalid_pattern',
+			),
+			'invalid payment method ID'                    => array( array( 'enabled_payment_method_ids' => array( 'card', 'not_a_payment_method' ) ), 'US', 'enabled_payment_method_ids', 'rest_invalid_param', true, null ),
+			'duplicate payment method IDs'                 => array( array( 'enabled_payment_method_ids' => array( 'card', 'link', 'link' ) ), 'US', 'enabled_payment_method_ids', 'rest_invalid_param', true, null ),
+			'descriptor shorter than 5 characters'         => array( array( $descriptor => 'WOOP' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'descriptor longer than 22 characters'         => array( array( $descriptor => 'WOOPAYMENTS STORE NAME XL' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'descriptor without a Latin letter'            => array( array( $descriptor => '1234567890' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'descriptor with an asterisk'                  => array( array( $descriptor => 'WOO*STORE' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'descriptor with a double quote'               => array( array( $descriptor => 'WOO"STORE' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'descriptor with a single quote'               => array( array( $descriptor => "WOO'STORE" ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'descriptor with angle brackets'               => array( array( $descriptor => 'WOO<STORE>' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'descriptor of only whitespace'                => array( array( $descriptor => '      ' ), 'US', $descriptor, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'empty communications email'                   => array( array( $email => '' ), 'US', $email, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'malformed communications email'               => array( array( $email => 'not-an-email' ), 'US', $email, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'communications email without a domain'        => array( array( $email => 'merchant@' ), 'US', $email, 'rest_invalid_param', true, 'rest_invalid_pattern' ),
+			'malformed branding color'                     => array( array( 'account_branding_primary_color' => '#eeeeee onload=alert(1)' ), 'US', 'account_branding_primary_color', null, false, 'rest_invalid_pattern' ),
+			'business URL whose scheme esc_url_raw strips' => array( array( 'account_business_url' => 'javascript:alert(document.cookie)' ), 'US', 'account_business_url', null, false, 'rest_invalid_pattern' ),
+			'malformed business support email'             => array( array( 'account_business_support_email' => 'not-an-email' ), 'US', 'account_business_support_email', null, false, 'rest_invalid_pattern' ),
+			'malformed support phone'                      => array( array( $phone => 'not a phone!' ), 'US', $phone, 'rest_invalid_param', false, 'rest_invalid_pattern' ),
+			'US support phone on a Japanese account'       => array( array( $phone => '+12345678901' ), 'JP', $phone, null, false, 'rest_invalid_pattern' ),
+			'empty support phone on a Japanese account'    => array( array( $phone => '' ), 'JP', $phone, null, false, 'rest_invalid_pattern' ),
+			'support address with an unknown key'          => array(
+				array(
+					'account_business_support_address' => array(
+						'city'   => 'Portland',
+						'planet' => 'Earth',
+					),
+				),
+				'US',
+				'account_business_support_address',
+				null,
+				false,
+				'rest_invalid_pattern',
+			),
+		);
 	}
 
 	/**
@@ -808,162 +782,6 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 			$arg['items']['enum']
 		);
 		$this->assertSame( 19, $arg['maxItems'] );
-	}
-
-	/**
-	 * @testdox Should reject duplicate payment method IDs before settings persistence.
-	 */
-	public function test_update_settings_rejects_duplicate_payment_method_ids(): void {
-		$this->mock_settings_service
-			->expects( $this->never() )
-			->method( 'update_settings' );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'enabled_payment_method_ids' => array( 'card', 'link', 'link' ),
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 400, $response->get_status() );
-		$this->assertSame( 'rest_invalid_param', $response->get_data()['code'] );
-		$this->assertArrayHasKey( 'enabled_payment_method_ids', $response->get_data()['data']['params'] );
-	}
-
-	/**
-	 * @testdox Should reject invalid statement descriptors before settings persistence.
-	 * @dataProvider provider_invalid_statement_descriptors
-	 *
-	 * @param string $descriptor Invalid statement descriptor.
-	 */
-	public function test_update_settings_rejects_invalid_statement_descriptor( string $descriptor ): void {
-		$this->mock_settings_service
-			->expects( $this->never() )
-			->method( 'update_settings' );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'account_statement_descriptor' => $descriptor,
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 400, $response->get_status() );
-		$this->assertSame( 'rest_invalid_param', $response->get_data()['code'] );
-		$this->assertArrayHasKey( 'account_statement_descriptor', $response->get_data()['data']['params'] );
-		$this->assertSame( 'rest_invalid_pattern', $response->get_data()['data']['details']['account_statement_descriptor']['code'] );
-	}
-
-	/**
-	 * Invalid statement descriptor vectors, mirroring the WooPayments plugin's validator.
-	 *
-	 * @return array<string,array{string}>
-	 */
-	public function provider_invalid_statement_descriptors(): array {
-		return array(
-			'shorter than 5 characters'    => array( 'WOOP' ),
-			'longer than 22 characters'    => array( 'WOOPAYMENTS STORE NAME XL' ),
-			'no Latin letter'              => array( '1234567890' ),
-			'contains asterisk'            => array( 'WOO*STORE' ),
-			'contains double quote'        => array( 'WOO"STORE' ),
-			'contains single quote'        => array( "WOO'STORE" ),
-			'contains angle brackets'      => array( 'WOO<STORE>' ),
-			'only whitespace when trimmed' => array( '      ' ),
-		);
-	}
-
-	/**
-	 * @testdox Should accept a valid statement descriptor and pass it through to settings persistence.
-	 */
-	public function test_update_settings_accepts_valid_statement_descriptor(): void {
-		$this->mock_settings_service
-			->expects( $this->once() )
-			->method( 'update_settings' )
-			->with(
-				$this->callback(
-					static function ( array $params ): bool {
-						return 'WOO STORE' === $params['account_statement_descriptor'];
-					}
-				)
-			)
-			->willReturn( array() );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'account_statement_descriptor' => 'WOO STORE',
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 200, $response->get_status() );
-	}
-
-	/**
-	 * @testdox Should reject an empty or malformed communications email before settings persistence.
-	 * @dataProvider provider_invalid_communications_emails
-	 *
-	 * @param string $email Invalid communications email.
-	 */
-	public function test_update_settings_rejects_invalid_communications_email( string $email ): void {
-		$this->mock_settings_service
-			->expects( $this->never() )
-			->method( 'update_settings' );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'account_communications_email' => $email,
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 400, $response->get_status() );
-		$this->assertSame( 'rest_invalid_param', $response->get_data()['code'] );
-		$this->assertArrayHasKey( 'account_communications_email', $response->get_data()['data']['params'] );
-		$this->assertSame( 'rest_invalid_pattern', $response->get_data()['data']['details']['account_communications_email']['code'] );
-	}
-
-	/**
-	 * Invalid communications email vectors, mirroring the WooPayments plugin's validator.
-	 *
-	 * @return array<string,array{string}>
-	 */
-	public function provider_invalid_communications_emails(): array {
-		return array(
-			'empty string'      => array( '' ),
-			'malformed address' => array( 'not-an-email' ),
-			'missing domain'    => array( 'merchant@' ),
-		);
-	}
-
-	/**
-	 * @testdox Should accept a valid communications email and pass it through to settings persistence.
-	 */
-	public function test_update_settings_accepts_valid_communications_email(): void {
-		$this->mock_settings_service
-			->expects( $this->once() )
-			->method( 'update_settings' )
-			->with(
-				$this->callback(
-					static function ( array $params ): bool {
-						return 'merchant@example.com' === $params['account_communications_email'];
-					}
-				)
-			)
-			->willReturn( array() );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'account_communications_email' => 'merchant@example.com',
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 200, $response->get_status() );
 	}
 
 	/**
@@ -1029,291 +847,6 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 400, $response->get_status() );
 		$this->assertSame( 'wcpay_server_error', $response->get_data()['code'] );
 		$this->assertSame( 'Error: Invalid statement descriptor.', $response->get_data()['data']['details']['account_statement_descriptor']['message'] );
-	}
-
-	/**
-	 * @testdox Should reject a malformed branding color but accept a valid or empty one.
-	 */
-	public function test_update_settings_validates_branding_colors(): void {
-		$this->mock_settings_service
-			->expects( $this->never() )
-			->method( 'update_settings' );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'account_branding_primary_color' => '#eeeeee onload=alert(1)',
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 400, $response->get_status() );
-		$this->assertSame( 'rest_invalid_pattern', $response->get_data()['data']['details']['account_branding_primary_color']['code'] );
-	}
-
-	/**
-	 * @testdox Should accept a valid hex branding color and an empty secondary color.
-	 */
-	public function test_update_settings_accepts_valid_branding_colors(): void {
-		$this->mock_settings_service
-			->expects( $this->once() )
-			->method( 'update_settings' )
-			->willReturn( array() );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'account_branding_primary_color'   => '#123ABC',
-				'account_branding_secondary_color' => '',
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 200, $response->get_status() );
-	}
-
-	/**
-	 * @testdox Should reject a business URL whose scheme is stripped entirely by esc_url_raw.
-	 */
-	public function test_update_settings_rejects_dangerous_business_url(): void {
-		$this->mock_settings_service
-			->expects( $this->never() )
-			->method( 'update_settings' );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'account_business_url' => 'javascript:alert(document.cookie)',
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 400, $response->get_status() );
-		$this->assertSame( 'rest_invalid_pattern', $response->get_data()['data']['details']['account_business_url']['code'] );
-	}
-
-	/**
-	 * @testdox Should accept scheme-less and empty business URLs.
-	 */
-	public function test_update_settings_accepts_lenient_business_urls(): void {
-		$this->mock_settings_service
-			->expects( $this->once() )
-			->method( 'update_settings' )
-			->with(
-				$this->callback(
-					static function ( array $params ): bool {
-						return 'example.test/store' === $params['account_business_url'];
-					}
-				)
-			)
-			->willReturn( array() );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'account_business_url' => 'example.test/store',
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 200, $response->get_status() );
-	}
-
-	/**
-	 * @testdox Should reject a malformed business support email but accept an empty one.
-	 */
-	public function test_update_settings_validates_business_support_email(): void {
-		$this->mock_settings_service
-			->expects( $this->never() )
-			->method( 'update_settings' );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'account_business_support_email' => 'not-an-email',
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 400, $response->get_status() );
-		$this->assertSame( 'rest_invalid_pattern', $response->get_data()['data']['details']['account_business_support_email']['code'] );
-	}
-
-	/**
-	 * @testdox Should accept an empty business support email.
-	 */
-	public function test_update_settings_accepts_empty_business_support_email(): void {
-		$this->mock_settings_service
-			->expects( $this->once() )
-			->method( 'update_settings' )
-			->willReturn( array() );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'account_business_support_email' => '',
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 200, $response->get_status() );
-	}
-
-	/**
-	 * @testdox Should reject a malformed support phone before settings persistence.
-	 */
-	public function test_update_settings_rejects_malformed_support_phone(): void {
-		$this->mock_settings_service
-			->expects( $this->never() )
-			->method( 'update_settings' );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'account_business_support_phone' => 'not a phone!',
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 400, $response->get_status() );
-		$this->assertSame( 'rest_invalid_param', $response->get_data()['code'] );
-		$this->assertSame( 'rest_invalid_pattern', $response->get_data()['data']['details']['account_business_support_phone']['code'] );
-	}
-
-	/**
-	 * @testdox Should accept an empty support phone on a non-Japanese account.
-	 */
-	public function test_update_settings_accepts_empty_support_phone_outside_japan(): void {
-		$this->mock_settings_service
-			->expects( $this->once() )
-			->method( 'update_settings' )
-			->willReturn( array() );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'account_business_support_phone' => '',
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 200, $response->get_status() );
-	}
-
-	/**
-	 * @testdox Should reject a support phone without the +81 prefix on a Japanese account.
-	 * @dataProvider provider_invalid_japanese_support_phones
-	 *
-	 * @param string $phone Support phone rejected for a Japanese account.
-	 */
-	public function test_update_settings_rejects_non_japanese_support_phone_on_japanese_account( string $phone ): void {
-		$this->account_country = 'JP';
-		$this->mock_settings_service
-			->expects( $this->never() )
-			->method( 'update_settings' );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'account_business_support_phone' => $phone,
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 400, $response->get_status() );
-		$this->assertSame( 'rest_invalid_pattern', $response->get_data()['data']['details']['account_business_support_phone']['code'] );
-	}
-
-	/**
-	 * Support phone vectors a Japanese account must reject, mirroring the WooPayments plugin's validator.
-	 *
-	 * @return array<string,array{string}>
-	 */
-	public function provider_invalid_japanese_support_phones(): array {
-		return array(
-			'US number'    => array( '+12345678901' ),
-			'empty string' => array( '' ),
-		);
-	}
-
-	/**
-	 * @testdox Should accept a +81 support phone on a Japanese account.
-	 */
-	public function test_update_settings_accepts_japanese_support_phone_on_japanese_account(): void {
-		$this->account_country = 'JP';
-		$this->mock_settings_service
-			->expects( $this->once() )
-			->method( 'update_settings' )
-			->willReturn( array() );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'account_business_support_phone' => '+81312345678',
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 200, $response->get_status() );
-	}
-
-	/**
-	 * @testdox Should reject a support address carrying keys outside the allowlist.
-	 */
-	public function test_update_settings_rejects_support_address_with_unknown_key(): void {
-		$this->mock_settings_service
-			->expects( $this->never() )
-			->method( 'update_settings' );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'account_business_support_address' => array(
-					'city'   => 'Portland',
-					'planet' => 'Earth',
-				),
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 400, $response->get_status() );
-		$this->assertSame( 'rest_invalid_pattern', $response->get_data()['data']['details']['account_business_support_address']['code'] );
-	}
-
-	/**
-	 * @testdox Should accept a support address restricted to the allowlisted keys.
-	 */
-	public function test_update_settings_accepts_allowlisted_support_address(): void {
-		$address = array(
-			'city'        => 'Portland',
-			'country'     => 'US',
-			'line1'       => '123 Main St',
-			'line2'       => '',
-			'postal_code' => '97201',
-			'state'       => 'OR',
-		);
-
-		$this->mock_settings_service
-			->expects( $this->once() )
-			->method( 'update_settings' )
-			->with(
-				$this->callback(
-					static function ( array $params ) use ( $address ): bool {
-						return $address === $params['account_business_support_address'];
-					}
-				)
-			)
-			->willReturn( array() );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'account_business_support_address' => $address,
-			)
-		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 200, $response->get_status() );
 	}
 
 	/**
@@ -1398,12 +931,13 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 *           ["POST", "/wc/v3/payments/file"]
 	 *           ["POST", "/wc/v3/payments/pm-promotions/klarna-promo__spotlight/activate"]
 	 *           ["POST", "/wc/v3/payments/pm-promotions/klarna-promo__spotlight/dismiss"]
+	 *           ["POST", "/wc-admin/settings/payments/woopayments/admin-notices/test_to_live/shown"]
 	 *
 	 * @param string $method HTTP method.
 	 * @param string $route  Route path.
 	 */
 	public function test_write_routes_refuse_users_without_manager_permission( string $method, string $route ): void {
-		foreach ( array( $this->mock_settings_service, $this->mock_pm_promotions_service, $this->mock_overview_service ) as $service ) {
+		foreach ( array( $this->mock_settings_service, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_notice_service ) as $service ) {
 			$service->expects( $this->never() )->method( $this->anything() );
 		}
 
@@ -1417,123 +951,69 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should require payment gateway management permission for payment method promotions.
+	 * @testdox Should register the settings routes only while the built-in WooPayments owns the runtime: $_dataName.
+	 * @dataProvider provider_settings_route_registration
+	 *
+	 * @param bool     $builtin_owner Whether the built-in WooPayments owns the runtime.
+	 * @param string[] $registered    Routes that must be registered.
+	 * @param string[] $absent        Routes that must not be registered.
 	 */
-	public function test_get_pm_promotions_requires_manager_permission(): void {
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'subscriber' ) ) );
-		$this->mock_pm_promotions_service
-			->expects( $this->never() )
-			->method( 'get_visible_promotions' );
+	public function test_settings_routes_follow_the_runtime_owner( bool $builtin_owner, array $registered, array $absent ): void {
+		global $wp_rest_server;
 
-		$request  = new WP_REST_Request( 'GET', '/wc/v3/payments/pm-promotions' );
-		$response = $this->server->dispatch( $request );
+		$wp_rest_server = new WP_REST_Server();
+		$this->server   = $wp_rest_server;
 
-		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
+		$runtime_arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_builtin_owner' ) )
+			->getMock();
+		$runtime_arbiter
+			->method( 'is_builtin_owner' )
+			->willReturn( $builtin_owner );
+
+		$sut = new WooPaymentsMerchantRestController();
+		$sut->init( $this->mock_settings_service, $runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $this->mock_notice_service, new WooPaymentsApplePayDomainService(), $this->mock_api_client );
+		$sut->register_routes( true );
+
+		$routes = $this->server->get_routes();
+
+		foreach ( $registered as $route ) {
+			$this->assertArrayHasKey( $route, $routes );
+		}
+		foreach ( $absent as $route ) {
+			$this->assertArrayNotHasKey( $route, $routes );
+		}
 	}
 
 	/**
-	 * @testdox Should accept nullable monthly anchor and keyed support address objects.
+	 * Registered and absent routes by runtime owner.
+	 *
+	 * @return array<string,array{bool,string[],string[]}>
 	 */
-	public function test_update_settings_accepts_nullable_anchor_and_keyed_address(): void {
-		$settings = array( 'deposit_schedule_monthly_anchor' => null );
-
-		$this->mock_settings_service
-			->expects( $this->once() )
-			->method( 'update_settings' )
-			->with(
-				$this->callback(
-					static function ( array $params ): bool {
-						return array_key_exists( 'deposit_schedule_monthly_anchor', $params )
-							&& null === $params['deposit_schedule_monthly_anchor']
-							&& array(
-								'city'        => 'San Francisco',
-								'country'     => 'US',
-								'line1'       => '60 29th Street',
-								'postal_code' => '94110',
-							) === $params['account_business_support_address'];
-					}
-				)
-			)
-			->willReturn( $settings );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/settings' );
-		$request->set_body_params(
-			array(
-				'deposit_schedule_monthly_anchor'  => null,
-				'account_business_support_address' => array(
-					'city'        => 'San Francisco',
-					'country'     => 'US',
-					'line1'       => '60 29th Street',
-					'postal_code' => '94110',
+	public function provider_settings_route_registration(): array {
+		return array(
+			'the WooPayments extension owns the runtime' => array(
+				false,
+				array( self::ENDPOINT . '/account' ),
+				array( '/wc/v3/payments/settings', '/wc/v3/payments/pm-promotions', '/wc/v3/payments/file' ),
+			),
+			'the built-in WooPayments owns the runtime'  => array(
+				true,
+				array(
+					'/wc/v3/payments/settings',
+					'/wc/v3/payments/pm-promotions',
+					'/wc/v3/payments/pm-promotions/(?P<id>[^/]+)/activate',
+					'/wc/v3/payments/pm-promotions/(?P<id>[^/]+)/dismiss',
+					'/wc/v3/payments/file',
+					self::ENDPOINT . '/account',
 				),
-			)
+				array(
+					'/wc/v3/payments/pm-promotions/(?P<promotion_id>[^/]+)/activate',
+					'/wc/v3/payments/pm-promotions/(?P<promotion_id>[^/]+)/dismiss',
+				),
+			),
 		);
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( $settings, $response->get_data() );
-	}
-
-	/**
-	 * @testdox Should not register WooPayments settings routes while the WooPayments extension owns the runtime.
-	 */
-	public function test_settings_routes_are_not_registered_when_builtin_does_not_own_site(): void {
-		global $wp_rest_server;
-
-		$wp_rest_server = new WP_REST_Server();
-		$this->server   = $wp_rest_server;
-
-		$runtime_arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$runtime_arbiter
-			->method( 'is_builtin_owner' )
-			->willReturn( false );
-
-		$sut = new WooPaymentsMerchantRestController();
-		$sut->init( $this->mock_settings_service, $runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $this->createMock( WooPaymentsAdminNoticeService::class ), new WooPaymentsApplePayDomainService(), $this->mock_api_client );
-		$sut->register_routes( true );
-
-		$routes = $this->server->get_routes();
-
-		$this->assertArrayNotHasKey( '/wc/v3/payments/settings', $routes );
-		$this->assertArrayNotHasKey( '/wc/v3/payments/pm-promotions', $routes );
-		$this->assertArrayNotHasKey( '/wc/v3/payments/file', $routes );
-		$this->assertArrayHasKey( self::ENDPOINT . '/account', $routes );
-	}
-
-	/**
-	 * @testdox Should register WooPayments settings routes when the runtime arbiter owns the site.
-	 */
-	public function test_settings_routes_are_registered_when_builtin_owns_site(): void {
-		global $wp_rest_server;
-
-		$wp_rest_server = new WP_REST_Server();
-		$this->server   = $wp_rest_server;
-
-		$runtime_arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$runtime_arbiter
-			->method( 'is_builtin_owner' )
-			->willReturn( true );
-
-		$sut = new WooPaymentsMerchantRestController();
-		$sut->init( $this->mock_settings_service, $runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $this->createMock( WooPaymentsAdminNoticeService::class ), new WooPaymentsApplePayDomainService(), $this->mock_api_client );
-		$sut->register_routes( true );
-
-		$routes = $this->server->get_routes();
-
-		$this->assertArrayHasKey( '/wc/v3/payments/settings', $routes );
-		$this->assertArrayHasKey( '/wc/v3/payments/pm-promotions', $routes );
-		$this->assertArrayHasKey( '/wc/v3/payments/pm-promotions/(?P<id>[^/]+)/activate', $routes );
-		$this->assertArrayHasKey( '/wc/v3/payments/pm-promotions/(?P<id>[^/]+)/dismiss', $routes );
-		$this->assertArrayNotHasKey( '/wc/v3/payments/pm-promotions/(?P<promotion_id>[^/]+)/activate', $routes );
-		$this->assertArrayNotHasKey( '/wc/v3/payments/pm-promotions/(?P<promotion_id>[^/]+)/dismiss', $routes );
-		$this->assertArrayHasKey( '/wc/v3/payments/file', $routes );
-		$this->assertArrayHasKey( self::ENDPOINT . '/account', $routes );
 	}
 
 	/**
@@ -1799,45 +1279,6 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 			->method( 'get_file_contents' );
 
 		$request  = new WP_REST_Request( 'GET', '/wc/v3/payments/file/file_private' );
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
-		$this->assertSame( 'woocommerce_rest_cannot_view', $response->get_data()['code'] );
-
-		remove_filter( 'user_has_cap', $filter_callback );
-	}
-
-	/**
-	 * @testdox Should re-evaluate file classification on a cache miss before serving to unauthorized callers.
-	 */
-	public function test_get_public_settings_file_rechecks_classification_on_cache_miss(): void {
-		// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
-		$filter_callback = static fn( $caps ) => array(
-			'manage_woocommerce' => false,
-			'install_plugins'    => false,
-		);
-		add_filter( 'user_has_cap', $filter_callback );
-
-		// Ensure the classification cache misses so the handler must re-fetch the fresh purpose.
-		delete_transient( 'wcpay_file_purpose_file_reclassified_0' );
-
-		// The provider has reclassified this file from public to private since it was last served. File object shape
-		// from client 11.1.0 includes/admin/class-wc-rest-payments-files-controller.php:147, trimmed.
-		$this->mock_api_client
-			->expects( $this->once() )
-			->method( 'get_file' )
-			->with( 'file_reclassified', false )
-			->willReturn(
-				array(
-					'id'      => 'file_reclassified',
-					'purpose' => 'dispute_evidence',
-				)
-			);
-		$this->mock_api_client
-			->expects( $this->never() )
-			->method( 'get_file_contents' );
-
-		$request  = new WP_REST_Request( 'GET', '/wc/v3/payments/file/file_reclassified' );
 		$response = $this->server->dispatch( $request );
 
 		$this->assertSame( rest_authorization_required_code(), $response->get_status() );

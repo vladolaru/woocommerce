@@ -179,38 +179,28 @@ class WooPaymentsDisputesTaskTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A dispute due in one whole day still counts as the last day, since whole days are compared.
-	 */
-	public function test_dispute_due_in_one_whole_day_is_the_last_day(): void {
-		$sut = $this->create_task( array( $this->dispute( 2000, 'eur', '+1 day +1 hour' ) ) );
-
-		$this->assertSame( 'Respond to a dispute for 20,00 € – Last day', $sut->get_title() );
-	}
-
-	/**
-	 * @testdox A zero-decimal currency amount is not divided by 100, for $label.
-	 * @dataProvider provide_zero_decimal_cases
+	 * @testdox The task title for $_dataName names the disputes and their total.
+	 * @dataProvider provide_title_cases
 	 *
-	 * @param string                         $label    Case.
 	 * @param array<int,array<string,mixed>> $disputes Cached disputes.
 	 * @param string                         $expected Task title.
 	 */
-	public function test_zero_decimal_currency_amount( string $label, array $disputes, string $expected ): void {
-		unset( $label );
-
+	public function test_title_names_the_due_disputes( array $disputes, string $expected ): void {
 		$this->assertSame( $expected, $this->create_task( $disputes )->get_title() );
 	}
 
 	/**
-	 * Zero-decimal currency cases.
+	 * Title cases. A dispute due in one whole day still counts as the last day, since whole days are compared, and a
+	 * zero-decimal currency amount is not divided by 100.
 	 *
-	 * @return array<string,array{0:string,1:array<int,array<string,mixed>>,2:string}>
+	 * @return array<string,array{0:array<int,array<string,mixed>>,1:string}>
 	 */
-	public function provide_zero_decimal_cases(): array {
+	public function provide_title_cases(): array {
 		return array(
-			'one dispute'  => array( 'one dispute', array( $this->dispute( 5000, 'jpy', '+3 days +1 hour' ) ), 'Respond to a dispute for ¥5,000' ),
-			'two disputes' => array(
-				'the total of two disputes',
+			'no active disputes'               => array( array(), '' ),
+			'one dispute due in one whole day' => array( array( $this->dispute( 2000, 'eur', '+1 day +1 hour' ) ), 'Respond to a dispute for 20,00 € – Last day' ),
+			'one zero-decimal dispute'         => array( array( $this->dispute( 5000, 'jpy', '+3 days +1 hour' ) ), 'Respond to a dispute for ¥5,000' ),
+			'two zero-decimal disputes'        => array(
 				array(
 					$this->dispute( 5000, 'jpy', '+3 days +1 hour' ),
 					$this->dispute( 1200, 'jpy', '+5 days +1 hour' ),
@@ -218,13 +208,6 @@ class WooPaymentsDisputesTaskTest extends WC_Unit_Test_Case {
 				'Respond to 2 active disputes for a total of ¥6,200',
 			),
 		);
-	}
-
-	/**
-	 * @testdox With no dispute awaiting a response, the task has no title.
-	 */
-	public function test_no_active_disputes_have_no_title(): void {
-		$this->assertSame( '', $this->create_task( array() )->get_title() );
 	}
 
 	/**

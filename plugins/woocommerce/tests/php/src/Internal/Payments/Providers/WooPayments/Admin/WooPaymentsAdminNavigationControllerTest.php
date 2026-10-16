@@ -3,12 +3,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Admin;
 
-use Automattic\Jetpack\Connection\Manager as JetpackConnectionManager;
-use Automattic\Jetpack\Status\Cache as StatusCache;
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsOnboardingRedirect;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsOverviewService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -16,8 +13,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
@@ -109,179 +104,146 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preload full admin route availability for a valid account.
-	 */
-	public function test_preloads_full_admin_route_availability_for_valid_account(): void {
-		$sut = $this->create_controller(
-			true,
-			array(
-				'is_reports_enabled'         => true,
-				'is_documents_enabled'       => true,
-				'is_card_present_eligible'   => true,
-				'has_card_readers_available' => true,
-				'has_previous_capital_loans' => true,
-			)
-		);
-
-		$availability = $this->preload_route_availability( $sut );
-		$routes       = $availability['allowedRoutes'];
-
-		$this->assertTrue( $availability['gatewayEnabled'] );
-		$this->assertSame( 'full', $availability['accountState'] );
-		$this->assertTrue( $routes['/woopayments/settings'] );
-		$this->assertTrue( $routes['/woopayments/overview'] );
-		$this->assertTrue( $routes['/woopayments/payouts'] );
-		$this->assertTrue( $routes['/woopayments/payouts/details'] );
-		$this->assertTrue( $routes['/woopayments/transactions'] );
-		$this->assertTrue( $routes['/woopayments/transactions/details'] );
-		$this->assertTrue( $routes['/woopayments/disputes'] );
-		$this->assertTrue( $routes['/woopayments/disputes/details'] );
-		$this->assertTrue( $routes['/woopayments/disputes/challenge'] );
-		$this->assertTrue( $routes['/woopayments/reports'] );
-		$this->assertTrue( $routes['/woopayments/card-readers'] );
-		$this->assertTrue( $routes['/woopayments/loans'] );
-		$this->assertTrue( $routes['/woopayments/documents'] );
-		$this->assertTrue( $routes['/woopayments/settings/fraud-protection'] );
-	}
-
-	/**
-	 * @testdox Should preload reduced admin route availability for restricted accounts.
-	 * @dataProvider provider_restricted_account_states
+	 * @testdox Should preload the admin route availability of the $_dataName account state.
+	 * @dataProvider provider_admin_route_availability
 	 *
-	 * @param array<string,bool> $account_state Account state overrides.
+	 * @param array<string,bool> $account_state   Account state overrides.
+	 * @param bool|null          $gateway_enabled Expected gateway state, or null for a row that does not check it.
+	 * @param string|null        $expected_state  Expected account state, or null for a row that does not check it.
+	 * @param string[]           $allowed         Routes that must be allowed.
+	 * @param string[]           $denied          Routes that must be denied.
 	 */
-	public function test_preloads_restricted_admin_route_availability( array $account_state ): void {
-		$sut = $this->create_controller(
-			true,
-			array_merge(
-				$account_state,
-				array(
-					'is_reports_enabled'         => true,
-					'is_documents_enabled'       => true,
-					'is_card_present_eligible'   => true,
-					'has_card_readers_available' => true,
-					'has_previous_capital_loans' => true,
-				)
-			)
-		);
-
-		$availability = $this->preload_route_availability( $sut );
+	public function test_preloads_admin_route_availability_by_account_state( array $account_state, ?bool $gateway_enabled, ?string $expected_state, array $allowed, array $denied ): void {
+		$availability = $this->preload_route_availability( $this->create_controller( true, $account_state ) );
 		$routes       = $availability['allowedRoutes'];
 
-		$this->assertTrue( $availability['gatewayEnabled'] );
-		$this->assertSame( 'restricted', $availability['accountState'] );
-		$this->assertTrue( $routes['/woopayments/settings'] );
-		$this->assertTrue( $routes['/woopayments/overview'] );
-		$this->assertTrue( $routes['/woopayments/transactions'] );
-		$this->assertTrue( $routes['/woopayments/transactions/details'] );
-		$this->assertTrue( $routes['/woopayments/disputes'] );
-		$this->assertTrue( $routes['/woopayments/disputes/details'] );
-		$this->assertTrue( $routes['/woopayments/disputes/challenge'] );
-		$this->assertTrue( $routes['/woopayments/settings/fraud-protection'] );
-		$this->assertFalse( $routes['/woopayments/onboarding'] );
-		$this->assertFalse( $routes['/woopayments/payouts'] );
-		$this->assertFalse( $routes['/woopayments/payouts/details'] );
-		$this->assertFalse( $routes['/woopayments/reports'] );
-		$this->assertFalse( $routes['/woopayments/card-readers'] );
-		$this->assertFalse( $routes['/woopayments/loans'] );
-		$this->assertFalse( $routes['/woopayments/documents'] );
+		if ( null !== $gateway_enabled ) {
+			$this->assertSame( $gateway_enabled, $availability['gatewayEnabled'] );
+		}
+		if ( null !== $expected_state ) {
+			$this->assertSame( $expected_state, $availability['accountState'] );
+		}
+		foreach ( $allowed as $route ) {
+			$this->assertTrue( $routes[ $route ], "{$route} should be allowed." );
+		}
+		foreach ( $denied as $route ) {
+			$this->assertFalse( $routes[ $route ], "{$route} should be denied." );
+		}
 	}
 
 	/**
-	 * @testdox Should preload account-state admin route availability when the gateway is disabled.
-	 */
-	public function test_preloads_account_state_admin_route_availability_when_gateway_is_disabled(): void {
-		$sut = $this->create_controller(
-			true,
-			array(
-				'is_gateway_enabled'                     => false,
-				'is_reports_enabled'                     => true,
-				'is_documents_enabled'                   => true,
-				'is_card_present_eligible'               => true,
-				'has_card_readers_available'             => true,
-				'has_previous_capital_loans'             => true,
-				'has_valid_account_for_admin_navigation' => true,
-			)
-		);
-
-		$availability = $this->preload_route_availability( $sut );
-		$routes       = $availability['allowedRoutes'];
-
-		$this->assertFalse( $availability['gatewayEnabled'] );
-		$this->assertSame( 'full', $availability['accountState'] );
-		$this->assertTrue( $routes['/woopayments/settings'] );
-		$this->assertTrue( $routes['/woopayments/overview'] );
-		$this->assertTrue( $routes['/woopayments/payouts'] );
-		$this->assertTrue( $routes['/woopayments/payouts/details'] );
-		$this->assertTrue( $routes['/woopayments/transactions'] );
-		$this->assertTrue( $routes['/woopayments/transactions/details'] );
-		$this->assertTrue( $routes['/woopayments/disputes'] );
-		$this->assertTrue( $routes['/woopayments/disputes/details'] );
-		$this->assertTrue( $routes['/woopayments/disputes/challenge'] );
-		$this->assertTrue( $routes['/woopayments/reports'] );
-		$this->assertTrue( $routes['/woopayments/card-readers'] );
-		$this->assertTrue( $routes['/woopayments/loans'] );
-		$this->assertTrue( $routes['/woopayments/documents'] );
-		$this->assertTrue( $routes['/woopayments/settings/fraud-protection'] );
-		$this->assertFalse( $routes['/woopayments/onboarding'] );
-	}
-
-	/**
-	 * @testdox Should preload onboarding-only admin route availability for accounts that are not ready.
-	 * @dataProvider provider_not_ready_account_states
+	 * Account states and the admin routes each one allows and denies.
 	 *
-	 * @param array<string,bool> $account_state Account state overrides.
-	 * @param string             $expected_title Expected menu item title.
+	 * @return array<string,array{0:array<string,bool>,1:bool|null,2:string|null,3:string[],4:string[]}>
 	 */
-	public function test_preloads_onboarding_only_admin_route_availability_for_accounts_that_are_not_ready( array $account_state, string $expected_title ): void {
-		unset( $expected_title );
-
-		$sut = $this->create_controller(
-			true,
-			array_merge(
-				$account_state,
-				array(
-					'is_reports_enabled'         => true,
-					'is_documents_enabled'       => true,
-					'is_card_present_eligible'   => true,
-					'has_card_readers_available' => true,
-					'has_previous_capital_loans' => true,
-				)
-			)
+	public function provider_admin_route_availability(): array {
+		$optional_on = array(
+			'is_reports_enabled'         => true,
+			'is_documents_enabled'       => true,
+			'is_card_present_eligible'   => true,
+			'has_card_readers_available' => true,
+			'has_previous_capital_loans' => true,
+		);
+		$all_routes  = array(
+			'/woopayments/settings',
+			'/woopayments/overview',
+			'/woopayments/payouts',
+			'/woopayments/payouts/details',
+			'/woopayments/transactions',
+			'/woopayments/transactions/details',
+			'/woopayments/disputes',
+			'/woopayments/disputes/details',
+			'/woopayments/disputes/challenge',
+			'/woopayments/reports',
+			'/woopayments/card-readers',
+			'/woopayments/loans',
+			'/woopayments/documents',
+			'/woopayments/settings/fraud-protection',
+		);
+		$reduced     = array(
+			'/woopayments/settings',
+			'/woopayments/overview',
+			'/woopayments/transactions',
+			'/woopayments/transactions/details',
+			'/woopayments/disputes',
+			'/woopayments/disputes/details',
+			'/woopayments/disputes/challenge',
+			'/woopayments/settings/fraud-protection',
+		);
+		$not_reduced = array(
+			'/woopayments/onboarding',
+			'/woopayments/payouts',
+			'/woopayments/payouts/details',
+			'/woopayments/reports',
+			'/woopayments/card-readers',
+			'/woopayments/loans',
+			'/woopayments/documents',
+		);
+		$onboarding  = array( '/woopayments/settings', '/woopayments/onboarding', '/woopayments/settings/fraud-protection' );
+		$not_ready   = array(
+			'/woopayments/overview',
+			'/woopayments/payouts',
+			'/woopayments/transactions',
+			'/woopayments/disputes',
+			'/woopayments/reports',
+			'/woopayments/card-readers',
+			'/woopayments/loans',
+			'/woopayments/documents',
 		);
 
-		$availability = $this->preload_route_availability( $sut );
-		$routes       = $availability['allowedRoutes'];
-
-		$this->assertTrue( $availability['gatewayEnabled'] );
-		$this->assertSame( 'onboarding', $availability['accountState'] );
-		$this->assertTrue( $routes['/woopayments/settings'] );
-		$this->assertTrue( $routes['/woopayments/onboarding'] );
-		$this->assertTrue( $routes['/woopayments/settings/fraud-protection'] );
-		$this->assertFalse( $routes['/woopayments/overview'] );
-		$this->assertFalse( $routes['/woopayments/payouts'] );
-		$this->assertFalse( $routes['/woopayments/transactions'] );
-		$this->assertFalse( $routes['/woopayments/disputes'] );
-		$this->assertFalse( $routes['/woopayments/reports'] );
-		$this->assertFalse( $routes['/woopayments/card-readers'] );
-		$this->assertFalse( $routes['/woopayments/loans'] );
-		$this->assertFalse( $routes['/woopayments/documents'] );
-	}
-
-	/**
-	 * @testdox Should preload optional admin routes only when their account-service predicates are true.
-	 */
-	public function test_preloads_optional_admin_routes_only_when_available(): void {
-		$sut = $this->create_controller( true );
-
-		$routes = $this->preload_route_availability( $sut )['allowedRoutes'];
-
-		$this->assertTrue( $routes['/woopayments/settings'] );
-		$this->assertTrue( $routes['/woopayments/overview'] );
-		$this->assertFalse( $routes['/woopayments/reports'] );
-		$this->assertFalse( $routes['/woopayments/card-readers'] );
-		$this->assertFalse( $routes['/woopayments/loans'] );
-		$this->assertFalse( $routes['/woopayments/documents'] );
+		return array(
+			'full'             => array( $optional_on, true, 'full', $all_routes, array() ),
+			'rejected'         => array( array_merge( array( 'is_account_rejected' => true ), $optional_on ), true, 'restricted', $reduced, $not_reduced ),
+			'under review'     => array( array_merge( array( 'is_account_under_review' => true ), $optional_on ), true, 'restricted', $reduced, $not_reduced ),
+			'gateway disabled' => array(
+				array_merge(
+					array(
+						'is_gateway_enabled' => false,
+						'has_valid_account_for_admin_navigation' => true,
+					),
+					$optional_on
+				),
+				false,
+				'full',
+				$all_routes,
+				array( '/woopayments/onboarding' ),
+			),
+			'not connected'    => array(
+				array_merge(
+					array(
+						'has_account'                   => false,
+						'is_details_submitted'          => false,
+						'has_valid_admin_account_state' => false,
+					),
+					$optional_on
+				),
+				true,
+				'onboarding',
+				$onboarding,
+				$not_ready,
+			),
+			'details missing'  => array(
+				array_merge(
+					array(
+						'has_account'                   => true,
+						'is_details_submitted'          => false,
+						'has_valid_admin_account_state' => false,
+					),
+					$optional_on
+				),
+				true,
+				'onboarding',
+				$onboarding,
+				$not_ready,
+			),
+			'optional off'     => array(
+				array(),
+				null,
+				null,
+				array( '/woopayments/settings', '/woopayments/overview' ),
+				array( '/woopayments/reports', '/woopayments/card-readers', '/woopayments/loans', '/woopayments/documents' ),
+			),
+		);
 	}
 
 	/**
@@ -405,21 +367,16 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map WooPayments extension setup URLs to onboarding routes.
+	 * @testdox Should map the WooPayments extension setup URL $payments_path for $_dataName to $expected_route.
 	 *
 	 * @dataProvider provider_payments_setup_redirects
 	 *
-	 * @param string $payments_path WooPayments extension WC Admin route path.
+	 * @param string              $payments_path  WooPayments extension WC Admin route path.
+	 * @param array<string,mixed> $account_state  Account state overrides.
+	 * @param string              $expected_route Expected route path.
 	 */
-	public function test_maps_payments_setup_paths_to_onboarding_routes( string $payments_path ): void {
-		$sut = $this->create_controller(
-			true,
-			array(
-				'has_account'                            => false,
-				'has_valid_account_for_admin_navigation' => false,
-				'is_details_submitted'                   => false,
-			)
-		);
+	public function test_maps_payments_setup_paths_by_account( string $payments_path, array $account_state, string $expected_route ): void {
+		$sut = $this->create_controller( true, $account_state );
 
 		$url = $sut->get_payments_path_redirect_url(
 			array(
@@ -430,44 +387,31 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout', $url );
-		$this->assertStringContainsString( 'path=/woopayments/onboarding', $url );
+		$this->assertStringContainsString( 'path=' . $expected_route, $url );
 		$this->assertStringContainsString( 'source=legacy-bookmark', $url );
 		$this->assertStringNotContainsString( 'page=wc-admin', $url );
 	}
 
 	/**
-	 * @return array<string,array{legacy_path:string}>
+	 * Setup paths, by account, and the route each one opens.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:string}>
 	 */
 	public function provider_payments_setup_redirects(): array {
+		$no_account = array(
+			'has_account'                            => false,
+			'has_valid_account_for_admin_navigation' => false,
+			'is_details_submitted'                   => false,
+		);
+
 		return array(
-			'connect'        => array( 'payments_path' => '/payments/connect' ),
-			'onboarding'     => array( 'payments_path' => '/payments/onboarding' ),
-			'onboarding kyc' => array( 'payments_path' => '/payments/onboarding/kyc' ),
+			'connect, no account'               => array( '/payments/connect', $no_account, '/woopayments/onboarding' ),
+			'onboarding, no account'            => array( '/payments/onboarding', $no_account, '/woopayments/onboarding' ),
+			'onboarding kyc, no account'        => array( '/payments/onboarding/kyc', $no_account, '/woopayments/onboarding' ),
+			'connect, connected account'        => array( '/payments/connect', array(), '/woopayments/overview' ),
+			'onboarding, connected account'     => array( '/payments/onboarding', array(), '/woopayments/overview' ),
+			'onboarding kyc, connected account' => array( '/payments/onboarding/kyc', array(), '/woopayments/overview' ),
 		);
-	}
-
-	/**
-	 * @testdox Should map WooPayments extension setup URLs to overview routes for connected accounts.
-	 *
-	 * @dataProvider provider_payments_setup_redirects
-	 *
-	 * @param string $payments_path WooPayments extension WC Admin route path.
-	 */
-	public function test_maps_payments_setup_paths_to_overview_routes_for_connected_accounts( string $payments_path ): void {
-		$sut = $this->create_controller( true );
-
-		$url = $sut->get_payments_path_redirect_url(
-			array(
-				'page'   => 'wc-admin',
-				'path'   => rawurlencode( $payments_path ),
-				'source' => 'legacy-bookmark',
-			)
-		);
-
-		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout', $url );
-		$this->assertStringContainsString( 'path=/woopayments/overview', $url );
-		$this->assertStringContainsString( 'source=legacy-bookmark', $url );
-		$this->assertStringNotContainsString( 'page=wc-admin', $url );
 	}
 
 	/**
@@ -535,175 +479,118 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map WooPayments extension WC Admin Documents URLs to the Documents route when eligible.
+	 * @testdox Should map the WooPayments extension WC Admin URL for $_dataName to the $expected_route route.
+	 * @dataProvider provider_payments_paths_by_account_gate
+	 *
+	 * @param array<string,mixed>  $account_state  Account state overrides.
+	 * @param array<string,string> $request        WC Admin query request.
+	 * @param string               $expected_route Expected route path.
+	 * @param string[]             $url_parts      Further strings the redirect URL must contain.
+	 * @param array<string,string> $expected_query Further query values the redirect URL must carry.
 	 */
-	public function test_maps_payments_documents_path_to_route_when_documents_are_enabled(): void {
-		$sut = $this->create_controller(
-			true,
-			array(
-				'is_documents_enabled' => true,
-			)
-		);
+	public function test_maps_payments_paths_by_account_gate( array $account_state, array $request, string $expected_route, array $url_parts, array $expected_query ): void {
+		$sut = $this->create_controller( true, $account_state );
 
-		$url = $sut->get_payments_path_redirect_url(
-			array(
-				'page'          => 'wc-admin',
-				'path'          => '%2Fpayments%2Fdocuments',
-				'document_id'   => 'doc_native',
-				'document_type' => 'vat_invoice',
-			)
-		);
+		$url = $sut->get_payments_path_redirect_url( $request );
+		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
 
 		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout', $url );
-		$this->assertStringContainsString( 'path=/woopayments/documents', $url );
-		$this->assertStringContainsString( 'document_id=doc_native', $url );
-		$this->assertStringContainsString( 'document_type=vat_invoice', $url );
+		$this->assertStringContainsString( 'path=' . $expected_route, $url );
+		$this->assertSame( $expected_route, $query['path'] );
 		$this->assertStringNotContainsString( 'page=wc-admin', $url );
+		foreach ( $url_parts as $url_part ) {
+			$this->assertStringContainsString( $url_part, $url );
+		}
+		foreach ( $expected_query as $key => $value ) {
+			$this->assertSame( $value, $query[ $key ] );
+		}
 	}
 
 	/**
-	 * @testdox Should map WooPayments extension WC Admin Documents URLs to overview when Documents are not eligible.
+	 * WooPayments extension WC Admin paths, by the account gate that decides their route.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:array<string,string>,2:string,3:string[],4:array<string,string>}>
 	 */
-	public function test_maps_payments_documents_path_to_overview_when_documents_are_disabled(): void {
-		$sut = $this->create_controller(
-			true,
-			array(
-				'is_documents_enabled' => false,
-			)
+	public function provider_payments_paths_by_account_gate(): array {
+		$under_review = array( 'is_account_under_review' => true );
+		$no_account   = array(
+			'has_account'                            => false,
+			'has_valid_account_for_admin_navigation' => false,
+			'is_details_submitted'                   => false,
 		);
 
-		$url = $sut->get_payments_path_redirect_url(
-			array(
-				'page' => 'wc-admin',
-				'path' => '%2Fpayments%2Fdocuments',
-			)
+		return array(
+			'documents, enabled'             => array(
+				array( 'is_documents_enabled' => true ),
+				array(
+					'page'          => 'wc-admin',
+					'path'          => '%2Fpayments%2Fdocuments',
+					'document_id'   => 'doc_native',
+					'document_type' => 'vat_invoice',
+				),
+				'/woopayments/documents',
+				array( 'document_id=doc_native', 'document_type=vat_invoice' ),
+				array(),
+			),
+			'documents, disabled'            => array( array( 'is_documents_enabled' => false ), $this->wc_admin_request( '%2Fpayments%2Fdocuments' ), '/woopayments/overview', array(), array() ),
+			'reports, enabled'               => array(
+				array( 'is_reports_enabled' => true ),
+				array(
+					'page'     => 'wc-admin',
+					'path'     => '%2Fpayments%2Freports',
+					'tab'      => 'fees',
+					'view'     => 'fees',
+					'currency' => 'USD',
+				),
+				'/woopayments/reports',
+				array( 'currency=USD', 'view=fees' ),
+				array(
+					'tab'        => 'checkout',
+					'report_tab' => 'fees',
+				),
+			),
+			'reports, disabled'              => array( array( 'is_reports_enabled' => false ), $this->wc_admin_request( '%2Fpayments%2Freports' ), '/woopayments/overview', array(), array() ),
+			'deposits, account under review' => array( $under_review, $this->wc_admin_request( '%2Fpayments%2Fdeposits' ), '/woopayments/overview', array(), array() ),
+			'payouts, account under review'  => array( $under_review, $this->wc_admin_request( '%2Fpayments%2Fpayouts' ), '/woopayments/overview', array(), array() ),
+			'transactions, no account'       => array( $no_account, $this->wc_admin_request( '%2Fpayments%2Ftransactions' ), '/woopayments/settings', array(), array() ),
+			'card readers, available'        => array(
+				array(
+					'is_card_present_eligible'   => true,
+					'has_card_readers_available' => true,
+				),
+				$this->wc_admin_request( '%2Fpayments%2Fcard-readers' ),
+				'/woopayments/card-readers',
+				array(),
+				array(),
+			),
+			'card readers, unavailable'      => array(
+				array(
+					'is_card_present_eligible'   => true,
+					'has_card_readers_available' => false,
+				),
+				$this->wc_admin_request( '%2Fpayments%2Fcard-readers' ),
+				'/woopayments/overview',
+				array(),
+				array(),
+			),
+			'capital loans, available'       => array( array( 'has_previous_capital_loans' => true ), $this->wc_admin_request( '%2Fpayments%2Floans' ), '/woopayments/loans', array(), array() ),
+			'capital loans, none'            => array( array( 'has_previous_capital_loans' => false ), $this->wc_admin_request( '%2Fpayments%2Floans' ), '/woopayments/overview', array(), array() ),
+			'settings, gateway disabled'     => array( array( 'is_gateway_enabled' => false ), $this->wc_admin_request( '%2Fpayments%2Fsettings' ), '/woopayments/settings', array(), array() ),
+			'transactions, gateway disabled' => array( array( 'is_gateway_enabled' => false ), $this->wc_admin_request( '%2Fpayments%2Ftransactions' ), '/woopayments/transactions', array(), array() ),
 		);
-		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
-
-		$this->assertSame( '/woopayments/overview', $query['path'] );
 	}
 
 	/**
-	 * @testdox Should map WooPayments extension WC Admin Reports URLs to the Reports route when Reports are enabled.
+	 * Build a WC Admin request for a path.
+	 *
+	 * @param string $path Encoded WC Admin path.
+	 * @return array<string,string>
 	 */
-	public function test_maps_payments_reports_path_to_route_when_reports_are_enabled(): void {
-		$sut = $this->create_controller(
-			true,
-			array(
-				'is_reports_enabled' => true,
-			)
+	private function wc_admin_request( string $path ): array {
+		return array(
+			'page' => 'wc-admin',
+			'path' => $path,
 		);
-
-		$url = $sut->get_payments_path_redirect_url(
-			array(
-				'page'     => 'wc-admin',
-				'path'     => '%2Fpayments%2Freports',
-				'tab'      => 'fees',
-				'view'     => 'fees',
-				'currency' => 'USD',
-			)
-		);
-		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
-
-		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout', $url );
-		$this->assertStringContainsString( 'path=/woopayments/reports', $url );
-		$this->assertStringContainsString( 'currency=USD', $url );
-		$this->assertStringContainsString( 'view=fees', $url );
-		$this->assertSame( 'checkout', $query['tab'] );
-		$this->assertSame( 'fees', $query['report_tab'] );
-		$this->assertStringNotContainsString( 'page=wc-admin', $url );
-	}
-
-	/**
-	 * @testdox Should map WooPayments extension WC Admin Reports URLs to overview when Reports are disabled.
-	 */
-	public function test_maps_payments_reports_path_to_overview_when_reports_are_disabled(): void {
-		$sut = $this->create_controller(
-			true,
-			array(
-				'is_reports_enabled' => false,
-			)
-		);
-
-		$url = $sut->get_payments_path_redirect_url(
-			array(
-				'page' => 'wc-admin',
-				'path' => '%2Fpayments%2Freports',
-			)
-		);
-		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
-
-		$this->assertSame( '/woopayments/overview', $query['path'] );
-	}
-
-	/**
-	 * @testdox Should map full-access WooPayments extension WC Admin URLs to overview for restricted accounts.
-	 */
-	public function test_maps_full_access_payments_paths_to_overview_for_restricted_accounts(): void {
-		$sut = $this->create_controller(
-			true,
-			array(
-				'is_account_under_review' => true,
-			)
-		);
-
-		$url = $sut->get_payments_path_redirect_url(
-			array(
-				'page' => 'wc-admin',
-				'path' => '%2Fpayments%2Fdeposits',
-			)
-		);
-		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
-
-		$this->assertSame( '/woopayments/overview', $query['path'] );
-	}
-
-	/**
-	 * @testdox Should map denied WooPayments extension URLs to the overview fallback when overview is allowed.
-	 */
-	public function test_maps_denied_payments_path_to_overview_fallback_when_available(): void {
-		$sut = $this->create_controller(
-			true,
-			array(
-				'is_account_under_review' => true,
-			)
-		);
-
-		$url = $sut->get_payments_path_redirect_url(
-			array(
-				'page' => 'wc-admin',
-				'path' => '%2Fpayments%2Fpayouts',
-			)
-		);
-		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
-
-		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout', $url );
-		$this->assertSame( '/woopayments/overview', $query['path'] );
-	}
-
-	/**
-	 * @testdox Should map denied WooPayments extension URLs to settings when overview is unavailable.
-	 */
-	public function test_maps_denied_payments_path_to_settings_fallback_when_overview_is_unavailable(): void {
-		$sut = $this->create_controller(
-			true,
-			array(
-				'has_account'                            => false,
-				'has_valid_account_for_admin_navigation' => false,
-				'is_details_submitted'                   => false,
-			)
-		);
-
-		$url = $sut->get_payments_path_redirect_url(
-			array(
-				'page' => 'wc-admin',
-				'path' => '%2Fpayments%2Ftransactions',
-			)
-		);
-		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
-
-		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout', $url );
-		$this->assertSame( '/woopayments/settings', $query['path'] );
 	}
 
 	/**
@@ -776,128 +663,6 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map WooPayments extension WC Admin Card Readers URLs to the route when Card Readers are available.
-	 */
-	public function test_maps_payments_card_readers_path_to_route_when_card_readers_are_available(): void {
-		$sut = $this->create_controller(
-			true,
-			array(
-				'is_card_present_eligible'   => true,
-				'has_card_readers_available' => true,
-			)
-		);
-
-		$url = $sut->get_payments_path_redirect_url(
-			array(
-				'page' => 'wc-admin',
-				'path' => '%2Fpayments%2Fcard-readers',
-			)
-		);
-
-		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout', $url );
-		$this->assertStringContainsString( 'path=/woopayments/card-readers', $url );
-		$this->assertStringNotContainsString( 'page=wc-admin', $url );
-	}
-
-	/**
-	 * @testdox Should map WooPayments extension WC Admin Card Readers URLs to overview when Card Readers are unavailable.
-	 */
-	public function test_maps_payments_card_readers_path_to_overview_when_card_readers_are_unavailable(): void {
-		$sut = $this->create_controller(
-			true,
-			array(
-				'is_card_present_eligible'   => true,
-				'has_card_readers_available' => false,
-			)
-		);
-
-		$url = $sut->get_payments_path_redirect_url(
-			array(
-				'page' => 'wc-admin',
-				'path' => '%2Fpayments%2Fcard-readers',
-			)
-		);
-		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
-
-		$this->assertSame( '/woopayments/overview', $query['path'] );
-	}
-
-	/**
-	 * @testdox Should map WooPayments extension WC Admin Capital URLs to the route when Capital is available.
-	 */
-	public function test_maps_payments_capital_path_to_route_when_capital_is_available(): void {
-		$sut = $this->create_controller(
-			true,
-			array(
-				'has_previous_capital_loans' => true,
-			)
-		);
-
-		$url = $sut->get_payments_path_redirect_url(
-			array(
-				'page' => 'wc-admin',
-				'path' => '%2Fpayments%2Floans',
-			)
-		);
-
-		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout', $url );
-		$this->assertStringContainsString( 'path=/woopayments/loans', $url );
-		$this->assertStringNotContainsString( 'page=wc-admin', $url );
-	}
-
-	/**
-	 * @testdox Should map WooPayments extension WC Admin Capital URLs to overview when Capital is unavailable.
-	 */
-	public function test_maps_payments_capital_path_to_overview_when_capital_is_unavailable(): void {
-		$sut = $this->create_controller(
-			true,
-			array(
-				'has_previous_capital_loans' => false,
-			)
-		);
-
-		$url = $sut->get_payments_path_redirect_url(
-			array(
-				'page' => 'wc-admin',
-				'path' => '%2Fpayments%2Floans',
-			)
-		);
-		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
-
-		$this->assertSame( '/woopayments/overview', $query['path'] );
-	}
-
-	/**
-	 * @testdox Should map WooPayments extension WC Admin paths by account state when the gateway is disabled.
-	 */
-	public function test_maps_payments_paths_by_account_state_when_the_gateway_is_disabled(): void {
-		$sut = $this->create_controller(
-			true,
-			array(
-				'is_gateway_enabled' => false,
-			)
-		);
-
-		$settings_url = $sut->get_payments_path_redirect_url(
-			array(
-				'page' => 'wc-admin',
-				'path' => '%2Fpayments%2Fsettings',
-			)
-		);
-
-		$this->assertStringContainsString( 'path=/woopayments/settings', $settings_url );
-		$this->assertStringContainsString(
-			'path=/woopayments/transactions',
-			$sut->get_payments_path_redirect_url(
-				array(
-					'page' => 'wc-admin',
-					'path' => '%2Fpayments%2Ftransactions',
-				)
-			)
-		);
-	}
-
-	/**
 	 * @testdox Should not redirect unrelated WC Admin paths.
 	 */
 	public function test_does_not_map_unrelated_wc_admin_paths(): void {
@@ -915,57 +680,94 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not add WooPayments navigation when the built-in WooPayments does not own payments.
+	 * @testdox Should build the WooPayments navigation for $_dataName.
+	 * @dataProvider provider_menu_items_by_account_state
+	 *
+	 * @param bool                $builtin_owner   Whether the built-in WooPayments owns payments.
+	 * @param string              $role            Current user role.
+	 * @param array<string,mixed> $account_state   Account state overrides.
+	 * @param string[]            $expected_titles Expected menu item titles, in order.
 	 */
-	public function test_does_not_add_menu_items_when_builtin_does_not_own_payments(): void {
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
-
-		$sut = $this->create_controller( false );
-		$sut->add_menu_items();
-
-		$this->assertSame( array(), $this->get_payments_submenu_items() );
-	}
-
-	/**
-	 * @testdox Should not add WooPayments navigation for users without manage_woocommerce.
-	 */
-	public function test_does_not_add_menu_items_without_manage_woocommerce_capability(): void {
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'customer' ) ) );
-
-		$sut = $this->create_controller( true );
-		$sut->add_menu_items();
-
-		$this->assertSame( array(), $this->get_payments_submenu_items() );
-	}
-
-	/**
-	 * @testdox Should add account-state WooPayments navigation when the gateway is disabled.
-	 */
-	public function test_adds_account_state_menu_items_when_the_gateway_is_disabled(): void {
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
-
-		$sut = $this->create_controller(
-			true,
-			array(
-				'is_gateway_enabled' => false,
-			)
+	public function test_adds_menu_items_by_account_state( bool $builtin_owner, string $role, array $account_state, array $expected_titles ): void {
+		$routes = array(
+			'Overview'            => '/woopayments/overview',
+			'Payouts'             => '/woopayments/payouts',
+			'Transactions'        => '/woopayments/transactions',
+			'Disputes'            => '/woopayments/disputes',
+			'Reports'             => '/woopayments/reports',
+			'Card Readers'        => '/woopayments/card-readers',
+			'Capital Loans'       => '/woopayments/loans',
+			'Documents'           => '/woopayments/documents',
+			'Settings'            => '/woopayments/settings',
+			'Onboarding'          => '/woopayments/onboarding',
+			'Continue onboarding' => '/woopayments/onboarding',
 		);
+		wp_set_current_user( $this->factory->user->create( array( 'role' => $role ) ) );
+
+		$sut = $this->create_controller( $builtin_owner, $account_state );
 		$sut->add_menu_items();
 
+		$items = $this->get_payments_submenu_items();
+
+		$this->assertSame( $expected_titles, array_column( $items, 0 ) );
 		$this->assertSame(
-			array(
-				'Overview',
-				'Payouts',
-				'Transactions',
-				'Disputes',
-				'Settings',
-			),
 			array_map(
-				static function ( array $item ): string {
-					return wp_strip_all_tags( $item[0] );
-				},
-				$this->get_payments_submenu_items()
-			)
+				fn( string $title ): string => $this->get_settings_url( $routes[ $title ] ),
+				$expected_titles
+			),
+			array_column( $items, 2 )
+		);
+		$this->assertStringNotContainsString( 'wc-admin&path=/payments', implode( "\n", array_column( $items, 2 ) ) );
+	}
+
+	/**
+	 * Owners, users and account states, and the WooPayments navigation each one gets.
+	 *
+	 * @return array<string,array{0:bool,1:string,2:array<string,mixed>,3:string[]}>
+	 */
+	public function provider_menu_items_by_account_state(): array {
+		return array(
+			'an extension-owned store'                => array( false, 'administrator', array(), array() ),
+			'a user without manage_woocommerce'       => array( true, 'customer', array(), array() ),
+			'a disabled gateway'                      => array( true, 'administrator', array( 'is_gateway_enabled' => false ), array( 'Overview', 'Payouts', 'Transactions', 'Disputes', 'Settings' ) ),
+			'a valid account with all optional pages' => array(
+				true,
+				'administrator',
+				array(
+					'is_card_present_eligible'      => true,
+					'has_card_readers_available'    => true,
+					'has_previous_capital_loans'    => true,
+					'is_documents_enabled'          => false,
+					'has_valid_admin_account_state' => true,
+				),
+				array( 'Overview', 'Payouts', 'Transactions', 'Disputes', 'Card Readers', 'Capital Loans', 'Settings' ),
+			),
+			'Documents not eligible'                  => array( true, 'administrator', array( 'is_documents_enabled' => false ), array( 'Overview', 'Payouts', 'Transactions', 'Disputes', 'Settings' ) ),
+			'Documents eligible'                      => array( true, 'administrator', array( 'is_documents_enabled' => true ), array( 'Overview', 'Payouts', 'Transactions', 'Disputes', 'Documents', 'Settings' ) ),
+			'Reports enabled'                         => array( true, 'administrator', array( 'is_reports_enabled' => true ), array( 'Overview', 'Payouts', 'Transactions', 'Disputes', 'Reports', 'Settings' ) ),
+			'a rejected account'                      => array( true, 'administrator', array( 'is_account_rejected' => true ), array( 'Overview', 'Transactions', 'Disputes' ) ),
+			'an under-review account'                 => array( true, 'administrator', array( 'is_account_under_review' => true ), array( 'Overview', 'Transactions', 'Disputes' ) ),
+			'a store that is not connected'           => array(
+				true,
+				'administrator',
+				array(
+					'has_account'                   => false,
+					'is_details_submitted'          => false,
+					'has_valid_admin_account_state' => false,
+				),
+				array( 'Onboarding' ),
+			),
+			'an account with missing details'         => array(
+				true,
+				'administrator',
+				array(
+					'has_account'                   => true,
+					'is_details_submitted'          => false,
+					'has_valid_admin_account_state' => false,
+				),
+				array( 'Continue onboarding' ),
+			),
+			'a submitted account that cannot open the pages' => array( true, 'administrator', array( 'has_valid_admin_account_state' => false ), array() ),
 		);
 	}
 
@@ -998,53 +800,6 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should add full WooPayments navigation for a valid account.
-	 */
-	public function test_adds_full_menu_items_for_valid_account(): void {
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
-
-		$sut = $this->create_controller(
-			true,
-			array(
-				'is_card_present_eligible'      => true,
-				'has_card_readers_available'    => true,
-				'has_previous_capital_loans'    => true,
-				'is_documents_enabled'          => false,
-				'has_valid_admin_account_state' => true,
-			)
-		);
-		$sut->add_menu_items();
-
-		$items = $this->get_payments_submenu_items();
-
-		$this->assertSame(
-			array(
-				'Overview',
-				'Payouts',
-				'Transactions',
-				'Disputes',
-				'Card Readers',
-				'Capital Loans',
-				'Settings',
-			),
-			array_column( $items, 0 )
-		);
-		$this->assertSame(
-			array(
-				$this->get_settings_url( '/woopayments/overview' ),
-				$this->get_settings_url( '/woopayments/payouts' ),
-				$this->get_settings_url( '/woopayments/transactions' ),
-				$this->get_settings_url( '/woopayments/disputes' ),
-				$this->get_settings_url( '/woopayments/card-readers' ),
-				$this->get_settings_url( '/woopayments/loans' ),
-				$this->get_settings_url( '/woopayments/settings' ),
-			),
-			array_column( $items, 2 )
-		);
-		$this->assertStringNotContainsString( 'wc-admin&path=/payments', implode( "\n", array_column( $items, 2 ) ) );
-	}
-
-	/**
 	 * Client 11.1.0 registers its pages under the Payments menu (`class-wc-payments-admin.php:230-611`), so WC Admin
 	 * opens Payments and marks the current page's item, detail pages marking their list.
 	 *
@@ -1063,7 +818,6 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$_GET['path'] = $path;
 
 		$this->assertSame( $this->get_submenu_item_by_title( $expected_title )[2], $sut->highlight_current_payments_submenu( null ) );
-		$this->assertStringContainsString( '( function () {var item = document.querySelector( "#adminmenu .wp-submenu li.current" );', $this->get_open_payments_menu_output( $sut ) );
 		$this->assertStringStartsWith( '<script', $this->get_open_payments_menu_output( $sut ) );
 	}
 
@@ -1219,262 +973,48 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should add a Disputes badge and direct the submenu to awaiting-response disputes.
-	 */
-	public function test_adds_disputes_badge_and_awaiting_response_filter(): void {
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
-
-		$sut = $this->create_controller(
-			true,
-			array(),
-			array(
-				'disputes_awaiting_response' => 4,
-			)
-		);
-		$sut->add_menu_items();
-
-		$disputes_item = $this->get_submenu_item_by_title( 'Disputes' );
-
-		$this->assertStringContainsString( 'wcpay-menu-badge awaiting-mod count-4', $disputes_item[0] );
-		$this->assertStringContainsString( '<span class="plugin-count">4</span>', $disputes_item[0] );
-		$this->assertStringContainsString( 'path=/woopayments/disputes', $disputes_item[2] );
-		$this->assertStringContainsString( 'filter=awaiting_response', $disputes_item[2] );
-	}
-
-	/**
-	 * @testdox Should omit the Disputes badge and filter when there are no awaiting-response disputes.
-	 */
-	public function test_omits_disputes_badge_for_zero_count(): void {
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
-
-		$sut = $this->create_controller( true );
-		$sut->add_menu_items();
-
-		$disputes_item = $this->get_submenu_item_by_title( 'Disputes' );
-
-		$this->assertSame( 'Disputes', $disputes_item[0] );
-		$this->assertSame( $this->get_settings_url( '/woopayments/disputes' ), $disputes_item[2] );
-	}
-
-	/**
-	 * @testdox Should add a Transactions badge when uncaptured transactions exist.
-	 */
-	public function test_adds_transactions_badge_for_uncaptured_transactions(): void {
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
-
-		$sut = $this->create_controller(
-			true,
-			array(),
-			array(
-				'uncaptured_transactions' => 3,
-			)
-		);
-		$sut->add_menu_items();
-
-		$transactions_item = $this->get_submenu_item_by_title( 'Transactions' );
-
-		$this->assertStringContainsString( 'wcpay-menu-badge awaiting-mod count-3', $transactions_item[0] );
-		$this->assertStringContainsString( '<span class="plugin-count">3</span>', $transactions_item[0] );
-		$this->assertSame( $this->get_settings_url( '/woopayments/transactions' ), $transactions_item[2] );
-	}
-
-	/**
-	 * @testdox Should omit the Transactions badge when there are no uncaptured transactions.
-	 */
-	public function test_omits_transactions_badge_for_zero_count(): void {
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
-
-		$sut = $this->create_controller( true );
-		$sut->add_menu_items();
-
-		$transactions_item = $this->get_submenu_item_by_title( 'Transactions' );
-
-		$this->assertSame( 'Transactions', $transactions_item[0] );
-		$this->assertSame( $this->get_settings_url( '/woopayments/transactions' ), $transactions_item[2] );
-	}
-
-	/**
-	 * @testdox Should add Documents navigation only when Documents are eligible while Reports are disabled by default.
-	 */
-	public function test_adds_documents_menu_item_only_when_documents_are_enabled_and_reports_are_disabled_by_default(): void {
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
-
-		$sut = $this->create_controller(
-			true,
-			array(
-				'is_documents_enabled' => false,
-			)
-		);
-		$sut->add_menu_items();
-
-		$titles = array_map(
-			static function ( array $item ): string {
-				return trim( wp_strip_all_tags( $item[0] ) );
-			},
-			$this->get_payments_submenu_items()
-		);
-
-		$this->assertNotContains( 'Reports', $titles );
-		$this->assertNotContains( 'Documents', $titles );
-
-		$sut = $this->create_controller(
-			true,
-			array(
-				'is_documents_enabled' => true,
-			)
-		);
-		$sut->add_menu_items();
-
-		$titles         = array_map(
-			static function ( array $item ): string {
-				return trim( wp_strip_all_tags( $item[0] ) );
-			},
-			$this->get_payments_submenu_items()
-		);
-		$documents_item = $this->get_submenu_item_by_title( 'Documents' );
-
-		$this->assertNotContains( 'Reports', $titles );
-		$this->assertContains( 'Documents', $titles );
-		$this->assertSame( $this->get_settings_url( '/woopayments/documents' ), $documents_item[2] );
-	}
-
-	/**
-	 * @testdox Should add Reports after Disputes for a valid account when Reports are enabled.
-	 */
-	public function test_adds_reports_menu_item_after_disputes_when_reports_are_enabled(): void {
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
-
-		$sut = $this->create_controller(
-			true,
-			array(
-				'is_reports_enabled' => true,
-			)
-		);
-		$sut->add_menu_items();
-
-		$items = $this->get_payments_submenu_items();
-
-		$this->assertSame(
-			array(
-				'Overview',
-				'Payouts',
-				'Transactions',
-				'Disputes',
-				'Reports',
-				'Settings',
-			),
-			array_column( $items, 0 )
-		);
-		$this->assertSame( $this->get_settings_url( '/woopayments/reports' ), $this->get_submenu_item_by_title( 'Reports' )[2] );
-	}
-
-	/**
-	 * @testdox Should add reduced WooPayments navigation for rejected and under-review accounts.
-	 * @dataProvider provider_restricted_account_states
+	 * @testdox Should show the $title menu item's badge and link for $_dataName.
+	 * @dataProvider provider_menu_badges
 	 *
-	 * @param array<string,bool> $account_state Account state overrides.
+	 * @param string            $title        Menu item title.
+	 * @param array<string,int> $badge_counts Badge count overrides.
+	 * @param int|null          $badge        Expected badge count, or null for a plain title.
+	 * @param string|null       $exact_route  Route the link must equal exactly, or null for a row that checks parts of it.
+	 * @param string[]          $url_parts    Strings the link must contain.
 	 */
-	public function test_adds_reduced_menu_items_for_restricted_account_states( array $account_state ): void {
+	public function test_adds_menu_badges( string $title, array $badge_counts, ?int $badge, ?string $exact_route, array $url_parts ): void {
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 
-		$sut = $this->create_controller( true, $account_state );
+		$sut = $this->create_controller( true, array(), $badge_counts );
 		$sut->add_menu_items();
 
-		$items = $this->get_payments_submenu_items();
+		$item = $this->get_submenu_item_by_title( $title );
 
-		$this->assertSame(
-			array(
-				'Overview',
-				'Transactions',
-				'Disputes',
-			),
-			array_column( $items, 0 )
-		);
-		$this->assertSame(
-			array(
-				$this->get_settings_url( '/woopayments/overview' ),
-				$this->get_settings_url( '/woopayments/transactions' ),
-				$this->get_settings_url( '/woopayments/disputes' ),
-			),
-			array_column( $items, 2 )
-		);
-		$this->assertNotContains( 'Reports', array_column( $items, 0 ) );
+		if ( null === $badge ) {
+			$this->assertSame( $title, $item[0] );
+		} else {
+			$this->assertStringContainsString( "wcpay-menu-badge awaiting-mod count-{$badge}", $item[0] );
+			$this->assertStringContainsString( "<span class=\"plugin-count\">{$badge}</span>", $item[0] );
+		}
+		if ( null !== $exact_route ) {
+			$this->assertSame( $this->get_settings_url( $exact_route ), $item[2] );
+		}
+		foreach ( $url_parts as $url_part ) {
+			$this->assertStringContainsString( $url_part, $item[2] );
+		}
 	}
 
 	/**
-	 * Restricted account state provider.
+	 * Badge counts and the Disputes and Transactions menu items they give.
 	 *
-	 * @return array<string,array{account_state:array<string,bool>}>
+	 * @return array<string,array{0:string,1:array<string,int>,2:int|null,3:string|null,4:string[]}>
 	 */
-	public function provider_restricted_account_states(): array {
+	public function provider_menu_badges(): array {
 		return array(
-			'rejected account'     => array(
-				'account_state' => array(
-					'is_account_rejected' => true,
-				),
-			),
-			'under-review account' => array(
-				'account_state' => array(
-					'is_account_under_review' => true,
-				),
-			),
-		);
-	}
-
-	/**
-	 * @testdox Should add onboarding navigation for accounts that are not ready.
-	 * @dataProvider provider_not_ready_account_states
-	 *
-	 * @param array<string,bool> $account_state Account state overrides.
-	 * @param string             $expected_title Expected menu item title.
-	 */
-	public function test_adds_onboarding_menu_items_for_accounts_that_are_not_ready( array $account_state, string $expected_title ): void {
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
-
-		$sut = $this->create_controller( true, $account_state );
-		$sut->add_menu_items();
-
-		$items = $this->get_payments_submenu_items();
-
-		$this->assertSame( array( $expected_title ), array_column( $items, 0 ) );
-		$this->assertSame( array( $this->get_settings_url( '/woopayments/onboarding' ) ), array_column( $items, 2 ) );
-	}
-
-	/**
-	 * @testdox Should add no navigation for a submitted account that cannot open the WooPayments pages.
-	 */
-	public function test_adds_no_menu_items_for_a_submitted_account_without_access(): void {
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
-
-		$sut = $this->create_controller( true, array( 'has_valid_admin_account_state' => false ) );
-		$sut->add_menu_items();
-
-		$this->assertSame( array(), $this->get_payments_submenu_items() );
-	}
-
-	/**
-	 * Not-ready account state provider.
-	 *
-	 * @return array<string,array{account_state:array<string,bool>,expected_title:string}>
-	 */
-	public function provider_not_ready_account_states(): array {
-		return array(
-			'not connected'   => array(
-				'account_state'  => array(
-					'has_account'                   => false,
-					'is_details_submitted'          => false,
-					'has_valid_admin_account_state' => false,
-				),
-				'expected_title' => 'Onboarding',
-			),
-			'details missing' => array(
-				'account_state'  => array(
-					'has_account'                   => true,
-					'is_details_submitted'          => false,
-					'has_valid_admin_account_state' => false,
-				),
-				'expected_title' => 'Continue onboarding',
-			),
+			'4 disputes awaiting a response' => array( 'Disputes', array( 'disputes_awaiting_response' => 4 ), 4, null, array( 'path=/woopayments/disputes', 'filter=awaiting_response' ) ),
+			'no dispute awaiting a response' => array( 'Disputes', array(), null, '/woopayments/disputes', array() ),
+			'3 uncaptured transactions'      => array( 'Transactions', array( 'uncaptured_transactions' => 3 ), 3, '/woopayments/transactions', array() ),
+			'no uncaptured transaction'      => array( 'Transactions', array(), null, '/woopayments/transactions', array() ),
 		);
 	}
 
@@ -1964,32 +1504,6 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Replace the container's Overview service with one that returns the shell and the account summary, or that must not be
-	 * asked for them.
-	 *
-	 * @param array<string,mixed>|null $shell   The shell, or null when building it must not happen.
-	 * @param array<string,mixed>|null $summary The account summary, or null when reading it must not happen.
-	 * @return void
-	 */
-	private function replace_overview_service( ?array $shell, ?array $summary = null ): void {
-		$overview_service = $this->getMockBuilder( WooPaymentsOverviewService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_overview', 'get_account_summary' ) )
-			->getMock();
-		if ( null === $shell ) {
-			$overview_service->expects( $this->never() )->method( 'get_overview' );
-		} else {
-			$overview_service->method( 'get_overview' )->willReturn( $shell );
-		}
-		if ( null === $summary ) {
-			$overview_service->expects( $this->never() )->method( 'get_account_summary' );
-		} else {
-			$overview_service->method( 'get_account_summary' )->willReturn( $summary );
-		}
-		wc_get_container()->replace( WooPaymentsOverviewService::class, $overview_service );
-	}
-
-	/**
 	 * Create a native account service test double.
 	 *
 	 * @param array<string,mixed> $overrides Account state overrides.
@@ -2032,30 +1546,6 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		}
 
 		return $account_service;
-	}
-
-	/**
-	 * Create a real Apple Pay domain service with Apple Pay enabled.
-	 *
-	 * @param bool $live_account Whether the account is live.
-	 * @return WooPaymentsApplePayDomainService
-	 */
-	private function create_apple_pay_domain_service( bool $live_account ): WooPaymentsApplePayDomainService {
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'has_live_account', 'is_payment_request_method_enabled' ) )
-			->getMock();
-		$account_service->method( 'has_live_account' )->willReturn( $live_account );
-		$account_service->method( 'is_payment_request_method_enabled' )->willReturn( true );
-
-		$service = new WooPaymentsApplePayDomainService();
-		$service->init(
-			$this->createMock( WooPaymentsApiClient::class ),
-			$account_service,
-			$this->createMock( WooPaymentsActionSchedulerService::class )
-		);
-
-		return $service;
 	}
 
 	/**

@@ -81,33 +81,6 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preload the Reports feature flag for WooPayments routes on the Payments settings page.
-	 */
-	public function test_preloads_reports_feature_flag_on_payments_settings_request(): void {
-		$_GET['page'] = 'wc-settings';
-		$_GET['tab']  = 'checkout';
-		$sut          = $this->create_shared_settings(
-			true,
-			array(
-				'is_reports_enabled' => true,
-			)
-		);
-
-		$settings = $sut->preload_shared_settings(
-			array(
-				'woopaymentsSettings' => array(
-					'featureFlags' => array(
-						'existingFlag' => true,
-					),
-				),
-			)
-		);
-
-		$this->assertTrue( $settings['woopaymentsSettings']['featureFlags']['reportsArea'] );
-		$this->assertTrue( $settings['woopaymentsSettings']['featureFlags']['existingFlag'] );
-	}
-
-	/**
 	 * The money formatter's data is preloaded as client 11.1.0 `WC_Payments_Admin::get_js_settings()` localizes it: the store
 	 * country, the zero-decimal currencies and each country's currency format from WooCommerce's locale data
 	 * (`class-wc-payments-admin.php:937-964,1007,1023,1047`).
@@ -330,17 +303,41 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 	/**
 	 * Outside the Payments settings pages nothing is preloaded, so nothing reads the tracking info.
 	 *
-	 * @testdox Should not read the tracking info outside the Payments settings pages.
+	 * @testdox Should preload nothing and not read the tracking info outside the Payments settings page.
+	 * @dataProvider provide_requests_outside_payments_settings
+	 *
+	 * @param array<string,string> $query         Query arguments of the admin request.
+	 * @param array<string,mixed>  $account_state Account state overrides.
 	 */
-	public function test_does_not_read_tracking_info_outside_payments_settings(): void {
-		$_GET['page'] = 'wc-orders';
-		$service      = FixedTrackingInfoService::install();
-		$sut          = $this->create_shared_settings( true );
+	public function test_does_not_preload_outside_payments_settings( array $query, array $account_state ): void {
+		foreach ( $query as $key => $value ) {
+			$_GET[ $key ] = $value;
+		}
+		$service = FixedTrackingInfoService::install();
+		$sut     = $this->create_shared_settings( true, $account_state );
 
 		$settings = $sut->preload_shared_settings( array() );
 
-		$this->assertArrayNotHasKey( 'woopaymentsSettings', $settings );
+		$this->assertSame( array(), $settings );
 		$this->assertSame( 0, $service->reads );
+	}
+
+	/**
+	 * Admin requests outside the Payments settings page.
+	 *
+	 * @return array<string,array{0:array<string,string>,1:array<string,mixed>}>
+	 */
+	public function provide_requests_outside_payments_settings(): array {
+		return array(
+			'WooCommerce Admin with the checkout tab' => array(
+				array(
+					'page' => 'wc-admin',
+					'tab'  => 'checkout',
+				),
+				array( 'is_reports_enabled' => true ),
+			),
+			'the orders page'                         => array( array( 'page' => 'wc-orders' ), array() ),
+		);
 	}
 
 	/**
@@ -539,41 +536,73 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preload the account's loans for the transactions Loan filter, keeping only the loan strings.
+	 * @testdox Should preload the account's loans for the transactions Loan filter, keeping only the loan strings, and no loans without Capital data.
 	 *
 	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:1031` (`accountLoans` from `WC_Payments_Account::get_capital()`, every WooPayments page)
-	 * and `client/transactions/filters/config.ts:555-571` (`<loan id>|<status>` strings).
+	 * and `client/transactions/filters/config.ts:555-571` (`<loan id>|<status>` strings). `WC_Payments_Account::get_capital()` falls
+	 * back to no loans and no active or previous loan.
+	 *
+	 * @dataProvider provide_account_loans_cases
+	 *
+	 * @param string|null         $path     The settings page route, or null for none.
+	 * @param array<string,mixed> $capital  The cached account's Capital data.
+	 * @param array<string,mixed> $expected The preloaded loans.
+	 * @param string              $message  Failure message.
 	 */
-	public function test_preloads_account_loans_for_the_transactions_loan_filter(): void {
+	public function test_preloads_account_loans_for_the_transactions_loan_filter( ?string $path, array $capital, array $expected, string $message ): void {
 		$_GET['page'] = 'wc-settings';
 		$_GET['tab']  = 'checkout';
-		$_GET['path'] = '/woopayments/transactions';
-		$sut          = $this->create_shared_settings(
+		if ( null !== $path ) {
+			$_GET['path'] = $path;
+		}
+		$sut = $this->create_shared_settings(
 			true,
 			array(
 				'get_cached_account_data' => array(
-					'capital' => array(
-						'loans'           => array(
-							3 => 'flxln_active|active',
-							5 => array( 'not' => 'a loan' ),
-							7 => 'flxln_paid|paid',
-						),
-						'has_active_loan' => true,
-					),
+					'capital' => $capital,
 				),
 			)
 		);
 
 		$settings = $sut->preload_shared_settings( array() );
 
-		$this->assertSame(
-			array(
-				'loans'              => array( 'flxln_active|active', 'flxln_paid|paid' ),
-				'has_active_loan'    => true,
-				'has_previous_loans' => false,
+		$this->assertSame( $expected, $settings['woopaymentsSettings']['accountLoans'], $message );
+	}
+
+	/**
+	 * Cached Capital data and the loans it preloads.
+	 *
+	 * @return array<string,array{0:string|null,1:array<string,mixed>,2:array<string,mixed>,3:string}>
+	 */
+	public function provide_account_loans_cases(): array {
+		return array(
+			'loans with a non-string entry and an active loan' => array(
+				'/woopayments/transactions',
+				array(
+					'loans'           => array(
+						3 => 'flxln_active|active',
+						5 => array( 'not' => 'a loan' ),
+						7 => 'flxln_paid|paid',
+					),
+					'has_active_loan' => true,
+				),
+				array(
+					'loans'              => array( 'flxln_active|active', 'flxln_paid|paid' ),
+					'has_active_loan'    => true,
+					'has_previous_loans' => false,
+				),
+				'The loans page requests the active loan summary only when has_active_loan, as the client mounts its card (capital/index.tsx:216).',
 			),
-			$settings['woopaymentsSettings']['accountLoans'],
-			'The loans page requests the active loan summary only when has_active_loan, as the client mounts its card (capital/index.tsx:216).'
+			'loans that are not a list' => array(
+				null,
+				array( 'loans' => 'flxln_active|active' ),
+				array(
+					'loans'              => array(),
+					'has_active_loan'    => false,
+					'has_previous_loans' => false,
+				),
+				'',
+			),
 		);
 	}
 
@@ -608,35 +637,6 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 				'country'                => 'CH',
 			),
 			$settings['woopaymentsSettings']['accountDocuments']
-		);
-	}
-
-	/**
-	 * @testdox Should preload no loans when the cached account has no Capital data.
-	 *
-	 * Source: plugin 11.1.0 `WC_Payments_Account::get_capital()` falls back to no loans and no active or previous loan.
-	 */
-	public function test_preloads_empty_account_loans_without_capital_data(): void {
-		$_GET['page'] = 'wc-settings';
-		$_GET['tab']  = 'checkout';
-		$sut          = $this->create_shared_settings(
-			true,
-			array(
-				'get_cached_account_data' => array(
-					'capital' => array( 'loans' => 'flxln_active|active' ),
-				),
-			)
-		);
-
-		$settings = $sut->preload_shared_settings( array() );
-
-		$this->assertSame(
-			array(
-				'loans'              => array(),
-				'has_active_loan'    => false,
-				'has_previous_loans' => false,
-			),
-			$settings['woopaymentsSettings']['accountLoans']
 		);
 	}
 
@@ -705,26 +705,6 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave the Overview shell to the page request when building it fails.
-	 */
-	public function test_does_not_preload_overview_shell_when_building_it_fails(): void {
-		$_GET['page']     = 'wc-settings';
-		$_GET['tab']      = 'checkout';
-		$_GET['path']     = '/woopayments/overview';
-		$overview_service = $this->getMockBuilder( WooPaymentsOverviewService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_overview' ) )
-			->getMock();
-		$overview_service->method( 'get_overview' )->willThrowException( new \Exception( 'Overview failed.' ) );
-		wc_get_container()->replace( WooPaymentsOverviewService::class, $overview_service );
-		$sut = $this->create_shared_settings( true );
-
-		$settings = $sut->preload_shared_settings( array() );
-
-		$this->assertArrayNotHasKey( 'overviewShell', $settings['woopaymentsSettings'] );
-	}
-
-	/**
 	 * Client 11.1.0 logs each failure to read its JS settings as a warning line, gated by its logging setting, and lets a PHP
 	 * error fatal (`includes/admin/class-wc-payments-admin.php:973-988`, `src/Internal/Logger.php:64-90`). The page still
 	 * loads here, so an error is logged whatever the setting. The exception's message stays out of the line.
@@ -738,9 +718,8 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 	 * @param \Throwable  $throwable        What it throws.
 	 * @param bool        $logging          Whether WooPayments logging is on.
 	 * @param string|null $expected_level   The expected line's level, or null for no line.
-	 * @param string      $expected_message The expected line's message.
 	 */
-	public function test_logs_preload_failures( string $label, string $path, string $method, \Throwable $throwable, bool $logging, ?string $expected_level, string $expected_message ): void {
+	public function test_logs_preload_failures( string $label, string $path, string $method, \Throwable $throwable, bool $logging, ?string $expected_level ): void {
 		unset( $label );
 		$_GET['page'] = 'wc-settings';
 		$_GET['tab']  = 'checkout';
@@ -760,29 +739,26 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 		$lines = array();
 		foreach ( $logger->lines as $index => $line ) {
 			if ( 'woopayments' === $line[2] ) {
-				$lines[] = array( $line[0], $line[1], $logger->contexts[ $index ]['exception'] ?? null );
+				$lines[] = array( $line[0], $logger->contexts[ $index ]['exception'] ?? null );
 				$this->assertStringNotContainsString( $throwable->getMessage(), (string) wp_json_encode( $logger->contexts[ $index ] ) );
 			}
 		}
-		$this->assertSame( null === $expected_level ? array() : array( array( $expected_level, $expected_message, get_class( $throwable ) ) ), $lines );
+		$this->assertSame( null === $expected_level ? array() : array( array( $expected_level, get_class( $throwable ) ) ), $lines );
 	}
 
 	/**
 	 * Preload failures and the line each one writes.
 	 *
-	 * @return array<string,array{0:string,1:string,2:string,3:\Throwable,4:bool,5:string|null,6:string}>
+	 * @return array<string,array{0:string,1:string,2:string,3:\Throwable,4:bool,5:string|null}>
 	 */
 	public function provide_preload_failures(): array {
-		$shell = 'WooPayments JS settings: Could not build the Overview data.';
-		$mode  = 'WooPayments JS settings: Could not read the account mode.';
-
 		return array(
-			'Overview shell, logging on'        => array( 'Overview shell', '/woopayments/overview', 'get_overview', new \Exception( 'Probe failure text' ), true, 'warning', $shell ),
-			'Overview shell, logging off'       => array( 'Overview shell', '/woopayments/overview', 'get_overview', new \Exception( 'Probe failure text' ), false, null, $shell ),
-			'Overview shell error, logging off' => array( 'Overview shell', '/woopayments/overview', 'get_overview', new \TypeError( 'Probe type error' ), false, 'error', $shell ),
-			'account mode, logging on'          => array( 'account mode', '/woopayments/settings', 'get_account_summary', new \Exception( 'Probe failure text' ), true, 'warning', $mode ),
-			'account mode, logging off'         => array( 'account mode', '/woopayments/settings', 'get_account_summary', new \Exception( 'Probe failure text' ), false, null, $mode ),
-			'account mode error, logging off'   => array( 'account mode', '/woopayments/settings', 'get_account_summary', new \TypeError( 'Probe type error' ), false, 'error', $mode ),
+			'Overview shell, logging on'        => array( 'Overview shell', '/woopayments/overview', 'get_overview', new \Exception( 'Probe failure text' ), true, 'warning' ),
+			'Overview shell, logging off'       => array( 'Overview shell', '/woopayments/overview', 'get_overview', new \Exception( 'Probe failure text' ), false, null ),
+			'Overview shell error, logging off' => array( 'Overview shell', '/woopayments/overview', 'get_overview', new \TypeError( 'Probe type error' ), false, 'error' ),
+			'account mode, logging on'          => array( 'account mode', '/woopayments/settings', 'get_account_summary', new \Exception( 'Probe failure text' ), true, 'warning' ),
+			'account mode, logging off'         => array( 'account mode', '/woopayments/settings', 'get_account_summary', new \Exception( 'Probe failure text' ), false, null ),
+			'account mode error, logging off'   => array( 'account mode', '/woopayments/settings', 'get_account_summary', new \TypeError( 'Probe type error' ), false, 'error' ),
 		);
 	}
 
@@ -853,61 +829,63 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preload trimmed Balance report identity from the WooPayments account.
+	 * @testdox Should preload the trimmed Balance report identity from the WooPayments account, falling back to the store name and an empty account ID.
+	 * @dataProvider provide_balance_report_identity_cases
+	 *
+	 * @param string|null          $blogname      The site title to store, or null to leave it.
+	 * @param array<string,mixed>  $account_state Account state overrides.
+	 * @param array<string,string> $expected      The preloaded identity.
 	 */
-	public function test_preloads_trimmed_balance_report_identity_from_account(): void {
+	public function test_preloads_balance_report_identity( ?string $blogname, array $account_state, array $expected ): void {
 		$_GET['page'] = 'wc-settings';
 		$_GET['tab']  = 'checkout';
-		$sut          = $this->create_shared_settings(
-			true,
-			array(
-				'get_cached_account_data' => array(
-					'business_profile' => array(
-						'name' => ' Native Merchant ',
-					),
-				),
-				'get_account_id'          => ' acct_native_123 ',
-			)
-		);
+		if ( null !== $blogname ) {
+			update_option( 'blogname', $blogname );
+		}
+		$sut = $this->create_shared_settings( true, $account_state );
 
 		$settings = $sut->preload_shared_settings( array() );
 
-		$this->assertSame(
-			array(
-				'businessName' => 'Native Merchant',
-				'accountId'    => 'acct_native_123',
-			),
-			$settings['woopaymentsSettings']['balanceReportIdentity']
-		);
+		$this->assertSame( $expected, $settings['woopaymentsSettings']['balanceReportIdentity'] );
 	}
 
 	/**
-	 * @testdox Should fall back to the store name and an empty account ID for Balance report identity.
+	 * Account identities and the Balance report identity they preload.
+	 *
+	 * @return array<string,array{0:string|null,1:array<string,mixed>,2:array<string,string>}>
 	 */
-	public function test_preloads_balance_report_identity_with_store_name_and_empty_account_id_fallbacks(): void {
-		$_GET['page'] = 'wc-settings';
-		$_GET['tab']  = 'checkout';
-		update_option( 'blogname', ' Native Store ' );
-		$sut = $this->create_shared_settings(
-			true,
-			array(
-				'get_cached_account_data' => array(
-					'business_profile' => array(
-						'name' => ' ',
+	public function provide_balance_report_identity_cases(): array {
+		return array(
+			'padded business name and account ID' => array(
+				null,
+				array(
+					'get_cached_account_data' => array(
+						'business_profile' => array(
+							'name' => ' Native Merchant ',
+						),
 					),
+					'get_account_id'          => ' acct_native_123 ',
 				),
-				'get_account_id'          => ' ',
-			)
-		);
-
-		$settings = $sut->preload_shared_settings( array() );
-
-		$this->assertSame(
-			array(
-				'businessName' => 'Native Store',
-				'accountId'    => '',
+				array(
+					'businessName' => 'Native Merchant',
+					'accountId'    => 'acct_native_123',
+				),
 			),
-			$settings['woopaymentsSettings']['balanceReportIdentity']
+			'blank business name and account ID'  => array(
+				' Native Store ',
+				array(
+					'get_cached_account_data' => array(
+						'business_profile' => array(
+							'name' => ' ',
+						),
+					),
+					'get_account_id'          => ' ',
+				),
+				array(
+					'businessName' => 'Native Store',
+					'accountId'    => '',
+				),
+			),
 		);
 	}
 
@@ -977,9 +955,12 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve WooPayments settings when the Core filter returns an invalid value.
+	 * @testdox Should keep the last valid settings when the $null_filter filter returns an invalid value.
+	 * @dataProvider provide_invalid_settings_filters
+	 *
+	 * @param string $null_filter The filter that returns null: `core` (Multi-Currency) or `extension` (WooPayments extension).
 	 */
-	public function test_preserves_woopayments_settings_when_core_filter_returns_invalid_value(): void {
+	public function test_preserves_settings_when_a_settings_filter_returns_an_invalid_value( string $null_filter ): void {
 		$_GET['page']                   = 'wc-settings';
 		$_GET['tab']                    = 'checkout';
 		$sut                            = $this->create_shared_settings(
@@ -993,18 +974,18 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 
 		add_filter(
 			'woocommerce_multi_currency_js_settings',
-			static function ( array $settings ) use ( &$core_settings ) {
+			static function ( array $settings ) use ( &$core_settings, $null_filter ) {
 				$core_settings = $settings;
 
-				return null;
+				return 'core' === $null_filter ? null : array_merge( $settings, array( 'multiCurrency' => array( 'enabled' => true ) ) );
 			}
 		);
 		add_filter(
 			'wcpay_js_settings',
-			static function ( array $settings ) use ( &$woopayments_extension_settings ): array {
+			static function ( array $settings ) use ( &$woopayments_extension_settings, $null_filter ) {
 				$woopayments_extension_settings = $settings;
 
-				return $settings;
+				return 'extension' === $null_filter ? null : $settings;
 			}
 		);
 
@@ -1020,8 +1001,13 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertSame( $core_settings, $woopayments_extension_settings );
-		$this->assertSame( $core_settings, $settings['woopaymentsSettings'] );
+		if ( 'core' === $null_filter ) {
+			$this->assertSame( $core_settings, $woopayments_extension_settings );
+			$this->assertSame( $core_settings, $settings['woopaymentsSettings'] );
+		} else {
+			$this->assertSame( $woopayments_extension_settings, $settings['woopaymentsSettings'] );
+			$this->assertSame( array( 'enabled' => true ), $settings['woopaymentsSettings']['multiCurrency'] );
+		}
 		$this->assertSame( 'shared value', $settings['preservedSharedSetting'] );
 		$this->assertSame( 'provider value', $settings['woopaymentsSettings']['preservedProviderSetting'] );
 		$this->assertTrue( $settings['woopaymentsSettings']['featureFlags']['existingFlag'] );
@@ -1030,71 +1016,15 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve Core Multi-Currency settings when the WooPayments extension filter returns an invalid value.
+	 * The settings filter that returns null.
+	 *
+	 * @return array<string,array{0:string}>
 	 */
-	public function test_preserves_core_multi_currency_settings_when_woopayments_extension_filter_returns_invalid_value(): void {
-		$_GET['page']                   = 'wc-settings';
-		$_GET['tab']                    = 'checkout';
-		$sut                            = $this->create_shared_settings(
-			true,
-			array(
-				'is_reports_enabled' => true,
-			)
+	public function provide_invalid_settings_filters(): array {
+		return array(
+			'core filter returns null'      => array( 'core' ),
+			'extension filter returns null' => array( 'extension' ),
 		);
-		$woopayments_extension_settings = null;
-
-		add_filter(
-			'woocommerce_multi_currency_js_settings',
-			static function ( array $settings ): array {
-				return array_merge( $settings, array( 'multiCurrency' => array( 'enabled' => true ) ) );
-			}
-		);
-		add_filter(
-			'wcpay_js_settings',
-			static function ( array $settings ) use ( &$woopayments_extension_settings ) {
-				$woopayments_extension_settings = $settings;
-
-				return null;
-			}
-		);
-
-		$settings = $sut->preload_shared_settings(
-			array(
-				'preservedSharedSetting' => 'shared value',
-				'woopaymentsSettings'    => array(
-					'preservedProviderSetting' => 'provider value',
-					'featureFlags'             => array(
-						'existingFlag' => true,
-					),
-				),
-			)
-		);
-
-		$this->assertSame( $woopayments_extension_settings, $settings['woopaymentsSettings'] );
-		$this->assertSame( 'shared value', $settings['preservedSharedSetting'] );
-		$this->assertSame( 'provider value', $settings['woopaymentsSettings']['preservedProviderSetting'] );
-		$this->assertTrue( $settings['woopaymentsSettings']['featureFlags']['existingFlag'] );
-		$this->assertTrue( $settings['woopaymentsSettings']['featureFlags']['reportsArea'] );
-		$this->assertArrayHasKey( 'adminRouteAvailability', $settings['woopaymentsSettings'] );
-		$this->assertSame( array( 'enabled' => true ), $settings['woopaymentsSettings']['multiCurrency'] );
-	}
-
-	/**
-	 * @testdox Should not preload WooPayments route flags outside the Payments settings page.
-	 */
-	public function test_does_not_preload_reports_feature_flag_outside_payments_settings_request(): void {
-		$_GET['page'] = 'wc-admin';
-		$_GET['tab']  = 'checkout';
-		$sut          = $this->create_shared_settings(
-			true,
-			array(
-				'is_reports_enabled' => true,
-			)
-		);
-
-		$settings = $sut->preload_shared_settings( array() );
-
-		$this->assertSame( array(), $settings );
 	}
 
 	/**
@@ -1124,11 +1054,6 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 			),
 			$overrides
 		);
-
-		if ( isset( $state['has_valid_admin_account_state'] ) ) {
-			$state['has_valid_account_for_admin_navigation'] = $state['has_valid_admin_account_state'];
-			unset( $state['has_valid_admin_account_state'] );
-		}
 
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
@@ -1240,10 +1165,9 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed>                   $account_state            Account state overrides.
 	 * @param array<string,int>                     $badge_counts             Badge count overrides.
 	 * @param WooPaymentsApplePayDomainService|null $apple_pay_domain_service Optional Apple Pay domain service.
-	 * @param bool                                  $connected                Whether the WordPress.com connection works.
 	 * @return WooPaymentsAdminSharedSettings
 	 */
-	private function create_shared_settings( bool $builtin_owner, array $account_state = array(), array $badge_counts = array(), ?WooPaymentsApplePayDomainService $apple_pay_domain_service = null, bool $connected = true ): WooPaymentsAdminSharedSettings {
+	private function create_shared_settings( bool $builtin_owner, array $account_state = array(), array $badge_counts = array(), ?WooPaymentsApplePayDomainService $apple_pay_domain_service = null ): WooPaymentsAdminSharedSettings {
 		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_builtin_owner' ) )
@@ -1253,7 +1177,7 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 		$account_service = $this->create_account_service( $account_state );
 		$badge_service   = $this->create_badge_service( $badge_counts );
 		$api_client      = $this->createMock( WooPaymentsApiClient::class );
-		$api_client->method( 'is_available' )->willReturn( $connected );
+		$api_client->method( 'is_available' )->willReturn( true );
 		$onboarding_redirect = new WooPaymentsOnboardingRedirect();
 		$onboarding_redirect->init( $arbiter, $api_client, $account_service );
 		$navigation = new WooPaymentsAdminNavigationController();

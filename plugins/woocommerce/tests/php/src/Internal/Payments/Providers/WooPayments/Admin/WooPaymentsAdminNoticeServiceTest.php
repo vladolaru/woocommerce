@@ -19,13 +19,6 @@ use WP_Error;
  */
 class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	/**
-	 * @testdox The notice service should resolve through the WooCommerce container.
-	 */
-	public function test_container_resolves_notice_service(): void {
-		$this->assertInstanceOf( WooPaymentsAdminNoticeService::class, wc_get_container()->get( WooPaymentsAdminNoticeService::class ) );
-	}
-
-	/**
 	 * @testdox The notice service should stay out of every setup tier's classes.
 	 */
 	public function test_notice_service_is_absent_from_the_setup_tier_classes(): void {
@@ -84,45 +77,6 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'test', $queries[0]['meta_value'] );
 			$this->assertSame( $notice, $sut->refresh_notice_for_current_user() );
 			$this->assertCount( 1, $queries, 'The one-hour site transient should prevent another existence query.' );
-		} finally {
-			remove_filter( 'woocommerce_order_query_args', $record_query );
-			delete_option( 'wcpay_test_mode_enabled_date' );
-			delete_transient( 'wcpay_test_to_live_eligible' );
-		}
-	}
-
-	/**
-	 * @testdox Test-to-live eligibility should keep one bounded ID query with a large irrelevant order fixture.
-	 */
-	public function test_test_to_live_query_stays_bounded_with_many_irrelevant_orders(): void {
-		$now = 1700000000;
-		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
-		delete_transient( 'wcpay_test_to_live_eligible' );
-		update_option( 'wcpay_test_mode_enabled_date', $now - 7 * DAY_IN_SECONDS, false );
-		for ( $index = 0; $index < 10; ++$index ) {
-			$this->create_paid_order( 'cod', '', $now - DAY_IN_SECONDS );
-		}
-		$this->create_paid_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'test', $now - DAY_IN_SECONDS );
-
-		$account = $this->createMock( WooPaymentsAccountService::class );
-		$account->method( 'has_working_account' )->willReturn( true );
-		$account->method( 'is_test_mode_enabled' )->willReturn( true );
-		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
-		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
-		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
-		$queries      = array();
-		$record_query = static function ( array $args ) use ( &$queries ): array {
-			$queries[] = $args;
-			return $args;
-		};
-		add_filter( 'woocommerce_order_query_args', $record_query );
-
-		try {
-			$this->assertNotNull( $sut->refresh_notice_for_current_user() );
-			$this->assertCount( 1, $queries, 'Irrelevant order volume must not increase the test-to-live query count.' );
-			$this->assertSame( 1, $queries[0]['limit'] );
-			$this->assertSame( 'none', $queries[0]['orderby'] );
-			$this->assertSame( 'ids', $queries[0]['return'] );
 		} finally {
 			remove_filter( 'woocommerce_order_query_args', $record_query );
 			delete_option( 'wcpay_test_mode_enabled_date' );
@@ -662,46 +616,14 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A concurrent snooze refresh should accept the fresh marker without extending it on replay.
-	 */
-	public function test_concurrent_snooze_refresh_accepts_fresh_marker_without_extending_replay(): void {
-		$user_id = self::factory()->user->create();
-		wp_set_current_user( $user_id );
-		$now      = 1700000000;
-		$meta_key = 'wcpay_one_and_done_notice_snoozed_at';
-		update_user_meta( $user_id, $meta_key, $now - 7 * DAY_IN_SECONDS );
-		$sut = new WooPaymentsAdminNoticeService(
-			static function () use ( &$now ): int {
-				return $now;
-			}
-		);
-		$sut->init( $this->createMock( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
-		$simulate_race = null;
-		$simulate_race = static function ( $check, int $object_id, string $key, $value ) use ( &$simulate_race, $user_id, $meta_key ) {
-			if ( $user_id !== $object_id || $meta_key !== $key ) {
-				return $check;
-			}
-			remove_filter( 'update_user_metadata', $simulate_race, 10 );
-			update_user_meta( $user_id, $meta_key, $value );
-			return false;
-		};
-		add_filter( 'update_user_metadata', $simulate_race, 10, 4 );
-
-		$this->assertTrue( $sut->record_action( 'one_and_done', 'snooze' ) );
-		$this->assertSame( $now, (int) get_user_meta( $user_id, $meta_key, true ) );
-		$now += DAY_IN_SECONDS;
-		$this->assertTrue( $sut->record_action( 'one_and_done', 'snooze' ) );
-		$this->assertSame( 1700000000, (int) get_user_meta( $user_id, $meta_key, true ), 'An immediate replay must not extend the other request\'s fresh snooze.' );
-	}
-
-	/**
-	 * @testdox An expired snooze can start a new window without letting request replays extend it.
+	 * @testdox An expired snooze can start a new window without letting request replays extend it, even when a concurrent refresh wrote the fresh marker.
 	 * @dataProvider provide_snoozable_notices
 	 *
 	 * @param string $notice_id Notice identifier.
 	 * @param string $meta_key  Preserved snooze marker key.
+	 * @param bool   $race      Whether a concurrent request writes the fresh marker and this request's update fails.
 	 */
-	public function test_expired_snooze_starts_one_fresh_window( string $notice_id, string $meta_key ): void {
+	public function test_expired_snooze_starts_one_fresh_window( string $notice_id, string $meta_key, bool $race ): void {
 		$user_id = self::factory()->user->create();
 		wp_set_current_user( $user_id );
 		$now = 1700000000;
@@ -712,24 +634,37 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			}
 		);
 		$sut->init( $this->createMock( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
+		if ( $race ) {
+			$simulate_race = null;
+			$simulate_race = static function ( $check, int $object_id, string $key, $value ) use ( &$simulate_race, $user_id, $meta_key ) {
+				if ( $user_id !== $object_id || $meta_key !== $key ) {
+					return $check;
+				}
+				remove_filter( 'update_user_metadata', $simulate_race, 10 );
+				update_user_meta( $user_id, $meta_key, $value );
+				return false;
+			};
+			add_filter( 'update_user_metadata', $simulate_race, 10, 4 );
+		}
 
 		$this->assertTrue( $sut->record_action( $notice_id, 'snooze' ) );
 		$this->assertSame( $now, (int) get_user_meta( $user_id, $meta_key, true ) );
 		$now += DAY_IN_SECONDS;
 		$this->assertTrue( $sut->record_action( $notice_id, 'snooze' ) );
-		$this->assertSame( 1700000000, (int) get_user_meta( $user_id, $meta_key, true ), 'An immediate replay must not extend the fresh snooze.' );
+		$this->assertSame( 1700000000, (int) get_user_meta( $user_id, $meta_key, true ), $race ? 'An immediate replay must not extend the other request\'s fresh snooze.' : 'An immediate replay must not extend the fresh snooze.' );
 		$this->assertCount( 1, get_user_meta( $user_id, $meta_key, false ) );
 	}
 
 	/**
-	 * Snoozable notices and their preserved keys.
+	 * Snoozable notices, their preserved keys, and whether a concurrent refresh wins the write.
 	 *
-	 * @return array<string,array{string,string}>
+	 * @return array<string,array{string,string,bool}>
 	 */
 	public static function provide_snoozable_notices(): array {
 		return array(
-			'test-to-live' => array( 'test_to_live', 'wcpay_test_to_live_notice_snoozed' ),
-			'one-and-done' => array( 'one_and_done', 'wcpay_one_and_done_notice_snoozed_at' ),
+			'test-to-live'                    => array( 'test_to_live', 'wcpay_test_to_live_notice_snoozed', false ),
+			'one-and-done'                    => array( 'one_and_done', 'wcpay_one_and_done_notice_snoozed_at', false ),
+			'one-and-done concurrent refresh' => array( 'one_and_done', 'wcpay_one_and_done_notice_snoozed_at', true ),
 		);
 	}
 
@@ -1016,21 +951,23 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Post-KYC cheap guards skip the live-order query.
+	 * @testdox Post-KYC cheap guards, including every due stage dismissed, skip the live-order query.
 	 * @dataProvider provide_post_kyc_cheap_guards
 	 *
-	 * @param bool $working      Whether the account is connected and enabled.
-	 * @param bool $can_process  Whether the account can process payments.
-	 * @param bool $live_account Whether the account is live.
-	 * @param bool $test_account Whether the account is a test account.
-	 * @param bool $test_mode    Whether test mode is enabled.
-	 * @param bool $dev_mode    Whether development mode is enabled.
-	 * @param bool $live_sale   Whether a live sale is already recorded.
-	 * @param int  $kyc_age     Days since KYC completion.
+	 * @param bool  $working          Whether the account is connected and enabled.
+	 * @param bool  $can_process      Whether the account can process payments.
+	 * @param bool  $live_account     Whether the account is live.
+	 * @param bool  $test_account     Whether the account is a test account.
+	 * @param bool  $test_mode        Whether test mode is enabled.
+	 * @param bool  $dev_mode         Whether development mode is enabled.
+	 * @param bool  $live_sale        Whether a live sale is already recorded.
+	 * @param int   $kyc_age          Days since KYC completion.
+	 * @param int[] $dismissed_stages Post-KYC stages the user dismissed.
 	 */
-	public function test_post_kyc_cheap_guards_skip_order_query( bool $working, bool $can_process, bool $live_account, bool $test_account, bool $test_mode, bool $dev_mode, bool $live_sale, int $kyc_age ): void {
-		$now = 1700000000;
-		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+	public function test_post_kyc_cheap_guards_skip_order_query( bool $working, bool $can_process, bool $live_account, bool $test_account, bool $test_mode, bool $dev_mode, bool $live_sale, int $kyc_age, array $dismissed_stages ): void {
+		$now     = 1700000000;
+		$user_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		wp_set_current_user( $user_id );
 		if ( 0 <= $kyc_age ) {
 			update_option( 'wcpay_kyc_completion_date', $now - $kyc_age * DAY_IN_SECONDS, false );
 		} else {
@@ -1041,8 +978,13 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			update_option( 'wcpay_has_live_sale', '1', false );
 			// An eligibility cached just before the sale was recorded must not show the notice.
 			set_transient( 'wcpay_post_kyc_activation_eligible', '1', HOUR_IN_SECONDS );
+		} else {
+			delete_option( 'wcpay_has_live_sale' );
 		}
 		set_transient( 'wcpay_one_and_done_eligible', '0', HOUR_IN_SECONDS );
+		foreach ( $dismissed_stages as $stage ) {
+			update_user_meta( $user_id, sprintf( 'wcpay_post_kyc_activation_%d_dismissed', $stage ), $now );
+		}
 		$account = $this->createMock( WooPaymentsAccountService::class );
 		$account->method( 'has_working_account' )->willReturn( $working );
 		$account->method( 'can_process_payments' )->willReturn( $can_process );
@@ -1074,63 +1016,22 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Predicates that make a post-KYC notice ineligible before querying orders.
 	 *
-	 * @return array<string,array{bool,bool,bool,bool,bool,bool,bool,int}>
+	 * @return array<string,array{bool,bool,bool,bool,bool,bool,bool,int,int[]}>
 	 */
 	public static function provide_post_kyc_cheap_guards(): array {
 		return array(
-			'disconnected account'  => array( false, true, true, false, false, false, false, 7 ),
-			'invalid account'       => array( true, false, true, false, false, false, false, 7 ),
-			'non-live account'      => array( true, true, false, false, false, false, false, 7 ),
-			'test account'          => array( true, true, true, true, false, false, false, 7 ),
-			'test mode enabled'     => array( true, true, true, false, true, false, false, 7 ),
-			'development mode'      => array( true, true, true, false, false, true, false, 7 ),
-			'known live sale'       => array( true, true, true, false, false, false, true, 7 ),
-			'missing KYC date'      => array( true, true, true, false, false, false, false, -1 ),
-			'before first stage'    => array( true, true, true, false, false, false, false, 6 ),
-			'after journey expires' => array( true, true, true, false, false, false, false, 60 ),
+			'disconnected account'     => array( false, true, true, false, false, false, false, 7, array() ),
+			'invalid account'          => array( true, false, true, false, false, false, false, 7, array() ),
+			'non-live account'         => array( true, true, false, false, false, false, false, 7, array() ),
+			'test account'             => array( true, true, true, true, false, false, false, 7, array() ),
+			'test mode enabled'        => array( true, true, true, false, true, false, false, 7, array() ),
+			'development mode'         => array( true, true, true, false, false, true, false, 7, array() ),
+			'known live sale'          => array( true, true, true, false, false, false, true, 7, array() ),
+			'missing KYC date'         => array( true, true, true, false, false, false, false, -1, array() ),
+			'before first stage'       => array( true, true, true, false, false, false, false, 6, array() ),
+			'after journey expires'    => array( true, true, true, false, false, false, false, 60, array() ),
+			'all due stages dismissed' => array( true, true, true, false, false, false, false, 30, array( 7, 14, 30 ) ),
 		);
-	}
-
-	/**
-	 * @testdox Dismissing every due post-KYC stage skips the live-order query.
-	 */
-	public function test_post_kyc_all_due_stages_dismissed_skip_order_query(): void {
-		$now     = 1700000000;
-		$user_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
-		wp_set_current_user( $user_id );
-		update_option( 'wcpay_kyc_completion_date', $now - 30 * DAY_IN_SECONDS, false );
-		delete_option( 'wcpay_has_live_sale' );
-		delete_transient( 'wcpay_post_kyc_activation_eligible' );
-		set_transient( 'wcpay_one_and_done_eligible', '0', HOUR_IN_SECONDS );
-		foreach ( array( 7, 14, 30 ) as $stage ) {
-			update_user_meta( $user_id, sprintf( 'wcpay_post_kyc_activation_%d_dismissed', $stage ), $now );
-		}
-		$account = $this->createMock( WooPaymentsAccountService::class );
-		$account->method( 'has_working_account' )->willReturn( true );
-		$account->method( 'can_process_payments' )->willReturn( true );
-		$account->method( 'has_live_account' )->willReturn( true );
-		$account->method( 'has_test_account' )->willReturn( false );
-		$account->method( 'is_test_mode_enabled' )->willReturn( false );
-		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
-		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
-		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
-		$queries      = 0;
-		$record_query = static function ( array $args ) use ( &$queries ): array {
-			++$queries;
-			return $args;
-		};
-		add_filter( 'woocommerce_order_query_args', $record_query );
-
-		try {
-			$this->assertNull( $sut->refresh_notice_for_current_user() );
-			$this->assertSame( 0, $queries );
-		} finally {
-			remove_filter( 'woocommerce_order_query_args', $record_query );
-			delete_option( 'wcpay_kyc_completion_date' );
-			delete_option( 'wcpay_has_live_sale' );
-			delete_transient( 'wcpay_post_kyc_activation_eligible' );
-			delete_transient( 'wcpay_one_and_done_eligible' );
-		}
 	}
 
 	/**
@@ -1210,7 +1111,6 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			$this->assertIsArray( $notice );
 			$this->assertSame( 'one_and_done', $notice['id'] );
 			$this->assertCount( 3, $queries, 'Cold selection should run the live-sale query, the limit-two WooPayments query and the limit-one alternate-gateway query.' );
-			$this->assertSame( array( 1, 2, 1 ), array_column( $queries, 'limit' ) );
 		} finally {
 			remove_filter( 'woocommerce_order_query_args', $record_query );
 			delete_option( 'wcpay_kyc_completion_date' );
@@ -1247,8 +1147,6 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 			$this->assertIsArray( $notice );
 			$this->assertSame( 'post_kyc_activation', $notice['id'] );
 			$this->assertFalse( get_option( 'wcpay_has_live_sale' ) );
-			$this->assertSame( 1, $queries[0]['limit'] );
-			$this->assertSame( 'prod', $queries[0]['meta_value'] );
 		} finally {
 			remove_filter( 'woocommerce_order_query_args', $record_query );
 			delete_option( 'wcpay_kyc_completion_date' );

@@ -50,25 +50,28 @@ class WooPaymentsGoLiveTaskTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The task shows only for a connected account that onboards in test mode.
+	 * @testdox The task shows only to a WooCommerce manager on a connected account that onboards in test mode.
 	 * @dataProvider provide_visibility_cases
 	 *
 	 * @param array<string,mixed> $account              Cached account data.
 	 * @param bool                $test_mode_onboarding Whether WooPayments onboards in test mode.
+	 * @param string              $role                 Current user role.
 	 * @param bool                $expected             Whether the task shows.
 	 */
-	public function test_visibility_follows_the_task_conditions( array $account, bool $test_mode_onboarding, bool $expected ): void {
+	public function test_visibility_follows_the_task_conditions( array $account, bool $test_mode_onboarding, string $role, bool $expected ): void {
+		wp_set_current_user( $this->factory->user->create( array( 'role' => $role ) ) );
+
 		$this->assertSame( $expected, $this->create_task( $account, $test_mode_onboarding )->can_view() );
 	}
 
 	/**
 	 * Visibility cases.
 	 *
-	 * @return array<string,array{0:array<string,mixed>,1:bool,2:bool}>
+	 * @return array<string,array{0:array<string,mixed>,1:bool,2:string,3:bool}>
 	 */
 	public function provide_visibility_cases(): array {
 		return array(
-			'connected, test-mode onboarding'           => array( array( 'account_id' => 'acct_test' ), true, true ),
+			'connected, test-mode onboarding'           => array( array( 'account_id' => 'acct_test' ), true, 'administrator', true ),
 			'connected live account, test-mode onboard' => array(
 				array(
 					'account_id'    => 'acct_test',
@@ -76,21 +79,14 @@ class WooPaymentsGoLiveTaskTest extends WC_Unit_Test_Case {
 					'is_test_drive' => false,
 				),
 				true,
+				'administrator',
 				true,
 			),
-			'connected, live onboarding'                => array( array( 'account_id' => 'acct_test' ), false, false ),
-			'no cached account'                         => array( array(), true, false ),
-			'cached account without an ID'              => array( array( 'account_id' => '' ), true, false ),
+			'connected, live onboarding'                => array( array( 'account_id' => 'acct_test' ), false, 'administrator', false ),
+			'no cached account'                         => array( array(), true, 'administrator', false ),
+			'cached account without an ID'              => array( array( 'account_id' => '' ), true, 'administrator', false ),
+			'customer user'                             => array( array( 'account_id' => 'acct_test' ), true, 'customer', false ),
 		);
-	}
-
-	/**
-	 * @testdox The task is hidden from users who cannot manage WooCommerce.
-	 */
-	public function test_hidden_without_manage_woocommerce(): void {
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'customer' ) ) );
-
-		$this->assertFalse( $this->create_task( array( 'account_id' => 'acct_test' ), true )->can_view() );
 	}
 
 	/**
