@@ -17,8 +17,8 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 
 /**
- * Adds the inbox note telling the merchant their WooPayments Capital loan was paid out, on each account refresh, and
- * deletes it once no loan is active.
+ * Adds the inbox note telling the merchant their WooPayments Capital loan was paid out, on account refreshes during
+ * admin, AJAX, REST and cron requests, and deletes it once no loan is active.
  *
  * Ports client 11.1.0 `includes/notes/class-wc-payments-notes-loan-approved.php` and its account-refresh handler
  * `WC_Payments_Account::handle_loan_approved_inbox_note()` (`includes/class-wc-payments-account.php:135,2778-2805`).

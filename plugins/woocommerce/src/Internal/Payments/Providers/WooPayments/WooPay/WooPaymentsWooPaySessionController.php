@@ -113,11 +113,12 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 		// After the Store API session handler saves the session on shutdown (priority 20, StoreApi\SessionHandler::init()).
 		add_action( 'shutdown', array( $this->store_api_request_handler, 'refresh_woopay_browser_session_cache' ), 21 );
 
-		// The session route is registered whatever WooPay's state: an unsigned or ineligible caller gets a 401 from the
-		// permission callback, never a 404 that would make WooPay's bootstrap fail without a reason. It registers on its
-		// own rest_api_init
-		// callback, as in client 11.1.0 (class-wc-payments.php:860, :2451-2452), so a plugin that
-		// empties WooCommerce's list of REST controllers does not remove it.
+		// The session route is registered whatever WooPay's state, never a 404 that would make WooPay's bootstrap fail
+		// without a reason. Its permission callback checks only that the request carries WooPay's user agent and a valid
+		// blog-token signature, not whether WooPay is enabled, as in client 11.1.0
+		// (class-wc-rest-woopay-session-controller.php:80-81). It registers on its own rest_api_init callback, as in
+		// client 11.1.0 (class-wc-payments.php:860, :2451-2452), so a plugin that empties WooCommerce's list of REST
+		// controllers does not remove it.
 		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 
 		// WooPay's hooks depend on the account, so they are decided on init: while plugins load, Jetpack cannot confirm the
