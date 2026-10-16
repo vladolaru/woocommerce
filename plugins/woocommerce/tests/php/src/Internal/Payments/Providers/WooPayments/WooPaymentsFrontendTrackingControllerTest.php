@@ -547,12 +547,10 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_controller();
 
-		$response = $sut->get_tracks_identity_response();
+		$identity = $sut->get_or_create_tracks_identity_for_current_user();
 
-		$this->assertTrue( $response['success'] );
-		$this->assertSame( 200, $response['status_code'] );
-		$this->assertSame( 'anon', $response['data']['_ut'] );
-		$this->assertSame( 'jetpack:anon-id', $response['data']['_ui'] );
+		$this->assertSame( 'anon', $identity['_ut'] );
+		$this->assertSame( 'jetpack:anon-id', $identity['_ui'] );
 		$this->assertSame( '', get_user_meta( $user_id, '_woocommerce_tracks_anon_id', true ) );
 	}
 
@@ -943,46 +941,40 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( 1, preg_match( '/^var wc_woopayments_frontend_tracks_params = (\{.*\});$/s', $localized, $matches ) );
-		$params      = json_decode( $matches[1], true );
-		$record_data = array(
-			'record_event_data' => array(
-				'is_admin_event'      => false,
-				'track_on_all_stores' => true,
-			),
-		);
+		$params = json_decode( $matches[1], true );
 		$this->assertSame( rest_url( 'wc/v3/payments/tracks' ), $params['tracksUrl'] );
 		$this->assertSame( 1, wp_verify_nonce( $params['nonce'], 'platform_tracks_nonce' ) );
 		$this->assertSame(
 			array(
 				array(
 					'event'      => 'cart_page_view',
-					'properties' => array( 'theme_type' => 'short_code' ) + $record_data,
+					'properties' => array( 'theme_type' => 'short_code' ),
 				),
 				array(
 					'event'      => 'cart_page_view',
-					'properties' => array( 'theme_type' => 'blocks' ) + $record_data,
+					'properties' => array( 'theme_type' => 'blocks' ),
 				),
 				array(
 					'event'      => 'product_page_view',
-					'properties' => array( 'theme_type' => 'short_code' ) + $record_data,
+					'properties' => array( 'theme_type' => 'short_code' ),
 				),
 				array(
 					'event'      => 'pay_for_order_page_view',
-					'properties' => $record_data,
+					'properties' => array(),
 				),
 				array(
 					'event'      => 'checkout_page_view',
 					'properties' => array(
 						'theme_type'     => 'short_code',
 						'woopay_enabled' => false,
-					) + $record_data,
+					),
 				),
 				array(
 					'event'      => 'checkout_page_view',
 					'properties' => array(
 						'theme_type'     => 'blocks',
 						'woopay_enabled' => false,
-					) + $record_data,
+					),
 				),
 			),
 			$params['events']

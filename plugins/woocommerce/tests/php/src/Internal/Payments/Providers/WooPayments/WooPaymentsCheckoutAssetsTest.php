@@ -2586,6 +2586,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 
 		// The page flag asks the every-store question, not the WooPay one.
 		$controller->method( 'is_shopper_event_tracking_enabled' )->willReturn( true );
+		$controller->init( wc_get_container()->get( WooPaymentsAccountService::class ) );
 
 		return $controller;
 	}

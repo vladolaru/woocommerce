@@ -156,12 +156,7 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 			array(
 				array(
 					'event'      => 'order_success_page_view',
-					'properties' => array(
-						'record_event_data' => array(
-							'is_admin_event'      => false,
-							'track_on_all_stores' => true,
-						),
-					),
+					'properties' => array(),
 				),
 			),
 			$params['events']

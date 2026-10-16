@@ -19,10 +19,6 @@ describe( 'WooPayments frontend Tracks queue', () => {
 					event: 'product_page_view',
 					properties: {
 						theme_type: 'short_code',
-						record_event_data: {
-							is_admin_event: false,
-							track_on_all_stores: true,
-						},
 					},
 				},
 				{ event: 'pay_for_order_page_view', properties: {} },
@@ -56,8 +52,7 @@ describe( 'WooPayments frontend Tracks queue', () => {
 				{
 					tracksNonce: 'tracks-nonce',
 					tracksEventName: 'product_page_view',
-					tracksEventProp:
-						'{"theme_type":"short_code","record_event_data":{"is_admin_event":false,"track_on_all_stores":true}}',
+					tracksEventProp: '{"theme_type":"short_code"}',
 				},
 			],
 			[

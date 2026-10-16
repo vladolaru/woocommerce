@@ -423,9 +423,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * Answer the `get_identity` AJAX action with the shopper's Tracks identity.
 	 */
 	public function handle_tracks_identity(): void {
-		$response = $this->get_tracks_identity_response();
-
-		wp_send_json_success( $response['data'], $response['status_code'] );
+		wp_send_json_success( $this->get_or_create_tracks_identity_for_current_user() );
 	}
 
 	/**
@@ -511,19 +509,6 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Build the Tracks identity response.
-	 *
-	 * @return array{success:bool,status_code:int,data:array<string,mixed>}
-	 */
-	public function get_tracks_identity_response(): array {
-		return array(
-			'success'     => true,
-			'status_code' => 200,
-			'data'        => $this->get_or_create_tracks_identity( get_current_user_id() ),
-		);
-	}
-
-	/**
 	 * Tell whether a shopper event recorded on every store may be recorded for this request: the store allows tracking,
 	 * and the visitor has not opted out, is not loading a wp-admin page and is not an administrator.
 	 *
@@ -591,11 +576,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 			return;
 		}
 
-		$properties['record_event_data'] = array(
-			'is_admin_event'      => false,
-			'track_on_all_stores' => true,
-		);
-		$this->frontend_events[]         = array(
+		$this->frontend_events[] = array(
 			'event'      => $event_name,
 			'properties' => $properties,
 		);
@@ -670,7 +651,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * @return bool|\WP_Error
 	 */
 	public function record_user_event( string $event_name, array $properties = array() ) {
-		return $this->record_prefixed_event( '_aliasUser' === $event_name ? $event_name : self::USER_EVENT_PREFIX . '_' . $event_name, $properties );
+		return $this->record_prefixed_event( self::USER_EVENT_PREFIX . '_' . $event_name, $properties );
 	}
 
 	/**
@@ -755,7 +736,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 */
 	private function send_other_gateway_order_counter(): void {
 		try {
-			if ( ! $this->is_shopper_event_tracking_enabled() || $this->get_account_service()->is_test_mode_enabled() ) {
+			if ( ! $this->is_shopper_event_tracking_enabled() || $this->account_service->is_test_mode_enabled() ) {
 				return;
 			}
 
@@ -824,7 +805,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 				'_ts'       => WC_Tracks_Client::build_timestamp(),
 				'blog_url'  => get_option( 'siteurl' ),
 				'user_lang' => $user->get( 'WPLANG' ),
-				'test_mode' => $this->get_account_service()->is_test_mode_enabled() ? 1 : 0,
+				'test_mode' => $this->account_service->is_test_mode_enabled() ? 1 : 0,
 			)
 		);
 		// The source property is set here, so a value the browser sent cannot change it.
@@ -884,7 +865,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 
 		$anon_id = get_user_meta( $user_id, 'jetpack_tracks_anon_id', true );
 		if ( ! is_string( $anon_id ) || '' === $anon_id ) {
-			$anon_id = $this->generate_tracks_anon_id();
+			$anon_id = \Jetpack_Tracks_Client::get_anon_id();
 			add_user_meta( $user_id, 'jetpack_tracks_anon_id', $anon_id, false );
 		}
 
@@ -901,10 +882,6 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_user_connected( int $user_id ): bool {
-		if ( ! class_exists( JetpackConnectionManager::class ) ) {
-			return false;
-		}
-
 		try {
 			$manager = new JetpackConnectionManager( 'woocommerce' );
 
@@ -921,10 +898,6 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * @return array<string,mixed>|null
 	 */
 	private function get_connected_user_data( int $user_id ): ?array {
-		if ( ! class_exists( JetpackConnectionManager::class ) ) {
-			return null;
-		}
-
 		try {
 			$manager = new JetpackConnectionManager( 'woocommerce' );
 			$data    = $manager->get_connected_user_data( $user_id );
@@ -933,30 +906,6 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 		} catch ( Throwable $e ) {
 			return null;
 		}
-	}
-
-	/**
-	 * Generate a Jetpack-compatible Tracks anonymous ID.
-	 *
-	 * @return string
-	 */
-	private function generate_tracks_anon_id(): string {
-		if (
-			class_exists( 'Jetpack_Tracks_Client' )
-			&& is_callable( array( 'Jetpack_Tracks_Client', 'get_anon_id' ) )
-		) {
-			$anon_id = \Jetpack_Tracks_Client::get_anon_id();
-			if ( is_string( $anon_id ) && '' !== $anon_id ) {
-				return $anon_id;
-			}
-		}
-
-		$binary = '';
-		for ( $i = 0; $i < 18; ++$i ) {
-			$binary .= chr( wp_rand( 0, 255 ) );
-		}
-
-		return 'jetpack:' . base64_encode( $binary ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
 	}
 
 	/**
@@ -977,12 +926,12 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 		}
 
 		// No tracking while the gateway is disabled, as on the client (`class-woopay-tracker.php:242-246`).
-		if ( ! $this->get_account_service()->is_gateway_enabled() ) {
+		if ( ! $this->account_service->is_gateway_enabled() ) {
 			return false;
 		}
 
 		// Any connected account, onboarded or not, like the client's `is_stripe_connected()` (`class-woopay-tracker.php:248-252`).
-		return array() !== $this->get_account_service()->get_cached_account_data() && $this->is_country_tracks_eligible();
+		return array() !== $this->account_service->get_cached_account_data() && $this->is_country_tracks_eligible();
 	}
 
 	/**
@@ -991,9 +940,9 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_woopay_tracking_enabled(): bool {
-		$account_data = $this->get_account_service()->get_cached_account_data();
+		$account_data = $this->account_service->get_cached_account_data();
 
-		return 'yes' === $this->get_account_service()->get_gateway_setting( 'platform_checkout', 'no' )
+		return 'yes' === $this->account_service->get_gateway_setting( 'platform_checkout', 'no' )
 			&& ! empty( $account_data['platform_checkout_eligible'] );
 	}
 
@@ -1003,26 +952,9 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_country_tracks_eligible(): bool {
-		if ( ! function_exists( 'wc_get_base_location' ) ) {
-			return false;
-		}
-
 		$base_location = wc_get_base_location();
 
 		return 'US' === ( $base_location['country'] ?? '' );
-	}
-
-	/**
-	 * Get the WooPayments account service.
-	 *
-	 * @return WooPaymentsAccountService
-	 */
-	private function get_account_service(): WooPaymentsAccountService {
-		if ( ! isset( $this->account_service ) ) {
-			$this->account_service = wc_get_container()->get( WooPaymentsAccountService::class );
-		}
-
-		return $this->account_service;
 	}
 
 	/**
