@@ -59,13 +59,14 @@ class WooPaymentsWooPayAppearanceStoreTest extends WC_Unit_Test_Case {
 	/**
 	 * An appearance stored for an older styles cache version is ignored. One the WooPayments extension stored for the current
 	 * version is still valid, as client 11.1.0 reads it (includes/class-wc-payments-styles-cache.php:69-75), so a store moving
-	 * from the extension keeps it.
+	 * from the extension keeps it. An appearance stored without that wrapper is not read either: no writer stores one.
 	 *
 	 * @testdox Should read the stored appearance only for the current styles cache version: $_dataName.
 	 *
 	 * @dataProvider styles_cache_version_cases
 	 *
-	 * @param string    $stored_by           'store' saves through the store with a font rule, 'extension' writes the extension-shape option.
+	 * @param string    $stored_by           'store' saves through the store with a font rule, 'extension' writes the extension-shape option,
+	 *                                       'unwrapped' writes the appearance itself as the option.
 	 * @param string    $read_version        Styles cache version when the appearance is read.
 	 * @param bool      $expect_appearance   Whether the stored appearance is read back.
 	 * @param bool|null $expected_maybe_save Expected maybe_save_woopay_appearance() answer afterwards, or null to skip it.
@@ -84,7 +85,7 @@ class WooPaymentsWooPayAppearanceStoreTest extends WC_Unit_Test_Case {
 					),
 				)
 			);
-		} else {
+		} elseif ( 'extension' === $stored_by ) {
 			update_option(
 				'wcpay_woopay_checkout_appearance',
 				array(
@@ -93,6 +94,8 @@ class WooPaymentsWooPayAppearanceStoreTest extends WC_Unit_Test_Case {
 					'version'    => 'version-one',
 				)
 			);
+		} else {
+			update_option( 'wcpay_woopay_checkout_appearance', $appearance );
 		}
 
 		update_option( 'wcpay_styles_cache_version', $read_version );
@@ -123,6 +126,7 @@ class WooPaymentsWooPayAppearanceStoreTest extends WC_Unit_Test_Case {
 		return array(
 			'stored for an older version'    => array( 'store', 'version-two', false, true ),
 			'stored for the current version' => array( 'extension', 'version-one', true, null ),
+			'stored without the wrapper'     => array( 'unwrapped', 'version-one', false, true ),
 		);
 	}
 

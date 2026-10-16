@@ -117,11 +117,11 @@ class WooPaymentsWooPayAppearanceStore {
 	private function get_stored_woopay_appearance(): array {
 		$stored = get_option( self::APPEARANCE_OPTION, array() );
 
-		if ( isset( $stored['appearance'] ) && is_array( $stored['appearance'] ) ) {
-			return $this->has_current_appearance_version( $stored ) ? $stored['appearance'] : array();
+		if ( ! isset( $stored['appearance'] ) || ! is_array( $stored['appearance'] ) ) {
+			return array();
 		}
 
-		return is_array( $stored ) ? $stored : array();
+		return $this->has_current_appearance_version( $stored ) ? $stored['appearance'] : array();
 	}
 
 	/**
