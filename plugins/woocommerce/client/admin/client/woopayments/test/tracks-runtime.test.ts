@@ -166,6 +166,29 @@ describe( 'payments_runtime on admin Tracks events', () => {
 			).toEqual( {} );
 		} );
 
+		// The payments settings main page preloads the cached tracking info; its Manage button then opens the WooPayments
+		// settings without a reload, so the settings page module loads into the same window.
+		it( 'adds the hosting provider the main page preloaded after opening the WooPayments settings without a reload', async () => {
+			settingsWindow.wcSettings = {
+				admin: {
+					woopaymentsSettings: {
+						trackingInfo: { hosting_provider: 'fixture-host' },
+					},
+				},
+			};
+
+			await jest.isolateModulesAsync( async () => {
+				await import( '../settings/settings-page' );
+			} );
+
+			expect( filterEvent( 'wcadmin_wcpay_gateway_toggle', {} ) ).toEqual(
+				{
+					hosting_provider: 'fixture-host',
+					payments_runtime: 'woocommerce_core',
+				}
+			);
+		} );
+
 		it( 'marks the same event on a store native owns, where core preloads the WooPayments settings', async () => {
 			settingsWindow.wcSettings = { admin: { woopaymentsSettings: {} } };
 

@@ -67,4 +67,25 @@ class WooPaymentsTrackingInfoService {
 
 		return is_array( $data ) ? $data : null;
 	}
+
+	/**
+	 * Get the tracking info only as it is already cached, without fetching a missing, expired or failed entry.
+	 *
+	 * For pages that do not record WooPayments events themselves but can open a WooPayments page without a reload.
+	 *
+	 * @return array<string,mixed>|null The cached tracking info, or null before the site is connected, with nothing cached, or
+	 *                                  after a failed fetch.
+	 */
+	public function get_cached_tracking_info(): ?array {
+		if ( ! $this->api_client->is_available() ) {
+			return null;
+		}
+
+		$contents = $this->database_cache->get_contents( WooPaymentsDatabaseCache::TRACKING_INFO_KEY );
+		if ( ! is_array( $contents ) || ! empty( $contents['errored'] ) || ! is_array( $contents['data'] ?? null ) ) {
+			return null;
+		}
+
+		return $contents['data'];
+	}
 }

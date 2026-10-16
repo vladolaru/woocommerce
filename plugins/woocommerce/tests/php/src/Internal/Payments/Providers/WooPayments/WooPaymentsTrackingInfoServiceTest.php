@@ -104,6 +104,32 @@ class WooPaymentsTrackingInfoServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The cache-only read answers what is stored and never fetches; like the full read it answers nothing before the site is connected.
+	 *
+	 * @testdox Should answer the cached tracking info without fetching: $label.
+	 * @testWith ["connected, fresh entry", true, "fresh", true]
+	 *           ["connected, expired entry", true, "expired", true]
+	 *           ["connected, failed fetch", true, "errored", false]
+	 *           ["connected, nothing cached", true, "none", false]
+	 *           ["not connected, fresh entry", false, "fresh", false]
+	 *
+	 * @param string $label     Case label.
+	 * @param bool   $connected Whether the site is connected.
+	 * @param string $entry     The stored entry: fresh, expired, errored or none.
+	 * @param bool   $expected  Whether the stored info is answered.
+	 */
+	public function test_cached_read_never_fetches( string $label, bool $connected, string $entry, bool $expected ): void {
+		unset( $label );
+		$this->api_client->available = $connected;
+		if ( 'none' !== $entry ) {
+			$this->seed( array( 'hosting_provider' => 'cached-host' ), 'expired' === $entry ? time() - 2 * MONTH_IN_SECONDS : time(), 'errored' === $entry, 'errored' === $entry ? 1 : 0 );
+		}
+
+		$this->assertSame( $expected ? array( 'hosting_provider' => 'cached-host' ) : null, $this->sut->get_cached_tracking_info() );
+		$this->assertSame( 0, $this->api_client->calls );
+	}
+
+	/**
 	 * @testdox Before the site is connected there is no tracking info and no platform request.
 	 */
 	public function test_returns_null_when_not_connected(): void {

@@ -198,6 +198,13 @@ class WooPaymentsAdminSharedSettings implements RegisterHooksInterface {
 		// refreshes the cache.
 		if ( $this->is_woopayments_page( $current_path ) ) {
 			$settings['woopaymentsSettings']['trackingInfo'] = wc_get_container()->get( WooPaymentsTrackingInfoService::class )->get_tracking_info();
+		} elseif ( '' === $this->get_request_scalar( $_GET, 'section' ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only route check.
+			// The Payments settings app opens the WooPayments pages without a reload (its Manage button), so it carries the
+			// info too, but only as cached: this page never fetches it.
+			$cached_tracking_info = wc_get_container()->get( WooPaymentsTrackingInfoService::class )->get_cached_tracking_info();
+			if ( null !== $cached_tracking_info ) {
+				$settings['woopaymentsSettings']['trackingInfo'] = $cached_tracking_info;
+			}
 		}
 
 		// The Overview's data comes with the page, so the page renders before any request.

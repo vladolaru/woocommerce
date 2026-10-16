@@ -227,33 +227,41 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Pages of the payments settings and whether the WooPayments extension localizes its tracking info there.
+	 * Pages of the payments settings, the tracking info cache state, the platform requests expected and whether the page carries
+	 * the tracking info.
 	 *
-	 * @return array<string,array{0:array<string,string>,1:bool}>
+	 * @return array<string,array{0:array<string,string>,1:string,2:int,3:bool}>
 	 */
 	public function provide_payments_settings_pages(): array {
 		return array(
-			'a WooPayments admin route'       => array( array( 'path' => '/woopayments/transactions' ), true ),
-			'the WooPayments section'         => array( array( 'section' => 'woocommerce_payments' ), true ),
-			'a WooPayments method section'    => array( array( 'section' => 'woocommerce_payments_klarna' ), true ),
-			'the bank transfer settings'      => array( array( 'section' => 'bacs' ), false ),
-			'the payments settings main page' => array( array(), false ),
+			'a WooPayments admin route, cold cache'       => array( array( 'path' => '/woopayments/transactions' ), 'cold', 1, true ),
+			'the WooPayments settings route, cold cache'  => array( array( 'path' => '/woopayments/settings' ), 'cold', 1, true ),
+			'the WooPayments section, cold cache'         => array( array( 'section' => 'woocommerce_payments' ), 'cold', 1, true ),
+			'a WooPayments method section, cold cache'    => array( array( 'section' => 'woocommerce_payments_klarna' ), 'cold', 1, true ),
+			'the bank transfer settings, cold cache'      => array( array( 'section' => 'bacs' ), 'cold', 0, false ),
+			'the bank transfer settings, warm cache'      => array( array( 'section' => 'bacs' ), 'warm', 0, false ),
+			'the payments settings main page, cold cache' => array( array(), 'cold', 0, false ),
+			'the payments settings main page, warm cache' => array( array(), 'warm', 0, true ),
+			'the payments settings main page, errored cache' => array( array(), 'errored', 0, false ),
 		);
 	}
 
 	/**
 	 * Client 11.1.0 localizes the cached platform tracking info only on its own pages (`class-wc-payments-admin.php:754`; the settings
 	 * check `class-wc-payments-utils.php:653` requires a `woocommerce_payments` section), and its admin Tracks recorder adds
-	 * `hosting_provider` from it (`class-wc-payments-admin.php:1066`, `client/tracks/index.ts:44`). On a cold cache the read fetches
-	 * the info, so another gateway's settings page must not read it.
+	 * `hosting_provider` from it (`class-wc-payments-admin.php:1066`, `client/tracks/index.ts:44`); a read fetches a missing entry.
+	 * The payments settings main page opens the WooPayments settings without a reload (its Manage button), so it carries the info
+	 * as cached, and never fetches it.
 	 *
-	 * @testdox Should read and preload the platform tracking info only on WooPayments pages: $_dataName.
+	 * @testdox Should read and preload the platform tracking info as the page needs: $_dataName.
 	 * @dataProvider provide_payments_settings_pages
 	 *
-	 * @param array<string,string> $query        Extra query arguments of the payments settings request.
-	 * @param bool                 $expect_fetch Whether the cold cache is fetched and preloaded.
+	 * @param array<string,string> $query          Extra query arguments of the payments settings request.
+	 * @param string               $cache          The tracking info cache: cold, warm (fresh) or errored (a failed fetch kept old data).
+	 * @param int                  $platform_calls Expected platform tracking info requests.
+	 * @param bool                 $expect_preload Whether the page carries the tracking info.
 	 */
-	public function test_preloads_tracking_info_only_on_woopayments_pages( array $query, bool $expect_fetch ): void {
+	public function test_preloads_tracking_info_as_the_page_needs( array $query, string $cache, int $platform_calls, bool $expect_preload ): void {
 		$_GET       = array_merge(
 			array(
 				'page' => 'wc-settings',
@@ -289,18 +297,30 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 				return FixedTrackingInfoService::TRACKING_INFO;
 			}
 		};
-		$cache      = new WooPaymentsDatabaseCache();
-		$cache->init( new LegacyProxy() );
+		$cache_db   = new WooPaymentsDatabaseCache();
+		$cache_db->init( new LegacyProxy() );
 		$service = new WooPaymentsTrackingInfoService();
-		$service->init( $api_client, $cache );
+		$service->init( $api_client, $cache_db );
 		wc_get_container()->replace( WooPaymentsTrackingInfoService::class, $service );
 		delete_option( WooPaymentsDatabaseCache::TRACKING_INFO_KEY );
+		if ( 'cold' !== $cache ) {
+			update_option(
+				WooPaymentsDatabaseCache::TRACKING_INFO_KEY,
+				array(
+					'data'               => FixedTrackingInfoService::TRACKING_INFO,
+					'fetched'            => time(),
+					'errored'            => 'errored' === $cache,
+					'consecutive_errors' => 'errored' === $cache ? 1 : 0,
+				),
+				false
+			);
+		}
 		$sut = $this->create_shared_settings( true );
 
 		$settings = $sut->preload_shared_settings( array() );
 
-		$this->assertSame( $expect_fetch ? 1 : 0, $api_client->calls );
-		if ( $expect_fetch ) {
+		$this->assertSame( $platform_calls, $api_client->calls );
+		if ( $expect_preload ) {
 			$this->assertSame( FixedTrackingInfoService::TRACKING_INFO, $settings['woopaymentsSettings']['trackingInfo'] ?? null );
 		} else {
 			$this->assertArrayNotHasKey( 'trackingInfo', $settings['woopaymentsSettings'] );
