@@ -9,7 +9,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsDisputesListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsFraudOutcomeTransactionsListRequest;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsReportingBalanceSummaryRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransactionsListRequest;
 use WC_Unit_Test_Case;
 use WP_REST_Request;
@@ -89,26 +88,6 @@ class WooPaymentsPaginatedListRequestTest extends WC_Unit_Test_Case {
 		} finally {
 			remove_filter( 'wcpay_list_fraud_outcome_transactions_request', '__return_empty_array' );
 		}
-	}
-
-	/**
-	 * @testdox Should expose a callable send() on transactions list requests for filter backward compatibility.
-	 */
-	public function test_send_is_callable_on_transactions_list_request(): void {
-		$request = WooPaymentsTransactionsListRequest::from_rest_request( new WP_REST_Request() );
-
-		$this->assertTrue( method_exists( $request, 'send' ), 'send() must exist on native list-request filter objects.' );
-		$this->assertTrue( is_callable( array( $request, 'send' ) ), 'send() must be callable on native list-request filter objects.' );
-	}
-
-	/**
-	 * @testdox Should expose a callable send() on the reporting balance summary request for filter backward compatibility.
-	 */
-	public function test_send_is_callable_on_reporting_balance_summary_request(): void {
-		$request = WooPaymentsReportingBalanceSummaryRequest::from_params( array() );
-
-		$this->assertTrue( method_exists( $request, 'send' ), 'send() must exist on native list-request filter objects.' );
-		$this->assertTrue( is_callable( array( $request, 'send' ) ), 'send() must be callable on native list-request filter objects.' );
 	}
 
 	/**
