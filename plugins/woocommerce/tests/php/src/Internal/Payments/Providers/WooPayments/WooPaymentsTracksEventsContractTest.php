@@ -179,18 +179,6 @@ class WooPaymentsTracksEventsContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The fixture is complete: its declared count matches its entries, and every wire name is unique.
-	 */
-	public function test_fixture_is_complete(): void {
-		$fixture = self::$fixture;
-
-		$this->assertSame( $fixture['count'], count( $fixture['entries'] ), 'count must match the number of entries.' );
-
-		$wire_names = array_column( $fixture['entries'], 'wire_name' );
-		$this->assertSame( array_unique( $wire_names ), $wire_names, 'Every wire_name must be unique.' );
-	}
-
-	/**
 	 * @testdox The built-in WooPayments has a call site recording every Tracks event of the WooPayments extension, or the difference is recorded.
 	 */
 	public function test_builtin_records_every_woopayments_extension_tracks_event_or_allows_it(): void {

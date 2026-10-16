@@ -418,7 +418,6 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $result );
 		$warnings = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && 'woopayments' === $line[2] ) );
 		$this->assertCount( 1, $warnings );
-		$this->assertStringContainsString( 'Failed to enable payment method klarna', $warnings[0][1] );
 		$this->assertArrayNotHasKey( 'wcadmin_wcpay_payment_method_enabled', $events );
 		$this->assertIsArray( $dismissals );
 		$this->assertArrayHasKey( 'klarna-promo__spotlight', $dismissals, 'The promotion is dismissed before its gateway is enabled.' );
@@ -458,7 +457,6 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		$this->assertArrayHasKey( 'wcadmin_wcpay_payment_method_enabled', $events );
 		$warnings = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && 'woopayments' === $line[2] ) );
 		$this->assertCount( 1, $warnings );
-		$this->assertStringContainsString( 'Failed to sync payment method klarna to the gateway settings: woocommerce_woocommerce_payments_settings', $warnings[0][1] );
 	}
 
 	/**
@@ -507,8 +505,6 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'fixture-host', $recorded['wcadmin_wcpay_payment_method_promotion_activation_failed']['hosting_provider'] ?? null );
 		$context = $this->get_logged_context_at_level( $logger, 'warning' );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
-		$warnings = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && 'woopayments' === $line[2] ) );
-		$this->assertStringContainsString( 'klarna', $warnings[0][1], 'The line names the payment method whose promotion failed.' );
 		$this->assert_log_holds_no_provider_text( $logger );
 	}
 

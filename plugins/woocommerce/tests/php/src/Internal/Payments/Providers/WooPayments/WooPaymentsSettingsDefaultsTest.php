@@ -19,10 +19,6 @@ class WooPaymentsSettingsDefaultsTest extends WC_Unit_Test_Case {
 	 * @param mixed  $expected Expected default value.
 	 */
 	public function test_get_returns_the_pinned_form_field_default( string $key, $expected ): void {
-		if ( ! class_exists( WooPaymentsSettingsDefaults::class ) ) {
-			$this->fail( 'WooPaymentsSettingsDefaults should provide the pinned WooPayments form-field defaults.' );
-		}
-
 		$this->assertSame( $expected, WooPaymentsSettingsDefaults::get( $key ), "The {$key} default should match WooPayments 11.1.0." );
 	}
 
@@ -30,10 +26,6 @@ class WooPaymentsSettingsDefaultsTest extends WC_Unit_Test_Case {
 	 * @testdox Should expose the complete WooPayments 11.1.0 form-field defaults table.
 	 */
 	public function test_all_returns_the_complete_pinned_form_field_defaults_table(): void {
-		if ( ! class_exists( WooPaymentsSettingsDefaults::class ) ) {
-			$this->fail( 'WooPaymentsSettingsDefaults should provide the complete pinned WooPayments form-field defaults table.' );
-		}
-
 		$expected = array();
 		foreach ( $this->form_field_defaults_provider() as $default ) {
 			$expected[ $default[0] ] = $default[1];

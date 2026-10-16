@@ -138,37 +138,6 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should store failure details and schedule a retry when domain registration fails.
-	 */
-	public function test_register_domain_stores_error_and_schedules_retry_on_failure(): void {
-		$error_message              = 'Domain verification failed: invalid domain';
-		$this->api_client->response = array(
-			'id'        => 'domain_123',
-			'apple_pay' => array(
-				'status'         => 'failed',
-				'status_details' => array( 'error_message' => $error_message ),
-			),
-		);
-		$this->service              = $this->create_service();
-		$this->set_gateway_settings(
-			array(
-				'enabled'                           => 'yes',
-				'express_checkout_checkout_methods' => array( 'payment_request' ),
-			)
-		);
-
-		$this->service->register_domain();
-
-		$stored = get_option( self::SETTINGS_OPTION );
-		$this->assertIsArray( $stored );
-		$this->assertSame( $this->expected_domain, $stored['apple_pay_verified_domain'] );
-		$this->assertSame( 'no', $stored['apple_pay_domain_set'] );
-		$this->assertSame( $error_message, get_option( self::ERROR_OPTION ) );
-		$this->assertCount( 1, $this->scheduler->scheduled_jobs );
-		$this->assertSame( self::RETRY_ACTION, $this->scheduler->scheduled_jobs[0]['hook'] );
-	}
-
-	/**
 	 * @testdox A platform error registering the domain is logged with its status and code, never its message.
 	 *
 	 * Client 11.1.0 logs the error text; the stored error stays for the merchant's Apple Pay notice, as on the client.

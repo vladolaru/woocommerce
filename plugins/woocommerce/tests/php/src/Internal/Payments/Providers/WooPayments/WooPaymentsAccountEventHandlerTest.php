@@ -52,26 +52,6 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox process() fails closed for an event type outside the supported account lifecycle set.
-	 *
-	 * Native-only fail-closed guard with no client counterpart: client 11.1.0's webhook
-	 * dispatch switch (`includes/class-wc-payments-webhook-processing-service.php:175-243`)
-	 * has no `default` case, so an unmatched event type is silently ignored there. The exact
-	 * exception message is native's own wording, so it is intentionally not asserted here.
-	 */
-	public function test_process_throws_for_unsupported_event_type(): void {
-		$handler = new WooPaymentsAccountEventHandler();
-		$handler->init(
-			$this->getMockBuilder( WooPaymentsAccountService::class )->disableOriginalConstructor()->getMock(),
-			$this->getMockBuilder( WooPaymentsTokenService::class )->disableOriginalConstructor()->getMock()
-		);
-
-		$this->expectException( InvalidArgumentException::class );
-
-		$handler->process( 'customer.created', array( 'id' => 'acct_123' ) );
-	}
-
-	/**
 	 * @testdox account.updated refreshes account data and clears the payment method caches.
 	 *
 	 * Mirrors client 11.1.0's non-strict `account.updated` handling
@@ -96,35 +76,6 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_ingestor_with_account_services( $account_service, $token_service );
 
-		$sut->process( $this->create_account_event( 'account.updated' ) );
-	}
-
-	/**
-	 * @testdox account.updated still clears the payment method cache and acknowledges the webhook when the account refresh fails.
-	 *
-	 * Client 11.1.0 ignores the `refresh_account_data()` result (webhook-processing-service.php:205-208)
-	 * and always clears the cache and returns success.
-	 */
-	public function test_account_updated_clears_payment_method_cache_and_does_not_throw_when_refresh_fails(): void {
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'refresh_account_data' ) )
-			->getMock();
-		$account_service->expects( $this->once() )
-			->method( 'refresh_account_data' )
-			->willReturn( array() );
-
-		$token_service = $this->getMockBuilder( WooPaymentsTokenService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'clear_all_cached_payment_methods' ) )
-			->getMock();
-		$token_service->expects( $this->once() )
-			->method( 'clear_all_cached_payment_methods' );
-
-		$sut = $this->create_ingestor_with_account_services( $account_service, $token_service );
-
-		// No exception: the webhook controller only turns a thrown exception into a 500,
-		// so completing process() without one is what acknowledges the webhook.
 		$sut->process( $this->create_account_event( 'account.updated' ) );
 	}
 

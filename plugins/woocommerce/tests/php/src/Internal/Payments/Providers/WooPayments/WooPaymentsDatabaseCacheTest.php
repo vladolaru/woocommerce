@@ -97,6 +97,8 @@ class WooPaymentsDatabaseCacheTest extends WC_Unit_Test_Case {
 			'tracking, after a month'              => array( $track, 'front', 'after a month', false, 0, MONTH_IN_SECONDS + 60, true ),
 			'tracking, 2 errors, 4 minutes'        => array( $track, 'front', '2 errors, 4 minutes', true, 2, 240, false ),
 			'tracking, 2 errors, 6 minutes'        => array( $track, 'front', '2 errors, 6 minutes', true, 2, 360, true ),
+			'tracking, no error count, 1 minute'   => array( $track, 'front', 'no error count, 1 minute', true, null, 60, false ),
+			'tracking, no error count, 3 min'      => array( $track, 'front', 'no error count, 3 minutes', true, null, 180, true ),
 			'other keys, errored before a day'     => array( $counts, 'dashboard', 'errored, no backoff', true, 1, DAY_IN_SECONDS - 60, false ),
 			'other keys, after a day'              => array( $counts, 'dashboard', 'after a day', false, 0, DAY_IN_SECONDS + 60, true ),
 		);
@@ -247,6 +249,7 @@ class WooPaymentsDatabaseCacheTest extends WC_Unit_Test_Case {
 		global $wpdb;
 
 		$this->assertSame( array( 'host' => 'fresh' ), $this->sut->get_or_add( WooPaymentsDatabaseCache::TRACKING_INFO_KEY, static fn() => array( 'host' => 'fresh' ), 'is_array' ) );
+		$this->assertFalse( wp_cache_get( WooPaymentsDatabaseCache::TRACKING_INFO_KEY, 'options' ) );
 
 		$stored = get_option( WooPaymentsDatabaseCache::TRACKING_INFO_KEY );
 		$this->assertSame( array( 'host' => 'fresh' ), $stored['data'] );

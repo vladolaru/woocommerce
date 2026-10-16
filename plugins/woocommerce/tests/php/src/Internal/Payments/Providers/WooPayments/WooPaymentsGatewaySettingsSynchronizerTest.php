@@ -120,35 +120,20 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 	public function test_persist_detects_logs_and_heals_split_gateway_drift(): void {
 		$option_name = 'woocommerce_woocommerce_payments_ideal_settings';
 		$settings    = array( 'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ) );
-		$logger      = $this->createMock( \WC_Logger_Interface::class );
-		$logger->expects( $this->once() )
-			->method( 'log' )
-			->with(
-				'warning',
-				'WooPayments split gateway settings drifted from the unchanged stored settings.',
-				array(
-					'event'                => 'split_gateway_settings_drift',
-					'drifted_option_names' => array( $option_name ),
-					'failed_option_names'  => array(),
-					'source'               => 'woopayments',
-				)
-			);
-		$logger_filter = static fn() => $logger;
-		add_filter( 'woocommerce_logging_class', $logger_filter );
+		$logger      = RecordingWcLogger::install();
 
-		try {
-			$synchronizer       = $this->create_synchronizer();
-			$first              = $synchronizer->persist( $settings );
-			$drifted            = get_option( $option_name );
-			$drifted['enabled'] = 'no';
-			$drifted['custom']  = 'preserved';
-			update_option( $option_name, $drifted );
+		$synchronizer       = $this->create_synchronizer();
+		$first              = $synchronizer->persist( $settings );
+		$drifted            = get_option( $option_name );
+		$drifted['enabled'] = 'no';
+		$drifted['custom']  = 'preserved';
+		update_option( $option_name, $drifted );
 
-			$second = $synchronizer->persist( $first['settings'] );
-		} finally {
-			remove_filter( 'woocommerce_logging_class', $logger_filter );
-		}
+		$second = $synchronizer->persist( $first['settings'] );
 
+		$this->assertCount( 1, $logger->lines, 'The drift is logged once.' );
+		$this->assertSame( array( 'warning', 'woopayments' ), array( $logger->lines[0][0], $logger->lines[0][2] ) );
+		$this->assertSame( array( $option_name ), $logger->contexts[0]['drifted_option_names'] ?? null );
 		$this->assertTrue( $second['persisted'] );
 		$this->assertSame( array( $option_name ), $second['updated_split_options'] );
 		$this->assertSame(

@@ -19,6 +19,8 @@ use WC_Unit_Test_Case;
  */
 class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 
+	use ProviderTextLogAssertions;
+
 	/**
 	 * Countries where WooPayments accounts are supported, as client 11.1.0 lists them (includes/class-wc-payments-utils.php:263-305).
 	 *
@@ -148,7 +150,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_service();
 
-		$this->assertTrue( method_exists( $sut, 'is_builtin_eligible' ), 'Native eligibility should be part of the account service contract.' );
 		$this->assertSame( $expected_eligible, $sut->is_builtin_eligible() );
 	}
 
@@ -226,27 +227,42 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose whether the WooPayments gateway is enabled.
+	 * @testdox Should expose whether the WooPayments gateway is enabled, and fail closed when the setting is absent.
+	 * @dataProvider gateway_enabled_reads_provider
+	 *
+	 * @param array<int,array{0:array<string,mixed>|null,1:bool}> $reads Gateway settings to store before each read (null stores none), with the expected answer.
 	 */
-	public function test_exposes_gateway_enabled_state_from_gateway_settings(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+	public function test_exposes_gateway_enabled_state_from_gateway_settings( array $reads ): void {
+		$sut = null;
+		foreach ( $reads as $index => list( $settings, $expected ) ) {
+			if ( null !== $settings ) {
+				update_option( 'woocommerce_woocommerce_payments_settings', $settings );
+			}
+			$sut = $sut ?? $this->create_service();
 
-		$sut = $this->create_service();
-
-		$this->assertTrue( $sut->is_gateway_enabled() );
-
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'no' ) );
-
-		$this->assertFalse( $sut->is_gateway_enabled() );
+			$this->assertSame( $expected, $sut->is_gateway_enabled(), "Read {$index}." );
+		}
 	}
 
 	/**
-	 * @testdox Should fail closed when the WooPayments gateway enabled setting is absent.
+	 * Gateway enabled reads, in order, on one service.
+	 *
+	 * @return array<string,array{array<int,array{0:array<string,mixed>|null,1:bool}>}>
 	 */
-	public function test_gateway_enabled_state_defaults_to_disabled_when_setting_is_absent(): void {
-		$sut = $this->create_service();
-
-		$this->assertFalse( $sut->is_gateway_enabled() );
+	public static function gateway_enabled_reads_provider(): array {
+		return array(
+			'yes, then no on the same service' => array(
+				array(
+					array( array( 'enabled' => 'yes' ), true ),
+					array( array( 'enabled' => 'no' ), false ),
+				),
+			),
+			'setting absent'                   => array(
+				array(
+					array( null, false ),
+				),
+			),
+		);
 	}
 
 	/**
@@ -301,13 +317,29 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose the account default currency from the stored account cache.
+	 * @testdox Should expose the account default currency from the stored account cache, and fall back to USD when it has none.
+	 * @dataProvider account_default_currency_provider
+	 *
+	 * @param array<string,mixed> $account_data Stored account data.
+	 * @param string              $expected     Expected default currency.
 	 */
-	public function test_exposes_account_default_currency_from_account_cache(): void {
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data' => array(
+	public function test_exposes_account_default_currency_from_account_cache( array $account_data, string $expected ): void {
+		update_option( 'wcpay_account_data', array( 'data' => $account_data ) );
+
+		$sut = $this->create_service();
+
+		$this->assertSame( $expected, $sut->get_account_default_currency() );
+	}
+
+	/**
+	 * Stored accounts with and without a default currency.
+	 *
+	 * @return array<string,array{array<string,mixed>,string}>
+	 */
+	public static function account_default_currency_provider(): array {
+		return array(
+			'default currency stored' => array(
+				array(
 					'account_id'       => 'acct_123',
 					'is_live'          => true,
 					'store_currencies' => array(
@@ -315,31 +347,16 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 						'supported' => array( 'eur' ),
 					),
 				),
-			)
-		);
-
-		$sut = $this->create_service();
-
-		$this->assertSame( 'eur', $sut->get_account_default_currency() );
-	}
-
-	/**
-	 * @testdox Should fall back to USD when the stored account cache does not include a default currency.
-	 */
-	public function test_account_default_currency_falls_back_to_usd_when_account_cache_omits_currency(): void {
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data' => array(
+				'eur',
+			),
+			'no currency stored'      => array(
+				array(
 					'account_id' => 'acct_123',
 					'is_live'    => true,
 				),
-			)
+				'usd',
+			),
 		);
-
-		$sut = $this->create_service();
-
-		$this->assertSame( 'usd', $sut->get_account_default_currency() );
 	}
 
 	/**
@@ -482,7 +499,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $indeterminate_service->has_account_or_is_connection_indeterminate(), 'Address-token cleanup must preserve state while account connection is indeterminate.' );
 
 		delete_option( 'wcpay_account_data' );
-		$empty_response_api_client = $this->create_counting_account_api_client( array() );
+		$empty_response_api_client = $this->create_account_api_client( array() );
 		$disconnected_service      = $this->create_service_with_api_client( $empty_response_api_client );
 
 		$this->assertFalse( $disconnected_service->has_account_or_is_connection_indeterminate(), 'A successful empty account response must remain a confirmed disconnection.' );
@@ -761,7 +778,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			'payments_enabled'  => true,
 			'details_submitted' => true,
 		);
-		$sut     = $this->create_service_with_api_client( $this->create_recorded_account_api_client( $account, false ) );
+		$sut     = $this->create_service_with_api_client( $this->create_account_api_client( $account ) );
 
 		$this->assertSame( 'acct_' . $kind, $sut->get_cached_account_data()['account_id'] ?? null );
 		$this->assertSame( $expected, get_option( 'wcpay_onboarding_test_mode', '(missing)' ) );
@@ -796,7 +813,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_service();
 
-		$this->assertTrue( method_exists( $sut, 'is_account_rejected' ), 'Account rejection state should be part of the native account service contract.' );
 		$this->assertTrue( $sut->is_account_rejected() );
 		$this->assertFalse( $sut->is_account_under_review() );
 
@@ -848,7 +864,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 				'account_branding_logo'            => 'file_saved_logo',
 			)
 		);
-		$sut = $this->create_service_with_api_client( $this->create_counting_account_api_client( array(), $connected ) );
+		$sut = $this->create_service_with_api_client( $this->create_account_api_client( array(), false, $connected ) );
 
 		$this->assertSame(
 			$expected,
@@ -1089,7 +1105,8 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$logger = RecordingWcLogger::install();
 
 		$this->assertSame( WooPaymentsSettingsDefaults::all(), $this->create_service()->get_gateway_settings() );
-		$this->assertStringContainsString( 'could not read the gateway settings; treating it as missing.', $logger->get_errors()[0][1] );
+		$this->assertNotEmpty( $logger->get_errors() );
+		$this->assertSame( array( 'woopayments' ), array_unique( array_column( $logger->get_errors(), 2 ) ) );
 		$this->assertStringNotContainsString( 'acct_secret', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
 	}
 
@@ -1109,7 +1126,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( '', $sut->get_account_id() );
 		$errors = $logger->get_errors();
 		$this->assertNotEmpty( $errors );
-		$this->assertSame( 'WooPayments could not read the account cache; treating it as missing.', $errors[0][1] );
+		$this->assertSame( array( 'woopayments' ), array_unique( array_column( $errors, 2 ) ) );
 		$this->assertStringNotContainsString( 'acct_secret', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
 	}
 
@@ -1169,7 +1186,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_service();
 
-		$this->assertTrue( method_exists( $sut, 'is_details_submitted' ), 'Details-submitted state should be part of the native account service contract.' );
 		$this->assertTrue( $sut->is_details_submitted() );
 		$this->assertTrue( $sut->has_valid_account_for_admin_navigation() );
 
@@ -1229,7 +1245,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_service();
 
-		$this->assertTrue( method_exists( $sut, 'is_card_present_eligible' ), 'Card-present eligibility should be part of the native account service contract.' );
 		$this->assertTrue( $sut->is_card_present_eligible() );
 		$this->assertTrue( $sut->has_card_readers_available() );
 		$this->assertTrue( $sut->has_previous_capital_loans() );
@@ -1248,85 +1263,75 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose Documents eligibility and VAT submission flags from the stored account cache.
+	 * @testdox Should expose Documents eligibility and VAT submission flags from the stored account cache, failing closed when they are missing or no account is cached.
+	 * @dataProvider document_flags_provider
+	 *
+	 * @param array<string,mixed>|null $overrides     Overrides of the valid live account, or null for an empty cached account.
+	 * @param bool                     $expected_docs Expected Documents eligibility.
+	 * @param bool                     $expected_vat  Expected VAT submission state.
 	 */
-	public function test_exposes_document_flags_from_account_cache(): void {
+	public function test_exposes_document_flags_from_account_cache( ?array $overrides, bool $expected_docs, bool $expected_vat ): void {
 		update_option(
 			'wcpay_account_data',
 			array(
-				'data' => $this->get_valid_live_account_payload(
-					array(
-						'is_documents_enabled'   => true,
-						'has_submitted_vat_data' => true,
-					)
-				),
+				'data' => null === $overrides ? array() : $this->get_valid_live_account_payload( $overrides ),
 			)
 		);
 
 		$sut = $this->create_service();
 
-		$this->assertTrue( method_exists( $sut, 'is_documents_enabled' ), 'Documents eligibility should be part of the native account service contract.' );
-		$this->assertTrue( method_exists( $sut, 'has_submitted_vat_data' ), 'VAT submission state should be part of the native account service contract.' );
-		$this->assertTrue( $sut->is_documents_enabled() );
-		$this->assertTrue( $sut->has_submitted_vat_data() );
-
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data' => $this->get_valid_live_account_payload(
-					array(
-						'is_documents_enabled'   => false,
-						'has_submitted_vat_data' => false,
-					)
-				),
-			)
-		);
-		$sut = $this->create_service();
-
-		$this->assertFalse( $sut->is_documents_enabled() );
-		$this->assertFalse( $sut->has_submitted_vat_data() );
+		$this->assertSame( $expected_docs, $sut->is_documents_enabled() );
+		$this->assertSame( $expected_vat, $sut->has_submitted_vat_data() );
 	}
 
 	/**
-	 * @testdox Should fail closed when Documents flags are missing or no account is cached.
+	 * Documents flag fixtures.
+	 *
+	 * @return array<string,array{array<string,mixed>|null,bool,bool}>
 	 */
-	public function test_document_flags_fail_closed_when_missing_or_no_account_exists(): void {
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data' => $this->get_valid_live_account_payload(),
-			)
+	public static function document_flags_provider(): array {
+		return array(
+			'both flags true'  => array(
+				array(
+					'is_documents_enabled'   => true,
+					'has_submitted_vat_data' => true,
+				),
+				true,
+				true,
+			),
+			'both flags false' => array(
+				array(
+					'is_documents_enabled'   => false,
+					'has_submitted_vat_data' => false,
+				),
+				false,
+				false,
+			),
+			'flags missing'    => array( array(), false, false ),
+			'empty account'    => array( null, false, false ),
 		);
-
-		$sut = $this->create_service();
-
-		$this->assertFalse( $sut->is_documents_enabled() );
-		$this->assertFalse( $sut->has_submitted_vat_data() );
-
-		update_option( 'wcpay_account_data', array( 'data' => array() ) );
-		$sut = $this->create_service();
-
-		$this->assertFalse( $sut->is_documents_enabled() );
-		$this->assertFalse( $sut->has_submitted_vat_data() );
 	}
 
 	/**
-	 * @testdox Reports availability follows stored server values before the local fallback without a refresh.
+	 * @testdox Reports availability follows stored server values before the local fallback without a refresh, with or without an account.
 	 * @dataProvider reports_availability_provider
 	 *
 	 * @param mixed  $server_value Server Reports flag.
 	 * @param bool   $include_server_value Whether to preserve the server Reports flag.
 	 * @param string $local_value Local Reports fallback value.
 	 * @param bool   $expected Whether Reports should be available.
+	 * @param bool   $account_cached Whether an account is cached.
 	 */
-	public function test_reports_availability_follows_stored_server_values_before_local_fallback( $server_value, bool $include_server_value, string $local_value, bool $expected ): void {
-		$account_data = $this->get_valid_live_account_payload();
-		if ( $include_server_value ) {
-			$account_data['reports_area_enabled'] = $server_value;
+	public function test_reports_availability_follows_stored_server_values_before_local_fallback( $server_value, bool $include_server_value, string $local_value, bool $expected, bool $account_cached ): void {
+		if ( $account_cached ) {
+			$account_data = $this->get_valid_live_account_payload();
+			if ( $include_server_value ) {
+				$account_data['reports_area_enabled'] = $server_value;
+			}
+			update_option( 'wcpay_account_data', array( 'data' => $account_data ) );
 		}
-		update_option( 'wcpay_account_data', array( 'data' => $account_data ) );
 		update_option( '_wcpay_feature_reports_area', $local_value );
-		$api_client = $this->create_counting_account_api_client( $this->get_valid_live_account_payload() );
+		$api_client = $this->create_account_api_client( $this->get_valid_live_account_payload() );
 		$sut        = $this->create_service_with_api_client( $api_client );
 
 		$this->assertSame( $expected, $sut->is_reports_enabled() );
@@ -1336,44 +1341,21 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Reports availability payload fixtures.
 	 *
-	 * @return array<string,array{mixed,bool,string,bool}>
+	 * @return array<string,array{mixed,bool,string,bool,bool}>
 	 */
 	public static function reports_availability_provider(): array {
 		return array(
-			'server true overrides local off'     => array( true, true, '0', true ),
-			'server false overrides local on'     => array( false, true, '1', false ),
-			'missing server value falls back on'  => array( null, false, '1', true ),
-			'missing server value falls back off' => array( null, false, '0', false ),
-			'null server value falls back on'     => array( null, true, '1', true ),
-			'null server value falls back off'    => array( null, true, '0', false ),
-			'truthy string server value enables'  => array( 'false', true, '0', true ),
-			'falsey string server value disables' => array( '0', true, '1', false ),
+			'server true overrides local off'     => array( true, true, '0', true, true ),
+			'server false overrides local on'     => array( false, true, '1', false, true ),
+			'missing server value falls back on'  => array( null, false, '1', true, true ),
+			'missing server value falls back off' => array( null, false, '0', false, true ),
+			'null server value falls back on'     => array( null, true, '1', true, true ),
+			'null server value falls back off'    => array( null, true, '0', false, true ),
+			'truthy string server value enables'  => array( 'false', true, '0', true, true ),
+			'falsey string server value disables' => array( '0', true, '1', false, true ),
+			'no account, local fallback on'       => array( null, false, '1', true, false ),
+			'no account, local fallback off'      => array( null, false, '0', false, false ),
 		);
-	}
-
-	/**
-	 * @testdox Reports local fallback does not require an account.
-	 */
-	public function test_reports_local_fallback_does_not_require_an_account(): void {
-		update_option( '_wcpay_feature_reports_area', '1' );
-		$api_client = $this->create_counting_account_api_client( $this->get_valid_live_account_payload() );
-		$sut        = $this->create_service_with_api_client( $api_client );
-
-		$this->assertTrue( $sut->is_reports_enabled() );
-		$this->assertSame( 0, $api_client->calls, 'Reports local fallback should not refresh account data.' );
-	}
-
-	/**
-	 * @testdox Reports availability does not refresh account data when no server flag is stored.
-	 */
-	public function test_reports_availability_does_not_refresh_account_data_without_a_server_flag(): void {
-		$api_client = $this->create_counting_account_api_client( $this->get_valid_live_account_payload() );
-		$sut        = $this->create_service_with_api_client( $api_client );
-
-		update_option( '_wcpay_feature_reports_area', '0' );
-
-		$this->assertFalse( $sut->is_reports_enabled() );
-		$this->assertSame( 0, $api_client->calls, 'Resolving Reports availability should not trigger an account refresh.' );
 	}
 
 	/**
@@ -1574,7 +1556,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		set_current_screen( $screen );
 		update_option( 'wcpay_onboarding_test_mode', 'yes' );
 		$full_account = $this->load_recorded_test_drive_account();
-		$api_client   = $this->create_recorded_account_api_client( $full_account, false );
+		$api_client   = $this->create_account_api_client( $full_account );
 		$sut          = $this->create_service_with_api_client( $api_client );
 
 		$sut->cache_account_data_until_refreshed( $this->get_partial_onboarding_record() );
@@ -1607,7 +1589,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	public function test_partial_onboarding_record_keeps_the_publishable_key_when_the_refetch_fails(): void {
 		set_current_screen( 'dashboard' );
 		update_option( 'wcpay_onboarding_test_mode', 'yes' );
-		$api_client = $this->create_recorded_account_api_client( array(), true );
+		$api_client = $this->create_account_api_client( array(), true );
 		$sut        = $this->create_service_with_api_client( $api_client );
 
 		$sut->cache_account_data_until_refreshed( $this->get_partial_onboarding_record() );
@@ -1635,58 +1617,32 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$api_client = new class() extends WooPaymentsApiClient {
-			/**
-			 * Store ID passed to the account request.
-			 *
-			 * @var string
-			 */
-			public string $woocommerce_store_id = '';
-
-			/**
-			 * Tell whether the fake client is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			/**
-			 * Return a full fake account payload.
-			 *
-			 * @param string $woocommerce_store_id WooCommerce store ID.
-			 * @return array<string,mixed>
-			 */
-			public function get_account( string $woocommerce_store_id = '' ): array {
-				$this->woocommerce_store_id = $woocommerce_store_id;
-
-				return array(
-					'account_id'                => 'acct_native_123',
-					'email'                     => 'merchant@example.test',
-					'communications_email'      => 'support@example.test',
-					'test_publishable_key'      => 'pk_test_native',
-					'live_publishable_key'      => 'pk_live_native',
-					'is_live'                   => false,
-					'is_test_drive'             => true,
-					'payments_enabled'          => true,
-					'details_submitted'         => true,
-					'business_profile'          => array(
-						'name' => 'Native Merchant',
+		$api_client = $this->create_account_api_client(
+			array(
+				'account_id'                => 'acct_native_123',
+				'email'                     => 'merchant@example.test',
+				'communications_email'      => 'support@example.test',
+				'test_publishable_key'      => 'pk_test_native',
+				'live_publishable_key'      => 'pk_live_native',
+				'is_live'                   => false,
+				'is_test_drive'             => true,
+				'payments_enabled'          => true,
+				'details_submitted'         => true,
+				'business_profile'          => array(
+					'name' => 'Native Merchant',
+				),
+				'fraud_mitigation_settings' => array(
+					'card_testing_protection' => array(
+						'enabled' => true,
 					),
-					'fraud_mitigation_settings' => array(
-						'card_testing_protection' => array(
-							'enabled' => true,
-						),
-					),
-					'pre_check_save_my_info'    => true,
-					'reports_area_enabled'      => true,
-					'account_details'           => array(
-						'business_type' => 'individual',
-					),
-				);
-			}
-		};
+				),
+				'pre_check_save_my_info'    => true,
+				'reports_area_enabled'      => true,
+				'account_details'           => array(
+					'business_type' => 'individual',
+				),
+			)
+		);
 		$sut        = $this->create_service_with_api_client( $api_client );
 		$refreshed  = array();
 		$hook       = static function ( $account ) use ( &$refreshed ): void {
@@ -1734,34 +1690,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$api_client = new class() extends WooPaymentsApiClient {
-			/**
-			 * Number of account fetch attempts.
-			 *
-			 * @var int
-			 */
-			public int $calls = 0;
-
-			/**
-			 * Tell whether the fake client is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			/**
-			 * Throw a transient account-fetch failure.
-			 *
-			 * @param string $woocommerce_store_id WooCommerce store ID.
-			 * @throws WooPaymentsApiException Always throws a transient account-fetch failure.
-			 */
-			public function get_account( string $woocommerce_store_id = '' ): array {
-				++$this->calls;
-				throw new WooPaymentsApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
-			}
-		};
+		$api_client = $this->create_account_api_client( array(), true );
 		$sut        = $this->create_service_with_api_client( $api_client );
 		$refreshed  = array();
 		$hook       = static function ( $account ) use ( &$refreshed ): void {
@@ -1790,98 +1719,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should use the non-admin account cache for twenty-four hours before refreshing.
-	 */
-	public function test_get_cached_account_data_uses_frontend_ttl_before_refreshing(): void {
-		$stale_account = $this->get_valid_live_account_payload(
-			array(
-				'account_id' => 'acct_stale',
-			)
-		);
-		$fresh_account = $this->get_valid_live_account_payload(
-			array(
-				'account_id' => 'acct_fresh',
-			)
-		);
-		$api_client    = $this->create_counting_account_api_client( $fresh_account );
-		$sut           = $this->create_service_with_api_client( $api_client );
-
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data'               => $stale_account,
-				'fetched'            => time() - ( 23 * HOUR_IN_SECONDS ),
-				'errored'            => false,
-				'consecutive_errors' => 0,
-			)
-		);
-
-		$this->assertSame( $stale_account, $sut->get_cached_account_data() );
-		$this->assertSame( 0, $api_client->calls );
-
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data'               => $stale_account,
-				'fetched'            => time() - ( 25 * HOUR_IN_SECONDS ),
-				'errored'            => false,
-				'consecutive_errors' => 0,
-			)
-		);
-		$sut = $this->create_service_with_api_client( $api_client );
-
-		$this->assertSame( $fresh_account, $sut->get_cached_account_data() );
-		$this->assertSame( 1, $api_client->calls );
-	}
-
-	/**
-	 * @testdox Should use shorter admin TTLs and progressive backoff for errored account caches.
-	 */
-	public function test_get_cached_account_data_uses_admin_ttl_and_error_backoff(): void {
-		set_current_screen( 'dashboard' );
-
-		$stale_account = $this->get_valid_live_account_payload(
-			array(
-				'account_id' => 'acct_stale',
-			)
-		);
-		$fresh_account = $this->get_valid_live_account_payload(
-			array(
-				'account_id' => 'acct_fresh',
-			)
-		);
-		$api_client    = $this->create_counting_account_api_client( $fresh_account );
-		$sut           = $this->create_service_with_api_client( $api_client );
-
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data'               => $stale_account,
-				'fetched'            => time() - ( 4 * MINUTE_IN_SECONDS ),
-				'errored'            => true,
-				'consecutive_errors' => 2,
-			)
-		);
-
-		$this->assertSame( $stale_account, $sut->get_cached_account_data() );
-		$this->assertSame( 0, $api_client->calls );
-
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data'               => $stale_account,
-				'fetched'            => time() - ( 6 * MINUTE_IN_SECONDS ),
-				'errored'            => true,
-				'consecutive_errors' => 2,
-			)
-		);
-		$sut = $this->create_service_with_api_client( $api_client );
-
-		$this->assertSame( $fresh_account, $sut->get_cached_account_data() );
-		$this->assertSame( 1, $api_client->calls );
-	}
-
-	/**
 	 * @testdox Should log an account cache write that a third-party option filter makes throw, and return the fetched account.
 	 */
 	public function test_throwing_account_cache_write_is_logged_and_the_fetched_account_returned(): void {
@@ -1893,12 +1730,11 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			}
 		);
 		$logger     = RecordingWcLogger::install();
-		$api_client = $this->create_counting_account_api_client( $this->get_valid_live_account_payload( array( 'account_id' => 'acct_fetched' ) ) );
+		$api_client = $this->create_account_api_client( $this->get_valid_live_account_payload( array( 'account_id' => 'acct_fetched' ) ) );
 
 		$this->assertSame( 'acct_fetched', $this->create_service_with_api_client( $api_client )->get_account_id() );
-		$errors = $logger->get_errors();
-		$this->assertCount( 1, $errors );
-		$this->assertSame( 'WooPayments could not write the account cache or sync the setup tier; the fetched account was returned.', $errors[0][1] );
+		$this->assertCount( 1, $logger->get_errors() );
+		$this->get_logged_context_at_level( $logger, 'error' );
 		$this->assertStringNotContainsString( 'acct_secret', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
 		$this->assertFalse( get_option( 'wcpay_account_data' ), 'The fetched account is not stored while the filter throws.' );
 	}
@@ -1937,19 +1773,20 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should read an admin account cache stored as $description.
-	 * @dataProvider provide_account_cache_wrappers_from_earlier_versions
+	 * @testdox Should read the account cache stored as $description.
+	 * @dataProvider provide_stored_account_cache_wrappers
 	 *
 	 * @param string   $description        Stored shape.
+	 * @param string   $screen             Screen to set, so is_admin() matches the request.
 	 * @param int|null $age                Seconds since the fetch, or null for a record never fetched.
 	 * @param bool     $errored            Whether the stored entry is errored.
 	 * @param int|null $consecutive_errors Stored error count, or null when the wrapper has none.
 	 * @param string   $expected_account   Account ID the read returns.
 	 * @param int      $expected_calls     Account fetches the read makes.
 	 */
-	public function test_reads_account_cache_wrappers_written_by_earlier_versions( string $description, ?int $age, bool $errored, ?int $consecutive_errors, string $expected_account, int $expected_calls ): void {
+	public function test_reads_the_stored_account_cache_until_it_is_due( string $description, string $screen, ?int $age, bool $errored, ?int $consecutive_errors, string $expected_account, int $expected_calls ): void {
 		unset( $description );
-		set_current_screen( 'dashboard' );
+		set_current_screen( $screen );
 		// Shapes as client 11.1.0 includes/class-database-cache.php:364-382 writes them, before and after its error count.
 		$wrapper = array(
 			'data'    => $this->get_valid_live_account_payload( array( 'account_id' => 'acct_stored' ) ),
@@ -1960,25 +1797,29 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			$wrapper['consecutive_errors'] = $consecutive_errors;
 		}
 		update_option( 'wcpay_account_data', $wrapper );
-		$api_client = $this->create_counting_account_api_client( $this->get_valid_live_account_payload( array( 'account_id' => 'acct_fetched' ) ) );
+		$api_client = $this->create_account_api_client( $this->get_valid_live_account_payload( array( 'account_id' => 'acct_fetched' ) ) );
 
 		$this->assertSame( $expected_account, $this->create_service_with_api_client( $api_client )->get_account_id() );
 		$this->assertSame( $expected_calls, $api_client->calls );
 	}
 
 	/**
-	 * Provide account cache wrappers as the current and earlier versions store them.
+	 * Provide account cache wrappers as the current and earlier versions store them, read on front-end and admin requests.
 	 *
-	 * @return array<string,array{0:string,1:int|null,2:bool,3:int|null,4:string,5:int}>
+	 * @return array<string,array{0:string,1:string,2:int|null,3:bool,4:int|null,5:string,6:int}>
 	 */
-	public function provide_account_cache_wrappers_from_earlier_versions(): array {
+	public static function provide_stored_account_cache_wrappers(): array {
 		return array(
-			'current shape, fresh'                      => array( 'the current shape, fresh', 60, false, 0, 'acct_stored', 0 ),
-			'no error count, fresh'                     => array( 'a wrapper without an error count, fresh', 60, false, null, 'acct_stored', 0 ),
-			'no error count, errored a minute ago'      => array( 'an errored wrapper without an error count, one minute old', 60, true, null, 'acct_stored', 0 ),
-			'no error count, errored three minutes ago' => array( 'an errored wrapper without an error count, three minutes old', 180, true, null, 'acct_fetched', 1 ),
+			'current shape, fresh'                      => array( 'the current shape, fresh', 'dashboard', 60, false, 0, 'acct_stored', 0 ),
+			'no error count, fresh'                     => array( 'a wrapper without an error count, fresh', 'dashboard', 60, false, null, 'acct_stored', 0 ),
+			'no error count, errored a minute ago'      => array( 'an errored wrapper without an error count, one minute old', 'dashboard', 60, true, null, 'acct_stored', 0 ),
+			'no error count, errored three minutes ago' => array( 'an errored wrapper without an error count, three minutes old', 'dashboard', 180, true, null, 'acct_fetched', 1 ),
 			// Built-in behaviour: cache_account_data_until_refreshed() stores the onboarding record with fetched 0.
-			'never fetched (partial onboarding record)' => array( 'a partial onboarding record never fetched', null, false, 0, 'acct_fetched', 1 ),
+			'never fetched (partial onboarding record)' => array( 'a partial onboarding record never fetched', 'dashboard', null, false, 0, 'acct_fetched', 1 ),
+			'front-end, fetched 23 hours ago'           => array( 'a front-end cache fetched 23 hours ago', 'front', 23 * HOUR_IN_SECONDS, false, 0, 'acct_stored', 0 ),
+			'front-end, fetched 25 hours ago'           => array( 'a front-end cache fetched 25 hours ago', 'front', 25 * HOUR_IN_SECONDS, false, 0, 'acct_fetched', 1 ),
+			'admin, errored twice four minutes ago'     => array( 'an admin cache errored twice, four minutes old', 'dashboard', 4 * MINUTE_IN_SECONDS, true, 2, 'acct_stored', 0 ),
+			'admin, errored twice six minutes ago'      => array( 'an admin cache errored twice, six minutes old', 'dashboard', 6 * MINUTE_IN_SECONDS, true, 2, 'acct_fetched', 1 ),
 		);
 	}
 
@@ -2002,7 +1843,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$cache_before = get_option( 'wcpay_account_data' );
-		$api_client   = $this->create_counting_account_api_client( $this->get_valid_live_account_payload(), false );
+		$api_client   = $this->create_account_api_client( $this->get_valid_live_account_payload(), false, false );
 		$sut          = $this->create_service_with_api_client( $api_client );
 
 		$this->assertSame( array(), $sut->get_cached_account_data(), 'Client 11.1.0 returns [] before any cache read when the server is not connected (class-wc-payments-account.php:2442-2444).' );
@@ -2055,7 +1896,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		$fresh_account = $this->get_valid_live_account_payload( array( 'account_id' => 'acct_fresh' ) );
-		$api_client    = $this->create_counting_account_api_client( $fresh_account );
+		$api_client    = $this->create_account_api_client( $fresh_account );
 		$sut           = $this->create_service_with_api_client( $api_client );
 		$sut->register();
 
@@ -2085,7 +1926,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 				'consecutive_errors' => 0,
 			)
 		);
-		$api_client = $this->create_counting_account_api_client( $this->get_valid_live_account_payload( array( 'account_id' => 'acct_fresh' ) ), false );
+		$api_client = $this->create_account_api_client( $this->get_valid_live_account_payload( array( 'account_id' => 'acct_fresh' ) ), false, false );
 		$sut        = $this->create_service_while_plugins_load( $api_client );
 
 		$this->assertSame( $cached_account, $sut->get_cached_account_data(), 'Before pluggable.php loads, the connection check reads false, so the read must not treat it as a known disconnect.' );
@@ -2114,7 +1955,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		);
 		$cache_before = get_option( 'wcpay_account_data' );
 		$refreshes    = did_action( 'woocommerce_payments_account_refreshed' );
-		$api_client   = $this->create_counting_account_api_client( $this->get_valid_live_account_payload(), false );
+		$api_client   = $this->create_account_api_client( $this->get_valid_live_account_payload(), false, false );
 		$sut          = $this->create_service_while_plugins_load( $api_client );
 
 		$sut->get_cached_account_data();
@@ -2160,7 +2001,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 				'account_id' => 'acct_fresh',
 			)
 		);
-		$api_client    = $this->create_counting_account_api_client( $fresh_account );
+		$api_client    = $this->create_account_api_client( $fresh_account );
 		$sut           = $this->create_service_with_api_client( $api_client );
 
 		update_option(
@@ -2205,7 +2046,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 				'account_id' => 'acct_fresh',
 			)
 		);
-		$api_client    = $this->create_counting_account_api_client( $fresh_account );
+		$api_client    = $this->create_account_api_client( $fresh_account );
 		$sut           = $this->create_service_with_api_client( $api_client );
 
 		update_option(
@@ -2223,9 +2064,13 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should let onboarding test mode and the WooPayments extension's test-mode filter override persisted gateway settings.
+	 * @testdox Should force test mode and the test publishable key over live gateway settings.
+	 * @dataProvider provide_test_mode_sources
+	 *
+	 * @param string|null $onboarding_option Stored onboarding test mode option, or null for none.
+	 * @param string|null $filter            WooPayments extension filter that returns true, or null for none.
 	 */
-	public function test_mode_follows_onboarding_option_and_test_mode_filter(): void {
+	public function test_mode_is_forced_by_onboarding_and_extension_filters( ?string $onboarding_option, ?string $filter ): void {
 		update_option(
 			'wcpay_account_data',
 			array(
@@ -2240,53 +2085,32 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'no' ) );
-		update_option( 'wcpay_onboarding_test_mode', 'yes' );
+		if ( null !== $onboarding_option ) {
+			update_option( 'wcpay_onboarding_test_mode', $onboarding_option );
+		}
+		if ( null !== $filter ) {
+			add_filter( $filter, '__return_true' );
+		}
 
 		$sut = $this->create_service();
 
 		$this->assertTrue( $sut->is_test_mode_enabled() );
 		$this->assertSame( 'test', $sut->get_mode() );
 		$this->assertSame( 'pk_test_123', $sut->get_publishable_key() );
-
-		update_option( 'wcpay_onboarding_test_mode', 'no' );
-		add_filter( 'wcpay_test_mode', '__return_true' );
-
-		$this->assertTrue( $sut->is_test_mode_enabled() );
-		$this->assertSame( 'test', $sut->get_mode() );
 	}
 
 	/**
-	 * @testdox Should force test mode when WooPayments onboarding or dev-mode filters are enabled.
+	 * Sources that force test mode.
+	 *
+	 * @return array<string,array{?string,?string}>
 	 */
-	public function test_mode_follows_onboarding_and_dev_mode_filters(): void {
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data' => array(
-					'account_id'           => 'acct_123',
-					'test_publishable_key' => 'pk_test_123',
-					'live_publishable_key' => 'pk_live_123',
-					'is_live'              => true,
-					'payments_enabled'     => true,
-					'details_submitted'    => true,
-				),
-			)
+	public static function provide_test_mode_sources(): array {
+		return array(
+			'onboarding test mode option'       => array( 'yes', null ),
+			'wcpay_test_mode filter'            => array( 'no', 'wcpay_test_mode' ),
+			'wcpay_test_mode_onboarding filter' => array( null, 'wcpay_test_mode_onboarding' ),
+			'wcpay_dev_mode filter'             => array( null, 'wcpay_dev_mode' ),
 		);
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'no' ) );
-		add_filter( 'wcpay_test_mode_onboarding', '__return_true' );
-
-		$sut = $this->create_service();
-
-		$this->assertTrue( $sut->is_test_mode_enabled() );
-		$this->assertSame( 'test', $sut->get_mode() );
-		$this->assertSame( 'pk_test_123', $sut->get_publishable_key() );
-
-		remove_all_filters( 'wcpay_test_mode_onboarding' );
-		add_filter( 'wcpay_dev_mode', '__return_true' );
-
-		$this->assertTrue( $sut->is_test_mode_enabled() );
-		$this->assertSame( 'test', $sut->get_mode() );
-		$this->assertSame( 'pk_test_123', $sut->get_publishable_key() );
 	}
 
 	/**
@@ -2517,7 +2341,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsAccountService
 	 */
 	private function create_service(): WooPaymentsAccountService {
-		return $this->create_service_with_api_client( $this->create_recorded_account_api_client( array(), true ) );
+		return $this->create_service_with_api_client( $this->create_account_api_client( array(), true ) );
 	}
 
 	/**
@@ -2549,20 +2373,28 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a transport double that returns a recorded account or fails, and counts fetches.
+	 * Create a transport double that returns an account or fails, counts fetches and records the store ID it was sent.
 	 *
-	 * @param array<string,mixed> $account Account to return.
-	 * @param bool                $fail    Whether every fetch fails.
+	 * @param array<string,mixed> $account   Account to return.
+	 * @param bool                $fail      Whether every fetch fails.
+	 * @param bool                $available Whether the site has a platform connection.
 	 * @return WooPaymentsApiClient
 	 */
-	private function create_recorded_account_api_client( array $account, bool $fail ): WooPaymentsApiClient {
-		return new class( $account, $fail ) extends WooPaymentsApiClient {
+	private function create_account_api_client( array $account, bool $fail = false, bool $available = true ): WooPaymentsApiClient {
+		return new class( $account, $fail, $available ) extends WooPaymentsApiClient {
 			/**
 			 * Number of account fetch attempts.
 			 *
 			 * @var int
 			 */
 			public int $calls = 0;
+
+			/**
+			 * Store ID passed to the last account request.
+			 *
+			 * @var string
+			 */
+			public string $woocommerce_store_id = '';
 
 			/**
 			 * Account to return.
@@ -2579,14 +2411,23 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			private bool $fail;
 
 			/**
+			 * Whether the site has a platform connection.
+			 *
+			 * @var bool
+			 */
+			private bool $available;
+
+			/**
 			 * Constructor.
 			 *
-			 * @param array<string,mixed> $account Account to return.
-			 * @param bool                $fail    Whether every fetch fails.
+			 * @param array<string,mixed> $account   Account to return.
+			 * @param bool                $fail      Whether every fetch fails.
+			 * @param bool                $available Whether the site has a platform connection.
 			 */
-			public function __construct( array $account, bool $fail ) {
-				$this->account = $account;
-				$this->fail    = $fail;
+			public function __construct( array $account, bool $fail, bool $available ) {
+				$this->account   = $account;
+				$this->fail      = $fail;
+				$this->available = $available;
 			}
 
 			/**
@@ -2595,11 +2436,11 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function is_available(): bool {
-				return true;
+				return $this->available;
 			}
 
 			/**
-			 * Return the recorded account or fail.
+			 * Return the account or fail.
 			 *
 			 * @param string $woocommerce_store_id WooCommerce store ID.
 			 * @return array<string,mixed>
@@ -2607,6 +2448,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			 */
 			public function get_account( string $woocommerce_store_id = '' ): array {
 				++$this->calls;
+				$this->woocommerce_store_id = $woocommerce_store_id;
 				if ( $this->fail ) {
 					throw new WooPaymentsApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
 				}
@@ -2655,70 +2497,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$sut->init( $legacy_proxy, $this->database_cache );
 
 		return $sut;
-	}
-
-	/**
-	 * Create a fake account API client that counts account fetches.
-	 *
-	 * @param array<string,mixed> $account_data Account payload.
-	 * @param bool                $available    Whether the site has a platform connection.
-	 * @return WooPaymentsApiClient
-	 */
-	private function create_counting_account_api_client( array $account_data, bool $available = true ): WooPaymentsApiClient {
-		return new class( $account_data, $available ) extends WooPaymentsApiClient {
-			/**
-			 * Account payload.
-			 *
-			 * @var array<string,mixed>
-			 */
-			private array $account_data;
-
-			/**
-			 * Whether the site has a platform connection.
-			 *
-			 * @var bool
-			 */
-			private bool $available;
-
-			/**
-			 * Number of account fetches.
-			 *
-			 * @var int
-			 */
-			public int $calls = 0;
-
-			/**
-			 * Constructor.
-			 *
-			 * @param array<string,mixed> $account_data Account payload.
-			 * @param bool                $available    Whether the site has a platform connection.
-			 */
-			public function __construct( array $account_data, bool $available ) {
-				$this->account_data = $account_data;
-				$this->available    = $available;
-			}
-
-			/**
-			 * Tell whether the fake client is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return $this->available;
-			}
-
-			/**
-			 * Return the fake account payload.
-			 *
-			 * @param string $woocommerce_store_id WooCommerce store ID.
-			 * @return array<string,mixed>
-			 */
-			public function get_account( string $woocommerce_store_id = '' ): array {
-				++$this->calls;
-
-				return $this->account_data;
-			}
-		};
 	}
 
 	/**

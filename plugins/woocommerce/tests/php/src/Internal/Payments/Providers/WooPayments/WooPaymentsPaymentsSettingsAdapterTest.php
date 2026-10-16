@@ -145,130 +145,68 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The WooPayments extension makes the onboarding runtime available while it is active.
+	 * @testdox The onboarding runtime is available while the WooPayments extension is active or the built-in WooPayments can manage onboarding: $_dataName.
+	 * @dataProvider provide_onboarding_runtimes
+	 *
+	 * @param bool      $extension_active Whether the WooPayments extension class exists.
+	 * @param bool|null $builtin_enabled  The built-in enablement filter answer, or null when not filtered.
+	 * @param bool|null $can_manage       Whether the provider can manage onboarding, or null when not stubbed.
+	 * @param bool      $can_process      Whether the provider can process payments.
+	 * @param bool      $expected         Whether the onboarding runtime is available.
 	 */
-	public function test_runtime_available_when_the_woopayments_extension_is_active(): void {
-		$this->legacy_proxy->register_function_mocks(
-			array(
-				'class_exists' => fn( $class_to_check ) => 'WC_Payments' === ltrim( (string) $class_to_check, '\\' ),
-			)
-		);
-		$this->provider->method( 'can_process_payments' )->willReturn( false );
+	public function test_onboarding_runtime_availability( bool $extension_active, ?bool $builtin_enabled, ?bool $can_manage, bool $can_process, bool $expected ): void {
+		$this->arrange_runtimes( $extension_active, $builtin_enabled, $can_manage, $can_process );
 
-		self::assertTrue( $this->adapter->is_onboarding_runtime_available() );
+		self::assertSame( $expected, $this->adapter->is_onboarding_runtime_available() );
 	}
 
 	/**
-	 * @testdox A future built-in provider transport can make onboarding available without the WooPayments extension class.
+	 * Runtime states with whether onboarding is available.
+	 *
+	 * @return array<string,array{bool,bool|null,bool|null,bool,bool}>
 	 */
-	public function test_runtime_available_when_builtin_can_process_without_the_woopayments_extension(): void {
-		$this->legacy_proxy->register_function_mocks(
-			array(
-				'class_exists' => fn() => false,
-			)
+	public function provide_onboarding_runtimes(): array {
+		return array(
+			'extension active'  => array( true, null, null, false, true ),
+			'built-in owner, can manage, before it can process' => array( false, true, true, false, true ),
+			'built-in disabled' => array( false, false, true, true, false ),
 		);
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
-		$this->provider->method( 'can_process_payments' )->willReturn( true );
-
-		self::assertTrue( $this->adapter->is_onboarding_runtime_available() );
 	}
 
 	/**
-	 * @testdox Onboarding is unavailable when the WooPayments extension is absent and the built-in WooPayments is disabled.
+	 * @testdox The WooPayments extension's gateway wins while it is active, otherwise the injected built-in gateway while built-in onboarding is available: $_dataName.
+	 * @dataProvider provide_payment_gateway_runtimes
+	 *
+	 * @param bool        $extension_active Whether the WooPayments extension class exists.
+	 * @param bool|null   $builtin_enabled  The built-in enablement filter answer, or null when not filtered.
+	 * @param bool|null   $can_manage       Whether the provider can manage onboarding, or null when not stubbed.
+	 * @param bool        $can_process      Whether the provider can process payments.
+	 * @param string|null $expected_gateway 'extension' or 'builtin', or null when no gateway is available.
 	 */
-	public function test_runtime_unavailable_when_the_woopayments_extension_is_absent_and_builtin_is_disabled(): void {
-		$this->legacy_proxy->register_function_mocks(
-			array(
-				'class_exists' => fn() => false,
-			)
-		);
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
-		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
-		$this->provider->method( 'can_process_payments' )->willReturn( true );
+	public function test_get_payment_gateway( bool $extension_active, ?bool $builtin_enabled, ?bool $can_manage, bool $can_process, ?string $expected_gateway ): void {
+		$this->arrange_runtimes( $extension_active, $builtin_enabled, $can_manage, $can_process );
 
-		self::assertFalse( $this->adapter->is_onboarding_runtime_available() );
+		if ( null === $expected_gateway ) {
+			$this->expectException( \RuntimeException::class );
+			$this->expectExceptionMessage( 'WooPayments gateway is not available.' );
+		}
+
+		$gateway = $this->adapter->get_payment_gateway();
+
+		self::assertSame( 'extension' === $expected_gateway ? $this->gateway : $this->builtin_gateway, $gateway );
 	}
 
 	/**
-	 * @testdox Built-in onboarding is available with transport even before the account can process payments.
+	 * Runtime states with the gateway the adapter returns.
+	 *
+	 * @return array<string,array{bool,bool|null,bool|null,bool,string|null}>
 	 */
-	public function test_runtime_available_when_builtin_transport_exists_before_account_can_process(): void {
-		$this->legacy_proxy->register_function_mocks(
-			array(
-				'class_exists' => fn() => false,
-			)
+	public function provide_payment_gateway_runtimes(): array {
+		return array(
+			'built-in available before the account can process' => array( false, true, true, false, 'builtin' ),
+			'built-in onboarding unavailable' => array( false, true, false, false, null ),
+			'extension active while both runtimes are available' => array( true, null, null, true, 'extension' ),
 		);
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
-		$this->provider->method( 'can_process_payments' )->willReturn( false );
-
-		self::assertTrue( $this->adapter->is_onboarding_runtime_available() );
-	}
-
-	/**
-	 * @testdox The injected built-in gateway is returned when built-in processing is available without the WooPayments extension.
-	 */
-	public function test_builtin_gateway_is_returned_when_builtin_can_process_without_the_woopayments_extension(): void {
-		$this->legacy_proxy->register_function_mocks(
-			array(
-				'class_exists' => fn() => false,
-			)
-		);
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
-		$this->provider->method( 'can_process_payments' )->willReturn( true );
-
-		self::assertSame( $this->builtin_gateway, $this->adapter->get_payment_gateway() );
-	}
-
-	/**
-	 * @testdox The injected built-in gateway is returned when onboarding is available before the account can process payments.
-	 */
-	public function test_builtin_gateway_is_returned_when_onboarding_is_available_before_account_can_process(): void {
-		$this->legacy_proxy->register_function_mocks(
-			array(
-				'class_exists' => fn() => false,
-			)
-		);
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
-		$this->provider->method( 'can_process_payments' )->willReturn( false );
-
-		self::assertSame( $this->builtin_gateway, $this->adapter->get_payment_gateway() );
-	}
-
-	/**
-	 * @testdox The built-in gateway is not returned when built-in onboarding is unavailable.
-	 */
-	public function test_builtin_gateway_is_not_returned_when_builtin_onboarding_is_unavailable(): void {
-		$this->legacy_proxy->register_function_mocks(
-			array(
-				'class_exists' => fn() => false,
-			)
-		);
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-		$this->provider->method( 'can_manage_onboarding' )->willReturn( false );
-		$this->provider->method( 'can_process_payments' )->willReturn( false );
-
-		$this->expectException( \RuntimeException::class );
-		$this->expectExceptionMessage( 'WooPayments gateway is not available.' );
-
-		$this->adapter->get_payment_gateway();
-	}
-
-	/**
-	 * @testdox The WooPayments extension's gateway wins when both runtimes are available.
-	 */
-	public function test_woopayments_extension_gateway_wins_when_both_runtimes_are_available(): void {
-		$this->legacy_proxy->register_function_mocks(
-			array(
-				'class_exists' => fn( $class_to_check ) => 'WC_Payments' === ltrim( (string) $class_to_check, '\\' ),
-			)
-		);
-		$this->provider->method( 'can_process_payments' )->willReturn( true );
-
-		self::assertSame( $this->gateway, $this->adapter->get_payment_gateway() );
 	}
 
 	/**
@@ -605,6 +543,29 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'partner-code', $stored );
 		$this->assertSame( 'partner-code', get_transient( 'woopayments_referral_code' ) );
+	}
+
+	/**
+	 * Arrange which runtimes can run onboarding.
+	 *
+	 * @param bool      $extension_active Whether the WooPayments extension class exists.
+	 * @param bool|null $builtin_enabled  The built-in enablement filter answer, or null when not filtered.
+	 * @param bool|null $can_manage       Whether the provider can manage onboarding, or null when not stubbed.
+	 * @param bool      $can_process      Whether the provider can process payments.
+	 */
+	private function arrange_runtimes( bool $extension_active, ?bool $builtin_enabled, ?bool $can_manage, bool $can_process ): void {
+		$this->legacy_proxy->register_function_mocks(
+			array(
+				'class_exists' => fn( $class_to_check ) => $extension_active && 'WC_Payments' === ltrim( (string) $class_to_check, '\\' ),
+			)
+		);
+		if ( null !== $builtin_enabled ) {
+			add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $builtin_enabled ? '__return_true' : '__return_false' );
+		}
+		if ( null !== $can_manage ) {
+			$this->provider->method( 'can_manage_onboarding' )->willReturn( $can_manage );
+		}
+		$this->provider->method( 'can_process_payments' )->willReturn( $can_process );
 	}
 
 	/**

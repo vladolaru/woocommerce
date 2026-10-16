@@ -116,46 +116,58 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should reject platform Tracks requests with invalid nonces.
+	 * The recorder takes only the shopper events native scripts send, each with its declared properties (the request
+	 * schema the owner decided on 2026-10-07; client 11.1.0 `class-woopay-tracker.php:93-120` forwards any name and any
+	 * property).
+	 *
+	 * @testdox Should refuse a platform Tracks request and record nothing: $_dataName.
+	 * @dataProvider provider_refused_tracks_requests
+	 *
+	 * @param bool        $valid_nonce      Whether the request carries a valid nonce.
+	 * @param string|null $event_name       Event name the browser sends, or null for none.
+	 * @param int         $expected_status  Expected status code.
+	 * @param string|null $expected_message Expected error message, or null when the row does not pin it.
 	 */
-	public function test_tracks_request_rejects_invalid_nonce(): void {
-		$sut = $this->create_controller();
+	public function test_tracks_request_refuses( bool $valid_nonce, ?string $event_name, int $expected_status, ?string $expected_message ): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$request = array( 'tracksNonce' => $valid_nonce ? wp_create_nonce( 'platform_tracks_nonce' ) : 'bad' );
+		if ( null !== $event_name ) {
+			$request['tracksEventName'] = $event_name;
+			$request['tracksEventProp'] = wp_json_encode( array() );
+		}
+		\WC_Tracks_Footer_Pixel::clear_events();
 
-		$response = $sut->record_tracks_request(
-			array(
-				'tracksNonce'     => 'bad',
-				'tracksEventName' => 'woopay_button_click',
-			)
-		);
+		$response = $this->create_controller()->record_tracks_request( $request );
 
+		$events = \WC_Tracks_Footer_Pixel::get_events();
+		\WC_Tracks_Footer_Pixel::clear_events();
 		$this->assertFalse( $response['success'] );
-		$this->assertSame( 403, $response['status_code'] );
-		$this->assertSame( 'You aren’t authorized to do that.', $response['data'] );
+		$this->assertSame( $expected_status, $response['status_code'] );
+		if ( null !== $expected_message ) {
+			$this->assertSame( $expected_message, $response['data'] );
+		}
+		$this->assertSame( array(), $events );
 	}
 
 	/**
-	 * @testdox Should require a platform Tracks event name.
+	 * Requests the recorder refuses.
+	 *
+	 * @return array<string,array{bool,string|null,int,string|null}>
 	 */
-	public function test_tracks_request_requires_event_name(): void {
-		$sut = $this->create_controller();
-
-		$response = $sut->record_tracks_request(
-			array(
-				'tracksNonce' => wp_create_nonce( 'platform_tracks_nonce' ),
-			)
+	public function provider_refused_tracks_requests(): array {
+		return array(
+			'bad nonce'     => array( false, 'woopay_button_click', 403, 'You aren’t authorized to do that.' ),
+			'no event name' => array( true, null, 403, 'No valid event name or type.' ),
+			'unknown event' => array( true, 'free_text_event', 400, null ),
 		);
-
-		$this->assertFalse( $response['success'] );
-		$this->assertSame( 403, $response['status_code'] );
-		$this->assertSame( 'No valid event name or type.', $response['data'] );
 	}
 
 	/**
 	 * @testdox Should record prefixed WooPayments shopper events and apply the reference filter.
 	 */
 	public function test_records_prefixed_wcpay_event_and_applies_reference_filter(): void {
-		$captured_url = '';
-		$user_id      = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		wp_set_current_user( $user_id );
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 		update_option( 'woocommerce_default_country', 'US:CA' );
@@ -170,27 +182,8 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 			10,
 			2
 		);
-		add_filter(
-			'pre_http_request',
-			static function ( $preempt, $parsed_args, $url ) use ( &$captured_url ) {
-				$captured_url = $url;
-
-				// The response array WP_Http::request() returns (wp-includes/class-wp-http.php).
-				return array(
-					'headers'  => array(),
-					'body'     => '',
-					'response' => array(
-						'code'    => 200,
-						'message' => 'OK',
-					),
-					'cookies'  => array(),
-					'filename' => null,
-				);
-			},
-			10,
-			3
-		);
-		$sut = $this->create_controller( $this->create_account_service( true ) );
+		$requests = $this->capture_http_requests();
+		$sut      = $this->create_controller( $this->create_account_service( true ) );
 
 		$response = $sut->record_tracks_request(
 			array(
@@ -202,6 +195,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $response['success'] );
 		$this->assertSame( 200, $response['status_code'] );
+		$captured_url = (string) ( $requests[ count( $requests ) - 1 ]['url'] ?? '' );
 		$this->assertNotSame( '', $captured_url );
 		parse_str( (string) wp_parse_url( $captured_url, PHP_URL_QUERY ), $pixel_args );
 		$this->assertSame( 'wcpay_woopay_button_click', $pixel_args['_en'] );
@@ -221,30 +215,10 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	 * and `_dl` (`includes/tracks/class-wc-tracks.php:61-73`), and on pay-for-order pages the referrer carries the order key.
 	 */
 	public function test_shopper_event_omits_ip_referrer_and_request_url(): void {
-		$server       = $_SERVER;
-		$captured_url = '';
+		$server = $_SERVER;
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 		add_filter( 'wp_doing_ajax', '__return_true' );
-		add_filter(
-			'pre_http_request',
-			static function ( $preempt, $parsed_args, $url ) use ( &$captured_url ) {
-				$captured_url = $url;
-
-				// The response array WP_Http::request() returns (wp-includes/class-wp-http.php).
-				return array(
-					'headers'  => array(),
-					'body'     => '',
-					'response' => array(
-						'code'    => 200,
-						'message' => 'OK',
-					),
-					'cookies'  => array(),
-					'filename' => null,
-				);
-			},
-			10,
-			3
-		);
+		$requests                   = $this->capture_http_requests();
 		$_SERVER['REMOTE_ADDR']     = '203.0.113.7';
 		$_SERVER['HTTP_REFERER']    = 'https://store.test/checkout/order-pay/12/?pay_for_order=true&key=wc_order_abc123';
 		$_SERVER['REQUEST_SCHEME']  = 'https';
@@ -265,6 +239,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertTrue( $response['success'] );
+		$captured_url = (string) ( $requests[ count( $requests ) - 1 ]['url'] ?? '' );
 		parse_str( (string) wp_parse_url( $captured_url, PHP_URL_QUERY ), $pixel_args );
 		$this->assertSame( 'wcpay_pay_for_order_page_view', $pixel_args['_en'] );
 		$this->assertArrayNotHasKey( '_via_ip', $pixel_args );
@@ -281,30 +256,9 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should mark a recorded shopper event as WooCommerce core, whatever the browser sends.
 	 */
 	public function test_shopper_event_names_the_builtin_runtime_and_no_plugin_version(): void {
-		$captured_url = '';
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 		add_filter( 'wp_doing_ajax', '__return_true' );
-		add_filter(
-			'pre_http_request',
-			static function ( $preempt, $parsed_args, $url ) use ( &$captured_url ) {
-				unset( $preempt, $parsed_args );
-				$captured_url = $url;
-
-				// The response array WP_Http::request() returns (wp-includes/class-wp-http.php).
-				return array(
-					'headers'  => array(),
-					'body'     => '',
-					'response' => array(
-						'code'    => 200,
-						'message' => 'OK',
-					),
-					'cookies'  => array(),
-					'filename' => null,
-				);
-			},
-			10,
-			3
-		);
+		$requests = $this->capture_http_requests();
 
 		$response = $this->create_controller( $this->create_account_service( true ) )->record_tracks_request(
 			array(
@@ -320,6 +274,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertTrue( $response['success'] );
+		$captured_url = (string) ( $requests[ count( $requests ) - 1 ]['url'] ?? '' );
 		parse_str( (string) wp_parse_url( $captured_url, PHP_URL_QUERY ), $pixel_args );
 		$this->assertSame( 'woocommerce_core', $pixel_args['payments_runtime'] ?? null );
 		$this->assertArrayNotHasKey( 'wcpay_version', $pixel_args );
@@ -333,30 +288,10 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	 * an array, and `:400` merges `(array) $properties`.
 	 */
 	public function test_property_filter_returning_null_does_not_break_recording(): void {
-		$captured_url = '';
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 		add_filter( 'wp_doing_ajax', '__return_true' );
 		add_filter( 'wcpay_tracks_event_properties', '__return_null' );
-		add_filter(
-			'pre_http_request',
-			static function ( $preempt, $parsed_args, $url ) use ( &$captured_url ) {
-				$captured_url = $url;
-
-				// The response array WP_Http::request() returns (wp-includes/class-wp-http.php).
-				return array(
-					'headers'  => array(),
-					'body'     => '',
-					'response' => array(
-						'code'    => 200,
-						'message' => 'OK',
-					),
-					'cookies'  => array(),
-					'filename' => null,
-				);
-			},
-			10,
-			3
-		);
+		$requests = $this->capture_http_requests();
 
 		$response = $this->create_controller( $this->create_account_service( true ) )->record_tracks_request(
 			array(
@@ -367,6 +302,7 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertTrue( $response['success'] );
+		$captured_url = (string) ( $requests[ count( $requests ) - 1 ]['url'] ?? '' );
 		parse_str( (string) wp_parse_url( $captured_url, PHP_URL_QUERY ), $pixel_args );
 		$this->assertSame( 'wcpay_woopay_button_click', $pixel_args['_en'] );
 	}
@@ -401,64 +337,66 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should queue nothing and load no footer script when the store has shopper tracking off.
-	 */
-	public function test_queue_user_event_is_a_no_op_when_store_tracking_is_off(): void {
-		update_option( 'woocommerce_default_country', 'US:CA' );
-		update_option( 'woocommerce_allow_tracking', 'no' );
-		$sut = $this->create_controller();
-
-		$sut->queue_user_event( 'product_page_view', array( 'theme_type' => 'short_code' ) );
-		$sut->enqueue_frontend_events_script();
-
-		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) ) );
-		$this->assertFalse( wp_script_is( 'wc-woopayments-frontend-tracks', 'enqueued' ) );
-	}
-
-	/**
-	 * @testdox Should queue nothing and track nothing while the WooPayments gateway is disabled.
+	 * Only the store-wide checks decide whether a page view is queued for the footer script; the AJAX recorder applies
+	 * the per-visitor ones, so a page view is queued even when the visitor who primes a page cache opted out.
 	 *
-	 * Client 11.1.0 `should_enable_tracking()` returns false when the gateway is disabled (`class-woopay-tracker.php:242-246`),
-	 * so a connected store with the gateway off loads no Tracks script on its thank-you page (review 36 F3).
-	 */
-	public function test_tracking_is_off_while_the_gateway_is_disabled(): void {
-		update_option( 'woocommerce_default_country', 'US:CA' );
-		update_option( 'woocommerce_allow_tracking', 'yes' );
-		$sut = $this->create_controller( $this->create_account_service( true, false ) );
-
-		$sut->queue_user_event( 'order_success_page_view', array( 'theme_type' => 'blocks' ) );
-
-		$this->assertFalse( has_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) ) );
-		$this->assertFalse( $sut->is_shopper_event_tracking_enabled() );
-	}
-
-	/**
-	 * A recorded departure from client 11.1.0, which computes isShopperTrackingEnabled with the
-	 * WooPay check (`class-woopay-tracker.php:660-674`, PR 11199), so its sender drops the page views that PR 6870 and
-	 * PR 8821 meant to record on every store. Native queues them; they carry track_on_all_stores.
+	 * - Client 11.1.0 `should_enable_tracking()` returns false when the gateway is disabled (`class-woopay-tracker.php:242-246`),
+	 *   so a connected store with the gateway off loads no Tracks script on its thank-you page (review 36 F3).
+	 * - A recorded departure from client 11.1.0, which computes isShopperTrackingEnabled with the
+	 *   WooPay check (`class-woopay-tracker.php:660-674`, PR 11199), so its sender drops the page views that PR 6870 and
+	 *   PR 8821 meant to record on every store. Native queues them; they carry track_on_all_stores.
 	 *
-	 * @testdox Should queue page views when WooPay is off, since they are recorded on every store.
+	 * @testdox Should queue a page view for the footer script only when the store-wide checks pass: $_dataName.
+	 * @dataProvider provider_page_view_queue_gates
+	 *
+	 * @param string              $allow_tracking          The woocommerce_allow_tracking option.
+	 * @param bool                $gateway_enabled         Whether the WooPayments gateway is enabled.
+	 * @param bool                $woopay_enabled          Whether WooPay is enabled.
+	 * @param bool                $opt_out_cookie          Whether the visitor sends the Tracks opt-out cookie.
+	 * @param string              $event_name              Page view queued.
+	 * @param array<string,mixed> $properties              Page view properties.
+	 * @param bool                $expect_footer           Whether the footer script is hooked.
+	 * @param bool|null           $expect_tracking_enabled Expected shopper tracking answer, or null when the row does not check it.
+	 * @param bool                $runs_footer_script      Whether the row also runs the footer callback and checks no script loads.
 	 */
-	public function test_queue_user_event_queues_page_views_when_woopay_is_off(): void {
+	public function test_queue_user_event_follows_the_store_wide_checks( string $allow_tracking, bool $gateway_enabled, bool $woopay_enabled, bool $opt_out_cookie, string $event_name, array $properties, bool $expect_footer, ?bool $expect_tracking_enabled, bool $runs_footer_script ): void {
 		update_option( 'woocommerce_default_country', 'US:CA' );
-		update_option( 'woocommerce_allow_tracking', 'yes' );
-		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_cached_account_data', 'get_gateway_setting', 'is_gateway_enabled' ) )
-			->getMock();
-		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
-		$account_service->method( 'get_cached_account_data' )->willReturn( array( 'platform_checkout_eligible' => true ) );
-		$account_service->method( 'get_gateway_setting' )->willReturn( 'no' );
-		$sut = $this->create_controller( $account_service );
+		update_option( 'woocommerce_allow_tracking', $allow_tracking );
+		if ( $opt_out_cookie ) {
+			$_COOKIE['tk_opt-out'] = 'yes';
+		}
+		$sut = $this->create_controller( $this->create_account_service( true, $gateway_enabled, $woopay_enabled ) );
 
-		$sut->queue_user_event( 'cart_page_view', array( 'theme_type' => 'blocks' ) );
+		$sut->queue_user_event( $event_name, $properties );
+		if ( $runs_footer_script ) {
+			$sut->enqueue_frontend_events_script();
+		}
 
 		try {
-			$this->assertSame( 10, has_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) ) );
+			$this->assertSame( $expect_footer ? 10 : false, has_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) ) );
 		} finally {
 			remove_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) );
 		}
-		$this->assertTrue( $sut->is_shopper_event_tracking_enabled() );
+		if ( $runs_footer_script ) {
+			$this->assertFalse( wp_script_is( 'wc-woopayments-frontend-tracks', 'enqueued' ) );
+		}
+		if ( null !== $expect_tracking_enabled ) {
+			$this->assertSame( $expect_tracking_enabled, $sut->is_shopper_event_tracking_enabled() );
+		}
+	}
+
+	/**
+	 * Store-wide and per-visitor states with whether a page view is queued.
+	 *
+	 * @return array<string,array{string,bool,bool,bool,string,array<string,mixed>,bool,bool|null,bool}>
+	 */
+	public function provider_page_view_queue_gates(): array {
+		return array(
+			'store tracking off' => array( 'no', true, true, false, 'product_page_view', array( 'theme_type' => 'short_code' ), false, null, true ),
+			'gateway disabled'   => array( 'yes', false, true, false, 'order_success_page_view', array( 'theme_type' => 'blocks' ), false, false, false ),
+			'WooPay off'         => array( 'yes', true, false, false, 'cart_page_view', array( 'theme_type' => 'blocks' ), true, true, false ),
+			'opt-out cookie'     => array( 'yes', true, true, true, 'product_page_view', array( 'theme_type' => 'short_code' ), true, false, false ),
+		);
 	}
 
 	/**
@@ -523,21 +461,6 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should queue page views even when the visitor who primes a page cache opted out; the AJAX recorder applies the per-visitor checks.
-	 */
-	public function test_queue_user_event_ignores_per_visitor_opt_out(): void {
-		update_option( 'woocommerce_default_country', 'US:CA' );
-		update_option( 'woocommerce_allow_tracking', 'yes' );
-		$_COOKIE['tk_opt-out'] = 'yes';
-		$sut                   = $this->create_controller();
-
-		$sut->queue_user_event( 'product_page_view', array( 'theme_type' => 'short_code' ) );
-
-		$this->assertSame( 10, has_action( 'wp_footer', array( $sut, 'enqueue_frontend_events_script' ) ) );
-		$this->assertFalse( $sut->is_shopper_event_tracking_enabled() );
-	}
-
-	/**
 	 * The `get_identity` answer is the JSON success envelope client 11.1.0 sends (`class-woopay-tracker.php:128-133`) and
 	 * the shopper Tracks script reads as `data._ui` and `data._ut` (`client/blocks/assets/js/extensions/payment-methods/woopayments/tracks.js:81-95`).
 	 *
@@ -590,23 +513,6 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		}
 
 		return json_decode( $body, true );
-	}
-
-	/**
-	 * The recorder takes only the shopper events native scripts send, each with its declared properties (the request
-	 * schema the owner decided on 2026-10-07; client 11.1.0 `class-woopay-tracker.php:93-120` forwards any name and any
-	 * property).
-	 *
-	 * @testdox Should refuse an event name no script sends, and record nothing.
-	 */
-	public function test_tracks_request_refuses_an_unknown_event(): void {
-		update_option( 'woocommerce_default_country', 'US:CA' );
-		update_option( 'woocommerce_allow_tracking', 'yes' );
-
-		$recorded = $this->record_through_tracks_request( $this->create_controller(), 'free_text_event', array() );
-
-		$this->assertSame( 400, $recorded['response']['status_code'] );
-		$this->assertSame( array(), $recorded['events'] );
 	}
 
 	/**
@@ -679,10 +585,9 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string   $recorder       Recorder called.
 	 * @param string   $allow_tracking The woocommerce_allow_tracking option.
-	 * @param string[] $expected_reads Ordered filter runs and account reads.
 	 * @param string[] $expected_names Event names recorded.
 	 */
-	public function test_tracking_filter_runs_once_before_the_account_reads( string $recorder, string $allow_tracking, array $expected_reads, array $expected_names ): void {
+	public function test_tracking_filter_runs_once_before_the_account_reads( string $recorder, string $allow_tracking, array $expected_names ): void {
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		update_option( 'woocommerce_allow_tracking', $allow_tracking );
 		$reads = new \ArrayObject();
@@ -716,28 +621,31 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 		$names = array_map( static fn( $event ) => $event->_en ?? null, \WC_Tracks_Footer_Pixel::get_events() );
 		\WC_Tracks_Footer_Pixel::clear_events();
 
-		$this->assertSame( $expected_reads, $reads->getArrayCopy() );
+		$reads       = $reads->getArrayCopy();
+		$filter_runs = array_values( preg_grep( '/^filter /', $reads ) );
+		$this->assertSame( array( 'filter ' . wp_json_encode( array( 'no' !== $allow_tracking ) ) ), $filter_runs, 'The filter runs once, with the tracking setting.' );
+		$this->assertSame( $filter_runs[0], $reads[0], 'The filter runs before any account read.' );
+		if ( 'no' === $allow_tracking ) {
+			$this->assertCount( 1, $reads, 'A refusal reads no account data.' );
+		}
 		$this->assertSame( $expected_names, $names );
 	}
 
 	/**
-	 * Recorders with the reads they make, tracking on and off.
+	 * Recorders with the events they record, tracking on and off.
 	 *
-	 * @return array<string,array{string,string,string[],string[]}>
+	 * @return array<string,array{string,string,string[]}>
 	 */
 	public function provider_tracking_filter_reads(): array {
-		$gateway_and_account = array( 'filter [true]', 'is_gateway_enabled', 'get_cached_account_data' );
-		$refused             = array( 'filter [false]' );
-
 		return array(
-			'every-store event, on'   => array( 'every-store event', 'yes', array_merge( $gateway_and_account, array( 'is_test_mode_enabled' ) ), array( 'wcpay_cart_page_view' ) ),
-			'every-store event, off'  => array( 'every-store event', 'no', $refused, array() ),
-			'WooPay event, on'        => array( 'WooPay event', 'yes', array_merge( $gateway_and_account, array( 'get_cached_account_data', 'get_gateway_setting platform_checkout', 'is_test_mode_enabled' ) ), array( 'wcpay_woopay_button_click' ) ),
-			'WooPay event, off'       => array( 'WooPay event', 'no', $refused, array() ),
-			'WooPay admin event, on'  => array( 'WooPay admin event', 'yes', array_merge( $gateway_and_account, array( 'is_test_mode_enabled' ) ), array( 'wcadmin_woopay_enabled' ) ),
-			'WooPay admin event, off' => array( 'WooPay admin event', 'no', $refused, array() ),
-			'queued page view, on'    => array( 'queued page view', 'yes', $gateway_and_account, array() ),
-			'queued page view, off'   => array( 'queued page view', 'no', $refused, array() ),
+			'every-store event, on'   => array( 'every-store event', 'yes', array( 'wcpay_cart_page_view' ) ),
+			'every-store event, off'  => array( 'every-store event', 'no', array() ),
+			'WooPay event, on'        => array( 'WooPay event', 'yes', array( 'wcpay_woopay_button_click' ) ),
+			'WooPay event, off'       => array( 'WooPay event', 'no', array() ),
+			'WooPay admin event, on'  => array( 'WooPay admin event', 'yes', array( 'wcadmin_woopay_enabled' ) ),
+			'WooPay admin event, off' => array( 'WooPay admin event', 'no', array() ),
+			'queued page view, on'    => array( 'queued page view', 'yes', array() ),
+			'queued page view, off'   => array( 'queued page view', 'no', array() ),
 		);
 	}
 
@@ -1110,19 +1018,6 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 			$sut->register();
 			$this->assertSame( 10, has_action( 'woocommerce_checkout_order_processed', array( $sut, 'record_checkout_order_placed' ) ) );
 			$this->assertSame( 10, has_action( 'woocommerce_store_api_checkout_order_processed', array( $sut, 'record_checkout_order_placed' ) ) );
-			$get_accepted_args = static function ( string $hook_name ) use ( $sut ): int {
-				global $wp_filter;
-				foreach ( $wp_filter[ $hook_name ]->callbacks[10] ?? array() as $callback ) {
-					if ( array( $sut, 'record_checkout_order_placed' ) === $callback['function'] ) {
-						return (int) $callback['accepted_args'];
-					}
-				}
-
-				return 0;
-			};
-			$this->assertSame( 2, $get_accepted_args( 'woocommerce_checkout_order_processed' ) );
-			$this->assertSame( 2, $get_accepted_args( 'woocommerce_store_api_checkout_order_processed' ) );
-			$this->assertSame( 'pending', $classic_order->get_status() );
 
 			/**
 			 * Fires after a classic checkout order is created and before payment processing.

@@ -4,7 +4,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTrackingInfoService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -35,13 +34,6 @@ class WooPaymentsTrackingInfoServiceTest extends WC_Unit_Test_Case {
 	private WooPaymentsApiClient $api_client;
 
 	/**
-	 * Database cache the service reads through.
-	 *
-	 * @var WooPaymentsDatabaseCache
-	 */
-	private WooPaymentsDatabaseCache $database_cache;
-
-	/**
 	 * Set up test fixtures.
 	 */
 	public function setUp(): void {
@@ -58,9 +50,6 @@ class WooPaymentsTrackingInfoServiceTest extends WC_Unit_Test_Case {
 			/** @var array<string,mixed> */
 			public array $response = array( 'hosting_provider' => 'fixture-host-3' );
 
-			/** @var bool */
-			public bool $fail = false;
-
 			/**
 			 * Tell whether the transport is available.
 			 *
@@ -74,22 +63,18 @@ class WooPaymentsTrackingInfoServiceTest extends WC_Unit_Test_Case {
 			 * Return the configured tracking info.
 			 *
 			 * @return array<string,mixed>
-			 * @throws WooPaymentsApiException When configured to fail.
 			 */
 			public function get_tracking_info(): array {
 				++$this->calls;
-				if ( $this->fail ) {
-					throw new WooPaymentsApiException( 'Request failed.', 'wcpay_http_request_failed', 500 );
-				}
 
 				return $this->response;
 			}
 		};
 
-		$this->database_cache = new WooPaymentsDatabaseCache();
-		$this->database_cache->init( new LegacyProxy() );
+		$database_cache = new WooPaymentsDatabaseCache();
+		$database_cache->init( new LegacyProxy() );
 		$this->sut = new WooPaymentsTrackingInfoService();
-		$this->sut->init( $this->api_client, $this->database_cache );
+		$this->sut->init( $this->api_client, $database_cache );
 		delete_option( self::OPTION );
 	}
 
@@ -98,7 +83,6 @@ class WooPaymentsTrackingInfoServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		delete_option( self::OPTION );
-		remove_all_filters( 'wp_doing_ajax' );
 
 		parent::tearDown();
 	}
@@ -156,98 +140,6 @@ class WooPaymentsTrackingInfoServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Successful tracking info is served from the cache for a month and refetched after.
-	 *
-	 * @testWith [2505600, 0, "cached-host"]
-	 *           [2595600, 1, "fixture-host-3"]
-	 *
-	 * @param int    $age           Seconds since the cache was written (29 days, then 30 days plus an hour).
-	 * @param int    $expected_call Expected platform requests.
-	 * @param string $expected_host Expected hosting provider.
-	 */
-	public function test_success_ttl_is_a_month( int $age, int $expected_call, string $expected_host ): void {
-		$this->seed( array( 'hosting_provider' => 'cached-host' ), time() - $age, false );
-
-		$this->assertSame( array( 'hosting_provider' => $expected_host ), $this->sut->get_tracking_info() );
-		$this->assertSame( $expected_call, $this->api_client->calls );
-	}
-
-	/**
-	 * @testdox A failed refresh keeps the previous tracking info and counts the consecutive error.
-	 */
-	public function test_failed_refresh_keeps_old_data(): void {
-		$this->api_client->fail = true;
-		$this->seed( array( 'hosting_provider' => 'cached-host' ), time() - 3 * MONTH_IN_SECONDS, true, 2 );
-
-		$this->assertSame( array( 'hosting_provider' => 'cached-host' ), $this->sut->get_tracking_info() );
-		$this->assertSame( 1, $this->api_client->calls );
-
-		$stored = get_option( self::OPTION );
-		$this->assertSame( array( 'hosting_provider' => 'cached-host' ), $stored['data'] );
-		$this->assertTrue( $stored['errored'] );
-		$this->assertSame( 3, $stored['consecutive_errors'] );
-	}
-
-	/**
-	 * @testdox An errored cache is retried on the WooPayments extension's 2/5/10/15 minute backoff ladder.
-	 *
-	 * @testWith [1, 180, 1]
-	 *           [2, 180, 0]
-	 *           [2, 360, 1]
-	 *           [3, 540, 0]
-	 *           [3, 660, 1]
-	 *           [9, 840, 0]
-	 *           [9, 960, 1]
-	 *
-	 * @param int $consecutive_errors Consecutive errors recorded in the cache.
-	 * @param int $age                Seconds since the errored write.
-	 * @param int $expected_calls     Expected platform requests.
-	 */
-	public function test_errored_cache_backoff( int $consecutive_errors, int $age, int $expected_calls ): void {
-		$this->seed( null, time() - $age, true, $consecutive_errors );
-
-		$this->sut->get_tracking_info();
-
-		$this->assertSame( $expected_calls, $this->api_client->calls );
-	}
-
-	/**
-	 * @testdox An errored cache stored without an error count, as before the backoff ladder, is retried after two minutes.
-	 *
-	 * @testWith [60, 0]
-	 *           [180, 1]
-	 *
-	 * @param int $age            Seconds since the errored write.
-	 * @param int $expected_calls Expected platform requests.
-	 */
-	public function test_errored_cache_without_an_error_count_is_retried_after_two_minutes( int $age, int $expected_calls ): void {
-		update_option(
-			self::OPTION,
-			array(
-				'data'    => null,
-				'fetched' => time() - $age,
-				'errored' => true,
-			),
-			false
-		);
-
-		$this->sut->get_tracking_info();
-
-		$this->assertSame( $expected_calls, $this->api_client->calls );
-	}
-
-	/**
-	 * @testdox An expired cache is not refreshed while an Action Scheduler job runs (the WooPayments extension `class-database-cache.php:295-301`).
-	 */
-	public function test_action_scheduler_jobs_do_not_refresh(): void {
-		$this->seed( array( 'hosting_provider' => 'cached-host' ), time() - 2 * MONTH_IN_SECONDS, false );
-		$this->database_cache->disable_refresh();
-
-		$this->assertSame( array( 'hosting_provider' => 'cached-host' ), $this->sut->get_tracking_info() );
-		$this->assertSame( 0, $this->api_client->calls );
-	}
-
-	/**
 	 * @testdox The tracking info is fetched once per request even when storing it fails (the WooPayments extension `class-database-cache.php:101-109,340-353`).
 	 */
 	public function test_fetches_once_per_request_when_the_write_fails(): void {
@@ -264,17 +156,6 @@ class WooPaymentsTrackingInfoServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'hosting_provider' => 'fixture-host-3' ), $this->sut->get_tracking_info() );
 		$this->assertSame( array( 'hosting_provider' => 'fixture-host-3' ), $this->sut->get_tracking_info() );
 		$this->assertSame( 1, $this->api_client->calls );
-	}
-
-	/**
-	 * @testdox AJAX requests never refresh the cache and serve stale data as is.
-	 */
-	public function test_ajax_requests_do_not_refresh(): void {
-		add_filter( 'wp_doing_ajax', '__return_true' );
-		$this->seed( array( 'hosting_provider' => 'cached-host' ), time() - 3 * MONTH_IN_SECONDS, false );
-
-		$this->assertSame( array( 'hosting_provider' => 'cached-host' ), $this->sut->get_tracking_info() );
-		$this->assertSame( 0, $this->api_client->calls );
 	}
 
 	/**

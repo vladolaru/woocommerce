@@ -17,51 +17,43 @@ use WC_Unit_Test_Case;
 class WooPaymentsPlatformConnectionServiceTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Should report no cutover failures when the platform transport is ready.
+	 * @testdox Should report the cutover preflight failures of the platform transport: $_dataName.
+	 * @dataProvider provide_cutover_preflight_states
+	 *
+	 * @param bool          $is_connected               Whether the store is connected.
+	 * @param int           $connection_owner_id        Connection owner ID.
+	 * @param bool          $connection_owner_connected Whether the connection owner has a user token.
+	 * @param int|null      $blog_id                    WPCOM blog ID, or null when unavailable.
+	 * @param array<string> $expected                   Expected failure codes.
 	 */
-	public function test_get_cutover_preflight_failures_returns_empty_for_ready_transport(): void {
-		$manager = $this->create_connection_manager( true, 1, true );
-		$sut     = new TestableWooPaymentsPlatformConnectionService();
+	public function test_get_cutover_preflight_failures( bool $is_connected, int $connection_owner_id, bool $connection_owner_connected, ?int $blog_id, array $expected ): void {
+		$sut          = new TestableWooPaymentsPlatformConnectionService();
+		$sut->manager = $this->create_connection_manager( $is_connected, $connection_owner_id, $connection_owner_connected );
+		$sut->blog_id = $blog_id;
 
-		$sut->manager = $manager;
-		$sut->blog_id = 123;
-
-		$this->assertSame( array(), $sut->get_cutover_preflight_failures() );
+		$this->assertSame( $expected, $sut->get_cutover_preflight_failures() );
 	}
 
 	/**
-	 * @testdox Should report granular local WPCOM platform readiness failures.
+	 * Provide platform transport states: connected, owner ID, owner token, blog ID, expected failure codes.
+	 *
+	 * @return array<string,array{0:bool,1:int,2:bool,3:int|null,4:array<string>}>
 	 */
-	public function test_get_cutover_preflight_failures_reports_granular_platform_codes(): void {
-		$manager = $this->create_connection_manager( false, 0, false );
-		$sut     = new TestableWooPaymentsPlatformConnectionService();
-
-		$sut->manager = $manager;
-		$sut->blog_id = null;
-
-		$this->assertSame(
-			array(
-				'wpcom_connection_unavailable',
-				'wpcom_blog_id_unavailable',
-				'wpcom_connection_owner_unavailable',
+	public function provide_cutover_preflight_states(): array {
+		return array(
+			'ready transport'               => array( true, 1, true, 123, array() ),
+			'nothing ready, granular codes' => array(
+				false,
+				0,
+				false,
+				null,
+				array(
+					'wpcom_connection_unavailable',
+					'wpcom_blog_id_unavailable',
+					'wpcom_connection_owner_unavailable',
+				),
 			),
-			$sut->get_cutover_preflight_failures()
-		);
-	}
-
-	/**
-	 * @testdox Should require a connection-owner user token for cutover readiness.
-	 */
-	public function test_get_cutover_preflight_failures_requires_connection_owner_user_token(): void {
-		$manager = $this->create_connection_manager( true, 1, false );
-		$sut     = new TestableWooPaymentsPlatformConnectionService();
-
-		$sut->manager = $manager;
-		$sut->blog_id = 123;
-
-		$this->assertSame(
-			array( 'wpcom_connection_owner_user_token_unavailable' ),
-			$sut->get_cutover_preflight_failures()
+			'owner without a user token'    => array( true, 1, false, 123, array( 'wpcom_connection_owner_user_token_unavailable' ) ),
 		);
 	}
 

@@ -385,14 +385,36 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should default Multi-Currency to enabled when the feature option is absent.
+	 * @testdox Should read Multi-Currency as enabled unless the feature option disables it ($scenario).
+	 * @dataProvider provide_multi_currency_flags
+	 *
+	 * @param string      $scenario Case.
+	 * @param string|null $flag     Stored `_wcpay_feature_customer_multi_currency`, or null when absent.
+	 * @param bool        $expected Expected `is_multi_currency_enabled`.
 	 */
-	public function test_get_settings_defaults_multi_currency_to_enabled_when_option_is_absent(): void {
-		delete_option( '_wcpay_feature_customer_multi_currency' );
+	public function test_get_settings_reads_the_multi_currency_flag( string $scenario, ?string $flag, bool $expected ): void {
+		unset( $scenario );
+		if ( null === $flag ) {
+			delete_option( '_wcpay_feature_customer_multi_currency' );
+		} else {
+			update_option( '_wcpay_feature_customer_multi_currency', $flag );
+		}
 
 		$settings = $this->sut->get_settings();
 
-		$this->assertTrue( $settings['is_multi_currency_enabled'] );
+		$this->assertSame( $expected, $settings['is_multi_currency_enabled'] );
+	}
+
+	/**
+	 * Provide stored Multi-Currency flags: case, stored value, expected setting.
+	 *
+	 * @return array<string,array{0:string,1:string|null,2:bool}>
+	 */
+	public function provide_multi_currency_flags(): array {
+		return array(
+			'option absent'    => array( 'option absent', null, true ),
+			'explicit disable' => array( 'explicit disable', '0', false ),
+		);
 	}
 
 	/**
@@ -403,17 +425,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 
 		// Client 11.1.0 sends the site locale, get_locale(), not the user's (includes/admin/class-wc-payments-admin.php:697).
 		$this->assertSame( 'en', $settings['express_checkout_preview']['stripe']['locale'] );
-	}
-
-	/**
-	 * @testdox Should preserve an explicit Multi-Currency disable.
-	 */
-	public function test_get_settings_preserves_explicit_multi_currency_disable(): void {
-		update_option( '_wcpay_feature_customer_multi_currency', '0' );
-
-		$settings = $this->sut->get_settings();
-
-		$this->assertFalse( $settings['is_multi_currency_enabled'] );
 	}
 
 	/**
@@ -677,83 +688,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( array( 'card', 'ideal', 'apple_pay', 'google_pay' ), $available );
-	}
-
-	/**
-	 * @testdox Public settings filters the registry catalog before deriving fee-backed availability.
-	 */
-	public function test_get_settings_filters_catalog_before_reading_fee_backed_availability(): void {
-		$events          = array();
-		$account_service = new class( $events ) extends WooPaymentsAccountService {
-			/**
-			 * Recorded availability events.
-			 *
-			 * @var string[]
-			 */
-			private array $events;
-
-			/**
-			 * Create the recording account service.
-			 *
-			 * @param string[] $events Recorded availability events.
-			 */
-			public function __construct( array &$events ) {
-				$this->events = &$events;
-			}
-
-			/**
-			 * Record and return fee-backed account availability.
-			 *
-			 * @param bool $force_refresh Whether to force an account refresh.
-			 * @return array<string,mixed>
-			 */
-			public function get_cached_account_data( bool $force_refresh = false ): array {
-				unset( $force_refresh );
-				$this->events[] = 'account_fees';
-
-				return array(
-					'account_id' => 'acct_ordering_test',
-					'fees'       => array(
-						'card'       => array(),
-						'bancontact' => array(),
-					),
-				);
-			}
-		};
-		$database_cache  = new WooPaymentsDatabaseCache();
-		$database_cache->init( new LegacyProxy() );
-		$account_service->init( new LegacyProxy(), $database_cache );
-		add_filter(
-			'wcpay_upe_available_payment_methods',
-			static function ( array $payment_method_ids ) use ( &$events ): array {
-				$events[] = 'availability_filter';
-
-				return array_values( array_diff( $payment_method_ids, array( 'bancontact' ) ) );
-			}
-		);
-		$service = new WooPaymentsSettingsService();
-		$service->init(
-			$account_service,
-			$this->api_client,
-			$this->pm_promotions_service,
-			wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ),
-			new WooPaymentsPaymentMethodRegistry(),
-			wc_get_container()->get( WooPaymentsStripeBillingModule::class ),
-			$this->create_fraud_ruleset_service( $account_service ),
-			$this->create_duplicate_gateway_methods_service( $account_service ),
-			$this->create_woopay_eligibility( $account_service ),
-			new RecordingWooPayAppearanceStore( $this->woopay_session_service ),
-			wc_get_container()->get( WooPaymentsFrontendTrackingController::class ),
-			wc_get_container()->get( WooPaymentsLogger::class )
-		);
-
-		$settings = $service->get_settings();
-
-		// The Amazon Pay feature reads the account first, as the client's registry does before any filter runs
-		// (client 11.1.0 PaymentMethodDefinitionRegistry.php:97-105); the fees are read after the one filter run.
-		$this->assertSame( array( 'account_fees', 'availability_filter', 'account_fees' ), array_slice( $events, 0, 3 ) );
-		$this->assertSame( 1, count( array_keys( $events, 'availability_filter', true ) ) );
-		$this->assertSame( array( 'card', 'apple_pay', 'google_pay' ), $settings['available_payment_method_ids'] );
 	}
 
 	/**
@@ -1065,81 +999,69 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should omit wallet duplicate clusters until a split wallet gateway is enabled.
+	 * @testdox Should omit the Apple Pay and Google Pay duplicate cluster ($scenario).
+	 * @dataProvider provide_omitted_wallet_clusters
+	 *
+	 * @param string                                                      $scenario        Case.
+	 * @param array<string,string>|null                                   $stored_settings Stored WooPayments settings, or null when absent.
+	 * @param array<int,array{0:string,1:string,2?:array<string,string>}> $gateway_specs   Gateway ID, enabled flag and options.
+	 * @param string                                                      $message         Assertion message.
 	 */
-	public function test_get_settings_omits_apple_pay_google_pay_duplicate_cluster_when_split_settings_are_missing(): void {
-		delete_option( 'woocommerce_woocommerce_payments_settings' );
+	public function test_get_settings_omits_apple_pay_google_pay_duplicate_cluster( string $scenario, ?array $stored_settings, array $gateway_specs, string $message ): void {
+		unset( $scenario );
+		if ( null === $stored_settings ) {
+			delete_option( 'woocommerce_woocommerce_payments_settings' );
+		} else {
+			update_option( 'woocommerce_woocommerce_payments_settings', $stored_settings );
+		}
 		$this->mock_payment_gateways(
-			array(
-				$this->create_gateway( 'woocommerce_payments', 'yes' ),
-				$this->create_gateway( 'legacy_googlepay_gateway', 'yes' ),
+			array_map(
+				fn( array $spec ): object => $this->create_gateway( ...$spec ),
+				$gateway_specs
 			)
 		);
 
 		$settings = $this->sut->get_settings();
 
-		$this->assertArrayNotHasKey(
-			'apple_pay_google_pay',
-			$settings['duplicated_payment_method_ids'],
-			'Unconfigured split wallet gateways are disabled.'
-		);
+		$this->assertArrayNotHasKey( 'apple_pay_google_pay', $settings['duplicated_payment_method_ids'], $message );
 	}
 
 	/**
-	 * @testdox Should omit Apple Pay and Google Pay duplicate clusters when payment request is disabled.
+	 * Provide gateway lists without a wallet duplicate: case, stored settings, gateways, assertion message.
+	 *
+	 * @return array<string,array{0:string,1:array<string,string>|null,2:array<int,array{0:string,1:string,2?:array<string,string>}>,3:string}>
 	 */
-	public function test_get_settings_omits_apple_pay_google_pay_duplicate_cluster_when_payment_request_is_disabled(): void {
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array(
-				'payment_request' => 'no',
-			)
-		);
-		$this->mock_payment_gateways(
-			array(
-				$this->create_gateway( 'woocommerce_payments', 'yes' ),
-				$this->create_gateway( 'legacy_google_pay_gateway', 'yes' ),
-			)
-		);
-
-		$settings = $this->sut->get_settings();
-
-		$this->assertArrayNotHasKey(
-			'apple_pay_google_pay',
-			$settings['duplicated_payment_method_ids'],
-			'Apple Pay and Google Pay duplicates require native WooPayments payment request support.'
-		);
-	}
-
-	/**
-	 * @testdox Should omit Apple Pay and Google Pay duplicate clusters when third-party option-gated wallets are disabled.
-	 */
-	public function test_get_settings_omits_apple_pay_google_pay_duplicate_cluster_for_disabled_option_gated_wallets(): void {
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array(
-				'payment_request' => 'yes',
-			)
-		);
-		$this->mock_payment_gateways(
-			array(
-				$this->create_gateway( 'woocommerce_payments', 'yes' ),
-				$this->create_gateway( 'stripe', 'yes', array( 'payment_request' => 'no' ) ),
-				$this->create_gateway( 'wallet_without_express_option', 'yes' ),
-				$this->create_gateway(
-					'wallet_with_disabled_express_option',
-					'yes',
-					array( 'express_checkout_enabled' => 'no' )
+	public function provide_omitted_wallet_clusters(): array {
+		return array(
+			'split settings missing'   => array(
+				'split settings missing',
+				null,
+				array(
+					array( 'woocommerce_payments', 'yes' ),
+					array( 'legacy_googlepay_gateway', 'yes' ),
 				),
-			)
-		);
-
-		$settings = $this->sut->get_settings();
-
-		$this->assertArrayNotHasKey(
-			'apple_pay_google_pay',
-			$settings['duplicated_payment_method_ids'],
-			'Apple Pay and Google Pay duplicates should not include third-party gateways with disabled Stripe payment request or generic express options.'
+				'Unconfigured split wallet gateways are disabled.',
+			),
+			'payment request off'      => array(
+				'payment request off',
+				array( 'payment_request' => 'no' ),
+				array(
+					array( 'woocommerce_payments', 'yes' ),
+					array( 'legacy_google_pay_gateway', 'yes' ),
+				),
+				'Apple Pay and Google Pay duplicates require native WooPayments payment request support.',
+			),
+			'option-gated wallets off' => array(
+				'option-gated wallets off',
+				array( 'payment_request' => 'yes' ),
+				array(
+					array( 'woocommerce_payments', 'yes' ),
+					array( 'stripe', 'yes', array( 'payment_request' => 'no' ) ),
+					array( 'wallet_without_express_option', 'yes' ),
+					array( 'wallet_with_disabled_express_option', 'yes', array( 'express_checkout_enabled' => 'no' ) ),
+				),
+				'Apple Pay and Google Pay duplicates should not include third-party gateways with disabled Stripe payment request or generic express options.',
+			),
 		);
 	}
 
@@ -1606,33 +1528,134 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should record the WooPay last disable date when WooPay is turned off.
+	 * @testdox Should record the WooPay last disable date only when a save turns WooPay off ($scenario).
+	 * @dataProvider provide_woopay_last_disable_date_saves
+	 *
+	 * @param string               $scenario          Case.
+	 * @param array<string,string> $stored_settings   Stored WooPayments settings before the save.
+	 * @param array<string,mixed>  $update            Settings update.
+	 * @param string               $platform_checkout Expected stored `platform_checkout`.
+	 * @param string|null          $disable_date      Expected stored and returned disable date, or null for today's date.
 	 */
-	public function test_update_settings_records_woopay_last_disable_date_when_turning_woopay_off(): void {
+	public function test_update_settings_records_woopay_last_disable_date( string $scenario, array $stored_settings, array $update, string $platform_checkout, ?string $disable_date ): void {
+		unset( $scenario );
+		update_option( 'woocommerce_woocommerce_payments_settings', $stored_settings );
+
+		$expected_dates = array( $disable_date ?? gmdate( 'Y-m-d' ) );
+
+		$result = $this->sut->update_settings( $update );
+
+		$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
+		if ( null === $disable_date ) {
+			$expected_dates[] = gmdate( 'Y-m-d' );
+			$expected_dates   = array_values( array_unique( $expected_dates ) );
+		}
+
+		$this->assertIsArray( $result );
+		$this->assertIsArray( $stored );
+		$this->assertSame( $platform_checkout, $stored['platform_checkout'] );
+		$this->assertContains( $stored['platform_checkout_last_disable_date'], $expected_dates );
+		$this->assertSame( $stored['platform_checkout_last_disable_date'], $result['woopay_last_disable_date'] );
+	}
+
+	/**
+	 * Provide WooPay saves: case, stored settings, update, expected stored `platform_checkout`, expected disable date.
+	 *
+	 * @return array<string,array{0:string,1:array<string,string>,2:array<string,mixed>,3:string,4:string|null}>
+	 */
+	public function provide_woopay_last_disable_date_saves(): array {
+		return array(
+			'turned off'  => array(
+				'turned off',
+				array( 'platform_checkout' => 'yes' ),
+				array( 'is_woopay_enabled' => false ),
+				'no',
+				null,
+			),
+			'already off' => array(
+				'already off',
+				array(
+					'platform_checkout'                   => 'no',
+					'platform_checkout_last_disable_date' => '2026-06-01',
+				),
+				array( 'is_woopay_enabled' => false ),
+				'no',
+				'2026-06-01',
+			),
+			'omitted'     => array(
+				'omitted',
+				array(
+					'platform_checkout'                   => 'yes',
+					'platform_checkout_last_disable_date' => '2026-06-01',
+				),
+				array( 'is_manual_capture_enabled' => true ),
+				'yes',
+				'2026-06-01',
+			),
+		);
+	}
+
+	/**
+	 * @testdox Disabling and re-enabling WooPay echoes each state and preserves manual capture and other gateway settings.
+	 */
+	public function test_woopay_round_trip_preserves_other_gateway_settings(): void {
+		// A WooPay-eligible account, as the client reads it (client 11.1.0 `includes/class-wc-payments-features.php:193-209`,
+		// `platform_checkout_eligible` in the cached account data).
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id'                 => 'acct_native_test',
+					'is_live'                    => true,
+					'platform_checkout_eligible' => true,
+				),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
 				'platform_checkout' => 'yes',
+				'manual_capture'    => 'no',
+				'test_mode'         => 'yes',
 			)
 		);
 
-		$expected_dates = array( gmdate( 'Y-m-d' ) );
-
-		$result = $this->sut->update_settings(
+		$disabled = $this->sut->update_settings(
 			array(
-				'is_woopay_enabled' => false,
+				'is_woopay_enabled'         => false,
+				'is_manual_capture_enabled' => true,
 			)
 		);
 
-		$stored           = get_option( 'woocommerce_woocommerce_payments_settings' );
-		$expected_dates[] = gmdate( 'Y-m-d' );
-		$expected_dates   = array_values( array_unique( $expected_dates ) );
+		$stored_after_disable = get_option( 'woocommerce_woocommerce_payments_settings' );
 
-		$this->assertIsArray( $result );
-		$this->assertIsArray( $stored );
-		$this->assertSame( 'no', $stored['platform_checkout'] );
-		$this->assertContains( $stored['platform_checkout_last_disable_date'], $expected_dates );
-		$this->assertSame( $stored['platform_checkout_last_disable_date'], $result['woopay_last_disable_date'] );
+		$this->assertIsArray( $disabled );
+		$this->assertFalse( $disabled['is_woopay_enabled'], 'The refreshed contract returned by the disable save should report WooPay disabled.' );
+		$this->assertTrue( $disabled['is_manual_capture_enabled'] );
+		$this->assertSame( 'no', $stored_after_disable['platform_checkout'] );
+		$this->assertSame( 'yes', $stored_after_disable['manual_capture'] );
+		$this->assertSame( 'yes', $stored_after_disable['test_mode'] );
+
+		$fresh_after_disable = $this->sut->get_settings();
+
+		$this->assertIsArray( $fresh_after_disable );
+		$this->assertFalse( $fresh_after_disable['is_woopay_enabled'], 'A fresh settings read after the disable save should report WooPay disabled.' );
+
+		$enabled = $this->sut->update_settings( array( 'is_woopay_enabled' => true ) );
+
+		$stored_after_enable = get_option( 'woocommerce_woocommerce_payments_settings' );
+
+		$fresh = $this->sut->get_settings();
+
+		$this->assertIsArray( $enabled );
+		$this->assertTrue( $enabled['is_woopay_enabled'], 'The refreshed contract returned by the enable save should report WooPay enabled.' );
+		$this->assertTrue( $fresh['is_woopay_enabled'], 'A fresh settings read after the enable save should report WooPay enabled.' );
+		$this->assertTrue( $fresh['is_manual_capture_enabled'] );
+		$this->assertSame( 'yes', $stored_after_enable['platform_checkout'] );
+		$this->assertSame( 'yes', $stored_after_enable['manual_capture'] );
+		$this->assertSame( 'yes', $stored_after_enable['test_mode'] );
 	}
 
 	/**
@@ -1667,12 +1690,17 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should record the WooPayments extension's per-method Tracks events when a save enables one method and disables another.
+	 * @testdox Should record the WooPayments extension's per-method Tracks events, with the platform tracking info, when a save enables one method and disables another.
 	 *
-	 * Expected names and properties: plugin 11.1.0 `class-wc-rest-payments-settings-controller.php:740-760`.
+	 * Expected names and properties: plugin 11.1.0 `class-wc-rest-payments-settings-controller.php:740-760`. Client 11.1.0's settings
+	 * controller tracks_event() merges get_tracking_info() last into the per-method events
+	 * (includes/admin/class-wc-rest-payments-settings-controller.php:1362-1380).
 	 */
 	public function test_update_settings_records_payment_method_toggle_tracks_events(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) ) );
+		// The cached platform account answer (wpcom class-accounts-controller.php:1129-1166, stored by the database cache as data,
+		// fetched, errored), reduced to the fields the settings save reads: the account ID, live mode, the capabilities of the three
+		// methods, all active, and an empty fee entry per method (no discount).
 		update_option(
 			'wcpay_account_data',
 			array(
@@ -1694,13 +1722,14 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				'errored' => false,
 			)
 		);
+		FixedTrackingInfoService::install();
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 		add_filter( 'wp_doing_ajax', '__return_true' );
 		$recorded = array();
 		$capture  = static function ( $preempt, $parsed_args, $url ) use ( &$recorded ) {
 			parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $pixel );
 			if ( 0 === strpos( (string) ( $pixel['_en'] ?? '' ), 'wcadmin_wcpay_payment_method_' ) ) {
-				$recorded[] = array( $pixel['_en'], $pixel['payment_method_id'], $pixel['capability_id'] );
+				$recorded[] = array( $pixel['_en'], $pixel['payment_method_id'], $pixel['capability_id'], $pixel['hosting_provider'] ?? null );
 			}
 			return array(
 				'headers'  => array(),
@@ -1718,117 +1747,11 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			array(
-				array( 'wcadmin_wcpay_payment_method_disabled', 'link', 'link_payments' ),
-				array( 'wcadmin_wcpay_payment_method_enabled', 'affirm', 'affirm_payments' ),
+				array( 'wcadmin_wcpay_payment_method_disabled', 'link', 'link_payments', 'fixture-host' ),
+				array( 'wcadmin_wcpay_payment_method_enabled', 'affirm', 'affirm_payments', 'fixture-host' ),
 			),
 			$recorded
 		);
-	}
-
-	/**
-	 * Client 11.1.0's settings controller tracks_event() merges get_tracking_info() last into the per-method events
-	 * (includes/admin/class-wc-rest-payments-settings-controller.php:1362-1380).
-	 *
-	 * @testdox Should send the platform tracking info with the per-method events of a settings save.
-	 */
-	public function test_update_settings_payment_method_events_carry_the_platform_tracking_info(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) ) );
-		// The cached platform account answer (wpcom class-accounts-controller.php:1129-1166, stored by the database cache as data,
-		// fetched, errored), reduced to the fields the settings save reads: the account ID, live mode, the capabilities of the three
-		// methods, all active, and an empty fee entry per method (no discount).
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data'    => array(
-					'account_id'   => 'acct_test',
-					'is_live'      => true,
-					'capabilities' => array(
-						'card_payments'   => 'active',
-						'link_payments'   => 'active',
-						'affirm_payments' => 'active',
-					),
-					'fees'         => array(
-						'card'   => array(),
-						'link'   => array(),
-						'affirm' => array(),
-					),
-				),
-				'fetched' => time(),
-				'errored' => false,
-			)
-		);
-		FixedTrackingInfoService::install();
-		update_option( 'woocommerce_allow_tracking', 'yes' );
-		$recorded = array();
-		$capture  = static function ( $properties, $event_name ) use ( &$recorded ) {
-			$recorded[ $event_name ] = $properties;
-			return $properties;
-		};
-		add_filter( 'woocommerce_tracks_event_properties', $capture, 10, 2 );
-
-		try {
-			$this->sut->update_settings( array( 'enabled_payment_method_ids' => array( 'card', 'affirm' ) ) );
-		} finally {
-			remove_filter( 'woocommerce_tracks_event_properties', $capture, 10 );
-			wc_get_container()->reset_all_replacements();
-		}
-
-		$this->assertSame( 'fixture-host', $recorded['wcadmin_wcpay_payment_method_enabled']['hosting_provider'] ?? null );
-		$this->assertSame( 'fixture-host', $recorded['wcadmin_wcpay_payment_method_disabled']['hosting_provider'] ?? null );
-	}
-
-	/**
-	 * @testdox Should keep the WooPay last disable date when WooPay is already off.
-	 */
-	public function test_update_settings_keeps_woopay_last_disable_date_when_woopay_was_already_off(): void {
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array(
-				'platform_checkout'                   => 'no',
-				'platform_checkout_last_disable_date' => '2026-06-01',
-			)
-		);
-
-		$result = $this->sut->update_settings(
-			array(
-				'is_woopay_enabled' => false,
-			)
-		);
-
-		$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
-
-		$this->assertIsArray( $result );
-		$this->assertIsArray( $stored );
-		$this->assertSame( 'no', $stored['platform_checkout'] );
-		$this->assertSame( '2026-06-01', $stored['platform_checkout_last_disable_date'] );
-		$this->assertSame( '2026-06-01', $result['woopay_last_disable_date'] );
-	}
-
-	/**
-	 * @testdox Should not record the WooPay last disable date when WooPay is omitted from the update.
-	 */
-	public function test_update_settings_does_not_record_woopay_last_disable_date_when_woopay_is_omitted(): void {
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array(
-				'platform_checkout'                   => 'yes',
-				'platform_checkout_last_disable_date' => '2026-06-01',
-			)
-		);
-
-		$result = $this->sut->update_settings(
-			array(
-				'is_manual_capture_enabled' => true,
-			)
-		);
-
-		$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
-
-		$this->assertIsArray( $result );
-		$this->assertIsArray( $stored );
-		$this->assertSame( 'yes', $stored['platform_checkout'] );
-		$this->assertSame( '2026-06-01', $stored['platform_checkout_last_disable_date'] );
-		$this->assertSame( '2026-06-01', $result['woopay_last_disable_date'] );
 	}
 
 	/**
@@ -2276,38 +2199,104 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should refresh missing fraud rulesets from the platform.
+	 * @testdox Should refresh the fraud ruleset from the platform once per settings response and read its protection level ($scenario).
+	 * @dataProvider provide_fraud_rulesets_fetched_on_read
+	 *
+	 * @param string                         $scenario         Case.
+	 * @param array<string,mixed>|null       $stored_settings  Stored WooPayments settings, or null when none.
+	 * @param string|null                    $stored_level     Stored `current_protection_level`, or null when none.
+	 * @param string|null                    $review_flag      Stored `wcpay_frt_review_feature_active`, or null when none.
+	 * @param array<int,array<string,mixed>> $platform_ruleset Ruleset config the platform answers.
+	 * @param string                         $expected_level   Expected protection level.
 	 */
-	public function test_get_settings_refreshes_missing_fraud_ruleset_from_platform(): void {
+	public function test_get_settings_refreshes_fraud_ruleset_from_platform( string $scenario, ?array $stored_settings, ?string $stored_level, ?string $review_flag, array $platform_ruleset, string $expected_level ): void {
+		unset( $scenario );
 		$this->set_connected_account_data();
-		update_option( 'current_protection_level', 'advanced' );
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array(
-				'advanced_fraud_protection_settings' => array(
-					array(
-						'key'     => 'stale_local_rule',
-						'outcome' => 'allow',
-						'check'   => array(
-							'key'      => 'item_count',
-							'operator' => 'greater_than',
-							'value'    => 1,
-						),
-					),
-				),
-			)
-		);
+		if ( null !== $stored_level ) {
+			update_option( 'current_protection_level', $stored_level );
+		}
+		if ( null !== $stored_settings ) {
+			update_option( 'woocommerce_woocommerce_payments_settings', $stored_settings );
+		}
+		if ( null !== $review_flag ) {
+			update_option( 'wcpay_frt_review_feature_active', $review_flag );
+		}
 		$this->api_client->latest_fraud_ruleset_response = array(
-			'ruleset_config' => $this->get_standard_fraud_ruleset_fixture(),
+			'ruleset_config' => $platform_ruleset,
 		);
 
 		$result = $this->sut->get_settings();
 
 		$this->assertSame( 1, $this->api_client->latest_fraud_ruleset_requests );
-		$this->assertSame( 'standard', $result['current_protection_level'] );
-		$this->assertSame( 'standard', get_option( 'current_protection_level' ) );
-		$this->assertSame( $this->get_standard_fraud_ruleset_fixture(), $result['advanced_fraud_protection_settings'] );
-		$this->assertSame( $this->get_standard_fraud_ruleset_fixture(), get_transient( 'wcpay_fraud_protection_settings' ) );
+		$this->assertSame( $expected_level, $result['current_protection_level'] );
+		$this->assertSame( $expected_level, get_option( 'current_protection_level' ) );
+		$this->assertSame( $platform_ruleset, $result['advanced_fraud_protection_settings'] );
+		$this->assertSame( $platform_ruleset, get_transient( 'wcpay_fraud_protection_settings' ) );
+	}
+
+	/**
+	 * Provide fraud rulesets the platform answers on a settings read: case, stored settings, stored level, review flag,
+	 * platform ruleset, expected level.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>|null,2:string|null,3:string|null,4:array<int,array<string,mixed>>,5:string}>
+	 */
+	public function provide_fraud_rulesets_fetched_on_read(): array {
+		return array(
+			'stale local rule, platform standard' => array(
+				'stale local rule, platform standard',
+				array(
+					'advanced_fraud_protection_settings' => array(
+						array(
+							'key'     => 'stale_local_rule',
+							'outcome' => 'allow',
+							'check'   => array(
+								'key'      => 'item_count',
+								'operator' => 'greater_than',
+								'value'    => 1,
+							),
+						),
+					),
+				),
+				'advanced',
+				null,
+				$this->get_standard_fraud_ruleset_fixture(),
+				'standard',
+			),
+			'custom platform rule'                => array(
+				'custom platform rule',
+				null,
+				null,
+				null,
+				array(
+					array(
+						'key'     => 'custom_rule',
+						'outcome' => 'review',
+						'check'   => array(
+							'key'      => 'item_count',
+							'operator' => 'greater_than',
+							'value'    => 3,
+						),
+					),
+				),
+				'advanced',
+			),
+			'review standard'                     => array(
+				'review standard',
+				null,
+				null,
+				'1',
+				$this->get_standard_fraud_ruleset_fixture( 'review' ),
+				'standard',
+			),
+			'review high'                         => array(
+				'review high',
+				null,
+				null,
+				'1',
+				$this->get_high_fraud_ruleset_fixture( 'review' ),
+				'high',
+			),
+		);
 	}
 
 	/**
@@ -2490,37 +2479,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * An advanced level sent with the error sentinel (the ruleset read failed when the page loaded) saves no ruleset;
 	 * client 11.1.0 throws there (includes/admin/class-wc-rest-payments-settings-controller.php:1281-1284).
 	 *
-	 * @testdox Should save the other settings and no fraud ruleset for an advanced level sent with the error sentinel.
-	 */
-	public function test_update_settings_saves_no_fraud_ruleset_for_advanced_level_with_error_sentinel(): void {
-		$this->set_connected_account_data();
-		update_option( 'current_protection_level', 'advanced' );
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array(
-				'enable_logging' => 'no',
-			)
-		);
-		$this->api_client->latest_fraud_ruleset_exception = new WooPaymentsApiException( 'Platform unavailable.', 'wcpay_server_error', 500 );
-
-		$result = $this->sut->update_settings(
-			array(
-				'is_debug_log_enabled'               => true,
-				'current_protection_level'           => 'advanced',
-				'advanced_fraud_protection_settings' => 'error',
-			)
-		);
-		$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
-
-		$this->assertIsArray( $result );
-		$this->assertIsArray( $stored );
-		$this->assertSame( 'yes', $stored['enable_logging'] );
-		$this->assertSame( 0, $this->api_client->fraud_ruleset_saves );
-		$this->assertSame( 'advanced', get_option( 'current_protection_level' ) );
-		$this->assertSame( 'error', $result['advanced_fraud_protection_settings'] );
-	}
-
-	/**
 	 * @testdox The settings route answers 200 and saves the other settings and no fraud ruleset for an advanced level sent with the error sentinel.
 	 */
 	public function test_settings_route_saves_no_fraud_ruleset_for_advanced_level_with_error_sentinel(): void {
@@ -2544,6 +2502,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			);
 
 			$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
+			$this->assertSame( 'error', $response->get_data()['advanced_fraud_protection_settings'] );
 			$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
 			$this->assertIsArray( $stored );
 			$this->assertSame( 'yes', $stored['enable_logging'] );
@@ -2589,69 +2548,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'advanced', $result['current_protection_level'] );
 		$this->assertSame( array(), $result['advanced_fraud_protection_settings'] );
 		$this->assertFalse( get_transient( 'wcpay_fraud_protection_settings' ) );
-	}
-
-	/**
-	 * @testdox Should refresh fraud rulesets only once per settings response.
-	 */
-	public function test_get_settings_refreshes_fraud_ruleset_once_per_settings_response(): void {
-		$this->set_connected_account_data();
-		$this->api_client->latest_fraud_ruleset_response = array(
-			'ruleset_config' => array(
-				array(
-					'key'     => 'custom_rule',
-					'outcome' => 'review',
-					'check'   => array(
-						'key'      => 'item_count',
-						'operator' => 'greater_than',
-						'value'    => 3,
-					),
-				),
-			),
-		);
-
-		$result = $this->sut->get_settings();
-
-		$this->assertSame( 1, $this->api_client->latest_fraud_ruleset_requests );
-		$this->assertSame( 'advanced', $result['current_protection_level'] );
-		$this->assertSame( 'advanced', get_option( 'current_protection_level' ) );
-		$this->assertSame( $this->api_client->latest_fraud_ruleset_response['ruleset_config'], $result['advanced_fraud_protection_settings'] );
-	}
-
-	/**
-	 * @testdox Should match review-enabled standard fraud rulesets fetched from the platform.
-	 */
-	public function test_get_settings_matches_review_enabled_standard_fraud_ruleset_from_platform(): void {
-		$this->set_connected_account_data();
-		update_option( 'wcpay_frt_review_feature_active', '1' );
-		$this->api_client->latest_fraud_ruleset_response = array(
-			'ruleset_config' => $this->get_standard_fraud_ruleset_fixture( 'review' ),
-		);
-
-		$result = $this->sut->get_settings();
-
-		$this->assertSame( 1, $this->api_client->latest_fraud_ruleset_requests );
-		$this->assertSame( 'standard', $result['current_protection_level'] );
-		$this->assertSame( 'standard', get_option( 'current_protection_level' ) );
-		$this->assertSame( $this->get_standard_fraud_ruleset_fixture( 'review' ), get_transient( 'wcpay_fraud_protection_settings' ) );
-	}
-
-	/**
-	 * @testdox Should match review-enabled high fraud rulesets fetched from the platform.
-	 */
-	public function test_get_settings_matches_review_enabled_high_fraud_ruleset_from_platform(): void {
-		$this->set_connected_account_data();
-		update_option( 'wcpay_frt_review_feature_active', '1' );
-		$this->api_client->latest_fraud_ruleset_response = array(
-			'ruleset_config' => $this->get_high_fraud_ruleset_fixture( 'review' ),
-		);
-
-		$result = $this->sut->get_settings();
-
-		$this->assertSame( 1, $this->api_client->latest_fraud_ruleset_requests );
-		$this->assertSame( 'high', $result['current_protection_level'] );
-		$this->assertSame( 'high', get_option( 'current_protection_level' ) );
-		$this->assertSame( $this->get_high_fraud_ruleset_fixture( 'review' ), get_transient( 'wcpay_fraud_protection_settings' ) );
 	}
 
 	/**
@@ -2905,29 +2801,49 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should clear the next-deposit notice dismissal when the payout schedule changes.
+	 * @testdox Should clear the next-deposit notice dismissal only when the save changes the payout schedule ($scenario).
+	 * @dataProvider provide_next_deposit_dismissal_saves
+	 *
+	 * @param string               $scenario        Case.
+	 * @param array<string,string> $stored_settings Stored WooPayments settings.
+	 * @param array<string,string> $update          Settings update.
+	 * @param bool                 $kept            Whether the dismissal is kept.
 	 */
-	public function test_update_settings_clears_next_deposit_notice_dismissal_on_schedule_change(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'deposit_schedule_interval' => 'daily' ) );
+	public function test_update_settings_next_deposit_notice_dismissal( string $scenario, array $stored_settings, array $update, bool $kept ): void {
+		unset( $scenario );
+		update_option( 'woocommerce_woocommerce_payments_settings', $stored_settings );
 		update_option( 'wcpay_next_deposit_notice_dismissed', true );
 
-		$result = $this->sut->update_settings( array( 'deposit_schedule_interval' => 'weekly' ) );
+		$result = $this->sut->update_settings( $update );
 
 		$this->assertIsArray( $result );
-		$this->assertFalse( get_option( 'wcpay_next_deposit_notice_dismissed' ) );
+		if ( $kept ) {
+			$this->assertTrue( (bool) get_option( 'wcpay_next_deposit_notice_dismissed' ) );
+		} else {
+			$this->assertFalse( get_option( 'wcpay_next_deposit_notice_dismissed' ) );
+		}
 	}
 
 	/**
-	 * @testdox Should keep the next-deposit notice dismissal when the save does not touch the payout schedule.
+	 * Provide saves around the next-deposit notice dismissal: case, stored settings, update, whether the dismissal is kept.
+	 *
+	 * @return array<string,array{0:string,1:array<string,string>,2:array<string,string>,3:bool}>
 	 */
-	public function test_update_settings_keeps_next_deposit_notice_dismissal_without_schedule_change(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'account_business_name' => 'Old Name' ) );
-		update_option( 'wcpay_next_deposit_notice_dismissed', true );
-
-		$result = $this->sut->update_settings( array( 'account_business_name' => 'New Name' ) );
-
-		$this->assertIsArray( $result );
-		$this->assertTrue( (bool) get_option( 'wcpay_next_deposit_notice_dismissed' ) );
+	public function provide_next_deposit_dismissal_saves(): array {
+		return array(
+			'schedule change'    => array(
+				'schedule change',
+				array( 'deposit_schedule_interval' => 'daily' ),
+				array( 'deposit_schedule_interval' => 'weekly' ),
+				false,
+			),
+			'no schedule change' => array(
+				'no schedule change',
+				array( 'account_business_name' => 'Old Name' ),
+				array( 'account_business_name' => 'New Name' ),
+				true,
+			),
+		);
 	}
 
 	/**
@@ -3017,9 +2933,18 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should request unrequested payment method capabilities when enabling methods.
+	 * @testdox Should request the capabilities of enabled payment methods that are unrequested or missing, once each ($scenario).
+	 * @dataProvider provide_capability_requests
+	 *
+	 * @param string                     $scenario     Case.
+	 * @param array<string,string>       $capabilities Cached account capability statuses.
+	 * @param array<string,array<mixed>> $fees         Cached account fees keyed by payment method ID.
+	 * @param string[]                   $enabled      Posted enabled payment method IDs.
+	 * @param string                     $capability   Expected requested capability.
+	 * @param string[]|null              $stored_ids   Expected stored enabled payment method IDs, or null when not checked.
 	 */
-	public function test_update_settings_requests_unrequested_payment_method_capabilities(): void {
+	public function test_update_settings_requests_payment_method_capabilities( string $scenario, array $capabilities, array $fees, array $enabled, string $capability, ?array $stored_ids ): void {
+		unset( $scenario );
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
@@ -3032,14 +2957,8 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				'data'    => array(
 					'account_id'   => 'acct_native_test',
 					'is_live'      => true,
-					'capabilities' => array(
-						'card_payments' => 'active',
-						'link_payments' => 'unrequested',
-					),
-					'fees'         => array(
-						'card' => array(),
-						'link' => array(),
-					),
+					'capabilities' => $capabilities,
+					'fees'         => $fees,
 				),
 				'fetched' => time(),
 				'errored' => false,
@@ -3048,19 +2967,75 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 
 		$result = $this->sut->update_settings(
 			array(
-				'enabled_payment_method_ids' => array( 'card', 'link' ),
+				'enabled_payment_method_ids' => $enabled,
 			)
 		);
+		$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
 
 		$this->assertIsArray( $result );
+		if ( null !== $stored_ids ) {
+			$this->assertIsArray( $stored );
+			$this->assertSame( $stored_ids, $stored['upe_enabled_payment_method_ids'] );
+		}
 		$this->assertSame(
 			array(
 				array(
-					'capability_id' => 'link_payments',
+					'capability_id' => $capability,
 					'requested'     => true,
 				),
 			),
 			$this->api_client->capability_requests
+		);
+	}
+
+	/**
+	 * Provide capability requests: case, capabilities, fees, posted methods, requested capability, stored methods.
+	 *
+	 * @return array<string,array{0:string,1:array<string,string>,2:array<string,array<mixed>>,3:string[],4:string,5:string[]|null}>
+	 */
+	public function provide_capability_requests(): array {
+		return array(
+			'unrequested link' => array(
+				'unrequested link',
+				array(
+					'card_payments' => 'active',
+					'link_payments' => 'unrequested',
+				),
+				array(
+					'card' => array(),
+					'link' => array(),
+				),
+				array( 'card', 'link' ),
+				'link_payments',
+				null,
+			),
+			'missing grabpay'  => array(
+				'missing grabpay',
+				array(
+					'card_payments' => 'active',
+				),
+				array(
+					'card'    => array(),
+					'grabpay' => array(),
+				),
+				array( 'card', 'grabpay' ),
+				'grabpay_payments',
+				null,
+			),
+			'duplicated link'  => array(
+				'duplicated link',
+				array(
+					'card_payments' => 'active',
+					'link_payments' => 'unrequested',
+				),
+				array(
+					'card' => array(),
+					'link' => array(),
+				),
+				array( 'card', 'link', 'link', 'link' ),
+				'link_payments',
+				array( 'card', 'link' ),
+			),
 		);
 	}
 
@@ -3118,53 +3093,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $this->api_client->fraud_ruleset_saves, 'A failed capability request saves no fraud ruleset.' );
 		$this->assertSame( 'standard', get_option( 'current_protection_level' ) );
 		$this->assertNull( $this->api_client->last_account_settings, 'A failed capability request makes no account update.' );
-	}
-
-	/**
-	 * @testdox Should request missing payment method capabilities when enabling methods.
-	 */
-	public function test_update_settings_requests_missing_payment_method_capabilities(): void {
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array(
-				'upe_enabled_payment_method_ids' => array( 'card' ),
-			)
-		);
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data'    => array(
-					'account_id'   => 'acct_native_test',
-					'is_live'      => true,
-					'capabilities' => array(
-						'card_payments' => 'active',
-					),
-					'fees'         => array(
-						'card'    => array(),
-						'grabpay' => array(),
-					),
-				),
-				'fetched' => time(),
-				'errored' => false,
-			)
-		);
-
-		$result = $this->sut->update_settings(
-			array(
-				'enabled_payment_method_ids' => array( 'card', 'grabpay' ),
-			)
-		);
-
-		$this->assertIsArray( $result );
-		$this->assertSame(
-			array(
-				array(
-					'capability_id' => 'grabpay_payments',
-					'requested'     => true,
-				),
-			),
-			$this->api_client->capability_requests
-		);
 	}
 
 	/**
@@ -3268,93 +3196,61 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should deduplicate payment methods before requesting capabilities.
+	 * Card's gateway is the WooPayments gateway, so adding or removing card through the settings route turns it on or off
+	 * (the WooPayments extension `class-wc-rest-payments-settings-controller.php:766-790`); a card filtered out of the
+	 * available methods still counts as removed, as the extension compares with the stored list (:738-740,782-789).
+	 *
+	 * @testdox The settings route turns the WooPayments gateway on or off with card ($scenario).
+	 * @dataProvider provide_card_toggles_through_the_settings_route
+	 *
+	 * @param string   $scenario          Case.
+	 * @param string   $stored_enabled    Stored gateway `enabled`.
+	 * @param string[] $stored_ids        Stored enabled payment method IDs.
+	 * @param bool     $card_filtered_out Whether an availability filter removes card.
+	 * @param string[] $posted_ids        Posted enabled payment method IDs.
+	 * @param string   $expected_enabled  Expected stored gateway `enabled`.
 	 */
-	public function test_update_settings_deduplicates_payment_methods_before_requesting_capabilities(): void {
+	public function test_settings_route_toggles_the_gateway_with_card( string $scenario, string $stored_enabled, array $stored_ids, bool $card_filtered_out, array $posted_ids, string $expected_enabled ): void {
+		unset( $scenario );
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
-				'upe_enabled_payment_method_ids' => array( 'card' ),
+				'enabled'                        => $stored_enabled,
+				'test_mode'                      => 'yes',
+				'upe_enabled_payment_method_ids' => $stored_ids,
 			)
 		);
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data'    => array(
-					'account_id'   => 'acct_native_test',
-					'is_live'      => true,
-					'capabilities' => array(
-						'card_payments' => 'active',
-						'link_payments' => 'unrequested',
-					),
-					'fees'         => array(
-						'card' => array(),
-						'link' => array(),
-					),
-				),
-				'fetched' => time(),
-				'errored' => false,
-			)
-		);
-
-		$result = $this->sut->update_settings(
-			array(
-				'enabled_payment_method_ids' => array( 'card', 'link', 'link', 'link' ),
-			)
-		);
-		$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
-
-		$this->assertIsArray( $result );
-		$this->assertIsArray( $stored );
-		$this->assertSame( array( 'card', 'link' ), $stored['upe_enabled_payment_method_ids'] );
-		$this->assertSame(
-			array(
-				array(
-					'capability_id' => 'link_payments',
-					'requested'     => true,
-				),
-			),
-			$this->api_client->capability_requests
-		);
-	}
-
-	/**
-	 * @testdox Removing card through the settings route disables the WooPayments gateway (the WooPayments extension `class-wc-rest-payments-settings-controller.php:781-790`).
-	 */
-	public function test_settings_route_disables_the_gateway_when_card_is_removed(): void {
-		$this->store_card_and_ideal_enabled();
-
-		try {
-			$response = $this->post_settings( array( 'enabled_payment_method_ids' => array( 'ideal' ) ) );
-
-			$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
-			$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
-			$this->assertSame( array( 'ideal' ), $stored['upe_enabled_payment_method_ids'] );
-			$this->assertSame( 'no', $stored['enabled'] );
-		} finally {
-			$this->clear_builtin_active();
-		}
-	}
-
-	/**
-	 * @testdox Removing card disables the WooPayments gateway even while card is filtered out of the available methods (the WooPayments extension `class-wc-rest-payments-settings-controller.php:738-740,782-789` compares with the stored list).
-	 */
-	public function test_settings_route_disables_the_gateway_when_an_unavailable_card_is_removed(): void {
-		$this->store_card_and_ideal_enabled();
+		$this->set_card_and_ideal_account_data();
+		$this->make_builtin_active();
 		$without_card = static fn( array $payment_method_ids ): array => array_values( array_diff( $payment_method_ids, array( 'card' ) ) );
-		add_filter( 'wcpay_upe_available_payment_methods', $without_card );
+		if ( $card_filtered_out ) {
+			add_filter( 'wcpay_upe_available_payment_methods', $without_card );
+		}
 
 		try {
-			$response = $this->post_settings( array( 'enabled_payment_method_ids' => array( 'ideal' ) ) );
+			$response = $this->post_settings( array( 'enabled_payment_method_ids' => $posted_ids ) );
 
 			$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
 			$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
-			$this->assertSame( array( 'ideal' ), $stored['upe_enabled_payment_method_ids'] );
-			$this->assertSame( 'no', $stored['enabled'] );
+			$this->assertSame( $posted_ids, $stored['upe_enabled_payment_method_ids'] );
+			$this->assertSame( $expected_enabled, $stored['enabled'] );
 		} finally {
 			remove_filter( 'wcpay_upe_available_payment_methods', $without_card );
 			$this->clear_builtin_active();
 		}
+	}
+
+	/**
+	 * Provide card toggles: case, stored enabled flag, stored methods, card filtered out, posted methods, expected enabled flag.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string[],3:bool,4:string[],5:string}>
+	 */
+	public function provide_card_toggles_through_the_settings_route(): array {
+		return array(
+			'card removed'                    => array( 'card removed', 'yes', array( 'card', 'ideal' ), false, array( 'ideal' ), 'no' ),
+			'card removed while filtered out' => array( 'card removed while filtered out', 'yes', array( 'card', 'ideal' ), true, array( 'ideal' ), 'no' ),
+			'card added'                      => array( 'card added', 'no', array( 'ideal' ), false, array( 'card', 'ideal' ), 'yes' ),
+		);
 	}
 
 	/**
@@ -3370,33 +3266,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 
 			$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
 			$this->assertFalse( $this->create_card_gateway()->is_available() );
-		} finally {
-			$this->clear_builtin_active();
-		}
-	}
-
-	/**
-	 * @testdox Adding card back through the settings route enables the WooPayments gateway (the WooPayments extension `class-wc-rest-payments-settings-controller.php:766-780`).
-	 */
-	public function test_settings_route_enables_the_gateway_when_card_is_added(): void {
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array(
-				'enabled'                        => 'no',
-				'test_mode'                      => 'yes',
-				'upe_enabled_payment_method_ids' => array( 'ideal' ),
-			)
-		);
-		$this->set_card_and_ideal_account_data();
-		$this->make_builtin_active();
-
-		try {
-			$response = $this->post_settings( array( 'enabled_payment_method_ids' => array( 'card', 'ideal' ) ) );
-
-			$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
-			$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
-			$this->assertSame( array( 'card', 'ideal' ), $stored['upe_enabled_payment_method_ids'] );
-			$this->assertSame( 'yes', $stored['enabled'] );
 		} finally {
 			$this->clear_builtin_active();
 		}

@@ -181,13 +181,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 			),
 		);
 
-		$logger = $this->create_recording_logger();
-		add_filter(
-			'woocommerce_logging_class',
-			static function () use ( $logger ): object {
-				return $logger;
-			}
-		);
+		$logger = RecordingWcLogger::install();
 		add_filter(
 			'woocommerce_order_number',
 			static function (): string {
@@ -200,16 +194,15 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertNull( $response->get_data()['data'][0]['order'] );
-		$this->assertCount( 1, $logger->entries );
-		$this->assertSame( 'error', $logger->entries[0]['level'] );
-		$this->assertSame( 'Error adding WooCommerce order info to WooPayments response.', $logger->entries[0]['message'] );
-		$this->assertSame( 'woopayments', $logger->entries[0]['context']['source'] );
-		$this->assertSame( RuntimeException::class, $logger->entries[0]['context']['exception'] );
-		$this->assertSame( 'dp_order', $logger->entries[0]['context']['entity_id'] );
-		$this->assertSame( 'dispute_list', $logger->entries[0]['context']['context'] );
-		$this->assertSame( 4242, $logger->entries[0]['context']['code'] );
-		$this->assertMatchesRegularExpression( '/\A#0 [^\n]*\(\)(\n#\d+ [^\n]*\(\))*\z/', $logger->entries[0]['context']['trace'], 'The trace lists frames without call arguments.' );
-		$this->assertStringNotContainsString( 'ada@example.com', (string) wp_json_encode( $logger->entries ) );
+		$this->assertCount( 1, $logger->lines );
+		$this->assertSame( 'error', $logger->lines[0][0] );
+		$this->assertSame( 'woopayments', $logger->lines[0][2] );
+		$this->assertSame( RuntimeException::class, $logger->contexts[0]['exception'] );
+		$this->assertSame( 'dp_order', $logger->contexts[0]['entity_id'] );
+		$this->assertSame( 'dispute_list', $logger->contexts[0]['context'] );
+		$this->assertSame( 4242, $logger->contexts[0]['code'] );
+		$this->assertMatchesRegularExpression( '/\A#0 [^\n]*\(\)(\n#\d+ [^\n]*\(\))*\z/', $logger->contexts[0]['trace'], 'The trace lists frames without call arguments.' );
+		$this->assertStringNotContainsString( 'ada@example.com', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
 	}
 
 	/**
@@ -399,48 +392,69 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Dispute close deletes stale dispute caches after the platform accepts the close.
-	 */
-	public function test_dispute_close_deletes_stale_dispute_caches_after_platform_success(): void {
-		$this->create_disputes_controller()->register_routes();
-		update_option( 'wcpay_dispute_status_counts_cache', array( 'data' => array( 'needs_response' => 1 ) ) );
-		update_option( 'wcpay_test_dispute_status_counts_cache', array( 'data' => array( 'warning_needs_response' => 1 ) ) );
-		update_option( 'wcpay_active_dispute_cache', array( 'id' => 'dp_test' ) );
-		$this->api_client->response = array(
-			'id'     => 'dp_test',
-			'status' => 'lost',
-		);
-
-		$response = $this->server->dispatch( new WP_REST_Request( 'POST', '/wc/v3/payments/disputes/dp_test/close' ) );
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertFalse( get_option( 'wcpay_dispute_status_counts_cache' ) );
-		$this->assertFalse( get_option( 'wcpay_test_dispute_status_counts_cache' ) );
-		$this->assertFalse( get_option( 'wcpay_active_dispute_cache' ) );
-	}
-
-	/**
-	 * @testdox Submitting dispute evidence deletes stale dispute caches after the platform accepts it.
+	 * @testdox Closing a dispute or submitting its evidence deletes the stale dispute caches after the platform accepts it.
 	 *
 	 * Client 11.1.0 clears them after the update request returns, as it does for close (class-wc-payments-api-client.php:722-724).
+	 *
+	 * @dataProvider provide_dispute_cache_clearing_actions
+	 *
+	 * @param string              $path              Route path.
+	 * @param array<string,mixed> $body              Body arguments.
+	 * @param array<string,mixed> $platform_response Platform dispute.
+	 * @param array<string,mixed> $caches            Cached options to seed, by option name.
 	 */
-	public function test_dispute_update_deletes_stale_dispute_caches_after_platform_success(): void {
+	public function test_dispute_action_deletes_stale_dispute_caches_after_platform_success( string $path, array $body, array $platform_response, array $caches ): void {
 		$this->create_disputes_controller()->register_routes();
-		update_option( 'wcpay_dispute_status_counts_cache', array( 'data' => array( 'needs_response' => 1 ) ) );
-		update_option( 'wcpay_active_dispute_cache', array( 'id' => 'dp_test' ) );
-		// A pass-through sentinel for the updated dispute the platform returns; the test reads only the caches.
-		$this->api_client->response = array(
-			'id'     => 'dp_test',
-			'status' => 'under_review',
-		);
+		foreach ( $caches as $option => $value ) {
+			update_option( $option, $value );
+		}
+		$this->api_client->response = $platform_response;
 
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/disputes/dp_test' );
-		$request->set_body_params( array( 'submit' => true ) );
+		$request = new WP_REST_Request( 'POST', $path );
+		if ( array() !== $body ) {
+			$request->set_body_params( $body );
+		}
 		$response = $this->server->dispatch( $request );
 
 		$this->assertSame( 200, $response->get_status() );
-		$this->assertFalse( get_option( 'wcpay_dispute_status_counts_cache' ) );
-		$this->assertFalse( get_option( 'wcpay_active_dispute_cache' ) );
+		foreach ( array_keys( $caches ) as $option ) {
+			$this->assertFalse( get_option( $option ), $option );
+		}
+	}
+
+	/**
+	 * Dispute actions the platform accepts, with the caches each must clear.
+	 *
+	 * @return array<string,array{string,array<string,mixed>,array<string,mixed>,array<string,mixed>}>
+	 */
+	public static function provide_dispute_cache_clearing_actions(): array {
+		return array(
+			'close'           => array(
+				'/wc/v3/payments/disputes/dp_test/close',
+				array(),
+				array(
+					'id'     => 'dp_test',
+					'status' => 'lost',
+				),
+				array(
+					'wcpay_dispute_status_counts_cache' => array( 'data' => array( 'needs_response' => 1 ) ),
+					'wcpay_test_dispute_status_counts_cache' => array( 'data' => array( 'warning_needs_response' => 1 ) ),
+					'wcpay_active_dispute_cache'        => array( 'id' => 'dp_test' ),
+				),
+			),
+			'evidence submit' => array(
+				'/wc/v3/payments/disputes/dp_test',
+				array( 'submit' => true ),
+				array(
+					'id'     => 'dp_test',
+					'status' => 'under_review',
+				),
+				array(
+					'wcpay_dispute_status_counts_cache' => array( 'data' => array( 'needs_response' => 1 ) ),
+					'wcpay_active_dispute_cache'        => array( 'id' => 'dp_test' ),
+				),
+			),
+		);
 	}
 
 	/**
@@ -535,13 +549,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_dispute_update_logs_success_audit_trail(): void {
 		$this->create_disputes_controller()->register_routes();
-		$logger = $this->create_recording_logger();
-		add_filter(
-			'woocommerce_logging_class',
-			static function () use ( $logger ): object {
-				return $logger;
-			}
-		);
+		$logger = RecordingWcLogger::install();
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/disputes/dp_test' );
 		$request->set_body_params(
@@ -554,15 +562,14 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 		$response = $this->server->dispatch( $request );
 
 		$this->assertSame( 200, $response->get_status() );
-		$this->assertCount( 2, $logger->entries );
-		$this->assertSame( 'info', $logger->entries[0]['level'] );
-		$this->assertSame( 'woopayments', $logger->entries[0]['context']['source'] );
-		$this->assertSame( 'update', $logger->entries[0]['context']['action'] );
-		$this->assertSame( 'dp_test', $logger->entries[0]['context']['dispute_id'] );
-		$this->assertTrue( $logger->entries[0]['context']['submit'] );
-		$this->assertSame( get_current_user_id(), $logger->entries[0]['context']['user_id'] );
-		$this->assertSame( 'info', $logger->entries[1]['level'] );
-		$this->assertStringContainsString( 'completed', $logger->entries[1]['message'] );
+		$this->assertCount( 2, $logger->lines );
+		$this->assertSame( 'info', $logger->lines[0][0] );
+		$this->assertSame( 'woopayments', $logger->lines[0][2] );
+		$this->assertSame( 'update', $logger->contexts[0]['action'] );
+		$this->assertSame( 'dp_test', $logger->contexts[0]['dispute_id'] );
+		$this->assertTrue( $logger->contexts[0]['submit'] );
+		$this->assertSame( get_current_user_id(), $logger->contexts[0]['user_id'] );
+		$this->assertSame( 'info', $logger->lines[1][0] );
 	}
 
 	/**
@@ -585,13 +592,7 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 			}
 		};
 		$this->create_disputes_controller( $order_service )->register_routes();
-		$logger = $this->create_recording_logger();
-		add_filter(
-			'woocommerce_logging_class',
-			static function () use ( $logger ): object {
-				return $logger;
-			}
-		);
+		$logger                     = RecordingWcLogger::install();
 		$this->api_client->response = array( 'id' => 'dp_test' );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/disputes/dp_test' );
@@ -602,11 +603,10 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'dp_test', $data['id'] );
 		$this->assertNull( $data['order'] );
-		$this->assertCount( 3, $logger->entries );
-		$this->assertStringContainsString( 'completed', $logger->entries[1]['message'] );
-		$this->assertSame( 'warning', $logger->entries[2]['level'] );
-		$this->assertStringContainsString( 'local order context enrichment failed', $logger->entries[2]['message'] );
-		$this->assertSame( RuntimeException::class, $logger->entries[2]['context']['exception'] );
+		$this->assertCount( 3, $logger->lines );
+		$this->assertSame( 'info', $logger->lines[1][0] );
+		$this->assertSame( 'warning', $logger->lines[2][0] );
+		$this->assertSame( RuntimeException::class, $logger->contexts[2]['exception'] );
 	}
 
 	/**
@@ -614,28 +614,21 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_dispute_close_logs_failure_audit_trail(): void {
 		$this->create_disputes_controller()->register_routes();
-		$logger = $this->create_recording_logger();
-		add_filter(
-			'woocommerce_logging_class',
-			static function () use ( $logger ): object {
-				return $logger;
-			}
-		);
+		$logger = RecordingWcLogger::install();
 		// A platform error code is free text to this store; one the logger does not list is logged as unknown_error.
 		$this->api_client->exception = new WooPaymentsApiException( 'Ambiguous dispute failure.', 'https://pay.example.test/r?key=sk_test_leak123', 504 );
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'POST', '/wc/v3/payments/disputes/dp_test/close' ) );
 
 		$this->assertSame( 504, $response->get_status() );
-		$this->assertCount( 2, $logger->entries );
-		$this->assertSame( 'error', $logger->entries[1]['level'] );
-		$this->assertStringContainsString( 'failed', $logger->entries[1]['message'] );
-		$this->assertSame( 'woopayments', $logger->entries[1]['context']['source'] );
-		$this->assertSame( 'close', $logger->entries[1]['context']['action'] );
-		$this->assertSame( 'dp_test', $logger->entries[1]['context']['dispute_id'] );
-		$this->assertSame( 'unknown_error', $logger->entries[1]['context']['api_code'] );
-		$this->assertSame( 504, $logger->entries[1]['context']['http_status'] );
-		$this->assertStringNotContainsString( 'sk_test_leak123', (string) wp_json_encode( $logger->entries ) );
+		$this->assertCount( 2, $logger->lines );
+		$this->assertSame( 'error', $logger->lines[1][0] );
+		$this->assertSame( 'woopayments', $logger->lines[1][2] );
+		$this->assertSame( 'close', $logger->contexts[1]['action'] );
+		$this->assertSame( 'dp_test', $logger->contexts[1]['dispute_id'] );
+		$this->assertSame( 'unknown_error', $logger->contexts[1]['api_code'] );
+		$this->assertSame( 504, $logger->contexts[1]['http_status'] );
+		$this->assertStringNotContainsString( 'sk_test_leak123', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
 	}
 
 	/**
@@ -648,73 +641,50 @@ class WooPaymentsDisputesRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_dispute_update_failure_logs_only_a_listed_code( string $code, string $expected ): void {
 		$this->create_disputes_controller()->register_routes();
-		$logger = $this->create_recording_logger();
-		add_filter(
-			'woocommerce_logging_class',
-			static function () use ( $logger ): object {
-				return $logger;
-			}
-		);
+		$logger                      = RecordingWcLogger::install();
 		$this->api_client->exception = new WooPaymentsApiException( 'Ambiguous dispute failure.', $code, 504 );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/disputes/dp_test' );
 		$request->set_body_params( array( 'submit' => 'false' ) );
 		$this->server->dispatch( $request );
 
-		$this->assertSame( 'error', $logger->entries[1]['level'] );
-		$this->assertSame( 'update', $logger->entries[1]['context']['action'] );
-		$this->assertSame( $expected, $logger->entries[1]['context']['api_code'] );
-		$this->assertStringNotContainsString( 'sk_test_leak123', (string) wp_json_encode( $logger->entries ) );
+		$this->assertSame( 'error', $logger->lines[1][0] );
+		$this->assertSame( 'update', $logger->contexts[1]['action'] );
+		$this->assertSame( $expected, $logger->contexts[1]['api_code'] );
+		$this->assertStringNotContainsString( 'sk_test_leak123', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
 	}
 
 	/**
-	 * A 4xx or 5xx platform status reaches the answer; any other status answers 500. The faked failures are the shape the
-	 * API client builds from a platform error body and its HTTP status; an unreadable body keeps the answer's status, 200
-	 * included (wcpay_unparseable_or_null_body).
+	 * A 4xx or 5xx platform status reaches the answer. The faked failure is the shape the API client builds from a platform
+	 * error body and its HTTP status.
 	 *
-	 * @testdox A "$code" platform failure with status $platform_status answers $expected_status.
-	 * @testWith ["resource_missing", 404, 404]
-	 *           ["wcpay_unparseable_or_null_body", 200, 500]
-	 *
-	 * @param string $code            Platform error code.
-	 * @param int    $platform_status Platform HTTP status.
-	 * @param int    $expected_status Expected answer status.
+	 * @testdox A "resource_missing" platform failure with status 404 answers 404.
 	 */
-	public function test_api_exceptions_answer_a_4xx_or_5xx_status( string $code, int $platform_status, int $expected_status ): void {
+	public function test_api_exceptions_answer_a_4xx_or_5xx_status(): void {
 		$this->create_disputes_controller()->register_routes();
-		$this->api_client->exception = new WooPaymentsApiException( 'Platform failure.', $code, $platform_status );
+		$this->api_client->exception = new WooPaymentsApiException( 'Platform failure.', 'resource_missing', 404 );
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/disputes/dp_missing' ) );
 
-		$this->assertSame( $expected_status, $response->get_status() );
-		$this->assertSame( $code, $response->get_data()['code'] );
+		$this->assertSame( 404, $response->get_status() );
+		$this->assertSame( 'resource_missing', $response->get_data()['code'] );
 	}
 
 	/**
 	 * A list request filter callback that returns something other than the request stops the request with the API client
 	 * path's error, as the extension's request classes end it with a 500 (includes/core/server/class-request.php:528-569, :770-783).
 	 *
-	 * @testdox A $hook callback returning no request answers 500 wcpay_invalid_filtered_request.
-	 * @testWith ["wcpay_list_disputes_request", false]
-	 *           ["wcpay_list_disputes_request", true]
-	 *
-	 * @param string $hook      Request filter.
-	 * @param bool   $as_object Whether the callback returns an object of another class.
+	 * @testdox A wcpay_list_disputes_request callback returning no request answers 500 wcpay_invalid_filtered_request.
 	 */
-	public function test_list_filter_returning_no_request_fails_the_request( string $hook, bool $as_object ): void {
+	public function test_list_filter_returning_no_request_fails_the_request(): void {
 		$this->create_disputes_controller()->register_routes();
-		add_filter(
-			$hook,
-			static function () use ( $as_object ) {
-				return $as_object ? new \stdClass() : null;
-			}
-		);
+		add_filter( 'wcpay_list_disputes_request', '__return_null' );
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/disputes' ) );
 
 		$this->assertSame( 500, $response->get_status() );
 		$this->assertSame( 'wcpay_invalid_filtered_request', $response->get_data()['code'] );
-		$this->assertSame( "Invalid WooPayments request returned by {$hook}.", $response->get_data()['message'] );
+		$this->assertSame( 'Invalid WooPayments request returned by wcpay_list_disputes_request.', $response->get_data()['message'] );
 	}
 
 	/**

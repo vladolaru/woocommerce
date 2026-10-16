@@ -88,44 +88,36 @@ class WooPaymentsDisputeReadinessRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox GET returns enabled payload by default when the feature flag is absent.
+	 * @testdox GET answers the overview the feature flag selects, never an error: $_dataName.
+	 * @dataProvider provide_feature_flag_overviews
+	 *
+	 * @param string|null $flag          Stored feature flag, or null when absent.
+	 * @param string      $expected_call Service method that builds the answer.
 	 */
-	public function test_get_returns_enabled_payload_when_feature_is_absent(): void {
+	public function test_get_returns_the_overview_for_the_feature_flag( ?string $flag, string $expected_call ): void {
+		if ( null !== $flag ) {
+			update_option( '_wcpay_feature_dispute_readiness_overview', $flag );
+		}
 		$this->sut->register_routes();
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/dispute-readiness' ) );
 
 		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( 'get_overview_payload', $this->service->last_call );
-		$this->assertSame( $this->service->get_overview_payload(), $response->get_data() );
+		$this->assertSame( $expected_call, $this->service->last_call );
+		$this->assertSame( $this->service->$expected_call(), $response->get_data() );
 	}
 
 	/**
-	 * @testdox GET returns enabled payload when the feature flag is enabled.
+	 * Feature flag values and the overview each one selects.
+	 *
+	 * @return array<string,array{string|null,string}>
 	 */
-	public function test_get_returns_enabled_payload_when_feature_is_enabled(): void {
-		update_option( '_wcpay_feature_dispute_readiness_overview', 'yes' );
-		$this->sut->register_routes();
-
-		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/dispute-readiness' ) );
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( 'get_overview_payload', $this->service->last_call );
-		$this->assertSame( $this->service->get_overview_payload(), $response->get_data() );
-	}
-
-	/**
-	 * @testdox GET answers the disabled overview, not an error, when the feature flag is off.
-	 */
-	public function test_get_returns_disabled_payload_when_feature_is_disabled(): void {
-		update_option( '_wcpay_feature_dispute_readiness_overview', '0' );
-		$this->sut->register_routes();
-
-		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/dispute-readiness' ) );
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( 'get_disabled_overview_payload', $this->service->last_call );
-		$this->assertSame( $this->service->get_disabled_overview_payload(), $response->get_data() );
+	public function provide_feature_flag_overviews(): array {
+		return array(
+			'flag absent' => array( null, 'get_overview_payload' ),
+			'flag yes'    => array( 'yes', 'get_overview_payload' ),
+			'flag 0'      => array( '0', 'get_disabled_overview_payload' ),
+		);
 	}
 
 	/**
@@ -146,31 +138,33 @@ class WooPaymentsDisputeReadinessRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox POST dismiss returns the updated overview when the feature is enabled.
+	 * @testdox POST $_dataName returns the updated overview when the feature is enabled.
+	 * @dataProvider provide_enabled_mutating_routes
+	 *
+	 * @param string $route         Route path.
+	 * @param string $expected_call Service method the route calls.
 	 */
-	public function test_dismiss_returns_updated_overview_when_feature_is_enabled(): void {
+	public function test_mutating_route_returns_updated_overview_when_feature_is_enabled( string $route, string $expected_call ): void {
 		update_option( '_wcpay_feature_dispute_readiness_overview', 'yes' );
 		$this->sut->register_routes();
 
-		$response = $this->server->dispatch( new WP_REST_Request( 'POST', '/wc/v3/payments/dispute-readiness/dismiss' ) );
+		$response = $this->server->dispatch( new WP_REST_Request( 'POST', $route ) );
 
 		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( 'dismiss_overview_card', $this->service->last_call );
-		$this->assertSame( $this->service->dismiss_overview_card(), $response->get_data() );
+		$this->assertSame( $expected_call, $this->service->last_call );
+		$this->assertSame( $this->service->$expected_call(), $response->get_data() );
 	}
 
 	/**
-	 * @testdox POST statement descriptor confirm returns the updated overview when the feature is enabled.
+	 * Mutating routes and the service method each one calls.
+	 *
+	 * @return array<string,array{string,string}>
 	 */
-	public function test_statement_descriptor_confirm_returns_updated_overview_when_feature_is_enabled(): void {
-		update_option( '_wcpay_feature_dispute_readiness_overview', 'yes' );
-		$this->sut->register_routes();
-
-		$response = $this->server->dispatch( new WP_REST_Request( 'POST', '/wc/v3/payments/dispute-readiness/statement-descriptor/confirm' ) );
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( 'confirm_statement_descriptor', $this->service->last_call );
-		$this->assertSame( $this->service->confirm_statement_descriptor(), $response->get_data() );
+	public function provide_enabled_mutating_routes(): array {
+		return array(
+			'dismiss route' => array( '/wc/v3/payments/dispute-readiness/dismiss', 'dismiss_overview_card' ),
+			'confirm route' => array( '/wc/v3/payments/dispute-readiness/statement-descriptor/confirm', 'confirm_statement_descriptor' ),
+		);
 	}
 
 	/**

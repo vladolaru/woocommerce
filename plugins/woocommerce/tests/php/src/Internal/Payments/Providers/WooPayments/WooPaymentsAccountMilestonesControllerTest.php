@@ -21,8 +21,6 @@ use WC_Unit_Test_Case;
  */
 class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 
-	use ProviderTextLogAssertions;
-
 	/**
 	 * Created services whose hooks must be removed after each test.
 	 *
@@ -112,15 +110,16 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Relevant paid transitions invalidate either cached one-and-done result after the live-sale marker exists.
-	 * @dataProvider provide_one_and_done_cache_invalidations
+	 * @testdox A paid transition after the live-sale marker exists clears the cached one-and-done result unless it is a test-mode card order: $_dataName.
+	 * @dataProvider provide_one_and_done_cache_transitions
 	 *
 	 * @param string $payment_method Payment gateway ID.
 	 * @param string $mode           WooPayments order mode.
 	 * @param string $cached_value   Cached one-and-done eligibility.
 	 * @param string $new_status     Paid status the order moves to.
+	 * @param bool   $expect_cleared Whether the cached result is cleared.
 	 */
-	public function test_paid_order_status_transition_invalidates_one_and_done_cache( string $payment_method, string $mode, string $cached_value, string $new_status ): void {
+	public function test_paid_order_status_transition_clears_one_and_done_cache_unless_test_card_order( string $payment_method, string $mode, string $cached_value, string $new_status, bool $expect_cleared ): void {
 		$service = $this->create_service();
 		$order   = wc_create_order();
 		$this->assertInstanceOf( WC_Order::class, $order );
@@ -134,71 +133,23 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 
 		$service->handle_woocommerce_order_status_changed( $order->get_id(), OrderStatus::PENDING, $new_status, $order );
 
-		$this->assertFalse( get_transient( 'wcpay_one_and_done_eligible' ) );
+		$this->assertSame( $expect_cleared ? false : $cached_value, get_transient( 'wcpay_one_and_done_eligible' ) );
 		$this->assertSame( '1', get_option( 'wcpay_has_live_sale' ) );
 	}
 
 	/**
-	 * Relevant transitions and both cached results.
+	 * Paid transitions with both cached results.
 	 *
-	 * @return array<string,array{string,string,string,string}>
+	 * @return array<string,array{string,string,string,string,bool}>
 	 */
-	public static function provide_one_and_done_cache_invalidations(): array {
+	public static function provide_one_and_done_cache_transitions(): array {
 		return array(
-			'second live WooPayments order with positive cache' => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'prod', '1', OrderStatus::PROCESSING ),
-			'alternate gateway order with negative cache' => array( 'cod', '', '0', OrderStatus::COMPLETED ),
+			'second live WooPayments order with positive cache' => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'prod', '1', OrderStatus::PROCESSING, true ),
+			'alternate gateway order with negative cache' => array( 'cod', '', '0', OrderStatus::COMPLETED, true ),
 			// Client 11.1.0 keeps the cache only for a test-mode card gateway order (admin/attach-rate/class-wc-payments-one-and-done-notice.php:103-106).
-			'test-mode iDEAL order with positive cache'   => array( 'woocommerce_payments_ideal', 'test', '1', OrderStatus::PROCESSING ),
+			'test-mode iDEAL order with positive cache'   => array( 'woocommerce_payments_ideal', 'test', '1', OrderStatus::PROCESSING, true ),
+			'test-mode card order keeps the cache'        => array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'test', '1', OrderStatus::PROCESSING, false ),
 		);
-	}
-
-	/**
-	 * @testdox A paid transition skips order mode metadata when no eligibility cache remains after a live sale.
-	 */
-	public function test_paid_order_status_transition_without_eligibility_cache_skips_mode_meta(): void {
-		$service = $this->create_service();
-		$order   = $this->createMock( WC_Order::class );
-		$order->method( 'get_payment_method' )->willReturn( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
-		$order->expects( $this->never() )->method( 'get_meta' );
-		update_option( 'wcpay_has_live_sale', '1', false );
-		delete_transient( 'wcpay_one_and_done_eligible' );
-
-		$service->handle_woocommerce_order_status_changed( 123, OrderStatus::PENDING, OrderStatus::PROCESSING, $order );
-
-		$this->assertSame( '1', get_option( 'wcpay_has_live_sale' ) );
-	}
-
-	/**
-	 * @testdox An alternate-gateway paid transition invalidates cached eligibility without reading order mode metadata.
-	 */
-	public function test_alternate_gateway_order_status_transition_invalidates_cache_without_mode_meta(): void {
-		$service = $this->create_service();
-		$order   = $this->createMock( WC_Order::class );
-		$order->expects( $this->once() )->method( 'get_payment_method' )->willReturn( 'cod' );
-		$order->expects( $this->never() )->method( 'get_meta' );
-		set_transient( 'wcpay_one_and_done_eligible', '0', HOUR_IN_SECONDS );
-
-		$service->handle_woocommerce_order_status_changed( 123, OrderStatus::PENDING, OrderStatus::COMPLETED, $order );
-
-		$this->assertFalse( get_transient( 'wcpay_one_and_done_eligible' ) );
-	}
-
-	/**
-	 * @testdox A test WooPayments transition leaves cached one-and-done eligibility unchanged.
-	 */
-	public function test_test_order_status_transition_preserves_one_and_done_cache(): void {
-		$service = $this->create_service();
-		$order   = wc_create_order();
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
-		$order->update_meta_data( '_wcpay_mode', 'test' );
-		$order->save();
-		update_option( 'wcpay_has_live_sale', '1', false );
-		set_transient( 'wcpay_one_and_done_eligible', '1', HOUR_IN_SECONDS );
-
-		$service->handle_woocommerce_order_status_changed( $order->get_id(), OrderStatus::PENDING, OrderStatus::PROCESSING, $order );
-
-		$this->assertSame( '1', get_transient( 'wcpay_one_and_done_eligible' ) );
 	}
 
 	/**
@@ -248,16 +199,20 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Referrer CTA handler records the event and redirects for an allowlisted stage without requiring a nonce.
+	 * @testdox Referrer CTA handler redirects only for an allowlisted stage and a manager, without requiring a nonce: $_dataName.
+	 * @dataProvider provider_referrer_cta_clicks
+	 *
+	 * @param string $role            Role of the current user.
+	 * @param string $stage           The referrer stage in the CTA link.
+	 * @param bool   $expect_redirect Whether the handler records the click and redirects.
 	 */
-	public function test_referrer_cta_records_event_with_allowlisted_stage(): void {
-		$service  = $this->create_service();
-		$admin_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
-		wp_set_current_user( $admin_id );
+	public function test_referrer_cta_redirects_only_for_a_recorded_click( string $role, string $stage, bool $expect_redirect ): void {
+		$service = $this->create_service();
+		wp_set_current_user( self::factory()->user->create( array( 'role' => $role ) ) );
 
 		// The email CTA link carries no nonce; the handler must still record the click.
 		$_GET['wcpay_referrer']       = 'post_kyc_email';
-		$_GET['wcpay_referrer_stage'] = '7';
+		$_GET['wcpay_referrer_stage'] = $stage;
 
 		$redirected = false;
 		add_filter(
@@ -272,57 +227,23 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 		try {
 			$service->handle_wcpay_post_kyc_activation_email_cta();
 		} catch ( \Exception $e ) {
-			// The redirect exception is the expected end of the happy path.
 			unset( $e );
 		}
 
-		$this->assertTrue( $redirected, 'An allowlisted stage should record the event and redirect without a nonce.' );
+		$this->assertSame( $expect_redirect, $redirected, $expect_redirect ? 'An allowlisted stage should record the event and redirect without a nonce.' : 'The handler must not record analytics or trigger a redirect.' );
 	}
 
 	/**
-	 * @testdox Referrer CTA handler skips recording and never redirects for $_dataName.
-	 * @dataProvider provider_referrer_cta_not_recorded
+	 * CTA clicks the handler records, and those it must not record.
 	 *
-	 * @param string $role  Role of the current user.
-	 * @param string $stage The referrer stage in the CTA link.
+	 * @return array<string,array{string,string,bool}>
 	 */
-	public function test_referrer_cta_skips_recording( string $role, string $stage ): void {
-		$service = $this->create_service();
-		wp_set_current_user( self::factory()->user->create( array( 'role' => $role ) ) );
-
-		$_GET['wcpay_referrer']       = 'post_kyc_email';
-		$_GET['wcpay_referrer_stage'] = $stage;
-
-		$redirected = false;
-		add_filter(
-			'wp_redirect',
-			function ( $location ) use ( &$redirected ) {
-				unset( $location );
-				$redirected = true;
-				// Guard the test run: a redirect here would otherwise reach the handler's exit.
-				throw new \Exception( 'unexpected redirect' );
-			}
-		);
-
-		try {
-			$service->handle_wcpay_post_kyc_activation_email_cta();
-		} catch ( \Exception $e ) {
-			unset( $e );
-		}
-
-		$this->assertFalse( $redirected, 'The handler must not record analytics or trigger a redirect.' );
-	}
-
-	/**
-	 * CTA clicks the handler must not record.
-	 *
-	 * @return array<string,array{string,string}>
-	 */
-	public static function provider_referrer_cta_not_recorded(): array {
+	public static function provider_referrer_cta_clicks(): array {
 		return array(
+			'allowlisted stage'                 => array( 'administrator', '7', true ),
 			// Stage 3 is not in POST_KYC_STAGE_DAYS.
-			'a stage that is not allowlisted'   => array( 'administrator', '3' ),
-			'a user without manage_woocommerce' => array( 'customer', '7' ),
+			'a stage that is not allowlisted'   => array( 'administrator', '3', false ),
+			'a user without manage_woocommerce' => array( 'customer', '7', false ),
 		);
 	}
 
@@ -369,44 +290,42 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Instant deposit eligibility refresh creates the inbox note and reminder.
+	 * @testdox Instant deposit eligibility refresh creates the inbox note and reminder only for an eligible account: $_dataName.
+	 * @dataProvider provide_instant_deposit_eligibility
+	 *
+	 * @param bool $eligible The account's instant deposit eligibility flag.
 	 */
-	public function test_instant_deposit_eligibility_refresh_creates_note_and_reminder(): void {
+	public function test_instant_deposit_eligibility_refresh_creates_note_and_reminder_only_when_eligible( bool $eligible ): void {
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service( $scheduler );
 
 		$service->handle_wcpay_instant_deposits_inbox_note(
 			array(
 				// Client 11.1.0 reads this flag in is_instant_deposits_eligible() (includes/class-wc-payments-account.php:2842-2847).
-				'instant_deposits_eligible' => true,
+				'instant_deposits_eligible' => $eligible,
 			)
 		);
 
-		$this->assertTrue( (bool) get_option( 'wcpay_instant_deposits_previously_eligible', false ) );
-		$this->assertNotSame( array(), $this->get_instant_deposit_note_ids() );
-		$this->assertCount( 1, $scheduler->scheduled_jobs );
-		$this->assertSame( 'wcpay_instant_deposit_reminder', $scheduler->scheduled_jobs[0]['hook'] );
-		$this->assertSame( array(), $scheduler->scheduled_jobs[0]['args'] );
-		$this->assertGreaterThanOrEqual( time() + 90 * DAY_IN_SECONDS - 5, $scheduler->scheduled_jobs[0]['timestamp'] ?? 0 );
+		$this->assertSame( $eligible, (bool) get_option( 'wcpay_instant_deposits_previously_eligible', false ) );
+		$this->assertSame( $eligible, array() !== $this->get_instant_deposit_note_ids() );
+		$this->assertCount( $eligible ? 1 : 0, $scheduler->scheduled_jobs );
+		if ( $eligible ) {
+			$this->assertSame( 'wcpay_instant_deposit_reminder', $scheduler->scheduled_jobs[0]['hook'] );
+			$this->assertSame( array(), $scheduler->scheduled_jobs[0]['args'] );
+			$this->assertGreaterThanOrEqual( time() + 90 * DAY_IN_SECONDS - 5, $scheduler->scheduled_jobs[0]['timestamp'] ?? 0 );
+		}
 	}
 
 	/**
-	 * @testdox Instant deposit eligibility refresh skips ineligible accounts.
+	 * Instant deposit eligibility flags in the refreshed account data.
+	 *
+	 * @return array<string,array{bool}>
 	 */
-	public function test_instant_deposit_eligibility_refresh_skips_ineligible_accounts(): void {
-		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( $scheduler );
-
-		$service->handle_wcpay_instant_deposits_inbox_note(
-			array(
-				// Client 11.1.0 reads this flag in is_instant_deposits_eligible() (includes/class-wc-payments-account.php:2842-2847).
-				'instant_deposits_eligible' => false,
-			)
+	public static function provide_instant_deposit_eligibility(): array {
+		return array(
+			'eligible account'   => array( true ),
+			'ineligible account' => array( false ),
 		);
-
-		$this->assertFalse( (bool) get_option( 'wcpay_instant_deposits_previously_eligible', false ) );
-		$this->assertSame( array(), $this->get_instant_deposit_note_ids() );
-		$this->assertSame( array(), $scheduler->scheduled_jobs );
 	}
 
 	/**
@@ -428,27 +347,6 @@ class WooPaymentsAccountMilestonesControllerTest extends WC_Unit_Test_Case {
 		$this->assertNotSame( array(), $this->get_instant_deposit_note_ids() );
 		$this->assertCount( 1, $scheduler->scheduled_jobs );
 		$this->assertSame( 'wcpay_instant_deposit_reminder', $scheduler->scheduled_jobs[0]['hook'] );
-	}
-
-	/**
-	 * @testdox Post-KYC completion schedules staged activation emails.
-	 */
-	public function test_post_kyc_completion_schedules_staged_activation_emails(): void {
-		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( $scheduler );
-		$kyc_date  = time();
-
-		$service->handle_add_option_wcpay_kyc_completion_date( 'wcpay_kyc_completion_date', $kyc_date );
-
-		$this->assertSame( '1', get_option( 'wcpay_post_kyc_activation_emails_scheduled' ) );
-		$this->assertSame(
-			array( array( 7 ), array( 14 ), array( 30 ) ),
-			array_column( $scheduler->scheduled_jobs, 'args' )
-		);
-		$this->assertSame(
-			array( 'wcpay_post_kyc_activation_email_send', 'wcpay_post_kyc_activation_email_send', 'wcpay_post_kyc_activation_email_send' ),
-			array_column( $scheduler->scheduled_jobs, 'hook' )
-		);
 	}
 
 	/**

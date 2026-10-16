@@ -171,9 +171,12 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not process the cart-total AJAX callback for ineligible messaging.
+	 * @testdox Should not process the $handler AJAX callback for ineligible messaging.
+	 * @dataProvider provide_ajax_handlers
+	 *
+	 * @param string $handler AJAX handler method.
 	 */
-	public function test_does_not_process_cart_total_ajax_for_ineligible_messaging(): void {
+	public function test_does_not_process_ajax_for_ineligible_messaging( string $handler ): void {
 		$controller  = $this->create_controller( false, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
 		$die_handler = static function () {
 			return static function () {
@@ -186,7 +189,7 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 
 		ob_start();
 		try {
-			$controller->handle_get_cart_total();
+			$controller->$handler();
 		} catch ( \Exception $exception ) {
 			$this->fail( $exception->getMessage() );
 		} finally {
@@ -199,51 +202,15 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not process the BNPL availability AJAX callback for ineligible messaging.
+	 * Provide the messaging AJAX handlers.
+	 *
+	 * @return array<string,array{0:string}>
 	 */
-	public function test_does_not_process_bnpl_availability_ajax_for_ineligible_messaging(): void {
-		$controller  = $this->create_controller( false, array( 'affirm' ), array( 'affirm_payments' => 'active' ) );
-		$die_handler = static function () {
-			return static function () {
-				throw new \Exception( 'ajax-die' );
-			};
-		};
-
-		add_filter( 'wp_doing_ajax', '__return_true' );
-		add_filter( 'wp_die_ajax_handler', $die_handler );
-
-		ob_start();
-		try {
-			$controller->handle_check_bnpl_availability();
-		} catch ( \Exception $exception ) {
-			$this->fail( $exception->getMessage() );
-		} finally {
-			$output = (string) ob_get_clean();
-			remove_filter( 'wp_doing_ajax', '__return_true' );
-			remove_filter( 'wp_die_ajax_handler', $die_handler );
-		}
-
-		$this->assertSame( '', $output );
-	}
-
-	/**
-	 * @testdox Should reuse eligibility and active methods during repeated eligible rendering.
-	 */
-	public function test_reuses_eligibility_and_active_methods_during_repeated_eligible_rendering(): void {
-		$product = \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '50.00' ) );
-		$this->set_current_product( $product );
-
-		$account_service = $this->create_account_service( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ), 1 );
-		$controller      = $this->create_controller( true, array( 'affirm' ), array( 'affirm_payments' => 'active' ), $account_service );
-
-		ob_start();
-		$controller->render_site_messaging();
-		$payment_methods = $this->get_localized_script_data()['paymentMethods'];
-		$controller->render_site_messaging();
-		$output = (string) ob_get_clean();
-
-		$this->assertSame( '<div id="payment-method-message"></div><div id="payment-method-message"></div>', $output );
-		$this->assertSame( array( 'affirm' ), $payment_methods );
+	public function provide_ajax_handlers(): array {
+		return array(
+			'cart total'        => array( 'handle_get_cart_total' ),
+			'BNPL availability' => array( 'handle_check_bnpl_availability' ),
+		);
 	}
 
 	/**

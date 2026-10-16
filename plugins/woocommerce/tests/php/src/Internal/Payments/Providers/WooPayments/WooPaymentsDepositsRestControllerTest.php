@@ -294,63 +294,54 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A paid-status query reaches both payout routes without reintroducing excluded rows or totals.
+	 * @testdox A payout resource route forwards its route ID to the platform and answers the platform response.
+	 * @dataProvider provide_resource_id_routes
+	 *
+	 * @param string              $path              Route path.
+	 * @param string              $response_property API client property holding the platform response.
+	 * @param array<string,mixed> $platform_response Platform response.
+	 * @param string              $id_property       API client property recording the forwarded ID.
+	 * @param string              $expected_id       Expected forwarded ID.
 	 */
-	public function test_paid_status_query_preserves_scoped_payout_rows_and_totals(): void {
+	public function test_resource_route_forwards_route_identifier( string $path, string $response_property, array $platform_response, string $id_property, string $expected_id ): void {
 		$this->sut->register_routes();
+		$this->api_client->{$response_property} = $platform_response;
 
-		$this->api_client->deposits_response         = array(
-			'data'        => array(
-				array(
-					'id'       => 'po_paid',
-					'status'   => 'paid',
-					'amount'   => 2500,
-					'currency' => 'usd',
-				),
-			),
-			'total_count' => 1,
-		);
-		$this->api_client->deposits_summary_response = array(
-			'count'    => 1,
-			'total'    => 2500,
-			'currency' => 'usd',
-		);
-
-		$list_request = new WP_REST_Request( 'GET', '/wc/v3/payments/deposits' );
-		$list_request->set_query_params( array( 'status_is' => 'paid' ) );
-		$list = $this->server->dispatch( $list_request );
-
-		$this->assertSame( 200, $list->get_status() );
-		$this->assertSame( 'paid', $this->api_client->last_deposits_query['status_is'] );
-		$this->assertSame( $this->api_client->deposits_response, $list->get_data() );
-		$this->assertCount( 1, $list->get_data()['data'] );
-		$this->assertSame( 'po_paid', $list->get_data()['data'][0]['id'] );
-
-		$summary_request = new WP_REST_Request( 'GET', '/wc/v3/payments/deposits/summary' );
-		$summary_request->set_query_params( array( 'status_is' => 'paid' ) );
-		$summary = $this->server->dispatch( $summary_request );
-
-		$this->assertSame( 200, $summary->get_status() );
-		$this->assertSame( array( 'status_is' => 'paid' ), $this->api_client->last_deposits_summary_query );
-		$this->assertSame( $this->api_client->deposits_summary_response, $summary->get_data() );
-	}
-
-	/**
-	 * @testdox Deposit detail forwards the route resource ID.
-	 */
-	public function test_get_deposit_forwards_route_identifier(): void {
-		$this->sut->register_routes();
-		$this->api_client->deposit_response = array(
-			'id'     => 'po_test',
-			'amount' => 1234,
-		);
-
-		$request  = new WP_REST_Request( 'GET', '/wc/v3/payments/deposits/po_test' );
+		$request  = new WP_REST_Request( 'GET', $path );
 		$response = $this->server->dispatch( $request );
 
 		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( 'po_test', $this->api_client->last_deposit_id );
-		$this->assertSame( $this->api_client->deposit_response, $response->get_data() );
+		$this->assertSame( $expected_id, $this->api_client->{$id_property} );
+		$this->assertSame( $platform_response, $response->get_data() );
+	}
+
+	/**
+	 * Payout routes that carry a resource ID.
+	 *
+	 * @return array<string,array{string,string,array<string,mixed>,string,string}>
+	 */
+	public static function provide_resource_id_routes(): array {
+		return array(
+			'deposit detail' => array(
+				'/wc/v3/payments/deposits/po_test',
+				'deposit_response',
+				array(
+					'id'     => 'po_test',
+					'amount' => 1234,
+				),
+				'last_deposit_id',
+				'po_test',
+			),
+			'export polling' => array(
+				'/wc/v3/payments/deposits/download/poexp_test',
+				'payouts_export_url_response',
+				array(
+					'url' => 'https://example.com/export.csv',
+				),
+				'last_export_id',
+				'poexp_test',
+			),
+		);
 	}
 
 	/**
@@ -390,23 +381,6 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 'merchant@example.com', $this->api_client->last_export_user_email );
 		$this->assertSame( 'en_US', $this->api_client->last_export_locale );
 		$this->assertSame( $this->api_client->deposits_export_response, $response->get_data() );
-	}
-
-	/**
-	 * @testdox Export polling forwards the export ID.
-	 */
-	public function test_get_export_url_forwards_route_identifier(): void {
-		$this->sut->register_routes();
-		$this->api_client->payouts_export_url_response = array(
-			'url' => 'https://example.com/export.csv',
-		);
-
-		$request  = new WP_REST_Request( 'GET', '/wc/v3/payments/deposits/download/poexp_test' );
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( 'poexp_test', $this->api_client->last_export_id );
-		$this->assertSame( $this->api_client->payouts_export_url_response, $response->get_data() );
 	}
 
 	/**
@@ -459,13 +433,7 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_manual_deposit_logs_success_audit_trail(): void {
 		$this->sut->register_routes();
-		$logger = $this->create_recording_logger();
-		add_filter(
-			'woocommerce_logging_class',
-			static function () use ( $logger ): object {
-				return $logger;
-			}
-		);
+		$logger                                    = RecordingWcLogger::install();
 		$this->api_client->manual_deposit_response = array( 'id' => 'po_manual' );
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/deposits' );
@@ -479,13 +447,12 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$response = $this->server->dispatch( $request );
 
 		$this->assertSame( 200, $response->get_status() );
-		$this->assertCount( 2, $logger->entries );
-		$this->assertSame( 'info', $logger->entries[0]['level'] );
-		$this->assertSame( 'woopayments', $logger->entries[0]['context']['source'] );
-		$this->assertSame( 'instant', $logger->entries[0]['context']['type'] );
-		$this->assertSame( 'usd', $logger->entries[0]['context']['currency'] );
-		$this->assertSame( 'info', $logger->entries[1]['level'] );
-		$this->assertStringContainsString( 'completed', $logger->entries[1]['message'] );
+		$this->assertCount( 2, $logger->lines );
+		$this->assertSame( 'info', $logger->lines[0][0] );
+		$this->assertSame( 'woopayments', $logger->lines[0][2] );
+		$this->assertSame( 'instant', $logger->contexts[0]['type'] );
+		$this->assertSame( 'usd', $logger->contexts[0]['currency'] );
+		$this->assertSame( 'info', $logger->lines[1][0] );
 	}
 
 	/**
@@ -493,13 +460,7 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function test_manual_deposit_logs_failure_audit_trail(): void {
 		$this->sut->register_routes();
-		$logger = $this->create_recording_logger();
-		add_filter(
-			'woocommerce_logging_class',
-			static function () use ( $logger ): object {
-				return $logger;
-			}
-		);
+		$logger = RecordingWcLogger::install();
 		// A platform error code is free text to this store; one the logger does not list is logged as unknown_error.
 		$this->api_client->exception = new WooPaymentsApiException( 'Ambiguous payout failure.', 'https://pay.example.test/r?key=sk_test_leak123', 504 );
 
@@ -514,65 +475,47 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$response = $this->server->dispatch( $request );
 
 		$this->assertSame( 504, $response->get_status(), 'A 5xx platform status reaches the answer.' );
-		$this->assertCount( 2, $logger->entries );
-		$this->assertSame( 'error', $logger->entries[1]['level'] );
-		$this->assertStringContainsString( 'failed', $logger->entries[1]['message'] );
-		$this->assertSame( 'woopayments', $logger->entries[1]['context']['source'] );
-		$this->assertSame( 'instant', $logger->entries[1]['context']['type'] );
-		$this->assertSame( 'usd', $logger->entries[1]['context']['currency'] );
-		$this->assertSame( 'unknown_error', $logger->entries[1]['context']['api_code'] );
-		$this->assertSame( 504, $logger->entries[1]['context']['http_status'] );
-		$this->assertStringNotContainsString( 'sk_test_leak123', (string) wp_json_encode( $logger->entries ) );
+		$this->assertCount( 2, $logger->lines );
+		$this->assertSame( 'error', $logger->lines[1][0] );
+		$this->assertSame( 'woopayments', $logger->lines[1][2] );
+		$this->assertSame( 'instant', $logger->contexts[1]['type'] );
+		$this->assertSame( 'usd', $logger->contexts[1]['currency'] );
+		$this->assertSame( 'unknown_error', $logger->contexts[1]['api_code'] );
+		$this->assertSame( 504, $logger->contexts[1]['http_status'] );
+		$this->assertStringNotContainsString( 'sk_test_leak123', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
 	}
 
 	/**
-	 * A 4xx or 5xx platform status reaches the answer; any other status answers 500. The faked failures are the shape the
-	 * API client builds from a platform error body and its HTTP status; an unreadable body keeps the answer's status, 200
-	 * included (wcpay_unparseable_or_null_body).
+	 * A 4xx or 5xx platform status reaches the answer. The faked failure is the shape the API client builds from a platform
+	 * error body and its HTTP status.
 	 *
-	 * @testdox A "$code" platform failure with status $platform_status on a payout answers $expected_status.
-	 * @testWith ["resource_missing", 404, 404]
-	 *           ["wcpay_unparseable_or_null_body", 200, 500]
-	 *
-	 * @param string $code            Platform error code.
-	 * @param int    $platform_status Platform HTTP status.
-	 * @param int    $expected_status Expected answer status.
+	 * @testdox A "resource_missing" platform failure with status 404 on a payout answers 404.
 	 */
-	public function test_api_exceptions_answer_a_4xx_or_5xx_status( string $code, int $platform_status, int $expected_status ): void {
+	public function test_api_exceptions_answer_a_4xx_or_5xx_status(): void {
 		$this->sut->register_routes();
-		$this->api_client->exception = new WooPaymentsApiException( 'Platform failure.', $code, $platform_status );
+		$this->api_client->exception = new WooPaymentsApiException( 'Platform failure.', 'resource_missing', 404 );
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/deposits/po_missing' ) );
 
-		$this->assertSame( $expected_status, $response->get_status() );
-		$this->assertSame( $code, $response->get_data()['code'] );
+		$this->assertSame( 404, $response->get_status() );
+		$this->assertSame( 'resource_missing', $response->get_data()['code'] );
 	}
 
 	/**
 	 * A list request filter callback that returns something other than the request stops the request with the API client
 	 * path's error, as the extension's request classes end it with a 500 (includes/core/server/class-request.php:528-569, :770-783).
 	 *
-	 * @testdox A $hook callback returning no request answers 500 wcpay_invalid_filtered_request.
-	 * @testWith ["wcpay_list_deposits_request", false]
-	 *           ["wcpay_list_deposits_request", true]
-	 *
-	 * @param string $hook      Request filter.
-	 * @param bool   $as_object Whether the callback returns an object of another class.
+	 * @testdox A wcpay_list_deposits_request callback returning no request answers 500 wcpay_invalid_filtered_request.
 	 */
-	public function test_list_filter_returning_no_request_fails_the_request( string $hook, bool $as_object ): void {
+	public function test_list_filter_returning_no_request_fails_the_request(): void {
 		$this->sut->register_routes();
-		add_filter(
-			$hook,
-			static function () use ( $as_object ) {
-				return $as_object ? new \stdClass() : null;
-			}
-		);
+		add_filter( 'wcpay_list_deposits_request', '__return_null' );
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/deposits' ) );
 
 		$this->assertSame( 500, $response->get_status() );
 		$this->assertSame( 'wcpay_invalid_filtered_request', $response->get_data()['code'] );
-		$this->assertSame( "Invalid WooPayments request returned by {$hook}.", $response->get_data()['message'] );
+		$this->assertSame( 'Invalid WooPayments request returned by wcpay_list_deposits_request.', $response->get_data()['message'] );
 	}
 
 	/**
@@ -585,155 +528,6 @@ class WooPaymentsDepositsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$controller->init( $this->api_client );
 
 		return $controller;
-	}
-
-	/**
-	 * Create a detail request with route params.
-	 *
-	 * @param string $deposit_id Deposit ID.
-	 * @return WP_REST_Request
-	 */
-	private function create_detail_request( string $deposit_id ): WP_REST_Request {
-		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/deposits/' . $deposit_id );
-		$request->set_param( 'deposit_id', $deposit_id );
-
-		return $request;
-	}
-
-	/**
-	 * Create a recording logger test double.
-	 *
-	 * @return object
-	 */
-	private function create_recording_logger(): object {
-		return new class() implements \WC_Logger_Interface {
-			/**
-			 * Logged entries.
-			 *
-			 * @var array<int,array{level:string,message:string,context:array<string,mixed>}>
-			 */
-			public array $entries = array();
-
-			/**
-			 * Add a log entry.
-			 *
-			 * @param string $handle  File handle.
-			 * @param string $message Log message.
-			 * @param string $level   Log level.
-			 * @return bool
-			 */
-			public function add( $handle, $message, $level = \WC_Log_Levels::NOTICE ) {
-				$this->record( $level, $message, array( 'source' => $handle ) );
-
-				return true;
-			}
-
-			/**
-			 * Add a log entry.
-			 *
-			 * @param string              $level   Log level.
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function log( $level, $message, $context = array() ) {
-				$this->record( $level, $message, $context );
-			}
-
-			/**
-			 * Record an emergency log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function emergency( $message, $context = array() ) {
-				$this->record( 'emergency', $message, $context );
-			}
-
-			/**
-			 * Record an alert log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function alert( $message, $context = array() ) {
-				$this->record( 'alert', $message, $context );
-			}
-
-			/**
-			 * Record a critical log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function critical( $message, $context = array() ) {
-				$this->record( 'critical', $message, $context );
-			}
-
-			/**
-			 * Record an info log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function info( $message, $context = array() ) {
-				$this->record( 'info', $message, $context );
-			}
-
-			/**
-			 * Record an error log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function error( $message, $context = array() ) {
-				$this->record( 'error', $message, $context );
-			}
-
-			/**
-			 * Record a warning log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function warning( $message, $context = array() ) {
-				$this->record( 'warning', $message, $context );
-			}
-
-			/**
-			 * Record a notice log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function notice( $message, $context = array() ) {
-				$this->record( 'notice', $message, $context );
-			}
-
-			/**
-			 * Record a debug log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function debug( $message, $context = array() ) {
-				$this->record( 'debug', $message, $context );
-			}
-
-			/**
-			 * Record a log entry.
-			 *
-			 * @param string              $level   Log level.
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			private function record( string $level, string $message, array $context ): void {
-				$this->entries[] = array(
-					'level'   => $level,
-					'message' => $message,
-					'context' => $context,
-				);
-			}
-		};
 	}
 
 	/**

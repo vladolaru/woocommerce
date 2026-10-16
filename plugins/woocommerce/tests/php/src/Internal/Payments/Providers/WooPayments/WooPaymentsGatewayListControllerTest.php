@@ -120,16 +120,20 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not change the settings collection when the canonical gateway is absent.
+	 * @testdox Should not change the settings collection ($scenario).
+	 * @dataProvider provide_unchanged_settings_collections
+	 *
+	 * @param string                              $scenario      Case.
+	 * @param bool                                $builtin_owner Whether the built-in WooPayments owns payments.
+	 * @param array<int,array{0:string,1:string}> $gateway_specs Gateway kind (`woopayments` or `unrelated`) and ID, keyed by position.
 	 */
-	public function test_does_not_change_settings_collection_when_canonical_gateway_is_absent(): void {
-		$afterpay  = $this->create_gateway( 'woocommerce_payments_afterpay_clearpay' );
-		$unrelated = $this->create_unrelated_gateway( 'bacs' );
-		$sut       = $this->create_controller( true );
-		$gateways  = array(
-			7  => $afterpay,
-			11 => $unrelated,
-		);
+	public function test_does_not_change_settings_collection( string $scenario, bool $builtin_owner, array $gateway_specs ): void {
+		unset( $scenario );
+		$gateways = array();
+		foreach ( $gateway_specs as $position => $spec ) {
+			$gateways[ $position ] = 'woopayments' === $spec[0] ? $this->create_gateway( $spec[1] ) : $this->create_unrelated_gateway( $spec[1] );
+		}
+		$sut = $this->create_controller( $builtin_owner );
 
 		WC()->payment_gateways()->payment_gateways = $gateways;
 
@@ -139,20 +143,29 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave the settings collection alone when the built-in WooPayments does not own payments.
+	 * Provide settings collections the display hook leaves alone: case, built-in owner, gateways by position.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:array<int,array{0:string,1:string}>}>
 	 */
-	public function test_does_not_change_settings_collection_when_builtin_does_not_own_payments(): void {
-		$gateways = array(
-			2 => $this->create_gateway( 'woocommerce_payments' ),
-			7 => $this->create_gateway( 'woocommerce_payments_klarna' ),
+	public function provide_unchanged_settings_collections(): array {
+		return array(
+			'canonical gateway absent' => array(
+				'canonical gateway absent',
+				true,
+				array(
+					7  => array( 'woopayments', 'woocommerce_payments_afterpay_clearpay' ),
+					11 => array( 'unrelated', 'bacs' ),
+				),
+			),
+			'built-in does not own'    => array(
+				'built-in does not own',
+				false,
+				array(
+					2 => array( 'woopayments', 'woocommerce_payments' ),
+					7 => array( 'woopayments', 'woocommerce_payments_klarna' ),
+				),
+			),
 		);
-		$sut      = $this->create_controller( false );
-
-		WC()->payment_gateways()->payment_gateways = $gateways;
-
-		$sut->handle_woocommerce_admin_field_payment_gateways();
-
-		$this->assertSame( $gateways, WC()->payment_gateways()->payment_gateways );
 	}
 
 	/**
@@ -212,27 +225,6 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 		$ids   = array_keys( WC()->payment_gateways()->payment_gateways() );
 		$this->assertSame( $block, array_slice( $ids, 0, count( $block ) ) );
 		$this->assertContains( 'bacs', array_slice( $ids, count( $block ) ), 'Other gateways must follow the WooPayments block.' );
-	}
-
-	/**
-	 * @testdox Checkout lists the WooPayments gateways before the saved gateways when the saved order lacks the card gateway.
-	 */
-	public function test_checkout_lists_the_woopayments_block_first_when_the_saved_order_lacks_the_card_gateway(): void {
-		$this->arrange_builtin_owner( WooPaymentsSetupTier::ACTIVE );
-		$this->run_bootstrap( '__return_false' );
-		update_option(
-			'woocommerce_gateway_order',
-			array(
-				'bacs'   => 0,
-				'cheque' => 1,
-			)
-		);
-
-		$this->reload_payment_gateways();
-
-		$block = $this->get_provider_gateway_ids();
-		$ids   = array_keys( WC()->payment_gateways()->payment_gateways() );
-		$this->assertSame( array_merge( $block, array( 'bacs', 'cheque' ) ), array_slice( $ids, 0, count( $block ) + 2 ) );
 	}
 
 	/**

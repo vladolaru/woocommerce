@@ -757,24 +757,28 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Recurring store setup sync is scheduled once in the WooPayments group.
+	 * @testdox Action Scheduler's recurring-action check schedules the store setup sync once, every six hours, in the WooPayments group.
+	 *
+	 * Client 11.1.0 hooks the schedule on action_scheduler_ensure_recurring_actions (includes/class-wc-payments-action-scheduler-service.php:87)
+	 * with a six-hour interval (:111).
 	 */
 	public function test_schedule_recurring_actions_schedules_store_setup_sync_once(): void {
-		$service = $this->create_service();
+		$this->create_service()->register();
 
-		$service->schedule_recurring_actions();
-		$service->schedule_recurring_actions();
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		do_action( 'action_scheduler_ensure_recurring_actions' );
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		do_action( 'action_scheduler_ensure_recurring_actions' );
 
-		$this->assertCount(
-			1,
-			as_get_scheduled_actions(
-				array(
-					'hook'   => WooPaymentsStoreSetupReportController::STORE_SETUP_SYNC_ACTION,
-					'group'  => WooPaymentsActionSchedulerService::GROUP_ID,
-					'status' => ActionScheduler_Store::STATUS_PENDING,
-				)
+		$actions = as_get_scheduled_actions(
+			array(
+				'hook'   => WooPaymentsStoreSetupReportController::STORE_SETUP_SYNC_ACTION,
+				'group'  => WooPaymentsActionSchedulerService::GROUP_ID,
+				'status' => ActionScheduler_Store::STATUS_PENDING,
 			)
 		);
+		$this->assertCount( 1, $actions );
+		$this->assertSame( 6 * HOUR_IN_SECONDS, reset( $actions )->get_schedule()->get_recurrence() );
 	}
 
 	/**

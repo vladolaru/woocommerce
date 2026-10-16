@@ -81,19 +81,17 @@ class WooPaymentsRemoteNoteServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should generate note names when a remote name is not provided.
 	 */
 	public function test_put_note_generates_note_name_from_title_and_content(): void {
-		$sut      = new WooPaymentsRemoteNoteService();
-		$title    = 'Generated notice';
-		$content  = 'Generated note content.';
-		$expected = WooPaymentsRemoteNoteService::NOTE_NAME_PREFIX . md5( $title . $content );
+		$sut = new WooPaymentsRemoteNoteService();
 
 		$sut->put_note(
 			array(
-				'title'   => $title,
-				'content' => $content,
+				'title'   => 'Generated notice',
+				'content' => 'Generated note content.',
 			)
 		);
 
-		$this->assertInstanceOf( Note::class, Notes::get_note_by_name( $expected ) );
+		// The prefix and md5( $title . $content ), as named by client includes/notes/class-wc-payments-remote-note-service.php:17, :71.
+		$this->assertInstanceOf( Note::class, Notes::get_note_by_name( 'wc-payments-remote-notes-25144cd02c24162b77c3c49906e77715' ) );
 	}
 
 	/**

@@ -58,10 +58,15 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Reports routes are registered when the built-in WooPayments owns the runtime.
+	 * @testdox Reports routes are registered whether or not the account Reports area is available ($scenario).
+	 * @dataProvider provide_reports_area_availability
+	 *
+	 * @param string $scenario        Case.
+	 * @param bool   $reports_enabled Whether the account Reports area is available.
 	 */
-	public function test_registers_routes_when_builtin_owns_runtime(): void {
-		$controller = $this->create_controller( true );
+	public function test_registers_routes( string $scenario, bool $reports_enabled ): void {
+		unset( $scenario );
+		$controller = $this->create_controller( $reports_enabled );
 		// WooCommerce's REST server registers the routes of the instance the container holds.
 		wc_get_container()->replace( WooPaymentsReportsRestController::class, $controller );
 		$controller->register();
@@ -72,17 +77,15 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Reports route shells are registered before the account Reports area is available.
+	 * Provide the account Reports area states: case, whether the area is available.
+	 *
+	 * @return array<string,array{0:string,1:bool}>
 	 */
-	public function test_registers_routes_when_reports_area_is_unavailable(): void {
-		$controller = $this->create_controller( false );
-		// WooCommerce's REST server registers the routes of the instance the container holds.
-		wc_get_container()->replace( WooPaymentsReportsRestController::class, $controller );
-		$controller->register();
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		do_action( 'rest_api_init' );
-
-		$this->assertExpectedRoutesRegistered();
+	public function provide_reports_area_availability(): array {
+		return array(
+			'Reports area available'   => array( 'Reports area available', true ),
+			'Reports area unavailable' => array( 'Reports area unavailable', false ),
+		);
 	}
 
 	/**
@@ -173,29 +176,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Balance report rejects invalid currency before calling the platform API.
-	 */
-	public function test_balance_report_rejects_invalid_currency(): void {
-		$this->create_controller( true )->register_routes();
-
-		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/reports/balance' );
-		$request->set_query_params(
-			array(
-				'date_start' => '2026-06-01T00:00:00Z',
-				'date_end'   => '2026-06-19T23:59:59Z',
-				'currency'   => 'usd1',
-			)
-		);
-
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 400, $response->get_status() );
-		$this->assertSame( 'rest_invalid_param', $response->get_data()['code'] );
-		$this->assertSame( array(), $this->api_client->last_call );
-	}
-
-	/**
-	 * @testdox Report collection routes reject malformed input before calling the platform.
+	 * @testdox Report routes reject malformed input before calling the platform.
 	 *
 	 * Client 11.1.0 class-wc-rest-payments-reports-transactions-controller.php:161-254 and the Fees variant :233-269.
 	 *
@@ -250,6 +231,14 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 			'malformed date'           => array( '/wc/v3/payments/reports/transactions', array( 'date_after' => 'yesterday' ) ),
 			'fees page below one'      => array( '/wc/v3/payments/reports/fees', array( 'page' => 0 ) ),
 			'fees summary type object' => array( '/wc/v3/payments/reports/fees/summary', array( 'type' => array( array( 'nested' ) ) ) ),
+			'invalid balance currency' => array(
+				'/wc/v3/payments/reports/balance',
+				array(
+					'date_start' => '2026-06-01T00:00:00Z',
+					'date_end'   => '2026-06-19T23:59:59Z',
+					'currency'   => 'usd1',
+				),
+			),
 		);
 	}
 

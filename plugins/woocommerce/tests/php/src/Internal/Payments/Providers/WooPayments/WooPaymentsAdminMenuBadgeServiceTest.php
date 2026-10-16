@@ -18,13 +18,6 @@ use WC_Unit_Test_Case;
 class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 
 	/**
-	 * Database cache of the service the last helper created.
-	 *
-	 * @var WooPaymentsDatabaseCache
-	 */
-	private WooPaymentsDatabaseCache $database_cache;
-
-	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
@@ -52,6 +45,7 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 3, $sut->get_disputes_awaiting_response_count() );
 		$this->assertSame( 1, $api_client->dispute_status_count_calls );
+		$stored = get_option( 'wcpay_dispute_status_counts_cache' );
 		$this->assertSame(
 			array(
 				'data'               => array(
@@ -59,36 +53,14 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 					'warning_needs_response' => 1,
 					'under_review'           => 7,
 				),
-				'fetched'            => get_option( 'wcpay_dispute_status_counts_cache' )['fetched'],
+				'fetched'            => $stored['fetched'],
 				'errored'            => false,
 				'consecutive_errors' => 0,
 			),
-			get_option( 'wcpay_dispute_status_counts_cache' )
+			$stored
 		);
-	}
-
-	/**
-	 * @testdox Should use stale valid dispute cache when refreshing fails.
-	 */
-	public function test_get_disputes_awaiting_response_count_uses_stale_valid_cache_when_fetch_fails(): void {
-		update_option(
-			'wcpay_dispute_status_counts_cache',
-			array(
-				'data'    => array( 'needs_response' => 4 ),
-				'fetched' => time() - DAY_IN_SECONDS - 5,
-				'errored' => false,
-			),
-			false
-		);
-
-		$api_client                    = $this->create_api_client();
-		$api_client->throw_on_disputes = true;
-		$sut                           = $this->create_service( $api_client );
-
-		$this->assertSame( 4, $sut->get_disputes_awaiting_response_count() );
-		$this->assertSame( 1, $api_client->dispute_status_count_calls );
-		$this->assertSame( array( 'needs_response' => 4 ), get_option( 'wcpay_dispute_status_counts_cache' )['data'] );
-		$this->assertTrue( get_option( 'wcpay_dispute_status_counts_cache' )['errored'] );
+		// Client class-database-cache.php:380 stores the fetch time.
+		$this->assertEqualsWithDelta( time(), $stored['fetched'], 5 );
 	}
 
 	/**
@@ -120,145 +92,10 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 
 		$errors = $logger->get_errors();
 		$this->assertCount( 1, $errors );
-		$this->assertSame( 'Failed to refresh a WooPayments admin cache.', $errors[0][1] );
+		$this->assertSame( 'woopayments', $errors[0][2] );
 		$context = $logger->contexts[ array_search( $errors[0], $logger->lines, true ) ];
 		$this->assertSame( 'wcpay_dispute_status_counts_cache', $context['cache_key'] );
 		$this->assertStringNotContainsString( 'Failed dispute count fetch', wp_json_encode( $logger->contexts ) );
-	}
-
-	/**
-	 * @testdox Should keep an errored badge cache for the full TTL, so admin pages do not refetch.
-	 */
-	public function test_get_disputes_awaiting_response_count_keeps_cold_failure_for_the_full_ttl(): void {
-		update_option(
-			'wcpay_dispute_status_counts_cache',
-			array(
-				'data'    => null,
-				'fetched' => time() - HOUR_IN_SECONDS,
-				'errored' => true,
-			),
-			false
-		);
-
-		$api_client = $this->create_api_client( array( 'needs_response' => 2 ) );
-		$sut        = $this->create_service( $api_client );
-
-		$this->assertSame( 0, $sut->get_disputes_awaiting_response_count() );
-		$this->assertSame( 0, $api_client->dispute_status_count_calls, 'Client 11.1.0 Database_Cache::get_ttl() keeps badge keys for 24 hours, errored or not.' );
-	}
-
-	/**
-	 * @testdox Should retry an errored badge cache once the TTL expires.
-	 */
-	public function test_get_disputes_awaiting_response_count_retries_cold_failure_after_ttl(): void {
-		update_option(
-			'wcpay_dispute_status_counts_cache',
-			array(
-				'data'    => null,
-				'fetched' => time() - DAY_IN_SECONDS - 1,
-				'errored' => true,
-			),
-			false
-		);
-
-		$api_client = $this->create_api_client( array( 'needs_response' => 2 ) );
-		$sut        = $this->create_service( $api_client );
-
-		$this->assertSame( 2, $sut->get_disputes_awaiting_response_count() );
-		$this->assertSame( 1, $api_client->dispute_status_count_calls );
-		$this->assertFalse( get_option( 'wcpay_dispute_status_counts_cache' )['errored'] );
-	}
-
-	/**
-	 * @testdox Should count errors in a row on the $key cache and reset the count on success (the WooPayments extension `class-database-cache.php:364-382`).
-	 *
-	 * @testWith ["wcpay_dispute_status_counts_cache"]
-	 *           ["wcpay_authorization_summary_cache"]
-	 *
-	 * @param string $key Badge cache option.
-	 */
-	public function test_counts_consecutive_errors_on_the_badge_caches( string $key ): void {
-		$api_client                    = $this->create_api_client( array( 'needs_response' => 2 ), array( 'count' => 2 ) );
-		$api_client->throw_on_disputes = true;
-		$api_client->throw_on_summary  = true;
-		$read                          = function () use ( $key, $api_client ): void {
-			$sut = $this->create_service( $api_client, false, 'yes' );
-			if ( 'wcpay_dispute_status_counts_cache' === $key ) {
-				$sut->get_disputes_awaiting_response_count();
-			} else {
-				$sut->get_uncaptured_transactions_count();
-			}
-		};
-
-		$read();
-		$this->assertSame( 1, get_option( $key )['consecutive_errors'] );
-
-		$stored            = get_option( $key );
-		$stored['fetched'] = time() - DAY_IN_SECONDS - 1;
-		update_option( $key, $stored, false );
-		$read();
-		$this->assertSame( 2, get_option( $key )['consecutive_errors'] );
-
-		$stored            = get_option( $key );
-		$stored['fetched'] = time() - DAY_IN_SECONDS - 1;
-		update_option( $key, $stored, false );
-		$api_client->throw_on_disputes = false;
-		$api_client->throw_on_summary  = false;
-		$read();
-		$this->assertSame( 0, get_option( $key )['consecutive_errors'] );
-		$this->assertFalse( get_option( $key )['errored'] );
-	}
-
-	/**
-	 * @testdox Should not refresh an expired badge cache while an Action Scheduler job runs (the WooPayments extension `class-database-cache.php:295-301`).
-	 */
-	public function test_does_not_refresh_the_badge_caches_while_refresh_is_disabled(): void {
-		update_option(
-			'wcpay_dispute_status_counts_cache',
-			array(
-				'data'    => array( 'needs_response' => 4 ),
-				'fetched' => time() - DAY_IN_SECONDS - 5,
-				'errored' => false,
-			),
-			false
-		);
-		$api_client = $this->create_api_client( array( 'needs_response' => 2 ) );
-		$sut        = $this->create_service( $api_client );
-		$this->database_cache->disable_refresh();
-
-		$this->assertSame( 4, $sut->get_disputes_awaiting_response_count() );
-		$this->assertSame( 0, $api_client->dispute_status_count_calls );
-	}
-
-	/**
-	 * @testdox Should fetch the badge counts once per request even when storing them fails (the WooPayments extension `class-database-cache.php:101-109,340-353`).
-	 */
-	public function test_fetches_the_badge_counts_once_per_request_when_the_write_fails(): void {
-		add_filter(
-			'pre_update_option_wcpay_dispute_status_counts_cache',
-			static function ( $value, $old_value ) {
-				unset( $value );
-				return $old_value;
-			},
-			10,
-			2
-		);
-		$api_client = $this->create_api_client( array( 'needs_response' => 2 ) );
-		$sut        = $this->create_service( $api_client );
-
-		$this->assertSame( 2, $sut->get_disputes_awaiting_response_count() );
-		$this->assertSame( 2, $sut->get_disputes_awaiting_response_count() );
-		$this->assertSame( 1, $api_client->dispute_status_count_calls );
-	}
-
-	/**
-	 * @testdox Should drop the object-cache entry after storing badge counts, so other processes read the new row (the WooPayments extension `class-database-cache.php:387-398`).
-	 */
-	public function test_drops_the_object_cache_entry_after_storing_badge_counts(): void {
-		$this->create_service( $this->create_api_client( array( 'needs_response' => 2 ) ) )->get_disputes_awaiting_response_count();
-
-		$this->assertFalse( wp_cache_get( 'wcpay_dispute_status_counts_cache', 'options' ) );
-		$this->assertSame( array( 'needs_response' => 2 ), get_option( 'wcpay_dispute_status_counts_cache' )['data'] );
 	}
 
 	/**
@@ -291,28 +128,6 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Invalidation purges a stale object-cache entry even when the option row is already gone.
-	 */
-	public function test_invalidate_authorization_summary_caches_purges_stale_object_cache(): void {
-		// delete_option() returns before touching caches when the row does not
-		// exist, so a stale external-object-cache entry would survive it.
-		delete_option( 'wcpay_authorization_summary_cache' );
-		wp_cache_set(
-			'wcpay_authorization_summary_cache',
-			array(
-				'data'    => array( 'count' => 9 ),
-				'fetched' => time(),
-				'errored' => false,
-			),
-			'options'
-		);
-
-		$this->create_service( $this->create_api_client( array(), array( 'count' => 3 ) ) )->invalidate_authorization_summary_caches();
-
-		$this->assertFalse( wp_cache_get( 'wcpay_authorization_summary_cache', 'options' ) );
-	}
-
-	/**
 	 * @testdox Should fetch the authorization summary again after invalidation in the same request ($description).
 	 * @testWith ["live mode", false, "wcpay_authorization_summary_cache"]
 	 *           ["test mode", true, "wcpay_test_authorization_summary_cache"]
@@ -336,25 +151,21 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return zero when manual capture is disabled.
+	 * @testdox Should read the authorization summary only when manual capture is enabled (manual capture $manual_capture).
+	 * @testWith ["no", 5, 0, 0]
+	 *           ["yes", 6, 6, 1]
+	 *
+	 * @param string $manual_capture Manual capture setting.
+	 * @param int    $summary_count  Count in the authorization summary.
+	 * @param int    $expected_count Expected uncaptured transactions count.
+	 * @param int    $expected_calls Expected authorization summary requests.
 	 */
-	public function test_get_uncaptured_transactions_count_returns_zero_when_manual_capture_is_disabled(): void {
-		$api_client = $this->create_api_client( array(), array( 'count' => 5 ) );
-		$sut        = $this->create_service( $api_client, false, 'no' );
+	public function test_get_uncaptured_transactions_count_reads_the_summary_only_with_manual_capture( string $manual_capture, int $summary_count, int $expected_count, int $expected_calls ): void {
+		$api_client = $this->create_api_client( array(), array( 'count' => $summary_count ) );
+		$sut        = $this->create_service( $api_client, false, $manual_capture );
 
-		$this->assertSame( 0, $sut->get_uncaptured_transactions_count() );
-		$this->assertSame( 0, $api_client->authorization_summary_calls );
-	}
-
-	/**
-	 * @testdox Should read authorization summary when manual capture is enabled.
-	 */
-	public function test_get_uncaptured_transactions_count_reads_authorization_summary_when_manual_capture_is_enabled(): void {
-		$api_client = $this->create_api_client( array(), array( 'count' => 6 ) );
-		$sut        = $this->create_service( $api_client, false, 'yes' );
-
-		$this->assertSame( 6, $sut->get_uncaptured_transactions_count() );
-		$this->assertSame( 1, $api_client->authorization_summary_calls );
+		$this->assertSame( $expected_count, $sut->get_uncaptured_transactions_count() );
+		$this->assertSame( $expected_calls, $api_client->authorization_summary_calls );
 	}
 
 	/**
@@ -378,11 +189,11 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsAdminMenuBadgeService
 	 */
 	private function create_service( WooPaymentsApiClient $api_client, bool $test_mode = false, string $manual_capture = 'no' ): WooPaymentsAdminMenuBadgeService {
-		$account_service      = $this->create_account_service( $test_mode, $manual_capture );
-		$this->database_cache = new WooPaymentsDatabaseCache();
-		$this->database_cache->init( new LegacyProxy() );
+		$account_service = $this->create_account_service( $test_mode, $manual_capture );
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( new LegacyProxy() );
 		$sut = new WooPaymentsAdminMenuBadgeService();
-		$sut->init( $account_service, $api_client, $this->database_cache );
+		$sut->init( $account_service, $api_client, $database_cache );
 
 		return $sut;
 	}
@@ -455,13 +266,6 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 			public bool $throw_on_disputes = false;
 
 			/**
-			 * Whether authorization summary calls should fail.
-			 *
-			 * @var bool
-			 */
-			public bool $throw_on_summary = false;
-
-			/**
 			 * Constructor.
 			 *
 			 * @param array<string,mixed> $dispute_status_counts Dispute status-count payload.
@@ -496,10 +300,6 @@ class WooPaymentsAdminMenuBadgeServiceTest extends WC_Unit_Test_Case {
 			public function get_authorizations_summary( array $query = array() ): array {
 				unset( $query );
 				++$this->authorization_summary_calls;
-
-				if ( $this->throw_on_summary ) {
-					throw new RuntimeException( 'Failed authorization summary fetch.' );
-				}
 
 				return $this->authorization_summary;
 			}

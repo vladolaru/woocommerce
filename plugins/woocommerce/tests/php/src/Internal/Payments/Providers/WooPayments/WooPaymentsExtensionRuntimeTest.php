@@ -60,9 +60,12 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return WooPayments account URLs when the account helpers are callable.
+	 * @testdox Should return the WooPayments account connect URL only when the account helpers are callable: $_dataName.
+	 * @dataProvider provide_account_url_helpers
+	 *
+	 * @param string|null $connect_url Connect URL the extension's helper answers, or null when the helper is unavailable.
 	 */
-	public function test_returns_woopayments_account_urls_when_helpers_are_callable(): void {
+	public function test_returns_woopayments_account_urls_only_when_helpers_are_callable( ?string $connect_url ): void {
 		$sut = new WooPaymentsExtensionRuntime();
 		$sut->init(
 			new WooPaymentsExtensionRuntimeProxy(
@@ -71,11 +74,23 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 				null,
 				null,
 				null,
-				'https://example.com/connect'
+				$connect_url
 			)
 		);
 
-		$this->assertSame( 'https://example.com/connect', $sut->get_account_connect_url( 'native-payments' ) );
+		$this->assertSame( $connect_url, $sut->get_account_connect_url( 'native-payments' ) );
+	}
+
+	/**
+	 * Provide the account URL helper states: connect URL or null.
+	 *
+	 * @return array<string,array{0:string|null}>
+	 */
+	public function provide_account_url_helpers(): array {
+		return array(
+			'helpers callable'    => array( 'https://example.com/connect' ),
+			'helpers unavailable' => array( null ),
+		);
 	}
 
 	/**
@@ -170,58 +185,93 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not report an onboarded account when the cached account has no submitted details.
+	 * @testdox Should report an onboarded account from the cached account data only when its details are submitted: $_dataName.
+	 * @dataProvider provide_cached_account_onboarding
+	 *
+	 * @param mixed $account_data Account data payload.
+	 * @param bool  $expected     Whether the account is onboarded.
 	 */
-	public function test_reports_not_onboarded_when_cached_account_has_no_submitted_details(): void {
-		$sut = $this->create_runtime_with_account_data(
-			array(
-				'data' => array(
-					'account_id' => 'acct_123',
-				),
-			)
-		);
+	public function test_reports_onboarded_account_from_cache( $account_data, bool $expected ): void {
+		$sut = $this->create_runtime_with_account_data( $account_data );
 
-		$this->assertFalse( $sut->is_account_onboarded_from_cache() );
+		$this->assertSame( $expected, $sut->is_account_onboarded_from_cache() );
 	}
 
 	/**
-	 * @testdox Should return admin onboarding context values from WooPayments constants when available.
+	 * Provide cached account payloads: payload, expected onboarded.
+	 *
+	 * @return array<string,array{0:mixed,1:bool}>
 	 */
-	public function test_returns_admin_onboarding_context_values_from_woopayments_constants(): void {
-		Constants::set_constant( 'WC_Payments_Onboarding_Service::FROM_WCADMIN_PAYMENTS_SETTINGS', 'RUNTIME_FROM' );
-		Constants::set_constant( 'WC_Payments_Onboarding_Service::SOURCE_WCADMIN_SETTINGS_PAGE', 'runtime-source' );
+	public function provide_cached_account_onboarding(): array {
+		$submitted = static fn( $details_submitted ): array => array(
+			'data' => array(
+				'account_id'        => 'acct_123',
+				'details_submitted' => $details_submitted,
+			),
+		);
+
+		return array(
+			'no submitted details'            => array( array( 'data' => array( 'account_id' => 'acct_123' ) ), false ),
+			'details submitted, boolean true' => array( $submitted( true ), true ),
+			'details submitted, string true'  => array( $submitted( 'true' ), true ),
+			'details submitted, string yes'   => array( $submitted( 'yes' ), true ),
+			'details submitted, string 1'     => array( $submitted( '1' ), true ),
+			'details submitted, integer 1'    => array( $submitted( 1 ), true ),
+			'invalid payload, false'          => array( false, false ),
+			'invalid payload, a string'       => array( 'invalid', false ),
+			'invalid payload, empty'          => array( array(), false ),
+			'invalid payload, data text'      => array( array( 'data' => 'invalid' ), false ),
+			'invalid payload, no fields'      => array( array( 'data' => array() ), false ),
+		);
+	}
+
+	/**
+	 * @testdox Should return the admin onboarding context values: $_dataName.
+	 * @dataProvider provide_admin_onboarding_contexts
+	 *
+	 * @param array<string,string>|null $constants Constant values the extension declares, or null when it declares none.
+	 * @param array<string,string>      $expected  Expected context.
+	 */
+	public function test_returns_admin_onboarding_context_values( ?array $constants, array $expected ): void {
+		Constants::clear_constants();
+		foreach ( $constants ?? array() as $name => $value ) {
+			Constants::set_constant( $name, $value );
+		}
 
 		try {
 			$sut = new WooPaymentsExtensionRuntime();
 			$sut->init( new WooPaymentsExtensionRuntimeProxy( true ) );
 
-			$this->assertSame(
-				array(
-					'from'   => 'RUNTIME_FROM',
-					'source' => 'runtime-source',
-				),
-				$sut->get_admin_onboarding_context()
-			);
+			$this->assertSame( $expected, $sut->get_admin_onboarding_context() );
 		} finally {
 			Constants::clear_constants();
 		}
 	}
 
 	/**
-	 * @testdox Should return Core admin onboarding context fallbacks when WooPayments constants are unavailable.
+	 * Provide the admin onboarding context cases: constants, expected context.
+	 *
+	 * @return array<string,array{0:array<string,string>|null,1:array<string,string>}>
 	 */
-	public function test_returns_admin_onboarding_context_fallback_values(): void {
-		Constants::clear_constants();
-
-		$sut = new WooPaymentsExtensionRuntime();
-		$sut->init( new WooPaymentsExtensionRuntimeProxy( true ) );
-
-		$this->assertSame(
-			array(
-				'from'   => 'WCADMIN_PAYMENT_SETTINGS',
-				'source' => 'wcadmin-settings-page',
+	public function provide_admin_onboarding_contexts(): array {
+		return array(
+			'from WooPayments constants' => array(
+				array(
+					'WC_Payments_Onboarding_Service::FROM_WCADMIN_PAYMENTS_SETTINGS' => 'RUNTIME_FROM',
+					'WC_Payments_Onboarding_Service::SOURCE_WCADMIN_SETTINGS_PAGE'   => 'runtime-source',
+				),
+				array(
+					'from'   => 'RUNTIME_FROM',
+					'source' => 'runtime-source',
+				),
 			),
-			$sut->get_admin_onboarding_context()
+			'Core fallbacks without the WooPayments constants' => array(
+				null,
+				array(
+					'from'   => 'WCADMIN_PAYMENT_SETTINGS',
+					'source' => 'wcadmin-settings-page',
+				),
+			),
 		);
 	}
 
@@ -257,78 +307,42 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should compare WooPayments extension version when the version constant is available.
+	 * @testdox Should compare the WooPayments extension version against $minimum_version: $_dataName.
+	 * @dataProvider provide_extension_versions
+	 *
+	 * @param mixed     $version         WCPAY_VERSION_NUMBER value, or null when the constant is not defined.
+	 * @param string    $minimum_version Minimum version.
+	 * @param bool|null $expected        Expected answer.
 	 */
-	public function test_compares_extension_version_when_constant_is_available(): void {
-		Constants::set_constant( 'WCPAY_VERSION_NUMBER', '10.0.0' );
-
-		try {
-			$sut = new WooPaymentsExtensionRuntime();
-			$sut->init( new WooPaymentsExtensionRuntimeProxy( true ) );
-
-			$this->assertTrue( $sut->is_extension_version_less_than( '10.1.0' ) );
-			$this->assertFalse( $sut->is_extension_version_less_than( '10.0.0' ) );
-			$this->assertFalse( $sut->is_extension_version_less_than( '9.9.0' ) );
-		} finally {
-			Constants::clear_constants();
-		}
-	}
-
-	/**
-	 * @testdox Should return null when the WooPayments extension version is unavailable.
-	 */
-	public function test_returns_null_when_extension_version_is_unavailable(): void {
+	public function test_compares_extension_version( $version, string $minimum_version, ?bool $expected ): void {
 		Constants::clear_constants();
-
-		$sut = new WooPaymentsExtensionRuntime();
-		$sut->init( new WooPaymentsExtensionRuntimeProxy( true ) );
-
-		$this->assertNull( $sut->is_extension_version_less_than( '10.0.0' ) );
-	}
-
-	/**
-	 * @testdox Should return null when the WooPayments extension version is not scalar.
-	 */
-	public function test_returns_null_when_extension_version_is_not_scalar(): void {
-		Constants::set_constant( 'WCPAY_VERSION_NUMBER', array( 'version' => '10.0.0' ) );
+		if ( null !== $version ) {
+			Constants::set_constant( 'WCPAY_VERSION_NUMBER', $version );
+		}
 
 		try {
 			$sut = new WooPaymentsExtensionRuntime();
 			$sut->init( new WooPaymentsExtensionRuntimeProxy( true ) );
 
-			$this->assertNull( $sut->is_extension_version_less_than( '10.0.0' ) );
+			$this->assertSame( $expected, $sut->is_extension_version_less_than( $minimum_version ) );
 		} finally {
 			Constants::clear_constants();
 		}
 	}
 
 	/**
-	 * @testdox Should report onboarded WooPayments account data when details are submitted.
+	 * Provide extension versions: constant value, minimum version, expected answer.
+	 *
+	 * @return array<string,array{0:mixed,1:string,2:bool|null}>
 	 */
-	public function test_reports_onboarded_account_data_when_details_are_submitted(): void {
-		foreach ( array( true, 'true', 'yes', '1', 1 ) as $details_submitted ) {
-			$sut = $this->create_runtime_with_account_data(
-				array(
-					'data' => array(
-						'account_id'        => 'acct_123',
-						'details_submitted' => $details_submitted,
-					),
-				)
-			);
-
-			$this->assertTrue( $sut->is_account_onboarded_from_cache() );
-		}
-	}
-
-	/**
-	 * @testdox Should ignore invalid WooPayments account cache payloads.
-	 */
-	public function test_ignores_invalid_account_cache_payloads(): void {
-		foreach ( array( false, 'invalid', array(), array( 'data' => 'invalid' ), array( 'data' => array() ) ) as $account_data ) {
-			$sut = $this->create_runtime_with_account_data( $account_data );
-
-			$this->assertFalse( $sut->is_account_onboarded_from_cache() );
-		}
+	public function provide_extension_versions(): array {
+		return array(
+			'older version'       => array( '10.0.0', '10.1.0', true ),
+			'same version'        => array( '10.0.0', '10.0.0', false ),
+			'newer version'       => array( '10.0.0', '9.9.0', false ),
+			'version unavailable' => array( null, '10.0.0', null ),
+			'version not scalar'  => array( array( 'version' => '10.0.0' ), '10.0.0', null ),
+		);
 	}
 
 	/**
@@ -352,16 +366,6 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 		} finally {
 			Constants::clear_constants();
 		}
-	}
-
-	/**
-	 * @testdox Should fail closed for account URLs when account helpers are unavailable.
-	 */
-	public function test_fails_closed_for_account_urls_when_helpers_are_unavailable(): void {
-		$sut = new WooPaymentsExtensionRuntime();
-		$sut->init( new WooPaymentsExtensionRuntimeProxy( true ) );
-
-		$this->assertNull( $sut->get_account_connect_url( 'native-payments' ) );
 	}
 
 	/**

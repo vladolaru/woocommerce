@@ -76,64 +76,74 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Capital routes require manage_woocommerce before calling the platform API.
+	 * @testdox The $route route requires manage_woocommerce before calling the platform API.
+	 * @testWith ["active_loan_summary"]
+	 *           ["loan_offer"]
+	 *           ["loans"]
+	 *
+	 * @param string $route Capital route.
 	 */
-	public function test_routes_require_manage_woocommerce(): void {
+	public function test_routes_require_manage_woocommerce( string $route ): void {
 		$this->sut->register_routes();
 		wp_set_current_user( 0 );
 
-		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/capital/active_loan_summary' ) );
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/capital/' . $route ) );
 
 		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
 		$this->assertSame( '', $this->api_client->last_call );
 	}
 
 	/**
-	 * @testdox Loan offer route requires manage_woocommerce before creating a Capital link.
+	 * @testdox $_dataName returns the raw platform envelope.
+	 * @dataProvider provide_raw_envelope_routes
+	 *
+	 * @param string              $handler       Controller handler.
+	 * @param string              $route         Route path.
+	 * @param string              $response_prop API client fake property holding the platform answer.
+	 * @param array<string,mixed> $envelope      Platform answer.
+	 * @param string              $expected_call Expected API client call.
 	 */
-	public function test_loan_offer_route_requires_manage_woocommerce(): void {
-		$this->sut->register_routes();
-		wp_set_current_user( 0 );
+	public function test_returns_the_raw_platform_envelope( string $handler, string $route, string $response_prop, array $envelope, string $expected_call ): void {
+		$this->api_client->{$response_prop} = $envelope;
 
-		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/capital/loan_offer' ) );
-
-		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
-		$this->assertSame( '', $this->api_client->last_call );
-	}
-
-	/**
-	 * @testdox Active loan summary returns the raw platform envelope.
-	 */
-	public function test_get_active_loan_summary_returns_raw_envelope(): void {
-		$this->api_client->active_loan_summary_response = array(
-			'loan_id' => 'loan_test',
-			'status'  => 'active',
-		);
-
-		$response = $this->sut->get_active_loan_summary( new WP_REST_Request( 'GET', '/wc/v3/payments/capital/active_loan_summary' ) );
+		$response = $this->sut->{$handler}( new WP_REST_Request( 'GET', $route ) );
 
 		$this->assertInstanceOf( WP_REST_Response::class, $response );
-		$this->assertSame( 'get_capital_active_loan_summary', $this->api_client->last_call );
-		$this->assertSame( $this->api_client->active_loan_summary_response, $response->get_data() );
+		$this->assertSame( $expected_call, $this->api_client->last_call );
+		$this->assertSame( $envelope, $response->get_data() );
 	}
 
 	/**
-	 * @testdox Loans route returns the raw platform envelope.
+	 * Provide the routes that pass the platform answer through: handler, route, fake property, answer, expected call.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string,3:array<string,mixed>,4:string}>
 	 */
-	public function test_get_loans_returns_raw_envelope(): void {
-		$this->api_client->loans_response = array(
-			'data' => array(
+	public function provide_raw_envelope_routes(): array {
+		return array(
+			'Active loan summary route' => array(
+				'get_active_loan_summary',
+				'/wc/v3/payments/capital/active_loan_summary',
+				'active_loan_summary_response',
 				array(
-					'id' => 'loan_test',
+					'loan_id' => 'loan_test',
+					'status'  => 'active',
 				),
+				'get_capital_active_loan_summary',
+			),
+			'Loans route'               => array(
+				'get_loans',
+				'/wc/v3/payments/capital/loans',
+				'loans_response',
+				array(
+					'data' => array(
+						array(
+							'id' => 'loan_test',
+						),
+					),
+				),
+				'get_capital_loans',
 			),
 		);
-
-		$response = $this->sut->get_loans( new WP_REST_Request( 'GET', '/wc/v3/payments/capital/loans' ) );
-
-		$this->assertInstanceOf( WP_REST_Response::class, $response );
-		$this->assertSame( 'get_capital_loans', $this->api_client->last_call );
-		$this->assertSame( $this->api_client->loans_response, $response->get_data() );
 	}
 
 	/**
@@ -155,45 +165,14 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The WooPayments extension's loan offer query arg redirects to a fresh Capital link.
+	 * @testdox The WooPayments extension's loan offer query arg sends any manage_woocommerce user ($role) to a fresh Capital link, with no Capital eligibility check.
+	 * @testWith ["administrator"]
+	 *           ["shop_manager"]
+	 *
+	 * @param string $role Current user role.
 	 */
-	public function test_loan_offer_query_arg_redirects_to_returned_capital_link_url(): void {
-		$this->api_client->capital_link_response = array(
-			'url' => 'https://connect.stripe.com/capital/view-offer',
-		);
-		$_GET['wcpay-loan-offer']                = '';
-		add_filter( 'allowed_redirect_hosts', array( $this, 'allow_stripe_redirect_host' ) );
-		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
-
-		try {
-			$this->sut->redirect_loan_offer_request();
-			$this->fail( 'Expected the redirect to be intercepted.' );
-		} catch ( \RuntimeException $exception ) {
-			$this->assertSame( 'wp_redirect intercepted: https://connect.stripe.com/capital/view-offer', $exception->getMessage() );
-		}
-
-		$this->assertSame( 'create_capital_link', $this->api_client->last_call );
-		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview', rawurldecode( $this->api_client->last_return_url ) );
-		$this->assertStringContainsString( 'admin.php?wcpay-loan-offer', $this->api_client->last_refresh_url );
-	}
-
-	/**
-	 * @testdox The WooPayments extension's loan offer query arg is ignored during AJAX requests.
-	 */
-	public function test_loan_offer_query_arg_does_not_redirect_during_ajax_requests(): void {
-		$_GET['wcpay-loan-offer'] = '';
-		add_filter( 'wp_doing_ajax', '__return_true' );
-
-		$this->sut->redirect_loan_offer_request();
-
-		$this->assertSame( '', $this->api_client->last_call );
-	}
-
-	/**
-	 * @testdox Loan offer link redirects any manage_woocommerce user to the Capital link, with no Capital eligibility check.
-	 */
-	public function test_loan_offer_query_arg_redirects_shop_manager_to_capital_link(): void {
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'shop_manager' ) ) );
+	public function test_loan_offer_query_arg_redirects_to_returned_capital_link_url( string $role ): void {
+		wp_set_current_user( $this->factory->user->create( array( 'role' => $role ) ) );
 		$this->api_client->capital_link_response = array(
 			'url' => 'https://connect.stripe.com/capital/view-offer',
 		);
@@ -201,6 +180,48 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertSame( 'https://connect.stripe.com/capital/view-offer', $this->run_loan_offer_redirect() );
 		$this->assertSame( 'create_capital_link', $this->api_client->last_call );
+		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview', rawurldecode( $this->api_client->last_return_url ) );
+		$this->assertStringContainsString( 'admin.php?wcpay-loan-offer', $this->api_client->last_refresh_url );
+	}
+
+	/**
+	 * @testdox The WooPayments extension's loan offer query arg is ignored: $_dataName.
+	 * @dataProvider provide_ignored_loan_offer_contexts
+	 *
+	 * @param string $context Request context: ajax, customer, no query arg or not owner.
+	 */
+	public function test_loan_offer_query_arg_is_ignored( string $context ): void {
+		if ( 'no query arg' === $context ) {
+			$this->api_client->capital_link_response = array(
+				'url' => 'https://connect.stripe.com/capital/view-offer',
+			);
+		} else {
+			$_GET['wcpay-loan-offer'] = '';
+		}
+		if ( 'ajax' === $context ) {
+			add_filter( 'wp_doing_ajax', '__return_true' );
+		} elseif ( 'customer' === $context ) {
+			wp_set_current_user( $this->factory->user->create( array( 'role' => 'customer' ) ) );
+		} elseif ( 'not owner' === $context ) {
+			$this->sut = $this->create_controller( false );
+		}
+
+		$this->assertNull( $this->run_loan_offer_redirect() );
+		$this->assertSame( '', $this->api_client->last_call );
+	}
+
+	/**
+	 * Provide the requests the loan offer redirect ignores.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function provide_ignored_loan_offer_contexts(): array {
+		return array(
+			'during AJAX requests'                         => array( 'ajax' ),
+			'for users without manage_woocommerce'         => array( 'customer' ),
+			'without the query arg, with no platform call' => array( 'no query arg' ),
+			'when the built-in WooPayments does not own the runtime' => array( 'not owner' ),
+		);
 	}
 
 	/**
@@ -218,44 +239,15 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Loan offer link is ignored for users without manage_woocommerce.
+	 * @testdox Loan offer route redirects to the overview error notice when $_dataName.
+	 * @dataProvider provide_capital_link_failures
+	 *
+	 * @param WooPaymentsApiException|null $exception     Platform failure, or null.
+	 * @param array<string,mixed>          $link_response Capital link answer when the platform answers.
 	 */
-	public function test_loan_offer_query_arg_is_ignored_without_manage_woocommerce(): void {
-		wp_set_current_user( $this->factory->user->create( array( 'role' => 'customer' ) ) );
-		$_GET['wcpay-loan-offer'] = '';
-
-		$this->assertNull( $this->run_loan_offer_redirect() );
-		$this->assertSame( '', $this->api_client->last_call );
-	}
-
-	/**
-	 * @testdox Loan offer redirect makes no platform call without the query arg.
-	 */
-	public function test_loan_offer_redirect_makes_no_platform_call_without_query_arg(): void {
-		$this->api_client->capital_link_response = array(
-			'url' => 'https://connect.stripe.com/capital/view-offer',
-		);
-
-		$this->assertNull( $this->run_loan_offer_redirect() );
-		$this->assertSame( '', $this->api_client->last_call );
-	}
-
-	/**
-	 * @testdox Loan offer link is ignored when the built-in WooPayments does not own the runtime.
-	 */
-	public function test_loan_offer_query_arg_is_ignored_when_builtin_does_not_own_runtime(): void {
-		$this->sut                = $this->create_controller( false );
-		$_GET['wcpay-loan-offer'] = '';
-
-		$this->assertNull( $this->run_loan_offer_redirect() );
-		$this->assertSame( '', $this->api_client->last_call );
-	}
-
-	/**
-	 * @testdox Loan offer route redirects to the overview error notice when the API request fails.
-	 */
-	public function test_loan_offer_route_redirects_to_overview_error_when_api_fails(): void {
-		$this->api_client->exception = new WooPaymentsApiException( 'Capital unavailable.', 'capital_unavailable', 503 );
+	public function test_loan_offer_route_redirects_to_overview_error_on_failure( ?WooPaymentsApiException $exception, array $link_response ): void {
+		$this->api_client->exception             = $exception;
+		$this->api_client->capital_link_response = $link_response;
 		$this->sut->register_routes();
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/capital/loan_offer' ) );
@@ -268,21 +260,15 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Loan offer route redirects to the overview error notice when the response omits a URL.
+	 * Provide the Capital link failures: exception, link answer.
+	 *
+	 * @return array<string,array{0:WooPaymentsApiException|null,1:array<string,mixed>}>
 	 */
-	public function test_loan_offer_route_redirects_to_overview_error_when_response_omits_url(): void {
-		$this->api_client->capital_link_response = array(
-			'id' => 'link_without_url',
+	public function provide_capital_link_failures(): array {
+		return array(
+			'the API request fails'    => array( new WooPaymentsApiException( 'Capital unavailable.', 'capital_unavailable', 503 ), array() ),
+			'the response omits a URL' => array( null, array( 'id' => 'link_without_url' ) ),
 		);
-		$this->sut->register_routes();
-
-		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/capital/loan_offer' ) );
-		$location = rawurldecode( (string) ( $response->get_headers()['Location'] ?? '' ) );
-
-		$this->assertSame( 'create_capital_link', $this->api_client->last_call );
-		$this->assertSame( 302, $response->get_status() );
-		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview', $location );
-		$this->assertStringContainsString( 'wcpay-loan-offer-error=1', $location );
 	}
 
 	/**
@@ -325,13 +311,7 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @testdox Loan offer route logs the Capital link failure while still redirecting to the overview error notice.
 	 */
 	public function test_loan_offer_route_logs_capital_link_failures(): void {
-		$logger = $this->create_recording_logger();
-		add_filter(
-			'woocommerce_logging_class',
-			static function () use ( $logger ): object {
-				return $logger;
-			}
-		);
+		$logger                      = RecordingWcLogger::install();
 		$this->api_client->exception = self::make_provider_error();
 		$this->sut->register_routes();
 
@@ -340,15 +320,11 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 
 		$this->assertSame( 302, $response->get_status() );
 		$this->assertStringContainsString( 'wcpay-loan-offer-error=1', $location );
-		$this->assertCount( 1, $logger->entries );
-		$this->assertSame( 'error', $logger->entries[0]['level'] );
+		$this->assertCount( 1, $logger->lines );
 		// The platform's message stays out of the log; its status and code go in.
-		$this->assertSame( 'Failed to build Capital loan offer redirect URL.', $logger->entries[0]['message'] );
-		$this->assertSame( array( 404, 'resource_missing' ), array( $logger->entries[0]['context']['http_status'], $logger->entries[0]['context']['error_code'] ) );
-		$this->assertSame( 'woopayments', $logger->entries[0]['context']['source'] );
-		foreach ( self::$provider_leak_fragments as $fragment ) {
-			$this->assertStringNotContainsString( $fragment, (string) wp_json_encode( $logger->entries ) );
-		}
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**
@@ -517,142 +493,6 @@ class WooPaymentsCapitalRestControllerTest extends WC_REST_Unit_Test_Case {
 				if ( null !== $this->exception ) {
 					throw $this->exception;
 				}
-			}
-		};
-	}
-
-	/**
-	 * Create a recording logger test double.
-	 *
-	 * @return object
-	 */
-	private function create_recording_logger(): object {
-		return new class() implements \WC_Logger_Interface {
-			/**
-			 * Logged entries.
-			 *
-			 * @var array<int,array{level:string,message:string,context:array<string,mixed>}>
-			 */
-			public array $entries = array();
-
-			/**
-			 * Add a log entry.
-			 *
-			 * @param string $handle  File handle.
-			 * @param string $message Log message.
-			 * @param string $level   Log level.
-			 * @return bool
-			 */
-			public function add( $handle, $message, $level = \WC_Log_Levels::NOTICE ) {
-				$this->record( $level, $message, array( 'source' => $handle ) );
-
-				return true;
-			}
-
-			/**
-			 * Add a log entry.
-			 *
-			 * @param string              $level   Log level.
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function log( $level, $message, $context = array() ) {
-				$this->record( $level, $message, $context );
-			}
-
-			/**
-			 * Record an emergency log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function emergency( $message, $context = array() ) {
-				$this->record( 'emergency', $message, $context );
-			}
-
-			/**
-			 * Record an alert log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function alert( $message, $context = array() ) {
-				$this->record( 'alert', $message, $context );
-			}
-
-			/**
-			 * Record a critical log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function critical( $message, $context = array() ) {
-				$this->record( 'critical', $message, $context );
-			}
-
-			/**
-			 * Record an error log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function error( $message, $context = array() ) {
-				$this->record( 'error', $message, $context );
-			}
-
-			/**
-			 * Record a warning log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function warning( $message, $context = array() ) {
-				$this->record( 'warning', $message, $context );
-			}
-
-			/**
-			 * Record a notice log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function notice( $message, $context = array() ) {
-				$this->record( 'notice', $message, $context );
-			}
-
-			/**
-			 * Record an info log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function info( $message, $context = array() ) {
-				$this->record( 'info', $message, $context );
-			}
-
-			/**
-			 * Record a debug log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function debug( $message, $context = array() ) {
-				$this->record( 'debug', $message, $context );
-			}
-
-			/**
-			 * Record a log entry.
-			 *
-			 * @param string              $level   Log level.
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			private function record( string $level, string $message, array $context ): void {
-				$this->entries[] = array(
-					'level'   => $level,
-					'message' => $message,
-					'context' => $context,
-				);
 			}
 		};
 	}

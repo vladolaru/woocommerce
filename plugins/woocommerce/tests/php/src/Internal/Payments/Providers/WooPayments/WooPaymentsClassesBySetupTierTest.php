@@ -10,6 +10,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminSharedSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsMerchantRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsHomeTasks;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsUserPreferenceFields;
 use Automattic\WooCommerce\Internal\Payments\ProviderGatewaysController;
 use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -124,6 +126,37 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 			'The WooCommerce update listener'       => array( WooPaymentsWooCommerceUpdateListener::class ),
 			// Every WordPress.com request of the store carries the connection's Safe Mode arguments.
 			'The WordPress.com connection features' => array( WooPaymentsConnectionFeatures::class ),
+		);
+	}
+
+	/**
+	 * @testdox $_dataName loads only on connected and active admin and REST requests, never on dormant tiers.
+	 *
+	 * @dataProvider connected_admin_and_rest_roots_provider
+	 *
+	 * @param string $root The root class.
+	 */
+	public function test_root_loads_only_on_connected_and_active_admin_and_rest_requests( string $root ): void {
+		foreach ( WooPaymentsProvider::get_classes_by_setup_tier() as $state => $request_groups ) {
+			foreach ( $request_groups as $request_type => $roots ) {
+				$expected = in_array( $state, array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true )
+					&& in_array( $request_type, array( 'admin', 'rest' ), true );
+
+				$this->assertSame( $expected, in_array( $root, $roots, true ), $state . ' ' . $request_type );
+			}
+		}
+		$this->assertArrayHasKey( 'rest', WooPaymentsProvider::get_classes_by_setup_tier()[ WooPaymentsSetupTier::CONNECTED ] );
+	}
+
+	/**
+	 * Roots that serve the merchant's admin pages and their REST reads.
+	 *
+	 * @return array<string, array{0: string}>
+	 */
+	public function connected_admin_and_rest_roots_provider(): array {
+		return array(
+			'The hidden column preferences' => array( WooPaymentsUserPreferenceFields::class ),
+			'The Home tasks'                => array( WooPaymentsHomeTasks::class ),
 		);
 	}
 

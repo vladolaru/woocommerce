@@ -119,32 +119,37 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox ToS route returns bad_request when accept is missing.
+	 * @testdox ToS route answers bad_request and leaves the gateway as it was when accept is missing or null.
+	 * @dataProvider provide_bad_tos_bodies
+	 *
+	 * @param array<string,mixed>|null $settings         Gateway settings to store first, or null for the setUp settings.
+	 * @param array<string,mixed>      $body             Request body.
+	 * @param string                   $expected_enabled Gateway enabled setting after the request.
 	 */
-	public function test_tos_route_rejects_missing_accept(): void {
+	public function test_tos_route_rejects_a_body_without_accept( ?array $settings, array $body, string $expected_enabled ): void {
+		if ( null !== $settings ) {
+			update_option( 'woocommerce_woocommerce_payments_settings', $settings );
+		}
 		$this->sut = $this->create_controller();
 		$this->sut->register_routes();
 
-		$response = $this->server->dispatch( $this->create_tos_request( array() ) );
+		$response = $this->server->dispatch( $this->create_tos_request( $body ) );
 
 		$this->assertSame( 400, $response->get_status() );
 		$this->assertSame( array( 'result' => 'bad_request' ), $response->get_data() );
-		$this->assertSame( 'no', $this->get_gateway_enabled_setting() );
+		$this->assertSame( $expected_enabled, $this->get_gateway_enabled_setting() );
 	}
 
 	/**
-	 * @testdox ToS route treats a null accept as missing and leaves an enabled gateway on.
+	 * Bodies without an accept value, with the gateway state they must leave alone.
+	 *
+	 * @return array<string,array{?array<string,mixed>,array<string,mixed>,string}>
 	 */
-	public function test_tos_route_rejects_null_accept_without_disabling_the_gateway(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
-		$this->sut = $this->create_controller();
-		$this->sut->register_routes();
-
-		$response = $this->server->dispatch( $this->create_tos_request( array( 'accept' => null ) ) );
-
-		$this->assertSame( 400, $response->get_status() );
-		$this->assertSame( array( 'result' => 'bad_request' ), $response->get_data() );
-		$this->assertSame( 'yes', $this->get_gateway_enabled_setting() );
+	public static function provide_bad_tos_bodies(): array {
+		return array(
+			'accept missing, gateway off' => array( null, array(), 'no' ),
+			'accept null, gateway on'     => array( array( 'enabled' => 'yes' ), array( 'accept' => null ), 'yes' ),
+		);
 	}
 
 	/**
@@ -282,8 +287,6 @@ class WooPaymentsTosRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * @return WooPaymentsTosRestController
 	 */
 	private function create_controller(): WooPaymentsTosRestController {
-		$this->assertTrue( class_exists( WooPaymentsTosRestController::class ), 'WooPaymentsTosRestController should exist.' );
-
 		$controller = new WooPaymentsTosRestController();
 		$controller->init( $this->api_client, $this->account_service );
 

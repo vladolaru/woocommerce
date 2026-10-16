@@ -1201,13 +1201,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	public function test_fraud_outcome_routes_enrich_every_platform_row(): void {
 		$order = $this->create_fraud_outcome_order( 'Ada', 'block', 'canceled', 1.00, false );
 		$this->create_transactions_controller()->register_routes();
-		$logger = $this->create_recording_logger();
-		add_filter(
-			'woocommerce_logging_class',
-			static function () use ( $logger ): object {
-				return $logger;
-			}
-		);
+		$logger                     = RecordingWcLogger::install();
 		$this->api_client->response = array(
 			'data' => array_fill( 0, 1001, array( 'order_id' => $order->get_id() ) ),
 		);
@@ -1233,7 +1227,7 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 			$counts,
 			'Every platform row must reach shaping; only the list route pages.'
 		);
-		$this->assertSame( array(), $logger->entries );
+		$this->assertSame( array(), $logger->lines );
 	}
 
 	/**

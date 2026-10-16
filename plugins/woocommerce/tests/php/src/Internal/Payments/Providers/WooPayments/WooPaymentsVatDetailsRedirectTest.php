@@ -95,24 +95,35 @@ class WooPaymentsVatDetailsRedirectTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Leaves requests without the VAT details query arg alone.
+	 * @testdox Leaves a request alone when it lacks the query arg or is an AJAX request.
+	 * @dataProvider provide_ignored_requests
+	 *
+	 * @param bool $has_query_arg Whether the request carries the VAT details query arg.
+	 * @param bool $doing_ajax    Whether the request is an AJAX request.
 	 */
-	public function test_ignores_requests_without_the_query_arg(): void {
-		$this->sut->handle_template_redirect();
-
-		$this->assertSame( '', $this->redirect );
-	}
-
-	/**
-	 * @testdox Leaves AJAX requests alone.
-	 */
-	public function test_ignores_ajax_requests(): void {
-		$_GET['woopayments-vat-details-redirect'] = '1';
-		add_filter( 'wp_doing_ajax', '__return_true' );
+	public function test_ignores_requests( bool $has_query_arg, bool $doing_ajax ): void {
+		if ( $has_query_arg ) {
+			$_GET['woopayments-vat-details-redirect'] = '1';
+		}
+		if ( $doing_ajax ) {
+			add_filter( 'wp_doing_ajax', '__return_true' );
+		}
 
 		$this->sut->handle_template_redirect();
 
 		remove_filter( 'wp_doing_ajax', '__return_true' );
 		$this->assertSame( '', $this->redirect );
+	}
+
+	/**
+	 * Requests the redirect leaves alone.
+	 *
+	 * @return array<string,array{bool,bool}>
+	 */
+	public static function provide_ignored_requests(): array {
+		return array(
+			'without the query arg'           => array( false, false ),
+			'AJAX request with the query arg' => array( true, true ),
+		);
 	}
 }

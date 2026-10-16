@@ -12,7 +12,6 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_REST_Unit_Test_Case;
 use WP_Error;
 use WP_REST_Request;
-use WP_REST_Response;
 use WP_REST_Server;
 
 /**
@@ -318,9 +317,13 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Document download streams upstream status, headers, and body without JSON wrapping.
+	 * @testdox A document download served by the REST server sends the document bytes, status and headers, not JSON, and is never cacheable.
+	 *
+	 * The REST server turns a plain WP_HTTP_Response into a new WP_REST_Response (rest_ensure_response(), rest-api.php),
+	 * so only a real serve proves the bytes reach the browser. Client 11.1.0 streams them itself (documents controller :113-125)
+	 * and calls nocache_headers() before streaming (:114-115), so a site that turns off the REST no-cache headers changes nothing.
 	 */
-	public function test_get_document_returns_raw_download_response_semantics(): void {
+	public function test_get_document_streams_through_the_rest_server(): void {
 		$this->api_client->document_response = array(
 			'response' => array(
 				'code'    => 201,
@@ -332,45 +335,7 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 			),
 			'body'     => '%PDF invoice',
 		);
-		$request                             = new WP_REST_Request( 'GET', '/wc/v3/payments/documents/vat_invoice-123' );
-		$request->set_param( 'document_id', 'vat_invoice-123' );
-
-		$response = $this->sut->get_document( $request );
-
-		$this->assertInstanceOf( WP_REST_Response::class, $response );
-		$this->assertSame( 201, $response->get_status() );
-		$this->assertSame( '%PDF invoice', $response->get_data() );
-		$this->assertSame( 'application/pdf', $response->get_headers()['Content-Type'] );
-		$this->assertSame( 'attachment; filename="invoice.pdf"', $response->get_headers()['Content-Disposition'] );
-		$this->assertSame( 'vat_invoice-123', $this->api_client->last_document_id );
-
-		ob_start();
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		$served        = apply_filters( 'rest_pre_serve_request', false, $response, $request, $this->server );
-		$response_body = ob_get_clean();
-
-		$this->assertTrue( $served );
-		$this->assertSame( '%PDF invoice', $response_body );
-	}
-
-	/**
-	 * @testdox A document download served by the REST server sends the document bytes and headers, not JSON.
-	 *
-	 * The REST server turns a plain WP_HTTP_Response into a new WP_REST_Response (rest_ensure_response(), rest-api.php),
-	 * so only a real serve proves the bytes reach the browser. Client 11.1.0 streams them itself (documents controller :113-125).
-	 */
-	public function test_get_document_streams_through_the_rest_server(): void {
-		$this->api_client->document_response = array(
-			'response' => array(
-				'code'    => 200,
-				'message' => 'OK',
-			),
-			'headers'  => array(
-				'content-type'        => 'application/pdf',
-				'content-disposition' => 'attachment; filename="invoice.pdf"',
-			),
-			'body'     => '%PDF invoice',
-		);
+		add_filter( 'rest_send_nocache_headers', '__return_false' );
 		// WordPress's spy server records headers and buffers the body instead of sending them.
 		$GLOBALS['wp_rest_server'] = new \Spy_REST_Server();
 		$server                    = $GLOBALS['wp_rest_server'];
@@ -380,9 +345,11 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 		$server->serve_request( '/wc/v3/payments/documents/vat_invoice-123' );
 
 		$this->assertSame( '%PDF invoice', $server->sent_body );
-		$this->assertSame( 200, $server->status );
+		$this->assertSame( 201, $server->status );
 		$this->assertSame( 'application/pdf', $server->sent_headers['Content-Type'] );
 		$this->assertSame( 'attachment; filename="invoice.pdf"', $server->sent_headers['Content-Disposition'] );
+		$this->assertStringContainsString( 'no-store', $server->sent_headers['Cache-Control'] );
+		$this->assertSame( 'vat_invoice-123', $this->api_client->last_document_id );
 	}
 
 	/**
@@ -414,24 +381,6 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 			$this->assertSame( 'There was an error accessing document vat_invoice-123. Document &lt;b&gt;not&lt;/b&gt; found.', $die[0] );
 			$this->assertSame( 404, $die[1]['response'] );
 		}
-	}
-
-	/**
-	 * @testdox A document download is never cacheable, even on a site that turns off the REST no-cache headers.
-	 *
-	 * Client 11.1.0 calls nocache_headers() before streaming (documents controller :114-115).
-	 */
-	public function test_get_document_sends_no_cache_headers(): void {
-		add_filter( 'rest_send_nocache_headers', '__return_false' );
-		$GLOBALS['wp_rest_server'] = new \Spy_REST_Server();
-		$server                    = $GLOBALS['wp_rest_server'];
-		$this->sut->register_routes();
-		$_SERVER['REQUEST_METHOD'] = 'GET';
-
-		$server->serve_request( '/wc/v3/payments/documents/vat_invoice-123' );
-
-		$this->assertStringContainsString( 'no-store', $server->sent_headers['Cache-Control'] );
-		$this->assertSame( '%PDF document', $server->sent_body );
 	}
 
 	/**
@@ -533,121 +482,95 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox VAT save forwards optional VAT number with company name and address.
+	 * @testdox Saving VAT details forwards the optional VAT number with the company name and address, without markup: $_dataName.
+	 *
+	 * Client 11.1.0 declares text-field on the VAT number and name, which also flattens line breaks, and textarea-field on
+	 * the address, which keeps them (class-wc-rest-payments-vat-controller.php:43-58).
+	 *
+	 * @dataProvider provide_vat_company_details
+	 *
+	 * @param array<string,string> $posted    Posted company details.
+	 * @param array<string,string> $forwarded Company details the platform receives.
 	 */
-	public function test_save_vat_forwards_company_details(): void {
+	public function test_save_vat_forwards_company_details( array $posted, array $forwarded ): void {
 		$this->sut->register_routes();
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/vat' );
-		$request->set_body_params(
-			array(
-				'vat_number' => 'RO123456',
-				'name'       => 'ACME SRL',
-				'address'    => '1 Market Street',
-			)
-		);
+		$request->set_body_params( $posted );
 
 		$response = $this->server->dispatch( $request );
 
 		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame(
-			array(
-				'vat_number' => 'RO123456',
-				'name'       => 'ACME SRL',
-				'address'    => '1 Market Street',
-			),
-			$this->api_client->last_saved_vat_details
-		);
+		$this->assertSame( $forwarded, $this->api_client->last_saved_vat_details );
 		$this->assertSame( $this->api_client->save_vat_response, $response->get_data() );
 	}
 
 	/**
-	 * @testdox Saving VAT details strips markup from the company details before they reach the platform.
+	 * Provide posted and forwarded VAT company details.
 	 *
-	 * Client 11.1.0 declares text-field on the VAT number and name, which also flattens line breaks, and textarea-field on
-	 * the address, which keeps them (class-wc-rest-payments-vat-controller.php:43-58).
+	 * @return array<string,array{0:array<string,string>,1:array<string,string>}>
 	 */
-	public function test_save_vat_sanitizes_company_details(): void {
-		$this->sut->register_routes();
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/vat' );
-		$request->set_body_params(
-			array(
-				'vat_number' => "<b>RO123</b>\n456",
-				'name'       => "<script>alert(1)</script>ACME\nSRL",
-				'address'    => "1 Market Street\n<i>Floor 2</i>",
-			)
-		);
-
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame(
-			array(
-				'vat_number' => 'RO123 456',
-				'name'       => 'ACME SRL',
-				'address'    => "1 Market Street\nFloor 2",
-			),
-			$this->api_client->last_saved_vat_details
-		);
-	}
-
-	/**
-	 * @testdox API exceptions are converted to REST errors with their status.
-	 */
-	public function test_api_exceptions_preserve_the_woopayments_extension_error_envelope(): void {
-		$this->api_client->exception = new WooPaymentsApiException( 'Provider unavailable.', 'provider_unavailable', 503 );
-
-		$response = $this->sut->get_documents( new WP_REST_Request( 'GET', '/wc/v3/payments/documents' ) );
-
-		$this->assertInstanceOf( WP_Error::class, $response );
-		$this->assertSame( 'provider_unavailable', $response->get_error_code() );
-		$this->assertSame( 'Provider unavailable.', $response->get_error_message() );
-		$this->assertSame( 503, $response->get_error_data()['status'] );
-	}
-
-	/**
-	 * @testdox API exceptions without a valid HTTP status become REST 500 errors.
-	 */
-	public function test_api_exceptions_without_valid_http_status_become_internal_errors(): void {
-		$this->api_client->exception = new WooPaymentsApiException( 'Transport failed.', 'wcpay_server_request_error', 0 );
-
-		$response = $this->sut->get_documents( new WP_REST_Request( 'GET', '/wc/v3/payments/documents' ) );
-
-		$this->assertInstanceOf( WP_Error::class, $response );
-		$this->assertSame( 'wcpay_server_request_error', $response->get_error_code() );
-		$this->assertSame( 'Transport failed.', $response->get_error_message() );
-		$this->assertSame( 500, $response->get_error_data()['status'] );
-	}
-
-	/**
-	 * @testdox API exceptions with non-error HTTP statuses become REST 500 errors.
-	 *
-	 * @dataProvider api_exception_non_error_status_provider
-	 *
-	 * @param int $http_code Exception HTTP code.
-	 */
-	public function test_api_exceptions_with_non_error_http_statuses_become_internal_errors( int $http_code ): void {
-		$this->api_client->exception = new WooPaymentsApiException( 'Malformed response.', 'wcpay_unparseable_or_null_body', $http_code );
-
-		$response = $this->sut->get_documents( new WP_REST_Request( 'GET', '/wc/v3/payments/documents' ) );
-
-		$this->assertInstanceOf( WP_Error::class, $response );
-		$this->assertSame( 'wcpay_unparseable_or_null_body', $response->get_error_code() );
-		$this->assertSame( 'Malformed response.', $response->get_error_message() );
-		$this->assertSame( 500, $response->get_error_data()['status'] );
-	}
-
-	/**
-	 * Get non-error HTTP statuses that should never be exposed as REST errors.
-	 *
-	 * @return array<string,array{int}>
-	 */
-	public function api_exception_non_error_status_provider(): array {
+	public function provide_vat_company_details(): array {
 		return array(
-			'success'     => array( 200 ),
-			'redirect'    => array( 302 ),
-			'out-of-band' => array( 700 ),
+			'plain details'       => array(
+				array(
+					'vat_number' => 'RO123456',
+					'name'       => 'ACME SRL',
+					'address'    => '1 Market Street',
+				),
+				array(
+					'vat_number' => 'RO123456',
+					'name'       => 'ACME SRL',
+					'address'    => '1 Market Street',
+				),
+			),
+			'details with markup' => array(
+				array(
+					'vat_number' => "<b>RO123</b>\n456",
+					'name'       => "<script>alert(1)</script>ACME\nSRL",
+					'address'    => "1 Market Street\n<i>Floor 2</i>",
+				),
+				array(
+					'vat_number' => 'RO123 456',
+					'name'       => 'ACME SRL',
+					'address'    => "1 Market Street\nFloor 2",
+				),
+			),
+		);
+	}
+
+	/**
+	 * @testdox API exceptions become REST errors that keep an HTTP error status and answer 500 for any other: $_dataName.
+	 * @dataProvider provide_api_exception_statuses
+	 *
+	 * @param int    $http_code       Exception HTTP code.
+	 * @param string $code            Exception error code.
+	 * @param string $message         Exception message.
+	 * @param int    $expected_status Expected REST error status.
+	 */
+	public function test_api_exceptions_become_rest_errors( int $http_code, string $code, string $message, int $expected_status ): void {
+		$this->api_client->exception = new WooPaymentsApiException( $message, $code, $http_code );
+
+		$response = $this->sut->get_documents( new WP_REST_Request( 'GET', '/wc/v3/payments/documents' ) );
+
+		$this->assertInstanceOf( WP_Error::class, $response );
+		$this->assertSame( $code, $response->get_error_code() );
+		$this->assertSame( $message, $response->get_error_message() );
+		$this->assertSame( $expected_status, $response->get_error_data()['status'] );
+	}
+
+	/**
+	 * Provide API exceptions: HTTP code, error code, message, expected REST status.
+	 *
+	 * @return array<string,array{0:int,1:string,2:string,3:int}>
+	 */
+	public function provide_api_exception_statuses(): array {
+		return array(
+			'error status 503'       => array( 503, 'provider_unavailable', 'Provider unavailable.', 503 ),
+			'no status'              => array( 0, 'wcpay_server_request_error', 'Transport failed.', 500 ),
+			'success status 200'     => array( 200, 'wcpay_unparseable_or_null_body', 'Malformed response.', 500 ),
+			'redirect status 302'    => array( 302, 'wcpay_unparseable_or_null_body', 'Malformed response.', 500 ),
+			'out-of-band status 700' => array( 700, 'wcpay_unparseable_or_null_body', 'Malformed response.', 500 ),
 		);
 	}
 

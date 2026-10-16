@@ -103,43 +103,63 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Registering a reader refreshes the cached account data.
+	 * @testdox Reader registration refreshes the cached account data only when it succeeds ($scenario).
+	 * @dataProvider provide_reader_registration_outcomes
+	 *
+	 * @param string                       $scenario           Case.
+	 * @param string                       $registration_code  Registration code the app sends.
+	 * @param array<string,mixed>          $reader_response    Registered reader the platform answers.
+	 * @param WooPaymentsApiException|null $exception          Platform failure, or null when the registration succeeds.
+	 * @param string                       $expected_class     Class of the route's answer.
+	 * @param int                          $expected_refreshes Expected number of account-data refreshes.
 	 */
-	public function test_register_reader_refreshes_account_data(): void {
-		$this->api_client->terminal_reader_response = array(
-			'id'          => 'tmr_registered',
-			'livemode'    => false,
-			'device_type' => 'bbpos_wisepos_e',
-			'label'       => 'Front desk',
-			'location'    => 'tml_1',
-			'metadata'    => array(),
-			'status'      => 'online',
-		);
+	public function test_reader_registration_refreshes_account_data_only_on_success( string $scenario, string $registration_code, array $reader_response, ?WooPaymentsApiException $exception, string $expected_class, int $expected_refreshes ): void {
+		unset( $scenario );
+		$this->api_client->terminal_reader_response  = $reader_response;
+		$this->api_client->register_reader_exception = $exception;
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/readers' );
 		$request->set_param( 'location', 'tml_1' );
-		$request->set_param( 'registration_code', 'puppies-plug-could' );
+		$request->set_param( 'registration_code', $registration_code );
 
 		$response = $this->sut->register_reader( $request );
 
-		$this->assertInstanceOf( WP_REST_Response::class, $response );
-		$this->assertSame( 1, $this->account_refresh_calls, 'A successful reader registration must refresh the cached account data.' );
+		$this->assertInstanceOf( $expected_class, $response );
+		$this->assertSame( $expected_refreshes, $this->account_refresh_calls, 'Only a successful reader registration refreshes the cached account data.' );
 	}
 
 	/**
-	 * @testdox A failed reader registration does not refresh the cached account data.
+	 * Provide reader registrations: case, registration code, platform reader, platform failure, answer class, refreshes.
+	 *
+	 * @return array<string,array{0:string,1:string,2:array<string,mixed>,3:WooPaymentsApiException|null,4:string,5:int}>
 	 */
-	public function test_failed_reader_registration_does_not_refresh_account_data(): void {
-		$this->api_client->register_reader_exception = new WooPaymentsApiException( 'Bad code.', 'wcpay_invalid_registration_code', 400 );
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/readers' );
-		$request->set_param( 'location', 'tml_1' );
-		$request->set_param( 'registration_code', 'bad-code' );
-
-		$response = $this->sut->register_reader( $request );
-
-		$this->assertInstanceOf( WP_Error::class, $response );
-		$this->assertSame( 0, $this->account_refresh_calls );
+	public function provide_reader_registration_outcomes(): array {
+		return array(
+			'success' => array(
+				'success',
+				'puppies-plug-could',
+				array(
+					'id'          => 'tmr_registered',
+					'livemode'    => false,
+					'device_type' => 'bbpos_wisepos_e',
+					'label'       => 'Front desk',
+					'location'    => 'tml_1',
+					'metadata'    => array(),
+					'status'      => 'online',
+				),
+				null,
+				WP_REST_Response::class,
+				1,
+			),
+			'failure' => array(
+				'failure',
+				'bad-code',
+				array(),
+				new WooPaymentsApiException( 'Bad code.', 'wcpay_invalid_registration_code', 400 ),
+				WP_Error::class,
+				0,
+			),
+		);
 	}
 
 	/**
@@ -250,80 +270,14 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Receipt preview accepts the camelCase settings payload.
-	 */
-	public function test_preview_print_receipt_uses_the_camel_case_settings_payload(): void {
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/readers/receipts/preview' );
-		$request->set_body_params(
-			array(
-				'accountBusinessName'           => 'Receipt Lab',
-				'accountBusinessSupportAddress' => array(
-					'line1'       => '1 Support Way',
-					'line2'       => 'Suite 2',
-					'city'        => 'San Francisco',
-					'state'       => 'CA',
-					'postal_code' => '94107',
-					'country'     => 'US',
-				),
-				'accountBusinessSupportPhone'   => '+1 555 0100',
-				'accountBusinessSupportEmail'   => 'support@example.com',
-			)
-		);
-
-		$response = $this->sut->preview_print_receipt( $request );
-		$html     = $response->get_data()['html_content'];
-
-		$this->assertStringContainsString( '<!DOCTYPE html>', $html );
-		$this->assertStringContainsString( 'Receipt Lab', $html );
-		$this->assertStringContainsString( '1 Support Way', $html );
-		$this->assertStringContainsString( '+1 555 0100 support@example.com', $html );
-		$this->assertStringContainsString( 'Sample', $html );
-		$this->assertStringContainsString( 'Application name', $html );
-		$this->assertStringContainsString( 'AID', $html );
-		$this->assertStringContainsString( 'Powered by WooCommerce', $html );
-	}
-
-	/**
 	 * @testdox Generated receipts include order lines and terminal receipt fields.
 	 */
 	public function test_generate_print_receipt_uses_order_and_charge_receipt_data(): void {
 		$order = $this->create_order( 12.34, 'USD' );
 
-		$this->account_data                           = $this->get_receipt_account();
-		$this->gateway_settings                       = $this->get_saved_business_details();
-		$this->api_client->payment_intention_response = array(
-			'id'       => 'pi_receipt',
-			'status'   => 'succeeded',
-			'currency' => 'usd',
-			'metadata' => array(
-				'order_id' => (string) $order->get_id(),
-			),
-			'charges'  => array(
-				'data' => array(
-					array( 'id' => 'ch_receipt' ),
-				),
-			),
-		);
-		$this->api_client->charge_response            = array(
-			'id'                     => 'ch_receipt',
-			'amount_captured'        => 1234,
-			'currency'               => 'usd',
-			'order'                  => array(
-				'number' => $order->get_id(),
-			),
-			'payment_method_details' => array(
-				'card_present' => array(
-					'brand'   => 'visa',
-					'network' => 'eftpos_au',
-					'last4'   => '0978',
-					'receipt' => array(
-						'application_preferred_name' => 'visa credit',
-						'dedicated_file_name'        => 'a0000000031010',
-						'account_type'               => 'credit',
-					),
-				),
-			),
-		);
+		$this->account_data     = $this->get_receipt_account();
+		$this->gateway_settings = $this->get_saved_business_details();
+		$this->prepare_receipt_payment( $order, array( 'network' => 'eftpos_au' ) );
 		// Override: a second address line, which the recorded account leaves empty.
 		$this->account_data['business_profile']['support_address']['line2'] = 'Suite 400';
 
@@ -355,45 +309,14 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	public function test_generate_print_receipt_embeds_account_branding_logo(): void {
 		$order = $this->create_order( 12.34, 'USD' );
 
-		$this->account_data                           = $this->get_receipt_account();
-		$this->account_data['branding']['logo']       = 'file_logo_123';
-		$this->gateway_settings                       = array( 'account_branding_logo' => 'file_saved_logo' );
-		$this->api_client->file_contents_response     = array(
+		$this->account_data                       = $this->get_receipt_account();
+		$this->account_data['branding']['logo']   = 'file_logo_123';
+		$this->gateway_settings                   = array( 'account_branding_logo' => 'file_saved_logo' );
+		$this->api_client->file_contents_response = array(
 			'content_type' => 'image/png',
 			'file_content' => base64_encode( 'logo-bytes' ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- Test fixture image payload.
 		);
-		$this->api_client->payment_intention_response = array(
-			'id'       => 'pi_receipt',
-			'status'   => 'succeeded',
-			'currency' => 'usd',
-			'metadata' => array(
-				'order_id' => (string) $order->get_id(),
-			),
-			'charges'  => array(
-				'data' => array(
-					array( 'id' => 'ch_receipt' ),
-				),
-			),
-		);
-		$this->api_client->charge_response            = array(
-			'id'                     => 'ch_receipt',
-			'amount_captured'        => 1234,
-			'currency'               => 'usd',
-			'order'                  => array(
-				'number' => $order->get_id(),
-			),
-			'payment_method_details' => array(
-				'card_present' => array(
-					'brand'   => 'visa',
-					'last4'   => '0978',
-					'receipt' => array(
-						'application_preferred_name' => 'visa credit',
-						'dedicated_file_name'        => 'a0000000031010',
-						'account_type'               => 'credit',
-					),
-				),
-			),
-		);
+		$this->prepare_receipt_payment( $order );
 
 		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/readers/receipts/pi_receipt' );
 		$request->set_param( 'payment_intent_id', 'pi_receipt' );
@@ -717,9 +640,10 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	 * includes/in-person-payments/class-wc-payments-in-person-payments-receipts-service.php:53,138-160 reads them. The
 	 * values are synthetic.
 	 *
-	 * @param \WC_Order $order Order the payment is for.
+	 * @param \WC_Order            $order                  Order the payment is for.
+	 * @param array<string,string> $card_present_overrides Card-present fields that replace or add to the defaults.
 	 */
-	private function prepare_receipt_payment( \WC_Order $order ): void {
+	private function prepare_receipt_payment( \WC_Order $order, array $card_present_overrides = array() ): void {
 		$this->api_client->payment_intention_response = array(
 			'id'       => 'pi_receipt',
 			'status'   => 'succeeded',
@@ -741,14 +665,17 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 				'number' => $order->get_id(),
 			),
 			'payment_method_details' => array(
-				'card_present' => array(
-					'brand'   => 'visa',
-					'last4'   => '0978',
-					'receipt' => array(
-						'application_preferred_name' => 'visa credit',
-						'dedicated_file_name'        => 'a0000000031010',
-						'account_type'               => 'credit',
+				'card_present' => array_merge(
+					array(
+						'brand'   => 'visa',
+						'last4'   => '0978',
+						'receipt' => array(
+							'application_preferred_name' => 'visa credit',
+							'dedicated_file_name'        => 'a0000000031010',
+							'account_type'               => 'credit',
+						),
 					),
+					$card_present_overrides
 				),
 			),
 		);

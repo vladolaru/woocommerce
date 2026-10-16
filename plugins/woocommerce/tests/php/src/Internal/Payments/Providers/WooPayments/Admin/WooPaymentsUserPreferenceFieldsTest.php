@@ -8,8 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Admin;
 
 use Automattic\WooCommerce\Internal\Admin\WCAdminUser;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsUserPreferenceFields;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
@@ -84,20 +82,5 @@ class WooPaymentsUserPreferenceFieldsTest extends WC_REST_Unit_Test_Case {
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( '["status"]', get_user_meta( $user_id, 'woocommerce_admin_wc_payments_payouts_hidden_columns', true ) );
 		$this->assertSame( '["status"]', $response->get_data()['woocommerce_meta']['wc_payments_payouts_hidden_columns'] );
-	}
-
-	/**
-	 * @testdox Loads only on connected and active admin and REST requests, never on dormant tiers.
-	 */
-	public function test_bootstrap_matrix_bounds_registration_to_connected_admin_and_rest(): void {
-		foreach ( WooPaymentsProvider::get_classes_by_setup_tier() as $state => $request_groups ) {
-			foreach ( $request_groups as $request_type => $roots ) {
-				$expected = in_array( $state, array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true )
-					&& in_array( $request_type, array( 'admin', 'rest' ), true );
-
-				$this->assertSame( $expected, in_array( WooPaymentsUserPreferenceFields::class, $roots, true ), $state . ' ' . $request_type );
-			}
-		}
-		$this->assertArrayHasKey( 'rest', WooPaymentsProvider::get_classes_by_setup_tier()[ WooPaymentsSetupTier::CONNECTED ] );
 	}
 }

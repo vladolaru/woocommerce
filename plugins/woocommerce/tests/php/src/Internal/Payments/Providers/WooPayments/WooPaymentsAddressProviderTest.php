@@ -354,8 +354,6 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 		bool $account_under_review,
 		?WooPaymentsApiClient $api_client = null
 	): WooPaymentsAddressProvider {
-		$this->assertTrue( class_exists( WooPaymentsAddressProvider::class ), 'WooPaymentsAddressProvider should exist.' );
-
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_gateway_enabled', 'has_account', 'has_account_or_is_connection_indeterminate', 'is_account_rejected', 'is_account_under_review' ) )

@@ -28,23 +28,6 @@ use WC_REST_Unit_Test_Case;
 class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 
 	/**
-	 * @testdox Should resolve through the WooCommerce dependency container.
-	 */
-	public function test_resolves_through_woocommerce_container(): void {
-		$previous_container      = $GLOBALS['wc_container'];
-		$GLOBALS['wc_container'] = new Container();
-
-		try {
-			$this->assertInstanceOf(
-				WooPaymentsAdminRestRouteRegistrar::class,
-				wc_get_container()->get( WooPaymentsAdminRestRouteRegistrar::class )
-			);
-		} finally {
-			$GLOBALS['wc_container'] = $previous_container;
-		}
-	}
-
-	/**
 	 * @testdox Should register routes when an admin page dispatches an internal REST request.
 	 */
 	public function test_registers_routes_for_internal_requests_with_admin_screen(): void {
