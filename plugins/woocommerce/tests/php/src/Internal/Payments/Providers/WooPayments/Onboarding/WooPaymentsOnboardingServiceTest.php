@@ -20,6 +20,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\FixedTrackingInfoService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
@@ -3226,6 +3227,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * `wcpay_account_referral` event `WC_Payments_Account::maybe_redirect_onboarding_referral()` records.
 	 */
 	public function test_store_referral_code_stores_the_normalized_code_and_records_the_referral(): void {
+		FixedTrackingInfoService::install();
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 		$recorded = array();
 		add_filter(
@@ -3238,12 +3240,18 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			2
 		);
 
-		$stored = $this->onboarding_service->store_referral_code( ' ' . str_repeat( 'Ab', 30 ) );
+		try {
+			$stored = $this->onboarding_service->store_referral_code( ' ' . str_repeat( 'Ab', 30 ) );
+		} finally {
+			wc_get_container()->reset_all_replacements();
+		}
 
 		$this->assertSame( str_repeat( 'ab', 24 ) . 'a', $stored );
 		$this->assertSame( $stored, get_transient( 'woopayments_referral_code' ) );
 		$this->assertEqualsWithDelta( time() + 30 * DAY_IN_SECONDS, (int) get_option( '_transient_timeout_woopayments_referral_code' ), 60 );
 		$this->assertSame( $stored, $recorded['wcadmin_wcpay_account_referral']['referral_code'] );
+		// Client 11.1.0's account tracks_event() merges the platform tracking info last (class-wc-payments-account.php:3210-3220).
+		$this->assertSame( 'fixture-host', $recorded['wcadmin_wcpay_account_referral']['hosting_provider'] ?? null );
 	}
 
 	/**

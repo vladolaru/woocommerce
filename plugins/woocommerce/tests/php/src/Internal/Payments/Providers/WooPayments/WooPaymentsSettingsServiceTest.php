@@ -1726,6 +1726,55 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0's settings controller tracks_event() merges get_tracking_info() last into the per-method events
+	 * (includes/admin/class-wc-rest-payments-settings-controller.php:1362-1380).
+	 *
+	 * @testdox Should send the platform tracking info with the per-method events of a settings save.
+	 */
+	public function test_update_settings_payment_method_events_carry_the_platform_tracking_info(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) ) );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => array(
+					'account_id'   => 'acct_test',
+					'is_live'      => true,
+					'capabilities' => array(
+						'card_payments'   => 'active',
+						'link_payments'   => 'active',
+						'affirm_payments' => 'active',
+					),
+					'fees'         => array(
+						'card'   => array(),
+						'link'   => array(),
+						'affirm' => array(),
+					),
+				),
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+		FixedTrackingInfoService::install();
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$recorded = array();
+		$capture  = static function ( $properties, $event_name ) use ( &$recorded ) {
+			$recorded[ $event_name ] = $properties;
+			return $properties;
+		};
+		add_filter( 'woocommerce_tracks_event_properties', $capture, 10, 2 );
+
+		try {
+			$this->sut->update_settings( array( 'enabled_payment_method_ids' => array( 'card', 'affirm' ) ) );
+		} finally {
+			remove_filter( 'woocommerce_tracks_event_properties', $capture, 10 );
+			wc_get_container()->reset_all_replacements();
+		}
+
+		$this->assertSame( 'fixture-host', $recorded['wcadmin_wcpay_payment_method_enabled']['hosting_provider'] ?? null );
+		$this->assertSame( 'fixture-host', $recorded['wcadmin_wcpay_payment_method_disabled']['hosting_provider'] ?? null );
+	}
+
+	/**
 	 * @testdox Should keep the WooPay last disable date when WooPay is already off.
 	 */
 	public function test_update_settings_keeps_woopay_last_disable_date_when_woopay_was_already_off(): void {

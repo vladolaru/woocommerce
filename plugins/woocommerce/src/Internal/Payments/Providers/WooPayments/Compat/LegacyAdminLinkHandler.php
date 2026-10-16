@@ -151,7 +151,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 			$description = 'weekly-' . $week;
 		}
 
-		WooPaymentsTracks::record_wcadmin_event(
+		WooPaymentsTracks::record_wcadmin_event_with_tracking_info(
 			'wcpay_kyc_reminder_merchant_returned',
 			array(
 				'offset'      => $offset,

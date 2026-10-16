@@ -57,7 +57,7 @@ class WooPaymentsTracksEventsContractTest extends WC_Unit_Test_Case {
 	 * the resolved literal to form the wire name.
 	 *
 	 * `wc_admin_record_tracks_event`, `record_tracks_event`, `WC_Tracks::record_event` and
-	 * `WooPaymentsTracks::record_wcadmin_event` all
+	 * `WooPaymentsTracks::record_wcadmin_event` (with or without the tracking info) all
 	 * carry `prefix => ''` here even though `WC_Tracks::record_event()` itself prepends `wcadmin_`
 	 * on the wire: the fixture's own `wire_name` for that same call shape is already the bare call
 	 * name, unprefixed (`extract-tracks.php`'s `$PHP_RECORDERS` table), so both sides agree and the
@@ -66,35 +66,39 @@ class WooPaymentsTracksEventsContractTest extends WC_Unit_Test_Case {
 	 * @var array<string,array{object:bool|string,prefix:string}>
 	 */
 	private const PHP_RECORDERS = array(
-		'record_user_event'            => array(
+		'record_user_event'                       => array(
 			'object' => true,
 			'prefix' => 'wcpay_',
 		),
-		'record_woopay_admin_event'    => array(
+		'record_woopay_admin_event'               => array(
 			'object' => true,
 			'prefix' => 'wcadmin_',
 		),
-		'queue_user_event'             => array(
+		'queue_user_event'                        => array(
 			'object' => true,
 			'prefix' => 'wcpay_',
 		),
-		'record_registration_event'    => array(
+		'record_registration_event'               => array(
 			'object' => true,
 			'prefix' => 'wcpay_',
 		),
-		'record_tracks_event'          => array(
+		'record_tracks_event'                     => array(
 			'object' => true,
 			'prefix' => '',
 		),
-		'wc_admin_record_tracks_event' => array(
+		'wc_admin_record_tracks_event'            => array(
 			'object' => false,
 			'prefix' => '',
 		),
-		'record_event'                 => array(
+		'record_event'                            => array(
 			'object' => 'static-WC_Tracks',
 			'prefix' => '',
 		),
-		'record_wcadmin_event'         => array(
+		'record_wcadmin_event'                    => array(
+			'object' => 'static-WooPaymentsTracks',
+			'prefix' => '',
+		),
+		'record_wcadmin_event_with_tracking_info' => array(
 			'object' => 'static-WooPaymentsTracks',
 			'prefix' => '',
 		),

@@ -179,7 +179,7 @@ class WooPaymentsPmPromotionsService {
 
 		$this->clear_cache();
 		$this->account_service->clear_cache();
-		WooPaymentsTracks::record_wcadmin_event(
+		WooPaymentsTracks::record_wcadmin_event_with_tracking_info(
 			'wcpay_payment_method_promotion_activated',
 			array(
 				'payment_method_id' => $payment_method_id,
@@ -213,7 +213,7 @@ class WooPaymentsPmPromotionsService {
 
 		$this->clear_cache();
 		$this->account_service->clear_cache();
-		WooPaymentsTracks::record_wcadmin_event(
+		WooPaymentsTracks::record_wcadmin_event_with_tracking_info(
 			'wcpay_payment_method_promotion_activated',
 			array(
 				'payment_method_id' => $payment_method_id,
@@ -236,7 +236,7 @@ class WooPaymentsPmPromotionsService {
 			return false;
 		}
 
-		WooPaymentsTracks::record_wcadmin_event(
+		WooPaymentsTracks::record_wcadmin_event_with_tracking_info(
 			'wcpay_payment_method_promotion_dismissed',
 			array(
 				'payment_method_id' => $promotion['payment_method'] ?? null,
@@ -678,7 +678,7 @@ class WooPaymentsPmPromotionsService {
 		}
 
 		$definition = $this->payment_method_registry->get( $payment_method_id );
-		WooPaymentsTracks::record_wcadmin_event(
+		WooPaymentsTracks::record_wcadmin_event_with_tracking_info(
 			'wcpay_payment_method_enabled',
 			array(
 				'payment_method_id' => $payment_method_id,
@@ -850,7 +850,7 @@ class WooPaymentsPmPromotionsService {
 	 */
 	private function handle_promotion_activation_failure( string $payment_method_id, array $promotion, string $error_message, array $log_context = array() ): void {
 		$this->log_promotion_error( sprintf( 'Failed to activate promotion for payment method %1$s: %2$s', $payment_method_id, $error_message ), $log_context );
-		WooPaymentsTracks::record_wcadmin_event(
+		WooPaymentsTracks::record_wcadmin_event_with_tracking_info(
 			'wcpay_payment_method_promotion_activation_failed',
 			array(
 				'payment_method_id' => $payment_method_id,

@@ -184,7 +184,7 @@ class WooPaymentsOnboardingService {
 		}
 
 		set_transient( self::REFERRAL_CODE_TRANSIENT, $referral_code, 30 * DAY_IN_SECONDS );
-		WooPaymentsTracks::record_wcadmin_event(
+		WooPaymentsTracks::record_wcadmin_event_with_tracking_info(
 			'wcpay_account_referral',
 			array(
 				'referral_code' => $referral_code,

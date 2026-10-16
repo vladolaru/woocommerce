@@ -267,6 +267,43 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0's promotions tracks_event() merges get_tracking_info() last into every promotion event
+	 * (includes/class-wc-payments-pm-promotions-service.php:1015-1025).
+	 *
+	 * @testdox Should send the platform tracking info with the promotion events.
+	 */
+	public function test_promotion_events_carry_the_platform_tracking_info(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
+		$this->account_service->cached_account_data = array(
+			'fees' => array(
+				'card'   => array(),
+				'klarna' => array(),
+			),
+		);
+		$this->api_client->promotions_response      = array(
+			$this->promotion_fixture( 'klarna-promo__spotlight', 'klarna-promo', 'klarna', 'spotlight' ),
+		);
+		FixedTrackingInfoService::install();
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$recorded = array();
+		$capture  = static function ( $properties, $event_name ) use ( &$recorded ) {
+			$recorded[ $event_name ] = $properties;
+			return $properties;
+		};
+		add_filter( 'woocommerce_tracks_event_properties', $capture, 10, 2 );
+
+		try {
+			$this->sut->activate_promotion( 'klarna-promo__spotlight' );
+		} finally {
+			remove_filter( 'woocommerce_tracks_event_properties', $capture, 10 );
+			wc_get_container()->reset_all_replacements();
+		}
+
+		$this->assertSame( 'fixture-host', $recorded['wcadmin_wcpay_payment_method_promotion_activated']['hosting_provider'] ?? null );
+		$this->assertSame( 'fixture-host', $recorded['wcadmin_wcpay_payment_method_enabled']['hosting_provider'] ?? null );
+	}
+
+	/**
 	 * Activation enables the method's own gateway, as client 11.1.0 `activate_promotion()` and
 	 * `enable_payment_method_gateway()` do (includes/class-wc-payments-pm-promotions-service.php:272-320,384-462).
 	 *

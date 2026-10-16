@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\Legacy
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCapitalRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\FixedTrackingInfoService;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
 
@@ -82,6 +83,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'woocommerce_tracks_event_properties' );
 		remove_all_filters( 'wp_redirect' );
 		remove_all_filters( 'wp_doing_ajax' );
+		wc_get_container()->reset_all_replacements();
 		delete_transient( 'wcpay_stripe_onboarding_state' );
 		unset( $_GET['wcpay-loan-offer'], $_GET['wcpay-link-handler'], $_GET['type'], $_GET['return_url'], $_GET['nested'], $_GET['page'], $_GET['path'], $_GET['wcpay-connect-redirect'], $_GET['wcpay-login'], $_GET['_wpnonce'], $_REQUEST['_wpnonce'], $_GET['from'], $_GET['wcpay-state'], $_GET['wcpay-mode'], $_GET['wcpay-account-id'], $_GET['wcpay-connection-error'], $_SERVER['HTTP_REFERER'] );
 
@@ -402,6 +404,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 	 * @param string $description Expected description.
 	 */
 	public function test_kyc_reminder_link_records_return_and_redirects_to_native_route( string $reminder, int $offset, string $description ): void {
+		FixedTrackingInfoService::install();
 		$recorded = $this->record_tracks_events();
 		$_GET     = array(
 			'page'                   => 'wc-admin',
@@ -420,6 +423,8 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $offset, $recorded->events['wcadmin_wcpay_kyc_reminder_merchant_returned']['offset'] ?? null );
 		$this->assertSame( $description, $recorded->events['wcadmin_wcpay_kyc_reminder_merchant_returned']['description'] ?? null );
+		// Client 11.1.0's account tracks_event() merges the platform tracking info last (class-wc-payments-account.php:3210-3220).
+		$this->assertSame( 'fixture-host', $recorded->events['wcadmin_wcpay_kyc_reminder_merchant_returned']['hosting_provider'] ?? null );
 	}
 
 	/**

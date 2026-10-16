@@ -471,10 +471,10 @@ class WooPaymentsSettingsService {
 				);
 			};
 			foreach ( $removed_payment_method_ids as $payment_method_id ) {
-				WooPaymentsTracks::record_wcadmin_event( 'wcpay_payment_method_disabled', $tracks_properties( $payment_method_id ) );
+				WooPaymentsTracks::record_wcadmin_event_with_tracking_info( 'wcpay_payment_method_disabled', $tracks_properties( $payment_method_id ) );
 			}
 			foreach ( $added_payment_method_ids as $payment_method_id ) {
-				WooPaymentsTracks::record_wcadmin_event( 'wcpay_payment_method_enabled', $tracks_properties( $payment_method_id ) );
+				WooPaymentsTracks::record_wcadmin_event_with_tracking_info( 'wcpay_payment_method_enabled', $tracks_properties( $payment_method_id ) );
 				$this->pm_promotions_service->maybe_activate_promotion_for_payment_method( $payment_method_id );
 			}
 			// Card's gateway is the WooPayments gateway, so adding or removing card turns it on or off; persist() sets the other
