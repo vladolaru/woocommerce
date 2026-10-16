@@ -110,7 +110,6 @@ class WooPaymentsDuplicateGatewayMethodsService {
 	public function get_duplicated_payment_method_ids(): array {
 		try {
 			$duplicate_candidates = array();
-			$settings             = $this->account_service->get_gateway_settings();
 
 			foreach ( $this->get_registered_payment_gateways() as $gateway ) {
 				if ( ! $this->is_gateway_enabled( $gateway ) ) {

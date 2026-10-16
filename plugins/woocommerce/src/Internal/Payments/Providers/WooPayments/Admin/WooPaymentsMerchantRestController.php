@@ -180,7 +180,6 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 				array(
 					'methods'             => \WP_REST_Server::READABLE,
 					'callback'            => fn( $request ) => $this->run( $request, 'get_account_summary' ),
-					'validation_callback' => 'rest_validate_request_arg',
 					'permission_callback' => fn( $request ) => $this->check_permissions( $request ),
 				),
 			),
@@ -193,7 +192,6 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 				array(
 					'methods'             => \WP_REST_Server::READABLE,
 					'callback'            => fn( $request ) => $this->run( $request, 'get_overview' ),
-					'validation_callback' => 'rest_validate_request_arg',
 					'permission_callback' => fn( $request ) => $this->check_permissions( $request ),
 				),
 			),
@@ -775,7 +773,6 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 		return true;
 	}
 
-
 	/**
 	 * Get a REST arg schema for string arrays.
 	 *
@@ -1198,10 +1195,6 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 			array( 'status' => $status )
 		);
 	}
-
-
-
-
 
 	/**
 	 * Require an authenticated store manager for notice state changes.
