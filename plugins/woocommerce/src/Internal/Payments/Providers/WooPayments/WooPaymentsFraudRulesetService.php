@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Throwable;
@@ -365,15 +366,31 @@ class WooPaymentsFraudRulesetService {
 	}
 
 	/**
-	 * Get the fraud threshold amount payload.
+	 * Get the Standard and High purchase-price threshold: $1,000 in the store currency, converted at the Multi-Currency USD
+	 * rate when USD is an enabled currency, or in USD while the WooPayments Multi-Currency flag is off, as client 11.1.0
+	 * builds it (includes/fraud-prevention/class-fraud-risk-tools.php:396-445). The platform converts the order total into
+	 * the rule's currency.
 	 *
 	 * @return string
 	 */
 	private function get_fraud_threshold_amount(): string {
-		$default_currency = $this->account_service->get_account_default_currency();
-		$currency         = strtolower( '' !== $default_currency ? $default_currency : 'usd' );
+		if ( '1' !== (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ) ) {
+			return '100000|usd';
+		}
 
-		return '100000|' . $currency;
+		$amount         = 100000;
+		$store_currency = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
+		$enabled_codes  = get_option( 'wcpay_multi_currency_enabled_currencies', array() );
+		// The Multi-Currency rates are read only when USD is enabled, the one case that converts.
+		if ( 'USD' !== $store_currency && is_array( $enabled_codes ) && in_array( 'USD', array_map( 'strtoupper', $enabled_codes ), true ) ) {
+			$enabled_currencies = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create()->build()->get_enabled_currencies();
+			$usd_rate           = isset( $enabled_currencies['USD'] ) ? $enabled_currencies['USD']->get_rate() : 0.0;
+			if ( $usd_rate > 0 ) {
+				$amount = (int) round( $amount * ( 1 / $usd_rate ) );
+			}
+		}
+
+		return $amount . '|' . strtolower( $store_currency );
 	}
 
 	/**
