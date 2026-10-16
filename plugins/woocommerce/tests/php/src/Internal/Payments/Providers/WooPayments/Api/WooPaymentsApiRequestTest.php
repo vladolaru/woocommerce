@@ -25,7 +25,7 @@ use WC_Unit_Test_Case;
 /**
  * Tests for the WooPayments request objects and their send contracts.
  */
-class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
+class WooPaymentsApiRequestTest extends WC_Unit_Test_Case {
 
 	/**
 	 * The original API client registered in the container.
@@ -83,10 +83,10 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 	 * @testdox Unknown custom parameters set through the compatibility API survive unchanged.
 	 * @dataProvider concrete_request_provider
 	 *
-	 * @param class-string $native_class Native request class.
+	 * @param class-string $request_class Request class.
 	 */
-	public function test_unknown_custom_set_param_survives_unchanged( string $native_class ): void {
-		$request = $this->create_request( $native_class );
+	public function test_unknown_custom_set_param_survives_unchanged( string $request_class ): void {
+		$request = $this->create_request( $request_class );
 		$value   = array(
 			'nested'  => array( 'alpha' => 1 ),
 			'enabled' => false,
@@ -105,10 +105,10 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 request classes declare setters such as set_type_is() and set_loan_id_is() that native requests do not;
 	 * extensions call them on the objects handed to the wcpay_list_*_request filters.
 	 *
-	 * @param class-string $native_class Native request class.
+	 * @param class-string $request_class Request class.
 	 */
-	public function test_undeclared_filter_setter_sets_its_parameter( string $native_class ): void {
-		$request = $this->create_request( $native_class );
+	public function test_undeclared_filter_setter_sets_its_parameter( string $request_class ): void {
+		$request = $this->create_request( $request_class );
 		$value   = array( 'flxln_1', ' raw ' );
 
 		call_user_func( array( $request, 'set_extension_filter_is' ), $value );
@@ -120,19 +120,19 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox send() applies exactly the mapped legacy filter and transports its custom parameter.
+	 * @testdox send() applies exactly the mapped WooPayments extension filter and transports its custom parameter.
 	 * @dataProvider request_filter_contract_provider
 	 *
-	 * @param class-string $native_class Native request class.
-	 * @param string       $hook Legacy request filter.
-	 * @param string       $api Expected API path.
-	 * @param string       $method Expected HTTP method.
-	 * @param bool         $returns_raw Whether send should return the raw transport response.
+	 * @param class-string $request_class   Request class.
+	 * @param string       $hook            Legacy request filter.
+	 * @param string       $api             Expected API path.
+	 * @param string       $method          Expected HTTP method.
+	 * @param bool         $returns_raw     Whether send should return the raw transport response.
 	 * @param bool         $uses_user_token Whether transport should use the connection-owner token.
-	 * @param bool         $dynamic_hook Whether the operation assigns its hook dynamically.
+	 * @param bool         $dynamic_hook    Whether the operation assigns its hook dynamically.
 	 */
 	public function test_send_applies_distinct_filter_and_preserves_transport_semantics(
-		string $native_class,
+		string $request_class,
 		string $hook,
 		string $api,
 		string $method,
@@ -142,9 +142,9 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 	): void {
 		$hook_calls       = 0;
 		$unexpected_calls = 0;
-		$request          = $this->create_request( $native_class, $api, $method );
+		$request          = $this->create_request( $request_class, $api, $method );
 
-		if ( WooPaymentsFraudOutcomeTransactionsListRequest::class === $native_class ) {
+		if ( WooPaymentsFraudOutcomeTransactionsListRequest::class === $request_class ) {
 			$this->http_client->response['body'] = wp_json_encode(
 				array(
 					array(
@@ -196,9 +196,9 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 
 		$decoded_response = json_decode( (string) $this->http_client->response['body'], true );
 
-		if ( WooPaymentsApiRequest::class === $native_class || WooPaymentsReportingBalanceSummaryRequest::class === $native_class ) {
+		if ( WooPaymentsApiRequest::class === $request_class || WooPaymentsReportingBalanceSummaryRequest::class === $request_class ) {
 			$this->assertSame( $decoded_response, $result, 'Get_Request and reporting requests should retain their array formatter.' );
-		} elseif ( WooPaymentsFraudOutcomeTransactionsListRequest::class === $native_class ) {
+		} elseif ( WooPaymentsFraudOutcomeTransactionsListRequest::class === $request_class ) {
 			$this->assertSame( array(), $result, 'Fraud-outcome requests should apply their custom array formatter.' );
 		} else {
 			$this->assertInstanceOf( WooPaymentsResponse::class, $result, 'Normally formatted requests should return the Response type.' );
@@ -213,7 +213,7 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox The response is immutable ArrayAccess with an exact to_array view.
 	 */
-	public function test_legacy_response_array_access_and_to_array_contract(): void {
+	public function test_response_array_access_and_to_array_contract(): void {
 		$response_class = WooPaymentsResponse::class;
 		$data           = array( 'answer' => 42 );
 		$response       = new $response_class( $data );
@@ -230,7 +230,7 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string $operation Mutation operation.
 	 */
-	public function test_legacy_response_is_immutable( string $operation ): void {
+	public function test_response_is_immutable( string $operation ): void {
 		$response_class = WooPaymentsResponse::class;
 		$response       = new $response_class( array( 'answer' => 42 ) );
 
@@ -244,9 +244,9 @@ class WooPaymentsLegacyRequestCompatibilityTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox assign_hook keeps the oracle untyped override contract.
+	 * @testdox assign_hook keeps the untyped override contract.
 	 */
-	public function test_assign_hook_has_no_return_type_and_allows_oracle_shaped_override(): void {
+	public function test_assign_hook_has_no_return_type_and_allows_an_untyped_override(): void {
 		$method = new \ReflectionMethod( AbstractWooPaymentsApiRequest::class, 'assign_hook' );
 
 		$this->assertFalse( $method->hasReturnType(), 'assign_hook() should not add a return type absent from the oracle.' );
