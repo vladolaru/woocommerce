@@ -104,6 +104,8 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 					'has_active_loan' => true,
 					'loans'           => array( 'flxln_paid|paid', 'flxln_123456|active', array( 'not-a-loan' ) ),
 				),
+				// The platform's account answer (wpcom class-accounts-controller.php:1129-1161 at d761f9d3d85): a top-level status and
+				// current_deadline, and requirements with errors only, as client 11.1.0 reads them (includes/class-wc-payments-account.php:360-380).
 				'status'               => 'restricted_soon',
 				'current_deadline'     => 1781740800,
 				'requirements'         => array(
@@ -313,16 +315,16 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Data provider for cached account status mapping.
 	 *
+	 * Each row holds fields the platform's account answer carries (wpcom class-accounts-controller.php:1129-1161 at d761f9d3d85:
+	 * status, has_overdue_requirements), which client 11.1.0 reads (includes/class-wc-payments-account.php:360-380).
+	 *
 	 * @return array<string,array{array<string,mixed>,string}>
 	 */
 	public function account_status_data(): array {
 		return array(
-			'explicit status wins'       => array(
+			'platform status'            => array(
 				array(
-					'status'       => 'under_review',
-					'requirements' => array(
-						'disabled_reason' => 'requirements.fields_needed',
-					),
+					'status' => 'under_review',
 				),
 				'under_review',
 			),

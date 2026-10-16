@@ -538,20 +538,58 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve WooPayments Jetpack identity meta continuity.
+	 * The `get_identity` answer is the JSON success envelope client 11.1.0 sends (`class-woopay-tracker.php:128-133`) and
+	 * the shopper Tracks script reads as `data._ui` and `data._ut` (`client/blocks/assets/js/extensions/payment-methods/woopayments/tracks.js:81-95`).
+	 *
+	 * @testdox Should answer get_identity with the Jetpack identity in a JSON success envelope.
 	 */
 	public function test_tracks_identity_prefers_jetpack_identity_meta(): void {
 		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		update_user_meta( $user_id, 'jetpack_tracks_anon_id', 'jetpack:anon-id' );
 		wp_set_current_user( $user_id );
 
-		$sut = $this->create_controller();
+		$response = $this->capture_ajax_json( array( $this->create_controller(), 'handle_tracks_identity' ) );
 
-		$identity = $sut->get_or_create_tracks_identity_for_current_user();
-
-		$this->assertSame( 'anon', $identity['_ut'] );
-		$this->assertSame( 'jetpack:anon-id', $identity['_ui'] );
+		$this->assertSame(
+			array(
+				'success' => true,
+				'data'    => array(
+					'_ut' => 'anon',
+					'_ui' => 'jetpack:anon-id',
+				),
+			),
+			$response
+		);
 		$this->assertSame( '', get_user_meta( $user_id, '_woocommerce_tracks_anon_id', true ) );
+	}
+
+	/**
+	 * Run an AJAX handler that answers with wp_send_json() and return the decoded body.
+	 *
+	 * @param callable $handler AJAX handler.
+	 * @return mixed
+	 */
+	private function capture_ajax_json( callable $handler ) {
+		$die_handler = static function () {
+			return static function (): void {
+				throw new \WPAjaxDieContinueException();
+			};
+		};
+		add_filter( 'wp_doing_ajax', '__return_true' );
+		add_filter( 'wp_die_ajax_handler', $die_handler );
+
+		ob_start();
+		try {
+			$handler();
+		} catch ( \WPAjaxDieContinueException $e ) {
+			unset( $e );
+		} finally {
+			$body = (string) ob_get_clean();
+			remove_filter( 'wp_doing_ajax', '__return_true' );
+			remove_filter( 'wp_die_ajax_handler', $die_handler );
+		}
+
+		return json_decode( $body, true );
 	}
 
 	/**

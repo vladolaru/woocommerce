@@ -2820,7 +2820,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			'Multi-Currency flag off'                => array( 'the WooPayments Multi-Currency flag is off', 'EUR', '0', array(), null, 'pln', null, '100000|usd' ),
 			'USD enabled at a manual rate'           => array( 'USD is an enabled currency at a manual rate', 'PLN', null, array( 'PLN', 'USD' ), 'manual:0.23', 'pln', null, '434783|pln' ),
 			'USD at an automatic rate, rates stored' => array( 'USD has an automatic rate only in the rates cache (Multi-Currency off)', 'PLN', null, array( 'PLN', 'USD' ), 'stored:0.25:PLN', 'pln', null, '400000|pln' ),
-			'rates stored for another currency'      => array( 'the rates cache was fetched for the previous store currency', 'EUR', null, array( 'EUR', 'USD' ), 'stored:0.25:PLN', 'pln', null, '100000|usd' ),
+			'rates stored for another currency'      => array( 'the rates cache was fetched for the previous store currency (decided answer)', 'EUR', null, array( 'EUR', 'USD' ), 'stored:0.25:PLN', 'pln', null, '100000|usd' ),
 			'USD at an automatic rate, provider'     => array( 'USD has an automatic rate from a running rate provider', 'PLN', null, array( 'PLN', 'USD' ), 'provider:0.23', 'pln', null, '434783|pln' ),
 			'USD listed without a rate'              => array( 'USD is enabled but no rate is stored (decided answer)', 'PLN', '1', array( 'PLN', 'USD' ), null, 'pln', null, '100000|usd' ),
 			'USD not enabled'                        => array( 'the store currency differs from the account currency', 'EUR', null, array(), null, 'pln', null, '100000|eur' ),

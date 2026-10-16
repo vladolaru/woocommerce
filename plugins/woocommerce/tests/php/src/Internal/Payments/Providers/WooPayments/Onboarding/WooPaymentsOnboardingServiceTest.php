@@ -376,6 +376,8 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 					'referral_code'  => $referral_code,
 				);
 
+				// The platform's embedded KYC session answer (wpcom class-onboarding-controller.php:609-621 at d761f9d3d85),
+				// the fields client 11.1.0 reads (includes/class-wc-payments-onboarding-service.php:408-415).
 				return array(
 					'client_secret'   => 'accs_secret_native',
 					'expires_at'      => 1234567999,
@@ -1595,15 +1597,15 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 					'referral_code'  => $referral_code,
 				);
 
+				// The platform's embedded KYC session answer (wpcom class-onboarding-controller.php:609-621 at d761f9d3d85),
+				// the fields client 11.1.0 reads (includes/class-wc-payments-onboarding-service.php:408-415).
 				return array(
-					'client_secret'     => 'accs_secret_live',
-					'expires_at'        => 1234567999,
-					'account_id'        => 'acct_live_native',
-					'is_live'           => true,
-					'account_created'   => true,
-					'publishable_key'   => 'pk_live_native',
-					'payments_enabled'  => true,
-					'details_submitted' => true,
+					'client_secret'   => 'accs_secret_live',
+					'expires_at'      => 1234567999,
+					'account_id'      => 'acct_live_native',
+					'is_live'         => true,
+					'account_created' => true,
+					'publishable_key' => 'pk_live_native',
 				);
 			}
 		};
@@ -1738,7 +1740,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $settings );
 		$this->assertSame( 'no', $settings['test_mode'] );
 		$this->assertSame( 'pk_live_native', $account_service->get_publishable_key() );
-		$this->assertTrue( $account_service->can_process_payments() );
+		$this->assertFalse( $account_service->can_process_payments(), 'A live account that has only started KYC cannot take payments yet.' );
 	}
 
 	/**
@@ -2486,6 +2488,8 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			public function initialize_onboarding_embedded_kyc( bool $live_account, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), ?string $referral_code = null ): array {
 				unset( $live_account, $site_data, $user_data, $account_data, $actioned_notes, $referral_code );
 
+				// The platform's embedded KYC session answer (wpcom class-onboarding-controller.php:609-621 at d761f9d3d85),
+				// the fields client 11.1.0 reads (includes/class-wc-payments-onboarding-service.php:408-415).
 				return array_merge(
 					array(
 						'client_secret'   => 'accs_secret_finalized_native',
@@ -2719,6 +2723,8 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 				$this->actioned_notes_by_call['initialize_onboarding_embedded_kyc'] = $actioned_notes;
 				$this->enabled_at_platform_call                                     = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['upe_enabled_payment_method_ids'] ?? null;
 
+				// The platform's embedded KYC session answer (wpcom class-onboarding-controller.php:609-621 at d761f9d3d85),
+				// the fields client 11.1.0 reads (includes/class-wc-payments-onboarding-service.php:408-415).
 				return array_merge(
 					array(
 						'client_secret'   => 'accs_secret_native',
