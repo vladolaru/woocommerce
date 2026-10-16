@@ -283,14 +283,6 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			);
 		}
 
-		if ( ! $refund instanceof \WC_Order_Refund ) {
-			return new WP_Error(
-				'wcpay_refund_payment_failed',
-				__( 'Failed to create refund.', 'woocommerce' ),
-				array( 'status' => 500 )
-			);
-		}
-
 		return new WP_REST_Response(
 			array(
 				'id'       => $refund->get_id(),
@@ -818,9 +810,9 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			return $this->get_invalid_refund_amount_error();
 		}
 
-		$refund_amount = WooPaymentsCurrencyUtils::amount_from_minor_units( (int) $amount, (string) $order->get_currency() );
+		$refund_amount = WooPaymentsCurrencyUtils::amount_from_minor_units( $amount, (string) $order->get_currency() );
 		$remaining     = (float) $order->get_remaining_refund_amount();
-		if ( $refund_amount <= 0.0 || $refund_amount > $remaining ) {
+		if ( $refund_amount > $remaining ) {
 			return $this->get_invalid_refund_amount_error();
 		}
 
