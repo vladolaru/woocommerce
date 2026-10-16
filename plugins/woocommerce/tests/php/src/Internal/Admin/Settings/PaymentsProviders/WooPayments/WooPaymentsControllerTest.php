@@ -36,7 +36,7 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A `woopayments-ref` link from a store manager stores the sanitized code and redirects to the plugin's onboarding URL.
+	 * @testdox A `woopayments-ref` link from a store manager stores the sanitized code and redirects to the WooPayments extension's onboarding URL.
 	 *
 	 * Source: plugin 11.1.0 `WC_Payments_Account::maybe_redirect_onboarding_referral()` (the `woopayments-ref` argument and
 	 * `sanitize_text_field`) continuing with `WC_Payments_Redirect_Service::redirect_to_nox_flow( 'REFERRAL' )`.
@@ -64,7 +64,7 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 		);
 
 		try {
-			$this->create_controller( $this->create_native_onboarding_service() )->handle_referral_link();
+			$this->create_controller( $this->create_builtin_onboarding_service() )->handle_referral_link();
 			$this->fail( 'Expected the redirect to be intercepted.' );
 		} catch ( \RuntimeException $exception ) {
 			$this->assertSame( 'wp_redirect intercepted: ' . $expected, $exception->getMessage() );
@@ -86,17 +86,17 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A WooCommerce update drops the onboarding fields cache in every native state, and leaves the plugin's own cache alone.
+	 * @testdox A WooCommerce update drops the onboarding fields cache while the built-in WooPayments owns the runtime, and leaves the WooPayments extension's own cache alone.
 	 *
 	 * @testWith [true, 1]
 	 *           [false, 0]
 	 *
-	 * @param bool $native_owner Whether native owns the runtime.
-	 * @param int  $clears       Expected cache clears.
+	 * @param bool $builtin_owner Whether the built-in WooPayments owns the runtime.
+	 * @param int  $clears        Expected cache clears.
 	 */
-	public function test_woocommerce_update_clears_the_native_onboarding_fields_cache( bool $native_owner, int $clears ): void {
+	public function test_woocommerce_update_clears_the_onboarding_fields_cache( bool $builtin_owner, int $clears ): void {
 		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_owner );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_owner );
 		$account_service = $this->createMock( WooPaymentsAccountService::class );
 		$account_service->expects( $this->exactly( $clears ) )->method( 'clear_onboarding_fields_cache' );
 		wc_get_container()->replace( WooPaymentsAccountService::class, $account_service );
@@ -244,45 +244,45 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function provider_unrelated_requests(): array {
 		return array(
-			'Payments settings main page'  => array(
+			'Payments settings main page' => array(
 				array(
 					'page' => 'wc-settings',
 					'tab'  => 'checkout',
 				),
 			),
-			'other settings tab'           => array(
+			'other settings tab'          => array(
 				array(
 					'page' => 'wc-settings',
 					'tab'  => 'general',
 					'path' => '/woopayments/overview',
 				),
 			),
-			'offline payment method'       => array(
+			'offline payment method'      => array(
 				array(
 					'page' => 'wc-settings',
 					'tab'  => 'checkout',
 					'path' => '/offline/bacs',
 				),
 			),
-			'other gateway section'        => array(
+			'other gateway section'       => array(
 				array(
 					'page'    => 'wc-settings',
 					'tab'     => 'checkout',
 					'section' => 'bacs',
 				),
 			),
-			'WC Home'                      => array(
+			'WC Home'                     => array(
 				array(
 					'page' => 'wc-admin',
 				),
 			),
-			'wc-admin analytics'           => array(
+			'wc-admin analytics'          => array(
 				array(
 					'page' => 'wc-admin',
 					'path' => '/analytics/overview',
 				),
 			),
-			'unknown legacy payments path' => array(
+			'unknown payments path'       => array(
 				array(
 					'page' => 'wc-admin',
 					'path' => '/payments/unknown',
@@ -318,25 +318,25 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a real WooPayments service for a store without an account, while native owns onboarding.
+	 * Create a real WooPayments service for a store without an account, while the built-in WooPayments owns onboarding.
 	 *
 	 * @return WooPaymentsService
 	 */
-	private function create_native_onboarding_service(): WooPaymentsService {
+	private function create_builtin_onboarding_service(): WooPaymentsService {
 		$extension_runtime = $this->createMock( WooPaymentsExtensionRuntime::class );
 		$extension_runtime->method( 'is_loaded' )->willReturn( false );
-		$onboarding_adapter = $this->createMock( WooPaymentsPaymentsSettingsAdapter::class );
-		$onboarding_adapter->method( 'has_valid_account' )->willReturn( false );
+		$settings_adapter = $this->createMock( WooPaymentsPaymentsSettingsAdapter::class );
+		$settings_adapter->method( 'has_valid_account' )->willReturn( false );
 		$onboarding_service = new WooPaymentsOnboardingService();
 		$onboarding_service->init( $this->createMock( LegacyProxy::class ) );
-		$onboarding_adapter->method( 'store_referral_code' )->willReturnCallback( array( $onboarding_service, 'store_referral_code' ) );
+		$settings_adapter->method( 'store_referral_code' )->willReturnCallback( array( $onboarding_service, 'store_referral_code' ) );
 
 		$service = new WooPaymentsService();
 		$service->init( $this->createMock( PaymentsProviders::class ), $this->createMock( LegacyProxy::class ) );
 
 		// The service resolves its native collaborators on first use; set the doubles on the instance.
 		$collaborators = array(
-			'settings_adapter'  => $onboarding_adapter,
+			'settings_adapter'  => $settings_adapter,
 			'extension_runtime' => $extension_runtime,
 		);
 		foreach ( $collaborators as $property => $collaborator ) {
