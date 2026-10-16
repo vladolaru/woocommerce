@@ -1219,6 +1219,86 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Finalize answers that do not finish KYC, as the platform sends them.
+	 *
+	 * @return array<string,array{0:array<string,mixed>}>
+	 */
+	public function provide_unfinished_kyc_finalize_responses(): array {
+		return array(
+			// The platform's answer when the merchant left KYC before submitting the account details
+			// (wpcom class-onboarding-redirect-controller.php:425-456).
+			'early exit' => array(
+				array(
+					'success'           => false,
+					'account_id'        => 'acct_early_exit',
+					'details_submitted' => false,
+					'mode'              => 'live',
+					'promotion_id'      => null,
+				),
+			),
+			'empty body' => array( array() ),
+		);
+	}
+
+	/**
+	 * Client 11.1.0 finalize_embedded_kyc() throws "Failed to finalize onboarding session." (wcpay-onboarding-finalize-error,
+	 * 400) when the answer is empty or not a success (includes/class-wc-payments-onboarding-service.php:442-444), so the
+	 * Payments settings onboarding marks business verification failed and nothing is connected.
+	 *
+	 * @testdox KYC finalization refuses an answer that does not finish KYC and connects nothing.
+	 * @dataProvider provide_unfinished_kyc_finalize_responses
+	 *
+	 * @param array<string,mixed> $finalize_response Provider finalize response.
+	 */
+	public function test_kyc_finalize_route_refuses_an_unfinished_kyc( array $finalize_response ): void {
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$recorded = array();
+		add_filter(
+			'woocommerce_tracks_event_properties',
+			function ( $properties, $event_name ) use ( &$recorded ) {
+				$recorded[ $event_name ] = $properties;
+				return $properties;
+			},
+			10,
+			2
+		);
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		$this->arrange_kyc_finalize(
+			array( $this->get_finalized_account_data( array( 'is_live' => true ) ) ),
+			array( 'card' => true ),
+			$finalize_response
+		);
+		$enabled_before = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['enabled'] ?? null;
+		$controller     = new WooPaymentsRestController();
+		$controller->init( $this->getMockBuilder( Payments::class )->getMock(), $this->sut );
+		$server  = $this->create_rest_server_with_routes(
+			array(
+				static function () use ( $controller ) {
+					$controller->register_routes( true );
+				},
+			),
+			true
+		);
+		$request = new WP_REST_Request( 'POST', '/wc-admin/settings/payments/woopayments/onboarding/step/' . WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION . '/kyc_session/finish' );
+		$request->set_param( 'location', 'US' );
+		$request->set_param( 'source', WooPaymentsService::SESSION_ENTRY_LYS );
+
+		$response = $server->dispatch( $request );
+		$step     = get_option( WooPaymentsService::NOX_PROFILE_OPTION_KEY )['onboarding']['US']['steps'][ WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION ] ?? array();
+
+		$this->assertSame( 424, $response->get_status() );
+		$this->assertSame( 'Failed to finalize onboarding session.', $response->get_data()['message'] );
+		$this->assertArrayHasKey( WooPaymentsService::ONBOARDING_STEP_STATUS_FAILED, $step['statuses'] ?? array() );
+		$this->assertArrayNotHasKey( WooPaymentsService::ONBOARDING_STEP_STATUS_COMPLETED, $step['statuses'] ?? array() );
+		$this->assertSame( 'wcpay-onboarding-finalize-error', $step['data']['error']['code'] ?? null );
+		$this->assertSame( $enabled_before, get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['enabled'] ?? null );
+		$this->assertFalse( get_option( 'wcpay_kyc_submitted_date', false ) );
+		$this->assertArrayNotHasKey( 'wcadmin_' . WooPaymentsService::EVENT_PREFIX . 'onboarding_kyc_session_finished', $recorded );
+		$this->assertArrayHasKey( 'wcadmin_' . WooPaymentsService::EVENT_PREFIX . 'onboarding_step_failed', $recorded );
+	}
+
+	/**
 	 * @testdox Live KYC finalization never overwrites an existing KYC submission date.
 	 */
 	public function test_kyc_finalize_keeps_existing_kyc_submitted_date(): void {

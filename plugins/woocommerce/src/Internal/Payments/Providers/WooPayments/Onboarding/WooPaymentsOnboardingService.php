@@ -381,8 +381,12 @@ class WooPaymentsOnboardingService {
 	/**
 	 * Finish the embedded KYC session; like client 11.1.0 finalize_embedded_connection(), it applies no NOX picks.
 	 *
+	 * The platform answers `success: false` when the merchant left KYC before submitting the account details; like client
+	 * 11.1.0 finalize_embedded_kyc() (includes/class-wc-payments-onboarding-service.php:442-444), that is an error.
+	 *
 	 * @param string $source Onboarding source.
 	 * @return array
+	 * @throws WooPaymentsApiException When the platform did not finalize the session.
 	 */
 	private function finalize_embedded_kyc( string $source ): array {
 		$response = $this->get_api_client()->finalize_onboarding_embedded_kyc(
@@ -391,25 +395,27 @@ class WooPaymentsOnboardingService {
 			$this->get_actioned_inbox_notes()
 		);
 
-		if ( ! empty( $response['success'] ) ) {
-			$mode    = isset( $response['mode'] ) && is_scalar( $response['mode'] ) ? (string) $response['mode'] : '';
-			$is_live = 'live' === $mode;
-			if ( ! $this->sync_account_cache_from_response( $response, $is_live, false, true ) ) {
-				$this->get_account_service()->clear_cache();
-			}
-
-			$this->apply_kyc_connection( $is_live );
-			$this->clear_onboarding_data();
-
-			$response['params'] = array(
-				'promo'                    => isset( $response['promotion_id'] ) && is_scalar( $response['promotion_id'] ) ? (string) $response['promotion_id'] : '',
-				'from'                     => WooPaymentsService::FROM_NOX_IN_CONTEXT,
-				'source'                   => $source,
-				'wcpay-connection-success' => '1',
-			);
-
-			$this->refresh_account_after_kyc();
+		if ( empty( $response['success'] ) ) {
+			throw new WooPaymentsApiException( esc_html__( 'Failed to finalize onboarding session.', 'woocommerce' ), 'wcpay-onboarding-finalize-error', 400 );
 		}
+
+		$mode    = isset( $response['mode'] ) && is_scalar( $response['mode'] ) ? (string) $response['mode'] : '';
+		$is_live = 'live' === $mode;
+		if ( ! $this->sync_account_cache_from_response( $response, $is_live, false, true ) ) {
+			$this->get_account_service()->clear_cache();
+		}
+
+		$this->apply_kyc_connection( $is_live );
+		$this->clear_onboarding_data();
+
+		$response['params'] = array(
+			'promo'                    => isset( $response['promotion_id'] ) && is_scalar( $response['promotion_id'] ) ? (string) $response['promotion_id'] : '',
+			'from'                     => WooPaymentsService::FROM_NOX_IN_CONTEXT,
+			'source'                   => $source,
+			'wcpay-connection-success' => '1',
+		);
+
+		$this->refresh_account_after_kyc();
 
 		return $response;
 	}
