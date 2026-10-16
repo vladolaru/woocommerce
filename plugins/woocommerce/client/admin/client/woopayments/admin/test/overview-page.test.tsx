@@ -225,7 +225,6 @@ const createShell = ( overrides: Record< string, unknown > = {} ) => ( {
 		remind_me_later_todo_tasks: {},
 	},
 	is_connection_success_modal_dismissed: false,
-	wpcom_reconnect_url: '',
 	urls: {
 		overview_page: '',
 		settings: '',
@@ -1147,7 +1146,12 @@ describe( 'WooPaymentsOverviewPage', () => {
 					test_drive: true,
 					test_mode_onboarding: true,
 				},
-				wpcom_reconnect_url: 'https://wordpress.com/reconnect',
+				account_status: {
+					...createShell().account_status,
+					status: 'restricted',
+					details_submitted: false,
+				},
+				show_update_details_task: true,
 			} )
 		);
 		mockGetOverview.mockResolvedValue( createDepositsOverview() );
@@ -1155,9 +1159,9 @@ describe( 'WooPaymentsOverviewPage', () => {
 
 		render( <WooPaymentsOverviewPage /> );
 
-		// The reconnect task proves the task list rendered.
+		// The finish-setup task proves the task list rendered.
 		expect(
-			await screen.findByText( 'Reconnect WooPayments' )
+			await screen.findByText( 'Finish setting up WooPayments' )
 		).toBeInTheDocument();
 		expect(
 			screen.queryByText( 'Activate payments' )

@@ -36,9 +36,9 @@ const activeDisputes = [
 const getDisputeTasks = ( disputes: Record< string, unknown >[] ) =>
 	buildOverviewTasks( {
 		showUpdateDetailsTask: false,
-		shell: {
-			wpcom_reconnect_url: '',
-		} as unknown as Parameters< typeof buildOverviewTasks >[ 0 ][ 'shell' ],
+		shell: {} as unknown as Parameters<
+			typeof buildOverviewTasks
+		>[ 0 ][ 'shell' ],
 		disputes,
 		onOpenUpdateBusinessDetails: jest.fn(),
 	} );

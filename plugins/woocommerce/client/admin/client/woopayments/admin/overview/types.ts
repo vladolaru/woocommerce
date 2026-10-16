@@ -203,7 +203,6 @@ export interface WooPaymentsOverviewShell {
 	instant_deposits_previously_eligible?: boolean;
 	/** Client 11.1.0 `wcpaySettings.isInstantDepositNoticeDismissed`. */
 	is_instant_deposit_notice_dismissed?: boolean;
-	wpcom_reconnect_url: string;
 	urls: {
 		overview_page?: string;
 		settings?: string;

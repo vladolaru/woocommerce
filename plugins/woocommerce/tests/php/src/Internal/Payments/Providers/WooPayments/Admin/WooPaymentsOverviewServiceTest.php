@@ -198,7 +198,6 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'flxln_paid|paid', 'flxln_123456|active' ), $overview['account_loans']['loans'] );
 		$this->assertFalse( $overview['instant_deposits_previously_eligible'] );
 		$this->assertFalse( $overview['is_instant_deposit_notice_dismissed'] );
-		$this->assertSame( '', $overview['wpcom_reconnect_url'] );
 		$this->assertStringContainsString( 'path=/woopayments/overview', $overview['urls']['overview_page'] );
 		$this->assertStringContainsString( 'path=/woopayments/onboarding', $overview['urls']['setup'] );
 		$this->assertStringContainsString( 'path=/woopayments/settings', $overview['urls']['settings'] );
@@ -233,7 +232,6 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'dispute_readiness_overview' => true ), $overview['feature_flags'] );
 		$this->assertFalse( $overview['account_loans']['has_active_loan'] );
 		$this->assertSame( array(), $overview['account_loans']['loans'] );
-		$this->assertSame( '', $overview['wpcom_reconnect_url'] );
 	}
 
 	/**

@@ -53,7 +53,6 @@ const createShell = ( overrides: Record< string, unknown > = {} ) => ( {
 		remind_me_later_todo_tasks: {},
 	},
 	is_connection_success_modal_dismissed: false,
-	wpcom_reconnect_url: '',
 	urls: {
 		overview_page: '',
 		settings: '',

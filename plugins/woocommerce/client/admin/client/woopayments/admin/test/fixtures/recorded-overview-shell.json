@@ -1,7 +1,7 @@
 {
 	"_meta": {
 		"recording": "GET wp-json/wc-admin/settings/payments/woopayments/overview on the native :8889 store (Transact platform via wpcom-local, Stripe test mode, test-drive account), 2026-09-30, with the account_status.deposits projection in place",
-		"sanitized": "account id replaced with acct_test; store host replaced with store.example.com; can_process_payments removed (no longer sent); every other value verbatim",
+		"sanitized": "account id replaced with acct_test; store host replaced with store.example.com; can_process_payments and wpcom_reconnect_url removed (no longer sent); every other value verbatim",
 		"notes": "account_link is empty because the account is a test drive (client 11.1.0 class-wc-payments-account.php:382); minimum_scheduled_deposit_amounts is the platform list keyed by lowercase currency"
 	},
 	"response": {
@@ -88,7 +88,6 @@
 			"loans": []
 		},
 		"instant_deposits_previously_eligible": false,
-		"wpcom_reconnect_url": "",
 		"urls": {
 			"overview_page": "https://store.example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview",
 			"settings": "https://store.example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/settings",

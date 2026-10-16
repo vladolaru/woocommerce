@@ -81,7 +81,6 @@ describe( 'WooPayments Overview Stripe notifications banner chunk failure', () =
 				remind_me_later_todo_tasks: {},
 			},
 			is_connection_success_modal_dismissed: true,
-			wpcom_reconnect_url: '',
 			urls: {},
 		} );
 	} );

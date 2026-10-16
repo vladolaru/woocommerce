@@ -112,7 +112,6 @@ const createShell = ( connected = true, status = 'restricted' ) =>
 			remind_me_later_todo_tasks: {},
 		},
 		is_connection_success_modal_dismissed: true,
-		wpcom_reconnect_url: '',
 		urls: {},
 	} ) as unknown as Awaited<
 		ReturnType< typeof getWooPaymentsOverviewShell >

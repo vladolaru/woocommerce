@@ -82,7 +82,6 @@ export const createRecordedOverviewShell = (
 	feature_flags: { dispute_readiness_overview: true },
 	account_loans: { has_active_loan: false, loans: [] },
 	instant_deposits_previously_eligible: false,
-	wpcom_reconnect_url: '',
 	urls: {
 		overview_page:
 			'http://example.com/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/overview',

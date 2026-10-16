@@ -482,7 +482,6 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 				'remind_me_later_todo_tasks' => array(),
 			),
 			'is_connection_success_modal_dismissed' => false,
-			'wpcom_reconnect_url'                   => '',
 			'urls'                                  => array(
 				'overview_page' => 'https://example.com/overview',
 			),

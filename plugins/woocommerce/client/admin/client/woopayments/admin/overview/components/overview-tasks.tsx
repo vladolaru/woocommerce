@@ -174,49 +174,6 @@ const buildUpdateBusinessDetailsTask = ( {
 	};
 };
 
-// Client 11.1.0 `overview/task-list/tasks/reconnect-task.tsx:13-53`.
-const buildReconnectTask = (
-	wpcomReconnectUrl: string
-): WooPaymentsOverviewTask | null => {
-	if ( ! wpcomReconnectUrl ) {
-		return null;
-	}
-
-	return {
-		key: 'reconnect-wpcom-user',
-		level: 1,
-		title: sprintf(
-			/* translators: %s: Payment provider name. */
-			__( 'Reconnect %s', 'woocommerce' ),
-			'WooPayments'
-		),
-		// The client's expandable task renders this as additional info above the button; native's tasks do not expand, so it goes in the content.
-		content: (
-			<div className="woocommerce-task__additional-info">
-				{ sprintf(
-					/* translators: %s: Payment provider name. */
-					__(
-						'%s is missing a connected WordPress.com account. Some functionality will be limited without a connected account.',
-						'woocommerce'
-					),
-					'WooPayments'
-				) }
-			</div>
-		),
-		actionLabel: __( 'Reconnect', 'woocommerce' ),
-		href: addQueryArgs( wpcomReconnectUrl, {
-			from: 'WCPAY_OVERVIEW',
-			source: 'wcpay-reconnect-wpcom-user-task',
-		} ),
-		onClick: () =>
-			recordEvent( 'wcpay_overview_task_click', {
-				task: 'reconnect-wpcom',
-				source: 'wcpay-reconnect-wpcom-task',
-			} ),
-		showActionButton: true,
-	};
-};
-
 // Client 11.1.0 `disputes/utils.ts:41-61` `isDueWithin()`: due within the window and not yet past due.
 export const isDisputeDueWithinDays = (
 	dispute: WooPaymentsOverviewDispute,
@@ -430,7 +387,6 @@ export const buildOverviewTasks = ( {
 				shell,
 				onOpenUpdateBusinessDetails,
 			} ),
-		buildReconnectTask( shell.wpcom_reconnect_url ),
 		buildDisputeTask( disputes ),
 		// No go-live task: client 11.1.0 `overview/index.js:105` calls getTasks() without showGoLiveTask, so the
 		// task shows only on WC Home (`WooPaymentsGoLiveTask` and `woopayments/home-tasks/go-live-task.tsx`).
