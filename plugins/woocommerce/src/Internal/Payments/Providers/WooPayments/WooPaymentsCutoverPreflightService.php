@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsLegacySubscriptionsGuard;
@@ -118,13 +117,6 @@ class WooPaymentsCutoverPreflightService {
 	private ?WooPaymentsNativeApiClientAdapter $native_rate_api_client = null;
 
 	/**
-	 * Native admin navigation owner.
-	 *
-	 * @var WooPaymentsAdminNavigationController|null
-	 */
-	private ?WooPaymentsAdminNavigationController $admin_navigation_controller = null;
-
-	/**
 	 * Request-local reconciliation failures keyed by blog ID.
 	 *
 	 * @var array<int,array<int,string>>
@@ -208,9 +200,6 @@ class WooPaymentsCutoverPreflightService {
 		$failures = array_merge( $failures, $this->get_platform_connection_service()->get_cutover_preflight_failures() );
 		if ( $this->has_unavailable_multi_currency_rate_provider() ) {
 			$failures[] = 'multi_currency_rates_unavailable';
-		}
-		if ( ! $this->get_admin_navigation_controller()->are_all_available_routes_registered() ) {
-			$failures[] = 'builtin_admin_surfaces_unavailable';
 		}
 		if ( array() !== $this->get_pending_operational_queue_hooks() ) {
 			$failures[] = 'operational_queue_hooks_unhandled';
@@ -640,18 +629,5 @@ class WooPaymentsCutoverPreflightService {
 		}
 
 		return $this->native_rate_api_client;
-	}
-
-	/**
-	 * Get the native admin navigation owner, resolving it on first use.
-	 *
-	 * @return WooPaymentsAdminNavigationController
-	 */
-	private function get_admin_navigation_controller(): WooPaymentsAdminNavigationController {
-		if ( null === $this->admin_navigation_controller ) {
-			$this->admin_navigation_controller = wc_get_container()->get( WooPaymentsAdminNavigationController::class );
-		}
-
-		return $this->admin_navigation_controller;
 	}
 }

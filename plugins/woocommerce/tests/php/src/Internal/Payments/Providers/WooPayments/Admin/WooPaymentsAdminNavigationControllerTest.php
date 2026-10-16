@@ -42,11 +42,11 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	private array $original_payment_gateways;
 
 	/**
-	 * Controllers created by the test.
+	 * Onboarding redirects of the controllers created by the test, keyed by the controller's object ID.
 	 *
-	 * @var WooPaymentsAdminNavigationController[]
+	 * @var array<int,WooPaymentsOnboardingRedirect>
 	 */
-	private array $controllers = array();
+	private array $onboarding_redirects = array();
 
 	/**
 	 * Set up test fixtures.
@@ -63,8 +63,8 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		global $submenu;
 
-		foreach ( $this->controllers as $controller ) {
-			remove_action( 'admin_init', array( $controller, 'maybe_redirect_to_onboarding' ), 16 );
+		foreach ( $this->onboarding_redirects as $onboarding_redirect ) {
+			remove_action( 'admin_init', array( $onboarding_redirect, 'maybe_redirect' ), 16 );
 		}
 		WC()->payment_gateways()->payment_gateways = $this->original_payment_gateways;
 
@@ -106,15 +106,6 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		remove_action( 'adminmenu', array( $sut, 'open_payments_menu' ) );
 		remove_action( 'admin_menu', array( $sut, 'add_menu_items' ), 70 );
 		remove_action( 'admin_init', array( $sut, 'redirect_payments_paths' ), 10 );
-	}
-
-	/**
-	 * @testdox Should resolve every published admin route through the canonical admin route inventory.
-	 */
-	public function test_all_published_admin_routes_are_registered(): void {
-		$sut = $this->create_controller( true );
-
-		$this->assertTrue( $sut->are_all_available_routes_registered() );
 	}
 
 	/**
@@ -1496,11 +1487,10 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$sut->register();
 
 		// Client 11.1.0 WC_Payments_Admin::init_hooks() hooks its child-page redirect on admin_init priority 16.
-		$this->assertSame( 16, has_action( 'admin_init', array( $sut, 'maybe_redirect_to_onboarding' ) ) );
+		$this->assertSame( 16, has_action( 'admin_init', array( $this->onboarding_redirects[ spl_object_id( $sut ) ], 'maybe_redirect' ) ) );
 
 		remove_action( 'admin_menu', array( $sut, 'add_menu_items' ), 70 );
 		remove_action( 'admin_init', array( $sut, 'redirect_payments_paths' ), 10 );
-		remove_action( 'admin_init', array( $sut, 'maybe_redirect_to_onboarding' ), 16 );
 	}
 
 	/**
@@ -1863,7 +1853,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ), 10, 1 );
 
 		try {
-			$sut->maybe_redirect_to_onboarding();
+			$this->onboarding_redirects[ spl_object_id( $sut ) ]->maybe_redirect();
 		} catch ( \RuntimeException $exception ) {
 			$this->assertSame( 'wp_redirect intercepted', $exception->getMessage() );
 		}
@@ -1925,7 +1915,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$onboarding_redirect = new WooPaymentsOnboardingRedirect();
 		$onboarding_redirect->init( $arbiter, $api_client, $account_service );
 		$controller->init( $arbiter, $account_service, $badge_service, $onboarding_redirect );
-		$this->controllers[] = $controller;
+		$this->onboarding_redirects[ spl_object_id( $controller ) ] = $onboarding_redirect;
 
 		return $controller;
 	}
@@ -1953,7 +1943,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$onboarding_redirect = new WooPaymentsOnboardingRedirect();
 		$onboarding_redirect->init( $arbiter, $api_client, $account_service );
 		$controller->init( $arbiter, $account_service, $this->create_badge_service(), $onboarding_redirect );
-		$this->controllers[] = $controller;
+		$this->onboarding_redirects[ spl_object_id( $controller ) ] = $onboarding_redirect;
 
 		return $controller;
 	}

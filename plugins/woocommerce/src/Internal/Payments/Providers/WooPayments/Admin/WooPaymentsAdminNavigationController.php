@@ -244,7 +244,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 
 		add_action( 'admin_init', array( $this, 'redirect_payments_paths' ) );
 
-		add_action( 'admin_init', array( $this, 'maybe_redirect_to_onboarding' ), self::ONBOARDING_REDIRECT_HOOK_PRIORITY );
+		add_action( 'admin_init', array( $this->onboarding_redirect, 'maybe_redirect' ), self::ONBOARDING_REDIRECT_HOOK_PRIORITY );
 
 		add_filter( 'submenu_file', array( $this, 'highlight_current_payments_submenu' ) );
 
@@ -380,19 +380,6 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 
 		wp_safe_redirect( $redirect_url );
 		exit;
-	}
-
-	/**
-	 * Redirect the WooPayments pages to onboarding without a working connection and a valid account.
-	 *
-	 * Runs at ONBOARDING_REDIRECT_HOOK_PRIORITY; WooPaymentsOnboardingRedirect decides.
-	 *
-	 * @since 11.2.0
-	 *
-	 * @return void
-	 */
-	public function maybe_redirect_to_onboarding(): void {
-		$this->onboarding_redirect->maybe_redirect();
 	}
 
 	/**
@@ -633,19 +620,6 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 		);
 
 		return $this->access;
-	}
-
-	/**
-	 * Tell whether every page in the availability map is a route the WooPayments admin pages register
-	 * (`REGISTERED_ROUTE_PATHS`).
-	 *
-	 * @internal
-	 * @return bool
-	 */
-	public function are_all_available_routes_registered(): bool {
-		$available_route_paths = array_keys( $this->get_admin_route_availability()['allowedRoutes'] );
-
-		return array() === array_diff( $available_route_paths, self::REGISTERED_ROUTE_PATHS );
 	}
 
 	/**
