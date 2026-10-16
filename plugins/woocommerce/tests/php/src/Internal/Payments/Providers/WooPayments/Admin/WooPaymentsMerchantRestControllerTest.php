@@ -126,7 +126,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 			->getMock();
 
 		$this->sut = new WooPaymentsMerchantRestController();
-		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, null, null, $this->mock_api_client );
+		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $this->createMock( WooPaymentsAdminNoticeService::class ), new WooPaymentsApplePayDomainService(), $this->mock_api_client );
 		$this->server = $this->create_rest_server_with_routes(
 			array(
 				function () {
@@ -188,7 +188,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 			->method( 'record_action' )
 			->with( 'test_to_live', 'shown', null )
 			->willReturn( true );
-		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
+		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service, new WooPaymentsApplePayDomainService(), $this->mock_api_client );
 		$this->sut->register_routes( true );
 
 		$request  = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/test_to_live/shown' );
@@ -196,13 +196,6 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( array( 'success' => true ), $response->get_data() );
-	}
-
-	/**
-	 * @testdox Should not register notice actions without the notice service.
-	 */
-	public function test_admin_notice_route_is_dormant_without_service(): void {
-		$this->assertSame( 404, $this->server->dispatch( new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/test_to_live/shown' ) )->get_status() );
 	}
 
 	/**
@@ -327,7 +320,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 * @return \WP_REST_Response
 	 */
 	private function dispatch_apple_pay_domain_error_shown( ?string $error_id ): \WP_REST_Response {
-		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, null, new WooPaymentsApplePayDomainService() );
+		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $this->createMock( WooPaymentsAdminNoticeService::class ), new WooPaymentsApplePayDomainService(), $this->mock_api_client );
 		$this->sut->register_routes( true );
 
 		$request = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/apple_pay_domain_error/shown' );
@@ -357,7 +350,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	public function test_record_admin_notice_action_rejects_anonymous_user(): void {
 		$notice_service = $this->createMock( WooPaymentsAdminNoticeService::class );
 		$notice_service->expects( $this->never() )->method( 'record_action' );
-		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
+		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service, new WooPaymentsApplePayDomainService(), $this->mock_api_client );
 		$this->sut->register_routes( true );
 		wp_set_current_user( 0 );
 
@@ -373,7 +366,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	public function test_record_admin_notice_action_rejects_non_manager(): void {
 		$notice_service = $this->createMock( WooPaymentsAdminNoticeService::class );
 		$notice_service->expects( $this->never() )->method( 'record_action' );
-		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
+		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service, new WooPaymentsApplePayDomainService(), $this->mock_api_client );
 		$this->sut->register_routes( true );
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'subscriber' ) ) );
 
@@ -387,7 +380,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	public function test_record_admin_notice_action_rejects_invalid_request(): void {
 		$notice_service = $this->createMock( WooPaymentsAdminNoticeService::class );
 		$notice_service->expects( $this->never() )->method( 'record_action' );
-		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
+		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service, new WooPaymentsApplePayDomainService(), $this->mock_api_client );
 		$this->sut->register_routes( true );
 
 		$this->assertSame( 404, $this->server->dispatch( new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/unknown/shown' ) )->get_status() );
@@ -411,7 +404,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 			}
 		);
 		$notice_service->init( $this->mock_account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
-		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service );
+		$this->sut->init( $this->mock_settings_service, $this->mock_runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $notice_service, new WooPaymentsApplePayDomainService(), $this->mock_api_client );
 		$this->sut->register_routes( true );
 
 		$request = new WP_REST_Request( 'POST', self::ENDPOINT . '/admin-notices/test_to_live/' . $action );
@@ -1506,28 +1499,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 			->willReturn( false );
 
 		$sut = new WooPaymentsMerchantRestController();
-		$sut->init( $this->mock_settings_service, $runtime_arbiter );
-		$sut->register_routes( true );
-
-		$routes = $this->server->get_routes();
-
-		$this->assertArrayNotHasKey( '/wc/v3/payments/settings', $routes );
-		$this->assertArrayNotHasKey( '/wc/v3/payments/pm-promotions', $routes );
-		$this->assertArrayNotHasKey( '/wc/v3/payments/file', $routes );
-		$this->assertArrayHasKey( self::ENDPOINT . '/account', $routes );
-	}
-
-	/**
-	 * @testdox Should not register WooPayments settings routes when no runtime arbiter is wired (fail closed).
-	 */
-	public function test_settings_routes_are_not_registered_without_runtime_arbiter(): void {
-		global $wp_rest_server;
-
-		$wp_rest_server = new WP_REST_Server();
-		$this->server   = $wp_rest_server;
-
-		$sut = new WooPaymentsMerchantRestController();
-		$sut->init( $this->mock_settings_service );
+		$sut->init( $this->mock_settings_service, $runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $this->createMock( WooPaymentsAdminNoticeService::class ), new WooPaymentsApplePayDomainService(), $this->mock_api_client );
 		$sut->register_routes( true );
 
 		$routes = $this->server->get_routes();
@@ -1556,7 +1528,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 			->willReturn( true );
 
 		$sut = new WooPaymentsMerchantRestController();
-		$sut->init( $this->mock_settings_service, $runtime_arbiter );
+		$sut->init( $this->mock_settings_service, $runtime_arbiter, $this->mock_pm_promotions_service, $this->mock_overview_service, $this->mock_account_service, $this->createMock( WooPaymentsAdminNoticeService::class ), new WooPaymentsApplePayDomainService(), $this->mock_api_client );
 		$sut->register_routes( true );
 
 		$routes = $this->server->get_routes();
@@ -1889,66 +1861,5 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 5 * MINUTE_IN_SECONDS, $reflection->getValue() );
 		$this->assertLessThan( DAY_IN_SECONDS, $reflection->getValue() );
-	}
-
-	/**
-	 * @testdox Should register the public file REST serve filter at most once across repeated dispatches.
-	 */
-	public function test_get_public_settings_file_registers_serve_filter_once(): void {
-		// File object and file contents shapes from client 11.1.0 includes/admin/class-wc-rest-payments-files-controller.php:147 and :174, trimmed.
-		$this->mock_api_client
-			->method( 'get_file' )
-			->with( 'file_test_logo', false )
-			->willReturn(
-				array(
-					'id'      => 'file_test_logo',
-					'purpose' => 'business_logo',
-				)
-			);
-		$this->mock_api_client
-			->method( 'get_file_contents' )
-			->with( 'file_test_logo', false )
-			->willReturn(
-				array(
-					'content_type' => 'image/png',
-					'file_content' => 'TE9HTw==',
-				)
-			);
-
-		$request = new WP_REST_Request( 'GET', '/wc/v3/payments/file/file_test_logo' );
-		$this->server->dispatch( $request );
-		$this->server->dispatch( $request );
-
-		$callback = array( $this->sut, 'serve_public_file_response' );
-		$this->assertNotFalse( has_filter( 'rest_pre_serve_request', $callback ) );
-		$this->assertSame( 1, $this->count_filter_callbacks( 'rest_pre_serve_request', $callback ) );
-
-		remove_filter( 'rest_pre_serve_request', $callback );
-	}
-
-	/**
-	 * Count how many times a specific callback is registered on a hook.
-	 *
-	 * @param string $hook     The hook name.
-	 * @param mixed  $callback The callback to count.
-	 * @return int
-	 */
-	private function count_filter_callbacks( string $hook, $callback ): int {
-		global $wp_filter;
-
-		if ( ! isset( $wp_filter[ $hook ] ) ) {
-			return 0;
-		}
-
-		$count = 0;
-		foreach ( $wp_filter[ $hook ]->callbacks as $callbacks ) {
-			foreach ( $callbacks as $registered ) {
-				if ( $registered['function'] === $callback ) {
-					++$count;
-				}
-			}
-		}
-
-		return $count;
 	}
 }

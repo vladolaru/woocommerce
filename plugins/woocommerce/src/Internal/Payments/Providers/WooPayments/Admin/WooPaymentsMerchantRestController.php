@@ -70,58 +70,58 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	/**
 	 * Settings service.
 	 *
-	 * @var WooPaymentsSettingsService|null
+	 * @var WooPaymentsSettingsService
 	 */
-	private ?WooPaymentsSettingsService $settings_service = null;
+	private WooPaymentsSettingsService $settings_service;
 
 	/**
 	 * Payment method promotions service.
 	 *
-	 * @var WooPaymentsPmPromotionsService|null
+	 * @var WooPaymentsPmPromotionsService
 	 */
-	private ?WooPaymentsPmPromotionsService $pm_promotions_service = null;
+	private WooPaymentsPmPromotionsService $pm_promotions_service;
 
 	/**
 	 * Overview service.
 	 *
-	 * @var WooPaymentsOverviewService|null
+	 * @var WooPaymentsOverviewService
 	 */
-	private ?WooPaymentsOverviewService $overview_service = null;
+	private WooPaymentsOverviewService $overview_service;
 
 	/**
 	 * Account service.
 	 *
-	 * @var WooPaymentsAccountService|null
+	 * @var WooPaymentsAccountService
 	 */
-	private ?WooPaymentsAccountService $account_service = null;
+	private WooPaymentsAccountService $account_service;
 
 	/**
 	 * Current-user settings notice state service.
 	 *
-	 * @var WooPaymentsAdminNoticeService|null
+	 * @var WooPaymentsAdminNoticeService
 	 */
-	private ?WooPaymentsAdminNoticeService $admin_notice_service = null;
+	private WooPaymentsAdminNoticeService $admin_notice_service;
 
 	/**
 	 * Apple Pay domain service, for the settings notice display acknowledgement.
 	 *
-	 * @var WooPaymentsApplePayDomainService|null
+	 * @var WooPaymentsApplePayDomainService
 	 */
-	private ?WooPaymentsApplePayDomainService $apple_pay_domain_service = null;
+	private WooPaymentsApplePayDomainService $apple_pay_domain_service;
 
 	/**
 	 * Runtime arbiter.
 	 *
-	 * @var WooPaymentsRuntimeArbiter|null
+	 * @var WooPaymentsRuntimeArbiter
 	 */
-	private ?WooPaymentsRuntimeArbiter $runtime_arbiter = null;
+	private WooPaymentsRuntimeArbiter $runtime_arbiter;
 
 	/**
 	 * WooPayments API client, for the settings file routes.
 	 *
-	 * @var WooPaymentsApiClient|null
+	 * @var WooPaymentsApiClient
 	 */
-	private ?WooPaymentsApiClient $api_client = null;
+	private WooPaymentsApiClient $api_client;
 
 	/**
 	 * Get the WooCommerce REST API namespace for the class.
@@ -142,40 +142,36 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 			$this->register_settings_routes( $override );
 		}
 
-		if ( null !== $this->admin_notice_service ) {
-			register_rest_route(
-				$this->route_namespace,
-				'/' . $this->rest_base . '/admin-notices/(?P<notice_id>test_to_live|post_kyc_activation|one_and_done)/(?P<action>shown|dismiss|snooze|cta)',
-				array(
-					'methods'             => \WP_REST_Server::CREATABLE,
-					'callback'            => fn( $request ) => $this->run( $request, 'record_admin_notice_action' ),
-					'permission_callback' => fn( $request ) => $this->check_admin_notice_permissions( $request ),
-				),
-				$override
-			);
-		}
+		register_rest_route(
+			$this->route_namespace,
+			'/' . $this->rest_base . '/admin-notices/(?P<notice_id>test_to_live|post_kyc_activation|one_and_done)/(?P<action>shown|dismiss|snooze|cta)',
+			array(
+				'methods'             => \WP_REST_Server::CREATABLE,
+				'callback'            => fn( $request ) => $this->run( $request, 'record_admin_notice_action' ),
+				'permission_callback' => fn( $request ) => $this->check_admin_notice_permissions( $request ),
+			),
+			$override
+		);
 
-		if ( null !== $this->apple_pay_domain_service ) {
-			// Same notice "shown" route family; the Apple Pay error is site state, not a per-user notice.
-			register_rest_route(
-				$this->route_namespace,
-				'/' . $this->rest_base . '/admin-notices/apple_pay_domain_error/shown',
-				array(
-					'methods'             => \WP_REST_Server::CREATABLE,
-					'callback'            => fn( $request ) => $this->run( $request, 'record_apple_pay_domain_error_shown' ),
-					'permission_callback' => fn( $request ) => $this->check_admin_notice_permissions( $request ),
-					'args'                => array(
-						'error_id' => array(
-							'description' => __( 'SHA-256 identifier of the displayed Apple Pay domain error.', 'woocommerce' ),
-							'type'        => 'string',
-							'pattern'     => '^[a-f0-9]{64}$',
-							'required'    => true,
-						),
+		// Same notice "shown" route family; the Apple Pay error is site state, not a per-user notice.
+		register_rest_route(
+			$this->route_namespace,
+			'/' . $this->rest_base . '/admin-notices/apple_pay_domain_error/shown',
+			array(
+				'methods'             => \WP_REST_Server::CREATABLE,
+				'callback'            => fn( $request ) => $this->run( $request, 'record_apple_pay_domain_error_shown' ),
+				'permission_callback' => fn( $request ) => $this->check_admin_notice_permissions( $request ),
+				'args'                => array(
+					'error_id' => array(
+						'description' => __( 'SHA-256 identifier of the displayed Apple Pay domain error.', 'woocommerce' ),
+						'type'        => 'string',
+						'pattern'     => '^[a-f0-9]{64}$',
+						'required'    => true,
 					),
 				),
-				$override
-			);
-		}
+			),
+			$override
+		);
 
 		register_rest_route(
 			$this->route_namespace,
@@ -208,18 +204,18 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	/**
 	 * Initialize the class instance.
 	 *
-	 * @param WooPaymentsSettingsService|null       $settings_service      Settings service.
-	 * @param WooPaymentsRuntimeArbiter|null        $runtime_arbiter       Runtime arbiter.
-	 * @param WooPaymentsPmPromotionsService|null   $pm_promotions_service Payment method promotions service.
-	 * @param WooPaymentsOverviewService|null       $overview_service      Overview service.
-	 * @param WooPaymentsAccountService|null        $account_service       Account service.
-	 * @param WooPaymentsAdminNoticeService|null    $admin_notice_service  Optional current-user settings notice service.
-	 * @param WooPaymentsApplePayDomainService|null $apple_pay_domain_service Optional Apple Pay domain service.
-	 * @param WooPaymentsApiClient|null             $api_client            Optional WooPayments API client.
+	 * @param WooPaymentsSettingsService       $settings_service         Settings service.
+	 * @param WooPaymentsRuntimeArbiter        $runtime_arbiter          Runtime arbiter.
+	 * @param WooPaymentsPmPromotionsService   $pm_promotions_service    Payment method promotions service.
+	 * @param WooPaymentsOverviewService       $overview_service         Overview service.
+	 * @param WooPaymentsAccountService        $account_service          Account service.
+	 * @param WooPaymentsAdminNoticeService    $admin_notice_service     Current-user settings notice service.
+	 * @param WooPaymentsApplePayDomainService $apple_pay_domain_service Apple Pay domain service.
+	 * @param WooPaymentsApiClient             $api_client               WooPayments API client.
 	 *
 	 * @internal
 	 */
-	final public function init( ?WooPaymentsSettingsService $settings_service = null, ?WooPaymentsRuntimeArbiter $runtime_arbiter = null, ?WooPaymentsPmPromotionsService $pm_promotions_service = null, ?WooPaymentsOverviewService $overview_service = null, ?WooPaymentsAccountService $account_service = null, ?WooPaymentsAdminNoticeService $admin_notice_service = null, ?WooPaymentsApplePayDomainService $apple_pay_domain_service = null, ?WooPaymentsApiClient $api_client = null ): void {
+	final public function init( WooPaymentsSettingsService $settings_service, WooPaymentsRuntimeArbiter $runtime_arbiter, WooPaymentsPmPromotionsService $pm_promotions_service, WooPaymentsOverviewService $overview_service, WooPaymentsAccountService $account_service, WooPaymentsAdminNoticeService $admin_notice_service, WooPaymentsApplePayDomainService $apple_pay_domain_service, WooPaymentsApiClient $api_client ): void {
 		$this->settings_service      = $settings_service;
 		$this->runtime_arbiter       = $runtime_arbiter;
 		$this->pm_promotions_service = $pm_promotions_service;
@@ -383,7 +379,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @return bool
 	 */
 	private function should_register_settings_routes(): bool {
-		return null !== $this->runtime_arbiter && $this->runtime_arbiter->is_builtin_owner();
+		return $this->runtime_arbiter->is_builtin_owner();
 	}
 
 	/**
@@ -738,7 +734,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 			);
 		}
 
-		if ( 'JP' === $this->get_account_service()->get_account_country() && '+81' !== substr( $phone, 0, 3 ) ) {
+		if ( 'JP' === $this->account_service->get_account_country() && '+81' !== substr( $phone, 0, 3 ) ) {
 			return new WP_Error(
 				'rest_invalid_pattern',
 				__( 'Error: Invalid Japanese phone number: ', 'woocommerce' ) . $phone
@@ -779,18 +775,6 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 		return true;
 	}
 
-	/**
-	 * Get the account service set by init(), or the container's when init() did not set it.
-	 *
-	 * @return WooPaymentsAccountService
-	 */
-	private function get_account_service(): WooPaymentsAccountService {
-		if ( null === $this->account_service ) {
-			$this->account_service = wc_get_container()->get( WooPaymentsAccountService::class );
-		}
-
-		return $this->account_service;
-	}
 
 	/**
 	 * Get a REST arg schema for string arrays.
@@ -873,7 +857,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 */
 	protected function get_account_summary() {
 		try {
-			$summary = $this->get_overview_service()->get_account_summary();
+			$summary = $this->overview_service->get_account_summary();
 		} catch ( Exception $e ) {
 			return new WP_Error( 'woocommerce_rest_woopayments_account_error', $e->getMessage(), array( 'status' => WP_Http::INTERNAL_SERVER_ERROR ) );
 		}
@@ -888,7 +872,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 */
 	protected function get_overview() {
 		try {
-			$overview = $this->get_overview_service()->get_overview();
+			$overview = $this->overview_service->get_overview();
 		} catch ( Exception $e ) {
 			return new WP_Error( 'woocommerce_rest_woopayments_overview_error', $e->getMessage(), array( 'status' => WP_Http::INTERNAL_SERVER_ERROR ) );
 		}
@@ -902,7 +886,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @return WP_REST_Response The response.
 	 */
 	protected function get_settings(): WP_REST_Response {
-		return rest_ensure_response( $this->get_settings_service()->get_settings() );
+		return rest_ensure_response( $this->settings_service->get_settings() );
 	}
 
 	/**
@@ -913,7 +897,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @return WP_Error|WP_REST_Response The response or error.
 	 */
 	protected function update_settings( WP_REST_Request $request ) {
-		$result = $this->get_settings_service()->update_settings( $request->get_params() );
+		$result = $this->settings_service->update_settings( $request->get_params() );
 		if ( is_wp_error( $result ) ) {
 			// A platform rejection of the account update with no field the page shows errors under answers `{ server_error }`
 			// with a 400, which the settings page shows as a notice.
@@ -937,7 +921,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	protected function update_settings_option( WP_REST_Request $request ) {
 		$option_name = (string) $request->get_param( 'option_name' );
 		$value       = $request->get_param( 'value' );
-		$result      = $this->get_settings_service()->update_option( $option_name, $value );
+		$result      = $this->settings_service->update_option( $option_name, $value );
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
@@ -951,7 +935,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @return WP_REST_Response The response.
 	 */
 	protected function get_pm_promotions(): WP_REST_Response {
-		return rest_ensure_response( $this->get_pm_promotions_service()->get_visible_promotions() ?? array() );
+		return rest_ensure_response( $this->pm_promotions_service->get_visible_promotions() ?? array() );
 	}
 
 	/**
@@ -964,10 +948,6 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @return WP_Error|WP_REST_Response
 	 */
 	protected function record_admin_notice_action( WP_REST_Request $request ) {
-		if ( null === $this->admin_notice_service ) {
-			return new WP_Error( 'woocommerce_woopayments_notice_unavailable', __( 'The notice is unavailable.', 'woocommerce' ), array( 'status' => WP_Http::SERVICE_UNAVAILABLE ) );
-		}
-
 		$stage = $request->get_param( 'stage' );
 		if ( null !== $stage && ! is_int( $stage ) ) {
 			return new WP_Error( 'woocommerce_woopayments_invalid_notice_action', __( 'Invalid notice action.', 'woocommerce' ), array( 'status' => WP_Http::BAD_REQUEST ) );
@@ -994,10 +974,6 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * @return WP_Error|WP_REST_Response
 	 */
 	protected function record_apple_pay_domain_error_shown( WP_REST_Request $request ) {
-		if ( null === $this->apple_pay_domain_service ) {
-			return new WP_Error( 'woocommerce_woopayments_notice_unavailable', __( 'The notice is unavailable.', 'woocommerce' ), array( 'status' => WP_Http::SERVICE_UNAVAILABLE ) );
-		}
-
 		$cleared = $this->apple_pay_domain_service->clear_displayed_error_notice_if_unchanged( (string) $request->get_param( 'error_id' ) );
 
 		return rest_ensure_response(
@@ -1018,7 +994,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	protected function activate_pm_promotion( WP_REST_Request $request ): WP_REST_Response {
 		return rest_ensure_response(
 			array(
-				'success' => $this->get_pm_promotions_service()->activate_promotion( (string) $request->get_param( 'id' ) ),
+				'success' => $this->pm_promotions_service->activate_promotion( (string) $request->get_param( 'id' ) ),
 			)
 		);
 	}
@@ -1033,7 +1009,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	protected function dismiss_pm_promotion( WP_REST_Request $request ): WP_REST_Response {
 		return rest_ensure_response(
 			array(
-				'success' => $this->get_pm_promotions_service()->dismiss_promotion( (string) $request->get_param( 'id' ) ),
+				'success' => $this->pm_promotions_service->dismiss_promotion( (string) $request->get_param( 'id' ) ),
 			)
 		);
 	}
@@ -1047,7 +1023,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 */
 	protected function upload_settings_file( WP_REST_Request $request ) {
 		try {
-			return rest_ensure_response( $this->get_api_client()->upload_file( $request ) );
+			return rest_ensure_response( $this->api_client->upload_file( $request ) );
 		} catch ( WooPaymentsApiException $exception ) {
 			return $exception->to_wp_error();
 		}
@@ -1062,7 +1038,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 */
 	protected function get_settings_file_details( WP_REST_Request $request ) {
 		try {
-			return rest_ensure_response( $this->get_api_client()->get_file( (string) $request->get_param( 'file_id' ), (bool) $request->get_param( 'as_account' ) ) );
+			return rest_ensure_response( $this->api_client->get_file( (string) $request->get_param( 'file_id' ), (bool) $request->get_param( 'as_account' ) ) );
 		} catch ( WooPaymentsApiException $exception ) {
 			return $exception->to_wp_error();
 		}
@@ -1077,7 +1053,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 */
 	protected function get_settings_file_contents( WP_REST_Request $request ) {
 		try {
-			return rest_ensure_response( $this->get_api_client()->get_file_contents( (string) $request->get_param( 'file_id' ), (bool) $request->get_param( 'as_account' ) ) );
+			return rest_ensure_response( $this->api_client->get_file_contents( (string) $request->get_param( 'file_id' ), (bool) $request->get_param( 'as_account' ) ) );
 		} catch ( WooPaymentsApiException $exception ) {
 			return $exception->to_wp_error();
 		}
@@ -1097,7 +1073,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 
 		if ( '' === $purpose ) {
 			try {
-				$file = $this->get_api_client()->get_file( $file_id, $as_account );
+				$file = $this->api_client->get_file( $file_id, $as_account );
 			} catch ( WooPaymentsApiException $exception ) {
 				return $this->get_file_error_response( $exception->to_wp_error() );
 			}
@@ -1122,7 +1098,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 		}
 
 		try {
-			$contents = $this->get_api_client()->get_file_contents( $file_id, $as_account );
+			$contents = $this->api_client->get_file_contents( $file_id, $as_account );
 		} catch ( WooPaymentsApiException $exception ) {
 			return $this->get_file_error_response( $exception->to_wp_error() );
 		}
@@ -1138,10 +1114,7 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 			);
 		}
 
-		$serve_callback = array( $this, 'serve_public_file_response' );
-		if ( false === has_filter( 'rest_pre_serve_request', $serve_callback ) ) {
-			add_filter( 'rest_pre_serve_request', $serve_callback, 10, 2 );
-		}
+		add_filter( 'rest_pre_serve_request', array( $this, 'serve_public_file_response' ), 10, 2 );
 
 		$content_type = isset( $contents['content_type'] ) && is_scalar( $contents['content_type'] ) ? (string) $contents['content_type'] : 'application/octet-stream';
 
@@ -1159,8 +1132,8 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	 * Stream a public provider file as the raw REST response body.
 	 *
 	 * Registered on `rest_pre_serve_request` by the public file route so the inline file bytes are emitted directly
-	 * instead of being JSON-encoded. It is a named method so the route can register it idempotently (at most once per
-	 * request) and remove it, rather than stacking a fresh anonymous closure on every dispatch.
+	 * instead of being JSON-encoded. It is a named method, so a second dispatch in the same request adds no second
+	 * callback: WordPress keeps one entry per object and method at a priority.
 	 *
 	 * @param bool             $served   Whether the request has already been served.
 	 * @param WP_HTTP_Response $response The response to serve.
@@ -1226,57 +1199,9 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 		);
 	}
 
-	/**
-	 * Get the WooPayments API client.
-	 *
-	 * @return WooPaymentsApiClient
-	 */
-	private function get_api_client(): WooPaymentsApiClient {
-		if ( ! $this->api_client instanceof WooPaymentsApiClient ) {
-			$this->api_client = wc_get_container()->get( WooPaymentsApiClient::class );
-		}
 
-		return $this->api_client;
-	}
 
-	/**
-	 * Get the settings service set by init(), or the container's when init() did not set it.
-	 *
-	 * @return WooPaymentsSettingsService
-	 */
-	private function get_settings_service(): WooPaymentsSettingsService {
-		if ( ! $this->settings_service instanceof WooPaymentsSettingsService ) {
-			$this->settings_service = wc_get_container()->get( WooPaymentsSettingsService::class );
-		}
 
-		return $this->settings_service;
-	}
-
-	/**
-	 * Get the payment method promotions service set by init(), or the container's when init() did not set it.
-	 *
-	 * @return WooPaymentsPmPromotionsService
-	 */
-	private function get_pm_promotions_service(): WooPaymentsPmPromotionsService {
-		if ( ! $this->pm_promotions_service instanceof WooPaymentsPmPromotionsService ) {
-			$this->pm_promotions_service = wc_get_container()->get( WooPaymentsPmPromotionsService::class );
-		}
-
-		return $this->pm_promotions_service;
-	}
-
-	/**
-	 * Get the Overview service set by init(), or the container's when init() did not set it.
-	 *
-	 * @return WooPaymentsOverviewService
-	 */
-	private function get_overview_service(): WooPaymentsOverviewService {
-		if ( ! $this->overview_service instanceof WooPaymentsOverviewService ) {
-			$this->overview_service = wc_get_container()->get( WooPaymentsOverviewService::class );
-		}
-
-		return $this->overview_service;
-	}
 
 	/**
 	 * Require an authenticated store manager for notice state changes.
