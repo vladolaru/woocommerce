@@ -301,9 +301,9 @@ class WC_Settings_Payment_Gateways extends WC_Settings_Page {
 	}
 
 	/**
-	 * Fire the WooPayments settings notices above the native settings UI, as the client's admin_options() does.
+	 * Fire the WooPayments settings notices action before the WooPayments settings render, in the React section or above the classic settings form.
 	 *
-	 * Only while native owns payments: the plugin fires this action from its own gateway settings screen.
+	 * Only while the built-in WooPayments owns payments: the WooPayments extension fires this action from its own settings screen.
 	 */
 	private function maybe_fire_woopayments_admin_notices(): void {
 		if ( ! wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner() ) {
