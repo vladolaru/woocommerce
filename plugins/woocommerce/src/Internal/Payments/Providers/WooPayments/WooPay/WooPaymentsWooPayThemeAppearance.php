@@ -77,7 +77,7 @@ class WooPaymentsWooPayThemeAppearance {
 
 		// Most block themes leave input backgrounds transparent, which shows the page background inside WooPay; fall back to
 		// settings.custom.input-background, then white on light themes or the page background on dark ones.
-		$custom_settings   = function_exists( 'wp_get_global_settings' ) ? wp_get_global_settings( array( 'custom' ) ) : array();
+		$custom_settings   = wp_get_global_settings( array( 'custom' ) );
 		$custom_settings   = is_array( $custom_settings ) ? $custom_settings : array();
 		$input_bg_default  = $this->is_color_light( $bg_color ) ? '#ffffff' : $bg_color;
 		$input_bg_raw      = $this->get( $input_el, 'color.background', $custom_settings['input-background'] ?? $input_bg_default );
@@ -724,10 +724,6 @@ class WooPaymentsWooPayThemeAppearance {
 	 * @return array<string,string>
 	 */
 	private function get_style_variation_colors( string $block_name, string $class_name ): array {
-		if ( ! function_exists( 'wp_get_block_style_variation_name_from_class' ) ) {
-			return array();
-		}
-
 		$variation_names = wp_get_block_style_variation_name_from_class( $class_name );
 		foreach ( is_array( $variation_names ) ? $variation_names : array() as $variation ) {
 			$variation_color = wp_get_global_styles( array( 'variations', $variation, 'color' ), array( 'block_name' => $block_name ) );
