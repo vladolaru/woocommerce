@@ -28,8 +28,6 @@ class WooPaymentsGatewayListController implements RegisterHooksInterface {
 
 	/**
 	 * Priorities of the saved and default gateway order filters (client 11.1.0 `includes/class-wc-payments.php:731-732`).
-	 *
-	 * Early, so filters that run later on the gateway order already see the WooPayments gateways as one block.
 	 */
 	private const GATEWAY_ORDER_OPTION_PRIORITY = 2;
 
