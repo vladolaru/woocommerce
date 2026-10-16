@@ -24,11 +24,6 @@ use WP_Error;
 class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider implements RegisterHooksInterface {
 
 	/**
-	 * A value never accepted as a token.
-	 */
-	private const INVALID_TOKEN = 'INVALID_TOKEN';
-
-	/**
 	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
@@ -142,7 +137,7 @@ class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider imple
 			$token = null;
 		}
 
-		if ( ! is_string( $token ) || '' === $token || self::INVALID_TOKEN === $token ) {
+		if ( ! is_string( $token ) || '' === $token ) {
 			return new WP_Error(
 				'wcpay_address_service_error',
 				__( 'An unexpected error occurred while retrieving the address service token.', 'woocommerce' )

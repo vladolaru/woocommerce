@@ -66,16 +66,16 @@ class WooPaymentsPmPromotionsService {
 	/**
 	 * WooPayments API client.
 	 *
-	 * @var WooPaymentsApiClient|null
+	 * @var WooPaymentsApiClient
 	 */
-	private ?WooPaymentsApiClient $api_client = null;
+	private WooPaymentsApiClient $api_client;
 
 	/**
 	 * WooPayments account service.
 	 *
-	 * @var WooPaymentsAccountService|null
+	 * @var WooPaymentsAccountService
 	 */
-	private ?WooPaymentsAccountService $account_service = null;
+	private WooPaymentsAccountService $account_service;
 
 	/**
 	 * Gateway settings writer.
@@ -343,7 +343,7 @@ class WooPaymentsPmPromotionsService {
 		}
 
 		try {
-			$response = $this->get_api_client()->get_pm_promotions( $store_context );
+			$response = $this->api_client->get_pm_promotions( $store_context );
 		} catch ( WooPaymentsApiException $e ) {
 			set_transient(
 				self::PROMOTIONS_CACHE_KEY,
@@ -653,7 +653,7 @@ class WooPaymentsPmPromotionsService {
 		}
 
 		try {
-			$this->get_api_client()->activate_pm_promotion( $id );
+			$this->api_client->activate_pm_promotion( $id );
 		} catch ( WooPaymentsApiException $e ) {
 			$this->handle_promotion_activation_failure( $payment_method_id, $promotion, 'Platform error.', WooPaymentsLogger::get_failure_context( $e ) );
 			return false;
@@ -767,12 +767,7 @@ class WooPaymentsPmPromotionsService {
 	 * @return string[]
 	 */
 	private function get_available_payment_method_ids(): array {
-		$account_service = $this->get_account_service();
-		if ( null === $account_service ) {
-			return array();
-		}
-
-		return $this->payment_method_registry->get_available_payment_method_ids_for_account( $account_service );
+		return $this->payment_method_registry->get_available_payment_method_ids_for_account( $this->account_service );
 	}
 
 	/**
@@ -815,9 +810,8 @@ class WooPaymentsPmPromotionsService {
 	 * @return array<string,mixed>
 	 */
 	private function get_account_fees(): array {
-		$account_service = $this->get_account_service();
-		$account_data    = $account_service ? $account_service->get_cached_account_data() : array();
-		$fees            = $account_data['fees'] ?? array();
+		$account_data = $this->account_service->get_cached_account_data();
+		$fees         = $account_data['fees'] ?? array();
 
 		return is_array( $fees ) ? $fees : array();
 	}
@@ -925,60 +919,6 @@ class WooPaymentsPmPromotionsService {
 	 * @return void
 	 */
 	private function clear_account_cache(): void {
-		$account_service = $this->get_account_service();
-		if ( $account_service instanceof WooPaymentsAccountService ) {
-			$account_service->clear_cache();
-		}
-	}
-
-	/**
-	 * Get the API client set by init(), or the container's when init() did not run.
-	 *
-	 * @return WooPaymentsApiClient
-	 * @throws WooPaymentsApiException When the service is unavailable.
-	 */
-	private function get_api_client(): WooPaymentsApiClient {
-		if ( $this->api_client instanceof WooPaymentsApiClient ) {
-			return $this->api_client;
-		}
-
-		if ( function_exists( 'wc_get_container' ) ) {
-			try {
-				$service = wc_get_container()->get( WooPaymentsApiClient::class );
-				if ( $service instanceof WooPaymentsApiClient ) {
-					$this->api_client = $service;
-					return $this->api_client;
-				}
-			} catch ( \Throwable $e ) {
-				$this->log_promotion_error( $e->getMessage() );
-			}
-		}
-
-		// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state.
-		throw new WooPaymentsApiException( __( 'WooPayments promotions are unavailable.', 'woocommerce' ), 'wcpay_pm_promotions_unavailable', 503 );
-	}
-
-	/**
-	 * Get the account service set by init(), or the container's when init() did not run.
-	 *
-	 * @return WooPaymentsAccountService|null
-	 */
-	private function get_account_service(): ?WooPaymentsAccountService {
-		if ( $this->account_service instanceof WooPaymentsAccountService ) {
-			return $this->account_service;
-		}
-
-		if ( function_exists( 'wc_get_container' ) ) {
-			try {
-				$service = wc_get_container()->get( WooPaymentsAccountService::class );
-				if ( $service instanceof WooPaymentsAccountService ) {
-					$this->account_service = $service;
-				}
-			} catch ( \Throwable $e ) {
-				return null;
-			}
-		}
-
-		return $this->account_service;
+		$this->account_service->clear_cache();
 	}
 }

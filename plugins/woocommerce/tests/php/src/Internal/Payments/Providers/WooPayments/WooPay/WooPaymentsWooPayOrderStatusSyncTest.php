@@ -93,7 +93,6 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 
 		$builtin_sync->register();
 
-		$this->assertSame( 10, has_filter( 'woocommerce_valid_webhook_resources', array( $builtin_sync, 'add_resource' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_valid_webhook_events', array( $builtin_sync, 'add_event' ) ) );
 		$this->assertSame( 20, has_filter( 'woocommerce_webhook_topic_hooks', array( $builtin_sync, 'add_topics' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_webhook_payload', array( $builtin_sync, 'create_payload' ) ) );
@@ -760,10 +759,8 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	 * @return WC_Webhook
 	 */
 	private function create_webhook_row( string $name, string $delivery_url, string $topic, string $status, string $secret = 'test-secret' ): WC_Webhook {
-		// Client 11.1.0 WooPay_Order_Status_Sync::add_resource(), add_event() and add_topics() make the order.status_changed topic valid.
-		$add_resource = static fn( array $resources ): array => array_merge( $resources, array( 'order' ) );
-		$add_event    = static fn( array $events ): array => array_merge( $events, array( 'status_changed' ) );
-		add_filter( 'woocommerce_valid_webhook_resources', $add_resource );
+		// Client 11.1.0 WooPay_Order_Status_Sync::add_event() makes the order.status_changed topic valid; WooCommerce lists the order resource itself.
+		$add_event = static fn( array $events ): array => array_merge( $events, array( 'status_changed' ) );
 		add_filter( 'woocommerce_valid_webhook_events', $add_event );
 
 		try {
@@ -776,7 +773,6 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 			$webhook->set_status( $status );
 			$webhook->save();
 		} finally {
-			remove_filter( 'woocommerce_valid_webhook_resources', $add_resource );
 			remove_filter( 'woocommerce_valid_webhook_events', $add_event );
 		}
 
@@ -884,7 +880,6 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsWooPayOrderStatusSync $sync Sync instance.
 	 */
 	private function remove_sync_hooks( WooPaymentsWooPayOrderStatusSync $sync ): void {
-		remove_filter( 'woocommerce_valid_webhook_resources', array( $sync, 'add_resource' ) );
 		remove_filter( 'woocommerce_valid_webhook_events', array( $sync, 'add_event' ) );
 		remove_filter( 'woocommerce_webhook_topic_hooks', array( $sync, 'add_topics' ), 20 );
 		remove_filter( 'woocommerce_webhook_payload', array( $sync, 'create_payload' ) );

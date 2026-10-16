@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 
-use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Enums\OrderInternalStatus;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use WP_Error;
@@ -52,11 +51,6 @@ class WooPaymentsAdminNoticeService {
 	 * Supported post-KYC activation stages.
 	 */
 	private const POST_KYC_ACTIVATION_STAGES = array( 7, 14, 30 );
-
-	/**
-	 * Name of a test-to-live inbox note no current code adds; the notice refresh deletes it.
-	 */
-	private const TEST_TO_LIVE_NOTE_NAME = 'wc-payments-notes-test-to-live';
 
 	/**
 	 * Supported actions for each settings notice.
@@ -132,7 +126,7 @@ class WooPaymentsAdminNoticeService {
 	}
 
 	/**
-	 * Work out the current user's settings notice, refreshing the cached eligibility and removing the test-to-live inbox note it replaces.
+	 * Work out the current user's settings notice, refreshing the cached eligibility.
 	 *
 	 * @since 11.2.0
 	 *
@@ -143,7 +137,6 @@ class WooPaymentsAdminNoticeService {
 		if ( 0 === $user_id || $this->runtime_arbiter->is_extension_owner() ) {
 			return null;
 		}
-		Notes::delete_notes_with_name( self::TEST_TO_LIVE_NOTE_NAME );
 		// Client 11.1.0 has_active_payments_account() opens every notice's eligibility and rules out test-drive accounts.
 		if ( ! $this->account_service->has_working_account() || $this->account_service->has_test_account() ) {
 			return null;
@@ -482,7 +475,6 @@ class WooPaymentsAdminNoticeService {
 		}
 		if ( 'test_to_live' === $notice_id ) {
 			delete_transient( self::TEST_TO_LIVE_ELIGIBLE_TRANSIENT );
-			Notes::delete_notes_with_name( self::TEST_TO_LIVE_NOTE_NAME );
 		}
 		if ( 'one_and_done' === $notice_id ) {
 			delete_transient( self::ONE_AND_DONE_ELIGIBLE_TRANSIENT );

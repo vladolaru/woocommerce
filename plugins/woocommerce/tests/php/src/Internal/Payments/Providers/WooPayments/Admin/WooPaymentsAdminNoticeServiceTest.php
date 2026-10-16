@@ -3,8 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Admin;
 
-use Automattic\WooCommerce\Admin\Notes\Note;
-use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -160,19 +158,13 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox While the WooPayments extension owns payments, the notice neither shows nor touches admin notes.
+	 * @testdox While the WooPayments extension owns payments, the notice neither shows nor records an action.
 	 */
 	public function test_notice_stays_off_while_the_extension_owns_payments(): void {
 		$now = 1700000000;
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		update_option( 'wcpay_test_mode_enabled_date', $now - 7 * DAY_IN_SECONDS, false );
 		set_transient( 'wcpay_test_to_live_eligible', '1', HOUR_IN_SECONDS );
-		$note = new Note();
-		$note->set_name( 'wc-payments-notes-test-to-live' );
-		$note->set_title( 'Existing note' );
-		$note->set_content( 'Existing note content' );
-		$note->set_type( Note::E_WC_ADMIN_NOTE_INFORMATIONAL );
-		$note->save();
 		$active_plugins = get_option( 'active_plugins', array() );
 		update_option( 'active_plugins', array_merge( (array) $active_plugins, array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ) );
 		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
@@ -181,88 +173,16 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 		$account->expects( $this->never() )->method( $this->anything() );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
 		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
-		$data_store = Notes::load_data_store();
-		$notes      = count( $data_store->get_notes( array( 'per_page' => 100 ) ) );
 
 		try {
 			$this->assertTrue( $arbiter->is_extension_owner() );
 			$this->assertNull( $sut->refresh_notice_for_current_user() );
 			$this->assertInstanceOf( \WP_Error::class, $sut->record_action( 'test_to_live', 'dismiss' ) );
-			$this->assertCount( 1, $data_store->get_notes_with_name( 'wc-payments-notes-test-to-live' ), 'No native note may be deleted while the plugin owns payments.' );
-			$this->assertSame( $notes, count( $data_store->get_notes( array( 'per_page' => 100 ) ) ), 'No native note may be created while the plugin owns payments.' );
 		} finally {
 			update_option( 'active_plugins', $active_plugins );
 			$arbiter->invalidate();
-			Notes::delete_notes_with_name( 'wc-payments-notes-test-to-live' );
 			delete_option( 'wcpay_test_mode_enabled_date' );
 			delete_transient( 'wcpay_test_to_live_eligible' );
-		}
-	}
-
-	/**
-	 * @testdox A settings notice should remove only the obsolete test-to-live inbox notes.
-	 */
-	public function test_test_to_live_cleans_only_obsolete_inbox_notes(): void {
-		$now = 1700000000;
-		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
-		update_option( 'wcpay_test_mode_enabled_date', $now - 7 * DAY_IN_SECONDS, false );
-		set_transient( 'wcpay_test_to_live_eligible', '1', HOUR_IN_SECONDS );
-		foreach ( array( 'wc-payments-notes-test-to-live', 'wc-payments-notes-test-to-live', 'unrelated-note' ) as $name ) {
-			$note = new Note();
-			$note->set_name( $name );
-			$note->set_title( 'Existing note' );
-			$note->set_content( 'Existing note content' );
-			$note->set_type( Note::E_WC_ADMIN_NOTE_INFORMATIONAL );
-			$note->save();
-		}
-		$account = $this->createMock( WooPaymentsAccountService::class );
-		$account->method( 'has_working_account' )->willReturn( true );
-		$account->method( 'is_test_mode_enabled' )->willReturn( true );
-		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
-		$sut = new WooPaymentsAdminNoticeService( static fn(): int => $now );
-		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
-
-		try {
-			$this->assertNotNull( $sut->refresh_notice_for_current_user() );
-			$data_store = Notes::load_data_store();
-			$this->assertEmpty( $data_store->get_notes_with_name( 'wc-payments-notes-test-to-live' ) );
-			$this->assertCount( 1, $data_store->get_notes_with_name( 'unrelated-note' ) );
-		} finally {
-			Notes::delete_notes_with_name( array( 'wc-payments-notes-test-to-live', 'unrelated-note' ) );
-			delete_option( 'wcpay_test_mode_enabled_date' );
-			delete_transient( 'wcpay_test_to_live_eligible' );
-		}
-	}
-
-	/**
-	 * @testdox A handled test-to-live notice should still remove only its obsolete inbox notes.
-	 */
-	public function test_handled_test_to_live_notice_cleans_only_obsolete_inbox_notes(): void {
-		$user_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
-		wp_set_current_user( $user_id );
-		update_user_meta( $user_id, 'wcpay_test_to_live_notice_dismissed', 1700000000 );
-		foreach ( array( 'wc-payments-notes-test-to-live', 'unrelated-note' ) as $name ) {
-			$note = new Note();
-			$note->set_name( $name );
-			$note->set_title( 'Existing note' );
-			$note->set_content( 'Existing note content' );
-			$note->set_type( Note::E_WC_ADMIN_NOTE_INFORMATIONAL );
-			$note->save();
-		}
-		$account = $this->createMock( WooPaymentsAccountService::class );
-		$account->method( 'has_working_account' )->willReturn( true );
-		$account->method( 'is_test_mode_enabled' )->willReturn( true );
-		$account->method( 'is_dev_mode_enabled' )->willReturn( false );
-		$sut = new WooPaymentsAdminNoticeService( static fn(): int => 1700000000 );
-		$sut->init( $account, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
-
-		try {
-			$this->assertNull( $sut->refresh_notice_for_current_user() );
-			$data_store = Notes::load_data_store();
-			$this->assertEmpty( $data_store->get_notes_with_name( 'wc-payments-notes-test-to-live' ) );
-			$this->assertCount( 1, $data_store->get_notes_with_name( 'unrelated-note' ) );
-		} finally {
-			Notes::delete_notes_with_name( array( 'wc-payments-notes-test-to-live', 'unrelated-note' ) );
 		}
 	}
 

@@ -5,8 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Admin\Settings\PaymentsProviders
 
 use Automattic\Jetpack\Connection\Manager as WPCOM_Connection_Manager;
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Admin\Notes\Note;
-use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Admin\PluginsHelper;
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
@@ -183,18 +181,10 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should clean the obsolete inbox note for a disconnected provider without attaching a settings notice.
+	 * @testdox Should attach no settings notice for a disconnected provider.
 	 */
-	public function test_get_details_cleans_obsolete_note_for_disconnected_account(): void {
+	public function test_get_details_attaches_no_notice_for_disconnected_account(): void {
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
-		foreach ( array( 'wc-payments-notes-test-to-live', 'unrelated-note' ) as $name ) {
-			$note = new Note();
-			$note->set_name( $name );
-			$note->set_title( 'Existing note' );
-			$note->set_content( 'Existing note content' );
-			$note->set_type( Note::E_WC_ADMIN_NOTE_INFORMATIONAL );
-			$note->save();
-		}
 		$gateway = new FakePaymentGateway(
 			'woocommerce_payments',
 			array(
@@ -208,14 +198,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 		$service->init( $account, wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter::class ) );
 		$this->set_notice_service_resolver( static fn() => $service );
 
-		try {
-			$this->assertArrayNotHasKey( '_admin_notice', $this->sut->get_details( $gateway ) );
-			$data_store = Notes::load_data_store();
-			$this->assertEmpty( $data_store->get_notes_with_name( 'wc-payments-notes-test-to-live' ) );
-			$this->assertCount( 1, $data_store->get_notes_with_name( 'unrelated-note' ) );
-		} finally {
-			Notes::delete_notes_with_name( array( 'wc-payments-notes-test-to-live', 'unrelated-note' ) );
-		}
+		$this->assertArrayNotHasKey( '_admin_notice', $this->sut->get_details( $gateway ) );
 	}
 
 	/**

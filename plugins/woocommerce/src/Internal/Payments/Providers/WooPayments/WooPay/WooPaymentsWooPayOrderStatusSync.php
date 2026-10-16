@@ -120,11 +120,9 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register the webhook's resource, event, topic and payload filters, and its create, refresh and settings hooks.
+	 * Register the webhook's event, topic and payload filters, and its create, refresh and settings hooks.
 	 */
 	public function register() {
-		add_filter( 'woocommerce_valid_webhook_resources', array( $this, 'add_resource' ) );
-
 		add_filter( 'woocommerce_valid_webhook_events', array( $this, 'add_event' ) );
 
 		add_filter( 'woocommerce_webhook_topic_hooks', array( $this, 'add_topics' ), 20, 2 );
@@ -203,24 +201,6 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 		if ( $was_enabled && ! $is_enabled && $this->arbiter->is_builtin_owner() ) {
 			$this->remove_woopay_webhooks();
 		}
-	}
-
-	/**
-	 * Add `order` to the webhook resources when it is missing; WooCommerce lists it by default.
-	 *
-	 * @param mixed $resources List of available resources.
-	 * @return mixed
-	 */
-	public function add_resource( $resources ) {
-		if ( ! is_array( $resources ) ) {
-			return $resources;
-		}
-
-		if ( ! in_array( 'order', $resources, true ) ) {
-			$resources[] = 'order';
-		}
-
-		return $resources;
 	}
 
 	/**
