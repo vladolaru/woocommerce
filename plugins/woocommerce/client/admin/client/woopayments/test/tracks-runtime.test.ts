@@ -101,6 +101,44 @@ describe( 'payments_runtime on admin Tracks events', () => {
 		).toEqual( {} );
 	} );
 
+	// Client 11.1.0 adds `wcpaySettings.trackingInfo?.hosting_provider` to every admin event (`client/tracks/index.ts:44`).
+	it( 'adds the preloaded hosting provider to native WooPayments admin events only', () => {
+		settingsWindow.wcSettings = {
+			admin: {
+				woopaymentsSettings: {
+					trackingInfo: { hosting_provider: 'fixture-host' },
+				},
+			},
+		};
+		registerPaymentsRuntimeTracksProperty();
+
+		expect( filterEvent( 'wcadmin_wcpay_deposits_row_click', {} ) ).toEqual(
+			{
+				hosting_provider: 'fixture-host',
+				payments_runtime: 'woocommerce_core',
+			}
+		);
+		expect(
+			filterEvent( 'wcadmin_payments_task_stepper_view', {} )
+		).toEqual( {} );
+	} );
+
+	it.each( [
+		[ 'no tracking info', { woopaymentsSettings: {} } ],
+		[
+			'a null tracking info',
+			{ woopaymentsSettings: { trackingInfo: null } },
+		],
+		[ 'no preloaded settings', {} ],
+	] )( 'adds no hosting provider with %s', ( _label, admin ) => {
+		settingsWindow.wcSettings = { admin };
+		registerPaymentsRuntimeTracksProperty();
+
+		expect( filterEvent( 'wcadmin_wcpay_deposits_row_click', {} ) ).toEqual(
+			{ payments_runtime: 'woocommerce_core' }
+		);
+	} );
+
 	it( 'adds the filter once however many native entries register it', () => {
 		registerPaymentsRuntimeTracksProperty();
 		registerPaymentsRuntimeTracksProperty();

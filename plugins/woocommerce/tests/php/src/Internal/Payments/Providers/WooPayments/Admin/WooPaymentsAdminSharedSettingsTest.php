@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAd
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\FixedTrackingInfoService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
@@ -220,6 +221,37 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 		$sut          = $this->create_shared_settings( true );
 
 		$this->assertSame( get_rest_url( null, '' ), $sut->preload_shared_settings( array() )['woopaymentsSettings']['restUrl'] );
+	}
+
+	/**
+	 * Client 11.1.0 localizes the cached platform tracking info on its admin pages (`class-wc-payments-admin.php:1066`), and its
+	 * admin Tracks recorder adds `hosting_provider` from it to every event (`client/tracks/index.ts:44`).
+	 *
+	 * @testdox Should preload the platform tracking info for the admin Tracks events.
+	 */
+	public function test_preloads_tracking_info_for_admin_tracks_events(): void {
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		FixedTrackingInfoService::install();
+		$sut = $this->create_shared_settings( true );
+
+		$this->assertSame( FixedTrackingInfoService::TRACKING_INFO, $sut->preload_shared_settings( array() )['woopaymentsSettings']['trackingInfo'] );
+	}
+
+	/**
+	 * Outside the Payments settings pages nothing is preloaded, so nothing reads the tracking info.
+	 *
+	 * @testdox Should not read the tracking info outside the Payments settings pages.
+	 */
+	public function test_does_not_read_tracking_info_outside_payments_settings(): void {
+		$_GET['page'] = 'wc-orders';
+		$service      = FixedTrackingInfoService::install();
+		$sut          = $this->create_shared_settings( true );
+
+		$settings = $sut->preload_shared_settings( array() );
+
+		$this->assertArrayNotHasKey( 'woopaymentsSettings', $settings );
+		$this->assertSame( 0, $service->reads );
 	}
 
 	/**

@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAd
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTrackingInfoService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 defined( 'ABSPATH' ) || exit;
@@ -189,6 +190,8 @@ class WooPaymentsAdminSharedSettings implements RegisterHooksInterface {
 		$settings['woopaymentsSettings']['currentUserEmail'] = $current_user->user_email ? $current_user->user_email : get_option( 'admin_email' );
 		// Client 11.1.0 `class-wc-payments-admin.php:1048`: the REST root for file URLs, which also works on Plain permalinks.
 		$settings['woopaymentsSettings']['restUrl'] = get_rest_url( null, '' );
+		// Client 11.1.0 `class-wc-payments-admin.php:1066`: the admin Tracks events add its hosting_provider (`client/tracks/index.ts:44`).
+		$settings['woopaymentsSettings']['trackingInfo'] = wc_get_container()->get( WooPaymentsTrackingInfoService::class )->get_tracking_info();
 
 		$current_path = $this->get_request_scalar( $_GET, 'path' ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only route check.
 		// The Overview's data comes with the page, so the page renders before any request.

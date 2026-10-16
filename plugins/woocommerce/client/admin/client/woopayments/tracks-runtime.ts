@@ -44,8 +44,30 @@ const isWooPaymentsAdminEvent = (
 	);
 };
 
+// The platform's hosting provider for the site, from the tracking info core preloads with the WooPayments settings
+// (`WooPaymentsAdminSharedSettings`), as client 11.1.0 adds `wcpaySettings.trackingInfo?.hosting_provider` to every admin
+// event (`client/tracks/index.ts:44`).
+const getPreloadedHostingProvider = () => {
+	const hostingProvider = (
+		window as typeof window & {
+			wcSettings?: {
+				admin?: {
+					woopaymentsSettings?: {
+						trackingInfo?: { hosting_provider?: unknown } | null;
+					};
+				};
+			};
+		}
+	 ).wcSettings?.admin?.woopaymentsSettings?.trackingInfo?.hosting_provider;
+
+	return typeof hostingProvider === 'string' && hostingProvider !== ''
+		? hostingProvider
+		: undefined;
+};
+
 /**
- * Mark a native WooPayments admin event as recorded by the WooCommerce core runtime.
+ * Mark a native WooPayments admin event as recorded by the WooCommerce core runtime, with the site's hosting provider when
+ * the platform's tracking info is preloaded.
  *
  * @param properties The event properties, as another filter callback may have left them.
  * @param eventName  The prefixed event name.
@@ -63,8 +85,11 @@ export const addPaymentsRuntimeProperty = (
 		return properties;
 	}
 
+	const hostingProvider = getPreloadedHostingProvider();
+
 	return {
 		...properties,
+		...( hostingProvider ? { hosting_provider: hostingProvider } : {} ),
 		[ PAYMENTS_RUNTIME_PROPERTY ]: PAYMENTS_RUNTIME,
 	};
 };
