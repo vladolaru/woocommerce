@@ -9,8 +9,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPay
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Helper_Order;
+use WC_Log_Levels;
 use WC_Unit_Test_Case;
 use WC_Webhook;
 
@@ -75,12 +77,9 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		}
 
 		remove_all_actions( 'wcpay_webhook_platform_checkout_order_status_changed' );
-		remove_all_filters( 'woocommerce_logging_class' );
 		wp_set_current_user( 0 );
 
-		if ( class_exists( '\Jetpack_Options' ) ) {
-			\Jetpack_Options::delete_option( 'id' );
-		}
+		\Jetpack_Options::delete_option( 'id' );
 
 		parent::tearDown();
 	}
@@ -271,9 +270,8 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	 * Fails when the rollback goes (WooPay would not hold the secret of an active row) or when the lock is not released on failure.
 	 */
 	public function test_failed_secret_registration_rolls_back_and_the_next_admin_page_retries(): void {
-		$logger = new RecordingWooPayLogger();
-		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$sync = $this->create_sync( true, true );
+		$logger = RecordingWcLogger::install();
+		$sync   = $this->create_sync( true, true );
 		$sync->register();
 		// The platform answers an update it cannot apply with Bad_Request_Exception, code wcpay_bad_request, status 400.
 		$this->api_client->update_woopay_exception = new WooPaymentsApiException( 'Error updating account. Webhook secret is empty.', 'wcpay_bad_request', 400 );
@@ -283,7 +281,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $this->api_client->woopay_updates );
 		$this->assertSame( array(), $this->find_woopay_webhook_ids(), 'A webhook whose secret WooPay does not hold must not stay active.' );
 		$this->assertNull( $this->read_option_row( self::CLAIM_OPTION ), 'The lock must be released after a failure.' );
-		$this->assertSame( array( 'Unable to register the WooPay order-status webhook secret with the platform.' ), array_column( $logger->error_calls, 'message' ) );
+		$this->assert_one_woopayments_error( $logger );
 
 		$this->api_client->update_woopay_exception = null;
 		$this->run_admin_init_for( $sync );
@@ -332,8 +330,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	 * on failure.
 	 */
 	public function test_failed_secret_rotation_keeps_the_secret_and_retries(): void {
-		$logger = new RecordingWooPayLogger();
-		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		$logger                        = RecordingWcLogger::install();
 		$woopayments_extension_webhook = $this->create_woopayments_extension_webhook();
 		$sync                          = $this->create_sync( true, true );
 		$sync->register();
@@ -344,7 +341,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->run_admin_init_for( $sync );
 
 		$this->assertSame( self::WOOPAYMENTS_EXTENSION_SECRET, wc_get_webhook( $woopayments_extension_webhook->get_id() )->get_secret() );
-		$this->assertSame( array( 'Unable to rotate the WooPay order-status webhook secret with the platform.' ), array_column( $logger->error_calls, 'message' ) );
+		$this->assert_one_woopayments_error( $logger );
 		$this->assertNull( $this->read_option_row( self::CLAIM_OPTION ), 'The lock must be released after a failure.' );
 
 		$this->api_client->update_woopay_exception = null;
@@ -363,8 +360,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	 * so a failed write is invisible to save(). Fails when the flag is cleared although WooPay holds a secret the row lacks.
 	 */
 	public function test_rotated_secret_the_row_did_not_save_is_rotated_again(): void {
-		$logger = new RecordingWooPayLogger();
-		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		$logger                        = RecordingWcLogger::install();
 		$woopayments_extension_webhook = $this->create_woopayments_extension_webhook();
 		$sync                          = $this->create_sync( true, true );
 		$sync->register();
@@ -384,7 +380,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $this->api_client->woopay_updates, 'WooPay got the new secret.' );
 		$this->assertSame( self::WOOPAYMENTS_EXTENSION_SECRET, $this->read_webhook_secret( $woopayments_extension_webhook->get_id() ), 'The row kept the old secret.' );
 		$this->assertSame( 'yes', $this->read_option_row( self::ROTATION_DUE_OPTION ), 'The next admin page must rotate again.' );
-		$this->assertSame( array( 'Unable to save the rotated WooPay order-status webhook secret.' ), array_column( $logger->error_calls, 'message' ) );
+		$this->assert_one_woopayments_error( $logger );
 		$this->assertNull( $this->read_option_row( self::CLAIM_OPTION ), 'The lock must be released.' );
 
 		$this->run_admin_init_for( $sync );
@@ -563,36 +559,19 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Restricted account status $status prevents creation and removes the existing webhook.
-	 * @dataProvider restricted_account_statuses
-	 *
-	 * @param string $status Restricted account status.
-	 */
-	public function test_restricted_account_prevents_creation_and_removes_the_webhook( string $status ): void {
-		$sync = $this->create_sync( true, true, $status );
-		$sync->register();
-		$this->run_admin_init_for( $sync );
-		$this->assertSame( array(), $this->find_woopay_webhook_ids() );
-
-		$woopayments_extension_webhook = $this->create_woopayments_extension_webhook();
-		do_action( 'woocommerce_payments_account_refreshed', array() );
-
-		$this->assertNull( wc_get_webhook( $woopayments_extension_webhook->get_id() ) );
-	}
-
-	/**
-	 * @testdox Invalid account data prevents creation and removes the existing webhook.
+	 * @testdox A restricted or invalid account prevents creation and removes the existing webhook: $_dataName.
 	 *
 	 * Client 11.1.0 creates the webhook only for a valid account (includes/woopay/class-woopay-order-status-sync.php:81;
 	 * tests/unit/woopay/test-class-woopay-order-status-sync.php:148-158) and removes it on every account refresh
-	 * (includes/class-wc-payments.php:683), while WooPay itself stays on for such an account.
+	 * (includes/class-wc-payments.php:683), while WooPay itself stays on for an invalid account.
 	 *
-	 * @dataProvider invalid_woopay_accounts
+	 * @dataProvider unusable_woopay_accounts
 	 *
-	 * @param array<string,mixed> $account_data Invalid account data.
+	 * @param string              $status       Account status.
+	 * @param array<string,mixed> $account_data Account data overrides.
 	 */
-	public function test_invalid_account_prevents_creation_and_removes_the_webhook( array $account_data ): void {
-		$sync = $this->create_sync( true, true, '', $account_data );
+	public function test_unusable_account_prevents_creation_and_removes_the_webhook( string $status, array $account_data ): void {
+		$sync = $this->create_sync( true, true, $status, $account_data );
 		$sync->register();
 		$this->run_admin_init_for( $sync );
 		$this->assertSame( array(), $this->find_woopay_webhook_ids() );
@@ -607,9 +586,8 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	 * @testdox A failed webhook save is logged, leaves no row, makes no platform call and releases the lock.
 	 */
 	public function test_failed_webhook_save_is_logged(): void {
-		$logger = new RecordingWooPayLogger();
-		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$sync = $this->create_sync( true, true );
+		$logger = RecordingWcLogger::install();
+		$sync   = $this->create_sync( true, true );
 		$sync->register();
 		$fail_insert = static function ( $query ) {
 			return false !== stripos( $query, 'INSERT INTO `' . $GLOBALS['wpdb']->prefix . 'wc_webhooks`' ) ? '' : $query;
@@ -622,33 +600,22 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $this->find_woopay_webhook_ids() );
 		$this->assertSame( array(), $this->api_client->woopay_updates );
 		$this->assertNull( $this->read_option_row( self::CLAIM_OPTION ) );
-		$this->assertSame( array( 'Unable to create the WooPay order-status webhook.' ), array_column( $logger->error_calls, 'message' ) );
-		$this->assertSame( 'woopayments', $logger->error_calls[0]['context']['source'] ?? null );
+		$this->assert_one_woopayments_error( $logger );
 	}
 
 	/**
-	 * Restricted account statuses.
+	 * Restricted account statuses, with the default account, and invalid accounts, with no status.
 	 *
-	 * @return array<string,array{string}>
+	 * @return array<string,array{0:string,1:array<string,mixed>}>
 	 */
-	public function restricted_account_statuses(): array {
+	public function unusable_woopay_accounts(): array {
 		return array(
-			'under review' => array( 'under_review' ),
-			'rejected'     => array( 'rejected.fraud' ),
-		);
-	}
-
-	/**
-	 * Invalid WooPay accounts.
-	 *
-	 * @return array<string,array{array<string,mixed>}>
-	 */
-	public function invalid_woopay_accounts(): array {
-		return array(
-			'missing account'           => array( array( 'account_id' => '' ) ),
-			'details not submitted'     => array( array( 'details_submitted' => false ) ),
-			'missing card payments'     => array( array( 'capabilities' => array() ) ),
-			'card payments unrequested' => array( array( 'capabilities' => array( 'card_payments' => 'unrequested' ) ) ),
+			'under review'              => array( 'under_review', array() ),
+			'rejected'                  => array( 'rejected.fraud', array() ),
+			'missing account'           => array( '', array( 'account_id' => '' ) ),
+			'details not submitted'     => array( '', array( 'details_submitted' => false ) ),
+			'missing card payments'     => array( '', array( 'capabilities' => array() ) ),
+			'card payments unrequested' => array( '', array( 'capabilities' => array( 'card_payments' => 'unrequested' ) ) ),
 		);
 	}
 
@@ -685,9 +652,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	 * @testdox WooPay merchant-notification payloads are rewritten to the platform checkout contract.
 	 */
 	public function test_create_payload_rewrites_only_woopay_merchant_notification_webhooks(): void {
-		if ( class_exists( '\Jetpack_Options' ) ) {
-			\Jetpack_Options::update_option( 'id', 98765 );
-		}
+		\Jetpack_Options::update_option( 'id', 98765 );
 
 		$sync = $this->create_sync( true );
 		$sync->register();
@@ -699,7 +664,7 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 			'id'     => 123,
 		);
 		$expected_platform_payload = array(
-			'blog_id'      => class_exists( '\Jetpack_Options' ) ? \Jetpack_Options::get_option( 'id' ) : false,
+			'blog_id'      => 98765,
 			'order_id'     => 123,
 			'order_status' => 'processing',
 		);
@@ -711,6 +676,18 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			$pre_processing_payload,
 			$sync->create_payload( $pre_processing_payload, 'order', 123, $non_woopay_webhook->get_id() )
+		);
+	}
+
+	/**
+	 * Assert the run logged one error line, from the woopayments source.
+	 *
+	 * @param RecordingWcLogger $logger Recording logger.
+	 */
+	private function assert_one_woopayments_error( RecordingWcLogger $logger ): void {
+		$this->assertSame(
+			array( array( WC_Log_Levels::ERROR, 'woopayments' ) ),
+			array_map( static fn( array $line ): array => array( $line[0], $line[2] ), $logger->get_errors() )
 		);
 	}
 
@@ -985,58 +962,6 @@ class StubWooPayAccountService extends WooPaymentsAccountService {
 				'status'                     => $this->account_status,
 			),
 			$this->account_data_overrides
-		);
-	}
-}
-
-/**
- * Recording logger for webhook lifecycle failures.
- */
-class RecordingWooPayLogger implements \WC_Logger_Interface {
-	/** @var array<int,array{message:mixed,context:array<string,mixed>}> */
-	public array $error_calls = array();
-
-	public function add( $handle, $message, $level = \WC_Log_Levels::NOTICE ) {
-		unset( $handle, $message, $level );
-		return true;
-	}
-
-	public function log( $level, $message, $context = array() ) {
-		unset( $level, $message, $context );
-	}
-
-	public function emergency( $message, $context = array() ) {
-		unset( $message, $context );
-	}
-
-	public function alert( $message, $context = array() ) {
-		unset( $message, $context );
-	}
-
-	public function critical( $message, $context = array() ) {
-		unset( $message, $context );
-	}
-
-	public function notice( $message, $context = array() ) {
-		unset( $message, $context );
-	}
-
-	public function debug( $message, $context = array() ) {
-		unset( $message, $context );
-	}
-
-	public function info( $message, $context = array() ) {
-		unset( $message, $context );
-	}
-
-	public function warning( $message, $context = array() ) {
-		unset( $message, $context );
-	}
-
-	public function error( $message, $context = array() ) {
-		$this->error_calls[] = array(
-			'message' => $message,
-			'context' => $context,
 		);
 	}
 }

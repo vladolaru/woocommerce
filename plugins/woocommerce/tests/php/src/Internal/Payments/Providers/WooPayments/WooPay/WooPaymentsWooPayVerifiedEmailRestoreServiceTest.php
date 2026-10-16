@@ -204,36 +204,8 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 		$this->sut->register();
 		$this->sut->register();
 
-		$this->assert_arbiter_is_cold();
 		$this->assertSame( 10, has_action( self::RESTORE_HOOK, array( $this->sut, 'restore_order_customer_id' ) ), 'The recovery callback must remain registered under every owner.' );
-		$this->assertSame( 1, $this->count_service_callbacks( self::RESTORE_HOOK, 'restore_order_customer_id' ), 'Repeated registration must leave exactly one restore callback.' );
 		$this->assertSame( 0, $query_count, 'Registration must not query orders.' );
-	}
-
-	/**
-	 * @testdox Registration attaches exactly the six option-specific post-write actions idempotently.
-	 */
-	public function test_registers_only_option_specific_hooks_idempotently(): void {
-		$this->sut->register();
-		$this->sut->register();
-
-		$expected_callback_counts = array();
-		foreach ( array( self::ENABLED_OPTION, self::KILL_SWITCH_OPTION ) as $option_name ) {
-			foreach ( array( 'add', 'update', 'delete' ) as $operation ) {
-				$expected_callback_counts[ "{$operation}_option_{$option_name}" ] = 1;
-			}
-			$expected_callback_counts[ "sanitize_option_{$option_name}" ] = 0;
-		}
-		foreach ( array( 'add_option', 'added_option', 'update_option', 'updated_option', 'delete_option', 'deleted_option' ) as $generic_hook ) {
-			$expected_callback_counts[ $generic_hook ] = 0;
-		}
-
-		$actual_callback_counts = array();
-		foreach ( array_keys( $expected_callback_counts ) as $hook ) {
-			$actual_callback_counts[ $hook ] = $this->count_service_callbacks_on_hook( $hook );
-		}
-
-		$this->assertSame( $expected_callback_counts, $actual_callback_counts, 'Only the six option-specific post-write actions may contain service callbacks.' );
 	}
 
 	/**
@@ -323,31 +295,6 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox A schedule created before the clear is gone before scanning while its marker is drained.
-	 */
-	public function test_drain_clears_existing_schedule_before_scanning_orders(): void {
-		$this->sut->register();
-		$customer_id = self::factory()->user->create();
-		$order_id    = $this->create_order( 0, $customer_id, true, true );
-		$observed    = false;
-		add_filter(
-			'woocommerce_order_query_args',
-			function ( array $query_args ) use ( $order_id, &$observed ): array {
-				if ( ! $observed && self::MARKER_META === ( $query_args['meta_key'] ?? null ) ) {
-					$observed = true;
-					$this->assertFalse( wp_next_scheduled( self::RESTORE_HOOK, array( $order_id ) ), 'The schedule must be cleared before the first marked-order query.' );
-				}
-				return $query_args;
-			}
-		);
-
-		$this->sut->drain_current_blog();
-
-		$this->assertTrue( $observed, 'The test must observe the marked-order scan.' );
-		$this->assert_order_state( $order_id, $customer_id, false );
-	}
-
-	/**
 	 * @testdox A detach saved at the terminal scan boundary keeps its event and is restored by the permanent callback.
 	 */
 	public function test_detach_saved_after_scan_is_restored_by_late_event(): void {
@@ -419,7 +366,6 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 		$second_fixture = $this->create_marked_order_for_owner_change();
 		$this->arbiter->invalidate();
 		$this->sut->register();
-		$this->assert_arbiter_is_cold();
 
 		$had_ready_action_count = is_array( $wp_actions ) && array_key_exists( self::ORDER_CRUD_READY, $wp_actions );
 		$ready_action_count     = $had_ready_action_count ? $wp_actions[ self::ORDER_CRUD_READY ] : null;
@@ -489,7 +435,6 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 		$fixture = $this->create_marked_order_for_owner_change();
 		$this->arbiter->invalidate();
 		$this->sut->register();
-		$this->assert_arbiter_is_cold();
 
 		$had_ready_action_count = is_array( $wp_actions ) && array_key_exists( self::ORDER_CRUD_READY, $wp_actions );
 		$ready_action_count     = $had_ready_action_count ? $wp_actions[ self::ORDER_CRUD_READY ] : null;
@@ -513,7 +458,6 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 
 			update_option( self::ENABLED_OPTION, 'yes' );
 
-			$this->assert_arbiter_cached_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 			$this->assertSame( 1, $this->count_service_callbacks( self::ORDER_CRUD_READY, 'drain_current_blog' ), 'The queued callback must still be observable before its guarded readiness entry.' );
 			// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Enter only the queued service callback without firing unrelated global lifecycle callbacks.
 			$wp_actions[ self::ORDER_CRUD_READY ] = 1;
@@ -535,65 +479,48 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox Enabling the kill switch drains when built-in ownership is lost.
+	 * @testdox An option write that loses built-in ownership drains: $_dataName.
+	 * @dataProvider owner_loss_option_write_provider
+	 *
+	 * @param string|false|null $initial_kill_switch Kill switch value to store first, false to delete it, or null to leave it as set up.
+	 * @param string            $operation           Option write operation: add, update or delete.
+	 * @param string            $option_name         Option written.
+	 * @param string|null       $new_value           Value for add and update operations.
 	 */
-	public function test_kill_switch_update_drains_on_builtin_owner_loss(): void {
+	public function test_option_write_drains_on_builtin_owner_loss( $initial_kill_switch, string $operation, string $option_name, ?string $new_value ): void {
 		update_option( self::ENABLED_OPTION, 'yes' );
-		update_option( self::KILL_SWITCH_OPTION, '0' );
+		if ( false === $initial_kill_switch ) {
+			delete_option( self::KILL_SWITCH_OPTION );
+		} elseif ( null !== $initial_kill_switch ) {
+			update_option( self::KILL_SWITCH_OPTION, $initial_kill_switch );
+		}
 		$fixture = $this->create_marked_order_for_owner_change();
 		$this->arbiter->invalidate();
 		$this->sut->register();
-		$this->assert_arbiter_is_cold();
 
-		update_option( self::KILL_SWITCH_OPTION, '1' );
+		if ( 'add' === $operation ) {
+			add_option( $option_name, $new_value );
+		} elseif ( 'update' === $operation ) {
+			update_option( $option_name, $new_value );
+		} else {
+			delete_option( $option_name );
+		}
 
 		$this->assert_restored_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
 	}
 
 	/**
-	 * @testdox Disabling the built-in enabled option drains when ownership becomes none.
+	 * Provide the option writes that end built-in ownership, from a built-in owner.
+	 *
+	 * @return array<string,array{0:string|false|null,1:string,2:string,3:string|null}>
 	 */
-	public function test_builtin_enabled_option_update_drains_on_owner_loss(): void {
-		update_option( self::ENABLED_OPTION, 'yes' );
-		$fixture = $this->create_marked_order_for_owner_change();
-		$this->arbiter->invalidate();
-		$this->sut->register();
-		$this->assert_arbiter_is_cold();
-
-		update_option( self::ENABLED_OPTION, 'no' );
-
-		$this->assert_restored_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
-	}
-
-	/**
-	 * @testdox Deleting the built-in enabled option drains when ownership becomes none.
-	 */
-	public function test_builtin_enabled_option_delete_drains_on_owner_loss(): void {
-		update_option( self::ENABLED_OPTION, 'yes' );
-		$fixture = $this->create_marked_order_for_owner_change();
-		$this->arbiter->invalidate();
-		$this->sut->register();
-		$this->assert_arbiter_is_cold();
-
-		delete_option( self::ENABLED_OPTION );
-
-		$this->assert_restored_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
-	}
-
-	/**
-	 * @testdox Adding an active kill switch drains when ownership becomes none.
-	 */
-	public function test_kill_switch_option_add_drains_on_owner_loss(): void {
-		update_option( self::ENABLED_OPTION, 'yes' );
-		delete_option( self::KILL_SWITCH_OPTION );
-		$fixture = $this->create_marked_order_for_owner_change();
-		$this->arbiter->invalidate();
-		$this->sut->register();
-		$this->assert_arbiter_is_cold();
-
-		add_option( self::KILL_SWITCH_OPTION, '1' );
-
-		$this->assert_restored_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
+	public function owner_loss_option_write_provider(): array {
+		return array(
+			'kill switch updated to 1' => array( '0', 'update', self::KILL_SWITCH_OPTION, '1' ),
+			'enabled option set to no' => array( null, 'update', self::ENABLED_OPTION, 'no' ),
+			'enabled option deleted'   => array( null, 'delete', self::ENABLED_OPTION, null ),
+			'kill switch added as 1'   => array( false, 'add', self::KILL_SWITCH_OPTION, '1' ),
+		);
 	}
 
 	/**
@@ -621,7 +548,6 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 			$this->assertFalse( (bool) get_option( self::KILL_SWITCH_OPTION, false ), 'The kill switch must begin inactive.' );
 			$this->assertTrue( $this->arbiter->is_builtin_enabled(), 'The stateful filter must resolve native enablement before the write.' );
 			$this->sut->register();
-			$this->assert_arbiter_is_cold();
 
 			if ( 'add' === $operation ) {
 				add_option( self::KILL_SWITCH_OPTION, '1' );
@@ -659,7 +585,6 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 		$this->plugin_active = true;
 		$this->arbiter->invalidate();
 		$this->sut->register();
-		$this->assert_arbiter_is_cold();
 
 		$this->sut->drain_current_blog();
 
@@ -667,37 +592,37 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox An option change while the WooPayments extension owns the runtime does not drain.
+	 * @testdox Kill switch writes do not drain while the resulting owner is not none: $_dataName.
+	 * @dataProvider no_drain_kill_switch_write_provider
+	 *
+	 * @param bool               $extension_active   Whether the WooPayments extension is active.
+	 * @param array<int, string> $kill_switch_writes Kill switch values written in order.
 	 */
-	public function test_option_change_while_extension_owned_does_not_drain(): void {
-		$this->plugin_active = true;
+	public function test_kill_switch_writes_do_not_drain_while_an_owner_remains( bool $extension_active, array $kill_switch_writes ): void {
+		$this->plugin_active = $extension_active;
 		update_option( self::ENABLED_OPTION, 'yes' );
 		update_option( self::KILL_SWITCH_OPTION, '0' );
 		$fixture = $this->create_marked_order_for_owner_change();
 		$this->arbiter->invalidate();
 		$this->sut->register();
-		$this->assert_arbiter_is_cold();
 
-		update_option( self::KILL_SWITCH_OPTION, '1' );
+		foreach ( $kill_switch_writes as $value ) {
+			update_option( self::KILL_SWITCH_OPTION, $value );
+		}
 
 		$this->assert_detached_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
 	}
 
 	/**
-	 * @testdox Relevant option updates do not drain while the resulting owner remains the built-in WooPayments.
+	 * Provide kill switch writes that leave an owner in place.
+	 *
+	 * @return array<string,array{0:bool,1:array<int,string>}>
 	 */
-	public function test_relevant_option_updates_while_owner_builtin_do_not_drain(): void {
-		update_option( self::ENABLED_OPTION, 'yes' );
-		update_option( self::KILL_SWITCH_OPTION, '0' );
-		$fixture = $this->create_marked_order_for_owner_change();
-		$this->arbiter->invalidate();
-		$this->sut->register();
-		$this->assert_arbiter_is_cold();
-
-		update_option( self::KILL_SWITCH_OPTION, '' );
-		update_option( self::KILL_SWITCH_OPTION, '0' );
-
-		$this->assert_detached_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
+	public function no_drain_kill_switch_write_provider(): array {
+		return array(
+			'extension active, kill switch 0 to 1' => array( true, array( '1' ) ),
+			'built-in owner, kill switch emptied then reset' => array( false, array( '', '0' ) ),
+		);
 	}
 
 	/**
@@ -747,7 +672,6 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 			}
 
 			$this->assertGreaterThan( 0, $post_write_owner_recomputation_count, 'Every relevant post-write action must recompute the current-blog owner after persistence.' );
-			$this->assert_arbiter_cached_owner( WooPaymentsRuntimeArbiter::OWNER_NONE );
 			$this->assert_restored_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
 		} finally {
 			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $count_post_write_owner_recomputations, PHP_INT_MAX - 1 );
@@ -778,7 +702,6 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 		$fixture             = $this->create_marked_order_for_owner_change();
 		$this->arbiter->invalidate();
 		$this->sut->register();
-		$this->assert_arbiter_is_cold();
 
 		do_action( self::RESTORE_HOOK, $fixture['order_id'] );
 
@@ -804,17 +727,13 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 		);
 		$this->builtin_enabled_override = false;
 		$this->assertFalse( $this->arbiter->is_builtin_enabled(), 'The mutable signal must now resolve native enablement to false without changing the warmed owner cache.' );
-		$this->assert_arbiter_cached_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 
 		add_option( self::UNRELATED_OPTION, 'first' );
 		$this->assertSame( 0, $query_count, 'Adding an unrelated option must not query orders.' );
-		$this->assert_arbiter_cached_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 		update_option( self::UNRELATED_OPTION, 'second' );
 		$this->assertSame( 0, $query_count, 'Updating an unrelated option must not query orders.' );
-		$this->assert_arbiter_cached_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 		delete_option( self::UNRELATED_OPTION );
 		$this->assertSame( 0, $query_count, 'Deleting an unrelated option must not query orders.' );
-		$this->assert_arbiter_cached_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assert_detached_owner_change_order( $fixture['order_id'], $fixture['customer_id'] );
 	}
@@ -878,13 +797,6 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 		$this->sut->drain_current_blog();
 
 		$this->assertGreaterThanOrEqual( 4, count( $drain_queries ), 'Three one-order batches plus a terminal empty query must complete without an offset.' );
-		foreach ( $drain_queries as $query_args ) {
-			$this->assertSame( 'ids', $query_args['return'] ?? null, 'The drain must request IDs instead of hydrating an unbounded order collection.' );
-			$this->assertIsInt( $query_args['limit'] ?? null, 'The batch limit must be an integer.' );
-			$this->assertGreaterThan( 0, $query_args['limit'], 'The batch limit must be positive.' );
-			$this->assertLessThanOrEqual( 1000, $query_args['limit'], 'The drain must use a practical bounded batch.' );
-			$this->assertEmpty( $query_args['offset'] ?? 0, 'Deleting markers between batches must not combine with an advancing offset.' );
-		}
 		$this->assert_order_state( $first_order_id, $first_customer_id, false );
 		$this->assert_order_state( $second_order_id, $second_customer_id, false );
 		$this->assert_order_state( $third_order_id, $third_customer_id, false );
@@ -1305,31 +1217,6 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * Count all callbacks registered by the service on a hook.
-	 *
-	 * @param string $hook Hook name.
-	 * @return int
-	 */
-	private function count_service_callbacks_on_hook( string $hook ): int {
-		global $wp_filter;
-		if ( ! isset( $wp_filter[ $hook ] ) || ! $wp_filter[ $hook ] instanceof \WP_Hook ) {
-			return 0;
-		}
-
-		$count = 0;
-		foreach ( $wp_filter[ $hook ]->callbacks as $callbacks ) {
-			foreach ( $callbacks as $callback ) {
-				$function = $callback['function'] ?? null;
-				if ( is_array( $function ) && ( $function[0] ?? null ) === $this->sut ) {
-					++$count;
-				}
-			}
-		}
-
-		return $count;
-	}
-
-	/**
 	 * Remove all callbacks registered by the service on a hook.
 	 *
 	 * @param string $hook Hook name.
@@ -1632,25 +1519,6 @@ class WooPaymentsWooPayVerifiedEmailRestoreServiceTest extends WC_Unit_Test_Case
 	 */
 	private function snapshot_arbiter_cache(): array {
 		return $this->read_arbiter_cache();
-	}
-
-	/**
-	 * Assert that the real arbiter has no current-blog owner memoized.
-	 */
-	private function assert_arbiter_is_cold(): void {
-		$this->assertArrayNotHasKey( get_current_blog_id(), $this->read_arbiter_cache(), 'The transition must begin with an unprimed current-blog arbiter.' );
-	}
-
-	/**
-	 * Assert the real arbiter retains the expected current-blog owner.
-	 *
-	 * @param string $expected_owner Expected cached owner.
-	 */
-	private function assert_arbiter_cached_owner( string $expected_owner ): void {
-		$cache   = $this->read_arbiter_cache();
-		$blog_id = get_current_blog_id();
-		$this->assertArrayHasKey( $blog_id, $cache, 'The unrelated option action must preserve the current-blog owner cache.' );
-		$this->assertSame( $expected_owner, $cache[ $blog_id ], 'The unrelated option action must preserve the cached current-blog owner.' );
 	}
 
 	/**

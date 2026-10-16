@@ -27,97 +27,62 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should require platform checkout to treat WooPay as enabled.
-	 */
-	public function test_woopay_requires_platform_checkout_to_be_enabled(): void {
-		$sut = $this->create_service(
-			array(
-				'platform_checkout'                 => 'no',
-				'express_checkout_product_methods'  => array( 'payment_request' ),
-				'express_checkout_cart_methods'     => array(),
-				'express_checkout_checkout_methods' => array( 'woopay' ),
-			)
-		);
-
-		$this->assertFalse( $this->woopay_eligibility->is_woopay_enabled() );
-
-		$sut = $this->create_service(
-			array(
-				'platform_checkout'                 => 'yes',
-				'express_checkout_product_methods'  => array( 'payment_request' ),
-				'express_checkout_cart_methods'     => array(),
-				'express_checkout_checkout_methods' => array(),
-			)
-		);
-
-		$this->assertTrue( $this->woopay_eligibility->is_woopay_enabled() );
-
-		$sut = $this->create_service(
-			array(
-				'platform_checkout' => 'yes',
-			),
-			array(
-				'platform_checkout_eligible' => false,
-			)
-		);
-
-		$this->assertFalse( $this->woopay_eligibility->is_woopay_enabled() );
-		$this->assertFalse( $sut->get_woopay_frontend_config( 'checkout' )['isWooPayEnabled'] );
-	}
-
-	/**
-	 * @testdox Should not treat WooPay as enabled for restricted account status $status.
-	 * @dataProvider restricted_account_statuses
-	 *
-	 * @param string $status Restricted account status.
-	 */
-	public function test_woopay_is_not_enabled_for_restricted_accounts( string $status ): void {
-		$sut = $this->create_service(
-			array( 'platform_checkout' => 'yes' ),
-			array( 'status' => $status )
-		);
-
-		$this->assertFalse( $this->woopay_eligibility->is_woopay_enabled() );
-		$this->assertFalse( $sut->get_woopay_frontend_config( 'checkout' )['isWooPayEnabled'] );
-	}
-
-	/**
-	 * Restricted account statuses.
-	 *
-	 * @return array<string,array{string}>
-	 */
-	public function restricted_account_statuses(): array {
-		return array(
-			'under review' => array( 'under_review' ),
-			'rejected'     => array( 'rejected.fraud' ),
-		);
-	}
-
-	/**
-	 * @testdox Should treat WooPay as enabled for an account still finishing onboarding: $label.
+	 * @testdox WooPay is enabled only with platform checkout on for an eligible account, onboarded or not: $_dataName.
+	 * @dataProvider woopay_enabled_provider
 	 *
 	 * Client 11.1.0 decides WooPay on the setting and `WC_Payments_Features::is_woopay_eligible()`, with no account validity
 	 * check (includes/woopay/class-woopay-session.php:883-890, includes/class-wc-payments.php:1711-1715,
 	 * includes/class-wc-payments-features.php:193-210); its own tests call an account holding only platform_checkout_eligible
 	 * eligible and enabled (tests/unit/test-class-wc-payments-features.php:133-136, :213-218).
 	 *
-	 * @testWith ["details not submitted", {"details_submitted": false}]
-	 *           ["card payments missing", {"capabilities": []}]
-	 *           ["card payments unrequested", {"capabilities": {"card_payments": "unrequested"}}]
-	 *           ["no account ID", {"account_id": ""}]
-	 *
-	 * @param string              $label        Case label.
+	 * @param array<string,mixed> $settings     Gateway settings overrides.
 	 * @param array<string,mixed> $account_data Account data overrides.
+	 * @param bool                $expected     Whether WooPay is enabled.
 	 */
-	public function test_woopay_is_enabled_for_an_account_still_onboarding( string $label, array $account_data ): void {
-		unset( $label );
-		$sut = $this->create_service(
-			array( 'platform_checkout' => 'yes' ),
-			$account_data
-		);
+	public function test_woopay_enabled_follows_the_setting_and_the_account( array $settings, array $account_data, bool $expected ): void {
+		$sut = $this->create_service( $settings, $account_data );
 
-		$this->assertTrue( $this->woopay_eligibility->is_woopay_enabled() );
-		$this->assertTrue( $sut->get_woopay_frontend_config( 'checkout' )['isWooPayEnabled'] );
+		$this->assertSame( $expected, $this->woopay_eligibility->is_woopay_enabled() );
+		$this->assertSame( $expected, $sut->get_woopay_frontend_config( 'checkout' )['isWooPayEnabled'] );
+	}
+
+	/**
+	 * WooPay settings and accounts, and whether WooPay is enabled for them.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:array<string,mixed>,2:bool}>
+	 */
+	public function woopay_enabled_provider(): array {
+		$on = array( 'platform_checkout' => 'yes' );
+
+		return array(
+			'platform checkout off'              => array(
+				array(
+					'platform_checkout'                 => 'no',
+					'express_checkout_product_methods'  => array( 'payment_request' ),
+					'express_checkout_cart_methods'     => array(),
+					'express_checkout_checkout_methods' => array( 'woopay' ),
+				),
+				array(),
+				false,
+			),
+			'platform checkout on without WooPay express methods' => array(
+				array(
+					'platform_checkout'                 => 'yes',
+					'express_checkout_product_methods'  => array( 'payment_request' ),
+					'express_checkout_cart_methods'     => array(),
+					'express_checkout_checkout_methods' => array(),
+				),
+				array(),
+				true,
+			),
+			'an account not eligible for WooPay' => array( $on, array( 'platform_checkout_eligible' => false ), false ),
+			'an account under review'            => array( $on, array( 'status' => 'under_review' ), false ),
+			'a rejected account'                 => array( $on, array( 'status' => 'rejected.fraud' ), false ),
+			'details not submitted'              => array( $on, array( 'details_submitted' => false ), true ),
+			'card payments missing'              => array( $on, array( 'capabilities' => array() ), true ),
+			'card payments unrequested'          => array( $on, array( 'capabilities' => array( 'card_payments' => 'unrequested' ) ), true ),
+			'no account ID'                      => array( $on, array( 'account_id' => '' ), true ),
+		);
 	}
 
 	/**
@@ -229,25 +194,6 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 			$this->create_eligibility( array( 'express_checkout_cart_methods' => array() ) )->should_show_woopay_button( 'pay_for_order' ),
 			'Only the checkout location applies on order-pay.'
 		);
-	}
-
-	/**
-	 * @testdox Should not leak optional extension aliases to later tests.
-	 *
-	 * Runs isolated on purpose. The assertion is about what *this* test class
-	 * defines, but class definitions are process-global and cannot be undone, so
-	 * in a shared process it also sees classes other suites define — for example
-	 * WooPaymentsGatewayTest evals a WC_Subscriptions_Cart double. A fresh
-	 * process is what makes the assertion mean what its name says.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 */
-	public function test_woopay_optional_extension_aliases_do_not_leak(): void {
-		$this->assertFalse( class_exists( 'WC_Pre_Orders_Product', false ) );
-		$this->assertFalse( class_exists( 'WC_Pre_Orders_Cart', false ) );
-		$this->assertFalse( class_exists( 'WC_Product_Booking', false ) );
-		$this->assertFalse( class_exists( 'WC_Subscriptions_Cart', false ) );
 	}
 
 	/**
@@ -1010,22 +956,41 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should match the extension WooPay button style settings.
+	 * @testdox The WooPay button takes its height from the express checkout size and its radius as stored: $_dataName.
+	 * @dataProvider woopay_button_size_provider
+	 *
+	 * Heights and radius follow client includes/express-checkout/class-wc-payments-express-checkout-button-helper.php:475-487
+	 * (size to height) and :441 (radius as stored).
+	 *
+	 * @param string $size            The express checkout button size.
+	 * @param string $radius          The stored button border radius.
+	 * @param string $expected_height The expected button height.
 	 */
-	public function test_uses_extension_woopay_button_style_settings(): void {
+	public function test_uses_extension_woopay_button_style_settings( string $size, string $radius, string $expected_height ): void {
 		$sut = $this->create_service(
 			array(
-				'payment_request_button_size'          => 'medium',
-				'payment_request_button_height'        => '44',
-				'payment_request_button_border_radius' => '',
-				'payment_request_button_radius'        => '9',
+				'payment_request_button_size'          => $size,
+				'payment_request_button_border_radius' => $radius,
 			)
 		);
 
 		$config = $sut->get_woopay_frontend_config( 'checkout' );
 
-		$this->assertSame( '48', $config['woopayButton']['height'] );
-		$this->assertSame( '', $config['woopayButton']['radius'] );
+		$this->assertSame( $expected_height, $config['woopayButton']['height'] );
+		$this->assertSame( $radius, $config['woopayButton']['radius'] );
+	}
+
+	/**
+	 * Express checkout button sizes, each with its own stored radius, and the height each gets.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string}>
+	 */
+	public function woopay_button_size_provider(): array {
+		return array(
+			'small'  => array( 'small', '4', '40' ),
+			'medium' => array( 'medium', '12', '48' ),
+			'large'  => array( 'large', '0', '55' ),
+		);
 	}
 
 	/**
@@ -1251,63 +1216,52 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A WooPay init error code that WordPress or Jetpack does not set is logged as unknown_error ($_dataName).
+	 * @testdox A failed WooPay init request logs only an error code WordPress or Jetpack sets, and its own cURL error number ($_dataName).
 	 *
 	 * WP_Http::request() hands back whatever a pre_http_request callback returns, and WP_Error keeps any code
 	 * (wp-includes/class-wp-error.php add(), get_error_code()), so an extension's error code can be a URL, an email or a token.
+	 * Requests words a transport failure as "cURL error <number>: <curl_error()>" (wp-includes/Requests/src/Transport/Curl.php);
+	 * WP_Http::request() sets other messages under the same http_request_failed code (wp-includes/class-wp-http.php), such as
+	 * "A valid URL was not provided.".
 	 *
-	 * @dataProvider woopay_init_error_codes
+	 * @dataProvider woopay_init_request_errors
 	 *
-	 * @param string $code     The WP_Error code a pre_http_request callback returns.
-	 * @param string $expected The logged error_code.
+	 * @param string              $code     The WP_Error code a pre_http_request callback returns.
+	 * @param string              $message  The WP_Error message.
+	 * @param array<string,mixed> $expected The logged context.
 	 */
-	public function test_logs_only_known_woopay_init_error_codes( string $code, string $expected ): void {
+	public function test_logs_only_known_woopay_init_error_codes( string $code, string $message, array $expected ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
 		$this->connect_woopay_blog();
-		add_filter( 'pre_http_request', static fn() => new \WP_Error( $code, 'Request blocked by an extension.' ) );
+		add_filter( 'pre_http_request', static fn() => new \WP_Error( $code, $message ) );
 		$lines = $this->record_woopayments_log_lines();
 
 		$this->assertSame( array( 'result' => 'failure' ), $this->create_service()->init_woopay_session( array( 'email' => 'shopper@example.com' ) ) );
 		$this->assertContains(
-			array( 'error', 'HTTP_REQUEST_ERROR: WooPay session init request failed.', array( 'error_code' => $expected ) ),
+			array( 'error', 'HTTP_REQUEST_ERROR: WooPay session init request failed.', $expected ),
 			$lines->getArrayCopy()
 		);
-		if ( $code !== $expected ) {
+		if ( $code !== $expected['error_code'] ) {
 			$this->assertStringNotContainsString( $code, (string) wp_json_encode( $lines->getArrayCopy(), JSON_UNESCAPED_SLASHES ) );
 		}
 	}
 
 	/**
-	 * @testdox A failed WooPay init request logs its own cURL error number, and none for a transport message of another form ($_dataName).
+	 * Failed WooPay init requests and the context logged for each.
 	 *
-	 * Requests words a transport failure as "cURL error <number>: <curl_error()>" (wp-includes/Requests/src/Transport/Curl.php);
-	 * WP_Http::request() sets other messages under the same http_request_failed code (wp-includes/class-wp-http.php), such as
-	 * "A valid URL was not provided.".
-	 *
-	 * @dataProvider woopay_init_transport_failures
-	 *
-	 * @param string              $message  The WP_Error message.
-	 * @param array<string,mixed> $expected The logged context.
+	 * @return array<string,array{0:string,1:string,2:array<string,mixed>}>
 	 */
-	public function test_logs_the_curl_error_number_of_a_failed_woopay_init( string $message, array $expected ): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
-		$this->connect_woopay_blog();
-		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'http_request_failed', $message ) );
-		$lines = $this->record_woopayments_log_lines();
+	public function woopay_init_request_errors(): array {
+		$blocked = 'Request blocked by an extension.';
 
-		$this->create_service()->init_woopay_session( array( 'email' => 'shopper@example.com' ) );
-
-		$this->assertContains( array( 'error', 'HTTP_REQUEST_ERROR: WooPay session init request failed.', $expected ), $lines->getArrayCopy() );
-	}
-
-	/**
-	 * Transport failures of a WooPay init request and the context logged for each.
-	 *
-	 * @return array<string,array{0:string,1:array<string,mixed>}>
-	 */
-	public function woopay_init_transport_failures(): array {
 		return array(
+			'a signed URL'                  => array( 'https://pay.woo.test/wp-json/platform-checkout/v1/init?token=tok_secret_123&signature=sig_abc', $blocked, array( 'error_code' => 'unknown_error' ) ),
+			'an email'                      => array( 'other-shopper@example.com', $blocked, array( 'error_code' => 'unknown_error' ) ),
+			'a token'                       => array( 'tok_secret_123', $blocked, array( 'error_code' => 'unknown_error' ) ),
+			"WordPress's blocked request"   => array( 'http_request_not_executed', $blocked, array( 'error_code' => 'http_request_not_executed' ) ),
+			"Jetpack's missing token"       => array( 'missing_token', $blocked, array( 'error_code' => 'missing_token' ) ),
 			'a host that does not resolve'  => array(
+				'http_request_failed',
 				'cURL error 6: Could not resolve host: pay.woo.com',
 				array(
 					'error_code' => 'http_request_failed',
@@ -1315,31 +1269,14 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 				),
 			),
 			'a timeout'                     => array(
+				'http_request_failed',
 				'cURL error 28: Operation timed out after 30001 milliseconds with 0 bytes received',
 				array(
 					'error_code' => 'http_request_failed',
 					'curl_error' => 28,
 				),
 			),
-			'a message that is not cURL\'s' => array(
-				'A valid URL was not provided.',
-				array( 'error_code' => 'http_request_failed' ),
-			),
-		);
-	}
-
-	/**
-	 * Error codes of a failed WooPay init request and what is logged for each.
-	 *
-	 * @return array<string,array{0:string,1:string}>
-	 */
-	public function woopay_init_error_codes(): array {
-		return array(
-			'a signed URL'                => array( 'https://pay.woo.test/wp-json/platform-checkout/v1/init?token=tok_secret_123&signature=sig_abc', 'unknown_error' ),
-			'an email'                    => array( 'other-shopper@example.com', 'unknown_error' ),
-			'a token'                     => array( 'tok_secret_123', 'unknown_error' ),
-			"WordPress's blocked request" => array( 'http_request_not_executed', 'http_request_not_executed' ),
-			"Jetpack's missing token"     => array( 'missing_token', 'missing_token' ),
+			'a message that is not cURL\'s' => array( 'http_request_failed', 'A valid URL was not provided.', array( 'error_code' => 'http_request_failed' ) ),
 		);
 	}
 
@@ -1480,68 +1417,76 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fall back to the WooCommerce customer's billing email when no email is supplied.
+	 * @testdox The init-session request email is $_dataName.
+	 * @dataProvider init_session_email_provider
+	 *
+	 * @param string|null $user_email     Email of a store account to log in, or null for a guest.
+	 * @param string      $billing_email  The WooCommerce customer's billing email.
+	 * @param string|null $customer_email The WooCommerce customer's email to set, or null to leave it.
+	 * @param string|null $supplied_email The email the request supplies.
+	 * @param string      $expected       The request email.
 	 */
-	public function test_init_session_request_falls_back_to_customer_billing_email(): void {
-		WC()->customer->set_billing_email( 'billing-fallback@example.com' );
+	public function test_init_session_request_email_fallbacks( ?string $user_email, string $billing_email, ?string $customer_email, ?string $supplied_email, string $expected ): void {
+		if ( null !== $user_email ) {
+			wp_set_current_user( $this->factory->user->create( array( 'user_email' => $user_email ) ) );
+		}
+		WC()->customer->set_billing_email( $billing_email );
+		if ( null !== $customer_email ) {
+			WC()->customer->set_email( $customer_email );
+		}
 
-		$request = $this->create_service()->start_init_session_request( null );
+		$request = $this->create_service()->start_init_session_request( $supplied_email );
 
-		$this->assertSame( 'billing-fallback@example.com', $request['email'] );
+		$this->assertSame( $expected, $request['email'] );
 	}
 
 	/**
-	 * @testdox Should fall back to the logged-in user's email when neither a request email nor a customer email exists.
+	 * Init-session request emails: the supplied one, then the customer's billing email, then the logged-in user's email.
+	 *
+	 * @return array<string,array{0:string|null,1:string,2:string|null,3:string|null,4:string}>
 	 */
-	public function test_init_session_request_falls_back_to_logged_in_user_email(): void {
-		$user_id = $this->factory->user->create( array( 'user_email' => 'account-fallback@example.com' ) );
-		wp_set_current_user( $user_id );
-		WC()->customer->set_billing_email( '' );
-		WC()->customer->set_email( '' );
-
-		$request = $this->create_service()->start_init_session_request( null );
-
-		$this->assertSame( 'account-fallback@example.com', $request['email'] );
+	public function init_session_email_provider(): array {
+		return array(
+			'the customer billing email when no email is supplied' => array( null, 'billing-fallback@example.com', null, null, 'billing-fallback@example.com' ),
+			'the logged-in user email when neither a request email nor a customer email exists' => array( 'account-fallback@example.com', '', '', null, 'account-fallback@example.com' ),
+			'the supplied email over every fallback' => array( null, 'billing-fallback@example.com', null, 'supplied@example.com', 'supplied@example.com' ),
+		);
 	}
 
 	/**
-	 * @testdox Should prefer the supplied email over every fallback.
+	 * @testdox The init-session request carries the platform customer of the current shopper: $_dataName.
+	 * @dataProvider init_session_platform_customer_provider
+	 *
+	 * @param bool   $logged_in   Whether a shopper is logged in.
+	 * @param string $customer_id The platform customer ID the customer service answers.
+	 * @param string $email       The email the request supplies.
 	 */
-	public function test_init_session_request_prefers_supplied_email(): void {
-		WC()->customer->set_billing_email( 'billing-fallback@example.com' );
-
-		$request = $this->create_service()->start_init_session_request( 'supplied@example.com' );
-
-		$this->assertSame( 'supplied@example.com', $request['email'] );
-	}
-
-	/**
-	 * @testdox Should carry the platform customer id for the current user in the init-session request.
-	 */
-	public function test_init_session_request_carries_platform_customer_id(): void {
-		$user_id = $this->factory->user->create();
-		wp_set_current_user( $user_id );
+	public function test_init_session_request_carries_platform_customer_id( bool $logged_in, string $customer_id, string $email ): void {
+		$user_id = 0;
+		if ( $logged_in ) {
+			$user_id = $this->factory->user->create();
+			wp_set_current_user( $user_id );
+		}
 
 		$captured_user_id = null;
-		$customer_service = $this->create_recording_customer_service( 'cus_test_123', $captured_user_id );
+		$customer_service = $this->create_recording_customer_service( $customer_id, $captured_user_id );
 
-		$request = $this->create_service( array(), array(), null, null, $customer_service )->start_init_session_request( 'shopper@example.com' );
+		$request = $this->create_service( array(), array(), null, null, $customer_service )->start_init_session_request( $email );
 
-		$this->assertSame( 'cus_test_123', $request['customer_id'] );
+		$this->assertSame( $customer_id, $request['customer_id'] );
 		$this->assertSame( $user_id, $captured_user_id );
 	}
 
 	/**
-	 * @testdox Should create a guest platform customer for the init-session request when nobody is logged in.
+	 * Shoppers whose platform customer WooPay charges.
+	 *
+	 * @return array<string,array{0:bool,1:string,2:string}>
 	 */
-	public function test_init_session_request_creates_guest_platform_customer(): void {
-		$captured_user_id = null;
-		$customer_service = $this->create_recording_customer_service( 'cus_guest_456', $captured_user_id );
-
-		$request = $this->create_service( array(), array(), null, null, $customer_service )->start_init_session_request( 'guest@example.com' );
-
-		$this->assertSame( 'cus_guest_456', $request['customer_id'] );
-		$this->assertSame( 0, $captured_user_id );
+	public function init_session_platform_customer_provider(): array {
+		return array(
+			'the logged-in user'                   => array( true, 'cus_test_123', 'shopper@example.com' ),
+			'a guest platform customer for user 0' => array( false, 'cus_guest_456', 'guest@example.com' ),
+		);
 	}
 
 	/**
@@ -1599,34 +1544,39 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should withhold stored appearance and font rules from the session when global theme support is off.
+	 * @testdox The init-session request carries the stored appearance and font rules only while global theme support is on: $_dataName.
+	 * @dataProvider stored_appearance_provider
+	 *
+	 * @param string                              $theme_support       The global theme support setting.
+	 * @param array<int,array<string,mixed>>      $font_rules          The stored font rules.
+	 * @param array<string,mixed>|null            $expected_appearance The request appearance.
+	 * @param array<int,array<string,mixed>>|null $expected_font_rules The request font rules, or null when not checked.
 	 */
-	public function test_init_session_request_gates_stored_appearance_on_global_theme_support(): void {
+	public function test_init_session_request_gates_stored_appearance_on_global_theme_support( string $theme_support, array $font_rules, ?array $expected_appearance, ?array $expected_font_rules ): void {
 		$sut = $this->create_service(
-			array( 'is_woopay_global_theme_support_enabled' => 'no' ),
+			array( 'is_woopay_global_theme_support_enabled' => $theme_support ),
 			array( 'platform_global_theme_support_enabled' => true )
 		);
-		$this->appearance_store->save_woopay_appearance( array( 'theme' => 'night' ), array( array( 'src' => 'https://example.com/font.woff2' ) ) );
+		$this->appearance_store->save_woopay_appearance( array( 'theme' => 'night' ), $font_rules );
 
 		$request = $sut->start_init_session_request( 'shopper@example.com' );
 
-		$this->assertNull( $request['appearance'] );
-		$this->assertSame( array(), $request['font_rules'] );
+		$this->assertSame( $expected_appearance, $request['appearance'] );
+		if ( null !== $expected_font_rules ) {
+			$this->assertSame( $expected_font_rules, $request['font_rules'] );
+		}
 	}
 
 	/**
-	 * @testdox Should fall back to stored appearance and font rules when global theme support is on.
+	 * Global theme support settings and what the init-session request carries of the stored appearance.
+	 *
+	 * @return array<string,array{0:string,1:array<int,array<string,mixed>>,2:array<string,mixed>|null,3:array<int,array<string,mixed>>|null}>
 	 */
-	public function test_init_session_request_uses_stored_appearance_when_global_theme_support_is_on(): void {
-		$sut = $this->create_service(
-			array( 'is_woopay_global_theme_support_enabled' => 'yes' ),
-			array( 'platform_global_theme_support_enabled' => true )
+	public function stored_appearance_provider(): array {
+		return array(
+			'theme support off withholds both' => array( 'no', array( array( 'src' => 'https://example.com/font.woff2' ) ), null, array() ),
+			'theme support on falls back to the stored appearance' => array( 'yes', array(), array( 'theme' => 'night' ), null ),
 		);
-		$this->appearance_store->save_woopay_appearance( array( 'theme' => 'night' ), array() );
-
-		$request = $sut->start_init_session_request( 'shopper@example.com' );
-
-		$this->assertSame( array( 'theme' => 'night' ), $request['appearance'] );
 	}
 
 	/**

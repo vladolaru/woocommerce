@@ -57,60 +57,73 @@ class WooPaymentsWooPayAppearanceStoreTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should ignore stale WooPay appearance data when the styles cache version changes.
+	 * An appearance stored for an older styles cache version is ignored. One the WooPayments extension stored for the current
+	 * version is still valid, as client 11.1.0 reads it (includes/class-wc-payments-styles-cache.php:69-75), so a store moving
+	 * from the extension keeps it.
+	 *
+	 * @testdox Should read the stored appearance only for the current styles cache version: $_dataName.
+	 *
+	 * @dataProvider styles_cache_version_cases
+	 *
+	 * @param string    $stored_by           'store' saves through the store with a font rule, 'extension' writes the extension-shape option.
+	 * @param string    $read_version        Styles cache version when the appearance is read.
+	 * @param bool      $expect_appearance   Whether the stored appearance is read back.
+	 * @param bool|null $expected_maybe_save Expected maybe_save_woopay_appearance() answer afterwards, or null to skip it.
 	 */
-	public function test_ignores_stale_appearance_when_styles_cache_version_changes(): void {
+	public function test_reads_stored_appearance_only_for_the_current_styles_cache_version( string $stored_by, string $read_version, bool $expect_appearance, ?bool $expected_maybe_save ): void {
 		$sut        = $this->create_appearance_store();
 		$appearance = $this->get_valid_appearance();
 
 		update_option( 'wcpay_styles_cache_version', 'version-one' );
-		$sut->save_woopay_appearance(
-			$appearance,
-			array(
+		if ( 'store' === $stored_by ) {
+			$sut->save_woopay_appearance(
+				$appearance,
 				array(
-					'cssSrc' => 'https://fonts.googleapis.com/css2?family=Inter',
-				),
-			)
-		);
-
-		update_option( 'wcpay_styles_cache_version', 'version-two' );
-
-		$this->assertSame( array(), $sut->get_woopay_appearance() );
-		$this->assertSame( array(), $sut->get_woopay_font_rules() );
-		$this->assertTrue(
-			$sut->maybe_save_woopay_appearance(
-				array(
-					'theme'     => 'night',
-					'variables' => array(
-						'colorText' => '#ffffff',
+					array(
+						'cssSrc' => 'https://fonts.googleapis.com/css2?family=Inter',
 					),
 				)
-			)
-		);
+			);
+		} else {
+			update_option(
+				'wcpay_woopay_checkout_appearance',
+				array(
+					'appearance' => $appearance,
+					'font_rules' => array(),
+					'version'    => 'version-one',
+				)
+			);
+		}
+
+		update_option( 'wcpay_styles_cache_version', $read_version );
+
+		$this->assertSame( $expect_appearance ? $appearance : array(), $sut->get_woopay_appearance() );
+		$this->assertSame( array(), $sut->get_woopay_font_rules() );
+		if ( null !== $expected_maybe_save ) {
+			$this->assertSame(
+				$expected_maybe_save,
+				$sut->maybe_save_woopay_appearance(
+					array(
+						'theme'     => 'night',
+						'variables' => array(
+							'colorText' => '#ffffff',
+						),
+					)
+				)
+			);
+		}
 	}
 
 	/**
-	 * An appearance the WooPayments extension stored for the current styles cache version is still valid, as client 11.1.0
-	 * reads it (includes/class-wc-payments-styles-cache.php:69-75), so a store moving from the extension keeps it.
+	 * How the appearance was stored, the version it is read at, and what the store answers.
 	 *
-	 * @testdox Should keep an appearance stored for the current styles cache version.
+	 * @return array<string,array{0:string,1:string,2:bool,3:bool|null}>
 	 */
-	public function test_keeps_appearance_stored_for_the_current_styles_cache_version(): void {
-		$sut        = $this->create_appearance_store();
-		$appearance = $this->get_valid_appearance();
-
-		update_option( 'wcpay_styles_cache_version', 'version-one' );
-		update_option(
-			'wcpay_woopay_checkout_appearance',
-			array(
-				'appearance' => $appearance,
-				'font_rules' => array(),
-				'version'    => 'version-one',
-			)
+	public function styles_cache_version_cases(): array {
+		return array(
+			'stored for an older version'    => array( 'store', 'version-two', false, true ),
+			'stored for the current version' => array( 'extension', 'version-one', true, null ),
 		);
-
-		$this->assertSame( $appearance, $sut->get_woopay_appearance() );
-		$this->assertSame( array(), $sut->get_woopay_font_rules() );
 	}
 
 	/**

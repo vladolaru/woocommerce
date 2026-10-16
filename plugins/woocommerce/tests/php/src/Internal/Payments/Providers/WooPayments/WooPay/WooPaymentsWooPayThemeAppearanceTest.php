@@ -107,41 +107,50 @@ class WooPaymentsWooPayThemeAppearanceTest extends WP_UnitTestCase {
 	}
 
 	/**
-	 * @testdox A dark theme gets the night theme and its page background in a transparent input.
+	 * Page backgrounds of a theme with transparent inputs and the WooPay appearance each gets.
+	 *
+	 * @return array<string,array{0:array<string,string>,1:string,2:string,3:string|null}>
 	 */
-	public function test_dark_theme_with_transparent_inputs(): void {
-		$rules = $this->compute_with_theme_styles(
-			array(
-				'color'    => array(
+	public function provider_transparent_input_themes(): array {
+		return array(
+			'a dark theme gets the night theme and its page background in the input' => array(
+				array(
 					'background' => '#111111',
 					'text'       => '#eeeeee',
 				),
-				'elements' => array(
-					'textInput' => array( 'color' => array( 'background' => 'transparent' ) ),
-				),
-			)
+				'night',
+				'#111111',
+				'#111111',
+			),
+			'a light theme gets the stripe theme and a white input'                  => array( array( 'background' => '#fafafa' ), 'stripe', '#ffffff', null ),
 		);
-
-		$this->assertSame( 'night', $rules['theme'] );
-		$this->assertSame( '#111111', $rules['variables']['colorBackground'] );
-		$this->assertSame( '#111111', $rules['rules']['.Input']['backgroundColor'] );
 	}
 
 	/**
-	 * @testdox A light theme gets the stripe theme and a white transparent input.
+	 * @testdox A theme with transparent inputs gets a WooPay theme and an input background for its page background: $_dataName.
+	 *
+	 * @dataProvider provider_transparent_input_themes
+	 *
+	 * @param array<string,string> $colors                    theme.json styles color.
+	 * @param string               $expected_theme            The WooPay theme.
+	 * @param string               $expected_input_background The input background color.
+	 * @param string|null          $expected_page_background  The colorBackground variable, or null when not checked.
 	 */
-	public function test_light_theme_with_transparent_inputs(): void {
+	public function test_theme_with_transparent_inputs( array $colors, string $expected_theme, string $expected_input_background, ?string $expected_page_background ): void {
 		$rules = $this->compute_with_theme_styles(
 			array(
-				'color'    => array( 'background' => '#fafafa' ),
+				'color'    => $colors,
 				'elements' => array(
 					'textInput' => array( 'color' => array( 'background' => 'transparent' ) ),
 				),
 			)
 		);
 
-		$this->assertSame( 'stripe', $rules['theme'] );
-		$this->assertSame( '#ffffff', $rules['rules']['.Input']['backgroundColor'] );
+		$this->assertSame( $expected_theme, $rules['theme'] );
+		if ( null !== $expected_page_background ) {
+			$this->assertSame( $expected_page_background, $rules['variables']['colorBackground'] );
+		}
+		$this->assertSame( $expected_input_background, $rules['rules']['.Input']['backgroundColor'] );
 	}
 
 	/**

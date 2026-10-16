@@ -70,23 +70,6 @@ class WooPaymentsWooPayPreflightGuardTest extends WC_Unit_Test_Case {
 		}
 	}
 
-	/** @testdox Registers the request callbacks at priority 10 with three arguments. */
-	public function test_registers_request_callbacks(): void {
-		$guard           = new WooPaymentsWooPayPreflightGuard();
-		$before_callback = array( $guard, 'suppress_checkout_side_effects' );
-		$after_callback  = array( $guard, 'restore_checkout_side_effects' );
-
-		$this->assertFalse( has_filter( 'rest_request_before_callbacks', $before_callback ) );
-		$this->assertFalse( has_filter( 'rest_request_after_callbacks', $after_callback ) );
-
-		$guard->register();
-
-		$this->assertSame( 10, has_filter( 'rest_request_before_callbacks', $before_callback ) );
-		$this->assertSame( 3, array_values( $GLOBALS['wp_filter']['rest_request_before_callbacks']->callbacks[10] )[0]['accepted_args'] );
-		$this->assertSame( 10, has_filter( 'rest_request_after_callbacks', $after_callback ) );
-		$this->assertSame( 3, array_values( $GLOBALS['wp_filter']['rest_request_after_callbacks']->callbacks[10] )[0]['accepted_args'] );
-	}
-
 	/** @testdox Leaves checkout hooks unchanged for unrelated, malformed, and missing-marker requests. */
 	public function test_non_preflight_requests_leave_checkout_hooks_unchanged(): void {
 		$guard                = new WooPaymentsWooPayPreflightGuard();

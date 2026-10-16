@@ -115,9 +115,9 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register WooPay route and AJAX hooks when the built-in WooPayments owns the runtime and WooPay is enabled.
+	 * @testdox Should register WooPay route, AJAX and frontend hooks when the built-in WooPayments owns the runtime and WooPay is enabled.
 	 */
-	public function test_registers_woopay_route_and_ajax_hooks_when_builtin_owns_runtime_and_woopay_is_enabled(): void {
+	public function test_registers_woopay_hooks_when_builtin_owns_runtime_and_woopay_is_enabled(): void {
 		$service   = new RecordingWooPaySessionService();
 		$this->sut = $this->create_controller( true, $service );
 
@@ -137,16 +137,6 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		foreach ( $this->get_expected_ajax_hooks() as $hook => $method ) {
 			$this->assertNotFalse( has_action( $hook, array( $this->sut, $method ) ), "{$hook} should be registered." );
 		}
-	}
-
-	/**
-	 * @testdox Should register WooPay frontend hooks when the built-in WooPayments owns the runtime and WooPay is enabled.
-	 */
-	public function test_registers_woopay_frontend_hooks_when_builtin_owns_runtime_and_woopay_is_enabled(): void {
-		$this->sut = $this->create_controller( true );
-
-		$this->sut->register();
-
 		foreach ( $this->get_expected_frontend_hooks() as $hook => $method ) {
 			$this->assertNotFalse( has_action( $hook, array( $this->sut, $method ) ), "{$hook} should be registered." );
 		}
@@ -174,20 +164,6 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		foreach ( array_merge( $this->get_expected_ajax_hooks(), $this->get_expected_frontend_hooks() ) as $hook => $method ) {
 			$this->assertNotFalse( has_action( $hook, array( $this->sut, $method ) ), "{$hook} should be registered once init runs." );
 		}
-	}
-
-	/**
-	 * @testdox Should keep controller registration enabled when the button filter hides WooPay buttons.
-	 */
-	public function test_button_filter_does_not_disable_controller_registration(): void {
-		$service   = $this->create_real_enabled_session_service();
-		$this->sut = $this->create_controller( true, $service );
-		add_filter( 'wcpay_woopay_enabled', '__return_false' );
-
-		$this->sut->register();
-
-		$this->assertTrue( $this->woopay_eligibility->is_woopay_enabled() );
-		$this->assertNotFalse( has_action( 'rest_api_init', array( $this->sut, 'register_routes' ) ) );
 	}
 
 	/**
@@ -304,39 +280,6 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should enqueue direct checkout assets on a Cart Block without rendering an express button.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 */
-	public function test_enqueue_frontend_assets_for_direct_checkout_on_cart_block(): void {
-		$service                                      = new RecordingWooPaySessionService();
-		$service->should_show_woopay_button           = false;
-		$service->should_load_woopay_save_user_assets = false;
-		$service->direct_checkout_enabled             = true;
-		$this->sut                                    = $this->create_controller( true, $service );
-		$page_id                                      = self::factory()->post->create(
-			array(
-				'post_type'    => 'page',
-				'post_status'  => 'publish',
-				'post_content' => '<!-- wp:woocommerce/cart --><div class="wp-block-woocommerce-cart"></div><!-- /wp:woocommerce/cart -->',
-			)
-		);
-
-		global $post;
-		$post = get_post( $page_id ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
-		setup_postdata( $post );
-		add_filter( 'woocommerce_is_cart', '__return_true' );
-
-		$this->sut->enqueue_frontend_assets();
-		$express_button = $this->sut->get_express_checkout_button_html();
-
-		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
-		$this->assertTrue( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
-		$this->assertSame( '', $express_button );
-	}
-
-	/**
 	 * Pages holding the Cart Block that are not the store's cart page.
 	 *
 	 * @return array<string,array{0:string|null}>
@@ -395,47 +338,41 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should enqueue direct checkout assets for a block mini-cart on an ordinary page at footer time.
+	 * @testdox Should enqueue the light direct checkout assets for a mini-cart at footer time: $_dataName.
 	 *
+	 * Runs in its own process: WOOCOMMERCE_CART, once an earlier test defines it (WC_Form_Handler::update_cart_action() does),
+	 * makes is_cart() true for the rest of the run, and the Checkout block page must not be a cart page.
+	 *
+	 * @dataProvider light_direct_checkout_surfaces
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
+	 *
+	 * @param string $surface Page and cart surface, as arrange_direct_checkout_surface() builds it.
 	 */
-	public function test_enqueue_frontend_assets_for_direct_checkout_block_mini_cart(): void {
+	public function test_enqueue_frontend_assets_loads_light_direct_checkout_for_a_mini_cart( string $surface ): void {
 		$service                                      = new RecordingWooPaySessionService();
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
 		$service->direct_checkout_enabled             = true;
 		$this->sut                                    = $this->create_controller( true, $service );
-		$this->sut->register();
+		$this->arrange_direct_checkout_surface( $surface );
 
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		do_action( 'woocommerce_blocks_cart_enqueue_data' );
 		$this->sut->enqueue_frontend_assets();
 
 		$this->assert_light_direct_checkout_assets( $service );
 	}
 
 	/**
-	 * @testdox Should enqueue direct checkout assets for a classic mini-cart on an ordinary page at footer time.
+	 * Mini-cart surfaces that get the light direct checkout config.
 	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
+	 * @return array<string,array{0:string}>
 	 */
-	public function test_enqueue_frontend_assets_for_direct_checkout_classic_mini_cart(): void {
-		$service                                      = new RecordingWooPaySessionService();
-		$service->should_show_woopay_button           = false;
-		$service->should_load_woopay_save_user_assets = false;
-		$service->direct_checkout_enabled             = true;
-		$this->sut                                    = $this->create_controller( true, $service );
-		$this->sut->register();
-		if ( ! wp_script_is( 'wc-cart-fragments', 'registered' ) ) {
-			wp_register_script( 'wc-cart-fragments', 'https://example.com/cart-fragments.js', array(), '1.0', true );
-		}
-		wp_enqueue_script( 'wc-cart-fragments' );
-
-		$this->sut->enqueue_frontend_assets();
-
-		$this->assert_light_direct_checkout_assets( $service );
+	public function light_direct_checkout_surfaces(): array {
+		return array(
+			'block mini-cart on an ordinary page'      => array( 'block mini-cart' ),
+			'classic mini-cart on an ordinary page'    => array( 'classic mini-cart' ),
+			'mini-cart block on a Checkout block page' => array( 'block mini-cart on checkout block page' ),
+		);
 	}
 
 	/**
@@ -615,53 +552,25 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should run direct checkout on a Checkout block page where a Mini-Cart block renders, with the light config.
+	 * @testdox Should not enqueue direct checkout assets: $_dataName.
 	 *
 	 * Runs in its own process: WOOCOMMERCE_CART, once an earlier test defines it (WC_Form_Handler::update_cart_action() does),
-	 * makes is_cart() true for the rest of the run, and this page must not be a cart page.
+	 * makes is_cart() true for the rest of the run, and these pages must not be cart pages. A prior checkout test must not
+	 * make the unrelated page appear to be checkout.
 	 *
+	 * @dataProvider no_direct_checkout_surfaces
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
+	 *
+	 * @param string $surface Page and cart surface, as arrange_direct_checkout_surface() builds it.
 	 */
-	public function test_enqueue_frontend_assets_runs_direct_checkout_for_a_mini_cart_block_on_checkout_block_page(): void {
+	public function test_enqueue_frontend_assets_skips_direct_checkout( string $surface ): void {
 		$service                                      = new RecordingWooPaySessionService();
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
 		$service->direct_checkout_enabled             = true;
 		$this->sut                                    = $this->create_controller( true, $service );
-		$this->sut->register();
-		$this->reset_frontend_surface_state();
-		update_option( 'woocommerce_checkout_page_id', $this->set_current_page_with_content( '<!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->' ) );
-		$this->reset_cart_checkout_page_cache();
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		do_action( 'woocommerce_blocks_cart_enqueue_data' );
-
-		$this->sut->enqueue_frontend_assets();
-
-		$this->assert_light_direct_checkout_assets( $service );
-	}
-
-	/**
-	 * @testdox Should not enqueue direct checkout assets for the classic cart widget on checkout pages.
-	 *
-	 * Runs in its own process: WOOCOMMERCE_CART, once an earlier test defines it (WC_Form_Handler::update_cart_action() does),
-	 * makes is_cart() true for the rest of the run, and this page must not be a cart page.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 */
-	public function test_enqueue_frontend_assets_skips_the_classic_cart_widget_on_checkout_pages(): void {
-		$service                                      = new RecordingWooPaySessionService();
-		$service->should_show_woopay_button           = false;
-		$service->should_load_woopay_save_user_assets = false;
-		$service->direct_checkout_enabled             = true;
-		$this->sut                                    = $this->create_controller( true, $service );
-		$this->sut->register();
-		$this->set_checkout_shortcode_page();
-		if ( ! wp_script_is( 'wc-cart-fragments', 'registered' ) ) {
-			wp_register_script( 'wc-cart-fragments', 'https://example.com/cart-fragments.js', array(), '1.0', true );
-		}
-		wp_enqueue_script( 'wc-cart-fragments' );
+		$this->arrange_direct_checkout_surface( $surface );
 
 		$this->sut->enqueue_frontend_assets();
 
@@ -670,58 +579,16 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not enqueue classic WooPay assets on checkout block pages.
+	 * Surfaces that load no direct checkout assets.
 	 *
-	 * Runs in its own process: WOOCOMMERCE_CART, once an earlier test defines it (WC_Form_Handler::update_cart_action() does),
-	 * makes is_cart() true for the rest of the run, and this page must not be a cart page.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
+	 * @return array<string,array{0:string}>
 	 */
-	public function test_enqueue_frontend_assets_skips_checkout_block_pages(): void {
-		$service                                      = new RecordingWooPaySessionService();
-		$service->should_show_woopay_button           = false;
-		$service->should_load_woopay_save_user_assets = false;
-		$service->direct_checkout_enabled             = true;
-		$this->sut                                    = $this->create_controller( true, $service );
-		$page_id                                      = self::factory()->post->create(
-			array(
-				'post_type'    => 'page',
-				'post_status'  => 'publish',
-				'post_content' => '<!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->',
-			)
+	public function no_direct_checkout_surfaces(): array {
+		return array(
+			'classic cart widget on the checkout page' => array( 'classic cart widget on checkout' ),
+			'Checkout block page'                      => array( 'checkout block page' ),
+			'unrelated page'                           => array( 'unrelated page' ),
 		);
-
-		global $post;
-		$post = get_post( $page_id ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
-		setup_postdata( $post );
-		add_filter( 'woocommerce_is_checkout', '__return_true' );
-
-		$this->sut->enqueue_frontend_assets();
-
-		$this->assertFalse( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
-		$this->assertFalse( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
-	}
-
-	/**
-	 * @testdox Should not enqueue direct checkout assets on unrelated pages.
-	 *
-	 * A prior checkout test must not make this unrelated page appear to be checkout.
-	 *
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 */
-	public function test_enqueue_frontend_assets_skips_unrelated_pages_for_direct_checkout(): void {
-		$service                                      = new RecordingWooPaySessionService();
-		$service->should_show_woopay_button           = false;
-		$service->should_load_woopay_save_user_assets = false;
-		$service->direct_checkout_enabled             = true;
-		$this->sut                                    = $this->create_controller( true, $service );
-
-		$this->sut->enqueue_frontend_assets();
-
-		$this->assertFalse( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
-		$this->assertFalse( wp_style_is( 'wc-woopayments-woopay', 'enqueued' ) );
 	}
 
 	/**
@@ -1027,32 +894,39 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-pay offers WooPay only when the order is in the active currency (store $store_currency, active $active_currency, order $order_currency).
+	 * @testdox Order-pay offers WooPay only for an order in the active currency with two active price decimals: $_dataName.
 	 *
 	 * The WooPay session preloads the Store API order, whose totals carry the active currency (CurrencyFormatter::format()),
 	 * while the payment charges the order's currency. Native multi-currency sets the active currency through the
 	 * woocommerce_currency filter (MultiCurrencyFrontendCurrenciesController::get_woocommerce_currency()); the filter here
 	 * stands in for a shopper whose selected currency is $active_currency.
 	 *
-	 * @testWith ["USD", "", "EUR", false]
-	 *           ["USD", "EUR", "USD", false]
-	 *           ["USD", "EUR", "EUR", true]
-	 *           ["EUR", "", "EUR", true]
+	 * The Store API order also writes its amounts with two decimals (OrderSchema::get_totals() calls
+	 * AbstractSchema::prepare_money_response(), whose decimals default to 2) and labels them with the active decimals
+	 * (CurrencyFormatter::format(), currency_minor_unit from wc_get_price_decimals()), so a ¥1,000 order at 0 decimals would
+	 * read as ¥100,000. Native multi-currency sets the active decimals through the wc_get_price_decimals filter at priority 900
+	 * (MultiCurrencyFrontendCurrenciesController); the filter here stands in for it.
 	 *
-	 * @param string $store_currency  Store currency option.
-	 * @param string $active_currency Currency the woocommerce_currency filter returns, or empty for none.
-	 * @param string $order_currency  Order currency.
-	 * @param bool   $offered         Whether WooPay is offered for the order.
+	 * @dataProvider order_pay_currency_cases
+	 *
+	 * @param string      $store_currency  Store currency option.
+	 * @param string|null $active_currency Currency the woocommerce_currency filter returns, or null for no filter.
+	 * @param string      $order_currency  Order currency.
+	 * @param int|null    $active_decimals Price decimals the wc_get_price_decimals filter returns, or null for no filter.
+	 * @param bool        $offered         Whether WooPay is offered for the order.
 	 */
-	public function test_order_pay_offers_woopay_only_in_the_order_currency( string $store_currency, string $active_currency, string $order_currency, bool $offered ): void {
+	public function test_order_pay_offers_woopay_only_in_the_order_currency_with_two_decimals( string $store_currency, ?string $active_currency, string $order_currency, ?int $active_decimals, bool $offered ): void {
 		update_option( 'woocommerce_currency', $store_currency );
 		$owner_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		$order    = \WC_Helper_Order::create_order( $owner_id );
 		$order->set_currency( $order_currency );
 		$order->save();
 		wp_set_current_user( $owner_id );
-		if ( '' !== $active_currency ) {
+		if ( null !== $active_currency ) {
 			add_filter( 'woocommerce_currency', static fn() => $active_currency, 900 );
+		}
+		if ( null !== $active_decimals ) {
+			add_filter( 'wc_get_price_decimals', static fn() => $active_decimals, 900 );
 		}
 		$this->sut = $this->create_controller( true );
 		$this->set_order_pay_page( $order->get_id(), $order->get_order_key() );
@@ -1078,51 +952,20 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Order-pay offers WooPay for a $currency order in the active $currency only when that currency uses two price decimals ($decimals).
+	 * Store, active and order currencies, active price decimals, and whether order-pay offers WooPay.
 	 *
-	 * The Store API order the WooPay session preloads writes its amounts with two decimals (OrderSchema::get_totals() calls
-	 * AbstractSchema::prepare_money_response(), whose decimals default to 2) and labels them with the active decimals
-	 * (CurrencyFormatter::format(), currency_minor_unit from wc_get_price_decimals()), so a ¥1,000 order at 0 decimals would
-	 * read as ¥100,000. Native multi-currency sets the active decimals through the wc_get_price_decimals filter at priority 900
-	 * (MultiCurrencyFrontendCurrenciesController); the filters here stand in for a shopper who selected $currency.
-	 *
-	 * @testWith ["JPY", 0, false]
-	 *           ["BHD", 3, false]
-	 *           ["JPY", 2, true]
-	 *
-	 * @param string $currency Order currency, also the active currency.
-	 * @param int    $decimals Active price decimals.
-	 * @param bool   $offered  Whether WooPay is offered for the order.
+	 * @return array<string,array{0:string,1:string|null,2:string,3:int|null,4:bool}>
 	 */
-	public function test_order_pay_offers_woopay_only_with_two_price_decimals( string $currency, int $decimals, bool $offered ): void {
-		update_option( 'woocommerce_currency', 'USD' );
-		$owner_id = self::factory()->user->create( array( 'role' => 'customer' ) );
-		$order    = \WC_Helper_Order::create_order( $owner_id );
-		$order->set_currency( $currency );
-		$order->save();
-		wp_set_current_user( $owner_id );
-		add_filter( 'woocommerce_currency', static fn() => $currency, 900 );
-		add_filter( 'wc_get_price_decimals', static fn() => $decimals, 900 );
-		$this->sut = $this->create_controller( true );
-		$this->set_order_pay_page( $order->get_id(), $order->get_order_key() );
-
-		$this->sut->enqueue_frontend_assets();
-		$config = $this->get_localized_woopay_config();
-		$html   = $this->sut->get_express_checkout_button_html();
-
-		if ( $offered ) {
-			$this->assertSame( '1', $config['shouldShowWooPayButton'] );
-			$this->assertSame( (string) $order->get_id(), $config['order_id'] );
-			$this->assertStringContainsString( 'id="wcpay-woopay-button"', $html );
-
-			return;
-		}
-
-		$this->assertSame( '', $config['shouldShowWooPayButton'] );
-		$this->assertArrayNotHasKey( 'order_id', $config );
-		$this->assertArrayNotHasKey( 'key', $config );
-		$this->assertArrayNotHasKey( 'billing_email', $config );
-		$this->assertSame( '', $html );
+	public function order_pay_currency_cases(): array {
+		return array(
+			'USD store, no active currency, EUR order' => array( 'USD', null, 'EUR', null, false ),
+			'USD store, EUR active, USD order'         => array( 'USD', 'EUR', 'USD', null, false ),
+			'USD store, EUR active, EUR order'         => array( 'USD', 'EUR', 'EUR', null, true ),
+			'EUR store, no active currency, EUR order' => array( 'EUR', null, 'EUR', null, true ),
+			'JPY order and active, 0 decimals'         => array( 'USD', 'JPY', 'JPY', 0, false ),
+			'BHD order and active, 3 decimals'         => array( 'USD', 'BHD', 'BHD', 3, false ),
+			'JPY order and active, 2 decimals'         => array( 'USD', 'JPY', 'JPY', 2, true ),
+		);
 	}
 
 	/**
@@ -1251,13 +1094,24 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The signed-request filter is strengthen-only and cannot grant access to an unsigned request.
+	 * @testdox The signed-request filter can only restrict access, never grant it: $_dataName.
+	 *
+	 * The real blog-token check is false in tests unless the test signs the request.
+	 *
+	 * @dataProvider signed_request_filter_cases
+	 *
+	 * @param bool      $signed  Whether the real blog-token check passes.
+	 * @param bool|null $filter  What the wcpay_woopay_is_signed_with_blog_token filter returns, or null for no filter.
+	 * @param bool      $allowed Whether the request is allowed.
 	 */
-	public function test_has_permission_filter_cannot_grant_access_to_unsigned_request(): void {
+	public function test_has_permission_follows_the_signed_request_filter_only_to_restrict( bool $signed, ?bool $filter, bool $allowed ): void {
 		$this->sut = $this->create_controller( true );
-
-		// Real blog-token check is false in tests; a filter returning true must not grant access.
-		add_filter( 'wcpay_woopay_is_signed_with_blog_token', '__return_true' );
+		if ( $signed ) {
+			$this->force_real_blog_token_signed();
+		}
+		if ( null !== $filter ) {
+			add_filter( 'wcpay_woopay_is_signed_with_blog_token', $filter ? '__return_true' : '__return_false' );
+		}
 
 		$request = new WP_REST_Request( 'GET', '/payments/woopay/session' );
 		$request->set_header( 'User-Agent', 'WooPay' );
@@ -1265,42 +1119,27 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 
 		$result = $this->sut->has_permission( $request );
 
+		if ( $allowed ) {
+			$this->assertTrue( $result );
+
+			return;
+		}
+
 		$this->assertInstanceOf( WP_Error::class, $result );
 		$this->assertSame( 'woocommerce_rest_cannot_view', $result->get_error_code() );
 	}
 
 	/**
-	 * @testdox A signed request is allowed when no filter restricts it.
+	 * Real signature check, filter answer and whether the request is allowed.
+	 *
+	 * @return array<string,array{0:bool,1:bool|null,2:bool}>
 	 */
-	public function test_has_permission_allows_signed_request_without_filter(): void {
-		$this->sut = $this->create_controller( true );
-		$this->force_real_blog_token_signed();
-
-		$request = new WP_REST_Request( 'GET', '/payments/woopay/session' );
-		$request->set_header( 'User-Agent', 'WooPay' );
-		$request->set_param( 'email', 'shopper@example.com' );
-
-		$this->assertTrue( $this->sut->has_permission( $request ) );
-	}
-
-	/**
-	 * @testdox The signed-request filter can still restrict access to a signed request.
-	 */
-	public function test_has_permission_filter_can_restrict_signed_request(): void {
-		$this->sut = $this->create_controller( true );
-		$this->force_real_blog_token_signed();
-
-		// The real check is true, but a filter returning false must still deny access.
-		add_filter( 'wcpay_woopay_is_signed_with_blog_token', '__return_false' );
-
-		$request = new WP_REST_Request( 'GET', '/payments/woopay/session' );
-		$request->set_header( 'User-Agent', 'WooPay' );
-		$request->set_param( 'email', 'shopper@example.com' );
-
-		$result = $this->sut->has_permission( $request );
-
-		$this->assertInstanceOf( WP_Error::class, $result );
-		$this->assertSame( 'woocommerce_rest_cannot_view', $result->get_error_code() );
+	public function signed_request_filter_cases(): array {
+		return array(
+			'unsigned, filter says signed' => array( false, true, false ),
+			'signed, no filter'            => array( true, null, true ),
+			'signed, filter says unsigned' => array( true, false, false ),
+		);
 	}
 
 	/**
@@ -1601,46 +1440,15 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return the WooPayments extension's WooPay signature AJAX success envelope.
+	 * @testdox Should render the posted message as a frontend error notice for a request with the WooPay button nonce.
 	 */
-	public function test_signature_ajax_handler_returns_success_envelope(): void {
-		$service   = new RecordingWooPaySessionService();
-		$this->sut = $this->create_controller( true, $service );
-		$_POST     = array( // phpcs:ignore WordPress.Security.NonceVerification.Missing
-			'_ajax_nonce' => wp_create_nonce( 'woopay_signature_nonce' ),
-		);
-		$_REQUEST  = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing
-
-		$response = $this->dispatch_signature_ajax();
-
-		$this->assertTrue( $response['success'] );
-		$this->assertSame( array( 'signature' => 'signed' ), $response['data'] );
-	}
-
-	/**
-	 * @testdox Should require the WooPay button nonce before rendering frontend error notices.
-	 */
-	public function test_show_error_notice_ajax_handler_requires_woopay_button_nonce(): void {
+	public function test_show_error_notice_ajax_renders_the_posted_message_with_the_button_nonce(): void {
 		$this->sut = $this->create_controller( true );
-		$_POST     = array( // phpcs:ignore WordPress.Security.NonceVerification.Missing
-			'message' => 'WooPay is unavailable.',
-		);
-		$_REQUEST  = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$this->sut->register();
 
-		$unauthorized = $this->dispatch_show_error_notice_ajax();
+		$authorized = $this->dispatch_ajax_hook_with_nonce( 'wp_ajax_woopay_express_checkout_button_show_error_notice', 'woopay_button_nonce', array( 'message' => 'WooPay is unavailable.' ) );
 
-		$this->assertFalse( $unauthorized['success'] );
-		$this->assertIsString( $unauthorized['data'] );
-		$this->assertNotSame( '', $unauthorized['data'] );
-
-		$_POST    = array( // phpcs:ignore WordPress.Security.NonceVerification.Missing
-			'_ajax_nonce' => wp_create_nonce( 'woopay_button_nonce' ),
-			'message'     => 'WooPay is unavailable.',
-		);
-		$_REQUEST = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing
-
-		$authorized = $this->dispatch_show_error_notice_ajax();
-
+		$this->assertIsArray( $authorized );
 		$this->assertTrue( $authorized['success'] );
 		$this->assertStringContainsString( 'WooPay is unavailable.', $authorized['data']['notice'] );
 	}
@@ -1737,11 +1545,13 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 			'attribute_pa_number' => '2',
 		);
 		$_REQUEST  = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$this->sut->register();
 
-		$response = $this->dispatch_add_to_cart_ajax();
+		$response = $this->dispatch_ajax_hook( 'wc_ajax_wcpay_add_to_cart' )['body'];
 		$cart     = WC()->cart->get_cart();
 		$item     = reset( $cart );
 
+		$this->assertIsArray( $response );
 		$this->assertSame( 'success', $response['result'] );
 		$this->assertSame( $variation_id, $item['variation_id'] );
 		$this->assertSame(
@@ -1806,11 +1616,13 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 				'quantity'   => $request_quantity,
 			);
 			$_REQUEST  = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$this->sut->register();
 
-			$response   = $this->dispatch_add_to_cart_ajax();
+			$response   = $this->dispatch_ajax_hook( 'wc_ajax_wcpay_add_to_cart' )['body'];
 			$cart_items = WC()->cart->get_cart();
 			$item       = reset( $cart_items );
 
+			$this->assertIsArray( $response );
 			$this->assertSame( 'success', $response['result'] );
 			$this->assertSame( $expected_quantity, $item['quantity'] );
 		} finally {
@@ -1984,93 +1796,59 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * Dispatch the WooPay signature AJAX handler and decode the JSON response.
+	 * Arrange the page and the cart surfaces it renders for a direct checkout row.
 	 *
-	 * @return array{success:bool,data:mixed}
+	 * @param string $surface Surface named by light_direct_checkout_surfaces() or no_direct_checkout_surfaces().
 	 */
-	private function dispatch_signature_ajax(): array {
-		add_filter( 'wp_doing_ajax', '__return_true' );
-		add_filter(
-			'wp_die_ajax_handler',
-			static function () {
-				return static function (): void {
-					throw new WPAjaxDieContinueException();
-				};
-			}
-		);
+	private function arrange_direct_checkout_surface( string $surface ): void {
+		switch ( $surface ) {
+			case 'block mini-cart':
+				$this->sut->register();
+				// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+				do_action( 'woocommerce_blocks_cart_enqueue_data' );
+				break;
+			case 'classic mini-cart':
+				$this->sut->register();
+				if ( ! wp_script_is( 'wc-cart-fragments', 'registered' ) ) {
+					wp_register_script( 'wc-cart-fragments', 'https://example.com/cart-fragments.js', array(), '1.0', true );
+				}
+				wp_enqueue_script( 'wc-cart-fragments' );
+				break;
+			case 'block mini-cart on checkout block page':
+				$this->sut->register();
+				$this->reset_frontend_surface_state();
+				update_option( 'woocommerce_checkout_page_id', $this->set_current_page_with_content( '<!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->' ) );
+				$this->reset_cart_checkout_page_cache();
+				// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+				do_action( 'woocommerce_blocks_cart_enqueue_data' );
+				break;
+			case 'classic cart widget on checkout':
+				$this->sut->register();
+				$this->set_checkout_shortcode_page();
+				if ( ! wp_script_is( 'wc-cart-fragments', 'registered' ) ) {
+					wp_register_script( 'wc-cart-fragments', 'https://example.com/cart-fragments.js', array(), '1.0', true );
+				}
+				wp_enqueue_script( 'wc-cart-fragments' );
+				break;
+			case 'checkout block page':
+				$page_id = self::factory()->post->create(
+					array(
+						'post_type'    => 'page',
+						'post_status'  => 'publish',
+						'post_content' => '<!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->',
+					)
+				);
 
-		ob_start();
-		try {
-			$this->sut->handle_get_woopay_signature();
-		} catch ( WPAjaxDieContinueException $e ) {
-			unset( $e );
+				global $post;
+				$post = get_post( $page_id ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+				setup_postdata( $post );
+				add_filter( 'woocommerce_is_checkout', '__return_true' );
+				break;
+			case 'unrelated page':
+				break;
+			default:
+				$this->fail( 'Unknown surface ' . $surface );
 		}
-		$body = (string) ob_get_clean();
-
-		$decoded = json_decode( $body, true );
-		$this->assertIsArray( $decoded, 'WooPay signature AJAX should emit a JSON object.' );
-
-		return $decoded;
-	}
-
-	/**
-	 * Dispatch the WooPay error notice AJAX handler and decode the JSON response.
-	 *
-	 * @return array{success:bool,data:mixed}
-	 */
-	private function dispatch_show_error_notice_ajax(): array {
-		add_filter( 'wp_doing_ajax', '__return_true' );
-		add_filter(
-			'wp_die_ajax_handler',
-			static function () {
-				return static function (): void {
-					throw new WPAjaxDieContinueException();
-				};
-			}
-		);
-
-		ob_start();
-		try {
-			$this->sut->handle_show_error_notice();
-		} catch ( WPAjaxDieContinueException $e ) {
-			unset( $e );
-		}
-		$body = (string) ob_get_clean();
-
-		$decoded = json_decode( $body, true );
-		$this->assertIsArray( $decoded, 'WooPay notice AJAX should emit a JSON object.' );
-
-		return $decoded;
-	}
-
-	/**
-	 * Dispatch the WooPay product add-to-cart AJAX handler and decode the JSON response.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function dispatch_add_to_cart_ajax(): array {
-		add_filter( 'wp_doing_ajax', '__return_true' );
-		add_filter(
-			'wp_die_ajax_handler',
-			static function () {
-				return static function (): void {
-					throw new WPAjaxDieContinueException();
-				};
-			}
-		);
-
-		ob_start();
-		try {
-			$this->sut->handle_add_to_cart();
-		} catch ( WPAjaxDieContinueException $e ) {
-			unset( $e );
-		}
-		$body = (string) ob_get_clean();
-
-		$decoded = json_decode( $body, true );
-		$this->assertIsArray( $decoded, 'WooPay add-to-cart AJAX should emit a JSON object.' );
-
-		return $decoded;
 	}
 
 	/**

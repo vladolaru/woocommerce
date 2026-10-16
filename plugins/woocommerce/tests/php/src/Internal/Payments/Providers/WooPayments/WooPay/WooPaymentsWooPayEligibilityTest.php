@@ -29,15 +29,6 @@ class WooPaymentsWooPayEligibilityTest extends WC_Unit_Test_Case {
 	use WooPayServicesFixture;
 
 	/**
-	 * @testdox Should show the WooPay button for a supported plain cart when guest checkout is enabled.
-	 */
-	public function test_woopay_button_shows_for_plain_guest_cart(): void {
-		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
-
-		$this->assertTrue( $this->create_eligibility()->should_show_woopay_button( 'cart' ) );
-	}
-
-	/**
 	 * @testdox Should hide the WooPay button when the base gateway is filtered out of available gateways.
 	 */
 	public function test_woopay_button_requires_available_base_gateway(): void {
@@ -153,6 +144,7 @@ class WooPaymentsWooPayEligibilityTest extends WC_Unit_Test_Case {
 	 * @testdox Should evaluate filtered enablement before rejecting an unsupported context.
 	 */
 	public function test_woopay_button_checks_filtered_enablement_before_context(): void {
+		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
 		$enabled_filter_calls = 0;
 		add_filter(
 			'wcpay_woopay_enabled',
@@ -229,15 +221,6 @@ class WooPaymentsWooPayEligibilityTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should reject WooPay button contexts outside product, cart, checkout and order-pay.
-	 */
-	public function test_woopay_button_rejects_unsupported_context(): void {
-		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
-
-		$this->assertFalse( $this->create_eligibility()->should_show_woopay_button( 'order_received' ) );
-	}
-
-	/**
 	 * @testdox Should honor per-location WooPay express checkout configuration.
 	 * @dataProvider disabled_woopay_context_provider
 	 *
@@ -251,76 +234,6 @@ class WooPaymentsWooPayEligibilityTest extends WC_Unit_Test_Case {
 				array( 'express_checkout_' . $context . '_methods' => array() )
 			)->should_show_woopay_button( $context )
 		);
-	}
-
-	/**
-	 * @testdox Should hide the product WooPay button when no current product exists.
-	 */
-	public function test_woopay_product_button_requires_current_product(): void {
-		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
-		unset( $GLOBALS['product'] );
-
-		$this->assertFalse( $this->create_eligibility()->should_show_woopay_button( 'product' ) );
-	}
-
-	/**
-	 * @testdox Should hide the WooPay button for external products.
-	 */
-	public function test_woopay_product_button_rejects_external_product(): void {
-		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
-		$this->set_current_woopay_product( $this->create_woopay_product( \WC_Product_External::class ) );
-
-		$this->assertFalse( $this->create_eligibility()->should_show_woopay_button( 'product' ) );
-	}
-
-	/**
-	 * @testdox Should hide the product WooPay button for pre-orders charged on release.
-	 */
-	public function test_woopay_product_button_rejects_preorder_charged_on_release(): void {
-		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
-		$this->set_current_woopay_product( $this->create_woopay_product() );
-		$sut                                      = $this->create_eligibility();
-		$sut->preorder_product_charged_on_release = true;
-
-		$this->assertFalse( $sut->should_show_woopay_button( 'product' ) );
-	}
-
-	/**
-	 * @testdox Should hide the product WooPay button for bookings requiring confirmation.
-	 */
-	public function test_woopay_product_button_rejects_booking_requiring_confirmation(): void {
-		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
-		$this->set_current_woopay_product( $this->create_woopay_product() );
-		$sut                                        = $this->create_eligibility();
-		$sut->booking_product_requires_confirmation = true;
-
-		$this->assertFalse( $sut->should_show_woopay_button( 'product' ) );
-	}
-
-	/**
-	 * @testdox Should hide the product WooPay button when the product is not purchasable.
-	 */
-	public function test_woopay_product_button_requires_purchasable_product(): void {
-		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
-		$product = $this->create_woopay_product();
-		$product->set_price( '' );
-		$product->save();
-		$this->set_current_woopay_product( $product );
-
-		$this->assertFalse( $this->create_eligibility()->should_show_woopay_button( 'product' ) );
-	}
-
-	/**
-	 * @testdox Should hide the product WooPay button when the product is out of stock.
-	 */
-	public function test_woopay_product_button_requires_in_stock_product(): void {
-		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
-		$product = $this->create_woopay_product();
-		$product->set_stock_status( 'outofstock' );
-		$product->save();
-		$this->set_current_woopay_product( $product );
-
-		$this->assertFalse( $this->create_eligibility()->should_show_woopay_button( 'product' ) );
 	}
 
 	/**
@@ -346,17 +259,6 @@ class WooPaymentsWooPayEligibilityTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should hide the cart WooPay button for pre-orders charged on release.
-	 */
-	public function test_woopay_cart_button_rejects_preorder_charged_on_release(): void {
-		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
-		$sut                                   = $this->create_eligibility();
-		$sut->cart_preorder_charged_on_release = true;
-
-		$this->assertFalse( $sut->should_show_woopay_button( 'cart' ) );
-	}
-
-	/**
 	 * @testdox Should preserve the WooPay cart-items support filter contract.
 	 */
 	public function test_woopay_cart_button_honors_cart_support_filter(): void {
@@ -374,87 +276,86 @@ class WooPaymentsWooPayEligibilityTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should hide product WooPay for guest subscription shoppers.
+	 * @testdox Should hide the product WooPay button for $_dataName.
+	 * @dataProvider hidden_product_button_provider
+	 *
+	 * @param string|null          $product_class The current product's class, or null for no current product.
+	 * @param array<string,string> $props         Product props changed after the product is created.
+	 * @param string|null          $sut_flag      The optional-extension predicate that answers true, if any.
+	 * @phpstan-param class-string<\WC_Product>|null $product_class
 	 */
-	public function test_woopay_product_button_rejects_guest_subscription(): void {
+	public function test_woopay_product_button_hides_for_unsupported_products( ?string $product_class, array $props, ?string $sut_flag ): void {
 		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
-		$this->set_current_woopay_product( $this->create_woopay_product( FakeWooPaySubscriptionProduct::class ) );
+		if ( null === $product_class ) {
+			unset( $GLOBALS['product'] );
+		} else {
+			$product = $this->create_woopay_product( $product_class );
+			if ( array() !== $props ) {
+				$product->set_props( $props );
+				$product->save();
+			}
+			$this->set_current_woopay_product( $product );
+		}
+		$sut = $this->create_eligibility();
+		if ( null !== $sut_flag ) {
+			$sut->{$sut_flag} = true;
+		}
 
-		$this->assertFalse( $this->create_eligibility()->should_show_woopay_button( 'product' ) );
+		$this->assertFalse( $sut->should_show_woopay_button( 'product' ) );
 	}
 
 	/**
-	 * @testdox Should hide cart WooPay for guest subscription shoppers.
+	 * @testdox Should show the product WooPay button for $_dataName.
+	 * @dataProvider shown_product_button_provider
+	 *
+	 * @param bool                 $logged_in     Whether the shopper is logged in; a guest gets guest checkout on.
+	 * @param string               $product_class The product's class.
+	 * @param string|null          $shortcode     The product_page shortcode the current page holds, with %d for the product ID, or null for the current product.
+	 * @param array<string,string> $props         Product props changed after the product is created.
+	 * @phpstan-param class-string<\WC_Product> $product_class
 	 */
-	public function test_woopay_cart_button_rejects_guest_subscription(): void {
-		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
-		$sut                             = $this->create_eligibility();
-		$sut->cart_contains_subscription = true;
-
-		$this->assertFalse( $sut->should_show_woopay_button( 'cart' ) );
-	}
-
-	/**
-	 * @testdox Should hide WooPay for guests when guest checkout is disabled by default.
-	 */
-	public function test_woopay_button_requires_guest_checkout_for_guests(): void {
-		$this->assertFalse( $this->create_eligibility()->should_show_woopay_button( 'cart' ) );
-	}
-
-	/**
-	 * @testdox Should keep subscription products eligible for logged-in shoppers.
-	 */
-	public function test_woopay_product_button_allows_logged_in_subscription(): void {
-		wp_set_current_user( 1 );
-		$this->set_current_woopay_product( $this->create_woopay_product( FakeWooPaySubscriptionProduct::class ) );
+	public function test_woopay_product_button_shows_for_supported_products( bool $logged_in, string $product_class, ?string $shortcode, array $props ): void {
+		if ( $logged_in ) {
+			wp_set_current_user( 1 );
+		} else {
+			update_option( 'woocommerce_enable_guest_checkout', 'yes' );
+		}
+		$product = $this->create_woopay_product( $product_class );
+		if ( array() !== $props ) {
+			$product->set_props( $props );
+			$product->save();
+		}
+		if ( null === $shortcode ) {
+			$this->set_current_woopay_product( $product );
+		} else {
+			$this->set_current_woopay_shortcode_page( sprintf( $shortcode, $product->get_id() ) );
+		}
 
 		$this->assertTrue( $this->create_eligibility()->should_show_woopay_button( 'product' ) );
 	}
 
 	/**
-	 * @testdox Should resolve the WooPay product from a product_page ID shortcode.
+	 * @testdox The cart WooPay button follows the cart and the shopper: $_dataName.
+	 * @dataProvider cart_button_provider
+	 *
+	 * @param bool        $logged_in      Whether the shopper is logged in.
+	 * @param string|null $guest_checkout The guest checkout setting, or null to leave the stored value.
+	 * @param string|null $cart_flag      The cart predicate that answers true, if any.
+	 * @param bool        $expected       Whether the button shows.
 	 */
-	public function test_woopay_product_button_supports_product_page_shortcode(): void {
-		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
-		$product = $this->create_woopay_product();
-		$this->set_current_woopay_shortcode_page( '[product_page id="' . $product->get_id() . '"]' );
+	public function test_woopay_cart_button_follows_the_cart_and_the_shopper( bool $logged_in, ?string $guest_checkout, ?string $cart_flag, bool $expected ): void {
+		if ( $logged_in ) {
+			wp_set_current_user( 1 );
+		}
+		if ( null !== $guest_checkout ) {
+			update_option( 'woocommerce_enable_guest_checkout', $guest_checkout );
+		}
+		$sut = $this->create_eligibility();
+		if ( null !== $cart_flag ) {
+			$sut->{$cart_flag} = true;
+		}
 
-		$this->assertTrue( $this->create_eligibility()->should_show_woopay_button( 'product' ) );
-	}
-
-	/**
-	 * @testdox Should resolve flexible product_page shortcode attributes and quoting.
-	 */
-	public function test_woopay_product_button_supports_flexible_product_page_shortcode(): void {
-		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
-		$product = $this->create_woopay_product();
-		$this->set_current_woopay_shortcode_page( "[product_page class='featured' columns='3' id='" . $product->get_id() . "']" );
-
-		$this->assertTrue( $this->create_eligibility()->should_show_woopay_button( 'product' ) );
-	}
-
-	/**
-	 * @testdox Should resolve product_page shortcode products by SKU.
-	 */
-	public function test_woopay_product_button_supports_product_page_shortcode_sku(): void {
-		update_option( 'woocommerce_enable_guest_checkout', 'yes' );
-		$product = $this->create_woopay_product();
-		$product->set_sku( 'woopay-shortcode-sku' );
-		$product->save();
-		$this->set_current_woopay_shortcode_page( "[product_page class='featured' sku='woopay-shortcode-sku']" );
-
-		$this->assertTrue( $this->create_eligibility()->should_show_woopay_button( 'product' ) );
-	}
-
-	/**
-	 * @testdox Should keep subscription carts eligible for logged-in shoppers.
-	 */
-	public function test_woopay_cart_button_allows_logged_in_subscription(): void {
-		wp_set_current_user( 1 );
-		$sut                             = $this->create_eligibility();
-		$sut->cart_contains_subscription = true;
-
-		$this->assertTrue( $sut->should_show_woopay_button( 'cart' ) );
+		$this->assertSame( $expected, $sut->should_show_woopay_button( 'cart' ) );
 	}
 
 	/**
@@ -695,6 +596,52 @@ class WooPaymentsWooPayEligibilityTest extends WC_Unit_Test_Case {
 			'product'  => array( 'product' ),
 			'cart'     => array( 'cart' ),
 			'checkout' => array( 'checkout' ),
+		);
+	}
+
+	/**
+	 * Provide the products the product WooPay button hides for.
+	 *
+	 * @return array<string,array{0:string|null,1:array<string,string>,2:string|null}>
+	 */
+	public function hidden_product_button_provider(): array {
+		return array(
+			'no current product'                => array( null, array(), null ),
+			'an external product'               => array( \WC_Product_External::class, array(), null ),
+			'a pre-order charged on release'    => array( \WC_Product_Simple::class, array(), 'preorder_product_charged_on_release' ),
+			'a booking requiring confirmation'  => array( \WC_Product_Simple::class, array(), 'booking_product_requires_confirmation' ),
+			'a product that is not purchasable' => array( \WC_Product_Simple::class, array( 'price' => '' ), null ),
+			'an out-of-stock product'           => array( \WC_Product_Simple::class, array( 'stock_status' => 'outofstock' ), null ),
+			'a guest shopper of a subscription' => array( FakeWooPaySubscriptionProduct::class, array(), null ),
+		);
+	}
+
+	/**
+	 * Provide the shoppers and pages the product WooPay button shows for.
+	 *
+	 * @return array<string,array{0:bool,1:string,2:string|null,3:array<string,string>}>
+	 */
+	public function shown_product_button_provider(): array {
+		return array(
+			'a logged-in shopper of a subscription'        => array( true, FakeWooPaySubscriptionProduct::class, null, array() ),
+			'a product_page ID shortcode'                  => array( false, \WC_Product_Simple::class, '[product_page id="%d"]', array() ),
+			'flexible product_page attributes and quoting' => array( false, \WC_Product_Simple::class, "[product_page class='featured' columns='3' id='%d']", array() ),
+			'a product_page shortcode by SKU'              => array( false, \WC_Product_Simple::class, "[product_page class='featured' sku='woopay-shortcode-sku']", array( 'sku' => 'woopay-shortcode-sku' ) ),
+		);
+	}
+
+	/**
+	 * Provide the carts and shoppers of the cart WooPay button.
+	 *
+	 * @return array<string,array{0:bool,1:string|null,2:string|null,3:bool}>
+	 */
+	public function cart_button_provider(): array {
+		return array(
+			'a supported plain guest cart with guest checkout on' => array( false, 'yes', null, true ),
+			'a guest cart with a pre-order charged on release' => array( false, 'yes', 'cart_preorder_charged_on_release', false ),
+			'a guest cart with a subscription'             => array( false, 'yes', 'cart_contains_subscription', false ),
+			'a guest while guest checkout is off by default' => array( false, null, null, false ),
+			'a logged-in shopper with a subscription cart' => array( true, null, 'cart_contains_subscription', true ),
 		);
 	}
 

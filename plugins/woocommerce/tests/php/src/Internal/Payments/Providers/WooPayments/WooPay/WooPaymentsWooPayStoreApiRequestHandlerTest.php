@@ -51,60 +51,51 @@ class WooPaymentsWooPayStoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave the resolved user untouched when the request does not carry the WooPay user agent.
+	 * @testdox Should leave the resolved user untouched and the request unflagged for $_dataName.
+	 * @dataProvider passthrough_request_provider
+	 *
+	 * @param string|null         $user_agent  The request user agent, or null for none.
+	 * @param string              $request_uri The request URI.
+	 * @param array<string,mixed> $settings    Gateway settings overrides.
 	 */
-	public function test_determine_current_user_passes_through_without_woopay_user_agent(): void {
-		$_SERVER['REQUEST_URI'] = '/wp-json/wc/store/v1/checkout';
+	public function test_determine_current_user_passes_through( ?string $user_agent, string $request_uri, array $settings ): void {
+		if ( null !== $user_agent ) {
+			$_SERVER['HTTP_USER_AGENT'] = $user_agent;
+		}
+		$_SERVER['REQUEST_URI'] = $request_uri;
 
-		$this->assertFalse( $this->create_handler()->determine_current_user_for_woopay( false ) );
+		$this->assertFalse( $this->create_handler( $settings )->determine_current_user_for_woopay( false ) );
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
 		$this->assertFalse( apply_filters( 'wcpay_is_woopay_store_api_request', false ) );
 	}
 
 	/**
-	 * @testdox Should leave the resolved user untouched outside Store API requests.
+	 * Requests the WooPay identity chain leaves alone.
+	 *
+	 * @return array<string,array{0:string|null,1:string,2:array<string,mixed>}>
 	 */
-	public function test_determine_current_user_passes_through_outside_store_api_requests(): void {
+	public function passthrough_request_provider(): array {
+		return array(
+			'a request without the WooPay user agent' => array( null, '/wp-json/wc/store/v1/checkout', array() ),
+			'a request outside the Store API'         => array( 'WooPay', '/checkout/', array() ),
+			'a WooPay Store API request while WooPay is disabled' => array( 'WooPay', '/wp-json/wc/store/v1/checkout', array( 'platform_checkout' => 'no' ) ),
+			'a Store API route outside the WooPay allowlist' => array( 'WooPay', '/wp-json/wc/store/v1/products', array() ),
+		);
+	}
+
+	/**
+	 * @testdox Should die with a 401 when a WooPay request is not signed with the blog token: $_dataName.
+	 * @dataProvider unsigned_request_provider
+	 *
+	 * @param string      $request_uri The request URI.
+	 * @param string|null $rest_route  The rest_route query argument, or null for none.
+	 */
+	public function test_determine_current_user_dies_401_when_request_is_not_signed( string $request_uri, ?string $rest_route ): void {
 		$_SERVER['HTTP_USER_AGENT'] = 'WooPay';
-		$_SERVER['REQUEST_URI']     = '/checkout/';
-
-		$this->assertFalse( $this->create_handler()->determine_current_user_for_woopay( false ) );
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		$this->assertFalse( apply_filters( 'wcpay_is_woopay_store_api_request', false ) );
-	}
-
-	/**
-	 * @testdox Should leave the resolved user untouched when WooPay is disabled.
-	 */
-	public function test_determine_current_user_passes_through_when_woopay_disabled(): void {
-		$this->simulate_woopay_store_api_request();
-
-		$sut = $this->create_handler( array( 'platform_checkout' => 'no' ) );
-
-		$this->assertFalse( $sut->determine_current_user_for_woopay( false ) );
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
-		$this->assertFalse( apply_filters( 'wcpay_is_woopay_store_api_request', false ) );
-	}
-
-	/**
-	 * @testdox Should die with a 401 when a WooPay Store API request is not signed with the blog token.
-	 */
-	public function test_determine_current_user_dies_401_when_request_is_not_signed(): void {
-		$this->simulate_woopay_store_api_request();
-
-		$this->expectException( \WPDieException::class );
-		$this->expectExceptionMessage( 'WooPay request is not signed correctly.' );
-
-		$this->create_handler()->determine_current_user_for_woopay( false );
-	}
-
-	/**
-	 * @testdox Should detect Store API requests routed through the rest_route query argument.
-	 */
-	public function test_determine_current_user_covers_rest_route_query_form(): void {
-		$_SERVER['HTTP_USER_AGENT'] = 'WooPay';
-		$_SERVER['REQUEST_URI']     = '/index.php?rest_route=%2Fwc%2Fstore%2Fv1%2Fcheckout';
-		$_REQUEST['rest_route']     = '/wc/store/v1/checkout';
+		$_SERVER['REQUEST_URI']     = $request_uri;
+		if ( null !== $rest_route ) {
+			$_REQUEST['rest_route'] = $rest_route;
+		}
 
 		$this->expectException( \WPDieException::class );
 		$this->expectExceptionMessage( 'WooPay request is not signed correctly.' );
@@ -114,6 +105,19 @@ class WooPaymentsWooPayStoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 		} finally {
 			unset( $_REQUEST['rest_route'] );
 		}
+	}
+
+	/**
+	 * Unsigned WooPay requests the identity chain refuses.
+	 *
+	 * @return array<string,array{0:string,1:string|null}>
+	 */
+	public function unsigned_request_provider(): array {
+		return array(
+			'a Store API checkout request' => array( '/wp-json/wc/store/v1/checkout', null ),
+			'a Store API request in the rest_route query form' => array( '/index.php?rest_route=%2Fwc%2Fstore%2Fv1%2Fcheckout', '/wc/store/v1/checkout' ),
+			'the WooPay session route'     => array( '/wp-json/payments/woopay/session', null ),
+		);
 	}
 
 	/**
@@ -213,43 +217,25 @@ class WooPaymentsWooPayStoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not resolve a WooPay-verified email without an active adapted extension.
-	 */
-	public function test_determine_current_user_ignores_verified_email_without_adapted_extension(): void {
-		$this->simulate_woopay_store_api_request();
-		$this->force_real_blog_token_signed();
-
-		$this->factory->user->create( array( 'user_email' => 'verified-shopper@example.com' ) );
-		$this->insert_store_api_session(
-			't_guesthash',
-			array(
-				'id'    => '0',
-				'email' => 'verified-shopper@example.com',
-			)
-		);
-		$_SERVER['HTTP_CART_TOKEN']                      = \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( 't_guesthash' );
-		$_SERVER['HTTP_X_WOOPAY_VERIFIED_EMAIL_ADDRESS'] = 'verified-shopper@example.com';
-
-		$this->assertFalse( $this->create_handler()->determine_current_user_for_woopay( false ) );
-	}
-
-	/**
 	 * @testdox Should not resolve a WooPay-verified email when $_dataName.
 	 *
 	 * @dataProvider unmatched_verified_email_provider
 	 *
-	 * @param string   $session_email The email the cart-token session holds.
-	 * @param string   $header_email  The X-WooPay-Verified-Email-Address value.
-	 * @param string[] $accounts      Emails of the store accounts that exist.
+	 * @param string   $session_email     The email the cart-token session holds.
+	 * @param string   $header_email      The X-WooPay-Verified-Email-Address value.
+	 * @param string[] $accounts          Emails of the store accounts that exist.
+	 * @param bool     $adapted_extension Whether an adapted extension is active.
 	 */
-	public function test_determine_current_user_ignores_an_unmatched_verified_email( string $session_email, string $header_email, array $accounts ): void {
+	public function test_determine_current_user_ignores_an_unmatched_verified_email( string $session_email, string $header_email, array $accounts, bool $adapted_extension ): void {
 		$this->simulate_woopay_store_api_request();
 		$this->force_real_blog_token_signed();
 
 		foreach ( $accounts as $account_email ) {
 			$this->factory->user->create( array( 'user_email' => $account_email ) );
 		}
-		update_option( 'woopay_enabled_adapted_extensions', array( 'woocommerce-gift-cards' ) );
+		if ( $adapted_extension ) {
+			update_option( 'woopay_enabled_adapted_extensions', array( 'woocommerce-gift-cards' ) );
+		}
 		$this->insert_store_api_session(
 			't_guesthash',
 			array(
@@ -311,16 +297,22 @@ class WooPaymentsWooPayStoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should update adapted-extension order data for every WooPay Store API order, verified email or not.
+	 * @testdox Should update adapted-extension order data for every WooPay Store API order, verified email or not, and only for those: $_dataName.
+	 * @dataProvider extension_order_data_provider
+	 *
+	 * @param bool $from_woopay      Whether the request is a WooPay Store API request.
+	 * @param int  $expected_updates How many times the order's extension data is updated.
 	 */
-	public function test_payment_status_change_updates_extension_order_data_without_verified_email(): void {
-		$this->simulate_woopay_store_api_request();
+	public function test_payment_status_change_updates_extension_order_data_only_for_woopay_requests( bool $from_woopay, int $expected_updates ): void {
+		if ( $from_woopay ) {
+			$this->simulate_woopay_store_api_request();
+		}
 
 		$order = wc_create_order();
 		$order->save();
 
 		$adapted_extensions = $this->createMock( WooPaymentsWooPayAdaptedExtensions::class );
-		$adapted_extensions->expects( $this->once() )
+		$adapted_extensions->expects( $this->exactly( $expected_updates ) )
 			->method( 'update_order_extension_data' )
 			->with( $order->get_id() );
 
@@ -328,16 +320,15 @@ class WooPaymentsWooPayStoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not touch adapted-extension order data outside a WooPay Store API request.
+	 * Requests whose orders do or do not get their adapted-extension data updated.
+	 *
+	 * @return array<string,array{0:bool,1:int}>
 	 */
-	public function test_payment_status_change_skips_extension_order_data_outside_woopay_request(): void {
-		$order = wc_create_order();
-		$order->save();
-
-		$adapted_extensions = $this->createMock( WooPaymentsWooPayAdaptedExtensions::class );
-		$adapted_extensions->expects( $this->never() )->method( 'update_order_extension_data' );
-
-		$this->create_handler( array(), array(), $adapted_extensions )->woopay_order_payment_status_changed( $order->get_id() );
+	public function extension_order_data_provider(): array {
+		return array(
+			'a WooPay Store API request without a verified email' => array( true, 1 ),
+			'a request from outside WooPay' => array( false, 0 ),
+		);
 	}
 
 	/**
@@ -461,29 +452,6 @@ class WooPaymentsWooPayStoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 			)
 		);
 		$this->assertSame( array(), wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
-	}
-
-	/**
-	 * @testdox Should run the inbound identity chain on the WooPay session route itself.
-	 */
-	public function test_determine_current_user_covers_the_woopay_session_route(): void {
-		$_SERVER['HTTP_USER_AGENT'] = 'WooPay';
-		$_SERVER['REQUEST_URI']     = '/wp-json/payments/woopay/session';
-
-		$this->expectException( \WPDieException::class );
-		$this->expectExceptionMessage( 'WooPay request is not signed correctly.' );
-
-		$this->create_handler()->determine_current_user_for_woopay( false );
-	}
-
-	/**
-	 * @testdox Should ignore Store API routes outside the WooPayments extension's WooPay allowlist.
-	 */
-	public function test_determine_current_user_ignores_store_api_routes_outside_the_allowlist(): void {
-		$_SERVER['HTTP_USER_AGENT'] = 'WooPay';
-		$_SERVER['REQUEST_URI']     = '/wp-json/wc/store/v1/products';
-
-		$this->assertFalse( $this->create_handler()->determine_current_user_for_woopay( false ) );
 	}
 
 	/**
@@ -1203,12 +1171,13 @@ class WooPaymentsWooPayStoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * Verified emails that must not log the WooPay request in.
 	 *
-	 * @return array<string,array{0:string,1:string,2:string[]}>
+	 * @return array<string,array{0:string,1:string,2:string[],3:bool}>
 	 */
 	public function unmatched_verified_email_provider(): array {
 		return array(
-			'the header names another account than the session' => array( 'shopper-a@example.com', 'shopper-b@example.com', array( 'shopper-a@example.com', 'shopper-b@example.com' ) ),
-			'no account owns the header email' => array( 'guest-shopper@example.com', 'guest-shopper@example.com', array( 'shopper-a@example.com' ) ),
+			'the header names another account than the session' => array( 'shopper-a@example.com', 'shopper-b@example.com', array( 'shopper-a@example.com', 'shopper-b@example.com' ), true ),
+			'no account owns the header email' => array( 'guest-shopper@example.com', 'guest-shopper@example.com', array( 'shopper-a@example.com' ), true ),
+			'no adapted extension is active'   => array( 'verified-shopper@example.com', 'verified-shopper@example.com', array( 'verified-shopper@example.com' ), false ),
 		);
 	}
 }
