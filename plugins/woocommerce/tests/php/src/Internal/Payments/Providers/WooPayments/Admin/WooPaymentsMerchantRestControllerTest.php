@@ -483,7 +483,6 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 			'account_status'                        => array(
 				'status' => 'restricted_soon',
 			),
-			'show_update_details_task'              => true,
 			'overview_tasks_visibility'             => array(
 				'dismissed_todo_tasks'       => array( 'old-task' ),
 				'deleted_todo_tasks'         => array(),

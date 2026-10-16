@@ -217,7 +217,6 @@ const createShell = ( overrides: Record< string, unknown > = {} ) => ( {
 		deposits_enabled: true,
 		deposits: RECORDED_ACCOUNT_DEPOSITS,
 	},
-	show_update_details_task: false,
 	disputes_awaiting_response_count: null,
 	overview_tasks_visibility: {
 		dismissed_todo_tasks: [],
@@ -914,7 +913,6 @@ describe( 'WooPaymentsOverviewPage', () => {
 					status: 'restricted',
 					details_submitted: false,
 				},
-				show_update_details_task: true,
 			} )
 		);
 		mockGetOverview.mockResolvedValue( createDepositsOverview() );
@@ -942,11 +940,9 @@ describe( 'WooPaymentsOverviewPage', () => {
 		expect( spotlightIndex ).toBeGreaterThan( balanceIndex );
 	} );
 
-	// Client 11.1.0 overview/index.js:72-74,105-109: the task shows only after the Stripe banner reports a load error, with no server gate.
-	it( 'shows the update-details task in the banner fallback state without a server flag', async () => {
-		mockGetShell.mockResolvedValue(
-			createShell( { show_update_details_task: false } )
-		);
+	// Client 11.1.0 overview/index.js:72-74,105-109: the task shows only after the Stripe banner reports a load error.
+	it( 'shows the update-details task in the banner fallback state', async () => {
+		mockGetShell.mockResolvedValue( createShell() );
 		mockGetOverview.mockResolvedValue( createDepositsOverview() );
 		mockGetRecent.mockResolvedValue( { data: [], total_count: 0 } );
 
@@ -965,7 +961,6 @@ describe( 'WooPaymentsOverviewPage', () => {
 					status: 'under_review',
 					details_submitted: false,
 				},
-				show_update_details_task: true,
 				account_details: {
 					account_status: { text: 'Paused' },
 					payout_status: { text: 'Unavailable' },
@@ -993,7 +988,6 @@ describe( 'WooPaymentsOverviewPage', () => {
 					status: 'restricted',
 					details_submitted: false,
 				},
-				show_update_details_task: true,
 				disputes_awaiting_response_count: 0,
 			} )
 		);
@@ -1151,7 +1145,6 @@ describe( 'WooPaymentsOverviewPage', () => {
 					status: 'restricted',
 					details_submitted: false,
 				},
-				show_update_details_task: true,
 			} )
 		);
 		mockGetOverview.mockResolvedValue( createDepositsOverview() );

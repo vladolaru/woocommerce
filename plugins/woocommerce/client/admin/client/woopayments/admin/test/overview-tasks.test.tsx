@@ -45,7 +45,6 @@ const createShell = ( overrides: Record< string, unknown > = {} ) => ( {
 		payments_enabled: true,
 		deposits_enabled: true,
 	},
-	show_update_details_task: false,
 	disputes_awaiting_response_count: null,
 	overview_tasks_visibility: {
 		dismissed_todo_tasks: [],
@@ -102,7 +101,6 @@ describe( 'overview task builders', () => {
 				status: 'restricted',
 				details_submitted: false,
 			},
-			show_update_details_task: true,
 		} );
 
 		const task = buildOverviewTasks( {
@@ -137,7 +135,6 @@ describe( 'overview task builders', () => {
 					],
 				},
 			},
-			show_update_details_task: true,
 		} );
 
 		const task = buildOverviewTasks( {
@@ -173,7 +170,6 @@ describe( 'overview task builders', () => {
 					],
 				},
 			},
-			show_update_details_task: true,
 		} );
 
 		const task = buildOverviewTasks( {
@@ -206,7 +202,6 @@ describe( 'overview task builders', () => {
 					],
 				},
 			},
-			show_update_details_task: true,
 		} );
 
 		const task = buildOverviewTasks( {

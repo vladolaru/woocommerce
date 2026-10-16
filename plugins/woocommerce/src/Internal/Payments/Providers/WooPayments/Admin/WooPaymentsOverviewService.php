@@ -58,7 +58,6 @@ class WooPaymentsOverviewService {
 		return array(
 			'account'                               => $this->get_account_summary_fields( $account_data ),
 			'account_status'                        => $this->get_account_status_fields( $account_data ),
-			'show_update_details_task'              => $this->should_show_update_business_details_task( $account_data ),
 			'overview_tasks_visibility'             => $this->get_overview_tasks_visibility(),
 			'is_connection_success_modal_dismissed' => $this->is_truthy( get_option( 'wcpay_connection_success_modal_dismissed', false ) ),
 			'disputes_awaiting_response_count'      => $this->get_cached_disputes_awaiting_response_count(),
@@ -275,20 +274,6 @@ class WooPaymentsOverviewService {
 	 */
 	private function has_past_due_requirements( array $account_data ): bool {
 		return $this->is_truthy( $account_data['has_overdue_requirements'] ?? false );
-	}
-
-	/**
-	 * Tell whether Overview should show the update-business-details task.
-	 *
-	 * @param array<string,mixed> $account_data Cached account data.
-	 * @return bool
-	 */
-	private function should_show_update_business_details_task( array $account_data ): bool {
-		$status = $this->get_account_status( $account_data );
-
-		return ( ! empty( $account_data ) && ! $this->is_truthy( $account_data['details_submitted'] ?? false ) )
-			|| ( 'restricted_soon' === $status && null !== $this->get_current_deadline( $account_data ) )
-			|| ( 'restricted' === $status && $this->has_past_due_requirements( $account_data ) );
 	}
 
 	/**

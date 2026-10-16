@@ -186,7 +186,6 @@ export interface WooPaymentsOverviewAccountFee {
 export interface WooPaymentsOverviewShell {
 	account: WooPaymentsOverviewAccount;
 	account_status: WooPaymentsOverviewAccountStatus;
-	show_update_details_task: boolean;
 	overview_tasks_visibility: WooPaymentsOverviewTasksVisibility;
 	is_connection_success_modal_dismissed: boolean;
 	disputes_awaiting_response_count: number | null;

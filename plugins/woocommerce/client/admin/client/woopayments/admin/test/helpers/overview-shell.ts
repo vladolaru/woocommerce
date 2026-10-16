@@ -56,7 +56,6 @@ export const createRecordedOverviewShell = (
 		deposits: RECORDED_ACCOUNT_DEPOSITS,
 		...accountStatus,
 	},
-	show_update_details_task: false,
 	overview_tasks_visibility: {
 		dismissed_todo_tasks: [],
 		deleted_todo_tasks: [],

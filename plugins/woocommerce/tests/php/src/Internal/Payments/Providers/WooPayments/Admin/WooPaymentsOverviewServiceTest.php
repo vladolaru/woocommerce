@@ -165,7 +165,6 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $overview['account_status']['details_submitted'] );
 		$this->assertTrue( $overview['account_status']['payments_enabled'] );
 		$this->assertTrue( $overview['account_status']['deposits_enabled'] );
-		$this->assertTrue( $overview['show_update_details_task'] );
 		$this->assertSame( array( 'old-task' ), $overview['overview_tasks_visibility']['dismissed_todo_tasks'] );
 		$this->assertSame( array( 'deleted-task' ), $overview['overview_tasks_visibility']['deleted_todo_tasks'] );
 		$this->assertSame( array( 'later-task' => 1781740800000 ), $overview['overview_tasks_visibility']['remind_me_later_todo_tasks'] );
@@ -227,7 +226,6 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $overview['account_status']['past_due'] );
 		$this->assertSame( '', $overview['account_status']['account_link'] );
 		$this->assertSame( array(), $overview['account_status']['requirements']['errors'] );
-		$this->assertFalse( $overview['show_update_details_task'] );
 		$this->assertNull( $overview['disputes_awaiting_response_count'] );
 		$this->assertNull( $overview['account_details'] );
 		$this->assertSame( array(), $overview['account_fees'] );
@@ -266,27 +264,6 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose unfinished setup as restricted account status with the finish-setup task.
-	 */
-	public function test_get_overview_marks_unfinished_setup_as_restricted_with_finish_setup_task(): void {
-		$this->cache_account_data(
-			array(
-				'account_id'        => 'acct_incomplete',
-				'details_submitted' => false,
-				'payments_enabled'  => false,
-				'is_live'           => true,
-			)
-		);
-
-		$overview = $this->sut->get_overview();
-
-		$this->assertSame( 'restricted', $overview['account_status']['status'] );
-		$this->assertFalse( $overview['account_status']['details_submitted'] );
-		$this->assertFalse( $overview['account']['details_submitted'] );
-		$this->assertTrue( $overview['show_update_details_task'] );
-	}
-
-	/**
 	 * @testdox Should map cached account data to reference-compatible account statuses.
 	 *
 	 * @dataProvider account_status_data
@@ -310,6 +287,8 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 		$overview = $this->sut->get_overview();
 
 		$this->assertSame( $expected_status, $overview['account_status']['status'] );
+		$this->assertSame( $account_data['details_submitted'] ?? true, $overview['account_status']['details_submitted'] );
+		$this->assertSame( $account_data['details_submitted'] ?? true, $overview['account']['details_submitted'] );
 	}
 
 	/**
@@ -337,6 +316,15 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 			'complete connected account' => array(
 				array(),
 				'complete',
+			),
+			// No status, as in the partial record onboarding caches until its refetch succeeds; client 11.1.0 answers
+			// error: true there (includes/class-wc-payments-account.php:360-365), a recorded note.
+			'details not submitted'      => array(
+				array(
+					'details_submitted' => false,
+					'payments_enabled'  => false,
+				),
+				'restricted',
 			),
 		);
 	}

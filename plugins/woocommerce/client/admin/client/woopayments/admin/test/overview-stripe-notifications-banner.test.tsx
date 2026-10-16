@@ -104,7 +104,6 @@ const createShell = ( connected = true, status = 'restricted' ) =>
 			payments_enabled: true,
 			deposits_enabled: true,
 		},
-		show_update_details_task: true,
 		disputes_awaiting_response_count: 0,
 		overview_tasks_visibility: {
 			dismissed_todo_tasks: [],
