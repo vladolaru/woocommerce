@@ -59,7 +59,7 @@ class Init extends RemoteSpecsEngine {
 			PaymentGatewaySuggestionsDataSourcePoller::get_instance()->set_specs_transient( array( $locale => $specs_to_save ), 3 * HOUR_IN_SECONDS );
 		}
 
-		return self::normalize_native_woopayments_suggestions( $specs_to_return );
+		return self::remove_woopayments_from_suggestions( $specs_to_return );
 	}
 
 	/**
@@ -84,7 +84,7 @@ class Init extends RemoteSpecsEngine {
 		 */
 		$specs   = apply_filters( 'woocommerce_admin_payment_gateway_suggestion_specs', $specs );
 		$results = EvaluateSuggestion::evaluate_specs( $specs );
-		return self::normalize_native_woopayments_suggestions( $results['suggestions'] );
+		return self::remove_woopayments_from_suggestions( $results['suggestions'] );
 	}
 
 	/**
@@ -96,7 +96,7 @@ class Init extends RemoteSpecsEngine {
 	 * @param array $suggestions Payment gateway suggestions.
 	 * @return array Normalized suggestions.
 	 */
-	private static function normalize_native_woopayments_suggestions( array $suggestions ): array {
+	private static function remove_woopayments_from_suggestions( array $suggestions ): array {
 		if ( Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' ) ) {
 			return $suggestions;
 		}
