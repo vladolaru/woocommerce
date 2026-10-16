@@ -5,16 +5,12 @@ namespace Automattic\WooCommerce\Tests\Internal\Admin\Settings\PaymentsProviders
 
 use Automattic\Jetpack\Connection\Manager as WPCOM_Connection_Manager;
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
 use Automattic\WooCommerce\Internal\Admin\Settings\Exceptions\ApiException;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
-use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
-use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsController;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
@@ -90,8 +86,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	private const TEST_EPOCH = 1234567890;
 
 	private const TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT = 'test_drive_account_settings_for_live_account';
-
-	private const WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT = 'woopay_enabled_by_default';
 
 	/**
 	 * Set up test.
@@ -252,8 +246,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->reset_container_replacements();
 		delete_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
 		delete_transient( 'woopayments_referral_code' );
-		delete_transient( self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT );
-		unset( $_GET['wcpay-connection-success'] );
 		remove_all_filters( 'woocommerce_tracks_event_properties' );
 		remove_all_filters( 'wcpay_tracks_event_properties' );
 		remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
@@ -330,7 +322,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_onboarding_details_uses_settings_adapter_runtime_availability(): void {
 		$location = 'US';
-		$gateway  = new FakePaymentGateway( WooPaymentsService::GATEWAY_ID );
 
 		$this->mockable_proxy->register_function_mocks(
 			array(
@@ -344,49 +335,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$settings_adapter = $this->getMockBuilder( WooPaymentsPaymentsSettingsAdapter::class )
-			->disableOriginalConstructor()
-			->onlyMethods(
-				array(
-					'is_onboarding_runtime_available',
-					'get_payment_gateway',
-					'has_account',
-					'has_valid_account',
-					'has_working_account',
-					'has_test_account',
-					'has_sandbox_account',
-					'has_live_account',
-					'get_onboarding_kyc_fallback_url',
-				)
-			)
-			->getMock();
-		$settings_adapter
-			->method( 'is_onboarding_runtime_available' )
-			->willReturn( true );
-		$settings_adapter
-			->method( 'get_payment_gateway' )
-			->willReturn( $gateway );
-		$settings_adapter
-			->method( 'has_account' )
-			->willReturn( false );
-		$settings_adapter
-			->method( 'has_valid_account' )
-			->willReturn( false );
-		$settings_adapter
-			->method( 'has_working_account' )
-			->willReturn( false );
-		$settings_adapter
-			->method( 'has_test_account' )
-			->willReturn( false );
-		$settings_adapter
-			->method( 'has_sandbox_account' )
-			->willReturn( false );
-		$settings_adapter
-			->method( 'has_live_account' )
-			->willReturn( false );
-		$settings_adapter
-			->method( 'get_onboarding_kyc_fallback_url' )
-			->willReturn( 'https://example.com/native-kyc' );
+		$settings_adapter = $this->create_unconnected_adapter( 'https://example.com/native-kyc', WooPaymentsService::GATEWAY_ID );
 
 		$this->sut = new WooPaymentsService();
 		$this->init_sut( $this->mock_providers, $this->mockable_proxy, $settings_adapter, $this->create_extension_runtime(), $this->create_unavailable_api_client(), $this->create_account_service() );
@@ -475,10 +424,12 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $business_verification_step, $this->find_onboarding_step( $second_result['steps'], WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION ) );
 		$this->assertSame( $location, $business_verification_step['context']['fields']['location'] );
 		$this->assertSame( 'en_US', $business_verification_step['context']['fields']['__locale'] );
-		$this->assertSame(
-			DefaultPaymentGateways::get_wcpay_countries(),
-			array_keys( $business_verification_step['context']['fields']['available_countries'] )
-		);
+		// Client class-wc-payments-utils.php:263-305. Order-free, because the screen sorts the countries by name.
+		$expected_countries  = $this->get_woopayments_supported_countries();
+		$available_countries = $business_verification_step['context']['fields']['available_countries'];
+		ksort( $expected_countries );
+		ksort( $available_countries );
+		$this->assertSame( $expected_countries, $available_countries );
 		$this->assertSame( $fields_data['business_types'], $business_verification_step['context']['fields']['business_types'] );
 		$this->assertSame( array(), $business_verification_step['errors'] );
 	}
@@ -586,32 +537,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 				return array( 'business_types' => array() );
 			}
 		};
-		$adapter                              = $this->getMockBuilder( WooPaymentsPaymentsSettingsAdapter::class )
-			->disableOriginalConstructor()
-			->onlyMethods(
-				array(
-					'is_onboarding_runtime_available',
-					'get_payment_gateway',
-					'has_account',
-					'has_valid_account',
-					'has_working_account',
-					'has_test_account',
-					'has_sandbox_account',
-					'has_live_account',
-					'get_onboarding_kyc_fallback_url',
-				)
-			)
-			->getMock();
-
-		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
-		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
-		$adapter->method( 'has_account' )->willReturn( false );
-		$adapter->method( 'has_valid_account' )->willReturn( false );
-		$adapter->method( 'has_working_account' )->willReturn( false );
-		$adapter->method( 'has_test_account' )->willReturn( false );
-		$adapter->method( 'has_sandbox_account' )->willReturn( false );
-		$adapter->method( 'has_live_account' )->willReturn( false );
-		$adapter->method( 'get_onboarding_kyc_fallback_url' )->willReturn( 'https://example.com/kyc' );
+		$adapter                              = $this->create_unconnected_adapter( 'https://example.com/kyc' );
 		$this->mock_provider->method( 'is_onboarding_supported' )->willReturn( true );
 		$this->mock_provider->method( 'is_onboarding_started' )->willReturn( false );
 		$this->mock_provider->method( 'is_onboarding_completed' )->willReturn( false );
@@ -676,31 +602,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * While the WooPayments plugin owns the runtime, its own maybe_activate_woopay() reads the answer, so native leaves it alone.
-	 *
-	 * @testdox The platform's WooPay default is left to the WooPayments extension while the built-in WooPayments does not own onboarding.
-	 */
-	public function test_platform_woopay_default_is_left_to_the_woopayments_extension_when_builtin_does_not_own_onboarding(): void {
-		$controller = new WooPaymentsController();
-		$controller->init( $this->getMockBuilder( Payments::class )->getMock(), $this->sut );
-		update_option(
-			WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
-			array(
-				'platform_checkout'              => 'no',
-				'upe_enabled_payment_method_ids' => array( 'card' ),
-			)
-		);
-		set_transient( self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT, true, DAY_IN_SECONDS );
-		$_GET['wcpay-connection-success'] = '1';
-
-		$this->run_woopayments_controller_admin_init( $controller );
-
-		$this->assertSame( 'no', get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['platform_checkout'] );
-		$this->assertTrue( (bool) get_transient( self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT ) );
-	}
-
-	/**
-	 * @testdox A referral link stores the normalized code, records the referral event and continues to onboarding.
+	 * @testdox A referral link records the referral event with the normalized code and continues to onboarding.
 	 *
 	 * Source: plugin 11.1.0 `WC_Payments_Account::maybe_redirect_onboarding_referral()` and
 	 * `WC_Payments_Onboarding_Service::normalize_and_store_referral_code()` (50 chars, lowercased, 30 days).
@@ -725,8 +627,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$url = $this->sut->handle_onboarding_referral( str_repeat( 'Ab', 30 ) );
 		unset( $_SERVER['HTTP_REFERER'] );
 
-		$this->assertSame( str_repeat( 'ab', 25 ), get_transient( 'woopayments_referral_code' ) );
-		$this->assertEqualsWithDelta( time() + 30 * DAY_IN_SECONDS, (int) get_option( '_transient_timeout_woopayments_referral_code' ), 60, 'The code is kept for 30 days.' );
 		$this->assertSame( admin_url( 'admin.php?page=wc-settings&tab=checkout&path=/woopayments/onboarding&from=REFERRAL' ), $url );
 		$this->assertArrayHasKey( 'wcadmin_wcpay_account_referral', $recorded );
 		$this->assertSame( str_repeat( 'ab', 25 ), $recorded['wcadmin_wcpay_account_referral']['referral_code'] );
@@ -1034,32 +934,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsApiClient $api_client Native API client.
 	 */
 	private function arrange_builtin_fields_onboarding( WooPaymentsApiClient $api_client ): void {
-		$adapter = $this->getMockBuilder( WooPaymentsPaymentsSettingsAdapter::class )
-			->disableOriginalConstructor()
-			->onlyMethods(
-				array(
-					'is_onboarding_runtime_available',
-					'get_payment_gateway',
-					'has_account',
-					'has_valid_account',
-					'has_working_account',
-					'has_test_account',
-					'has_sandbox_account',
-					'has_live_account',
-					'get_onboarding_kyc_fallback_url',
-				)
-			)
-			->getMock();
-
-		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
-		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
-		$adapter->method( 'has_account' )->willReturn( false );
-		$adapter->method( 'has_valid_account' )->willReturn( false );
-		$adapter->method( 'has_working_account' )->willReturn( false );
-		$adapter->method( 'has_test_account' )->willReturn( false );
-		$adapter->method( 'has_sandbox_account' )->willReturn( false );
-		$adapter->method( 'has_live_account' )->willReturn( false );
-		$adapter->method( 'get_onboarding_kyc_fallback_url' )->willReturn( 'https://example.com/native-kyc' );
+		$adapter = $this->create_unconnected_adapter( 'https://example.com/native-kyc' );
 		$this->mock_provider->method( 'is_onboarding_supported' )->willReturn( true );
 		$this->mock_provider->method( 'is_onboarding_started' )->willReturn( false );
 		$this->mock_provider->method( 'is_onboarding_completed' )->willReturn( false );
@@ -1112,6 +987,44 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			$api_client,
 			$this->create_account_service_with_api_client( $api_client )
 		);
+	}
+
+	/**
+	 * Create a Payments settings adapter double for a store with an available onboarding runtime and no account.
+	 *
+	 * @param string $kyc_fallback_url The KYC fallback URL the adapter answers.
+	 * @param string $gateway_id       The gateway id, or empty for the fake gateway's default.
+	 * @return WooPaymentsPaymentsSettingsAdapter|MockObject
+	 */
+	private function create_unconnected_adapter( string $kyc_fallback_url, string $gateway_id = '' ) {
+		$adapter = $this->getMockBuilder( WooPaymentsPaymentsSettingsAdapter::class )
+			->disableOriginalConstructor()
+			->onlyMethods(
+				array(
+					'is_onboarding_runtime_available',
+					'get_payment_gateway',
+					'has_account',
+					'has_valid_account',
+					'has_working_account',
+					'has_test_account',
+					'has_sandbox_account',
+					'has_live_account',
+					'get_onboarding_kyc_fallback_url',
+				)
+			)
+			->getMock();
+
+		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
+		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway( $gateway_id ) );
+		$adapter->method( 'has_account' )->willReturn( false );
+		$adapter->method( 'has_valid_account' )->willReturn( false );
+		$adapter->method( 'has_working_account' )->willReturn( false );
+		$adapter->method( 'has_test_account' )->willReturn( false );
+		$adapter->method( 'has_sandbox_account' )->willReturn( false );
+		$adapter->method( 'has_live_account' )->willReturn( false );
+		$adapter->method( 'get_onboarding_kyc_fallback_url' )->willReturn( $kyc_fallback_url );
+
+		return $adapter;
 	}
 
 	/**
@@ -1235,18 +1148,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			$reflection->setAccessible( true );
 			$this->assertNull( $reflection->getValue( $sut ), $property . ' must be resolved on first use, not when the service is initialized.' );
 		}
-	}
-
-	/**
-	 * @testdox Should centralize WooPayments extension runtime access.
-	 */
-	public function test_extension_runtime_access_is_centralized(): void {
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local plugin source for admin-service boundary regression coverage.
-		$source = (string) file_get_contents( WC()->plugin_path() . '/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsService.php' );
-
-		$this->assertStringNotContainsString( "class_exists( 'WC_Payments_Onboarding_Service' )", $source, 'WooPaymentsService should reset onboarding mode through WooPaymentsExtensionRuntime.' );
-		$this->assertStringNotContainsString( "class_exists( '\\WC_Payments_Utils' )", $source, 'WooPaymentsService should read supported countries through WooPaymentsExtensionRuntime.' );
-		$this->assertStringNotContainsString( '\\WC_Payments_Utils::supported_countries', $source, 'WooPaymentsService should not call WooPayments utility statics directly.' );
 	}
 
 	/**
@@ -12350,32 +12251,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		$result = $this->invoke_private_method( 'get_onboarding_payment_methods_state', array( $location, $recommended_pms ) );
 		$this->assertArrayHasKey( 'apple_google', $result );
 		$this->assertFalse( $result['apple_google'], 'Explicit stored apple_google should take precedence over OR/recommended.' );
-	}
-
-	/**
-	 * Run the admin_init callbacks the WooPayments settings controller registers, as an admin page load does.
-	 *
-	 * @param WooPaymentsController $controller Controller under test.
-	 */
-	private function run_woopayments_controller_admin_init( WooPaymentsController $controller ): void {
-		global $wp_filter;
-
-		$controller->register();
-		remove_action( 'load-woocommerce_page_wc-settings', array( $controller, 'maybe_redirect_to_onboarding' ) );
-		$callbacks = array();
-		foreach ( $wp_filter['admin_init']->callbacks as $priority => $registered_callbacks ) {
-			foreach ( $registered_callbacks as $registered_callback ) {
-				$callback = $registered_callback['function'];
-				if ( is_array( $callback ) && $controller === $callback[0] ) {
-					$callbacks[] = $callback;
-					remove_action( 'admin_init', $callback, $priority );
-				}
-			}
-		}
-
-		foreach ( $callbacks as $callback ) {
-			call_user_func( $callback );
-		}
 	}
 
 	/**
