@@ -89,13 +89,21 @@ class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_C
 	}
 
 	/**
-	 * @testdox Store-location lookup creates a terminal location from the WooCommerce base address when none exists.
+	 * @testdox Store-location lookup creates a terminal location from the WooCommerce base address when none exists: $_dataName.
+	 * @dataProvider provide_store_addresses
+	 *
+	 * @param string $default_country Store country option.
+	 * @param string $address         Store address line.
+	 * @param string $city            Store city.
+	 * @param string $postcode        Store postcode.
+	 * @param string $country         Expected location country.
+	 * @param string $state           Expected location state.
 	 */
-	public function test_get_or_create_store_location_creates_location_from_store_address(): void {
-		update_option( 'woocommerce_default_country', 'US:CA' );
-		update_option( 'woocommerce_store_address', '123 Main St' );
-		update_option( 'woocommerce_store_city', 'San Francisco' );
-		update_option( 'woocommerce_store_postcode', '94107' );
+	public function test_get_or_create_store_location_creates_location_from_store_address( string $default_country, string $address, string $city, string $postcode, string $country, string $state ): void {
+		update_option( 'woocommerce_default_country', $default_country );
+		update_option( 'woocommerce_store_address', $address );
+		update_option( 'woocommerce_store_city', $city );
+		update_option( 'woocommerce_store_postcode', $postcode );
 		update_option( 'woocommerce_store_address_2', '' );
 
 		$response = $this->sut->get_or_create_store_location( new WP_REST_Request( 'GET', '/wc/v3/payments/terminal/locations/store' ) );
@@ -104,10 +112,23 @@ class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_C
 		$data = $response->get_data();
 		$this->assertSame( 'tml_created', $data['id'] );
 		$this->assertSame( $this->get_site_location_name(), $this->api_client->last_created_location['display_name'] );
-		$this->assertSame( 'US', $this->api_client->last_created_location['address']['country'] );
-		$this->assertSame( 'CA', $this->api_client->last_created_location['address']['state'] );
-		$this->assertSame( '123 Main St', $this->api_client->last_created_location['address']['line1'] );
+		$this->assertSame( $country, $this->api_client->last_created_location['address']['country'] );
+		$this->assertSame( $state, $this->api_client->last_created_location['address']['state'] );
+		$this->assertSame( $address, $this->api_client->last_created_location['address']['line1'] );
 		$this->assertSame( array(), $this->api_client->last_created_location['metadata'], 'The auto-created store location must carry no metadata, like the reference client.' );
+	}
+
+	/**
+	 * Store addresses and the location country and state they are created with.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string,3:string,4:string,5:string}>
+	 */
+	public function provide_store_addresses(): array {
+		return array(
+			'a California store'  => array( 'US:CA', '123 Main St', 'San Francisco', '94107', 'US', 'CA' ),
+			// Client 11.1.0 treats Puerto Rico as a US state (includes/admin/class-wc-rest-payments-terminal-locations-controller.php:125-129).
+			'a Puerto Rico store' => array( 'PR', '1 Calle Fortaleza', 'San Juan', '00901', 'US', 'PR' ),
+		);
 	}
 
 	/**
@@ -199,24 +220,6 @@ class WooPaymentsTerminalLocationsRestControllerTest extends WC_REST_Unit_Test_C
 		$this->assertInstanceOf( WP_REST_Response::class, $response );
 		$this->assertSame( 'tml_direct', $response->get_data()['id'] );
 		$this->assertSame( array( 'tml_direct' ), $this->api_client->terminal_location_calls );
-	}
-
-	/**
-	 * @testdox A Puerto Rico store's location is created in the US with the state PR.
-	 *
-	 * Client 11.1.0 treats Puerto Rico as a US state (includes/admin/class-wc-rest-payments-terminal-locations-controller.php:125-129).
-	 */
-	public function test_get_or_create_store_location_creates_a_puerto_rico_location_in_the_us(): void {
-		update_option( 'woocommerce_default_country', 'PR' );
-		update_option( 'woocommerce_store_address', '1 Calle Fortaleza' );
-		update_option( 'woocommerce_store_city', 'San Juan' );
-		update_option( 'woocommerce_store_postcode', '00901' );
-		update_option( 'woocommerce_store_address_2', '' );
-
-		$this->sut->get_or_create_store_location( new WP_REST_Request( 'GET', '/wc/v3/payments/terminal/locations/store' ) );
-
-		$this->assertSame( 'US', $this->api_client->last_created_location['address']['country'] ?? null );
-		$this->assertSame( 'PR', $this->api_client->last_created_location['address']['state'] ?? null );
 	}
 
 	/**

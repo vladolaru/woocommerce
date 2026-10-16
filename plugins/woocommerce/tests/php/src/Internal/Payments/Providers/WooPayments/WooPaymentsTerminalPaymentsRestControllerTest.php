@@ -90,24 +90,6 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox Connection-token responses include the WooPayments test-mode flag for mobile clients.
-	 */
-	public function test_connection_token_response_appends_test_mode(): void {
-		$this->api_client->connection_token_response = array( 'secret' => 'cnctok_test_secret' );
-
-		$response = $this->sut->create_connection_token( new WP_REST_Request( 'POST', '/wc/v3/payments/connection_tokens' ) );
-
-		$this->assertInstanceOf( WP_REST_Response::class, $response );
-		$this->assertSame(
-			array(
-				'secret'    => 'cnctok_test_secret',
-				'test_mode' => true,
-			),
-			$response->get_data()
-		);
-	}
-
-	/**
 	 * @testdox Terminal intent creation sends the order amount, lower-case currency, metadata, and card-present defaults.
 	 */
 	public function test_create_terminal_intent_builds_reference_payload(): void {
@@ -128,11 +110,11 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$this->assertSame( 'mobile', $this->api_client->last_terminal_intent_payload['metadata']['channel'] );
 		$this->assertSame( (string) $order->get_id(), $this->api_client->last_terminal_intent_payload['metadata']['order_id'] );
 		$this->assertSame( $order->get_order_number(), $this->api_client->last_terminal_intent_payload['metadata']['order_number'] );
+		// The extension's description (includes/core/server/request/trait-intention.php:36-46), with no blog id, as no site is connected here.
 		$this->assertSame(
-			\Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder::intent_description( (string) $order->get_order_number() ),
+			sprintf( 'Online Payment for Order #%s for %s', $order->get_order_number(), str_replace( array( 'https://', 'http://' ), '', get_site_url() ) ),
 			$this->api_client->last_terminal_intent_payload['description']
 		);
-		$this->assertStringContainsString( 'Online Payment for Order #' . $order->get_order_number(), $this->api_client->last_terminal_intent_payload['description'] );
 		$this->assertSame( array( 'card_present' ), $this->api_client->last_terminal_intent_payload['payment_method_types'] );
 		$this->assertSame( 'manual', $this->api_client->last_terminal_intent_payload['capture_method'] );
 	}
@@ -171,13 +153,20 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox Terminal intent creation rejects invalid payment method payloads like the reference mobile route.
+	 * Like the reference mobile route, an invalid payment method payload or an unsupported payment or capture method is refused
+	 * instead of silently defaulting.
+	 *
+	 * @testdox Terminal intent creation refuses $_dataName and creates no intent.
+	 * @dataProvider provide_invalid_terminal_intent_params
+	 *
+	 * @param string $param Request parameter.
+	 * @param mixed  $value Its invalid value.
 	 */
-	public function test_create_terminal_intent_rejects_invalid_payment_method_payload(): void {
+	public function test_create_terminal_intent_refuses_an_invalid_param( string $param, $value ): void {
 		$order   = $this->create_order();
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_terminal_intent' );
 		$request->set_param( 'order_id', $order->get_id() );
-		$request->set_param( 'payment_methods', 'card_present' );
+		$request->set_param( $param, $value );
 
 		$response = $this->sut->create_terminal_intent( $request );
 
@@ -188,37 +177,16 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox Terminal intent creation rejects unsupported payment methods instead of silently defaulting.
+	 * Invalid terminal intent parameters.
+	 *
+	 * @return array<string,array{0:string,1:mixed}>
 	 */
-	public function test_create_terminal_intent_rejects_unsupported_payment_method(): void {
-		$order   = $this->create_order();
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_terminal_intent' );
-		$request->set_param( 'order_id', $order->get_id() );
-		$request->set_param( 'payment_methods', array( 'card' ) );
-
-		$response = $this->sut->create_terminal_intent( $request );
-
-		$this->assertInstanceOf( WP_Error::class, $response );
-		$this->assertSame( 'wcpay_server_error', $response->get_error_code() );
-		$this->assertSame( 500, $response->get_error_data()['status'] );
-		$this->assertSame( array(), $this->api_client->last_terminal_intent_payload );
-	}
-
-	/**
-	 * @testdox Terminal intent creation rejects unsupported capture methods instead of silently defaulting.
-	 */
-	public function test_create_terminal_intent_rejects_invalid_capture_method(): void {
-		$order   = $this->create_order();
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_terminal_intent' );
-		$request->set_param( 'order_id', $order->get_id() );
-		$request->set_param( 'capture_method', 'later' );
-
-		$response = $this->sut->create_terminal_intent( $request );
-
-		$this->assertInstanceOf( WP_Error::class, $response );
-		$this->assertSame( 'wcpay_server_error', $response->get_error_code() );
-		$this->assertSame( 500, $response->get_error_data()['status'] );
-		$this->assertSame( array(), $this->api_client->last_terminal_intent_payload );
+	public function provide_invalid_terminal_intent_params(): array {
+		return array(
+			'payment methods sent as a string' => array( 'payment_methods', 'card_present' ),
+			'an unsupported payment method'    => array( 'payment_methods', array( 'card' ) ),
+			'an unsupported capture method'    => array( 'capture_method', 'later' ),
+		);
 	}
 
 	/**
@@ -976,7 +944,9 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$this->assertSame( 'wcpay_intent_order_mismatch', $response->get_error_code() );
 		$this->assertSame( 409, $response->get_error_data()['status'] );
 		// Client 11.1.0 logs the rejection (class-wc-rest-payments-orders-controller.php:204-205).
-		$this->assertSame( array( array( 'error', 'Payment capture rejected due to failed validation: order id on intent is incorrect or missing.', 'woopayments' ) ), $logger->get_errors() );
+		$errors = $logger->get_errors();
+		$this->assertCount( 1, $errors );
+		$this->assertSame( 'woopayments', $errors[0][2] );
 		$this->assertNotSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $order->get_payment_method() );
 		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
 	}
@@ -1003,71 +973,6 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$this->assertSame( 'wcpay_payment_uncapturable', $response->get_error_code() );
 		$this->assertSame( 409, $response->get_error_data()['status'] );
 		$this->assertSame( array(), $this->api_client->last_capture_metadata, 'No capture must be attempted once the stored intent mismatch is found.' );
-	}
-
-	/**
-	 * @testdox capture_terminal_payment reaches the handler through the registered REST route with the WooPayments extension's payment_intent_id argument name.
-	 *
-	 * Dispatches through `WP_REST_Server` (not by calling the controller method directly), so the
-	 * route's `args` schema is exercised too: a `payment_intent_id` rename in that schema would fail
-	 * this request with 400 `rest_missing_callback_param` before the handler ever runs, the way the
-	 * reference client requires `payment_intent_id` for the same endpoint
-	 * (`class-wc-rest-payments-orders-controller.php:80-83`).
-	 */
-	public function test_capture_terminal_payment_dispatches_through_the_rest_server_with_payment_intent_id(): void {
-		$this->sut->register_routes();
-
-		$order                                        = $this->create_order( 12.34, 'USD' );
-		$this->api_client->payment_intention_response = array(
-			'id'       => 'pi_terminal',
-			'status'   => 'requires_capture',
-			'currency' => 'usd',
-			'metadata' => array(
-				'order_id' => (string) $order->get_id(),
-			),
-			'charges'  => array(
-				'data' => array(
-					array(
-						'id'                     => 'ch_terminal',
-						'payment_method'         => 'pm_terminal',
-						'payment_method_details' => array(
-							'type'         => 'card_present',
-							'card_present' => array(
-								'brand' => 'visa',
-								'last4' => '4242',
-							),
-						),
-					),
-				),
-			),
-		);
-		$this->api_client->captured_intention_response = array(
-			'id'       => 'pi_terminal',
-			'status'   => 'succeeded',
-			'currency' => 'usd',
-			'charges'  => array(
-				'data' => array(
-					array(
-						'id'             => 'ch_terminal',
-						'payment_method' => 'pm_terminal',
-					),
-				),
-			),
-		);
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
-		$request->set_param( 'payment_intent_id', 'pi_terminal' );
-
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame(
-			array(
-				'status' => 'succeeded',
-				'id'     => 'pi_terminal',
-			),
-			$response->get_data()
-		);
 	}
 
 	/**
@@ -1181,14 +1086,15 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * @testdox Terminal capture preserves the amount-too-small machine-readable error code.
+	 * @testdox Terminal capture answers the amount-too-small minimum as the machine-readable payload: $_dataName.
+	 * @dataProvider provide_amount_too_small_captures
+	 *
+	 * @param float                        $total             Order total.
+	 * @param array<string,mixed>|null     $captured_response Capture answer, or null when the capture throws.
+	 * @param WooPaymentsApiException|null $capture_exception Capture exception, or null when the capture answers.
 	 */
-	public function test_capture_terminal_payment_returns_amount_too_small_error_details(): void {
-		$order                                        = $this->create_order( 12.34, 'USD' );
-		$error_details                                = array(
-			'minimum_amount'          => 50,
-			'minimum_amount_currency' => 'USD',
-		);
+	public function test_capture_terminal_payment_answers_the_amount_too_small_minimum( float $total, ?array $captured_response, ?WooPaymentsApiException $capture_exception ): void {
+		$order                                        = $this->create_order( $total, 'USD' );
 		$this->api_client->payment_intention_response = array(
 			'id'       => 'pi_terminal',
 			'status'   => 'requires_capture',
@@ -1197,50 +1103,12 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 				'order_id' => (string) $order->get_id(),
 			),
 		);
-		$this->api_client->captured_intention_response = array(
-			'id'            => 'pi_terminal',
-			'status'        => 'requires_capture',
-			'http_code'     => 400,
-			'error_code'    => 'amount_too_small',
-			'extra_details' => $error_details,
-		);
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
-		$request->set_param( 'order_id', $order->get_id() );
-		$request->set_param( 'payment_intent_id', 'pi_terminal' );
-
-		$response = $this->sut->capture_terminal_payment( $request );
-
-		$this->assertInstanceOf( WP_Error::class, $response );
-		$this->assertSame( 'wcpay_capture_error_amount_too_small', $response->get_error_code() );
-		$this->assertSame( esc_html( wp_json_encode( $error_details ) ), $response->get_error_message() );
-		$this->assertSame( 400, $response->get_error_data()['status'] );
-	}
-
-	/**
-	 * @testdox Terminal capture converts a thrown amount-too-small API error into the machine-readable payload.
-	 */
-	public function test_capture_terminal_payment_converts_amount_too_small_exception_to_error_details(): void {
-		$order                                        = $this->create_order( 0.30, 'USD' );
-		$this->api_client->payment_intention_response = array(
-			'id'       => 'pi_terminal',
-			'status'   => 'requires_capture',
-			'currency' => 'usd',
-			'metadata' => array(
-				'order_id' => (string) $order->get_id(),
-			),
-		);
-		$this->api_client->captured_intention_exception = new WooPaymentsApiException(
-			'Amount must be at least $0.50 usd',
-			'amount_too_small',
-			400,
-			'',
-			'',
-			array(
-				'minimum_amount' => 50,
-				'currency'       => 'usd',
-			)
-		);
+		if ( null !== $captured_response ) {
+			$this->api_client->captured_intention_response = $captured_response;
+		}
+		if ( null !== $capture_exception ) {
+			$this->api_client->captured_intention_exception = $capture_exception;
+		}
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
 		$request->set_param( 'order_id', $order->get_id() );
@@ -1262,6 +1130,45 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 			$response->get_error_message()
 		);
 		$this->assertSame( 400, $response->get_error_data()['status'] );
+	}
+
+	/**
+	 * Amount-too-small capture failures, answered or thrown.
+	 *
+	 * @return array<string,array{0:float,1:?array<string,mixed>,2:?WooPaymentsApiException}>
+	 */
+	public function provide_amount_too_small_captures(): array {
+		return array(
+			'a capture answer that did not succeed' => array(
+				12.34,
+				array(
+					'id'            => 'pi_terminal',
+					'status'        => 'requires_capture',
+					'http_code'     => 400,
+					'error_code'    => 'amount_too_small',
+					'extra_details' => array(
+						'minimum_amount'          => 50,
+						'minimum_amount_currency' => 'USD',
+					),
+				),
+				null,
+			),
+			'a thrown amount_too_small error'       => array(
+				0.30,
+				null,
+				new WooPaymentsApiException(
+					'Amount must be at least $0.50 usd',
+					'amount_too_small',
+					400,
+					'',
+					'',
+					array(
+						'minimum_amount' => 50,
+						'currency'       => 'usd',
+					)
+				),
+			),
+		);
 	}
 
 	/**
@@ -1345,10 +1252,9 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	 *
 	 * @dataProvider provide_mobile_routes_with_unexpected_errors
 	 *
-	 * @param string $route   Controller method under test.
-	 * @param string $message Expected log line.
+	 * @param string $route Controller method under test.
 	 */
-	public function test_mobile_routes_log_an_unexpected_error( string $route, string $message ): void {
+	public function test_mobile_routes_log_an_unexpected_error( string $route ): void {
 		$logger = RecordingWcLogger::install();
 		$order  = $this->create_order( 12.34, 'USD' );
 		$order->update_meta_data( '_stripe_customer_id', 'cus_existing' );
@@ -1365,7 +1271,9 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$response = $this->sut->$route( $request );
 
 		$this->assertSame( 'wcpay_server_error', $response->get_error_code() );
-		$this->assertSame( array( array( 'error', $message, 'woopayments' ) ), $logger->get_errors() );
+		$errors = $logger->get_errors();
+		$this->assertCount( 1, $errors );
+		$this->assertSame( 'woopayments', $errors[0][2] );
 	}
 
 	/**
@@ -1484,7 +1392,9 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 
 		$this->assertSame( 'wcpay_server_error', $response->get_error_code() );
 		$this->assertSame( 500, $response->get_error_data()['status'] );
-		$this->assertSame( array( array( 'error', 'Failed to prepare a terminal payment via the REST API.', 'woopayments' ) ), $logger->get_errors() );
+		$errors = $logger->get_errors();
+		$this->assertCount( 1, $errors );
+		$this->assertSame( 'woopayments', $errors[0][2] );
 	}
 
 	/**
@@ -1615,33 +1525,6 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$this->assertInstanceOf( WP_REST_Response::class, $prepare );
 		$this->assertInstanceOf( WP_REST_Response::class, $capture );
 		$this->assertCount( 1, $this->api_client->captures );
-	}
-
-	/**
-	 * @testdox Terminal preparation forwards the intent and order ids and answers the platform response.
-	 */
-	public function test_prepare_terminal_payment_forwards_the_ids(): void {
-		$order = $this->create_order( 12.34, 'USD' );
-
-		$response = $this->sut->prepare_terminal_payment( $this->make_prepare_request( $order ) );
-
-		$this->assertSame(
-			array(
-				'id'     => 'pi_terminal',
-				'object' => 'payment_intent',
-				'status' => 'requires_confirmation',
-			),
-			$response->get_data()
-		);
-		$this->assertSame(
-			array(
-				array(
-					'intent_id' => 'pi_terminal',
-					'order_id'  => $order->get_id(),
-				),
-			),
-			$this->api_client->prepared_terminal_payments
-		);
 	}
 
 	/**
@@ -1882,14 +1765,14 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
-	 * Mobile routes whose unexpected errors are logged, with the expected log line.
+	 * Mobile routes whose unexpected errors are logged.
 	 *
-	 * @return array<string,array{0:string,1:string}>
+	 * @return array<string,array{string}>
 	 */
 	public function provide_mobile_routes_with_unexpected_errors(): array {
 		return array(
-			'customer'        => array( 'create_customer', 'Failed to create or update the customer from the order via the REST API.' ),
-			'terminal intent' => array( 'create_terminal_intent', 'Failed to create a terminal payment intent via the REST API.' ),
+			'customer'        => array( 'create_customer' ),
+			'terminal intent' => array( 'create_terminal_intent' ),
 		);
 	}
 

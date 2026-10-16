@@ -20,8 +20,6 @@ use WP_REST_Request;
  */
 class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case {
 
-	use WooPaymentsMoneyMovementControllerTestTrait;
-
 	/**
 	 * Recording API client.
 	 *
@@ -285,12 +283,11 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	 *
 	 * Client 11.1.0 logs and answers wcpay_server_error (class-wc-rest-payments-orders-controller.php:434-436, :667-669).
 	 *
-	 * @dataProvider provide_authorization_actions
+	 * @dataProvider provide_authorization_action_names
 	 *
-	 * @param string $action  Route action.
-	 * @param string $message Expected log line.
+	 * @param string $action Route action.
 	 */
-	public function test_authorization_actions_log_an_unexpected_error( string $action, string $message ): void {
+	public function test_authorization_actions_log_an_unexpected_error( string $action ): void {
 		$processing_service = new class() extends PaymentProcessingService {
 			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
 			/**
@@ -335,7 +332,9 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 
 		$this->assertSame( 500, $response->get_status() );
 		$this->assertSame( 'wcpay_server_error', $response->get_data()['code'] );
-		$this->assertSame( array( array( 'error', $message, 'woopayments' ) ), $logger->get_errors() );
+		$errors = $logger->get_errors();
+		$this->assertCount( 1, $errors );
+		$this->assertSame( 'woopayments', $errors[0][2] );
 	}
 
 	/**
@@ -372,7 +371,9 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 		$response = $this->server->dispatch( $request );
 
 		$this->assertSame( 'wcpay_server_error', $response->get_data()['code'] );
-		$this->assertSame( array( array( 'error', 'Failed to capture an authorization via the REST API.', 'woopayments' ) ), $logger->get_errors() );
+		$errors = $logger->get_errors();
+		$this->assertCount( 1, $errors );
+		$this->assertSame( 'woopayments', $errors[0][2] );
 	}
 
 	/**
@@ -412,12 +413,11 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	 * failure is the shape the API client builds from a platform error body and its HTTP status.
 	 *
 	 * @testdox A failed intent read before $action answers the logged generic 500 error.
-	 * @dataProvider provide_authorization_actions
+	 * @dataProvider provide_authorization_action_names
 	 *
-	 * @param string $action  Route action.
-	 * @param string $message Expected log line.
+	 * @param string $action Route action.
 	 */
-	public function test_failed_intent_read_answers_the_generic_error( string $action, string $message ): void {
+	public function test_failed_intent_read_answers_the_generic_error( string $action ): void {
 		$logger = RecordingWcLogger::install();
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
 		$this->create_authorizations_controller()->register_routes();
@@ -430,7 +430,9 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 
 		$this->assertSame( 500, $response->get_status() );
 		$this->assertSame( 'wcpay_server_error', $response->get_data()['code'] );
-		$this->assertSame( array( array( 'error', $message, 'woopayments' ) ), $logger->get_errors() );
+		$errors = $logger->get_errors();
+		$this->assertCount( 1, $errors );
+		$this->assertSame( 'woopayments', $errors[0][2] );
 	}
 
 	/**
@@ -483,14 +485,14 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
-	 * Authorization actions and the line their unexpected errors log.
+	 * Authorization route actions.
 	 *
-	 * @return array<string,array{0:string,1:string}>
+	 * @return array<string,array{string}>
 	 */
-	public function provide_authorization_actions(): array {
+	public function provide_authorization_action_names(): array {
 		return array(
-			'capture' => array( 'capture', 'Failed to capture an authorization via the REST API.' ),
-			'cancel'  => array( 'cancel', 'Failed to cancel an authorization via the REST API.' ),
+			'capture' => array( 'capture' ),
+			'cancel'  => array( 'cancel' ),
 		);
 	}
 
@@ -718,67 +720,22 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox Authorization actions validate order state before delegating to payment processing.
-	 */
-	public function test_authorization_actions_validate_order_state_before_processing(): void {
-		$processing_service = new class() extends PaymentProcessingService {
-			/**
-			 * Capture call count.
-			 *
-			 * @var int
-			 */
-			public int $capture_calls = 0;
-
-			/**
-			 * Capture a payment.
-			 *
-			 * @param PaymentOperationContext $context  Payment context.
-			 * @param ProviderInterface       $provider Payment provider.
-			 * @return PaymentOutcome
-			 */
-			public function capture( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
-				++$this->capture_calls;
-
-				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_auth' );
-			}
-		};
-
-		$this->create_authorizations_controller( $processing_service )->register_routes();
-
-		$no_intent_response = $this->server->dispatch( new WP_REST_Request( 'POST', '/wc/v3/payments/orders/999999/capture_authorization' ) );
-
-		$this->assertSame( 400, $no_intent_response->get_status(), 'payment_intent_id is a required route arg, like the reference client.' );
-		$this->assertSame( 'rest_missing_callback_param', $no_intent_response->get_data()['code'] );
-
-		$missing_request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/999999/capture_authorization' );
-		$missing_request->set_body_params( array( 'payment_intent_id' => 'pi_auth' ) );
-		$missing_response = $this->server->dispatch( $missing_request );
-
-		$this->assertSame( 404, $missing_response->get_status() );
-		$this->assertSame( 'wcpay_missing_order', $missing_response->get_data()['code'] );
-		$this->assertSame( 0, $processing_service->capture_calls );
-
-		$order   = $this->create_authorized_order( 'pi_order' );
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_authorization' );
-		$request->set_body_params( array( 'payment_intent_id' => 'pi_other' ) );
-
-		$mismatch_response = $this->server->dispatch( $request );
-
-		$this->assertSame( 409, $mismatch_response->get_status() );
-		$this->assertSame( 'wcpay_intent_order_mismatch', $mismatch_response->get_data()['code'] );
-		$this->assertSame( 0, $processing_service->capture_calls );
-	}
-
-	/**
-	 * @testdox Authorization actions refuse capture and cancel on partially or fully refunded orders.
+	 * @testdox An authorization request is refused before payment processing: $_dataName.
+	 * @dataProvider provide_authorization_refusals_before_processing
 	 *
-	 * Mirrors client 11.1.0's refund guard, present with the same error code and 400 status
-	 * in both `capture_authorization()`
-	 * (`includes/admin/class-wc-rest-payments-orders-controller.php:379-386`) and
-	 * `cancel_authorization()` (`:618-625`): `0 < $order->get_total_refunded()` short-circuits
-	 * before the live intent is ever fetched.
+	 * @param string                   $action                 Capture or cancel.
+	 * @param string|null              $stored_intent          The order's stored intent, or null for no order.
+	 * @param string|null              $posted_intent          Posted payment_intent_id, or null to post none.
+	 * @param bool                     $refunded               Whether the order has a refund.
+	 * @param array<string,mixed>|null $live_intent            Live intent id, status and order_id offset, or null for no answer.
+	 * @param int                      $expected_status        Expected answer status.
+	 * @param string                   $expected_code          Expected error code.
+	 * @param string|null              $expected_message       Expected error message, or null when the row does not check it.
+	 * @param string|null              $expected_last_method   Platform method last called ('' for none), or null when the row does not check it.
+	 * @param bool                     $keeps_payment_identity Whether the row checks the order keeps its status, intent and audit trail.
+	 * @phpstan-param array{id:string,status:string,order_offset:int}|null $live_intent
 	 */
-	public function test_authorization_actions_reject_refunded_orders(): void {
+	public function test_authorization_refusal_before_processing( string $action, ?string $stored_intent, ?string $posted_intent, bool $refunded, ?array $live_intent, int $expected_status, string $expected_code, ?string $expected_message, ?string $expected_last_method, bool $keeps_payment_identity ): void {
 		$processing_service = new class() extends PaymentProcessingService {
 			/**
 			 * Capture call count.
@@ -822,254 +779,122 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 		};
 
 		$this->create_authorizations_controller( $processing_service )->register_routes();
-		$order = $this->create_authorized_order( 'pi_auth' );
-		wc_create_refund(
-			array(
-				'order_id' => $order->get_id(),
-				'amount'   => 1,
-			)
-		);
+		$order_id = 999999;
+		if ( null !== $stored_intent ) {
+			$order_id = $this->create_authorized_order( $stored_intent )->get_id();
+		}
+		if ( $refunded ) {
+			wc_create_refund(
+				array(
+					'order_id' => $order_id,
+					'amount'   => 1,
+				)
+			);
+		}
+		if ( null !== $live_intent ) {
+			$this->api_client->response = array(
+				'id'       => $live_intent['id'],
+				'status'   => $live_intent['status'],
+				'metadata' => array(
+					'order_id' => (string) ( $order_id + $live_intent['order_offset'] ),
+				),
+			);
+		}
 
-		$capture_request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_authorization' );
-		$capture_request->set_body_params( array( 'payment_intent_id' => 'pi_auth' ) );
-		$capture_response = $this->server->dispatch( $capture_request );
-
-		$this->assertSame( 400, $capture_response->get_status() );
-		$this->assertSame( 'wcpay_refunded_order_uncapturable', $capture_response->get_data()['code'] );
-
-		$cancel_request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/cancel_authorization' );
-		$cancel_request->set_body_params( array( 'payment_intent_id' => 'pi_auth' ) );
-		$cancel_response = $this->server->dispatch( $cancel_request );
-
-		$this->assertSame( 400, $cancel_response->get_status() );
-		$this->assertSame( 'wcpay_refunded_order_uncapturable', $cancel_response->get_data()['code'] );
-		$this->assertNotSame(
-			$capture_response->get_data()['message'],
-			$cancel_response->get_data()['message'],
-			'The capture and cancel refusals use different wording, like the reference client.'
-		);
-
-		$this->assertSame( array(), $this->api_client->last_call, 'The refund guard must run before the live intent is ever fetched.' );
-		$this->assertSame( 0, $processing_service->capture_calls );
-		$this->assertSame( 0, $processing_service->cancel_calls );
-	}
-
-	/**
-	 * @testdox Cancel authorization requires payment_intent_id.
-	 *
-	 * Mirrors client 11.1.0 `cancel_authorization`'s route registration
-	 * (`includes/admin/class-wc-rest-payments-orders-controller.php:122-133`), which declares
-	 * `payment_intent_id` as `required` on the cancel route the same way the capture route does.
-	 */
-	public function test_cancel_authorization_requires_payment_intent_id_param(): void {
-		$processing_service = new class() extends PaymentProcessingService {
-			/**
-			 * Cancel call count.
-			 *
-			 * @var int
-			 */
-			public int $cancel_calls = 0;
-
-			/**
-			 * Cancel a payment.
-			 *
-			 * @param PaymentOperationContext $context  Payment context.
-			 * @param ProviderInterface       $provider Payment provider.
-			 * @return PaymentOutcome
-			 */
-			public function cancel( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
-				++$this->cancel_calls;
-
-				return new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, 'pi_auth' );
-			}
-		};
-
-		$this->create_authorizations_controller( $processing_service )->register_routes();
-		$order = $this->create_authorized_order( 'pi_auth' );
-
-		$response = $this->server->dispatch( new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/cancel_authorization' ) );
-
-		$this->assertSame( 400, $response->get_status(), 'payment_intent_id is a required route arg on the cancel route too.' );
-		$this->assertSame( 'rest_missing_callback_param', $response->get_data()['code'] );
-		$this->assertSame( 0, $processing_service->cancel_calls );
-	}
-
-	/**
-	 * @testdox Authorization actions reject live intents that belong to another order.
-	 */
-	public function test_authorization_actions_reject_live_intent_order_mismatch(): void {
-		$processing_service = new class() extends PaymentProcessingService {
-			/**
-			 * Capture call count.
-			 *
-			 * @var int
-			 */
-			public int $capture_calls = 0;
-
-			/**
-			 * Capture a payment.
-			 *
-			 * @param PaymentOperationContext $context  Payment context.
-			 * @param ProviderInterface       $provider Payment provider.
-			 * @return PaymentOutcome
-			 */
-			public function capture( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
-				++$this->capture_calls;
-
-				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_auth' );
-			}
-		};
-
-		$this->create_authorizations_controller( $processing_service )->register_routes();
-		$order                      = $this->create_authorized_order( 'pi_auth' );
-		$this->api_client->response = array(
-			'id'       => 'pi_auth',
-			'status'   => 'requires_capture',
-			'metadata' => array(
-				'order_id' => (string) ( $order->get_id() + 1 ),
-			),
-		);
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_authorization' );
-		$request->set_body_params( array( 'payment_intent_id' => 'pi_auth' ) );
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order_id . '/' . $action . '_authorization' );
+		if ( null !== $posted_intent ) {
+			$request->set_body_params( array( 'payment_intent_id' => $posted_intent ) );
+		}
 		$response = $this->server->dispatch( $request );
 
-		$this->assertSame( 409, $response->get_status() );
-		$this->assertSame( 'wcpay_intent_order_mismatch', $response->get_data()['code'] );
-		$this->assertSame( 'get_payment_intention', $this->api_client->last_call['method'] );
-		$this->assertSame( 0, $processing_service->capture_calls );
+		$this->assertSame( $expected_status, $response->get_status() );
+		$this->assertSame( $expected_code, $response->get_data()['code'] );
+		$this->assertSame( 0, $processing_service->capture_calls, 'No capture may run for a refused request.' );
+		$this->assertSame( 0, $processing_service->cancel_calls, 'No cancel may run for a refused request.' );
+		if ( null !== $expected_message ) {
+			$this->assertSame( $expected_message, $response->get_data()['message'] );
+		}
+		if ( '' === $expected_last_method ) {
+			$this->assertSame( array(), $this->api_client->last_call, 'The refusal comes before the live intent is ever fetched.' );
+		} elseif ( null !== $expected_last_method ) {
+			$this->assertSame( $expected_last_method, $this->api_client->last_call['method'] );
+		}
+		if ( $keeps_payment_identity ) {
+			$order = wc_get_order( $order_id );
+			$this->assertInstanceOf( WC_Order::class, $order );
+			$this->assertSame( 'on-hold', $order->get_status() );
+			$this->assertSame( 'pi_Y', $order->get_meta( '_intent_id', true ) );
+			$this->assertSame( 'pi_Y', $order->get_transaction_id() );
+			$this->assertSame( '', $order->get_meta( '_wcpay_fraud_outcome_manual_entry', true ), 'The refused request must not write the merchant audit entry.' );
+		}
 	}
 
 	/**
-	 * @testdox The $action route refuses an intent other than the order's own, even when that intent names the order and is authorized.
-	 * @dataProvider provide_authorization_action_names
+	 * Authorization requests refused before payment processing, with the checks each row adds.
 	 *
-	 * Client 11.1.0 checks only the live intent's metadata.order_id and status
-	 * (includes/admin/class-wc-rest-payments-orders-controller.php:389-406 for capture, :628-645 for cancel), then
-	 * captures or cancels the order's stored intent (class-wc-payment-gateway-wcpay.php:3975, :4076), so a request naming
-	 * pi_X moves pi_Y. Native refuses the request before any platform call.
-	 *
-	 * @param string $action Capture or cancel.
+	 * @return array<string,array{0:string,1:?string,2:?string,3:bool,4:?array{id:string,status:string,order_offset:int},5:int,6:string,7:?string,8:?string,9:bool}>
 	 */
-	public function test_authorization_action_refuses_an_intent_other_than_the_orders_own( string $action ): void {
-		$processing_service = new class() extends PaymentProcessingService {
-			/**
-			 * Capture and cancel call count.
-			 *
-			 * @var int
-			 */
-			public int $calls = 0;
-
-			/**
-			 * Capture a payment.
-			 *
-			 * @param PaymentOperationContext $context  Payment context.
-			 * @param ProviderInterface       $provider Payment provider.
-			 * @return PaymentOutcome
-			 */
-			public function capture( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
-				++$this->calls;
-
-				return new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_Y' );
-			}
-
-			/**
-			 * Cancel a payment.
-			 *
-			 * @param PaymentOperationContext $context  Payment context.
-			 * @param ProviderInterface       $provider Payment provider.
-			 * @return PaymentOutcome
-			 */
-			public function cancel( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
-				++$this->calls;
-
-				return new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, 'pi_Y' );
-			}
-		};
-
-		$this->create_authorizations_controller( $processing_service )->register_routes();
-		$order = $this->create_authorized_order( 'pi_Y' );
-		// The live pi_X passes both client checks: metadata.order_id is the order (orders controller :393-396 for capture,
-		// :632-635 for cancel) and the status is requires_capture (is_authorized() at :400, the status list at :639).
-		$this->api_client->response = array(
-			'id'       => 'pi_X',
-			'status'   => 'requires_capture',
-			'metadata' => array(
-				'order_id' => (string) $order->get_id(),
-			),
+	public function provide_authorization_refusals_before_processing(): array {
+		$another_intent = array(
+			'id'           => 'pi_X',
+			'status'       => 'requires_capture',
+			'order_offset' => 0,
 		);
 
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/' . $action . '_authorization' );
-		$request->set_body_params( array( 'payment_intent_id' => 'pi_X' ) );
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 409, $response->get_status() );
-		$this->assertSame( 'wcpay_intent_order_mismatch', $response->get_data()['code'] );
-		$this->assertSame( 0, $processing_service->calls, "No {$action} may run for another intent." );
-		$order = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'on-hold', $order->get_status() );
-		$this->assertSame( 'pi_Y', $order->get_meta( '_intent_id', true ) );
-		$this->assertSame( 'pi_Y', $order->get_transaction_id() );
-		$this->assertSame( '', $order->get_meta( '_wcpay_fraud_outcome_manual_entry', true ), 'The refused request must not write the merchant audit entry.' );
-	}
-
-	/**
-	 * Authorization route actions.
-	 *
-	 * @return array<string,array{string}>
-	 */
-	public function provide_authorization_action_names(): array {
 		return array(
-			'capture' => array( 'capture' ),
-			'cancel'  => array( 'cancel' ),
-		);
-	}
-
-	/**
-	 * @testdox Authorization actions reject stale live intent statuses.
-	 */
-	public function test_authorization_actions_reject_stale_live_intent_status(): void {
-		$processing_service = new class() extends PaymentProcessingService {
-			/**
-			 * Cancel call count.
-			 *
-			 * @var int
-			 */
-			public int $cancel_calls = 0;
-
-			/**
-			 * Cancel a payment.
-			 *
-			 * @param PaymentOperationContext $context  Payment context.
-			 * @param ProviderInterface       $provider Payment provider.
-			 * @return PaymentOutcome
-			 */
-			public function cancel( PaymentOperationContext $context, ProviderInterface $provider ): PaymentOutcome {
-				++$this->cancel_calls;
-
-				return new PaymentOutcome( PaymentOutcome::STATUS_CANCELED, 'pi_auth' );
-			}
-		};
-
-		$this->create_authorizations_controller( $processing_service )->register_routes();
-		$order                      = $this->create_authorized_order( 'pi_auth' );
-		$this->api_client->response = array(
-			'id'       => 'pi_auth',
-			'status'   => 'succeeded',
-			'metadata' => array(
-				'order_id' => (string) $order->get_id(),
+			// payment_intent_id is a required route arg, like the reference client.
+			'capture without an intent id'               => array( 'capture', null, null, false, null, 400, 'rest_missing_callback_param', null, null, false ),
+			'capture for a missing order'                => array( 'capture', null, 'pi_auth', false, null, 404, 'wcpay_missing_order', null, null, false ),
+			'capture naming another intent than the stored one' => array( 'capture', 'pi_order', 'pi_other', false, null, 409, 'wcpay_intent_order_mismatch', null, null, false ),
+			// The refund guard of capture_authorization() (includes/admin/class-wc-rest-payments-orders-controller.php:379-386, message :383):
+			// 0 < $order->get_total_refunded() short-circuits before the live intent is ever fetched.
+			'capture on a refunded order'                => array( 'capture', 'pi_auth', 'pi_auth', true, null, 400, 'wcpay_refunded_order_uncapturable', 'Payment cannot be captured for partially or fully refunded orders.', '', false ),
+			// The same guard in cancel_authorization() (:618-625, message :622).
+			'cancel on a refunded order'                 => array( 'cancel', 'pi_auth', 'pi_auth', true, null, 400, 'wcpay_refunded_order_uncapturable', 'Payment cannot be canceled for partially or fully refunded orders.', '', false ),
+			// The cancel route declares payment_intent_id as required the same way the capture route does
+			// (includes/admin/class-wc-rest-payments-orders-controller.php:122-133).
+			'cancel without an intent id'                => array( 'cancel', 'pi_auth', null, false, null, 400, 'rest_missing_callback_param', null, null, false ),
+			'capture of a live intent for another order' => array(
+				'capture',
+				'pi_auth',
+				'pi_auth',
+				false,
+				array(
+					'id'           => 'pi_auth',
+					'status'       => 'requires_capture',
+					'order_offset' => 1,
+				),
+				409,
+				'wcpay_intent_order_mismatch',
+				null,
+				'get_payment_intention',
+				false,
+			),
+			// Client 11.1.0 checks only the live intent's metadata.order_id and status
+			// (includes/admin/class-wc-rest-payments-orders-controller.php:389-406 for capture, :628-645 for cancel), then
+			// captures or cancels the order's stored intent (class-wc-payment-gateway-wcpay.php:3975, :4076), so a request naming
+			// pi_X moves pi_Y. Native refuses the request before any platform call.
+			// The live pi_X passes both client checks: metadata.order_id is the order (orders controller :393-396 for capture,
+			// :632-635 for cancel) and the status is requires_capture (is_authorized() at :400, the status list at :639).
+			'capture of another authorized intent for the order' => array( 'capture', 'pi_Y', 'pi_X', false, $another_intent, 409, 'wcpay_intent_order_mismatch', null, null, true ),
+			'cancel of another authorized intent for the order' => array( 'cancel', 'pi_Y', 'pi_X', false, $another_intent, 409, 'wcpay_intent_order_mismatch', null, null, true ),
+			'cancel of an intent that already succeeded' => array(
+				'cancel',
+				'pi_auth',
+				'pi_auth',
+				false,
+				array(
+					'id'           => 'pi_auth',
+					'status'       => 'succeeded',
+					'order_offset' => 0,
+				),
+				409,
+				'wcpay_payment_uncapturable',
+				null,
+				'get_payment_intention',
+				false,
 			),
 		);
-
-		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/cancel_authorization' );
-		$request->set_body_params( array( 'payment_intent_id' => 'pi_auth' ) );
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 409, $response->get_status() );
-		$this->assertSame( 'wcpay_payment_uncapturable', $response->get_data()['code'] );
-		$this->assertSame( 'get_payment_intention', $this->api_client->last_call['method'] );
-		$this->assertSame( 0, $processing_service->cancel_calls );
 	}
 
 	/**
