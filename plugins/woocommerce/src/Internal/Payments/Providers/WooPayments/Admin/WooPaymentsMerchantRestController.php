@@ -45,13 +45,13 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 	private const FILE_PURPOSE_CACHE_PREFIX = 'wcpay_file_purpose_';
 
 	/**
-	 * Lifetime, in seconds, of a cached provider file purpose.
+	 * Lifetime, in seconds, of a cached provider file purpose: a day, as client 11.1.0 keeps it
+	 * (includes/class-wc-payments-file-service.php:22-23).
 	 *
-	 * The cache only avoids re-fetching the file classification on repeated requests. It is intentionally short so a
-	 * provider-side reclassification (e.g. a file flipped from public to private) propagates quickly instead of letting
-	 * a stale "public" classification keep serving the file to unauthenticated callers.
+	 * A file's purpose is set when the file is uploaded and the platform has no way to change it, so a day-old
+	 * classification is still the file's classification.
 	 */
-	private const FILE_PURPOSE_CACHE_TTL = 5 * MINUTE_IN_SECONDS;
+	private const FILE_PURPOSE_CACHE_TTL = DAY_IN_SECONDS;
 
 	/**
 	 * The root namespace for the JSON REST API endpoints.

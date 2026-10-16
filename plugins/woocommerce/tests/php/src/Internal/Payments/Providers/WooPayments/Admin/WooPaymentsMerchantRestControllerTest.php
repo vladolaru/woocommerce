@@ -1847,12 +1847,34 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should cache the file classification with a short TTL so reclassifications propagate quickly.
+	 * Client 11.1.0 keeps a file's purpose for WC_Payments_File_Service::CACHE_PERIOD, a day
+	 * (includes/class-wc-payments-file-service.php:22-23, read at includes/admin/class-wc-rest-payments-files-controller.php:103).
+	 *
+	 * @testdox Should keep a file's classification for a day after reading it from the platform.
 	 */
-	public function test_get_public_settings_file_caches_classification_with_short_ttl(): void {
-		$reflection = new \ReflectionClassConstant( WooPaymentsMerchantRestController::class, 'FILE_PURPOSE_CACHE_TTL' );
+	public function test_get_public_settings_file_keeps_the_classification_for_a_day(): void {
+		$this->mock_api_client
+			->method( 'get_file' )
+			->willReturn(
+				array(
+					'id'      => 'file_test_logo',
+					'purpose' => 'business_logo',
+				)
+			);
+		$this->mock_api_client
+			->method( 'get_file_contents' )
+			->willReturn(
+				array(
+					'content_type' => 'image/png',
+					'file_content' => 'TE9HTw==',
+				)
+			);
 
-		$this->assertSame( 5 * MINUTE_IN_SECONDS, $reflection->getValue() );
-		$this->assertLessThan( DAY_IN_SECONDS, $reflection->getValue() );
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/file/file_test_logo' ) );
+		$expires  = (int) get_option( '_transient_timeout_wcpay_file_purpose_file_test_logo_0' );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( 'business_logo', get_transient( 'wcpay_file_purpose_file_test_logo_0' ) );
+		$this->assertEqualsWithDelta( time() + DAY_IN_SECONDS, $expires, 60 );
 	}
 }
