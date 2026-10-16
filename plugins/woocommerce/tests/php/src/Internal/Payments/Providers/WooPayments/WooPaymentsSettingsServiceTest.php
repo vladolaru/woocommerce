@@ -22,6 +22,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistrarInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
+use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 use WP_Error;
@@ -2717,21 +2722,23 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Client 11.1.0 prices the Standard and High purchase-price rule at $1,000 in the store currency, converted at the
 	 * Multi-Currency USD rate when USD is an enabled currency, and in USD while its Multi-Currency flag is off
-	 * (includes/fraud-prevention/class-fraud-risk-tools.php:167-261, :396-445); the platform converts the order total into
-	 * the rule's currency.
+	 * (includes/fraud-prevention/class-fraud-risk-tools.php:167-261, :396-445; automatic rates from the rates cache,
+	 * includes/multi-currency/MultiCurrency.php:1707-1731); the platform converts the order total into the rule's currency.
 	 *
 	 * @testdox Should build the preset purchase-price threshold as $expected when $label.
 	 * @dataProvider provide_preset_threshold_cases
 	 *
-	 * @param string      $label            Case.
-	 * @param string      $store_currency   Store currency.
-	 * @param string|null $flag             The WooPayments Multi-Currency flag, or null for never saved.
-	 * @param string[]    $enabled          Multi-Currency enabled currencies.
-	 * @param string|null $usd_manual_rate  Manual USD rate, or null for none.
-	 * @param string      $account_currency The account's default currency.
-	 * @param string      $expected         Expected threshold value.
+	 * @param string      $label             Case.
+	 * @param string      $store_currency    Store currency.
+	 * @param string|null $flag              The WooPayments Multi-Currency flag, or null for never saved.
+	 * @param string[]    $enabled           Multi-Currency enabled currencies.
+	 * @param string|null $usd_rate          The USD rate as "manual:<rate>", "stored:<rate>" (rates cache only) or "provider:<rate>"
+	 *                                       (a running rate provider), or null for none.
+	 * @param string      $account_currency  The account's default currency.
+	 * @param string|null $filtered_currency A currency a woocommerce_currency filter answers, or null for none.
+	 * @param string      $expected          Expected threshold value.
 	 */
-	public function test_update_settings_builds_the_preset_threshold_in_the_store_currency( string $label, string $store_currency, ?string $flag, array $enabled, ?string $usd_manual_rate, string $account_currency, string $expected ): void {
+	public function test_update_settings_builds_the_preset_threshold_in_the_store_currency( string $label, string $store_currency, ?string $flag, array $enabled, ?string $usd_rate, string $account_currency, ?string $filtered_currency, string $expected ): void {
 		unset( $label );
 		$this->set_connected_account_data();
 		$account_data                                        = get_option( 'wcpay_account_data' );
@@ -2741,10 +2748,32 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		if ( null !== $flag ) {
 			update_option( '_wcpay_feature_customer_multi_currency', $flag );
 		}
+		if ( null !== $filtered_currency ) {
+			add_filter( 'woocommerce_currency', static fn() => $filtered_currency );
+		}
 		update_option( 'wcpay_multi_currency_enabled_currencies', $enabled );
-		if ( null !== $usd_manual_rate ) {
+		list( $rate_source, $rate ) = null === $usd_rate ? array( null, null ) : explode( ':', $usd_rate );
+		if ( 'manual' === $rate_source ) {
 			update_option( 'wcpay_multi_currency_exchange_rate_usd', 'manual' );
-			update_option( 'wcpay_multi_currency_manual_rate_usd', $usd_manual_rate );
+			update_option( 'wcpay_multi_currency_manual_rate_usd', $rate );
+		} elseif ( 'stored' === $rate_source ) {
+			// The rates cache in the shape MultiCurrencyDatabaseCache stores the platform's currency rates answer, fetched long
+			// ago: with Multi-Currency off nothing refreshes it.
+			$rates_cache = array(
+				'data'               => array(
+					'currencies' => array( 'USD' => (float) $rate ),
+					'updated'    => time() - WEEK_IN_SECONDS,
+				),
+				'fetched'            => time() - WEEK_IN_SECONDS,
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			);
+			update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, $rates_cache, false );
+		}
+		$registry_factory = wc_get_container()->get( CurrencyRateProviderRegistryFactory::class );
+		$registrars       = $registry_factory->get_provider_registrars();
+		if ( 'provider' === $rate_source ) {
+			$registry_factory->set_provider_registrars( array( $this->create_usd_rate_provider_registrar( (float) $rate ) ) );
 		}
 		$expected_standard                      = $this->get_standard_fraud_ruleset_fixture();
 		$expected_standard[2]['check']['value'] = $expected;
@@ -2757,33 +2786,63 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				)
 			);
 			delete_transient( 'wcpay_fraud_protection_settings' );
+			// The settings read then fetches the latest ruleset and matches its ruleset_config to a level (the WooPayments
+			// extension includes/class-wc-payment-gateway-wcpay.php:3782-3787).
 			$this->api_client->latest_fraud_ruleset_response = array( 'ruleset_config' => $expected_standard );
 
 			$this->assertIsArray( $result );
 			$this->assertSame( $expected_standard, $this->api_client->last_fraud_ruleset );
 			$this->assertSame( 'standard', $this->sut->get_settings()['current_protection_level'], 'A ruleset the extension built for this store reads back as Standard.' );
 		} finally {
+			$registry_factory->set_provider_registrars( $registrars );
+			remove_all_filters( 'woocommerce_currency' );
 			// Through delete_option(), so the shared Multi-Currency state sees the change.
 			delete_option( 'wcpay_multi_currency_enabled_currencies' );
 			delete_option( 'wcpay_multi_currency_exchange_rate_usd' );
 			delete_option( 'wcpay_multi_currency_manual_rate_usd' );
+			delete_option( MultiCurrencyCacheInterface::CURRENCIES_KEY );
 		}
 	}
 
 	/**
 	 * Preset threshold cases: the store, its Multi-Currency setup, the account currency and the expected rule value.
 	 *
-	 * @return array<string,array{0:string,1:string,2:string|null,3:string[],4:string|null,5:string,6:string}>
+	 * @return array<string,array{0:string,1:string,2:string|null,3:string[],4:string|null,5:string,6:string|null,7:string}>
 	 */
 	public function provide_preset_threshold_cases(): array {
 		return array(
-			'Multi-Currency flag off'                => array( 'the WooPayments Multi-Currency flag is off', 'EUR', '0', array(), null, 'pln', '100000|usd' ),
-			'USD enabled in Multi-Currency'          => array( 'USD is an enabled currency at a manual rate', 'PLN', null, array( 'PLN', 'USD' ), '0.23', 'pln', '434783|pln' ),
-			'USD not enabled'                        => array( 'the store currency differs from the account currency', 'EUR', null, array(), null, 'pln', '100000|eur' ),
-			'USD listed without a rate'              => array( 'USD is listed but has no rate', 'PLN', '1', array( 'PLN', 'USD' ), null, 'pln', '100000|pln' ),
-			'store currency is the account currency' => array( 'the store currency is the account currency', 'PLN', null, array(), null, 'pln', '100000|pln' ),
-			'USD store'                              => array( 'the store sells in USD', 'USD', null, array( 'USD', 'EUR' ), null, 'usd', '100000|usd' ),
+			'Multi-Currency flag off'                => array( 'the WooPayments Multi-Currency flag is off', 'EUR', '0', array(), null, 'pln', null, '100000|usd' ),
+			'USD enabled at a manual rate'           => array( 'USD is an enabled currency at a manual rate', 'PLN', null, array( 'PLN', 'USD' ), 'manual:0.23', 'pln', null, '434783|pln' ),
+			'USD at an automatic rate, rates stored' => array( 'USD has an automatic rate only in the rates cache (Multi-Currency off)', 'PLN', null, array( 'PLN', 'USD' ), 'stored:0.25', 'pln', null, '400000|pln' ),
+			'USD at an automatic rate, provider'     => array( 'USD has an automatic rate from a running rate provider', 'PLN', null, array( 'PLN', 'USD' ), 'provider:0.23', 'pln', null, '434783|pln' ),
+			'USD listed without a rate'              => array( 'USD is enabled but no rate is stored', 'PLN', '1', array( 'PLN', 'USD' ), null, 'pln', null, '100000|usd' ),
+			'USD not enabled'                        => array( 'the store currency differs from the account currency', 'EUR', null, array(), null, 'pln', null, '100000|eur' ),
+			'store currency is the account currency' => array( 'the store currency is the account currency', 'PLN', null, array(), null, 'pln', null, '100000|pln' ),
+			'filtered store currency'                => array( 'a filter answers another currency than the stored one', 'PLN', null, array(), null, 'pln', 'GBP', '100000|pln' ),
+			'USD store'                              => array( 'the store sells in USD', 'USD', null, array( 'USD', 'EUR' ), null, 'cad', null, '100000|usd' ),
 		);
+	}
+
+	/**
+	 * A rate provider registrar whose provider is available and answers one USD rate, as a running Multi-Currency has.
+	 *
+	 * @param float $rate USD rate against the store currency.
+	 * @return CurrencyRateProviderRegistrarInterface
+	 */
+	private function create_usd_rate_provider_registrar( float $rate ): CurrencyRateProviderRegistrarInterface {
+		$provider = $this->createMock( CurrencyRateProvider::class );
+		$provider->method( 'get_id' )->willReturn( 'test-rates' );
+		$provider->method( 'is_available' )->willReturn( true );
+		$provider->method( 'get_supported_currencies' )->willReturn( array( 'USD' ) );
+		$provider->method( 'get_currency_rates' )->willReturn( array( 'USD' => $rate ) );
+		$registrar = $this->createMock( CurrencyRateProviderRegistrarInterface::class );
+		$registrar->method( 'register' )->willReturnCallback(
+			static function ( CurrencyRateProviderRegistry $registry ) use ( $provider ): void {
+				$registry->register( $provider );
+			}
+		);
+
+		return $registrar;
 	}
 
 	/**

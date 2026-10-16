@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDatabaseCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
@@ -369,7 +371,7 @@ class WooPaymentsFraudRulesetService {
 	 * Get the Standard and High purchase-price threshold: $1,000 in the store currency, converted at the Multi-Currency USD
 	 * rate when USD is an enabled currency, or in USD while the WooPayments Multi-Currency flag is off, as client 11.1.0
 	 * builds it (includes/fraud-prevention/class-fraud-risk-tools.php:396-445). The platform converts the order total into
-	 * the rule's currency.
+	 * the rule's currency, so with no USD rate at all the threshold stays in USD.
 	 *
 	 * @return string
 	 */
@@ -384,10 +386,14 @@ class WooPaymentsFraudRulesetService {
 		// The Multi-Currency rates are read only when USD is enabled, the one case that converts.
 		if ( 'USD' !== $store_currency && is_array( $enabled_codes ) && in_array( 'USD', array_map( 'strtoupper', $enabled_codes ), true ) ) {
 			$enabled_currencies = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create()->build()->get_enabled_currencies();
-			$usd_rate           = isset( $enabled_currencies['USD'] ) ? $enabled_currencies['USD']->get_rate() : 0.0;
-			if ( $usd_rate > 0 ) {
-				$amount = (int) round( $amount * ( 1 / $usd_rate ) );
+			// With Multi-Currency off no rate provider runs, so an automatic rate is the one the rates cache still holds.
+			$usd_rate = isset( $enabled_currencies['USD'] )
+				? $enabled_currencies['USD']->get_rate()
+				: (float) ( ( new MultiCurrencyDatabaseCache() )->get( MultiCurrencyCacheInterface::CURRENCIES_KEY, true )['currencies']['USD'] ?? 0 );
+			if ( $usd_rate <= 0 ) {
+				return '100000|usd';
 			}
+			$amount = (int) round( $amount * ( 1 / $usd_rate ) );
 		}
 
 		return $amount . '|' . strtolower( $store_currency );
