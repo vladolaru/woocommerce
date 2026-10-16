@@ -48,18 +48,27 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 	private WooPaymentsDatabaseCache $database_cache;
 
 	/**
+	 * WooPayments logger.
+	 *
+	 * @var WooPaymentsLogger
+	 */
+	private WooPaymentsLogger $logger;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsApiClient           $api_client            WooPayments API client.
-	 * @param WooPaymentsOrderDetailsService $order_service         Order details service.
-	 * @param WooPaymentsDatabaseCache       $database_cache        Database cache.
+	 * @param WooPaymentsApiClient           $api_client     WooPayments API client.
+	 * @param WooPaymentsOrderDetailsService $order_service  Order details service.
+	 * @param WooPaymentsDatabaseCache       $database_cache Database cache.
+	 * @param WooPaymentsLogger              $logger         WooPayments logger.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsOrderDetailsService $order_service, WooPaymentsDatabaseCache $database_cache ): void {
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsOrderDetailsService $order_service, WooPaymentsDatabaseCache $database_cache, WooPaymentsLogger $logger ): void {
 		$this->api_client     = $api_client;
 		$this->order_service  = $order_service;
 		$this->database_cache = $database_cache;
+		$this->logger         = $logger;
 	}
 
 	/**
@@ -164,7 +173,7 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 		$submit      = wc_string_to_bool( $request->get_param( 'submit' ) );
 		$log_context = $this->get_dispute_action_log_context( 'update', $dispute_id, $submit );
 
-		$this->log_dispute_action( 'info', __( 'WooPayments dispute update requested.', 'woocommerce' ), $log_context );
+		$this->log_dispute_action( 'info', 'WooPayments dispute update requested.', $log_context );
 
 		try {
 			$evidence = $request->get_param( 'evidence' );
@@ -179,13 +188,13 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 			// The client invalidates the dispute caches after the update, as after a close (class-wc-payments-api-client.php:722-724).
 			$this->database_cache->delete_dispute_caches();
 
-			$this->log_dispute_action( 'info', __( 'WooPayments dispute update completed.', 'woocommerce' ), $log_context );
+			$this->log_dispute_action( 'info', 'WooPayments dispute update completed.', $log_context );
 
 			return new WP_REST_Response( $this->enrich_dispute_response_after_completed_action( $response, $log_context ) );
 		} catch ( WooPaymentsApiException $exception ) {
 			$this->log_dispute_action(
 				'error',
-				__( 'WooPayments dispute update failed.', 'woocommerce' ),
+				'WooPayments dispute update failed.',
 				array_merge(
 					$log_context,
 					array(
@@ -210,19 +219,19 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 		$dispute_id  = (string) $request->get_param( 'dispute_id' );
 		$log_context = $this->get_dispute_action_log_context( 'close', $dispute_id );
 
-		$this->log_dispute_action( 'info', __( 'WooPayments dispute close requested.', 'woocommerce' ), $log_context );
+		$this->log_dispute_action( 'info', 'WooPayments dispute close requested.', $log_context );
 
 		try {
 			$response = $this->api_client->close_dispute( $dispute_id );
 			$this->database_cache->delete_dispute_caches();
 
-			$this->log_dispute_action( 'info', __( 'WooPayments dispute close completed.', 'woocommerce' ), $log_context );
+			$this->log_dispute_action( 'info', 'WooPayments dispute close completed.', $log_context );
 
 			return new WP_REST_Response( $this->enrich_dispute_response_after_completed_action( $response, $log_context ) );
 		} catch ( WooPaymentsApiException $exception ) {
 			$this->log_dispute_action(
 				'error',
-				__( 'WooPayments dispute close failed.', 'woocommerce' ),
+				'WooPayments dispute close failed.',
 				array_merge(
 					$log_context,
 					array(
@@ -365,7 +374,6 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 	 */
 	private function get_dispute_action_log_context( string $action, string $dispute_id, ?bool $submit = null ): array {
 		$context = array(
-			'source'     => WooPaymentsLogger::SOURCE,
 			'action'     => $action,
 			'dispute_id' => $dispute_id,
 			'user_id'    => get_current_user_id(),
@@ -386,7 +394,7 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 	 * @param array<string,mixed> $context Log context.
 	 */
 	private function log_dispute_action( string $level, string $message, array $context ): void {
-		wc_get_logger()->log( $level, $message, $context );
+		$this->logger->log_always( $message, $level, $context );
 	}
 
 	/**
@@ -402,7 +410,7 @@ class WooPaymentsDisputesRestController extends RestApiControllerBase {
 		} catch ( Throwable $exception ) {
 			$this->log_dispute_action(
 				'warning',
-				__( 'WooPayments dispute action completed, but local order context enrichment failed.', 'woocommerce' ),
+				'WooPayments dispute action completed, but local order context enrichment failed.',
 				array_merge(
 					$log_context,
 					array(

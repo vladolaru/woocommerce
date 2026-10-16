@@ -81,6 +81,13 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 	private WooPaymentsWooPayEligibility $woopay_eligibility;
 
 	/**
+	 * WooPayments logger.
+	 *
+	 * @var WooPaymentsLogger
+	 */
+	private WooPaymentsLogger $logger;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -90,19 +97,22 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 	 * @param WooPaymentsAccountService                 $account_service                   WooPayments account service.
 	 * @param WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service Duplicate gateway methods service.
 	 * @param WooPaymentsWooPayEligibility              $woopay_eligibility                WooPay eligibility rules.
+	 * @param WooPaymentsLogger                         $logger                            WooPayments logger.
 	 */
 	final public function init(
 		WooPaymentsActionSchedulerService $scheduler,
 		WooPaymentsApiClient $api_client,
 		WooPaymentsAccountService $account_service,
 		WooPaymentsDuplicateGatewayMethodsService $duplicate_gateway_methods_service,
-		WooPaymentsWooPayEligibility $woopay_eligibility
+		WooPaymentsWooPayEligibility $woopay_eligibility,
+		WooPaymentsLogger $logger
 	): void {
 		$this->scheduler                         = $scheduler;
 		$this->api_client                        = $api_client;
 		$this->account_service                   = $account_service;
 		$this->duplicate_gateway_methods_service = $duplicate_gateway_methods_service;
 		$this->woopay_eligibility                = $woopay_eligibility;
+		$this->logger                            = $logger;
 	}
 
 	/**
@@ -640,9 +650,6 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 	 * @param array<string,mixed> $context   Context added to the line, such as the Action Scheduler hook.
 	 */
 	private function log_exception( string $message, Throwable $exception, array $context = array() ): void {
-		wc_get_logger()->error(
-			$message,
-			array_merge( $context, WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => WooPaymentsLogger::SOURCE ) )
-		);
+		$this->logger->log_throwable_always( $message, $exception, $context );
 	}
 }

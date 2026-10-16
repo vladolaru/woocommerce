@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProvider
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -934,7 +935,8 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 			$api_client ?? $this->create_api_client( array() ),
 			$account_service ?? $this->create_account_service(),
 			$duplicate_gateway_methods_service ?? wc_get_container()->get( WooPaymentsDuplicateGatewayMethodsService::class ),
-			$woopay_eligibility ?? wc_get_container()->get( WooPaymentsWooPayEligibility::class )
+			$woopay_eligibility ?? wc_get_container()->get( WooPaymentsWooPayEligibility::class ),
+			wc_get_container()->get( WooPaymentsLogger::class )
 		);
 
 		$this->services[] = $service;

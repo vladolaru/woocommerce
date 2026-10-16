@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 
 use ActionScheduler_Store;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayExtensionSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
@@ -192,7 +193,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 			->getMock();
 		$api_client->method( 'get_woopay_compatibility' )->willThrowException( self::make_provider_error() );
 		$sync = new WooPaymentsWooPayExtensionSync();
-		$sync->init( $api_client, wc_get_container()->get( WooPaymentsActionSchedulerService::class ) );
+		$sync->init( $api_client, wc_get_container()->get( WooPaymentsActionSchedulerService::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
 		$logger = RecordingWcLogger::install();
 
 		$sync->update_compatibility_and_maybe_show_incompatibility_warning();
@@ -264,7 +265,7 @@ class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
 			->willReturn( $compatibility );
 
 		$sync = new WooPaymentsWooPayExtensionSync();
-		$sync->init( $api_client, wc_get_container()->get( WooPaymentsActionSchedulerService::class ) );
+		$sync->init( $api_client, wc_get_container()->get( WooPaymentsActionSchedulerService::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
 
 		$this->syncs[] = $sync;
 

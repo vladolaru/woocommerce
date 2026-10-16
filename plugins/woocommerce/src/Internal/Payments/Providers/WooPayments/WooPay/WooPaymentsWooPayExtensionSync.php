@@ -87,16 +87,25 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 	private WooPaymentsActionSchedulerService $action_scheduler;
 
 	/**
+	 * WooPayments logger.
+	 *
+	 * @var WooPaymentsLogger
+	 */
+	private WooPaymentsLogger $logger;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
 	 * @param WooPaymentsApiClient              $api_client       WooPayments API client.
 	 * @param WooPaymentsActionSchedulerService $action_scheduler WooPayments Action Scheduler service.
+	 * @param WooPaymentsLogger                 $logger           WooPayments logger.
 	 */
-	final public function init( WooPaymentsApiClient $api_client, WooPaymentsActionSchedulerService $action_scheduler ): void {
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsActionSchedulerService $action_scheduler, WooPaymentsLogger $logger ): void {
 		$this->api_client       = $api_client;
 		$this->action_scheduler = $action_scheduler;
+		$this->logger           = $logger;
 	}
 
 	/**
@@ -159,10 +168,7 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 		} catch ( Throwable $e ) {
 			// The platform's message is free text, so the line carries only the failure context; written whatever the logging
 			// setting.
-			wc_get_logger()->error(
-				'Failed to update WooPay compatibility data.',
-				array_merge( WooPaymentsLogger::get_failure_context( $e ), array( 'source' => WooPaymentsLogger::SOURCE ) )
-			);
+			$this->logger->log_throwable_always( 'Failed to update WooPay compatibility data.', $e );
 		}
 	}
 
