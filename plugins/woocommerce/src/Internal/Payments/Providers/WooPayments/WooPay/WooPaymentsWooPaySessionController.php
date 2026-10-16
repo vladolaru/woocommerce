@@ -499,14 +499,10 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			return '';
 		}
 
-		$settings = is_array( $config['woopayButton'] ?? null ) ? $config['woopayButton'] : array();
-		$type     = isset( $settings['type'] ) && is_scalar( $settings['type'] ) ? (string) $settings['type'] : 'default';
-		$theme    = isset( $settings['theme'] ) && is_scalar( $settings['theme'] ) ? (string) $settings['theme'] : 'dark';
-		$height   = isset( $settings['height'] ) && is_scalar( $settings['height'] ) ? (string) $settings['height'] : '48';
-		$radius   = isset( $settings['radius'] ) && is_scalar( $settings['radius'] ) ? (string) $settings['radius'] : '4';
+		$settings = $config['woopayButton'];
 
 		return '<div id="wcpay-woopay-button" data-product_page="' . esc_attr( 'product' === $context ? '1' : '0' ) . '">' .
-			'<div class="woopay-express-button is-placeholder" aria-label="' . esc_attr__( 'WooPay', 'woocommerce' ) . '" data-type="' . esc_attr( $type ) . '" data-theme="' . esc_attr( $theme ) . '" data-size="' . esc_attr( (string) ( $settings['size'] ?? 'default' ) ) . '" style="height: ' . esc_attr( $height ) . 'px; border-radius: ' . esc_attr( $radius ) . 'px"></div>' .
+			'<div class="woopay-express-button is-placeholder" aria-label="' . esc_attr__( 'WooPay', 'woocommerce' ) . '" data-type="' . esc_attr( (string) $settings['type'] ) . '" data-theme="' . esc_attr( (string) $settings['theme'] ) . '" data-size="' . esc_attr( (string) $settings['size'] ) . '" style="height: ' . esc_attr( (string) $settings['height'] ) . 'px; border-radius: ' . esc_attr( (string) $settings['radius'] ) . 'px"></div>' .
 			'</div>';
 	}
 
@@ -520,9 +516,7 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			define( 'WOOCOMMERCE_CART', true );
 		}
 
-		if ( function_exists( 'WC' ) && WC() ) {
-			WC()->shipping()->reset_shipping();
-		}
+		WC()->shipping()->reset_shipping();
 
 		$request    = wp_unslash( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
 		$product_id = isset( $request['product_id'] ) ? absint( $request['product_id'] ) : 0;
@@ -585,32 +579,30 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			);
 		}
 
-		if ( function_exists( 'WC' ) && WC() && WC()->cart ) {
-			WC()->cart->empty_cart();
-			$variation_id = isset( $request['variation_id'] ) ? absint( $request['variation_id'] ) : 0;
-			$attributes   = $this->get_add_to_cart_attributes( $request );
-			$added        = WC()->cart->add_to_cart( $product_id, $quantity, $variation_id, $attributes );
-			if ( ! $added ) {
-				wp_send_json(
-					array(
-						'error' => array(
-							'code'    => 'add_to_cart_failed',
-							'message' => __( 'Unable to add this product to the cart.', 'woocommerce' ),
-						),
+		WC()->cart->empty_cart();
+		$variation_id = isset( $request['variation_id'] ) ? absint( $request['variation_id'] ) : 0;
+		$attributes   = $this->get_add_to_cart_attributes( $request );
+		$added        = WC()->cart->add_to_cart( $product_id, $quantity, $variation_id, $attributes );
+		if ( ! $added ) {
+			wp_send_json(
+				array(
+					'error' => array(
+						'code'    => 'add_to_cart_failed',
+						'message' => __( 'Unable to add this product to the cart.', 'woocommerce' ),
 					),
-					400
-				);
-			}
-
-			WC()->cart->calculate_totals();
+				),
+				400
+			);
 		}
+
+		WC()->cart->calculate_totals();
 
 		wp_send_json(
 			array(
 				'result' => 'success',
 				'cart'   => array(
-					'items_count' => function_exists( 'WC' ) && WC() && WC()->cart ? WC()->cart->get_cart_contents_count() : 0,
-					'total'       => function_exists( 'WC' ) && WC() && WC()->cart ? WC()->cart->get_total( '' ) : '',
+					'items_count' => WC()->cart->get_cart_contents_count(),
+					'total'       => WC()->cart->get_total( '' ),
 				),
 			)
 		);

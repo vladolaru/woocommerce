@@ -293,16 +293,6 @@ class WooPaymentsWooPaySessionService {
 	}
 
 	/**
-	 * Get the platform customer ID of the current shopper, creating the customer when missing, guests included, so WooPay
-	 * can show saved payment methods and charge the right customer.
-	 *
-	 * @return string The platform customer id.
-	 */
-	private function get_or_create_platform_customer_id() {
-		return $this->customer_service->get_or_create_customer_id_for_user( get_current_user_id() );
-	}
-
-	/**
 	 * Get unencrypted minimum WooPay session data.
 	 *
 	 * @return array<string,mixed>
@@ -312,7 +302,7 @@ class WooPaymentsWooPaySessionService {
 			'wcpay_version'     => WooPaymentsClientVersion::VERSION,
 			'blog_id'           => $this->get_store_blog_id(),
 			'blog_rest_url'     => get_rest_url(),
-			'blog_checkout_url' => function_exists( 'wc_get_checkout_url' ) ? wc_get_checkout_url() : home_url( '/' ),
+			'blog_checkout_url' => wc_get_checkout_url(),
 			'session_nonce'     => $this->create_woopay_nonce( get_current_user_id() ),
 			'store_api_token'   => $this->get_store_api_token(),
 		);
@@ -388,7 +378,7 @@ class WooPaymentsWooPaySessionService {
 		$request = array(
 			'wcpay_version'        => WooPaymentsClientVersion::VERSION,
 			'user_id'              => get_current_user_id(),
-			'customer_id'          => $this->get_or_create_platform_customer_id(),
+			'customer_id'          => $this->customer_service->get_or_create_customer_id_for_user( get_current_user_id() ),
 			'session_nonce'        => $this->create_woopay_nonce( get_current_user_id() ),
 			'store_api_token'      => $this->get_store_api_token(),
 			'email'                => $email,
@@ -396,13 +386,13 @@ class WooPaymentsWooPaySessionService {
 			'user_session'         => $user_session,
 			'preloaded_requests'   => $is_pay_for_order
 				? array(
-					'cart'     => $this->get_cart_data( true, $order_id, $key, $billing_email, $woopay_request ),
+					'cart'     => $this->get_cart_data( $order_id, $key, $billing_email, $woopay_request ),
 					'checkout' => array(
 						'order_id' => $order_id,
 					),
 				)
 				: array(
-					'cart'     => $this->get_cart_data( false, null, null, null, $woopay_request ),
+					'cart'     => $this->get_cart_data( null, null, null, $woopay_request ),
 					'checkout' => $this->get_checkout_data( $woopay_request ),
 				),
 			'tracks_user_identity' => $this->frontend_tracking_controller->get_or_create_tracks_identity_for_current_user(),
@@ -584,11 +574,6 @@ class WooPaymentsWooPaySessionService {
 	public function set_woopay_phone_session_data( array $request ): void {
 		$session = WooPaymentsSessionService::get_wc_session();
 		if ( null === $session ) {
-			return;
-		}
-
-		if ( ! empty( $request['empty'] ) ) {
-			$this->clear_woopay_session_data();
 			return;
 		}
 
@@ -829,14 +814,11 @@ class WooPaymentsWooPaySessionService {
 	/**
 	 * Get a string gateway setting.
 	 *
-	 * @param string      $key      Setting key.
-	 * @param string|null $fallback Optional explicit fallback value.
+	 * @param string $key Setting key.
 	 * @return string
 	 */
-	private function get_string_gateway_setting( string $key, ?string $fallback = null ): string {
-		$value = null === $fallback
-			? $this->account_service->get_gateway_setting( $key )
-			: $this->account_service->get_gateway_setting( $key, $fallback );
+	private function get_string_gateway_setting( string $key ): string {
+		$value = $this->account_service->get_gateway_setting( $key );
 
 		if ( is_scalar( $value ) && '' !== (string) $value ) {
 			return sanitize_text_field( (string) $value );
@@ -844,7 +826,7 @@ class WooPaymentsWooPaySessionService {
 
 		$default = WooPaymentsSettingsDefaults::get( $key );
 
-		return null !== $fallback ? $fallback : ( is_scalar( $default ) ? sanitize_text_field( (string) $default ) : '' );
+		return is_scalar( $default ) ? sanitize_text_field( (string) $default ) : '';
 	}
 
 	/**
@@ -951,13 +933,7 @@ class WooPaymentsWooPaySessionService {
 	 * @return string
 	 */
 	private function get_store_blog_id(): string {
-		$blog_id = '';
-
-		if ( class_exists( '\Jetpack_Options' ) ) {
-			$blog_id = (string) \Jetpack_Options::get_option( 'id' );
-		}
-
-		return $blog_id;
+		return (string) \Jetpack_Options::get_option( 'id' );
 	}
 
 	/**
@@ -966,13 +942,7 @@ class WooPaymentsWooPaySessionService {
 	 * @return string
 	 */
 	private function get_store_blog_token(): string {
-		$blog_token = '';
-
-		if ( class_exists( '\Jetpack_Options' ) ) {
-			$blog_token = (string) \Jetpack_Options::get_option( 'blog_token' );
-		} elseif ( defined( 'DEV_BLOG_TOKEN_SECRET' ) && is_string( DEV_BLOG_TOKEN_SECRET ) ) {
-			$blog_token = DEV_BLOG_TOKEN_SECRET;
-		}
+		$blog_token = (string) \Jetpack_Options::get_option( 'blog_token' );
 
 		if ( '' === $blog_token ) {
 			// Client 11.1.0 class-woopay-utilities.php:297.
@@ -1003,7 +973,7 @@ class WooPaymentsWooPaySessionService {
 	 */
 	private function get_store_api_token(): string {
 		$session = WooPaymentsSessionService::get_wc_session();
-		if ( null === $session || ! class_exists( CartTokenUtils::class ) ) {
+		if ( null === $session ) {
 			return '';
 		}
 
@@ -1017,14 +987,14 @@ class WooPaymentsWooPaySessionService {
 	 * @return array<string,mixed>
 	 */
 	private function get_store_data( ?int $order_id = null ): array {
-		$shop_url = function_exists( 'wc_get_page_permalink' ) ? wc_get_page_permalink( 'shop' ) : home_url( '/' );
+		$shop_url = wc_get_page_permalink( 'shop' );
 		if ( ! is_string( $shop_url ) || '' === $shop_url ) {
 			$shop_url = home_url( '/' );
 		}
 
 		$manual_capture = 'yes' === $this->account_service->get_gateway_setting( 'manual_capture' );
 		$order          = $order_id ? wc_get_order( $order_id ) : false;
-		$checkout_url   = function_exists( 'wc_get_checkout_url' ) ? wc_get_checkout_url() : home_url( '/' );
+		$checkout_url   = wc_get_checkout_url();
 		$custom_message = (string) $this->account_service->get_gateway_setting( 'platform_checkout_custom_message' );
 		$blocks_data    = $this->blocks_data_extractor;
 		if ( $order instanceof \WC_Order ) {
@@ -1051,8 +1021,8 @@ class WooPaymentsWooPaySessionService {
 			'capture_method'                 => $manual_capture ? 'manual' : 'automatic',
 			'is_subscriptions_plugin_active' => WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active(),
 			'woocommerce_tax_display_cart'   => get_option( 'woocommerce_tax_display_cart' ),
-			'ship_to_billing_address_only'   => function_exists( 'wc_ship_to_billing_address_only' ) && wc_ship_to_billing_address_only(),
-			'return_url'                     => $order instanceof \WC_Order ? $checkout_url : ( function_exists( 'wc_get_cart_url' ) ? wc_get_cart_url() : home_url( '/' ) ),
+			'ship_to_billing_address_only'   => wc_ship_to_billing_address_only(),
+			'return_url'                     => $order instanceof \WC_Order ? $checkout_url : wc_get_cart_url(),
 			'blocks_data'                    => $blocks_data->get_data(),
 			'checkout_schema_namespaces'     => $blocks_data->get_checkout_schema_namespaces(),
 			'optional_fields_status'         => $blocks_data->get_optional_fields_status( $custom_message ),
@@ -1094,7 +1064,6 @@ class WooPaymentsWooPaySessionService {
 	/**
 	 * Get cart data for WooPay init-session preloading.
 	 *
-	 * @param bool                 $is_pay_for_order Whether this is a pay-for-order session.
 	 * @param int|null             $order_id         Pay-for-order order ID.
 	 * @param string|null          $key              Pay-for-order key.
 	 * @param string|null          $billing_email    Pay-for-order billing email.
@@ -1102,7 +1071,7 @@ class WooPaymentsWooPaySessionService {
 	 * @phpstan-param WP_REST_Request<array<string,mixed>>|null $woopay_request
 	 * @return array<string,mixed>
 	 */
-	private function get_cart_data( bool $is_pay_for_order, ?int $order_id, ?string $key, ?string $billing_email, ?WP_REST_Request $woopay_request ): array {
+	private function get_cart_data( ?int $order_id, ?string $key, ?string $billing_email, ?WP_REST_Request $woopay_request ): array {
 		if ( $woopay_request instanceof WP_REST_Request ) {
 			/**
 			 * Store API cart subrequest.
@@ -1115,7 +1084,7 @@ class WooPaymentsWooPaySessionService {
 			return $this->get_store_api_response_data( $request );
 		}
 
-		if ( $is_pay_for_order && null !== $order_id ) {
+		if ( null !== $order_id ) {
 			return $this->preload_store_api_path(
 				'/wc/store/v1/order/' . rawurlencode( (string) $order_id ) .
 				'?key=' . rawurlencode( (string) $key ) .
