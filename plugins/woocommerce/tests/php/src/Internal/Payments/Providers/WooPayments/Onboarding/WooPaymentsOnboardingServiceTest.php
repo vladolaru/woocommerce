@@ -1523,15 +1523,26 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Test native test-drive initialization writes a usable account cache from the platform response.
+	 * Test-drive initialization caches the platform's partial answer until the next account read replaces it.
 	 *
-	 * @return void
+	 * The test-drive answer carries no payments_enabled (wpcom class-onboarding-controller.php:491-498). Client 11.1.0 clears
+	 * its account cache after the init (includes/class-wc-payments-onboarding-service.php:796), so when the next read fails it
+	 * has no account and its gateway needs setup (includes/class-wc-payment-gateway-wcpay.php:851-858, :946).
+	 *
+	 * @testdox After test-drive init and $scenario, the store can take payments: $can_process.
+	 * @dataProvider provide_test_drive_account_reads
+	 *
+	 * @param string $scenario    Scenario label.
+	 * @param bool   $read_fails  Whether the platform fails the account read after the init.
+	 * @param bool   $can_process Whether the store can take payments after that read.
 	 */
-	public function test_onboarding_test_account_init_uses_the_api_client_and_writes_usable_account_cache(): void {
+	public function test_onboarding_test_account_init_caches_the_partial_account_until_the_platform_read( string $scenario, bool $read_fails, bool $can_process ): void {
+		unset( $scenario );
 		$captured_call = array();
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
 		$recorded_account = json_decode( (string) file_get_contents( __DIR__ . '/../Fixtures/platform-test-drive-account.json' ), true )['account'];
-		$api_client       = new class( $captured_call, $recorded_account ) extends WooPaymentsApiClient {
+		$read_failure     = $read_fails ? new WooPaymentsApiException( 'Internal server error.', 'wcpay_server_error', 500 ) : null;
+		$api_client       = new class( $captured_call, $recorded_account, $read_failure ) extends WooPaymentsApiClient {
 			/**
 			 * Captured onboarding init payload.
 			 *
@@ -1545,6 +1556,13 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			 * @var array<string,mixed>
 			 */
 			private array $recorded_account;
+
+			/**
+			 * The failure the platform answers the account read with once the account exists, or null for the account.
+			 *
+			 * @var WooPaymentsApiException|null
+			 */
+			private ?WooPaymentsApiException $read_failure;
 
 			/**
 			 * Whether the test-drive account exists on the platform.
@@ -1563,12 +1581,14 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			/**
 			 * Constructor.
 			 *
-			 * @param array               $captured_call    Captured onboarding init payload.
-			 * @param array<string,mixed> $recorded_account The account the platform answers once the test-drive account exists.
+			 * @param array                        $captured_call    Captured onboarding init payload.
+			 * @param array<string,mixed>          $recorded_account The account the platform answers once the test-drive account exists.
+			 * @param WooPaymentsApiException|null $read_failure     The failure the platform answers the account read with, or null.
 			 */
-			public function __construct( array &$captured_call, array $recorded_account ) {
+			public function __construct( array &$captured_call, array $recorded_account, ?WooPaymentsApiException $read_failure ) {
 				$this->captured_call    = &$captured_call;
 				$this->recorded_account = $recorded_account;
+				$this->read_failure     = $read_failure;
 			}
 
 			/**
@@ -1611,11 +1631,11 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 				return array(
 					'woopay_enabled_by_default' => false,
 					'url'                       => false,
-					'account_id'                => 'acct_native_test',
+					'account_id'                => 'acct_test_drive',
 					'is_live'                   => false,
 					'is_test_drive'             => true,
-					'live_publishable_key'      => 'pk_live_native',
-					'test_publishable_key'      => 'pk_test_native',
+					'live_publishable_key'      => 'pk_live_drive',
+					'test_publishable_key'      => 'pk_test_drive',
 				);
 			}
 
@@ -1631,6 +1651,9 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 				++$this->account_requests;
 				if ( ! $this->account_created ) {
 					throw new WooPaymentsApiException( 'Account not found.', 'wcpay_account_not_found', 404 );
+				}
+				if ( null !== $this->read_failure ) {
+					throw $this->read_failure;
 				}
 
 				return $this->recorded_account;
@@ -1718,8 +1741,8 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$this->assertStringNotContainsString( 'wcpay-connection-error', $captured_call['return_url'] );
 		$this->assertSame( 'card_payments', array_key_first( $captured_call['account_data']['capabilities'] ) );
 		$this->assertIsArray( $cached );
-		$this->assertSame( 'acct_native_test', $cached['data']['account_id'] );
-		$this->assertSame( 'pk_test_native', $cached['data']['test_publishable_key'] );
+		$this->assertSame( 'acct_test_drive', $cached['data']['account_id'] );
+		$this->assertSame( 'pk_test_drive', $cached['data']['test_publishable_key'] );
 		$this->assertFalse( $cached['data']['is_live'] );
 		$this->assertTrue( $cached['data']['is_test_drive'] );
 		$this->assertSame( 0, $cached['fetched'], 'The client clears its account cache after test-drive init (class-wc-payments-onboarding-service.php:796), so the next read fetches the full account; the partial record must not pass as fresh.' );
@@ -1728,9 +1751,30 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 
 		$account_requests_after_init = $api_client->account_requests;
 
-		$this->assertTrue( $account_service->can_process_payments(), 'The recorded test-drive account takes payments.' );
+		$this->assertSame( $can_process, $account_service->can_process_payments() );
 		$this->assertSame( $account_requests_after_init + 1, $api_client->account_requests, 'The next account read fetches the account from the platform.' );
-		$this->assertSame( $recorded_account['account_id'], get_option( 'wcpay_account_data' )['data']['account_id'] );
+		$cached = get_option( 'wcpay_account_data' );
+		if ( $read_fails ) {
+			$this->assertTrue( $cached['errored'] );
+			$this->assertSame( 'acct_test_drive', $cached['data']['account_id'] );
+			$this->assertSame( 'pk_test_drive', $cached['data']['test_publishable_key'], 'A failed read keeps the key (566fd534c3d).' );
+			$this->assertFalse( $cached['data']['payments_enabled'], 'The test-drive answer does not say payments are enabled.' );
+			$this->assertTrue( $cached['data']['details_submitted'], 'The platform answers without an onboarding URL only for submitted details.' );
+		} else {
+			$this->assertSame( $recorded_account['account_id'], $cached['data']['account_id'] );
+		}
+	}
+
+	/**
+	 * Account reads after the test-drive init: scenario, whether the read fails, whether the store can take payments.
+	 *
+	 * @return array<string,array{string,bool,bool}>
+	 */
+	public function provide_test_drive_account_reads(): array {
+		return array(
+			'the platform answers the recorded account' => array( 'a read the platform answers with the recorded account', false, true ),
+			'the platform read fails'                   => array( 'a failed platform read', true, false ),
+		);
 	}
 
 	/**

@@ -310,6 +310,7 @@ class WooPaymentsOnboardingService {
 		if ( $success ) {
 			$this->update_gateway_settings_after_test_account_init( $capabilities, $response );
 			$is_live = $this->get_response_bool( $response, array( 'is_live' ), false );
+			// The platform answers without an onboarding URL only once the account's details are submitted.
 			if ( ! $this->sync_account_cache_from_response( $response, $is_live, ! $is_live, true ) ) {
 				$this->get_account_service()->clear_cache();
 			}
@@ -1014,13 +1015,17 @@ class WooPaymentsOnboardingService {
 	 * Cache the account from an onboarding response that carries an account ID and a publishable key, and set the
 	 * gateway's test mode from it.
 	 *
-	 * @param array $response      Platform response.
-	 * @param bool  $is_live       Whether the account is live.
-	 * @param bool  $is_test_drive Whether the account is a test-drive account.
-	 * @param bool  $default_ready Default readiness when the response omits readiness fields.
+	 * Readiness the response omits comes from the same account's cached record. Payments otherwise read as disabled until
+	 * the next account read succeeds: client 11.1.0 clears its cache here, so a failed read leaves it no account to take
+	 * payments with (includes/class-wc-payments-onboarding-service.php:451, :796).
+	 *
+	 * @param array $response                  Platform response.
+	 * @param bool  $is_live                   Whether the account is live.
+	 * @param bool  $is_test_drive             Whether the account is a test-drive account.
+	 * @param bool  $details_submitted_default Whether the details count as submitted when the response and the cache omit them.
 	 * @return bool Whether account data was cached.
 	 */
-	private function sync_account_cache_from_response( array $response, bool $is_live, bool $is_test_drive, bool $default_ready ): bool {
+	private function sync_account_cache_from_response( array $response, bool $is_live, bool $is_test_drive, bool $details_submitted_default ): bool {
 		$existing_cache  = $this->get_account_service()->get_cached_account_data();
 		$publishable_key = $this->get_response_scalar(
 			$response,
@@ -1057,14 +1062,14 @@ class WooPaymentsOnboardingService {
 			array(
 				'payments_enabled',
 			),
-			$readiness_default['payments_enabled'] ?? $default_ready
+			$readiness_default['payments_enabled'] ?? false
 		);
 		$account_data['details_submitted']     = $this->get_response_bool(
 			$response,
 			array(
 				'details_submitted',
 			),
-			$readiness_default['details_submitted'] ?? $default_ready
+			$readiness_default['details_submitted'] ?? $details_submitted_default
 		);
 
 		$this->get_account_service()->cache_account_data_until_refreshed( $account_data );

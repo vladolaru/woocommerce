@@ -1584,12 +1584,15 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep the partial onboarding record, including its publishable key, when the refetch fails.
+	 * Client 11.1.0 has no account after a failed refetch (it cleared its cache, class-wc-payments-onboarding-service.php:796),
+	 * so it cannot take payments until a read succeeds.
+	 *
+	 * @testdox Should keep the partial onboarding record and its publishable key when the refetch fails, and take payments only after a refetch succeeds.
 	 */
 	public function test_partial_onboarding_record_keeps_the_publishable_key_when_the_refetch_fails(): void {
 		set_current_screen( 'dashboard' );
 		update_option( 'wcpay_onboarding_test_mode', 'yes' );
-		$api_client = $this->create_account_api_client( array(), true );
+		$api_client = $this->create_account_api_client( $this->load_recorded_test_drive_account(), true );
 		$sut        = $this->create_service_with_api_client( $api_client );
 
 		$sut->cache_account_data_until_refreshed( $this->get_partial_onboarding_record() );
@@ -1600,6 +1603,14 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'acct_1UL3bQJQsm0lol5W', $account['account_id'] );
 		$this->assertSame( 'pk_test_partial', $account['test_publishable_key'], 'A failed refetch must not lose the key checkout needs (566fd534c3d).' );
 		$this->assertTrue( $cached['errored'] );
+		$this->assertFalse( $sut->can_process_payments(), 'The partial record cannot take payments before a refetch succeeds.' );
+		$this->assertSame( 1, $api_client->calls, 'The errored record is not refetched within its back-off.' );
+
+		$api_client->fail = false;
+		$sut->refresh_account_data();
+
+		$this->assertSame( 2, $api_client->calls );
+		$this->assertTrue( $sut->can_process_payments(), 'The full account read takes payments.' );
 	}
 
 	/**
@@ -2367,7 +2378,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			'test_publishable_key' => 'pk_test_partial',
 			'is_live'              => false,
 			'is_test_drive'        => true,
-			'payments_enabled'     => true,
+			'payments_enabled'     => false,
 			'details_submitted'    => true,
 		);
 	}
@@ -2408,7 +2419,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 			 *
 			 * @var bool
 			 */
-			private bool $fail;
+			public bool $fail;
 
 			/**
 			 * Whether the site has a platform connection.
