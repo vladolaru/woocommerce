@@ -33,7 +33,8 @@ class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The WooPayments extension's `WC_Payments_Onboarding_Service_Test::data_get_from()` cases (tests/unit/test-class-wc-payments-onboarding-service.php:529-682), unchanged.
+	 * The WooPayments extension's `WC_Payments_Onboarding_Service_Test::data_get_from()` cases (tests/unit/test-class-wc-payments-onboarding-service.php:529-682), unchanged,
+	 * then the built-in Overview, Payouts and settings referers, which map to the WooPayments extension's from values.
 	 *
 	 * @return array<string,array{0:string,1:string,2:array<string,string>}>
 	 */
@@ -189,16 +190,22 @@ class WooPaymentsOnboardingSourceTest extends WC_Unit_Test_Case {
 				'http://something.stripe.com/something',
 				array( 'wcpay-connect' => '1' ),
 			),
+			'Via the referer URL - built-in Overview page' => array(
+				WooPaymentsOnboardingSource::FROM_OVERVIEW_PAGE,
+				'/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Foverview',
+				array(),
+			),
+			'Via the referer URL - built-in Payouts page'  => array(
+				WooPaymentsOnboardingSource::FROM_PAYOUTS,
+				'/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/payouts',
+				array(),
+			),
+			'Via the referer URL - built-in settings page' => array(
+				WooPaymentsOnboardingSource::FROM_WCADMIN_PAYMENTS_SETTINGS,
+				'/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/settings',
+				array(),
+			),
 		);
-	}
-
-	/**
-	 * @testdox Should map the Overview and Payouts referers to the WooPayments extension's from values.
-	 */
-	public function test_get_from_maps_builtin_page_referers(): void {
-		$this->assertSame( WooPaymentsOnboardingSource::FROM_OVERVIEW_PAGE, WooPaymentsOnboardingSource::get_from( '/wp-admin/admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Foverview', array() ) );
-		$this->assertSame( WooPaymentsOnboardingSource::FROM_PAYOUTS, WooPaymentsOnboardingSource::get_from( '/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/payouts', array() ) );
-		$this->assertSame( WooPaymentsOnboardingSource::FROM_WCADMIN_PAYMENTS_SETTINGS, WooPaymentsOnboardingSource::get_from( '/wp-admin/admin.php?page=wc-settings&tab=checkout&path=/woopayments/settings', array() ) );
 	}
 
 	/**

@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsAccountSessionRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsEmbeddedAccountSessionService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -82,29 +83,32 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox Account session route requires manage_woocommerce before calling the service.
+	 * The routes, each with the recording service it must not reach without permission.
+	 *
+	 * @return array<string,array{0:string,1:string}>
 	 */
-	public function test_route_requires_manage_woocommerce(): void {
-		$this->sut->register_routes();
-		wp_set_current_user( 0 );
-
-		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/accounts/session' ) );
-
-		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
-		$this->assertSame( '', $this->service->last_call );
+	public function provide_routes_and_recorders(): array {
+		return array(
+			'account session route' => array( '/wc/v3/payments/accounts/session', 'service' ),
+			'accounts route'        => array( '/wc/v3/payments/accounts', 'account_service' ),
+		);
 	}
 
 	/**
-	 * @testdox Accounts route requires manage_woocommerce before reading account data.
+	 * @testdox Account routes require manage_woocommerce before calling the service or reading account data.
+	 * @dataProvider provide_routes_and_recorders
+	 *
+	 * @param string $route    Route path.
+	 * @param string $recorder Property holding the recording service the route calls.
 	 */
-	public function test_accounts_route_requires_manage_woocommerce(): void {
+	public function test_route_requires_manage_woocommerce( string $route, string $recorder ): void {
 		$this->sut->register_routes();
 		wp_set_current_user( 0 );
 
-		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/accounts' ) );
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', $route ) );
 
 		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
-		$this->assertSame( '', $this->account_service->last_call );
+		$this->assertSame( '', $this->{$recorder}->last_call );
 	}
 
 	/**
@@ -152,6 +156,9 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 		update_option( 'woocommerce_currency', 'USD' );
 		update_option( 'woocommerce_default_country', 'US:CA' );
 		$this->account_service->account_data = array();
+		// Onboarding test mode forces test mode on (client includes/core/class-mode.php:127-128).
+		$this->account_service->test_mode            = true;
+		$this->account_service->test_mode_onboarding = true;
 		$this->sut->register_routes();
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/accounts' ) );
@@ -173,8 +180,8 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 				'customer_currencies'      => array(
 					'supported' => array( 'USD' ),
 				),
-				'test_mode'                => false,
-				'test_mode_onboarding'     => false,
+				'test_mode'                => true,
+				'test_mode_onboarding'     => true,
 			),
 			$response->get_data()
 		);
@@ -216,48 +223,45 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox Account session route returns a sanitized 500 when the service throws.
+	 * Failures of the account session service: a platform error, and an unexpected exception whose message holds a key.
+	 *
+	 * @return array<string,array{0:\Throwable,1:string[],2:array{0:int,1:string}|null}>
 	 */
-	public function test_route_returns_sanitized_error_when_service_throws(): void {
-		$this->service->exception = new \RuntimeException( 'secret platform failure: sk_test_123' );
-		$this->sut->register_routes();
-
-		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/accounts/session' ) );
-
-		$this->assertSame( 500, $response->get_status() );
-		$this->assertSame( 'woocommerce_woopayments_account_session_error', $response->as_error()->get_error_code() );
-		$this->assertStringNotContainsString( 'sk_test_123', wp_json_encode( $response->get_data() ) );
-		$this->assertStringNotContainsString( 'secret platform failure', wp_json_encode( $response->get_data() ) );
+	public function provide_session_failures(): array {
+		return array(
+			'a platform error'        => array( self::make_provider_error(), self::$provider_leak_fragments, array( 404, 'resource_missing' ) ),
+			'an unexpected exception' => array( new \RuntimeException( 'secret platform failure: sk_test_123' ), array( 'sk_test_123', 'secret platform failure' ), null ),
+		);
 	}
 
 	/**
 	 * @testdox Account session route logs the failure instead of silently discarding it, keeping the sanitized 500.
+	 * @dataProvider provide_session_failures
+	 *
+	 * @param \Throwable                 $exception                What the service throws.
+	 * @param string[]                   $leak_fragments           Text of the failure the response must not carry.
+	 * @param array{0:int,1:string}|null $expected_status_and_code The HTTP status and error code in the log line, or null when not checked.
 	 */
-	public function test_route_logs_error_when_service_throws(): void {
-		$this->service->exception = self::make_provider_error();
-		$logger                   = $this->create_recording_logger();
+	public function test_route_logs_error_when_service_throws( \Throwable $exception, array $leak_fragments, ?array $expected_status_and_code ): void {
+		$this->service->exception = $exception;
+		$logger                   = RecordingWcLogger::install();
 		self::enable_woopayments_debug_logging();
-		add_filter(
-			'woocommerce_logging_class',
-			static function () use ( $logger ): object {
-				return $logger;
-			}
-		);
 		$this->sut->register_routes();
 
 		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/accounts/session' ) );
 
 		$this->assertSame( 500, $response->get_status() );
 		$this->assertSame( 'woocommerce_woopayments_account_session_error', $response->as_error()->get_error_code() );
-
-		$this->assertCount( 1, $logger->entries );
-		$this->assertSame( 'error', $logger->entries[0]['level'] );
-		$this->assertSame( 'woopayments', $logger->entries[0]['context']['source'] );
-		$this->assertSame( 'Failed to create embedded account session.', $logger->entries[0]['message'] );
-		$this->assertSame( array( 404, 'resource_missing' ), array( $logger->entries[0]['context']['http_status'], $logger->entries[0]['context']['error_code'] ) );
-		foreach ( self::$provider_leak_fragments as $fragment ) {
-			$this->assertStringNotContainsString( $fragment, (string) wp_json_encode( $logger->entries ) );
+		foreach ( $leak_fragments as $fragment ) {
+			$this->assertStringNotContainsString( $fragment, (string) wp_json_encode( $response->get_data() ) );
 		}
+
+		$this->assertCount( 1, $logger->lines );
+		$context = $this->get_logged_context_at_level( $logger, 'error' );
+		if ( null !== $expected_status_and_code ) {
+			$this->assertSame( $expected_status_and_code, array( $context['http_status'], $context['error_code'] ) );
+		}
+		$this->assert_log_holds_no_provider_text( $logger );
 	}
 
 	/**
@@ -401,145 +405,6 @@ class WooPaymentsAccountSessionRestControllerTest extends WC_REST_Unit_Test_Case
 				}
 
 				return $this->response;
-			}
-		};
-	}
-
-	/**
-	 * Create a recording logger test double.
-	 *
-	 * Implements WC_Logger_Interface so it can be injected through the
-	 * woocommerce_logging_class filter.
-	 *
-	 * @return object
-	 */
-	private function create_recording_logger(): object {
-		return new class() implements \WC_Logger_Interface {
-			/**
-			 * Logged entries.
-			 *
-			 * @var array<int,array{level:string,message:string,context:array<string,mixed>}>
-			 */
-			public array $entries = array();
-
-			/**
-			 * Add a log entry.
-			 *
-			 * @param string $handle  File handle.
-			 * @param string $message Log message.
-			 * @param string $level   Log level.
-			 * @return bool
-			 */
-			public function add( $handle, $message, $level = \WC_Log_Levels::NOTICE ) {
-				$this->record( $level, $message, array( 'source' => $handle ) );
-
-				return true;
-			}
-
-			/**
-			 * Add a log entry.
-			 *
-			 * @param string              $level   Log level.
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function log( $level, $message, $context = array() ) {
-				$this->record( $level, $message, $context );
-			}
-
-			/**
-			 * Record an emergency log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function emergency( $message, $context = array() ) {
-				$this->record( 'emergency', $message, $context );
-			}
-
-			/**
-			 * Record an alert log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function alert( $message, $context = array() ) {
-				$this->record( 'alert', $message, $context );
-			}
-
-			/**
-			 * Record a critical log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function critical( $message, $context = array() ) {
-				$this->record( 'critical', $message, $context );
-			}
-
-			/**
-			 * Record an error log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function error( $message, $context = array() ) {
-				$this->record( 'error', $message, $context );
-			}
-
-			/**
-			 * Record a warning log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function warning( $message, $context = array() ) {
-				$this->record( 'warning', $message, $context );
-			}
-
-			/**
-			 * Record a notice log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function notice( $message, $context = array() ) {
-				$this->record( 'notice', $message, $context );
-			}
-
-			/**
-			 * Record an info log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function info( $message, $context = array() ) {
-				$this->record( 'info', $message, $context );
-			}
-
-			/**
-			 * Record a debug log entry.
-			 *
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			public function debug( $message, $context = array() ) {
-				$this->record( 'debug', $message, $context );
-			}
-
-			/**
-			 * Record a log entry.
-			 *
-			 * @param string              $level   Log level.
-			 * @param string              $message Log message.
-			 * @param array<string,mixed> $context Log context.
-			 */
-			private function record( string $level, string $message, array $context ): void {
-				$this->entries[] = array(
-					'level'   => $level,
-					'message' => $message,
-					'context' => $context,
-				);
 			}
 		};
 	}

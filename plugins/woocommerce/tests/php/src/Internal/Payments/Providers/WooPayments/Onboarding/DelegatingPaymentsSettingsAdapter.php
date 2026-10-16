@@ -9,12 +9,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\Wo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
-use Exception;
 use WC_Payment_Gateway;
 
 /**
- * An onboarding adapter for the Payments settings tests: account questions go to the test's adapter, and the built-in
- * onboarding is the test's onboarding service, chosen with the test's API client and extension runtime.
+ * An onboarding adapter for the Payments settings tests: account questions go to the test's adapter, and the adapter's own
+ * onboarding methods run on the test's API client, account service, onboarding service and extension runtime.
  */
 class DelegatingPaymentsSettingsAdapter extends WooPaymentsPaymentsSettingsAdapter {
 
@@ -26,13 +25,6 @@ class DelegatingPaymentsSettingsAdapter extends WooPaymentsPaymentsSettingsAdapt
 	private WooPaymentsPaymentsSettingsAdapter $inner;
 
 	/**
-	 * The test's API client.
-	 *
-	 * @var WooPaymentsApiClient
-	 */
-	private WooPaymentsApiClient $test_api_client;
-
-	/**
 	 * The test's extension runtime.
 	 *
 	 * @var WooPaymentsExtensionRuntime
@@ -40,92 +32,28 @@ class DelegatingPaymentsSettingsAdapter extends WooPaymentsPaymentsSettingsAdapt
 	private WooPaymentsExtensionRuntime $test_extension_runtime;
 
 	/**
-	 * The test's account service.
-	 *
-	 * @var WooPaymentsAccountService
-	 */
-	private WooPaymentsAccountService $test_account_service;
-
-	/**
-	 * The test's onboarding service.
-	 *
-	 * @var WooPaymentsOnboardingService
-	 */
-	private WooPaymentsOnboardingService $test_onboarding;
-
-	/**
 	 * Constructor.
 	 *
-	 * @param WooPaymentsPaymentsSettingsAdapter $inner           The test's adapter.
-	 * @param WooPaymentsApiClient               $api_client      The test's API client.
+	 * @param WooPaymentsPaymentsSettingsAdapter $inner             The test's adapter.
+	 * @param WooPaymentsApiClient               $api_client        The test's API client.
 	 * @param WooPaymentsExtensionRuntime        $extension_runtime The test's extension runtime.
-	 * @param WooPaymentsAccountService          $account_service The test's account service.
-	 * @param WooPaymentsOnboardingService       $onboarding      The test's onboarding service.
+	 * @param WooPaymentsAccountService          $account_service   The test's account service.
+	 * @param WooPaymentsOnboardingService       $onboarding        The test's onboarding service.
 	 */
 	public function __construct( WooPaymentsPaymentsSettingsAdapter $inner, WooPaymentsApiClient $api_client, WooPaymentsExtensionRuntime $extension_runtime, WooPaymentsAccountService $account_service, WooPaymentsOnboardingService $onboarding ) {
 		$this->inner                  = $inner;
-		$this->test_api_client        = $api_client;
 		$this->test_extension_runtime = $extension_runtime;
-		$this->test_account_service   = $account_service;
-		$this->test_onboarding        = $onboarding;
-	}
 
-	/**
-	 * The built-in onboarding runs when the API client is available, no extension is loaded and the test's adapter says
-	 * the built-in WooPayments can onboard.
-	 *
-	 * @return WooPaymentsOnboardingService|null
-	 */
-	public function get_builtin_onboarding(): ?WooPaymentsOnboardingService {
-		if ( $this->test_api_client->is_available() && ! $this->test_extension_runtime->is_loaded() && $this->inner->is_builtin_onboarding_available() ) {
-			return $this->test_onboarding;
+		$collaborators = array(
+			'api_client'         => $api_client,
+			'account_service'    => $account_service,
+			'onboarding_service' => $onboarding,
+		);
+		foreach ( $collaborators as $property => $collaborator ) {
+			$reflection = new \ReflectionProperty( WooPaymentsPaymentsSettingsAdapter::class, $property );
+			$reflection->setAccessible( true );
+			$reflection->setValue( $this, $collaborator );
 		}
-
-		return null;
-	}
-
-	/**
-	 * The KYC fields from the test's account service, unless an extension is loaded or the API client is unavailable.
-	 *
-	 * @param string $locale The user's locale.
-	 * @return array|null
-	 * @throws Exception When the account service answers no fields.
-	 */
-	public function get_onboarding_fields( string $locale ): ?array {
-		if ( $this->test_extension_runtime->is_loaded() || ! $this->test_api_client->is_available() ) {
-			return null;
-		}
-
-		$fields = $this->test_account_service->get_onboarding_fields_data( $locale );
-		if ( null === $fields ) {
-			throw new Exception( 'Failed to retrieve the onboarding fields.' );
-		}
-
-		return $fields;
-	}
-
-	/**
-	 * Turn WooPay on through the test's onboarding service when the platform asked for it.
-	 */
-	public function maybe_activate_woopay_enabled_by_default(): void {
-		if ( ! get_transient( self::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT ) ) {
-			return;
-		}
-
-		$onboarding = $this->get_builtin_onboarding();
-		if ( null !== $onboarding ) {
-			$onboarding->activate_woopay_enabled_by_default();
-		}
-	}
-
-	/**
-	 * Store the referral code with the test's onboarding service.
-	 *
-	 * @param string $referral_code The code.
-	 * @return string
-	 */
-	public function store_referral_code( string $referral_code ): string {
-		return $this->test_onboarding->store_referral_code( $referral_code );
 	}
 
 	/**

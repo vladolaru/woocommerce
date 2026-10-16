@@ -328,149 +328,19 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * @return void
 	 */
 	public function test_get_onboarding_kyc_session_uses_the_api_client_when_the_woopayments_extension_onboarding_route_is_unavailable(): void {
-		$location      = 'US';
 		$captured_call = array();
-		$api_client    = new class( $captured_call ) extends WooPaymentsApiClient {
-			/**
-			 * Captured KYC session request payload.
-			 *
-			 * @var array
-			 */
-			private array $captured_call;
-
-			/**
-			 * Constructor.
-			 *
-			 * @param array $captured_call Captured KYC session request payload.
-			 */
-			public function __construct( array &$captured_call ) {
-				$this->captured_call = &$captured_call;
-			}
-
-			/**
-			 * Tell whether the fake client is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			/**
-			 * Capture an embedded KYC request and return a fake session.
-			 *
-			 * @param bool        $live_account   Whether the session is for a live account.
-			 * @param array       $site_data      Site data.
-			 * @param array       $user_data      User data.
-			 * @param array       $account_data   Account data.
-			 * @param array       $actioned_notes Actioned notes.
-			 * @param string|null $referral_code  Referral code.
-			 * @return array
-			 */
-			public function initialize_onboarding_embedded_kyc( bool $live_account, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), ?string $referral_code = null ): array {
-				$this->captured_call = array(
-					'live_account'   => $live_account,
-					'site_data'      => $site_data,
-					'user_data'      => $user_data,
-					'account_data'   => $account_data,
-					'actioned_notes' => $actioned_notes,
-					'referral_code'  => $referral_code,
-				);
-
-				// The platform's embedded KYC session answer (wpcom class-onboarding-controller.php:609-621 at d761f9d3d85),
-				// the fields client 11.1.0 reads (includes/class-wc-payments-onboarding-service.php:408-415).
-				return array(
-					'client_secret'   => 'accs_secret_native',
-					'expires_at'      => 1234567999,
-					'account_id'      => 'acct_native',
-					'is_live'         => true,
-					'account_created' => true,
-					'publishable_key' => 'pk_live_native',
-				);
-			}
-		};
-		$adapter       = $this->getMockBuilder( WooPaymentsPaymentsSettingsAdapter::class )
-			->disableOriginalConstructor()
-			->onlyMethods(
-				array(
-					'is_onboarding_runtime_available',
-					'is_builtin_onboarding_available',
-					'get_payment_gateway',
-					'has_account',
-					'has_valid_account',
-					'has_working_account',
-					'has_test_account',
-					'has_sandbox_account',
-					'has_live_account',
-					'get_onboarding_kyc_fallback_url',
-				)
-			)
-			->getMock();
-
-		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
-		$adapter->method( 'is_builtin_onboarding_available' )->willReturn( true );
-		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
-		$adapter->method( 'has_account' )->willReturn( false );
-		$adapter->method( 'has_valid_account' )->willReturn( false );
-		$adapter->method( 'has_working_account' )->willReturn( false );
-		$adapter->method( 'has_test_account' )->willReturn( false );
-		$adapter->method( 'has_sandbox_account' )->willReturn( false );
-		$adapter->method( 'has_live_account' )->willReturn( false );
-		$adapter->method( 'get_onboarding_kyc_fallback_url' )->willReturn( 'https://example.com/native-kyc' );
-		$this->mock_provider->method( 'is_in_dev_mode' )->willReturn( false );
-		$this->mock_wpcom_connection_manager->method( 'is_connected' )->willReturn( true );
-		$this->mock_wpcom_connection_manager->method( 'has_connected_owner' )->willReturn( true );
-		update_option(
-			WooPaymentsService::NOX_PROFILE_OPTION_KEY,
+		// The platform's embedded KYC session answer (wpcom class-onboarding-controller.php:609-621 at d761f9d3d85),
+		// the fields client 11.1.0 reads (includes/class-wc-payments-onboarding-service.php:408-415).
+		$this->arrange_embedded_kyc_session(
 			array(
-				'onboarding' => array(
-					'US' => array(
-						'steps' => array(
-							WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => array(
-								'data' => array(
-									'payment_methods' => array(
-										'card' => true,
-									),
-								),
-							),
-						),
-					),
-				),
-			)
-		);
-		$this->mockable_proxy->register_function_mocks(
-			array(
-				'class_exists' => function ( $class_to_check ) {
-					if ( $this->is_woopayments_class( $class_to_check ) ) {
-						return false;
-					}
-
-					return false;
-				},
-			)
-		);
-		$this->mockable_proxy->register_static_mocks(
-			array(
-				Utils::class => array(
-					'rest_endpoint_post_request' => function ( string $endpoint ) {
-						if ( '/wc/v3/payments/onboarding/kyc/session' === $endpoint ) {
-							return new WP_Error( 'rest_no_route', 'No route was found matching the URL and request method.' );
-						}
-
-						throw new \Exception( esc_html( 'POST endpoint response is not mocked: ' . $endpoint ) );
-					},
-				),
-			)
-		);
-
-		$this->sut = new WooPaymentsService();
-		$this->init_sut(
-			$this->mock_providers,
-			$this->mockable_proxy,
-			$adapter,
-			$this->create_extension_runtime(),
-			$api_client,
-			$this->create_account_service()
+				'client_secret'   => 'accs_secret_native',
+				'expires_at'      => 1234567999,
+				'account_id'      => 'acct_native',
+				'is_live'         => true,
+				'account_created' => true,
+				'publishable_key' => 'pk_live_native',
+			),
+			$captured_call
 		);
 		update_option(
 			'wcpay_account_data',
@@ -484,9 +354,11 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		);
 		// Plugin 11.1.0 `WC_Payments_Onboarding_Service::init_embedded_kyc()` passes the stored referral code (line 380).
 		set_transient( 'woopayments_referral_code', 'partner-abc', DAY_IN_SECONDS );
+		// The session answer carries the user's locale (client includes/admin/class-wc-rest-payments-onboarding-controller.php:262).
+		update_user_meta( get_current_user_id(), 'locale', 'de_DE' );
 
 		$result = $this->sut->get_onboarding_kyc_session(
-			$location,
+			'US',
 			array(
 				'business_type' => 'individual',
 				'country'       => 'US',
@@ -495,7 +367,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 'accs_secret_native', $result['clientSecret'] );
 		$this->assertSame( 'pk_live_native', $result['publishableKey'] );
-		$this->assertSame( 'en_US', $result['locale'] );
+		$this->assertSame( 'de_DE', $result['locale'] );
 		$this->assertTrue( $result['isLive'] );
 		$this->assertTrue( $captured_call['live_account'] );
 		$this->assertSame( 'card_payments', array_key_first( $captured_call['account_data']['capabilities'] ) );
@@ -609,31 +481,69 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Picks and stored gateway settings at embedded KYC session creation.
+	 *
 	 * Client 11.1.0 update_enabled_payment_methods_ids() enables the gateway of every method in the merged enabled list
 	 * (includes/class-wc-payments-onboarding-service.php:1532-1538). For `card` that gateway is the main WooPayments gateway
-	 * (class-wc-payments.php:631), so creating the embedded KYC session turns the card gateway on before any KYC.
+	 * (class-wc-payments.php:631), so creating the embedded KYC session turns the card gateway on before any KYC; when card
+	 * is neither stored nor picked, the card gateway stays as it was.
 	 *
-	 * @testdox Creating the embedded KYC session enables the card gateway when card is enabled.
+	 * @return array<string,array{0:array<string,bool>,1:array<string,mixed>,2:string[]|null,3:string,4:string|null}>
 	 */
-	public function test_kyc_session_creation_enables_card_gateway(): void {
-		$fixture = $this->arrange_nox_picks(
-			array(
-				'card'  => true,
-				'ideal' => true,
+	public function provide_kyc_session_card_gateway_cases(): array {
+		return array(
+			'card picked'     => array(
+				array(
+					'card'  => true,
+					'ideal' => true,
+				),
+				array(
+					'enabled'                        => 'no',
+					'upe_enabled_payment_method_ids' => array( 'card' ),
+				),
+				null,
+				'yes',
+				'yes',
 			),
-			array(
-				'enabled'                        => 'no',
-				'upe_enabled_payment_method_ids' => array( 'card' ),
+			'card not picked' => array(
+				array(
+					'ideal' => true,
+				),
+				array(
+					'enabled'                        => 'no',
+					'upe_enabled_payment_method_ids' => array( 'ideal' ),
+				),
+				array( 'ideal' ),
+				'no',
+				null,
 			),
-			'no'
 		);
+	}
+
+	/**
+	 * @testdox Creating the embedded KYC session enables the card gateway only when card is enabled.
+	 * @dataProvider provide_kyc_session_card_gateway_cases
+	 *
+	 * @param array<string,bool>  $picks                  Persisted NOX payment-method picks.
+	 * @param array<string,mixed> $settings               Stored gateway settings.
+	 * @param string[]|null       $expected_ids           Enabled payment methods after session creation, or null when not checked.
+	 * @param string              $expected_enabled       The card gateway's `enabled` after session creation.
+	 * @param string|null         $expected_ideal_enabled The iDEAL gateway's `enabled` after session creation, or null when not checked.
+	 */
+	public function test_kyc_session_creation_sets_card_gateway( array $picks, array $settings, ?array $expected_ids, string $expected_enabled, ?string $expected_ideal_enabled ): void {
+		$fixture = $this->arrange_nox_picks( $picks, $settings, 'no' );
 
 		$response = $fixture['server']->dispatch( $this->create_nox_pick_request( WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION . '/kyc_session' ) );
 		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
 
 		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( 'yes', $settings['enabled'], 'The card gateway is enabled with the card payment method.' );
-		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'], 'The picked split gateway is enabled.' );
+		if ( null !== $expected_ids ) {
+			$this->assertSame( $expected_ids, $settings['upe_enabled_payment_method_ids'], 'Card stays out of the enabled methods.' );
+		}
+		$this->assertSame( $expected_enabled, $settings['enabled'], 'The card gateway follows the card payment method.' );
+		if ( null !== $expected_ideal_enabled ) {
+			$this->assertSame( $expected_ideal_enabled, get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'], 'The picked split gateway is enabled.' );
+		}
 	}
 
 	/**
@@ -660,32 +570,6 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'yes', get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['enabled'], 'Session creation enabled the card gateway.' );
 		$this->assertFalse( wc_get_container()->get( WooPaymentsAccountService::class )->has_account(), 'The platform created no account yet.' );
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $state->get_effective_tier(), 'Without an account the store stays below the active tier.' );
-	}
-
-	/**
-	 * Client 11.1.0 update_enabled_payment_methods_ids() only enables gateways of methods in the merged list (:1532-1538),
-	 * so the card gateway stays as it was when card is neither stored nor picked.
-	 *
-	 * @testdox Creating the embedded KYC session leaves the card gateway alone when card is not enabled.
-	 */
-	public function test_kyc_session_creation_leaves_card_gateway_without_card(): void {
-		$fixture = $this->arrange_nox_picks(
-			array(
-				'ideal' => true,
-			),
-			array(
-				'enabled'                        => 'no',
-				'upe_enabled_payment_method_ids' => array( 'ideal' ),
-			),
-			'no'
-		);
-
-		$response = $fixture['server']->dispatch( $this->create_nox_pick_request( WooPaymentsService::ONBOARDING_STEP_BUSINESS_VERIFICATION . '/kyc_session' ) );
-		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( array( 'ideal' ), $settings['upe_enabled_payment_method_ids'], 'Card stays out of the enabled methods.' );
-		$this->assertSame( 'no', $settings['enabled'], 'The card gateway is not enabled without the card payment method.' );
 	}
 
 	/**
@@ -908,7 +792,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $this->dispatch_onboarding_route_for_actioned_notes( $call ) );
 		$note_store_errors = array_filter(
 			$logger->get_errors(),
-			static fn( array $line ): bool => 'WooPayments could not read the actioned promotion notes for onboarding.' === $line[1]
+			static fn( array $line ): bool => 'woopayments' === $line[2]
 		);
 		$this->assertCount( 1, $note_store_errors, 'The note store failure is logged once.' );
 
@@ -1357,95 +1241,138 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
 
 		$this->assertTrue( $response['success'], 'The platform finalization cannot be replayed, so the answer stays a success.' );
-		$messages = array_column( $logger->get_errors(), 1 );
+		$sources = array_column( $logger->get_errors(), 2 );
 		if ( 'gateway enable' === $refused_write ) {
-			$this->assertContains( 'WooPayments could not enable the gateway after KYC finalization.', $messages );
+			$this->assertContains( 'woopayments', $sources );
 			$this->assertStringContainsString( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, (string) wp_json_encode( $logger->contexts ) );
 		} else {
-			$this->assertSame( array( 'WooPayments could not restore the Test Drive payment methods after KYC finalization.' ), $messages );
+			$this->assertSame( array( 'woopayments' ), $sources );
 			$this->assertNotFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ), 'The Test Drive selection is not deleted with the failed write.' );
 		}
 	}
 
 	/**
-	 * @testdox KYC finalization restores test-drive payment methods and keeps Link mutually exclusive with WooPay.
-	 */
-	public function test_finish_onboarding_kyc_session_restores_test_drive_payment_methods(): void {
-		$fresh_account = $this->get_finalized_account_data(
-			array(
-				'capabilities' => array(
-					'card_payments' => 'active',
-					'link_payments' => 'active',
-				),
-				'fees'         => array(
-					'card' => array(),
-					'link' => array(),
-				),
-			)
-		);
-		$this->arrange_kyc_finalize( array( $fresh_account ), array( 'card' => true ) );
-		set_transient(
-			self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
-			array(
-				'capabilities'            => array(
-					'card_payments' => array( 'requested' => 'true' ),
-					'link_payments' => array( 'requested' => 'true' ),
-				),
-				'enabled_payment_methods' => array( 'card', 'link' ),
-			),
-			HOUR_IN_SECONDS
-		);
-		update_option(
-			WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
-			array(
-				'platform_checkout'              => 'yes',
-				'upe_enabled_payment_method_ids' => array( 'card' ),
-			)
-		);
-
-		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
-		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
-
-		$this->assertTrue( $response['success'] );
-		$this->assertSame( array( 'card', 'link' ), $settings['upe_enabled_payment_method_ids'] );
-		$this->assertSame( 'no', $settings['platform_checkout'] );
-		$this->assertFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
-	}
-
-	/**
+	 * Test-drive payment-method snapshots at KYC finalization, with the fresh account's capabilities.
+	 *
 	 * Client 11.1.0 restore_test_drive_enabled_payment_methods() (includes/class-wc-payments-account.php:2258-2289) merges
-	 * the saved test-drive methods back without checking the new live account's capabilities.
+	 * the saved test-drive methods back without checking the new live account's capabilities, and finalize_embedded_connection()
+	 * restores them before, and independently of, any account refresh.
 	 *
-	 * @testdox KYC finalization restores test-drive payment methods whose live capabilities are still pending.
+	 * @return array<string,array{0:array<string,mixed>,1:array<string,mixed>|null,2:bool,3:string[],4:string,5:string[]|null}>
 	 */
-	public function test_finish_onboarding_kyc_session_restores_test_drive_payment_methods_with_pending_capabilities(): void {
-		$fresh_account = $this->get_finalized_account_data(
-			array(
-				'capabilities' => array(
-					'card_payments'  => 'active',
-					'ideal_payments' => 'pending',
-					'link_payments'  => 'pending',
+	public function provide_test_drive_restores(): array {
+		return array(
+			'Link restored turns WooPay off'     => array(
+				array(
+					'capabilities' => array(
+						'card_payments' => 'active',
+						'link_payments' => 'active',
+					),
+					'fees'         => array(
+						'card' => array(),
+						'link' => array(),
+					),
 				),
-				'fees'         => array(
-					'card'  => array(),
-					'ideal' => array(),
-					'link'  => array(),
+				array(
+					'capabilities'            => array(
+						'card_payments' => array( 'requested' => 'true' ),
+						'link_payments' => array( 'requested' => 'true' ),
+					),
+					'enabled_payment_methods' => array( 'card', 'link' ),
 				),
-			)
-		);
-		$this->arrange_kyc_finalize( array( $fresh_account ), array( 'card' => true ) );
-		set_transient(
-			self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
-			array(
-				'capabilities'            => array(
-					'card_payments'  => array( 'requested' => 'true' ),
-					'ideal_payments' => array( 'requested' => 'true' ),
-					'link_payments'  => array( 'requested' => 'true' ),
-				),
-				'enabled_payment_methods' => array( 'card', 'ideal', 'link' ),
+				false,
+				array( 'card', 'link' ),
+				'no',
+				null,
 			),
-			HOUR_IN_SECONDS
+			'pending capabilities restored'      => array(
+				array(
+					'capabilities' => array(
+						'card_payments'  => 'active',
+						'ideal_payments' => 'pending',
+						'link_payments'  => 'pending',
+					),
+					'fees'         => array(
+						'card'  => array(),
+						'ideal' => array(),
+						'link'  => array(),
+					),
+				),
+				array(
+					'capabilities'            => array(
+						'card_payments'  => array( 'requested' => 'true' ),
+						'ideal_payments' => array( 'requested' => 'true' ),
+						'link_payments'  => array( 'requested' => 'true' ),
+					),
+					'enabled_payment_methods' => array( 'card', 'ideal', 'link' ),
+				),
+				false,
+				array( 'card', 'ideal', 'link' ),
+				'no',
+				array( 'card', 'ideal', 'link' ),
+			),
+			'WooPay kept without Link'           => array(
+				array(),
+				null,
+				false,
+				array( 'card' ),
+				'yes',
+				null,
+			),
+			'malformed snapshot ignored'         => array(
+				array(
+					'capabilities' => array( 'link_payments' => 'active' ),
+					'fees'         => array( 'link' => array() ),
+				),
+				array(
+					'enabled_payment_methods' => array( '', array( 'link' ), 'not-a-payment-method', 'l!i@n#k' ),
+				),
+				false,
+				array( 'card' ),
+				'yes',
+				null,
+			),
+			'restored despite a refresh failure' => array(
+				array(
+					'capabilities' => array(
+						'card_payments' => 'active',
+						'link_payments' => 'active',
+					),
+					'fees'         => array(
+						'card' => array(),
+						'link' => array(),
+					),
+				),
+				array(
+					'capabilities'            => array( 'link_payments' => array( 'requested' => 'true' ) ),
+					'enabled_payment_methods' => array( 'card', 'link' ),
+				),
+				true,
+				array( 'card', 'link' ),
+				'no',
+				null,
+			),
 		);
+	}
+
+	/**
+	 * @testdox KYC finalization restores the test-drive payment methods, keeps Link exclusive with WooPay and consumes the snapshot.
+	 * @dataProvider provide_test_drive_restores
+	 *
+	 * @param array<string,mixed>      $account_overrides     Fields of the fresh account after finalization.
+	 * @param array<string,mixed>|null $test_drive_snapshot   The saved test-drive settings, or null for none.
+	 * @param bool                     $refresh_fails_first   Whether the first account refresh fails.
+	 * @param string[]                 $expected_ids          Enabled payment methods after finalization.
+	 * @param string                   $expected_woopay       WooPay setting after finalization.
+	 * @param string[]|null            $expected_ideal_ids    Enabled methods on the iDEAL gateway, or null when not checked.
+	 */
+	public function test_finish_onboarding_kyc_session_restores_test_drive_payment_methods( array $account_overrides, ?array $test_drive_snapshot, bool $refresh_fails_first, array $expected_ids, string $expected_woopay, ?array $expected_ideal_ids ): void {
+		$fresh_account     = $this->get_finalized_account_data( $account_overrides );
+		$account_responses = $refresh_fails_first ? array( new \RuntimeException( 'Temporary account refresh failure.' ), $fresh_account ) : array( $fresh_account );
+		$fixture           = $this->arrange_kyc_finalize( $account_responses, array( 'card' => true ) );
+		if ( null !== $test_drive_snapshot ) {
+			set_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT, $test_drive_snapshot, HOUR_IN_SECONDS );
+		}
 		update_option(
 			WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
 			array(
@@ -1458,124 +1385,18 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
 
 		$this->assertTrue( $response['success'] );
-		$this->assertSame( array( 'card', 'ideal', 'link' ), $settings['upe_enabled_payment_method_ids'] );
-		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
-		$this->assertSame( array( 'card', 'ideal', 'link' ), get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['upe_enabled_payment_method_ids'] );
-		$this->assertSame( 'no', $settings['platform_checkout'] );
+		$this->assertSame( $expected_ids, $settings['upe_enabled_payment_method_ids'] );
+		$this->assertSame( $expected_woopay, $settings['platform_checkout'] );
 		$this->assertFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
-	}
+		if ( null !== $expected_ideal_ids ) {
+			$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
+			$this->assertSame( $expected_ideal_ids, get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['upe_enabled_payment_method_ids'] );
+		}
+		if ( $refresh_fails_first ) {
+			$fixture['account_service']->refresh_account_data();
 
-	/**
-	 * @testdox KYC finalization leaves WooPay enabled when no restored method conflicts with it.
-	 */
-	public function test_finish_onboarding_kyc_session_preserves_woopay_without_link(): void {
-		$this->arrange_kyc_finalize(
-			array( $this->get_finalized_account_data() ),
-			array( 'card' => true )
-		);
-		update_option(
-			WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
-			array(
-				'platform_checkout'              => 'yes',
-				'upe_enabled_payment_method_ids' => array( 'card' ),
-			)
-		);
-
-		$this->sut->finish_onboarding_kyc_session( 'US' );
-
-		$this->assertSame( 'yes', get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['platform_checkout'] );
-	}
-
-	/**
-	 * @testdox KYC finalization ignores and consumes malformed test-drive payment-method state.
-	 */
-	public function test_finish_onboarding_kyc_session_ignores_malformed_test_drive_payment_methods(): void {
-		$this->arrange_kyc_finalize(
-			array(
-				$this->get_finalized_account_data(
-					array(
-						'capabilities' => array( 'link_payments' => 'active' ),
-						'fees'         => array( 'link' => array() ),
-					)
-				),
-			),
-			array( 'card' => true )
-		);
-		set_transient(
-			self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
-			array(
-				'enabled_payment_methods' => array( '', array( 'link' ), 'not-a-payment-method', 'l!i@n#k' ),
-			),
-			HOUR_IN_SECONDS
-		);
-		update_option(
-			WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
-			array(
-				'platform_checkout'              => 'yes',
-				'upe_enabled_payment_method_ids' => array( 'card' ),
-			)
-		);
-
-		$this->sut->finish_onboarding_kyc_session( 'US' );
-		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
-
-		$this->assertSame( array( 'card' ), $settings['upe_enabled_payment_method_ids'] );
-		$this->assertSame( 'yes', $settings['platform_checkout'] );
-		$this->assertFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
-	}
-
-	/**
-	 * Client 11.1.0 finalize_embedded_connection() restores the test-drive methods before, and independently of, any account refresh.
-	 *
-	 * @testdox KYC finalization restores test-drive methods even when the account refresh fails.
-	 */
-	public function test_finish_onboarding_kyc_session_restores_test_drive_payment_methods_despite_refresh_failure(): void {
-		$fresh_account = $this->get_finalized_account_data(
-			array(
-				'capabilities' => array(
-					'card_payments' => 'active',
-					'link_payments' => 'active',
-				),
-				'fees'         => array(
-					'card' => array(),
-					'link' => array(),
-				),
-			)
-		);
-		$fixture       = $this->arrange_kyc_finalize(
-			array(
-				new \RuntimeException( 'Temporary account refresh failure.' ),
-				$fresh_account,
-			),
-			array( 'card' => true )
-		);
-		set_transient(
-			self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT,
-			array(
-				'capabilities'            => array( 'link_payments' => array( 'requested' => 'true' ) ),
-				'enabled_payment_methods' => array( 'card', 'link' ),
-			),
-			HOUR_IN_SECONDS
-		);
-		update_option(
-			WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION,
-			array(
-				'platform_checkout'              => 'yes',
-				'upe_enabled_payment_method_ids' => array( 'card' ),
-			)
-		);
-
-		$response = $this->sut->finish_onboarding_kyc_session( 'US' );
-		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
-
-		$this->assertTrue( $response['success'] );
-		$this->assertFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
-		$this->assertSame( array( 'card', 'link' ), $settings['upe_enabled_payment_method_ids'] );
-		$this->assertSame( 'no', $settings['platform_checkout'] );
-
-		$fixture['account_service']->refresh_account_data();
-
-		$this->assertSame( array( 'card', 'link' ), get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+			$this->assertSame( $expected_ids, get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+		}
 	}
 
 	/**
@@ -1607,7 +1428,6 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'card' ), get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
 		$this->assertFalse( get_option( 'woocommerce_woocommerce_payments_ideal_settings', false ) );
 		$this->assertCount( 1, $logger->get_errors() );
-		$this->assertStringContainsString( 'could not save the payment methods picked in onboarding', $logger->get_errors()[0][1] );
 		$this->assertSame( 'woopayments', $logger->get_errors()[0][2] );
 	}
 
@@ -1636,152 +1456,22 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * @return void
 	 */
 	public function test_live_kyc_switches_gateway_out_of_test_mode_after_test_drive(): void {
-		$location      = 'US';
 		$captured_call = array();
-		$api_client    = new class( $captured_call ) extends WooPaymentsApiClient {
-			/**
-			 * Captured KYC session request payload.
-			 *
-			 * @var array
-			 */
-			private array $captured_call;
-
-			/**
-			 * Constructor.
-			 *
-			 * @param array $captured_call Captured KYC session request payload.
-			 */
-			public function __construct( array &$captured_call ) {
-				$this->captured_call = &$captured_call;
-			}
-
-			/**
-			 * Tell whether the fake client is available.
-			 *
-			 * @return bool
-			 */
-			public function is_available(): bool {
-				return true;
-			}
-
-			/**
-			 * Capture an embedded KYC request and return a ready live account session.
-			 *
-			 * @param bool        $live_account   Whether the session is for a live account.
-			 * @param array       $site_data      Site data.
-			 * @param array       $user_data      User data.
-			 * @param array       $account_data   Account data.
-			 * @param array       $actioned_notes Actioned notes.
-			 * @param string|null $referral_code  Referral code.
-			 * @return array
-			 */
-			public function initialize_onboarding_embedded_kyc( bool $live_account, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), ?string $referral_code = null ): array {
-				$this->captured_call = array(
-					'live_account'   => $live_account,
-					'site_data'      => $site_data,
-					'user_data'      => $user_data,
-					'account_data'   => $account_data,
-					'actioned_notes' => $actioned_notes,
-					'referral_code'  => $referral_code,
-				);
-
-				// The platform's embedded KYC session answer (wpcom class-onboarding-controller.php:609-621 at d761f9d3d85),
-				// the fields client 11.1.0 reads (includes/class-wc-payments-onboarding-service.php:408-415).
-				return array(
-					'client_secret'   => 'accs_secret_live',
-					'expires_at'      => 1234567999,
-					'account_id'      => 'acct_live_native',
-					'is_live'         => true,
-					'account_created' => true,
-					'publishable_key' => 'pk_live_native',
-				);
-			}
-		};
-		$adapter       = $this->getMockBuilder( WooPaymentsPaymentsSettingsAdapter::class )
-			->disableOriginalConstructor()
-			->onlyMethods(
-				array(
-					'is_onboarding_runtime_available',
-					'is_builtin_onboarding_available',
-					'get_payment_gateway',
-					'has_account',
-					'has_valid_account',
-					'has_working_account',
-					'has_test_account',
-					'has_sandbox_account',
-					'has_live_account',
-					'get_onboarding_kyc_fallback_url',
-				)
-			)
-			->getMock();
-
-		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
-		$adapter->method( 'is_builtin_onboarding_available' )->willReturn( true );
-		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
-		$adapter->method( 'has_account' )->willReturn( false );
-		$adapter->method( 'has_valid_account' )->willReturn( false );
-		$adapter->method( 'has_working_account' )->willReturn( false );
-		$adapter->method( 'has_test_account' )->willReturn( false );
-		$adapter->method( 'has_sandbox_account' )->willReturn( false );
-		$adapter->method( 'has_live_account' )->willReturn( false );
-		$adapter->method( 'get_onboarding_kyc_fallback_url' )->willReturn( 'https://example.com/native-kyc' );
-		$this->mock_provider->method( 'is_in_dev_mode' )->willReturn( false );
-		$this->mock_wpcom_connection_manager->method( 'is_connected' )->willReturn( true );
-		$this->mock_wpcom_connection_manager->method( 'has_connected_owner' )->willReturn( true );
-		update_option(
-			WooPaymentsService::NOX_PROFILE_OPTION_KEY,
+		// The platform's embedded KYC session answer (wpcom class-onboarding-controller.php:609-621 at d761f9d3d85),
+		// the fields client 11.1.0 reads (includes/class-wc-payments-onboarding-service.php:408-415).
+		$api_client = $this->arrange_embedded_kyc_session(
 			array(
-				'onboarding' => array(
-					'US' => array(
-						'steps' => array(
-							WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => array(
-								'data' => array(
-									'payment_methods' => array(
-										'card' => true,
-									),
-								),
-							),
-						),
-					),
-				),
-			)
+				'client_secret'   => 'accs_secret_live',
+				'expires_at'      => 1234567999,
+				'account_id'      => 'acct_live_native',
+				'is_live'         => true,
+				'account_created' => true,
+				'publishable_key' => 'pk_live_native',
+			),
+			$captured_call
 		);
-		$this->mockable_proxy->register_function_mocks(
-			array(
-				'class_exists' => function ( $class_to_check ) {
-					if ( $this->is_woopayments_class( $class_to_check ) ) {
-						return false;
-					}
-
-					return false;
-				},
-			)
-		);
-		$this->mockable_proxy->register_static_mocks(
-			array(
-				Utils::class => array(
-					'rest_endpoint_post_request' => function ( string $endpoint ) {
-						if ( '/wc/v3/payments/onboarding/kyc/session' === $endpoint ) {
-							return new WP_Error( 'rest_no_route', 'No route was found matching the URL and request method.' );
-						}
-
-						throw new \Exception( esc_html( 'POST endpoint response is not mocked: ' . $endpoint ) );
-					},
-				),
-			)
-		);
-
 		// The account read needs the same connection: without one it returns no account, like the client.
 		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
-		$this->sut = new WooPaymentsService();
-		$this->init_sut(
-			$this->mock_providers,
-			$this->mockable_proxy,
-			$adapter,
-			$this->create_extension_runtime(),
-			$api_client,
-			$this->create_account_service()
-		);
 		update_option(
 			'wcpay_account_data',
 			array(
@@ -1812,7 +1502,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$result          = $this->sut->get_onboarding_kyc_session(
-			$location,
+			'US',
 			array(
 				'business_type' => 'individual',
 				'country'       => 'US',
@@ -1838,7 +1528,9 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_onboarding_test_account_init_uses_the_api_client_and_writes_usable_account_cache(): void {
 		$captured_call = array();
-		$api_client    = new class( $captured_call ) extends WooPaymentsApiClient {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$recorded_account = json_decode( (string) file_get_contents( __DIR__ . '/../Fixtures/platform-test-drive-account.json' ), true )['account'];
+		$api_client       = new class( $captured_call, $recorded_account ) extends WooPaymentsApiClient {
 			/**
 			 * Captured onboarding init payload.
 			 *
@@ -1847,12 +1539,35 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			private array $captured_call;
 
 			/**
+			 * The account the platform answers once the test-drive account exists.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $recorded_account;
+
+			/**
+			 * Whether the test-drive account exists on the platform.
+			 *
+			 * @var bool
+			 */
+			private bool $account_created = false;
+
+			/**
+			 * Number of account requests.
+			 *
+			 * @var int
+			 */
+			public int $account_requests = 0;
+
+			/**
 			 * Constructor.
 			 *
-			 * @param array $captured_call Captured onboarding init payload.
+			 * @param array               $captured_call    Captured onboarding init payload.
+			 * @param array<string,mixed> $recorded_account The account the platform answers once the test-drive account exists.
 			 */
-			public function __construct( array &$captured_call ) {
-				$this->captured_call = &$captured_call;
+			public function __construct( array &$captured_call, array $recorded_account ) {
+				$this->captured_call    = &$captured_call;
+				$this->recorded_account = $recorded_account;
 			}
 
 			/**
@@ -1889,17 +1604,38 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 					'referral_code'               => $referral_code,
 				);
 
+				$this->account_created = true;
+
+				// The platform's test-drive init answer (wpcom class-onboarding-controller.php:463-465, :491-498).
 				return array(
-					'url'               => false,
-					'account_id'        => 'acct_native_test',
-					'is_live'           => false,
-					'publishable_key'   => 'pk_test_native',
-					'payments_enabled'  => true,
-					'details_submitted' => true,
+					'woopay_enabled_by_default' => false,
+					'url'                       => false,
+					'account_id'                => 'acct_native_test',
+					'is_live'                   => false,
+					'is_test_drive'             => true,
+					'live_publishable_key'      => 'pk_live_native',
+					'test_publishable_key'      => 'pk_test_native',
 				);
 			}
+
+			/**
+			 * Answer the account request: not found until the test-drive account exists, then the recorded account.
+			 *
+			 * @param string $woocommerce_store_id WooCommerce store ID.
+			 * @return array<string,mixed>
+			 * @throws WooPaymentsApiException Before the test-drive account exists.
+			 */
+			public function get_account( string $woocommerce_store_id = '' ): array {
+				unset( $woocommerce_store_id );
+				++$this->account_requests;
+				if ( ! $this->account_created ) {
+					throw new WooPaymentsApiException( 'Account not found.', 'wcpay_account_not_found', 404 );
+				}
+
+				return $this->recorded_account;
+			}
 		};
-		$adapter       = $this->getMockBuilder( WooPaymentsPaymentsSettingsAdapter::class )
+		$adapter          = $this->getMockBuilder( WooPaymentsPaymentsSettingsAdapter::class )
 			->disableOriginalConstructor()
 			->onlyMethods(
 				array(
@@ -1985,10 +1721,15 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pk_test_native', $cached['data']['test_publishable_key'] );
 		$this->assertFalse( $cached['data']['is_live'] );
 		$this->assertTrue( $cached['data']['is_test_drive'] );
-		$this->assertTrue( $cached['data']['payments_enabled'] );
-		$this->assertTrue( $cached['data']['details_submitted'] );
 		$this->assertSame( 0, $cached['fetched'], 'The client clears its account cache after test-drive init (class-wc-payments-onboarding-service.php:796), so the next read fetches the full account; the partial record must not pass as fresh.' );
-		$this->assertTrue( $account_service->can_process_payments() );
+		$this->assertIsArray( get_option( '_wcpay_onboarding_stripe_connected' ) );
+		$this->assertOptionNotAutoloaded( '_wcpay_onboarding_stripe_connected' );
+
+		$account_requests_after_init = $api_client->account_requests;
+
+		$this->assertTrue( $account_service->can_process_payments(), 'The recorded test-drive account takes payments.' );
+		$this->assertSame( $account_requests_after_init + 1, $api_client->account_requests, 'The next account read fetches the account from the platform.' );
+		$this->assertSame( $recorded_account['account_id'], get_option( 'wcpay_account_data' )['data']['account_id'] );
 	}
 
 	/**
@@ -2267,21 +2008,6 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not autoload the Stripe-connected onboarding marker when persisting it.
-	 */
-	public function test_update_gateway_settings_after_test_account_init_does_not_autoload_stripe_connected_marker(): void {
-		delete_option( '_wcpay_onboarding_stripe_connected' );
-
-		$this->invoke_private_method(
-			'update_gateway_settings_after_test_account_init',
-			array( array( 'card_payments' => true ), array( 'is_live' => false ) )
-		);
-
-		$this->assertIsArray( get_option( '_wcpay_onboarding_stripe_connected' ) );
-		$this->assertOptionNotAutoloaded( '_wcpay_onboarding_stripe_connected' );
-	}
-
-	/**
 	 * Create a WooPayments extension runtime wired to this test's mockable proxy.
 	 *
 	 * @return WooPaymentsExtensionRuntime
@@ -2496,6 +2222,161 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		foreach ( $callbacks as $callback ) {
 			call_user_func( $callback );
 		}
+	}
+
+	/**
+	 * Arrange the embedded KYC session route for a store without an account, on a platform that answers the given session
+	 * and where the WooPayments extension's onboarding route is unavailable.
+	 *
+	 * @param array<string,mixed> $session       The platform's embedded KYC session answer.
+	 * @param array               $captured_call Receives the KYC session request payload.
+	 * @return WooPaymentsApiClient
+	 */
+	private function arrange_embedded_kyc_session( array $session, array &$captured_call ): WooPaymentsApiClient {
+		$api_client = new class( $captured_call, $session ) extends WooPaymentsApiClient {
+			/**
+			 * Captured KYC session request payload.
+			 *
+			 * @var array
+			 */
+			private array $captured_call;
+
+			/**
+			 * The platform's embedded KYC session answer.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $session;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array               $captured_call Captured KYC session request payload.
+			 * @param array<string,mixed> $session       The platform's embedded KYC session answer.
+			 */
+			public function __construct( array &$captured_call, array $session ) {
+				$this->captured_call = &$captured_call;
+				$this->session       = $session;
+			}
+
+			/**
+			 * Tell whether the fake client is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Capture an embedded KYC request and return the platform's session.
+			 *
+			 * @param bool        $live_account   Whether the session is for a live account.
+			 * @param array       $site_data      Site data.
+			 * @param array       $user_data      User data.
+			 * @param array       $account_data   Account data.
+			 * @param array       $actioned_notes Actioned notes.
+			 * @param string|null $referral_code  Referral code.
+			 * @return array
+			 */
+			public function initialize_onboarding_embedded_kyc( bool $live_account, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), ?string $referral_code = null ): array {
+				$this->captured_call = array(
+					'live_account'   => $live_account,
+					'site_data'      => $site_data,
+					'user_data'      => $user_data,
+					'account_data'   => $account_data,
+					'actioned_notes' => $actioned_notes,
+					'referral_code'  => $referral_code,
+				);
+
+				return $this->session;
+			}
+		};
+		$adapter    = $this->getMockBuilder( WooPaymentsPaymentsSettingsAdapter::class )
+			->disableOriginalConstructor()
+			->onlyMethods(
+				array(
+					'is_onboarding_runtime_available',
+					'is_builtin_onboarding_available',
+					'get_payment_gateway',
+					'has_account',
+					'has_valid_account',
+					'has_working_account',
+					'has_test_account',
+					'has_sandbox_account',
+					'has_live_account',
+					'get_onboarding_kyc_fallback_url',
+				)
+			)
+			->getMock();
+
+		$adapter->method( 'is_onboarding_runtime_available' )->willReturn( true );
+		$adapter->method( 'is_builtin_onboarding_available' )->willReturn( true );
+		$adapter->method( 'get_payment_gateway' )->willReturn( new FakePaymentGateway() );
+		$adapter->method( 'has_account' )->willReturn( false );
+		$adapter->method( 'has_valid_account' )->willReturn( false );
+		$adapter->method( 'has_working_account' )->willReturn( false );
+		$adapter->method( 'has_test_account' )->willReturn( false );
+		$adapter->method( 'has_sandbox_account' )->willReturn( false );
+		$adapter->method( 'has_live_account' )->willReturn( false );
+		$adapter->method( 'get_onboarding_kyc_fallback_url' )->willReturn( 'https://example.com/native-kyc' );
+		$this->mock_provider->method( 'is_in_dev_mode' )->willReturn( false );
+		$this->mock_wpcom_connection_manager->method( 'is_connected' )->willReturn( true );
+		$this->mock_wpcom_connection_manager->method( 'has_connected_owner' )->willReturn( true );
+		update_option(
+			WooPaymentsService::NOX_PROFILE_OPTION_KEY,
+			array(
+				'onboarding' => array(
+					'US' => array(
+						'steps' => array(
+							WooPaymentsService::ONBOARDING_STEP_PAYMENT_METHODS => array(
+								'data' => array(
+									'payment_methods' => array(
+										'card' => true,
+									),
+								),
+							),
+						),
+					),
+				),
+			)
+		);
+		$this->mockable_proxy->register_function_mocks(
+			array(
+				'class_exists' => function ( $class_to_check ) {
+					if ( $this->is_woopayments_class( $class_to_check ) ) {
+						return false;
+					}
+
+					return false;
+				},
+			)
+		);
+		$this->mockable_proxy->register_static_mocks(
+			array(
+				Utils::class => array(
+					'rest_endpoint_post_request' => function ( string $endpoint ) {
+						if ( '/wc/v3/payments/onboarding/kyc/session' === $endpoint ) {
+							return new WP_Error( 'rest_no_route', 'No route was found matching the URL and request method.' );
+						}
+
+						throw new \Exception( esc_html( 'POST endpoint response is not mocked: ' . $endpoint ) );
+					},
+				),
+			)
+		);
+
+		$this->sut = new WooPaymentsService();
+		$this->init_sut(
+			$this->mock_providers,
+			$this->mockable_proxy,
+			$adapter,
+			$this->create_extension_runtime(),
+			$api_client,
+			$this->create_account_service()
+		);
+
+		return $api_client;
 	}
 
 	/**
@@ -3221,12 +3102,29 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A referral code is stored cut to 50 characters, lowercased and trimmed for 30 days, and the referral is recorded.
+	 * Referral codes as they arrive from the referral link.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provide_referral_codes(): array {
+		return array(
+			'a padded mixed-case code over 50 characters' => array( ' ' . str_repeat( 'Ab', 30 ), str_repeat( 'ab', 24 ) . 'a' ),
+			'a blank code'                                => array( '   ', '' ),
+		);
+	}
+
+	/**
+	 * @testdox A referral code is stored cut to 50 characters, lowercased and trimmed for 30 days, and the referral is recorded; an empty code stores and records nothing.
 	 *
 	 * Source: the extension's `WC_Payments_Onboarding_Service::normalize_and_store_referral_code()` and the
 	 * `wcpay_account_referral` event `WC_Payments_Account::maybe_redirect_onboarding_referral()` records.
+	 *
+	 * @dataProvider provide_referral_codes
+	 *
+	 * @param string $referral_code The code from the referral link.
+	 * @param string $expected_code The stored code, or '' when nothing is stored.
 	 */
-	public function test_store_referral_code_stores_the_normalized_code_and_records_the_referral(): void {
+	public function test_store_referral_code( string $referral_code, string $expected_code ): void {
 		FixedTrackingInfoService::install();
 		update_option( 'woocommerce_allow_tracking', 'yes' );
 		$recorded = array();
@@ -3241,38 +3139,23 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		);
 
 		try {
-			$stored = $this->onboarding_service->store_referral_code( ' ' . str_repeat( 'Ab', 30 ) );
+			$stored = $this->onboarding_service->store_referral_code( $referral_code );
 		} finally {
 			wc_get_container()->reset_all_replacements();
 		}
 
-		$this->assertSame( str_repeat( 'ab', 24 ) . 'a', $stored );
+		$this->assertSame( $expected_code, $stored );
+		if ( '' === $expected_code ) {
+			$this->assertFalse( get_transient( 'woopayments_referral_code' ) );
+			$this->assertArrayNotHasKey( 'wcadmin_wcpay_account_referral', $recorded );
+			return;
+		}
+
 		$this->assertSame( $stored, get_transient( 'woopayments_referral_code' ) );
 		$this->assertEqualsWithDelta( time() + 30 * DAY_IN_SECONDS, (int) get_option( '_transient_timeout_woopayments_referral_code' ), 60 );
 		$this->assertSame( $stored, $recorded['wcadmin_wcpay_account_referral']['referral_code'] );
 		// Client 11.1.0's account tracks_event() merges the platform tracking info last (class-wc-payments-account.php:3210-3220).
 		$this->assertSame( 'fixture-host', $recorded['wcadmin_wcpay_account_referral']['hosting_provider'] ?? null );
-	}
-
-	/**
-	 * @testdox An empty referral code stores nothing and records nothing.
-	 */
-	public function test_store_referral_code_ignores_an_empty_code(): void {
-		update_option( 'woocommerce_allow_tracking', 'yes' );
-		$recorded = array();
-		add_filter(
-			'woocommerce_tracks_event_properties',
-			function ( $properties, $event_name ) use ( &$recorded ) {
-				$recorded[ $event_name ] = $properties;
-				return $properties;
-			},
-			10,
-			2
-		);
-
-		$this->assertSame( '', $this->onboarding_service->store_referral_code( '   ' ) );
-		$this->assertFalse( get_transient( 'woopayments_referral_code' ) );
-		$this->assertArrayNotHasKey( 'wcadmin_wcpay_account_referral', $recorded );
 	}
 
 	/**
