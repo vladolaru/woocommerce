@@ -40,7 +40,7 @@ class WooPaymentsOverviewServiceReconnectUrlTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should send the client's nonce-protected reconnect URL when the connection has no owner.
+	 * @testdox Should send the WooPayments extension's nonce-protected reconnect URL when the connection has no owner.
 	 */
 	public function test_sends_reconnect_url_when_connected_without_owner(): void {
 		$sut = $this->create_sut( true, false );
@@ -70,7 +70,7 @@ class WooPaymentsOverviewServiceReconnectUrlTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should send no reconnect URL for a site-level connection without an owner, because the client's connection check needs an owner.
+	 * @testdox Should send no reconnect URL for a site-level connection without an owner, because the WooPayments extension's connection check needs an owner.
 	 */
 	public function test_real_site_connection_without_owner_sends_no_url(): void {
 		\Jetpack_Options::update_option( 'id', 12345 );

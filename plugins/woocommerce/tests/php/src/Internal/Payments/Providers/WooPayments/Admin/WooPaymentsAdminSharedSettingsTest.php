@@ -77,7 +77,7 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preload the Reports feature flag for native WooPayments routes on the Payments settings page.
+	 * @testdox Should preload the Reports feature flag for WooPayments routes on the Payments settings page.
 	 */
 	public function test_preloads_reports_feature_flag_on_payments_settings_request(): void {
 		$_GET['page'] = 'wc-settings';
@@ -793,9 +793,9 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should apply Core Multi-Currency settings before legacy WooPayments settings.
+	 * @testdox Should apply Core Multi-Currency settings before WooPayments extension settings.
 	 */
-	public function test_preloads_core_multi_currency_settings_before_legacy_woopayments_settings(): void {
+	public function test_preloads_core_multi_currency_settings_before_woopayments_extension_settings(): void {
 		$_GET['page'] = 'wc-settings';
 		$_GET['tab']  = 'checkout';
 		$sut          = $this->create_shared_settings(
@@ -858,19 +858,19 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve native WooPayments settings when the Core filter returns an invalid value.
+	 * @testdox Should preserve WooPayments settings when the Core filter returns an invalid value.
 	 */
-	public function test_preserves_native_woopayments_settings_when_core_filter_returns_invalid_value(): void {
-		$_GET['page']    = 'wc-settings';
-		$_GET['tab']     = 'checkout';
-		$sut             = $this->create_shared_settings(
+	public function test_preserves_woopayments_settings_when_core_filter_returns_invalid_value(): void {
+		$_GET['page']                   = 'wc-settings';
+		$_GET['tab']                    = 'checkout';
+		$sut                            = $this->create_shared_settings(
 			true,
 			array(
 				'is_reports_enabled' => true,
 			)
 		);
-		$core_settings   = null;
-		$legacy_settings = null;
+		$core_settings                  = null;
+		$woopayments_extension_settings = null;
 
 		add_filter(
 			'woocommerce_multi_currency_js_settings',
@@ -882,8 +882,8 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 		);
 		add_filter(
 			'wcpay_js_settings',
-			static function ( array $settings ) use ( &$legacy_settings ): array {
-				$legacy_settings = $settings;
+			static function ( array $settings ) use ( &$woopayments_extension_settings ): array {
+				$woopayments_extension_settings = $settings;
 
 				return $settings;
 			}
@@ -901,7 +901,7 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertSame( $core_settings, $legacy_settings );
+		$this->assertSame( $core_settings, $woopayments_extension_settings );
 		$this->assertSame( $core_settings, $settings['woopaymentsSettings'] );
 		$this->assertSame( 'shared value', $settings['preservedSharedSetting'] );
 		$this->assertSame( 'provider value', $settings['woopaymentsSettings']['preservedProviderSetting'] );
@@ -911,18 +911,18 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve Core Multi-Currency settings when the legacy filter returns an invalid value.
+	 * @testdox Should preserve Core Multi-Currency settings when the WooPayments extension filter returns an invalid value.
 	 */
-	public function test_preserves_core_multi_currency_settings_when_legacy_filter_returns_invalid_value(): void {
-		$_GET['page']    = 'wc-settings';
-		$_GET['tab']     = 'checkout';
-		$sut             = $this->create_shared_settings(
+	public function test_preserves_core_multi_currency_settings_when_woopayments_extension_filter_returns_invalid_value(): void {
+		$_GET['page']                   = 'wc-settings';
+		$_GET['tab']                    = 'checkout';
+		$sut                            = $this->create_shared_settings(
 			true,
 			array(
 				'is_reports_enabled' => true,
 			)
 		);
-		$legacy_settings = null;
+		$woopayments_extension_settings = null;
 
 		add_filter(
 			'woocommerce_multi_currency_js_settings',
@@ -932,8 +932,8 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 		);
 		add_filter(
 			'wcpay_js_settings',
-			static function ( array $settings ) use ( &$legacy_settings ) {
-				$legacy_settings = $settings;
+			static function ( array $settings ) use ( &$woopayments_extension_settings ) {
+				$woopayments_extension_settings = $settings;
 
 				return null;
 			}
@@ -951,7 +951,7 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertSame( $legacy_settings, $settings['woopaymentsSettings'] );
+		$this->assertSame( $woopayments_extension_settings, $settings['woopaymentsSettings'] );
 		$this->assertSame( 'shared value', $settings['preservedSharedSetting'] );
 		$this->assertSame( 'provider value', $settings['woopaymentsSettings']['preservedProviderSetting'] );
 		$this->assertTrue( $settings['woopaymentsSettings']['featureFlags']['existingFlag'] );
@@ -1117,19 +1117,19 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the shared settings preload over a navigation controller for an account state.
 	 *
-	 * @param bool                                  $native_register          Whether the built-in WooPayments owns payments.
+	 * @param bool                                  $builtin_owner            Whether the built-in WooPayments owns payments.
 	 * @param array<string,mixed>                   $account_state            Account state overrides.
 	 * @param array<string,int>                     $badge_counts             Badge count overrides.
 	 * @param WooPaymentsApplePayDomainService|null $apple_pay_domain_service Optional Apple Pay domain service.
 	 * @param bool                                  $connected                Whether the WordPress.com connection works.
 	 * @return WooPaymentsAdminSharedSettings
 	 */
-	private function create_shared_settings( bool $native_register, array $account_state = array(), array $badge_counts = array(), ?WooPaymentsApplePayDomainService $apple_pay_domain_service = null, bool $connected = true ): WooPaymentsAdminSharedSettings {
+	private function create_shared_settings( bool $builtin_owner, array $account_state = array(), array $badge_counts = array(), ?WooPaymentsApplePayDomainService $apple_pay_domain_service = null, bool $connected = true ): WooPaymentsAdminSharedSettings {
 		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_owner );
 
 		$account_service = $this->create_account_service( $account_state );
 		$badge_service   = $this->create_badge_service( $badge_counts );

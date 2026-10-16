@@ -20,9 +20,9 @@ use WP_REST_Request;
 class WooPaymentsUserPreferenceFieldsTest extends WC_REST_Unit_Test_Case {
 
 	/**
-	 * The client's keys (WooPayments 11.1.0 WC_Payments::add_user_data_fields()) for the native lists.
+	 * The hidden column keys (the WooPayments extension's WC_Payments::add_user_data_fields()) for the WooPayments lists.
 	 */
-	private const CLIENT_KEYS = array(
+	private const HIDDEN_COLUMN_KEYS = array(
 		'wc_payments_transactions_hidden_columns',
 		'wc_payments_transactions_blocked_hidden_columns',
 		'wc_payments_transactions_uncaptured_hidden_columns',
@@ -55,24 +55,24 @@ class WooPaymentsUserPreferenceFieldsTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Registers the client's hidden column keys as WooCommerce user data fields.
+	 * @testdox Registers the hidden column keys as WooCommerce user data fields.
 	 */
-	public function test_registers_client_hidden_column_keys(): void {
-		$this->assertEmpty( array_intersect( self::CLIENT_KEYS, WCAdminUser::get_instance()->get_user_data_fields() ), 'Nothing is registered before register().' );
+	public function test_registers_the_hidden_column_keys(): void {
+		$this->assertEmpty( array_intersect( self::HIDDEN_COLUMN_KEYS, WCAdminUser::get_instance()->get_user_data_fields() ), 'Nothing is registered before register().' );
 
 		$this->sut->register();
 		$fields = WCAdminUser::get_instance()->get_user_data_fields();
 
-		foreach ( self::CLIENT_KEYS as $key ) {
+		foreach ( self::HIDDEN_COLUMN_KEYS as $key ) {
 			$this->assertContains( $key, $fields );
 		}
 		$this->assertContains( 'variable_product_tour_shown', $fields, 'Core fields must be kept.' );
 	}
 
 	/**
-	 * @testdox Stores a hidden columns write through the users REST route in the client's user meta.
+	 * @testdox Stores a hidden columns write through the users REST route in its user meta.
 	 */
-	public function test_users_route_writes_the_client_user_meta(): void {
+	public function test_users_route_writes_the_hidden_columns_user_meta(): void {
 		$user_id = $this->factory->user->create( array( 'role' => 'administrator' ) );
 		wp_set_current_user( $user_id );
 		$this->sut->register();

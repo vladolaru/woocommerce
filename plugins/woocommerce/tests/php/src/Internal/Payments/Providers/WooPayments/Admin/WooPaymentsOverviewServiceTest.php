@@ -55,9 +55,9 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return a safe Overview projection from the preserved account snapshot.
+	 * @testdox Should return safe Overview fields from the stored account snapshot.
 	 */
-	public function test_get_overview_returns_safe_projection(): void {
+	public function test_get_overview_returns_safe_fields(): void {
 		$this->cache_account_data(
 			array(
 				'account_id'           => 'acct_native_test',
@@ -211,9 +211,9 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return a fail-closed Overview projection when no account is connected.
+	 * @testdox Should return fail-closed Overview fields when no account is connected.
 	 */
-	public function test_get_overview_returns_fail_closed_projection_without_account(): void {
+	public function test_get_overview_returns_fail_closed_fields_without_account(): void {
 		$this->cache_account_data( array() );
 
 		$overview = $this->sut->get_overview();
@@ -427,9 +427,9 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose a safe native account summary for the WooPayments settings surface.
+	 * @testdox Should expose a safe account summary for the WooPayments settings surface.
 	 */
-	public function test_get_account_summary_returns_safe_native_account_state(): void {
+	public function test_get_account_summary_returns_safe_account_state(): void {
 		update_option(
 			'wcpay_account_data',
 			array(

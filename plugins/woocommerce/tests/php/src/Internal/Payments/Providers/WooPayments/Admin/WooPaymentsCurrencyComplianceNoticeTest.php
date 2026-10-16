@@ -36,7 +36,7 @@ class WooPaymentsCurrencyComplianceNoticeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should warn managers when the account does not support the store currency, like the client
+	 * @testdox Should warn managers when the account does not support the store currency
 	 *
 	 * Source: plugin 11.1.0 `class-wc-payments-admin.php:249-273` with the gateway's `is_available_for_current_currency()` (`class-wc-payment-gateway-wcpay.php:1058-1069`).
 	 */
@@ -66,7 +66,7 @@ class WooPaymentsCurrencyComplianceNoticeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should warn managers about ISK stores with non-zero price decimals like the reference client
+	 * @testdox Should warn managers about ISK stores with non-zero price decimals
 	 */
 	public function test_displays_isk_decimal_notice_only_for_misconfigured_isk_stores(): void {
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );

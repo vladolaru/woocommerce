@@ -84,7 +84,7 @@ class WooPaymentsDisputesTaskTest extends WC_Unit_Test_Case {
 	 * @param array<int,array<string,mixed>>|null $disputes Cached disputes, or null for an errored empty cache.
 	 * @param bool                                $expected Whether the task shows.
 	 */
-	public function test_visibility_follows_the_client_due_window( ?array $disputes, bool $expected ): void {
+	public function test_visibility_follows_the_due_window( ?array $disputes, bool $expected ): void {
 		$this->assertSame( $expected, $this->create_task( $disputes )->can_view() );
 	}
 
@@ -114,7 +114,7 @@ class WooPaymentsDisputesTaskTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The task is hidden for users without manage_woocommerce and for accounts the client treats as invalid.
+	 * @testdox The task is hidden for users without manage_woocommerce and for invalid accounts.
 	 * @dataProvider provide_invalid_account_cases
 	 *
 	 * @param array<string,mixed> $account Cached account data.
@@ -179,7 +179,7 @@ class WooPaymentsDisputesTaskTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A dispute due in one whole day still counts as the last day, as the client compares whole days.
+	 * @testdox A dispute due in one whole day still counts as the last day, since whole days are compared.
 	 */
 	public function test_dispute_due_in_one_whole_day_is_the_last_day(): void {
 		$sut = $this->create_task( array( $this->dispute( 2000, 'eur', '+1 day +1 hour' ) ) );
@@ -291,9 +291,9 @@ class WooPaymentsDisputesTaskTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A missing cache is filled once with the client's dispute query, sorted by due date, and reused afterwards.
+	 * @testdox A missing cache is filled once with the dispute query, sorted by due date, and reused afterwards.
 	 */
-	public function test_missing_cache_is_filled_once_with_the_client_query(): void {
+	public function test_missing_cache_is_filled_once_with_the_dispute_query(): void {
 		$this->api_client->disputes = array(
 			$this->dispute( 1000, 'usd', '+5 days', 'ch_late' ),
 			$this->dispute( 2000, 'usd', '+2 days', 'ch_soon' ),

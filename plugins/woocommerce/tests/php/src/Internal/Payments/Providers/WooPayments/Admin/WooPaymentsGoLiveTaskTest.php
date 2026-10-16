@@ -57,7 +57,7 @@ class WooPaymentsGoLiveTaskTest extends WC_Unit_Test_Case {
 	 * @param bool                $test_mode_onboarding Whether WooPayments onboards in test mode.
 	 * @param bool                $expected             Whether the task shows.
 	 */
-	public function test_visibility_follows_the_client_conditions( array $account, bool $test_mode_onboarding, bool $expected ): void {
+	public function test_visibility_follows_the_task_conditions( array $account, bool $test_mode_onboarding, bool $expected ): void {
 		$this->assertSame( $expected, $this->create_task( $account, $test_mode_onboarding )->can_view() );
 	}
 
@@ -94,9 +94,9 @@ class WooPaymentsGoLiveTaskTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The task carries the client's ID, title and time, never completes, and cannot be dismissed or snoozed.
+	 * @testdox The task carries its ID, title and time, never completes, and cannot be dismissed or snoozed.
 	 */
-	public function test_copy_and_state_match_the_client(): void {
+	public function test_task_copy_and_state(): void {
 		$json = $this->create_task( array( 'account_id' => 'acct_test' ), true )->get_json();
 
 		$this->assertSame( 'go-live-payments', $json['id'] );

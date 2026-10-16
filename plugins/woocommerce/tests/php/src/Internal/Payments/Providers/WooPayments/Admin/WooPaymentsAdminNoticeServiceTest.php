@@ -28,9 +28,9 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The notice service should stay out of every native bootstrap root.
+	 * @testdox The notice service should stay out of every setup tier's classes.
 	 */
-	public function test_notice_service_is_absent_from_native_bootstrap_roots(): void {
+	public function test_notice_service_is_absent_from_the_setup_tier_classes(): void {
 		foreach ( WooPaymentsProvider::get_classes_by_setup_tier() as $state => $request_groups ) {
 			foreach ( $request_groups as $request => $roots ) {
 				$this->assertNotContains( WooPaymentsAdminNoticeService::class, $roots, $state . ' ' . $request . ' requests must not bootstrap the notice service.' );
@@ -133,7 +133,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An account that cannot switch live in one click should link to native onboarding.
+	 * @testdox An account that cannot switch live in one click should link to onboarding.
 	 */
 	public function test_test_to_live_uses_onboarding_fallback_for_non_live_account(): void {
 		$now = 1700000000;
@@ -160,9 +160,9 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox While the WooPayments plugin owns payments, the native notice neither shows nor touches admin notes.
+	 * @testdox While the WooPayments extension owns payments, the notice neither shows nor touches admin notes.
 	 */
-	public function test_notice_stays_off_while_the_plugin_owns_payments(): void {
+	public function test_notice_stays_off_while_the_extension_owns_payments(): void {
 		$now = 1700000000;
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		update_option( 'wcpay_test_mode_enabled_date', $now - 7 * DAY_IN_SECONDS, false );
@@ -202,7 +202,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A settings notice should remove only the obsolete test-to-live inbox notes.
 	 */
-	public function test_test_to_live_cleans_only_legacy_inbox_notes(): void {
+	public function test_test_to_live_cleans_only_obsolete_inbox_notes(): void {
 		$now = 1700000000;
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		update_option( 'wcpay_test_mode_enabled_date', $now - 7 * DAY_IN_SECONDS, false );
@@ -237,7 +237,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A handled test-to-live notice should still remove only its obsolete inbox notes.
 	 */
-	public function test_handled_test_to_live_notice_cleans_only_legacy_inbox_notes(): void {
+	public function test_handled_test_to_live_notice_cleans_only_obsolete_inbox_notes(): void {
 		$user_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
 		wp_set_current_user( $user_id );
 		update_user_meta( $user_id, 'wcpay_test_to_live_notice_dismissed', 1700000000 );
@@ -375,14 +375,14 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Preserved test-to-live user markers should suppress or allow the notice at the correct boundary.
+	 * @testdox Stored test-to-live user markers should suppress or allow the notice at the correct boundary.
 	 * @dataProvider provide_test_to_live_user_markers
 	 *
 	 * @param string $meta_key      Preserved user-meta key.
 	 * @param int    $marker_offset Seconds before the test clock.
 	 * @param bool   $expected      Whether the notice should appear.
 	 */
-	public function test_test_to_live_preserved_user_markers( string $meta_key, int $marker_offset, bool $expected ): void {
+	public function test_test_to_live_stored_user_markers( string $meta_key, int $marker_offset, bool $expected ): void {
 		$now     = 1700000000;
 		$user_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
 		wp_set_current_user( $user_id );
@@ -542,7 +542,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Notice actions send the client's attach-rate Tracks event once per state change: $notice_id $action.
+	 * @testdox Notice actions send the WooPayments extension's attach-rate Tracks event once per state change: $notice_id $action.
 	 * @dataProvider tracks_actions
 	 *
 	 * @param string              $notice_id        Notice identifier.
@@ -553,7 +553,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $properties       Expected notice properties.
 	 * @param int                 $expected_count   Pixels expected across two identical actions.
 	 */
-	public function test_notice_actions_record_client_tracks_events( string $notice_id, string $action, ?int $stage, bool $has_live_account, string $event_name, array $properties, int $expected_count ): void {
+	public function test_notice_actions_record_woopayments_extension_tracks_events( string $notice_id, string $action, ?int $stage, bool $has_live_account, string $event_name, array $properties, int $expected_count ): void {
 		$account_service = $this->createMock( WooPaymentsAccountService::class );
 		$account_service->method( 'has_live_account' )->willReturn( $has_live_account );
 		$sut = new WooPaymentsAdminNoticeService( static fn(): int => 1000 );
@@ -664,7 +664,7 @@ class WooPaymentsAdminNoticeServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The test-to-live CTA writes no dismissal marker, like the client's handle_cta().
+	 * @testdox The test-to-live CTA writes no dismissal marker, like the WooPayments extension's handle_cta().
 	 */
 	public function test_test_to_live_cta_keeps_user_state(): void {
 		$user_id = self::factory()->user->create();

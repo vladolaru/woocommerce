@@ -35,14 +35,14 @@ class WooPaymentsOnboardingRedirectTest extends WC_Unit_Test_Case {
 	 * the Payments child pages (`WC_Payments_Admin::maybe_redirect_from_payments_admin_child_pages()`, no tracking args).
 	 * The connect page has no native equivalent; native sends it to onboarding (inbox.md N-125).
 	 *
-	 * @testdox Should redirect the legacy WooPayments link $request to onboarding on a never-connected store.
-	 * @dataProvider provider_legacy_links_on_a_never_connected_store
+	 * @testdox Should redirect the WooPayments extension link $request to onboarding on a never-connected store.
+	 * @dataProvider provider_payments_links_on_a_never_connected_store
 	 *
 	 * @param array<string,string> $request        Legacy link query.
 	 * @param array<string,string> $expected_query Expected onboarding tracking query args.
 	 */
-	public function test_redirects_legacy_links_to_onboarding_on_a_never_connected_store( array $request, array $expected_query ): void {
-		$this->set_disabled_native_store();
+	public function test_redirects_payments_links_to_onboarding_on_a_never_connected_store( array $request, array $expected_query ): void {
+		$this->set_disabled_builtin_store();
 		$sut = $this->create_redirect( false, false );
 
 		$url = $this->run_shell_redirect_for_request( $sut, $request );
@@ -63,11 +63,11 @@ class WooPaymentsOnboardingRedirectTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Legacy WooPayments links and the onboarding tracking args client 11.1.0 adds for each.
+	 * WooPayments extension links and the onboarding tracking args added for each.
 	 *
 	 * @return array<string,array{0:array<string,string>,1:array<string,string>}>
 	 */
-	public function provider_legacy_links_on_a_never_connected_store(): array {
+	public function provider_payments_links_on_a_never_connected_store(): array {
 		$settings_from = array(
 			'from'   => 'WCADMIN_PAYMENT_SETTINGS',
 			'source' => 'wcadmin-settings-page',
@@ -159,10 +159,10 @@ class WooPaymentsOnboardingRedirectTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave the legacy settings section alone for a connected store with a valid account.
+	 * @testdox Should leave the gateway settings section alone for a connected store with a valid account.
 	 */
-	public function test_does_not_redirect_the_legacy_settings_section_for_a_valid_account(): void {
-		$this->set_disabled_native_store();
+	public function test_does_not_redirect_the_gateway_settings_section_for_a_valid_account(): void {
+		$this->set_disabled_builtin_store();
 		$sut = $this->create_redirect( true, true );
 
 		$url = $this->run_shell_redirect_for_request(
@@ -178,14 +178,14 @@ class WooPaymentsOnboardingRedirectTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should redirect a native WooPayments page to onboarding in the disabled state without a connection.
+	 * @testdox Should redirect a WooPayments page to onboarding in the disabled state without a connection.
 	 * @dataProvider provider_disabled_state_redirects
 	 *
 	 * @param string               $path           Requested native WooPayments route path.
 	 * @param array<string,string> $expected_query Expected onboarding tracking query args.
 	 */
 	public function test_redirects_to_onboarding_in_the_disabled_state_without_a_connection( string $path, array $expected_query ): void {
-		$this->set_disabled_native_store();
+		$this->set_disabled_builtin_store();
 		$sut = $this->create_redirect( false, false );
 
 		$url = $this->run_shell_redirect( $sut, $path );
@@ -234,7 +234,7 @@ class WooPaymentsOnboardingRedirectTest extends WC_Unit_Test_Case {
 	 * @testdox Should not redirect or resolve the redirect for the onboarding route in the disabled state.
 	 */
 	public function test_does_not_redirect_the_onboarding_route_in_the_disabled_state(): void {
-		$this->set_disabled_native_store();
+		$this->set_disabled_builtin_store();
 		$sut = $this->create_redirect( false, false );
 
 		$this->assertSame( '', $this->run_shell_redirect( $sut, '/woopayments/onboarding' ) );
@@ -244,27 +244,27 @@ class WooPaymentsOnboardingRedirectTest extends WC_Unit_Test_Case {
 	 * @testdox Should not redirect a connected store with a valid account in the disabled state.
 	 */
 	public function test_does_not_redirect_a_connected_valid_account_in_the_disabled_state(): void {
-		$this->set_disabled_native_store();
+		$this->set_disabled_builtin_store();
 		$sut = $this->create_redirect( true, true );
 
 		$this->assertSame( '', $this->run_shell_redirect( $sut, '/woopayments/transactions' ) );
 	}
 
 	/**
-	 * @testdox Should redirect a connected store with an invalid account in the disabled state, like the client.
+	 * @testdox Should redirect a connected store with an invalid account in the disabled state.
 	 */
 	public function test_redirects_a_connected_invalid_account_in_the_disabled_state(): void {
-		$this->set_disabled_native_store();
+		$this->set_disabled_builtin_store();
 		$sut = $this->create_redirect( true, false );
 
 		$this->assertStringContainsString( 'path=/woopayments/onboarding', $this->run_shell_redirect( $sut, '/woopayments/transactions' ) );
 	}
 
 	/**
-	 * @testdox Should not redirect when the WooPayments plugin owns the payments runtime.
+	 * @testdox Should not redirect when the WooPayments extension owns the payments runtime.
 	 */
-	public function test_does_not_redirect_when_native_does_not_own_the_runtime(): void {
-		$this->set_disabled_native_store();
+	public function test_does_not_redirect_when_builtin_does_not_own_the_runtime(): void {
+		$this->set_disabled_builtin_store();
 		$sut = $this->create_redirect( false, false, false );
 
 		$this->assertSame( '', $this->run_shell_redirect( $sut, '/woopayments/transactions' ) );
@@ -275,12 +275,12 @@ class WooPaymentsOnboardingRedirectTest extends WC_Unit_Test_Case {
 	 * settings route opens the plugin's settings page: the URL WooPayments::get_settings_url() gives there, built from
 	 * client 11.1.0 `includes/admin/class-wc-payments-admin-settings.php:32-36` (page, tab, section).
 	 *
-	 * @testdox Should send native settings routes to the plugin's settings page while the plugin owns the runtime.
-	 * @dataProvider provider_native_settings_paths
+	 * @testdox Should send settings routes to the WooPayments extension's settings page while it owns the runtime.
+	 * @dataProvider provider_settings_paths
 	 *
 	 * @param string $path Native settings route.
 	 */
-	public function test_sends_native_settings_routes_to_the_plugin_settings_page_while_the_plugin_owns_the_runtime( string $path ): void {
+	public function test_sends_settings_routes_to_the_woopayments_extension_settings_page_while_the_extension_owns_the_runtime( string $path ): void {
 		$this->set_admin_user();
 		$sut = $this->create_redirect( false, false, false, true );
 
@@ -290,11 +290,11 @@ class WooPaymentsOnboardingRedirectTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Native settings routes.
+	 * Settings routes.
 	 *
 	 * @return array<string,array{0:string}>
 	 */
-	public function provider_native_settings_paths(): array {
+	public function provider_settings_paths(): array {
 		return array(
 			'settings'         => array( '/woopayments/settings' ),
 			'express checkout' => array( '/woopayments/settings/express-checkout/woopay' ),
@@ -303,12 +303,12 @@ class WooPaymentsOnboardingRedirectTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave $_dataName alone while the plugin owns the runtime.
-	 * @dataProvider provider_requests_left_alone_on_plugin_stores
+	 * @testdox Should leave $_dataName alone while the WooPayments extension owns the runtime.
+	 * @dataProvider provider_requests_left_alone_on_extension_owned_stores
 	 *
 	 * @param array<string,string> $request Query request.
 	 */
-	public function test_leaves_requests_alone_while_the_plugin_owns_the_runtime( array $request ): void {
+	public function test_leaves_requests_alone_while_the_extension_owns_the_runtime( array $request ): void {
 		$this->set_admin_user();
 		$sut = $this->create_redirect( false, false, false, true );
 
@@ -316,34 +316,34 @@ class WooPaymentsOnboardingRedirectTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Requests a plugin-owned store keeps: the plugin's own settings section (the redirect target, so no loop), other
-	 * native routes, and the plugin's own WC Admin routes.
+	 * Requests an extension-owned store keeps: the WooPayments extension's own settings section (the redirect target, so no loop), other
+	 * routes, and the WooPayments extension's own WC Admin routes.
 	 *
 	 * @return array<string,array{0:array<string,string>}>
 	 */
-	public function provider_requests_left_alone_on_plugin_stores(): array {
+	public function provider_requests_left_alone_on_extension_owned_stores(): array {
 		return array(
-			'the plugin settings section'        => array(
+			'the WooPayments extension settings section' => array(
 				array(
 					'page'    => 'wc-settings',
 					'tab'     => 'checkout',
 					'section' => 'woocommerce_payments',
 				),
 			),
-			'a native transactions route'        => array(
+			'a transactions route'                       => array(
 				array(
 					'page' => 'wc-settings',
 					'tab'  => 'checkout',
 					'path' => '/woopayments/transactions',
 				),
 			),
-			'the plugin WC Admin settings route' => array(
+			'the WooPayments extension WC Admin settings route' => array(
 				array(
 					'page' => 'wc-admin',
 					'path' => '/payments/settings',
 				),
 			),
-			'the plugin WC Admin deposits route' => array(
+			'the WooPayments extension WC Admin deposits route' => array(
 				array(
 					'page' => 'wc-admin',
 					'path' => '/payments/deposits',
@@ -353,9 +353,9 @@ class WooPaymentsOnboardingRedirectTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not redirect a native settings route on a store no payments runtime owns.
+	 * @testdox Should not redirect a settings route on a store no payments runtime owns.
 	 */
-	public function test_does_not_redirect_native_settings_without_a_runtime_owner(): void {
+	public function test_does_not_redirect_settings_routes_without_a_runtime_owner(): void {
 		$this->set_admin_user();
 		$sut = $this->create_redirect( false, false, false, false );
 
@@ -379,9 +379,9 @@ class WooPaymentsOnboardingRedirectTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Mark the store as a native-owned store in the disabled state, where the admin navigation controller is not loaded.
+	 * Mark the store as one the built-in WooPayments owns, in the disabled state, where the admin navigation controller is not loaded.
 	 */
-	private function set_disabled_native_store(): void {
+	private function set_disabled_builtin_store(): void {
 		$this->set_admin_user();
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::DISABLED );
 	}
@@ -454,16 +454,16 @@ class WooPaymentsOnboardingRedirectTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the shared onboarding redirect with test doubles.
 	 *
-	 * @param WooPaymentsApiClient $api_client    API client double.
-	 * @param bool                 $valid_account Whether the account is valid for admin navigation.
-	 * @param bool                 $native_owner  Whether native owns the payments runtime.
-	 * @param bool                 $plugin_owner  Whether the WooPayments plugin owns the payments runtime.
+	 * @param WooPaymentsApiClient $api_client      API client double.
+	 * @param bool                 $valid_account   Whether the account is valid for admin navigation.
+	 * @param bool                 $builtin_owner   Whether the built-in WooPayments owns the payments runtime.
+	 * @param bool                 $extension_owner Whether the WooPayments extension owns the payments runtime.
 	 * @return WooPaymentsOnboardingRedirect
 	 */
-	private function create_onboarding_redirect( WooPaymentsApiClient $api_client, bool $valid_account, bool $native_owner, bool $plugin_owner = false ): WooPaymentsOnboardingRedirect {
+	private function create_onboarding_redirect( WooPaymentsApiClient $api_client, bool $valid_account, bool $builtin_owner, bool $extension_owner = false ): WooPaymentsOnboardingRedirect {
 		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_owner );
-		$arbiter->method( 'is_extension_owner' )->willReturn( $plugin_owner );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_owner );
+		$arbiter->method( 'is_extension_owner' )->willReturn( $extension_owner );
 		$account_service = $this->createMock( WooPaymentsAccountService::class );
 		$account_service->method( 'has_valid_account_for_admin_navigation' )->willReturn( $valid_account );
 
@@ -476,16 +476,16 @@ class WooPaymentsOnboardingRedirectTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the onboarding redirect for a store state.
 	 *
-	 * @param bool $connected     Whether the WordPress.com connection works.
-	 * @param bool $valid_account Whether the account is valid for admin navigation.
-	 * @param bool $native_owner  Whether native owns the payments runtime.
-	 * @param bool $plugin_owner  Whether the WooPayments plugin owns the payments runtime.
+	 * @param bool $connected       Whether the WordPress.com connection works.
+	 * @param bool $valid_account   Whether the account is valid for admin navigation.
+	 * @param bool $builtin_owner   Whether the built-in WooPayments owns the payments runtime.
+	 * @param bool $extension_owner Whether the WooPayments extension owns the payments runtime.
 	 * @return WooPaymentsOnboardingRedirect
 	 */
-	private function create_redirect( bool $connected, bool $valid_account, bool $native_owner = true, bool $plugin_owner = false ): WooPaymentsOnboardingRedirect {
+	private function create_redirect( bool $connected, bool $valid_account, bool $builtin_owner = true, bool $extension_owner = false ): WooPaymentsOnboardingRedirect {
 		$api_client = $this->createMock( WooPaymentsApiClient::class );
 		$api_client->method( 'is_available' )->willReturn( $connected );
 
-		return $this->create_onboarding_redirect( $api_client, $valid_account, $native_owner, $plugin_owner );
+		return $this->create_onboarding_redirect( $api_client, $valid_account, $builtin_owner, $extension_owner );
 	}
 }

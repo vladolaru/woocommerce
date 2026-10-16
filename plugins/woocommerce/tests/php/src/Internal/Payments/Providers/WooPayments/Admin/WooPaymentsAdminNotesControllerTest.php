@@ -51,16 +51,16 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Registers the admin_init note hook when native owns the runtime.
+	 * @testdox Registers the admin_init note hook when the built-in WooPayments owns the runtime.
 	 */
-	public function test_registers_admin_init_hook_when_native_owns_runtime(): void {
+	public function test_registers_admin_init_hook_when_builtin_owns_runtime(): void {
 		$this->sut->register();
 
 		$this->assertSame( 10, has_action( 'admin_init', array( $this->sut, 'add_woo_admin_notes' ) ) );
 	}
 
 	/**
-	 * @testdox Adds the secure checkout note with the client's name, copy and action when checkout is not HTTPS.
+	 * @testdox Adds the secure checkout note with its name, copy and action when checkout is not HTTPS.
 	 */
 	public function test_adds_https_note_when_checkout_is_not_secure(): void {
 		$this->sut->add_woo_admin_notes();
@@ -125,7 +125,7 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Adds the Link note with the client's name, copy and action when card is enabled without Link.
+	 * @testdox Adds the Link note with its name, copy and action when card is enabled without Link.
 	 */
 	public function test_adds_link_note_when_card_is_enabled_without_link(): void {
 		$sut = $this->create_sut( $this->get_link_account_data(), array( 'card' ) );
@@ -173,14 +173,14 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Does not add the Link note in the cases the client rules out.
+	 * @testdox Does not add the Link note in the cases the WooPayments extension rules out.
 	 * @dataProvider provide_link_note_rejections
 	 *
 	 * @param array<string,mixed> $account_data Cached account data.
 	 * @param string[]            $enabled_ids  Enabled payment method IDs.
 	 * @param bool                $filter_link  Whether the available-methods filter removes Link.
 	 */
-	public function test_does_not_add_link_note_when_client_rules_it_out( array $account_data, array $enabled_ids, bool $filter_link ): void {
+	public function test_does_not_add_link_note_when_the_woopayments_extension_rules_it_out( array $account_data, array $enabled_ids, bool $filter_link ): void {
 		if ( $filter_link ) {
 			add_filter(
 				'wcpay_upe_available_payment_methods',
@@ -220,7 +220,7 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Adds the remediation note with the client's name, copy and action once the check found affected orders.
+	 * @testdox Adds the remediation note with its name, copy and action once the check found affected orders.
 	 */
 	public function test_adds_canceled_auth_note_when_check_found_affected_orders(): void {
 		update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY, 'has_affected_orders', true );
@@ -255,14 +255,14 @@ class WooPaymentsAdminNotesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Does not add the remediation note in the cases the client rules out.
+	 * @testdox Does not add the remediation note in the cases the WooPayments extension rules out.
 	 * @dataProvider provide_canceled_auth_note_rejections
 	 *
 	 * @param string $check_state       Affected-orders check state.
 	 * @param string $remediation_state Remediation status option value.
 	 * @param bool   $running           Whether a live remediation batch is scheduled.
 	 */
-	public function test_does_not_add_canceled_auth_note_when_client_rules_it_out( string $check_state, string $remediation_state, bool $running ): void {
+	public function test_does_not_add_canceled_auth_note_when_the_woopayments_extension_rules_it_out( string $check_state, string $remediation_state, bool $running ): void {
 		update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_STATE_OPTION_KEY, $check_state, true );
 		update_option( WooPaymentsCanceledAuthorizationFeeRemediationService::STATUS_OPTION_KEY, $remediation_state );
 		if ( $running ) {

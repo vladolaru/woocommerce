@@ -60,7 +60,7 @@ class WooPaymentsUpdateBusinessDetailsTaskTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $account  Cached account data.
 	 * @param bool                $expected Whether the task shows.
 	 */
-	public function test_visibility_follows_the_client_conditions( array $account, bool $expected ): void {
+	public function test_visibility_follows_the_task_conditions( array $account, bool $expected ): void {
 		$this->assertSame( $expected, $this->create_task( $account )->can_view() );
 	}
 
@@ -97,7 +97,7 @@ class WooPaymentsUpdateBusinessDetailsTaskTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A restricted-soon account gets the update title, the deadline sentence and the login link with the client's attribution.
+	 * @testdox A restricted-soon account gets the update title, the deadline sentence and the login link with the WooPayments extension's attribution.
 	 */
 	public function test_restricted_soon_copy_and_login_link(): void {
 		$task = $this->create_task( $this->account( 'restricted_soon', array( 'current_deadline' => self::DEADLINE ) ) );

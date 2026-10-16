@@ -90,7 +90,7 @@ class WooPaymentsAdminSharedSettingsExplicitPriceTest extends WC_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox Should preload shouldUseExplicitPrice as false when a configured currency has no rate, like the plugin's enabled currencies.
+	 * @testdox Should preload shouldUseExplicitPrice as false when a configured currency has no rate, like the WooPayments extension's enabled currencies.
 	 */
 	public function test_preloads_explicit_price_flag_off_when_the_additional_currency_is_unavailable(): void {
 		$this->set_multi_currency_enabled( true );
@@ -116,7 +116,7 @@ class WooPaymentsAdminSharedSettingsExplicitPriceTest extends WC_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox Should pass the plugin's default to wcpay_multi_currency_should_output_explicit_price and use its result.
+	 * @testdox Should pass the WooPayments extension's default to wcpay_multi_currency_should_output_explicit_price and use its result.
 	 *
 	 * @testWith [true, true, false]
 	 *           [false, false, true]
@@ -125,7 +125,7 @@ class WooPaymentsAdminSharedSettingsExplicitPriceTest extends WC_Unit_Test_Case 
 	 * @param bool $expected_default       The default the filter should receive.
 	 * @param bool $filtered               The value the filter returns.
 	 */
-	public function test_applies_the_legacy_explicit_price_filter( bool $multi_currency_enabled, bool $expected_default, bool $filtered ): void {
+	public function test_applies_the_woopayments_extension_explicit_price_filter( bool $multi_currency_enabled, bool $expected_default, bool $filtered ): void {
 		$this->set_multi_currency_enabled( $multi_currency_enabled );
 		$this->enable_manual_rate_currency( 'EUR', '0.9' );
 		$received = array();

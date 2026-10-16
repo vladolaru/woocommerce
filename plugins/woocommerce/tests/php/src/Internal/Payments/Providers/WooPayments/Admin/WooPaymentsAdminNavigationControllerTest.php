@@ -109,7 +109,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should resolve every published admin route through the canonical client route inventory.
+	 * @testdox Should resolve every published admin route through the canonical admin route inventory.
 	 */
 	public function test_all_published_admin_routes_are_registered(): void {
 		$sut = $this->create_controller( true );
@@ -118,9 +118,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preload full admin route availability for a valid native account.
+	 * @testdox Should preload full admin route availability for a valid account.
 	 */
-	public function test_preloads_full_admin_route_availability_for_valid_native_account(): void {
+	public function test_preloads_full_admin_route_availability_for_valid_account(): void {
 		$sut = $this->create_controller(
 			true,
 			array(
@@ -154,7 +154,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preload reduced admin route availability for restricted native accounts.
+	 * @testdox Should preload reduced admin route availability for restricted accounts.
 	 * @dataProvider provider_restricted_account_states
 	 *
 	 * @param array<string,bool> $account_state Account state overrides.
@@ -294,9 +294,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map legacy WooPayments WC Admin transaction URLs to native Settings Payments routes.
+	 * @testdox Should map WooPayments extension WC Admin transaction URLs to Settings Payments routes.
 	 */
-	public function test_maps_legacy_payment_transaction_details_url_to_native_route(): void {
+	public function test_maps_payments_transaction_details_path_to_route(): void {
 		$sut = $this->create_controller( true );
 
 		$url = $sut->get_payments_path_redirect_url(
@@ -318,24 +318,24 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should open the native Transactions view that matches a client 11.1.0 Transactions tab link.
+	 * @testdox Should open the Transactions view that matches a WooPayments extension Transactions tab link.
 	 *
 	 * Client 11.1.0 `client/transactions/index.tsx:32-43, :77-97` writes the open tab to the URL as
 	 * `tab=transactions-page|uncaptured-page|blocked-page`; native reads `view=uncaptured|blocked`.
 	 *
-	 * @dataProvider provider_client_transactions_tabs
+	 * @dataProvider provider_payments_transactions_tabs
 	 *
-	 * @param string      $client_tab    Client 11.1.0 Transactions tab name.
-	 * @param string|null $expected_view Native Transactions view, or null for the default list.
+	 * @param string      $transactions_tab The WooPayments extension's Transactions tab name.
+	 * @param string|null $expected_view    Native Transactions view, or null for the default list.
 	 */
-	public function test_maps_legacy_payment_transactions_tab_url_to_native_view( string $client_tab, ?string $expected_view ): void {
+	public function test_maps_payments_transactions_tab_path_to_view( string $transactions_tab, ?string $expected_view ): void {
 		$sut = $this->create_controller( true );
 
 		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page' => 'wc-admin',
 				'path' => '/payments/transactions',
-				'tab'  => $client_tab,
+				'tab'  => $transactions_tab,
 			)
 		);
 		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
@@ -347,11 +347,11 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Client 11.1.0 Transactions tab names and the native view each one opens.
+	 * The WooPayments extension's Transactions tab names and the view each one opens.
 	 *
 	 * @return array<string,array{0:string,1:string|null}>
 	 */
-	public function provider_client_transactions_tabs(): array {
+	public function provider_payments_transactions_tabs(): array {
 		return array(
 			'uncaptured' => array( 'uncaptured-page', 'uncaptured' ),
 			'blocked'    => array( 'blocked-page', 'blocked' ),
@@ -361,36 +361,36 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should redirect every client 11.1.0 WC Admin route to a native route.
+	 * @testdox Should redirect every WooPayments extension WC Admin route to a route.
 	 *
 	 * Source: Fixtures/woopayments-admin-routes.json (client/index.js:145-361, includes/admin/class-wc-payments-admin.php:230-611).
 	 *
-	 * @dataProvider provider_client_admin_routes
+	 * @dataProvider provider_payments_paths
 	 *
-	 * @param string $legacy_path Client WC Admin route path.
-	 * @param string $plugin_site Client source of the route.
+	 * @param string $payments_path                WooPayments extension WC Admin route path.
+	 * @param string $woopayments_extension_source Where the WooPayments extension defines the route (a citation).
 	 */
-	public function test_redirects_every_client_admin_route_to_a_native_route( string $legacy_path, string $plugin_site ): void {
+	public function test_redirects_every_payments_path_to_a_route( string $payments_path, string $woopayments_extension_source ): void {
 		$sut = $this->create_controller( true );
 
 		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page' => 'wc-admin',
-				'path' => rawurlencode( $legacy_path ),
+				'path' => rawurlencode( $payments_path ),
 			)
 		);
 
-		$this->assertNotSame( '', $url, "Client route {$legacy_path} ({$plugin_site}) has no native redirect." );
+		$this->assertNotSame( '', $url, "Client route {$payments_path} ({$woopayments_extension_source}) has no native redirect." );
 		$this->assertStringContainsString( 'path=/woopayments/', $url );
 		$this->assertStringNotContainsString( 'page=wc-admin', $url );
 	}
 
 	/**
-	 * Client 11.1.0 WC Admin routes, read from the pinned fixture.
+	 * The WooPayments extension's WC Admin routes, read from the pinned fixture.
 	 *
 	 * @return array<string,array{0:string,1:string}>
 	 */
-	public function provider_client_admin_routes(): array {
+	public function provider_payments_paths(): array {
 		$path = dirname( __DIR__ ) . '/Fixtures/woopayments-admin-routes.json';
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local test fixture.
 		$fixture = json_decode( (string) file_get_contents( $path ), true );
@@ -404,23 +404,23 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should pin all 20 client 11.1.0 WC Admin routes in the fixture.
+	 * @testdox Should pin all 20 WooPayments extension WC Admin routes in the fixture.
 	 */
-	public function test_client_admin_route_fixture_holds_every_client_route(): void {
-		$routes = $this->provider_client_admin_routes();
+	public function test_admin_routes_fixture_holds_every_payments_path(): void {
+		$routes = $this->provider_payments_paths();
 
 		$this->assertCount( 20, $routes );
 		$this->assertArrayNotHasKey( '/payments/accounts', $routes );
 	}
 
 	/**
-	 * @testdox Should map legacy WooPayments setup URLs to native onboarding routes.
+	 * @testdox Should map WooPayments extension setup URLs to onboarding routes.
 	 *
-	 * @dataProvider provider_legacy_setup_redirects
+	 * @dataProvider provider_payments_setup_redirects
 	 *
-	 * @param string $legacy_path Legacy WC Admin route path.
+	 * @param string $payments_path WooPayments extension WC Admin route path.
 	 */
-	public function test_maps_legacy_setup_urls_to_native_onboarding_routes( string $legacy_path ): void {
+	public function test_maps_payments_setup_paths_to_onboarding_routes( string $payments_path ): void {
 		$sut = $this->create_controller(
 			true,
 			array(
@@ -433,7 +433,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page'   => 'wc-admin',
-				'path'   => rawurlencode( $legacy_path ),
+				'path'   => rawurlencode( $payments_path ),
 				'source' => 'legacy-bookmark',
 			)
 		);
@@ -447,28 +447,28 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @return array<string,array{legacy_path:string}>
 	 */
-	public function provider_legacy_setup_redirects(): array {
+	public function provider_payments_setup_redirects(): array {
 		return array(
-			'connect'        => array( 'legacy_path' => '/payments/connect' ),
-			'onboarding'     => array( 'legacy_path' => '/payments/onboarding' ),
-			'onboarding kyc' => array( 'legacy_path' => '/payments/onboarding/kyc' ),
+			'connect'        => array( 'payments_path' => '/payments/connect' ),
+			'onboarding'     => array( 'payments_path' => '/payments/onboarding' ),
+			'onboarding kyc' => array( 'payments_path' => '/payments/onboarding/kyc' ),
 		);
 	}
 
 	/**
-	 * @testdox Should map legacy WooPayments setup URLs to native overview routes for connected accounts.
+	 * @testdox Should map WooPayments extension setup URLs to overview routes for connected accounts.
 	 *
-	 * @dataProvider provider_legacy_setup_redirects
+	 * @dataProvider provider_payments_setup_redirects
 	 *
-	 * @param string $legacy_path Legacy WC Admin route path.
+	 * @param string $payments_path WooPayments extension WC Admin route path.
 	 */
-	public function test_maps_legacy_setup_urls_to_native_overview_routes_for_connected_accounts( string $legacy_path ): void {
+	public function test_maps_payments_setup_paths_to_overview_routes_for_connected_accounts( string $payments_path ): void {
 		$sut = $this->create_controller( true );
 
 		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page'   => 'wc-admin',
-				'path'   => rawurlencode( $legacy_path ),
+				'path'   => rawurlencode( $payments_path ),
 				'source' => 'legacy-bookmark',
 			)
 		);
@@ -480,22 +480,22 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map legacy WooPayments settings URLs to native provider settings routes.
+	 * @testdox Should map WooPayments extension settings URLs to provider settings routes.
 	 *
-	 * @dataProvider provider_legacy_settings_redirects
+	 * @dataProvider provider_gateway_settings_section_redirects
 	 *
-	 * @param string               $legacy_path       Legacy WC Admin route path.
-	 * @param string               $native_path       Expected native route path.
+	 * @param string               $payments_path     WooPayments extension WC Admin route path.
+	 * @param string               $expected_route    Expected route path.
 	 * @param array<string,string> $expected_query    Expected query values.
 	 * @param string|null          $expected_fragment Expected URL fragment.
 	 */
-	public function test_maps_legacy_settings_urls_to_native_provider_settings_routes( string $legacy_path, string $native_path, array $expected_query = array(), ?string $expected_fragment = null ): void {
+	public function test_maps_gateway_settings_section_urls_to_provider_settings_routes( string $payments_path, string $expected_route, array $expected_query = array(), ?string $expected_fragment = null ): void {
 		$sut = $this->create_controller( true );
 
 		$url = $sut->get_payments_path_redirect_url(
 			array(
 				'page'         => 'wc-admin',
-				'path'         => rawurlencode( $legacy_path ),
+				'path'         => rawurlencode( $payments_path ),
 				'tab'          => 'legacy-tab',
 				'existing_arg' => 'keep-me',
 			)
@@ -505,7 +505,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertStringContainsString( 'admin.php?page=wc-settings&tab=checkout', $url );
 		$this->assertSame( 'checkout', $query['tab'] );
-		$this->assertSame( $native_path, $query['path'] );
+		$this->assertSame( $expected_route, $query['path'] );
 		$this->assertSame( 'keep-me', $query['existing_arg'] );
 		foreach ( $expected_query as $key => $value ) {
 			$this->assertSame( $value, $query[ $key ] );
@@ -522,21 +522,21 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @return array<string,array{legacy_path:string,native_path:string,expected_query?:array<string,string>,expected_fragment?:string}>
 	 */
-	public function provider_legacy_settings_redirects(): array {
+	public function provider_gateway_settings_section_redirects(): array {
 		return array(
 			'fraud protection'           => array(
-				'legacy_path' => '/payments/fraud-protection',
-				'native_path' => '/woopayments/settings/fraud-protection',
+				'payments_path'  => '/payments/fraud-protection',
+				'expected_route' => '/woopayments/settings/fraud-protection',
 			),
 			'multi currency setup'       => array(
-				'legacy_path'       => '/payments/multi-currency-setup',
-				'native_path'       => '/woopayments/settings',
+				'payments_path'     => '/payments/multi-currency-setup',
+				'expected_route'    => '/woopayments/settings',
 				'expected_query'    => array(),
 				'expected_fragment' => 'advanced',
 			),
 			'additional payment methods' => array(
-				'legacy_path'       => '/payments/additional-payment-methods',
-				'native_path'       => '/woopayments/settings',
+				'payments_path'     => '/payments/additional-payment-methods',
+				'expected_route'    => '/woopayments/settings',
 				'expected_query'    => array(),
 				'expected_fragment' => 'payment-methods',
 			),
@@ -544,9 +544,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map legacy WooPayments WC Admin Documents URLs to the native Documents route when eligible.
+	 * @testdox Should map WooPayments extension WC Admin Documents URLs to the Documents route when eligible.
 	 */
-	public function test_maps_legacy_payment_documents_url_to_native_route_when_documents_are_enabled(): void {
+	public function test_maps_payments_documents_path_to_route_when_documents_are_enabled(): void {
 		$sut = $this->create_controller(
 			true,
 			array(
@@ -571,9 +571,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map legacy WooPayments WC Admin Documents URLs to overview when Documents are not eligible.
+	 * @testdox Should map WooPayments extension WC Admin Documents URLs to overview when Documents are not eligible.
 	 */
-	public function test_maps_legacy_payment_documents_url_to_overview_when_documents_are_disabled(): void {
+	public function test_maps_payments_documents_path_to_overview_when_documents_are_disabled(): void {
 		$sut = $this->create_controller(
 			true,
 			array(
@@ -593,9 +593,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map legacy WooPayments WC Admin Reports URLs to the native Reports route when Reports are enabled.
+	 * @testdox Should map WooPayments extension WC Admin Reports URLs to the Reports route when Reports are enabled.
 	 */
-	public function test_maps_legacy_payment_reports_url_to_native_route_when_reports_are_enabled(): void {
+	public function test_maps_payments_reports_path_to_route_when_reports_are_enabled(): void {
 		$sut = $this->create_controller(
 			true,
 			array(
@@ -624,9 +624,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map legacy WooPayments WC Admin Reports URLs to overview when Reports are disabled.
+	 * @testdox Should map WooPayments extension WC Admin Reports URLs to overview when Reports are disabled.
 	 */
-	public function test_maps_legacy_payment_reports_url_to_overview_when_reports_are_disabled(): void {
+	public function test_maps_payments_reports_path_to_overview_when_reports_are_disabled(): void {
 		$sut = $this->create_controller(
 			true,
 			array(
@@ -646,9 +646,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map legacy full-access WooPayments WC Admin URLs to overview for restricted accounts.
+	 * @testdox Should map full-access WooPayments extension WC Admin URLs to overview for restricted accounts.
 	 */
-	public function test_maps_legacy_full_access_urls_to_overview_for_restricted_accounts(): void {
+	public function test_maps_full_access_payments_paths_to_overview_for_restricted_accounts(): void {
 		$sut = $this->create_controller(
 			true,
 			array(
@@ -668,9 +668,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map denied legacy WooPayments URLs to the overview fallback when overview is allowed.
+	 * @testdox Should map denied WooPayments extension URLs to the overview fallback when overview is allowed.
 	 */
-	public function test_maps_denied_legacy_payment_url_to_overview_fallback_when_available(): void {
+	public function test_maps_denied_payments_path_to_overview_fallback_when_available(): void {
 		$sut = $this->create_controller(
 			true,
 			array(
@@ -691,9 +691,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map denied legacy WooPayments URLs to settings when overview is unavailable.
+	 * @testdox Should map denied WooPayments extension URLs to settings when overview is unavailable.
 	 */
-	public function test_maps_denied_legacy_payment_url_to_settings_fallback_when_overview_is_unavailable(): void {
+	public function test_maps_denied_payments_path_to_settings_fallback_when_overview_is_unavailable(): void {
 		$sut = $this->create_controller(
 			true,
 			array(
@@ -716,9 +716,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map unknown legacy WooPayments method sections to native settings.
+	 * @testdox Should map unknown WooPayments extension method sections to settings.
 	 */
-	public function test_maps_unknown_legacy_woopayments_method_section_to_native_settings(): void {
+	public function test_maps_unknown_woopayments_method_section_to_settings(): void {
 		$sut = $this->create_controller( true );
 
 		$url = $sut->get_payments_path_redirect_url(
@@ -735,11 +735,11 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should redirect a registered split payment method section to native settings, as the client redirects every woocommerce_payments_ section.
+	 * @testdox Should redirect a registered split payment method section to settings.
 	 */
-	public function test_redirects_registered_split_method_section_to_native_settings(): void {
+	public function test_redirects_registered_split_method_section_to_settings(): void {
 		$sut                                       = $this->create_controller( true );
-		WC()->payment_gateways()->payment_gateways = array( 0 => $this->create_native_gateway( 'woocommerce_payments_klarna' ) );
+		WC()->payment_gateways()->payment_gateways = array( 0 => $this->create_gateway( 'woocommerce_payments_klarna' ) );
 
 		$url = $sut->get_payments_path_redirect_url(
 			array(
@@ -756,9 +756,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not redirect legacy WooPayments settings URLs during AJAX requests, as the client does not.
+	 * @testdox Should not redirect WooPayments extension settings URLs during AJAX requests.
 	 */
-	public function test_does_not_redirect_legacy_paths_during_ajax_requests(): void {
+	public function test_does_not_redirect_payments_paths_during_ajax_requests(): void {
 		$sut = $this->create_controller( true );
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		$_GET = array(
@@ -785,9 +785,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map legacy WooPayments WC Admin Card Readers URLs to the native route when Card Readers are available.
+	 * @testdox Should map WooPayments extension WC Admin Card Readers URLs to the route when Card Readers are available.
 	 */
-	public function test_maps_legacy_payment_card_readers_url_to_native_route_when_card_readers_are_available(): void {
+	public function test_maps_payments_card_readers_path_to_route_when_card_readers_are_available(): void {
 		$sut = $this->create_controller(
 			true,
 			array(
@@ -809,9 +809,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map legacy WooPayments WC Admin Card Readers URLs to overview when Card Readers are unavailable.
+	 * @testdox Should map WooPayments extension WC Admin Card Readers URLs to overview when Card Readers are unavailable.
 	 */
-	public function test_maps_legacy_payment_card_readers_url_to_overview_when_card_readers_are_unavailable(): void {
+	public function test_maps_payments_card_readers_path_to_overview_when_card_readers_are_unavailable(): void {
 		$sut = $this->create_controller(
 			true,
 			array(
@@ -832,9 +832,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map legacy WooPayments WC Admin Capital URLs to the native route when Capital is available.
+	 * @testdox Should map WooPayments extension WC Admin Capital URLs to the route when Capital is available.
 	 */
-	public function test_maps_legacy_payment_capital_url_to_native_route_when_capital_is_available(): void {
+	public function test_maps_payments_capital_path_to_route_when_capital_is_available(): void {
 		$sut = $this->create_controller(
 			true,
 			array(
@@ -855,9 +855,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map legacy WooPayments WC Admin Capital URLs to overview when Capital is unavailable.
+	 * @testdox Should map WooPayments extension WC Admin Capital URLs to overview when Capital is unavailable.
 	 */
-	public function test_maps_legacy_payment_capital_url_to_overview_when_capital_is_unavailable(): void {
+	public function test_maps_payments_capital_path_to_overview_when_capital_is_unavailable(): void {
 		$sut = $this->create_controller(
 			true,
 			array(
@@ -877,9 +877,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should map legacy WooPayments WC Admin paths by account state when the native gateway is disabled.
+	 * @testdox Should map WooPayments extension WC Admin paths by account state when the gateway is disabled.
 	 */
-	public function test_maps_legacy_payment_paths_by_account_state_when_native_gateway_is_disabled(): void {
+	public function test_maps_payments_paths_by_account_state_when_the_gateway_is_disabled(): void {
 		$sut = $this->create_controller(
 			true,
 			array(
@@ -924,9 +924,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not add WooPayments navigation when native runtime does not own payments.
+	 * @testdox Should not add WooPayments navigation when the built-in WooPayments does not own payments.
 	 */
-	public function test_does_not_add_menu_items_when_native_runtime_does_not_own_payments(): void {
+	public function test_does_not_add_menu_items_when_builtin_does_not_own_payments(): void {
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 
 		$sut = $this->create_controller( false );
@@ -948,9 +948,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should add account-state WooPayments navigation when the native gateway is disabled.
+	 * @testdox Should add account-state WooPayments navigation when the gateway is disabled.
 	 */
-	public function test_adds_account_state_menu_items_when_native_gateway_is_disabled(): void {
+	public function test_adds_account_state_menu_items_when_the_gateway_is_disabled(): void {
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 
 		$sut = $this->create_controller(
@@ -1007,9 +1007,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should add full WooPayments navigation for a valid native account.
+	 * @testdox Should add full WooPayments navigation for a valid account.
 	 */
-	public function test_adds_full_menu_items_for_valid_native_account(): void {
+	public function test_adds_full_menu_items_for_valid_account(): void {
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 
 		$sut = $this->create_controller(
@@ -1107,12 +1107,12 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave the admin menu highlight alone outside the native WooPayments pages.
-	 * @dataProvider provider_requests_outside_native_payments_pages
+	 * @testdox Should leave the admin menu highlight alone outside the WooPayments pages.
+	 * @dataProvider provider_requests_outside_woopayments_pages
 	 *
 	 * @param array<string,string> $request Query request.
 	 */
-	public function test_does_not_change_the_menu_highlight_outside_native_payments_pages( array $request ): void {
+	public function test_does_not_change_the_menu_highlight_outside_woopayments_pages( array $request ): void {
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 		$sut = $this->create_controller( true );
 		$sut->add_menu_items();
@@ -1125,11 +1125,11 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Requests that are not native WooPayments pages.
+	 * Requests that are not WooPayments pages.
 	 *
 	 * @return array<string,array{0:array<string,string>}>
 	 */
-	public function provider_requests_outside_native_payments_pages(): array {
+	public function provider_requests_outside_woopayments_pages(): array {
 		return array(
 			'Payments providers list' => array(
 				array(
@@ -1181,12 +1181,12 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	 * each detail page with its own title (`includes/admin/class-wc-payments-admin.php:567-593`).
 	 *
 	 * @testdox Should title $path as "$expected_page" in the browser tab on first paint.
-	 * @dataProvider provider_native_page_titles
+	 * @dataProvider provider_woopayments_page_titles
 	 *
 	 * @param string $path          Native WooPayments route path.
 	 * @param string $expected_page Expected page section of the title.
 	 */
-	public function test_sets_the_admin_title_for_native_payments_pages( string $path, string $expected_page ): void {
+	public function test_sets_the_admin_title_for_woopayments_pages( string $path, string $expected_page ): void {
 		update_option( 'blogname', 'Shop & Co' );
 		$sut          = $this->create_controller( true );
 		$_GET['page'] = 'wc-settings';
@@ -1197,11 +1197,11 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Native routes and the page section of their first-paint title.
+	 * WooPayments routes and the page section of their first-paint title.
 	 *
 	 * @return array<string,array{0:string,1:string}>
 	 */
-	public function provider_native_page_titles(): array {
+	public function provider_woopayments_page_titles(): array {
 		return array(
 			'overview'            => array( '/woopayments/overview', 'Overview' ),
 			'payout details'      => array( '/woopayments/payouts/details', 'Payout details &lsaquo; Payouts' ),
@@ -1213,12 +1213,12 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave the admin title alone outside the native WooPayments pages.
-	 * @dataProvider provider_requests_outside_native_payments_pages
+	 * @testdox Should leave the admin title alone outside the WooPayments pages.
+	 * @dataProvider provider_requests_outside_woopayments_pages
 	 *
 	 * @param array<string,string> $request Query request.
 	 */
-	public function test_does_not_change_the_admin_title_outside_native_payments_pages( array $request ): void {
+	public function test_does_not_change_the_admin_title_outside_woopayments_pages( array $request ): void {
 		$sut = $this->create_controller( true );
 		foreach ( $request as $key => $value ) {
 			$_GET[ $key ] = $value;
@@ -1348,7 +1348,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should add Reports after Disputes for a valid native account when Reports are enabled, as the client's menu shows it.
+	 * @testdox Should add Reports after Disputes for a valid account when Reports are enabled.
 	 */
 	public function test_adds_reports_menu_item_after_disputes_when_reports_are_enabled(): void {
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
@@ -1378,7 +1378,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should add reduced WooPayments navigation for rejected and under-review native accounts.
+	 * @testdox Should add reduced WooPayments navigation for rejected and under-review accounts.
 	 * @dataProvider provider_restricted_account_states
 	 *
 	 * @param array<string,bool> $account_state Account state overrides.
@@ -1431,7 +1431,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should add onboarding navigation for native accounts that are not ready.
+	 * @testdox Should add onboarding navigation for accounts that are not ready.
 	 * @dataProvider provider_not_ready_account_states
 	 *
 	 * @param array<string,bool> $account_state Account state overrides.
@@ -1488,9 +1488,9 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register the onboarding redirect after the plugin's account redirects, like client 11.1.0.
+	 * @testdox Should register the onboarding redirect after the WooPayments extension's account redirects.
 	 */
-	public function test_registers_onboarding_redirect_at_client_admin_init_priority(): void {
+	public function test_registers_onboarding_redirect_at_the_woopayments_extension_admin_init_priority(): void {
 		$sut = $this->create_controller( true );
 
 		$sut->register();
@@ -1504,7 +1504,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should redirect native WooPayments admin pages to onboarding when there is no account.
+	 * @testdox Should redirect WooPayments admin pages to onboarding when there is no account.
 	 * @dataProvider provider_onboarding_redirect_paths
 	 *
 	 * @param string               $path           Requested native WooPayments route path.
@@ -1556,7 +1556,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should match native WooPayments admin paths by prefix, like the client's unanchored path regex.
+	 * @testdox Should match WooPayments admin paths by prefix, with an unanchored path regex.
 	 */
 	public function test_redirects_paths_that_start_with_a_guarded_path(): void {
 		$this->set_admin_user();
@@ -1575,7 +1575,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should send the referer-derived onboarding source with the Overview redirect, like client 11.1.0.
+	 * @testdox Should send the referer-derived onboarding source with the Overview redirect.
 	 * @dataProvider provider_overview_redirect_sources
 	 *
 	 * @param string               $referer         Referer URL.
@@ -1617,7 +1617,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	public function provider_overview_redirect_sources(): array {
 		return array(
 			'payments task referer'     => array( admin_url( 'admin.php?page=wc-admin&task=payments' ), array(), 'wcadmin-payment-task' ),
-			'native payouts referer'    => array( admin_url( 'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fpayouts' ), array(), 'wcpay-payouts-page' ),
+			'payouts page referer'      => array( admin_url( 'admin.php?page=wc-settings&tab=checkout&path=%2Fwoopayments%2Fpayouts' ), array(), 'wcpay-payouts-page' ),
 			'payments settings referer' => array( admin_url( 'admin.php?page=wc-settings&tab=checkout' ), array(), 'wcadmin-settings-page' ),
 			'from param over referer'   => array( admin_url( 'admin.php?page=wc-admin&task=payments' ), array( 'from' => 'WCPAY_PAYOUTS' ), 'wcpay-payouts-page' ),
 		);
@@ -1672,7 +1672,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not redirect native WooPayments admin pages with a valid account and a working connection.
+	 * @testdox Should not redirect WooPayments admin pages with a valid account and a working connection.
 	 * @dataProvider provider_onboarding_redirect_paths
 	 *
 	 * @param string $path Requested native WooPayments route path.
@@ -1756,7 +1756,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not redirect requests outside the native WooPayments admin routes.
+	 * @testdox Should not redirect requests outside the WooPayments admin routes.
 	 * @dataProvider provider_unrelated_admin_requests
 	 *
 	 * @param array<string,string> $request Query request.
@@ -1901,13 +1901,13 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the controller under test.
 	 *
-	 * @param bool                $native_register Whether native should own menu registration.
-	 * @param array<string,mixed> $account_state   Account state overrides.
-	 * @param array<string,int>   $badge_counts    Badge count overrides.
-	 * @param bool                $connected       Whether the WordPress.com connection works.
+	 * @param bool                $builtin_owner Whether the built-in WooPayments owns the runtime.
+	 * @param array<string,mixed> $account_state Account state overrides.
+	 * @param array<string,int>   $badge_counts  Badge count overrides.
+	 * @param bool                $connected     Whether the WordPress.com connection works.
 	 * @return WooPaymentsAdminNavigationController
 	 */
-	private function create_controller( bool $native_register, array $account_state = array(), array $badge_counts = array(), bool $connected = true ): WooPaymentsAdminNavigationController {
+	private function create_controller( bool $builtin_owner, array $account_state = array(), array $badge_counts = array(), bool $connected = true ): WooPaymentsAdminNavigationController {
 		$class_name = WooPaymentsAdminNavigationController::class;
 		$this->assertTrue( class_exists( $class_name ), 'WooPayments admin navigation controller should exist.' );
 
@@ -1915,7 +1915,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_owner );
 
 		$account_service = $this->create_account_service( $account_state );
 		$badge_service   = $this->create_badge_service( $badge_counts );
@@ -1959,12 +1959,12 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a constructor-free native gateway identity.
+	 * Create a constructor-free gateway identity.
 	 *
 	 * @param string $gateway_id Gateway ID.
 	 * @return WooPaymentsGateway
 	 */
-	private function create_native_gateway( string $gateway_id ): WooPaymentsGateway {
+	private function create_gateway( string $gateway_id ): WooPaymentsGateway {
 		$gateway     = $this->getMockBuilder( WooPaymentsGateway::class )
 			->disableOriginalConstructor()
 			->getMock();

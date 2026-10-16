@@ -146,7 +146,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return the native WooPayments account summary for users with permission.
+	 * @testdox Should return the WooPayments account summary for users with permission.
 	 */
 	public function test_get_account_summary_by_manager() {
 		$summary = array(
@@ -180,7 +180,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should let a manager record a settings notice action through the native route.
+	 * @testdox Should let a manager record a settings notice action through the route.
 	 */
 	public function test_record_admin_notice_action_by_manager(): void {
 		$notice_service = $this->createMock( WooPaymentsAdminNoticeService::class );
@@ -437,7 +437,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should block the native WooPayments account summary for users without permission.
+	 * @testdox Should block the WooPayments account summary for users without permission.
 	 */
 	public function test_get_account_summary_by_user_without_caps() {
 		// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
@@ -477,7 +477,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return the native WooPayments Overview projection for users with permission.
+	 * @testdox Should return the WooPayments Overview fields for users with permission.
 	 */
 	public function test_get_overview_by_manager(): void {
 		$overview = array(
@@ -514,7 +514,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should block the native WooPayments Overview projection for users without permission.
+	 * @testdox Should block the WooPayments Overview fields for users without permission.
 	 */
 	public function test_get_overview_by_user_without_caps(): void {
 		// phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found
@@ -537,7 +537,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return an Overview projection error when the service throws.
+	 * @testdox Should return an error for the Overview fields when the service throws.
 	 */
 	public function test_get_overview_with_exception(): void {
 		$this->mock_overview_service
@@ -554,7 +554,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose the legacy-compatible native WooPayments settings GET route.
+	 * @testdox Should expose the WooPayments settings GET route.
 	 */
 	public function test_get_settings_contract_by_manager(): void {
 		$settings = array(
@@ -575,7 +575,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should deny an editor without payment-gateway management capability on the legacy-compatible native WooPayments settings GET route.
+	 * @testdox Should deny an editor without payment-gateway management capability on the WooPayments settings GET route.
 	 *
 	 * N-085: client 11.1.0 class-wc-payments-rest-controller.php:63-64 requires
 	 * `manage_woocommerce`, which the stock Editor role lacks, so the client denies this
@@ -600,7 +600,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should persist the native WooPayments settings contract through the legacy-compatible POST route.
+	 * @testdox Should persist the WooPayments settings contract through the settings POST route.
 	 */
 	public function test_update_settings_contract_by_manager(): void {
 		$settings = array(
@@ -657,7 +657,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should round-trip the fraud settings error sentinel through the native settings POST route.
+	 * @testdox Should round-trip the fraud settings error sentinel through the settings POST route.
 	 */
 	public function test_update_settings_accepts_fraud_error_sentinel(): void {
 		$settings = array(
@@ -981,7 +981,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should convert an unattributed account-update rejection into the legacy server_error body.
+	 * @testdox Should convert an unattributed account-update rejection into the WooPayments extension's server_error body.
 	 */
 	public function test_update_settings_converts_account_update_rejection_to_server_error_body(): void {
 		$this->mock_settings_service
@@ -1107,7 +1107,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should accept scheme-less and empty business URLs like the WooPayments plugin does.
+	 * @testdox Should accept scheme-less and empty business URLs.
 	 */
 	public function test_update_settings_accepts_lenient_business_urls(): void {
 		$this->mock_settings_service
@@ -1331,7 +1331,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should expose visible native WooPayments payment method promotions.
+	 * @testdox Should expose visible WooPayments payment method promotions.
 	 */
 	public function test_get_pm_promotions_by_manager(): void {
 		$promotions = array(
@@ -1355,7 +1355,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should activate native WooPayments payment method promotions.
+	 * @testdox Should activate WooPayments payment method promotions.
 	 */
 	public function test_activate_pm_promotion_by_manager(): void {
 		$this->mock_pm_promotions_service
@@ -1372,7 +1372,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should dismiss native WooPayments payment method promotions.
+	 * @testdox Should dismiss WooPayments payment method promotions.
 	 */
 	public function test_dismiss_pm_promotion_by_manager(): void {
 		$this->mock_pm_promotions_service
@@ -1391,7 +1391,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should reject encoded path separators in promotion action routes.
 	 */
-	public function test_native_pm_promotion_routes_reject_encoded_path_separators(): void {
+	public function test_pm_promotion_routes_reject_encoded_path_separators(): void {
 		$this->mock_pm_promotions_service
 			->expects( $this->never() )
 			->method( 'activate_promotion' );
@@ -1431,7 +1431,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should require payment gateway management permission for native payment method promotions.
+	 * @testdox Should require payment gateway management permission for payment method promotions.
 	 */
 	public function test_get_pm_promotions_requires_manager_permission(): void {
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'subscriber' ) ) );
@@ -1489,9 +1489,9 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register native WooPayments settings routes while the standalone plugin owns runtime.
+	 * @testdox Should not register WooPayments settings routes while the WooPayments extension owns the runtime.
 	 */
-	public function test_native_settings_routes_are_not_registered_when_native_runtime_does_not_own_site(): void {
+	public function test_settings_routes_are_not_registered_when_builtin_does_not_own_site(): void {
 		global $wp_rest_server;
 
 		$wp_rest_server = new WP_REST_Server();
@@ -1518,9 +1518,9 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register native WooPayments settings routes when no runtime arbiter is wired (fail closed).
+	 * @testdox Should not register WooPayments settings routes when no runtime arbiter is wired (fail closed).
 	 */
-	public function test_native_settings_routes_are_not_registered_without_runtime_arbiter(): void {
+	public function test_settings_routes_are_not_registered_without_runtime_arbiter(): void {
 		global $wp_rest_server;
 
 		$wp_rest_server = new WP_REST_Server();
@@ -1539,9 +1539,9 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should register native WooPayments settings routes when the runtime arbiter owns the site.
+	 * @testdox Should register WooPayments settings routes when the runtime arbiter owns the site.
 	 */
-	public function test_native_settings_routes_are_registered_when_native_runtime_owns_site(): void {
+	public function test_settings_routes_are_registered_when_builtin_owns_site(): void {
 		global $wp_rest_server;
 
 		$wp_rest_server = new WP_REST_Server();
@@ -1572,7 +1572,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should update only allowlisted native WooPayments settings options.
+	 * @testdox Should update only allowlisted WooPayments settings options.
 	 */
 	public function test_update_settings_option_by_manager(): void {
 		$this->mock_settings_service
@@ -1590,7 +1590,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return option update errors from the native WooPayments settings service.
+	 * @testdox Should return option update errors from the WooPayments settings service.
 	 */
 	public function test_update_settings_option_returns_service_error(): void {
 		$error = new WP_Error(

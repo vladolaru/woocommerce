@@ -38,7 +38,7 @@ class WooPaymentsOverviewServiceDepositsStatusTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report payouts enabled from the cached account's deposits status, as the client's Overview reads it.
+	 * @testdox Should report payouts enabled from the cached account's deposits status.
 	 */
 	public function test_reports_deposits_enabled_from_the_recorded_cached_account_shape(): void {
 		$this->cache_account_data( $this->get_recorded_account_data() );
@@ -68,7 +68,7 @@ class WooPaymentsOverviewServiceDepositsStatusTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should ignore top-level deposits_enabled and payouts_enabled keys, which the client never reads.
+	 * @testdox Should ignore top-level deposits_enabled and payouts_enabled keys, which the WooPayments extension never reads.
 	 */
 	public function test_ignores_top_level_enabled_keys(): void {
 		$account_data = $this->get_recorded_account_data();
@@ -131,7 +131,7 @@ class WooPaymentsOverviewServiceDepositsStatusTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should send empty payout fields when the cached account has no deposits object, as the client's `deposits ?? []` does.
+	 * @testdox Should send empty payout fields when the cached account has no deposits object, as the WooPayments extension's `deposits ?? []` does.
 	 */
 	public function test_projects_empty_deposits_fields_without_a_deposits_object(): void {
 		$account_data = $this->get_recorded_account_data();

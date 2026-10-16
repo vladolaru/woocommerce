@@ -91,7 +91,7 @@ class WooPaymentsAdminNoticesPassthroughTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep WooPayments' own admin notices, but not the multi-currency ones, on a native WooPayments route of the Payments tab.
+	 * @testdox Should keep WooPayments' own admin notices, but not the multi-currency ones, on a WooPayments route of the Payments tab.
 	 *
 	 * @testWith ["/woopayments/settings"]
 	 *           ["/woopayments/settings/fraud-protection"]
@@ -100,7 +100,7 @@ class WooPaymentsAdminNoticesPassthroughTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string $path The native route path.
 	 */
-	public function test_keeps_woopayments_notices_on_native_routes( string $path ): void {
+	public function test_keeps_woopayments_notices_on_woopayments_routes( string $path ): void {
 		$foreign_notice = static function () {};
 		add_action( 'admin_notices', $foreign_notice );
 		$this->open_payments_tab( $path );
@@ -115,7 +115,7 @@ class WooPaymentsAdminNoticesPassthroughTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave core's stripping in place on Payments tab routes that are not native WooPayments pages.
+	 * @testdox Should leave core's stripping in place on Payments tab routes that are not WooPayments pages.
 	 *
 	 * @testWith [""]
 	 *           ["/offline"]
