@@ -2381,6 +2381,8 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		if ( null !== $cached ) {
 			set_transient( 'wcpay_fraud_protection_settings', $this->get_fraud_ruleset_case_fixture( $cached ), DAY_IN_SECONDS );
 		}
+		// The platform's ruleset read answers a ruleset_config envelope, or the wcpay_fraud_ruleset_not_found error when the
+		// account has none (the WooPayments extension includes/class-wc-payment-gateway-wcpay.php:3782-3795).
 		if ( in_array( $platform, array( 'wcpay_fraud_ruleset_not_found', 'wcpay_server_error' ), true ) ) {
 			$this->api_client->latest_fraud_ruleset_exception = new WooPaymentsApiException( 'Platform answer.', $platform, 'wcpay_server_error' === $platform ? 500 : 404 );
 		} elseif ( null !== $platform ) {
@@ -2456,6 +2458,40 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $this->api_client->fraud_ruleset_saves );
 		$this->assertSame( 'advanced', get_option( 'current_protection_level' ) );
 		$this->assertSame( 'error', $result['advanced_fraud_protection_settings'] );
+	}
+
+	/**
+	 * @testdox The settings route answers 200 and saves the other settings and no fraud ruleset for an advanced level sent with the error sentinel.
+	 */
+	public function test_settings_route_saves_no_fraud_ruleset_for_advanced_level_with_error_sentinel(): void {
+		$this->set_connected_account_data();
+		update_option( 'current_protection_level', 'advanced' );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enable_logging' => 'no',
+			)
+		);
+		$this->api_client->latest_fraud_ruleset_exception = new WooPaymentsApiException( 'Platform unavailable.', 'wcpay_server_error', 500 );
+
+		try {
+			$response = $this->post_settings(
+				array(
+					'is_debug_log_enabled'               => true,
+					'current_protection_level'           => 'advanced',
+					'advanced_fraud_protection_settings' => 'error',
+				)
+			);
+
+			$this->assertSame( 200, $response->get_status(), (string) wp_json_encode( $response->get_data() ) );
+			$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
+			$this->assertIsArray( $stored );
+			$this->assertSame( 'yes', $stored['enable_logging'] );
+			$this->assertSame( 0, $this->api_client->fraud_ruleset_saves );
+			$this->assertSame( 'advanced', get_option( 'current_protection_level' ) );
+		} finally {
+			$this->clear_builtin_active();
+		}
 	}
 
 	/**
