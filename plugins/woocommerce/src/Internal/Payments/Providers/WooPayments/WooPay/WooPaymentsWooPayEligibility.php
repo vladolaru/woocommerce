@@ -60,8 +60,7 @@ class WooPaymentsWooPayEligibility {
 	 * @return bool
 	 */
 	public function is_woopay_enabled(): bool {
-		return 'yes' === $this->account_service->get_gateway_setting( 'platform_checkout', 'no' ) &&
-			$this->is_woopay_eligible();
+		return $this->is_woopay_setting_on() && $this->is_woopay_eligible();
 	}
 
 	/**
@@ -316,7 +315,7 @@ class WooPaymentsWooPayEligibility {
 			return in_array( 'woopay', $methods, true );
 		}
 
-		return 'yes' === $this->account_service->get_gateway_setting( 'platform_checkout', 'no' );
+		return $this->is_woopay_setting_on();
 	}
 
 	/**
@@ -569,14 +568,13 @@ class WooPaymentsWooPayEligibility {
 	}
 
 	/**
-	 * Tell whether the WooPay gateway setting reads "yes" once sanitized, as the button settings read their strings.
+	 * Tell whether the WooPay gateway setting is exactly "yes", as client 11.1.0 reads it at every site
+	 * (includes/woopay/class-woopay-session.php:889, includes/class-wc-payment-gateway-wcpay.php:1180).
 	 *
 	 * @return bool
 	 */
 	private function is_woopay_setting_on(): bool {
-		$value = $this->account_service->get_gateway_setting( 'platform_checkout', 'no' );
-
-		return is_scalar( $value ) && 'yes' === sanitize_text_field( (string) $value );
+		return 'yes' === $this->account_service->get_gateway_setting( 'platform_checkout', 'no' );
 	}
 
 	/**
