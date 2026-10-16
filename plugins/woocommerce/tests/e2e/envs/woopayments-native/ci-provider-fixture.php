@@ -501,6 +501,9 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 						'under_review'   => 0,
 					)
 				);
+			case 'GET tracking/info':
+				// The platform answers the site's hosting provider guess, a string (wpcom class-tracking-controller.php:233-239).
+				return $this->response( array( 'hosting_provider' => 'unknown' ) );
 			case 'GET fraud_ruleset':
 				return $this->response( array( 'ruleset_config' => $state['fraud_ruleset']['ruleset_config'] ) );
 			case 'POST fraud_ruleset':
@@ -960,6 +963,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			'GET disputes/summary',
 			'GET disputes/status_counts',
 			'GET fraud_ruleset',
+			'GET tracking/info',
 			'GET woopay/compatibility',
 			'GET payment_method_promotions',
 			'GET transact/currency/rates',

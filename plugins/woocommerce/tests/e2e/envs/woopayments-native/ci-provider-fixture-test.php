@@ -531,6 +531,9 @@ assert_true(
 	'signed known routes must still fail closed without the Jetpack signing envelope'
 );
 
+$tracking_info = body( $fixture->intercept( false, array( 'method' => 'GET' ), signed_provider_url( 'tracking/info', array() ) ) );
+assert_true( array( 'hosting_provider' => 'unknown' ) === $tracking_info, 'the platform tracking info route must answer the hosting provider guess the admin Tracks events read' );
+
 $account = body(
 	$fixture->intercept(
 		false,
