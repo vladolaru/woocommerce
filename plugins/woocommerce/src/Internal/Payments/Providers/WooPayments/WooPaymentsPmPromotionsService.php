@@ -39,30 +39,6 @@ class WooPaymentsPmPromotionsService {
 		'alert',
 	);
 
-	private const PAYMENT_METHOD_TITLES = array(
-		'affirm'            => 'Affirm',
-		'afterpay_clearpay' => 'Afterpay/Clearpay',
-		'alipay'            => 'Alipay',
-		'amazon_pay'        => 'Amazon Pay',
-		'apple_pay'         => 'Apple Pay',
-		'au_becs_debit'     => 'BECS Direct Debit',
-		'bancontact'        => 'Bancontact',
-		'card'              => 'Card',
-		'eps'               => 'EPS',
-		'giropay'           => 'giropay',
-		'google_pay'        => 'Google Pay',
-		'grabpay'           => 'GrabPay',
-		'ideal'             => 'iDEAL',
-		'jcb'               => 'JCB',
-		'klarna'            => 'Klarna',
-		'link'              => 'Link',
-		'multibanco'        => 'Multibanco',
-		'p24'               => 'Przelewy24',
-		'sepa_debit'        => 'SEPA Direct Debit',
-		'sofort'            => 'Sofort',
-		'wechat_pay'        => 'WeChat Pay',
-	);
-
 	/**
 	 * WooPayments API client.
 	 *
@@ -202,8 +178,8 @@ class WooPaymentsPmPromotionsService {
 		}
 
 		$this->clear_cache();
-		$this->clear_account_cache();
-		$this->record_tracks_event(
+		$this->account_service->clear_cache();
+		WooPaymentsTracks::record_wcadmin_event(
 			'wcpay_payment_method_promotion_activated',
 			array(
 				'payment_method_id' => $payment_method_id,
@@ -236,8 +212,8 @@ class WooPaymentsPmPromotionsService {
 		}
 
 		$this->clear_cache();
-		$this->clear_account_cache();
-		$this->record_tracks_event(
+		$this->account_service->clear_cache();
+		WooPaymentsTracks::record_wcadmin_event(
 			'wcpay_payment_method_promotion_activated',
 			array(
 				'payment_method_id' => $payment_method_id,
@@ -260,7 +236,7 @@ class WooPaymentsPmPromotionsService {
 			return false;
 		}
 
-		$this->record_tracks_event(
+		WooPaymentsTracks::record_wcadmin_event(
 			'wcpay_payment_method_promotion_dismissed',
 			array(
 				'payment_method_id' => $promotion['payment_method'] ?? null,
@@ -389,12 +365,9 @@ class WooPaymentsPmPromotionsService {
 	 * @return array<int,array<string,mixed>>
 	 */
 	private function sanitize_raw_promotions_list( array $promotions ): array {
-		$raw_promotions = isset( $promotions['promotions'] ) && is_array( $promotions['promotions'] )
-			? $promotions['promotions']
-			: $promotions;
-		$sanitized      = array();
+		$sanitized = array();
 
-		foreach ( $raw_promotions as $promotion ) {
+		foreach ( $promotions as $promotion ) {
 			if ( is_array( $promotion ) ) {
 				$sanitized[] = $promotion;
 			}
@@ -689,10 +662,6 @@ class WooPaymentsPmPromotionsService {
 	 * @return bool
 	 */
 	private function enable_payment_method_gateway( string $payment_method_id, array $promotion ): bool {
-		if ( ! $this->is_payment_method_available( $payment_method_id ) ) {
-			return false;
-		}
-
 		$row_option_name        = WooPaymentsGatewaySettingsSynchronizer::get_split_option_name( $payment_method_id );
 		$gateway_row            = get_option( $row_option_name, array() );
 		$gateway_row            = is_array( $gateway_row ) ? $gateway_row : array();
@@ -709,7 +678,7 @@ class WooPaymentsPmPromotionsService {
 		}
 
 		$definition = $this->payment_method_registry->get( $payment_method_id );
-		$this->record_tracks_event(
+		WooPaymentsTracks::record_wcadmin_event(
 			'wcpay_payment_method_enabled',
 			array(
 				'payment_method_id' => $payment_method_id,
@@ -845,8 +814,9 @@ class WooPaymentsPmPromotionsService {
 	 * @return string
 	 */
 	private function get_payment_method_title( string $payment_method_id ): string {
-		if ( isset( self::PAYMENT_METHOD_TITLES[ $payment_method_id ] ) ) {
-			return self::PAYMENT_METHOD_TITLES[ $payment_method_id ];
+		$definition = $this->payment_method_registry->get( $payment_method_id );
+		if ( null !== $definition ) {
+			return $definition->get_title();
 		}
 
 		return ucwords( str_replace( '_', ' ', $payment_method_id ) );
@@ -880,24 +850,13 @@ class WooPaymentsPmPromotionsService {
 	 */
 	private function handle_promotion_activation_failure( string $payment_method_id, array $promotion, string $error_message, array $log_context = array() ): void {
 		$this->log_promotion_error( sprintf( 'Failed to activate promotion for payment method %1$s: %2$s', $payment_method_id, $error_message ), $log_context );
-		$this->record_tracks_event(
+		WooPaymentsTracks::record_wcadmin_event(
 			'wcpay_payment_method_promotion_activation_failed',
 			array(
 				'payment_method_id' => $payment_method_id,
 				'promo_id'          => $promotion['promo_id'] ?? null,
 			)
 		);
-	}
-
-	/**
-	 * Record a Tracks event when the WC Admin helper is available.
-	 *
-	 * @param string              $event_name Event name.
-	 * @param array<string,mixed> $properties Event properties.
-	 * @return void
-	 */
-	private function record_tracks_event( string $event_name, array $properties ): void {
-		WooPaymentsTracks::record_wcadmin_event( $event_name, $properties );
 	}
 
 	/**
@@ -911,14 +870,5 @@ class WooPaymentsPmPromotionsService {
 	 */
 	private function log_promotion_error( string $message, array $context = array() ): void {
 		wc_get_container()->get( WooPaymentsLogger::class )->log( $message, 'warning', $context );
-	}
-
-	/**
-	 * Clear account data after successful promotion activation.
-	 *
-	 * @return void
-	 */
-	private function clear_account_cache(): void {
-		$this->account_service->clear_cache();
 	}
 }
