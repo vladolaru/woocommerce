@@ -337,15 +337,30 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A page carrying the Cart Block keeps the full WooPay config even when it is not the store's cart page.
+	 * Pages holding the Cart Block that are not the store's cart page.
+	 *
+	 * @return array<string,array{0:string|null}>
+	 */
+	public function provide_cart_block_pages(): array {
+		return array(
+			'another page'      => array( null ),
+			'the checkout page' => array( 'woocommerce_checkout_page_id' ),
+		);
+	}
+
+	/**
+	 * @testdox A page carrying the Cart Block keeps the full WooPay config with the cart's context even when it is not the store's cart page.
 	 *
 	 * Client 11.1.0 counts any page with the Cart Block as a cart page (class-wc-payments-woopay-direct-checkout.php:141-143)
 	 * and gives only other pages the light common config.
 	 *
+	 * @dataProvider provide_cart_block_pages
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
+	 *
+	 * @param string|null $page_option WooCommerce page option pointing at the page, or null for none.
 	 */
-	public function test_cart_block_page_keeps_the_full_config(): void {
+	public function test_cart_block_page_keeps_the_full_config( ?string $page_option ): void {
 		$service                                      = new RecordingWooPaySessionService();
 		$service->should_show_woopay_button           = false;
 		$service->should_load_woopay_save_user_assets = false;
@@ -359,17 +374,23 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 			)
 		);
 
+		if ( null !== $page_option ) {
+			update_option( $page_option, $page_id );
+		}
+		$this->go_to( get_permalink( $page_id ) );
+
 		global $post;
 		$post = get_post( $page_id ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 		setup_postdata( $post );
 
 		$this->sut->enqueue_frontend_assets();
 
+		$this->assertSame( null !== $page_option, is_checkout() );
 		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
 		$this->assertSame( 1, $service->frontend_config_calls );
 		$this->assertSame( 0, $service->direct_checkout_config_calls );
-		// The cart's button context, as client 11.1.0 get_button_context() gives a Cart block page
-		// (class-wc-payments-express-checkout-button-helper.php:275-277).
+		// The cart's button context, as client 11.1.0 get_button_context() gives a Cart block page, the checkout page
+		// too: it checks the cart before the checkout (class-wc-payments-express-checkout-button-helper.php:275-277, :450-468).
 		$this->assertStringContainsString( '"context":"cart"', (string) wp_scripts()->get_data( 'wc-woopayments-woopay', 'data' ) );
 	}
 

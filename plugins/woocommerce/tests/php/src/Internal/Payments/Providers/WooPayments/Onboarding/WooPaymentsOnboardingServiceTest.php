@@ -1296,6 +1296,13 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( get_option( 'wcpay_kyc_submitted_date', false ) );
 		$this->assertArrayNotHasKey( 'wcadmin_' . WooPaymentsService::EVENT_PREFIX . 'onboarding_kyc_session_finished', $recorded );
 		$this->assertArrayHasKey( 'wcadmin_' . WooPaymentsService::EVENT_PREFIX . 'onboarding_step_failed', $recorded );
+
+		// The step keeps only string context, so the error's 400 is read from the built-in onboarding's own answer.
+		$adapter = new \ReflectionProperty( WooPaymentsService::class, 'settings_adapter' );
+		$adapter->setAccessible( true );
+		$error = $adapter->getValue( $this->sut )->get_builtin_onboarding()->finish_kyc_session( WooPaymentsService::SESSION_ENTRY_LYS );
+		$this->assertInstanceOf( WP_Error::class, $error );
+		$this->assertSame( 400, $error->get_error_data()['code'] ?? null );
 	}
 
 	/**

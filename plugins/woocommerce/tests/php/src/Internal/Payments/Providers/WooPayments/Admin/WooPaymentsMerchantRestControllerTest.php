@@ -1853,6 +1853,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should keep a file's classification for a day after reading it from the platform.
 	 */
 	public function test_get_public_settings_file_keeps_the_classification_for_a_day(): void {
+		// The platform answers the Stripe file object (wpcom class-files-controller.php:158-172 at d761f9d3d85), trimmed.
 		$this->mock_api_client
 			->method( 'get_file' )
 			->willReturn(
@@ -1861,6 +1862,7 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 					'purpose' => 'business_logo',
 				)
 			);
+		// The platform answers content_type and the base64 file_content (wpcom class-files-controller.php:198-202 at d761f9d3d85).
 		$this->mock_api_client
 			->method( 'get_file_contents' )
 			->willReturn(

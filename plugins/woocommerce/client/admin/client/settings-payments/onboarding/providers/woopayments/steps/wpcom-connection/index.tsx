@@ -20,11 +20,12 @@ export const JetpackStep: React.FC = () => {
 		useOnboardingContext();
 	const [ isConnectButtonLoading, setIsConnectButtonLoading ] =
 		useState( false );
+	// Sent with this step by WooPaymentsService::get_wpcom_connection_state().
 	const connectionState = currentStep?.context?.connection_state;
 	// A store still connected to WordPress.com whose authorizing account is no longer linked only needs that account linked again.
 	const isOwnerless =
-		!! connectionState?.wpcom_is_store_connected &&
-		! connectionState?.wpcom_has_connected_owner;
+		!! connectionState?.is_store_connected &&
+		! connectionState?.has_connected_owner;
 
 	return (
 		<>

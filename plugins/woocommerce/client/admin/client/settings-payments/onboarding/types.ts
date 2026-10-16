@@ -140,12 +140,13 @@ export interface WooPaymentsProviderOnboardingStep {
 		has_test_account?: boolean;
 		// True when a sandbox (test-mode, non-test-drive) account is connected.
 		has_sandbox_account?: boolean;
-		// The store's WordPress.com connection, sent with the WordPress.com connection step.
+		// The store's WordPress.com connection, sent with the WordPress.com connection step
+		// (WooPaymentsService::get_wpcom_connection_state()).
 		connection_state?: {
-			wpcom_has_working_connection?: boolean;
-			wpcom_is_store_connected?: boolean;
-			wpcom_has_connected_owner?: boolean;
-			wpcom_is_connection_owner?: boolean;
+			has_working_connection?: boolean;
+			is_store_connected?: boolean;
+			has_connected_owner?: boolean;
+			is_connection_owner?: boolean;
 		};
 	};
 	errors?: OnboardingError[];
