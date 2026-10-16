@@ -16,6 +16,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAd
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTrackingInfoService;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\FixedTrackingInfoService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -64,7 +67,7 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 		remove_filter( 'wp_doing_ajax', '__return_true' );
 		remove_all_filters( 'woocommerce_multi_currency_js_settings' );
 		remove_all_filters( 'wcpay_js_settings' );
-		unset( $_GET['page'], $_GET['tab'], $_GET['path'], $_GET['from'], $_SERVER['HTTP_REFERER'] );
+		unset( $_GET['page'], $_GET['tab'], $_GET['path'], $_GET['section'], $_GET['from'], $_SERVER['HTTP_REFERER'] );
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'wcpay_onboarding_test_mode' );
 		delete_option( 'wcpay_next_deposit_notice_dismissed' );
@@ -224,18 +227,84 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Client 11.1.0 localizes the cached platform tracking info on its admin pages (`class-wc-payments-admin.php:1066`), and its
-	 * admin Tracks recorder adds `hosting_provider` from it to every event (`client/tracks/index.ts:44`).
+	 * Pages of the payments settings and whether the WooPayments extension localizes its tracking info there.
 	 *
-	 * @testdox Should preload the platform tracking info for the admin Tracks events.
+	 * @return array<string,array{0:array<string,string>,1:bool}>
 	 */
-	public function test_preloads_tracking_info_for_admin_tracks_events(): void {
-		$_GET['page'] = 'wc-settings';
-		$_GET['tab']  = 'checkout';
-		FixedTrackingInfoService::install();
+	public function provide_payments_settings_pages(): array {
+		return array(
+			'a WooPayments admin route'       => array( array( 'path' => '/woopayments/transactions' ), true ),
+			'the WooPayments section'         => array( array( 'section' => 'woocommerce_payments' ), true ),
+			'a WooPayments method section'    => array( array( 'section' => 'woocommerce_payments_klarna' ), true ),
+			'the bank transfer settings'      => array( array( 'section' => 'bacs' ), false ),
+			'the payments settings main page' => array( array(), false ),
+		);
+	}
+
+	/**
+	 * Client 11.1.0 localizes the cached platform tracking info only on its own pages (`class-wc-payments-admin.php:754`; the settings
+	 * check `class-wc-payments-utils.php:653` requires a `woocommerce_payments` section), and its admin Tracks recorder adds
+	 * `hosting_provider` from it (`class-wc-payments-admin.php:1066`, `client/tracks/index.ts:44`). On a cold cache the read fetches
+	 * the info, so another gateway's settings page must not read it.
+	 *
+	 * @testdox Should read and preload the platform tracking info only on WooPayments pages: $_dataName.
+	 * @dataProvider provide_payments_settings_pages
+	 *
+	 * @param array<string,string> $query        Extra query arguments of the payments settings request.
+	 * @param bool                 $expect_fetch Whether the cold cache is fetched and preloaded.
+	 */
+	public function test_preloads_tracking_info_only_on_woopayments_pages( array $query, bool $expect_fetch ): void {
+		$_GET       = array_merge(
+			array(
+				'page' => 'wc-settings',
+				'tab'  => 'checkout',
+			),
+			$query
+		);
+		$api_client = new class() extends WooPaymentsApiClient {
+			/**
+			 * Number of platform tracking info requests.
+			 *
+			 * @var int
+			 */
+			public int $calls = 0;
+
+			/**
+			 * The site is connected.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Answer the platform's tracking info (wpcom class-tracking-controller.php:233-239).
+			 *
+			 * @return array<string,mixed>
+			 */
+			public function get_tracking_info(): array {
+				++$this->calls;
+
+				return FixedTrackingInfoService::TRACKING_INFO;
+			}
+		};
+		$cache      = new WooPaymentsDatabaseCache();
+		$cache->init( new LegacyProxy() );
+		$service = new WooPaymentsTrackingInfoService();
+		$service->init( $api_client, $cache );
+		wc_get_container()->replace( WooPaymentsTrackingInfoService::class, $service );
+		delete_option( WooPaymentsDatabaseCache::TRACKING_INFO_KEY );
 		$sut = $this->create_shared_settings( true );
 
-		$this->assertSame( FixedTrackingInfoService::TRACKING_INFO, $sut->preload_shared_settings( array() )['woopaymentsSettings']['trackingInfo'] );
+		$settings = $sut->preload_shared_settings( array() );
+
+		$this->assertSame( $expect_fetch ? 1 : 0, $api_client->calls );
+		if ( $expect_fetch ) {
+			$this->assertSame( FixedTrackingInfoService::TRACKING_INFO, $settings['woopaymentsSettings']['trackingInfo'] ?? null );
+		} else {
+			$this->assertArrayNotHasKey( 'trackingInfo', $settings['woopaymentsSettings'] );
+		}
 	}
 
 	/**

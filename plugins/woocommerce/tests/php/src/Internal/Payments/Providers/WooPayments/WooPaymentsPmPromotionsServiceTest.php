@@ -256,10 +256,17 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		);
 		$before                                     = time();
 
-		$result     = $this->sut->dismiss_promotion( 'klarna-promo__spotlight' );
+		$result     = false;
+		$recorded   = $this->record_events_with_tracking_info(
+			function () use ( &$result ): void {
+				$result = $this->sut->dismiss_promotion( 'klarna-promo__spotlight' );
+			}
+		);
 		$dismissals = get_option( '_wcpay_pm_promotion_dismissals' );
 
 		$this->assertTrue( $result );
+		// Client 11.1.0 records the dismissal through its tracks_event() (pm-promotions-service.php:570, :1015).
+		$this->assertSame( 'fixture-host', $recorded['wcadmin_wcpay_payment_method_promotion_dismissed']['hosting_provider'] ?? null );
 		$this->assertIsArray( $dismissals );
 		$this->assertGreaterThanOrEqual( $before, $dismissals['klarna-promo__spotlight'] );
 		$this->assertLessThanOrEqual( time(), $dismissals['klarna-promo__spotlight'] );
@@ -274,6 +281,8 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_promotion_events_carry_the_platform_tracking_info(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
+		// The platform's account answer (wpcom class-accounts-controller.php:1129-1166), reduced to the fees the promotion code reads:
+		// an entry per method, empty because no method carries a discount here.
 		$this->account_service->cached_account_data = array(
 			'fees' => array(
 				'card'   => array(),
@@ -283,21 +292,12 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		$this->api_client->promotions_response      = array(
 			$this->promotion_fixture( 'klarna-promo__spotlight', 'klarna-promo', 'klarna', 'spotlight' ),
 		);
-		FixedTrackingInfoService::install();
-		update_option( 'woocommerce_allow_tracking', 'yes' );
-		$recorded = array();
-		$capture  = static function ( $properties, $event_name ) use ( &$recorded ) {
-			$recorded[ $event_name ] = $properties;
-			return $properties;
-		};
-		add_filter( 'woocommerce_tracks_event_properties', $capture, 10, 2 );
 
-		try {
-			$this->sut->activate_promotion( 'klarna-promo__spotlight' );
-		} finally {
-			remove_filter( 'woocommerce_tracks_event_properties', $capture, 10 );
-			wc_get_container()->reset_all_replacements();
-		}
+		$recorded = $this->record_events_with_tracking_info(
+			function (): void {
+				$this->sut->activate_promotion( 'klarna-promo__spotlight' );
+			}
+		);
 
 		$this->assertSame( 'fixture-host', $recorded['wcadmin_wcpay_payment_method_promotion_activated']['hosting_provider'] ?? null );
 		$this->assertSame( 'fixture-host', $recorded['wcadmin_wcpay_payment_method_enabled']['hosting_provider'] ?? null );
@@ -495,8 +495,16 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		$logger                                     = RecordingWcLogger::install();
 		self::enable_woopayments_debug_logging();
 
-		$this->assertFalse( $this->sut->activate_promotion( 'klarna-promo__spotlight' ) );
+		$result   = true;
+		$recorded = $this->record_events_with_tracking_info(
+			function () use ( &$result ): void {
+				$result = $this->sut->activate_promotion( 'klarna-promo__spotlight' );
+			}
+		);
 
+		$this->assertFalse( $result );
+		// Client 11.1.0 records the failure through its tracks_event(), which merges the tracking info (pm-promotions-service.php:540, :1015).
+		$this->assertSame( 'fixture-host', $recorded['wcadmin_wcpay_payment_method_promotion_activation_failed']['hosting_provider'] ?? null );
 		$context = $this->get_logged_context_at_level( $logger, 'warning' );
 		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
 		$warnings = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] && 'woopayments' === $line[2] ) );
@@ -524,11 +532,18 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 			$this->promotion_fixture( 'klarna-promo__spotlight', 'klarna-promo', 'klarna', 'spotlight' ),
 		);
 
-		$result     = $this->sut->maybe_activate_promotion_for_payment_method( 'klarna' );
+		$result     = false;
+		$recorded   = $this->record_events_with_tracking_info(
+			function () use ( &$result ): void {
+				$result = $this->sut->maybe_activate_promotion_for_payment_method( 'klarna' );
+			}
+		);
 		$settings   = get_option( 'woocommerce_woocommerce_payments_settings' );
 		$dismissals = get_option( '_wcpay_pm_promotion_dismissals', array() );
 
 		$this->assertTrue( $result );
+		// Client 11.1.0 records the settings-driven activation through its tracks_event() (pm-promotions-service.php:512, :1015).
+		$this->assertSame( 'fixture-host', $recorded['wcadmin_wcpay_payment_method_promotion_activated']['hosting_provider'] ?? null );
 		$this->assertSame( array( 'klarna-promo__spotlight' ), $this->api_client->activated_promotion_ids );
 		$this->assertIsArray( $settings );
 		$this->assertSame( array( 'card' ), $settings['upe_enabled_payment_method_ids'] );
@@ -572,6 +587,32 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertNull( $this->sut->get_visible_promotions() );
 		$this->assertSame( 0, $this->api_client->get_pm_promotions_calls );
+	}
+
+	/**
+	 * Run an action with the fixed platform tracking info installed and return the Tracks events it recorded, by name.
+	 *
+	 * @param callable $act Action.
+	 * @return array<string,array<string,mixed>>
+	 */
+	private function record_events_with_tracking_info( callable $act ): array {
+		FixedTrackingInfoService::install();
+		update_option( 'woocommerce_allow_tracking', 'yes' );
+		$recorded = array();
+		$capture  = static function ( $properties, $event_name ) use ( &$recorded ) {
+			$recorded[ $event_name ] = $properties;
+			return $properties;
+		};
+		add_filter( 'woocommerce_tracks_event_properties', $capture, 10, 2 );
+
+		try {
+			$act();
+		} finally {
+			remove_filter( 'woocommerce_tracks_event_properties', $capture, 10 );
+			wc_get_container()->reset_all_replacements();
+		}
+
+		return $recorded;
 	}
 
 	/**

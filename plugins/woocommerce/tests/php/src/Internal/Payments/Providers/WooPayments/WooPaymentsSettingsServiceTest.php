@@ -1733,6 +1733,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_update_settings_payment_method_events_carry_the_platform_tracking_info(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) ) );
+		// The cached platform account answer (wpcom class-accounts-controller.php:1129-1166, stored by the database cache as data,
+		// fetched, errored), reduced to the fields the settings save reads: the account ID, live mode, the capabilities of the three
+		// methods, all active, and an empty fee entry per method (no discount).
 		update_option(
 			'wcpay_account_data',
 			array(

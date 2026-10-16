@@ -190,10 +190,16 @@ class WooPaymentsAdminSharedSettings implements RegisterHooksInterface {
 		$settings['woopaymentsSettings']['currentUserEmail'] = $current_user->user_email ? $current_user->user_email : get_option( 'admin_email' );
 		// Client 11.1.0 `class-wc-payments-admin.php:1048`: the REST root for file URLs, which also works on Plain permalinks.
 		$settings['woopaymentsSettings']['restUrl'] = get_rest_url( null, '' );
-		// Client 11.1.0 `class-wc-payments-admin.php:1066`: the admin Tracks events add its hosting_provider (`client/tracks/index.ts:44`).
-		$settings['woopaymentsSettings']['trackingInfo'] = wc_get_container()->get( WooPaymentsTrackingInfoService::class )->get_tracking_info();
 
 		$current_path = $this->get_request_scalar( $_GET, 'path' ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only route check.
+		// Client 11.1.0 `class-wc-payments-admin.php:1066`: the admin Tracks events add its hosting_provider (`client/tracks/index.ts:44`).
+		// Read only on the WooPayments pages, where the client localizes it (`class-wc-payments-admin.php:754`, with the
+		// `woocommerce_payments` section check of `class-wc-payments-utils.php:653`), so another gateway's settings page never
+		// refreshes the cache.
+		if ( $this->is_woopayments_page( $current_path ) ) {
+			$settings['woopaymentsSettings']['trackingInfo'] = wc_get_container()->get( WooPaymentsTrackingInfoService::class )->get_tracking_info();
+		}
+
 		// The Overview's data comes with the page, so the page renders before any request.
 		if ( WooPaymentsAdminNavigationController::PATH_OVERVIEW === $current_path && ! empty( $route_availability['allowedRoutes'][ WooPaymentsAdminNavigationController::PATH_OVERVIEW ] ) ) {
 			$overview_shell = $this->get_overview_shell();
@@ -368,6 +374,18 @@ class WooPaymentsAdminSharedSettings implements RegisterHooksInterface {
 			'businessName' => $business_name,
 			'accountId'    => trim( $this->account_service->get_account_id() ),
 		);
+	}
+
+	/**
+	 * Tell whether the request shows a WooPayments page: one of its admin routes, or its section of the payments settings.
+	 *
+	 * @param string $current_path The request's admin route path.
+	 * @return bool
+	 */
+	private function is_woopayments_page( string $current_path ): bool {
+		$section = $this->get_request_scalar( $_GET, 'section' ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only route check.
+
+		return str_starts_with( $current_path, '/woopayments/' ) || str_starts_with( $section, 'woocommerce_payments' );
 	}
 
 	/**
