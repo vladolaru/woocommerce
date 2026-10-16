@@ -24,6 +24,7 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\FixedTr
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
@@ -250,7 +251,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->onboarding_service = new WooPaymentsOnboardingService();
-		$this->onboarding_service->init( $this->mockable_proxy );
+		$this->onboarding_service->init( $this->mockable_proxy, new WooPaymentsPaymentMethodRegistry() );
 
 		$this->sut = new WooPaymentsService();
 		$this->init_sut(
@@ -300,7 +301,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		$this->sut->init( $providers, $proxy );
 
 		$onboarding_service = new WooPaymentsOnboardingService();
-		$onboarding_service->init( $proxy );
+		$onboarding_service->init( $proxy, new WooPaymentsPaymentMethodRegistry() );
 		$onboarding_collaborators = array(
 			'api_client'      => $api_client,
 			'account_service' => $account_service,

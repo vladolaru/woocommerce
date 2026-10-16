@@ -17,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Onboarding\DelegatingPaymentsSettingsAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
@@ -276,7 +277,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 
 		if ( null === $onboarding_service ) {
 			$onboarding_service = new WooPaymentsOnboardingService();
-			$onboarding_service->init( $proxy );
+			$onboarding_service->init( $proxy, new WooPaymentsPaymentMethodRegistry() );
 			$onboarding_collaborators = array(
 				'api_client'      => $api_client,
 				'account_service' => $account_service,

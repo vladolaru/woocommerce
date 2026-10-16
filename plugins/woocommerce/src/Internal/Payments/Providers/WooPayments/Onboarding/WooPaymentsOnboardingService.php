@@ -67,16 +67,25 @@ class WooPaymentsOnboardingService {
 	private ?WooPaymentsAccountService $account_service = null;
 
 	/**
+	 * The WooPayments payment method registry.
+	 *
+	 * @var WooPaymentsPaymentMethodRegistry
+	 */
+	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * The API client and the account service are resolved on first use.
 	 *
 	 * @internal
 	 *
-	 * @param LegacyProxy $proxy The LegacyProxy instance.
+	 * @param LegacyProxy                      $proxy                   The LegacyProxy instance.
+	 * @param WooPaymentsPaymentMethodRegistry $payment_method_registry The WooPayments payment method registry.
 	 */
-	final public function init( LegacyProxy $proxy ): void {
-		$this->proxy = $proxy;
+	final public function init( LegacyProxy $proxy, WooPaymentsPaymentMethodRegistry $payment_method_registry ): void {
+		$this->proxy                   = $proxy;
+		$this->payment_method_registry = $payment_method_registry;
 	}
 
 	/**
@@ -342,9 +351,8 @@ class WooPaymentsOnboardingService {
 		}
 
 		if ( 'live' === $setup_mode ) {
-			$registry = new WooPaymentsPaymentMethodRegistry();
 			foreach ( $this->get_test_drive_enabled_payment_method_ids() as $payment_method_id ) {
-				$definition = $registry->get( $payment_method_id );
+				$definition = $this->payment_method_registry->get( $payment_method_id );
 				if ( null !== $definition ) {
 					$capabilities[ $definition->get_account_capability_key() ] = true;
 				}
@@ -608,7 +616,6 @@ class WooPaymentsOnboardingService {
 	 * @return string[]
 	 */
 	private function get_picked_payment_method_ids( array $picks ): array {
-		$registry   = new WooPaymentsPaymentMethodRegistry();
 		$picked_ids = array();
 
 		foreach ( $picks as $payment_method_id => $selected ) {
@@ -616,7 +623,7 @@ class WooPaymentsOnboardingService {
 				continue;
 			}
 
-			$definition = $registry->get( $payment_method_id );
+			$definition = $this->payment_method_registry->get( $payment_method_id );
 			if ( null === $definition || $definition->get_account_capability_key() !== $definition->get_stripe_id() ) {
 				continue;
 			}
@@ -682,7 +689,6 @@ class WooPaymentsOnboardingService {
 	 * @return string[]
 	 */
 	private function normalize_test_drive_payment_method_ids( array $payment_method_ids ): array {
-		$registry       = new WooPaymentsPaymentMethodRegistry();
 		$normalized_ids = array();
 
 		foreach ( $payment_method_ids as $payment_method_id ) {
@@ -691,7 +697,7 @@ class WooPaymentsOnboardingService {
 			}
 
 			$payment_method_id = strtolower( trim( (string) $payment_method_id ) );
-			if ( '' === $payment_method_id || sanitize_key( $payment_method_id ) !== $payment_method_id || null === $registry->get( $payment_method_id ) ) {
+			if ( '' === $payment_method_id || sanitize_key( $payment_method_id ) !== $payment_method_id || null === $this->payment_method_registry->get( $payment_method_id ) ) {
 				continue;
 			}
 
@@ -708,11 +714,10 @@ class WooPaymentsOnboardingService {
 	 * @return array<string,array{requested:string}>
 	 */
 	private function get_test_drive_payment_method_capabilities( array $payment_method_ids ): array {
-		$registry     = new WooPaymentsPaymentMethodRegistry();
 		$capabilities = array();
 
 		foreach ( $payment_method_ids as $payment_method_id ) {
-			$definition = $registry->get( $payment_method_id );
+			$definition = $this->payment_method_registry->get( $payment_method_id );
 			if ( null !== $definition ) {
 				$capabilities[ $definition->get_account_capability_key() ] = array( 'requested' => 'true' );
 			}
