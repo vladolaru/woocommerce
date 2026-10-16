@@ -94,6 +94,14 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	 */
 	public function test_create_terminal_intent_builds_reference_payload(): void {
 		$order = $this->create_order( 12.34, 'USD' );
+		// A store order number that differs from the order ID, as sequential order number plugins set it.
+		$order_number = 'T-' . $order->get_id();
+		add_filter(
+			'woocommerce_order_number',
+			static function () use ( $order_number ) {
+				return $order_number;
+			}
+		);
 
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/create_terminal_intent' );
 		$request->set_param( 'order_id', $order->get_id() );
@@ -109,10 +117,10 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$this->assertSame( 'cus_terminal', $this->api_client->last_terminal_intent_payload['customer'] );
 		$this->assertSame( 'mobile', $this->api_client->last_terminal_intent_payload['metadata']['channel'] );
 		$this->assertSame( (string) $order->get_id(), $this->api_client->last_terminal_intent_payload['metadata']['order_id'] );
-		$this->assertSame( $order->get_order_number(), $this->api_client->last_terminal_intent_payload['metadata']['order_number'] );
+		$this->assertSame( $order_number, $this->api_client->last_terminal_intent_payload['metadata']['order_number'] );
 		// The extension's description (includes/core/server/request/trait-intention.php:36-46), with no blog id, as no site is connected here.
 		$this->assertSame(
-			sprintf( 'Online Payment for Order #%s for %s', $order->get_order_number(), str_replace( array( 'https://', 'http://' ), '', get_site_url() ) ),
+			sprintf( 'Online Payment for Order #%s for %s', $order_number, str_replace( array( 'https://', 'http://' ), '', get_site_url() ) ),
 			$this->api_client->last_terminal_intent_payload['description']
 		);
 		$this->assertSame( array( 'card_present' ), $this->api_client->last_terminal_intent_payload['payment_method_types'] );

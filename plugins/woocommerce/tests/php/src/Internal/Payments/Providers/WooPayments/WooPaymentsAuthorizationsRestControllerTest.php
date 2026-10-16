@@ -843,18 +843,18 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 
 		return array(
 			// payment_intent_id is a required route arg, like the reference client.
-			'capture without an intent id'               => array( 'capture', null, null, false, null, 400, 'rest_missing_callback_param', null, null, false ),
-			'capture for a missing order'                => array( 'capture', null, 'pi_auth', false, null, 404, 'wcpay_missing_order', null, null, false ),
+			'capture without an intent id'                => array( 'capture', null, null, false, null, 400, 'rest_missing_callback_param', null, null, false ),
+			'capture for a missing order'                 => array( 'capture', null, 'pi_auth', false, null, 404, 'wcpay_missing_order', null, null, false ),
 			'capture naming another intent than the stored one' => array( 'capture', 'pi_order', 'pi_other', false, null, 409, 'wcpay_intent_order_mismatch', null, null, false ),
 			// The refund guard of capture_authorization() (includes/admin/class-wc-rest-payments-orders-controller.php:379-386, message :383):
 			// 0 < $order->get_total_refunded() short-circuits before the live intent is ever fetched.
-			'capture on a refunded order'                => array( 'capture', 'pi_auth', 'pi_auth', true, null, 400, 'wcpay_refunded_order_uncapturable', 'Payment cannot be captured for partially or fully refunded orders.', '', false ),
+			'capture on a refunded order'                 => array( 'capture', 'pi_auth', 'pi_auth', true, null, 400, 'wcpay_refunded_order_uncapturable', 'Payment cannot be captured for partially or fully refunded orders.', '', false ),
 			// The same guard in cancel_authorization() (:618-625, message :622).
-			'cancel on a refunded order'                 => array( 'cancel', 'pi_auth', 'pi_auth', true, null, 400, 'wcpay_refunded_order_uncapturable', 'Payment cannot be canceled for partially or fully refunded orders.', '', false ),
+			'cancel on a refunded order'                  => array( 'cancel', 'pi_auth', 'pi_auth', true, null, 400, 'wcpay_refunded_order_uncapturable', 'Payment cannot be canceled for partially or fully refunded orders.', '', false ),
 			// The cancel route declares payment_intent_id as required the same way the capture route does
 			// (includes/admin/class-wc-rest-payments-orders-controller.php:122-133).
-			'cancel without an intent id'                => array( 'cancel', 'pi_auth', null, false, null, 400, 'rest_missing_callback_param', null, null, false ),
-			'capture of a live intent for another order' => array(
+			'cancel without an intent id'                 => array( 'cancel', 'pi_auth', null, false, null, 400, 'rest_missing_callback_param', null, null, false ),
+			'capture of a live intent for another order'  => array(
 				'capture',
 				'pi_auth',
 				'pi_auth',
@@ -878,7 +878,25 @@ class WooPaymentsAuthorizationsRestControllerTest extends WC_REST_Unit_Test_Case
 			// :632-635 for cancel) and the status is requires_capture (is_authorized() at :400, the status list at :639).
 			'capture of another authorized intent for the order' => array( 'capture', 'pi_Y', 'pi_X', false, $another_intent, 409, 'wcpay_intent_order_mismatch', null, null, true ),
 			'cancel of another authorized intent for the order' => array( 'cancel', 'pi_Y', 'pi_X', false, $another_intent, 409, 'wcpay_intent_order_mismatch', null, null, true ),
-			'cancel of an intent that already succeeded' => array(
+			// Client 11.1.0 refuses to capture an intent that is no longer authorized
+			// (includes/admin/class-wc-rest-payments-orders-controller.php:400-402), so a second capture never reaches the platform.
+			'capture of an intent that already succeeded' => array(
+				'capture',
+				'pi_auth',
+				'pi_auth',
+				false,
+				array(
+					'id'           => 'pi_auth',
+					'status'       => 'succeeded',
+					'order_offset' => 0,
+				),
+				409,
+				'wcpay_payment_uncapturable',
+				null,
+				'get_payment_intention',
+				false,
+			),
+			'cancel of an intent that already succeeded'  => array(
 				'cancel',
 				'pi_auth',
 				'pi_auth',
