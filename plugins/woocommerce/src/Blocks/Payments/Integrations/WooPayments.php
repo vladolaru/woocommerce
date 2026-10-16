@@ -409,9 +409,13 @@ final class WooPayments extends AbstractPaymentMethodType {
 	/**
 	 * Get the WooPay and express checkout button context of the current Blocks page.
 	 *
+	 * A page holding the Cart block is a cart page even when it is not the store's cart page, as in client 11.1.0
+	 * get_button_context() (class-wc-payments-express-checkout-button-helper.php:275-277, :450-468), so the cart's
+	 * button locations apply there.
+	 *
 	 * @return string
 	 */
 	private function get_button_context(): string {
-		return is_cart() ? 'cart' : 'checkout';
+		return is_cart() || WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/cart' ) ? 'cart' : 'checkout';
 	}
 }

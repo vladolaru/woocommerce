@@ -645,6 +645,94 @@ class WooPaymentsTest extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Blocks pages and the button context client 11.1.0 get_button_context() gives them: a page holding the Cart block is
+	 * the cart, before the checkout (class-wc-payments-express-checkout-button-helper.php:275-277, :450-468).
+	 *
+	 * @return array<string,array{0:string,1:string|null,2:string}>
+	 */
+	public function provide_blocks_pages_and_button_contexts(): array {
+		$cart     = '<!-- wp:woocommerce/cart --><div class="wp-block-woocommerce-cart"></div><!-- /wp:woocommerce/cart -->';
+		$checkout = '<!-- wp:woocommerce/checkout --><div class="wp-block-woocommerce-checkout"></div><!-- /wp:woocommerce/checkout -->';
+
+		return array(
+			'Cart block on the cart page'         => array( $cart, 'woocommerce_cart_page_id', 'cart' ),
+			'Cart block on another page'          => array( $cart, null, 'cart' ),
+			'Cart and Checkout blocks on a page'  => array( $cart . $checkout, null, 'cart' ),
+			'Checkout block on the checkout page' => array( $checkout, 'woocommerce_checkout_page_id', 'checkout' ),
+		);
+	}
+
+	/**
+	 * @testdox Should ask for the WooPay and express buttons of the cart on any page holding the Cart block.
+	 * @dataProvider provide_blocks_pages_and_button_contexts
+	 *
+	 * A separate process, because an earlier test can define WOOCOMMERCE_CART or WOOCOMMERCE_CHECKOUT for the rest of the run.
+	 *
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param string      $content          Page content.
+	 * @param string|null $page_option      WooCommerce page option pointing at the page, or null for none.
+	 * @param string      $expected_context Expected button context.
+	 */
+	public function test_button_context_counts_any_cart_block_page_as_the_cart( string $content, ?string $page_option, string $expected_context ): void {
+		$page_id = self::factory()->post->create(
+			array(
+				'post_type'    => 'page',
+				'post_status'  => 'publish',
+				'post_content' => $content,
+			)
+		);
+		if ( null !== $page_option ) {
+			update_option( $page_option, $page_id );
+		}
+		$this->reset_cart_checkout_page_cache();
+		$this->go_to( get_permalink( $page_id ) );
+
+		$contexts = array();
+		$record   = static function ( string $context ) use ( &$contexts ): bool {
+			$contexts[] = $context;
+			return true;
+		};
+		$express  = $this->getMockBuilder( WooPaymentsExpressCheckoutService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_show_payment_request_button', 'get_express_checkout_params' ) )
+			->getMock();
+		$express->method( 'should_show_payment_request_button' )->willReturnCallback( $record );
+		$express->method( 'get_express_checkout_params' )->willReturnCallback(
+			static function ( string $context ) use ( &$contexts ): array {
+				$contexts[] = $context;
+				return array( 'button_context' => $context );
+			}
+		);
+		$woopay = $this->getMockBuilder( WooPaymentsWooPayEligibility::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_show_woopay_button' ) )
+			->getMock();
+		$woopay->method( 'should_show_woopay_button' )->willReturnCallback( $record );
+		$assets = $this->getMockBuilder( WooPaymentsCheckoutAssets::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_blocks_payment_method_data', 'should_expose_checkout_surface' ) )
+			->getMock();
+		$assets->method( 'should_expose_checkout_surface' )->willReturn( true );
+		$assets->method( 'get_blocks_payment_method_data' )->willReturn( array() );
+		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'can_process_payments', 'get_payment_gateways', 'get_gateway_for_method' ) )
+			->getMock();
+		$provider->method( 'can_process_payments' )->willReturn( true );
+		$provider->method( 'get_payment_gateways' )->willReturn( array() );
+		$integration = new WooPayments( $this->createMock( AssetApi::class ), $this->create_runtime_arbiter(), $assets, $provider, $woopay, $express );
+
+		$integration->get_payment_method_script_handles();
+		$data = $integration->get_payment_method_data();
+
+		$this->assertNotEmpty( $contexts );
+		$this->assertSame( array( $expected_context ), array_values( array_unique( $contexts ) ) );
+		$this->assertSame( $expected_context, $data['expressCheckoutParams']['button_context'] );
+	}
+
+	/**
 	 * @testdox Should source Blocks payment method data from the checkout assets class.
 	 */
 	public function test_get_payment_method_data_uses_checkout_assets_config(): void {

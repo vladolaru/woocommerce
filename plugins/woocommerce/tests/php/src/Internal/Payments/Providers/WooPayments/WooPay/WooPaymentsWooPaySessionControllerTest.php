@@ -368,6 +368,9 @@ class WooPaymentsWooPaySessionControllerTest extends WC_REST_Unit_Test_Case {
 		$this->assertTrue( wp_script_is( 'wc-woopayments-woopay', 'enqueued' ) );
 		$this->assertSame( 1, $service->frontend_config_calls );
 		$this->assertSame( 0, $service->direct_checkout_config_calls );
+		// The cart's button context, as client 11.1.0 get_button_context() gives a Cart block page
+		// (class-wc-payments-express-checkout-button-helper.php:275-277).
+		$this->assertStringContainsString( '"context":"cart"', (string) wp_scripts()->get_data( 'wc-woopayments-woopay', 'data' ) );
 	}
 
 	/**

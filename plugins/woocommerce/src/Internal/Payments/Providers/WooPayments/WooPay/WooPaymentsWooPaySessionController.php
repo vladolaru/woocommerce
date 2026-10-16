@@ -979,7 +979,8 @@ class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
 			return 'checkout';
 		}
 
-		return is_cart() ? 'cart' : 'checkout';
+		// A page holding the Cart block counts as the cart (class-wc-payments-express-checkout-button-helper.php:275-277).
+		return $this->is_cart_surface() ? 'cart' : 'checkout';
 	}
 
 	/**
