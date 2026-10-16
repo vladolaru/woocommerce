@@ -386,10 +386,16 @@ class WooPaymentsFraudRulesetService {
 		// The Multi-Currency rates are read only when USD is enabled, the one case that converts.
 		if ( 'USD' !== $store_currency && is_array( $enabled_codes ) && in_array( 'USD', array_map( 'strtoupper', $enabled_codes ), true ) ) {
 			$enabled_currencies = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create()->build()->get_enabled_currencies();
-			// With Multi-Currency off no rate provider runs, so an automatic rate is the one the rates cache still holds.
-			$usd_rate = isset( $enabled_currencies['USD'] )
-				? $enabled_currencies['USD']->get_rate()
-				: (float) ( ( new MultiCurrencyDatabaseCache() )->get( MultiCurrencyCacheInterface::CURRENCIES_KEY, true )['currencies']['USD'] ?? 0 );
+			if ( isset( $enabled_currencies['USD'] ) ) {
+				$usd_rate = $enabled_currencies['USD']->get_rate();
+			} elseif ( strtoupper( (string) get_option( 'wcpay_multi_currency_store_currency', '' ) ) === $store_currency ) {
+				// With Multi-Currency off no rate provider runs, so an automatic rate is the one the rates cache still holds,
+				// used only while the cache belongs to this store currency: client 11.1.0 deletes it when the store currency
+				// changes (includes/multi-currency/MultiCurrency.php:321-327, :1832-1844), and nothing does while it is off.
+				$usd_rate = (float) ( ( new MultiCurrencyDatabaseCache() )->get( MultiCurrencyCacheInterface::CURRENCIES_KEY, true )['currencies']['USD'] ?? 0 );
+			} else {
+				$usd_rate = 0.0;
+			}
 			if ( $usd_rate <= 0 ) {
 				return '100000|usd';
 			}

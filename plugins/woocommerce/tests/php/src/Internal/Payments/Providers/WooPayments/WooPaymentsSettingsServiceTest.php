@@ -2724,6 +2724,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * Multi-Currency USD rate when USD is an enabled currency, and in USD while its Multi-Currency flag is off
 	 * (includes/fraud-prevention/class-fraud-risk-tools.php:167-261, :396-445; automatic rates from the rates cache,
 	 * includes/multi-currency/MultiCurrency.php:1707-1731); the platform converts the order total into the rule's currency.
+	 * The "USD listed without a rate" row is the decided 100000|usd answer, where client 11.1.0 writes 100000|pln at its 1.0 rate.
 	 *
 	 * @testdox Should build the preset purchase-price threshold as $expected when $label.
 	 * @dataProvider provide_preset_threshold_cases
@@ -2732,8 +2733,8 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @param string      $store_currency    Store currency.
 	 * @param string|null $flag              The WooPayments Multi-Currency flag, or null for never saved.
 	 * @param string[]    $enabled           Multi-Currency enabled currencies.
-	 * @param string|null $usd_rate          The USD rate as "manual:<rate>", "stored:<rate>" (rates cache only) or "provider:<rate>"
-	 *                                       (a running rate provider), or null for none.
+	 * @param string|null $usd_rate          The USD rate as "manual:<rate>", "stored:<rate>:<store currency the cache was fetched
+	 *                                       for>" (rates cache only) or "provider:<rate>" (a running rate provider), or null for none.
 	 * @param string      $account_currency  The account's default currency.
 	 * @param string|null $filtered_currency A currency a woocommerce_currency filter answers, or null for none.
 	 * @param string      $expected          Expected threshold value.
@@ -2752,13 +2753,15 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			add_filter( 'woocommerce_currency', static fn() => $filtered_currency );
 		}
 		update_option( 'wcpay_multi_currency_enabled_currencies', $enabled );
-		list( $rate_source, $rate ) = null === $usd_rate ? array( null, null ) : explode( ':', $usd_rate );
+		list( $rate_source, $rate, $cache_currency ) = array_pad( null === $usd_rate ? array() : explode( ':', $usd_rate ), 3, null );
 		if ( 'manual' === $rate_source ) {
 			update_option( 'wcpay_multi_currency_exchange_rate_usd', 'manual' );
 			update_option( 'wcpay_multi_currency_manual_rate_usd', $rate );
 		} elseif ( 'stored' === $rate_source ) {
-			// The rates cache in the shape MultiCurrencyDatabaseCache stores the platform's currency rates answer, fetched long
-			// ago: with Multi-Currency off nothing refreshes it.
+			// The rates cache, fetched long ago (with Multi-Currency off nothing refreshes it), shaped as in client 11.1.0: the rates
+			// payload of includes/multi-currency/MultiCurrency.php:500-508 inside the includes/class-database-cache.php:364-382
+			// wrapper, with the store currency it was fetched for (MultiCurrency.php:1832-1844).
+			update_option( 'wcpay_multi_currency_store_currency', $cache_currency );
 			$rates_cache = array(
 				'data'               => array(
 					'currencies' => array( 'USD' => (float) $rate ),
@@ -2795,12 +2798,12 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'standard', $this->sut->get_settings()['current_protection_level'], 'A ruleset the extension built for this store reads back as Standard.' );
 		} finally {
 			$registry_factory->set_provider_registrars( $registrars );
-			remove_all_filters( 'woocommerce_currency' );
 			// Through delete_option(), so the shared Multi-Currency state sees the change.
 			delete_option( 'wcpay_multi_currency_enabled_currencies' );
 			delete_option( 'wcpay_multi_currency_exchange_rate_usd' );
 			delete_option( 'wcpay_multi_currency_manual_rate_usd' );
 			delete_option( MultiCurrencyCacheInterface::CURRENCIES_KEY );
+			delete_option( 'wcpay_multi_currency_store_currency' );
 		}
 	}
 
@@ -2813,9 +2816,10 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		return array(
 			'Multi-Currency flag off'                => array( 'the WooPayments Multi-Currency flag is off', 'EUR', '0', array(), null, 'pln', null, '100000|usd' ),
 			'USD enabled at a manual rate'           => array( 'USD is an enabled currency at a manual rate', 'PLN', null, array( 'PLN', 'USD' ), 'manual:0.23', 'pln', null, '434783|pln' ),
-			'USD at an automatic rate, rates stored' => array( 'USD has an automatic rate only in the rates cache (Multi-Currency off)', 'PLN', null, array( 'PLN', 'USD' ), 'stored:0.25', 'pln', null, '400000|pln' ),
+			'USD at an automatic rate, rates stored' => array( 'USD has an automatic rate only in the rates cache (Multi-Currency off)', 'PLN', null, array( 'PLN', 'USD' ), 'stored:0.25:PLN', 'pln', null, '400000|pln' ),
+			'rates stored for another currency'      => array( 'the rates cache was fetched for the previous store currency', 'EUR', null, array( 'EUR', 'USD' ), 'stored:0.25:PLN', 'pln', null, '100000|usd' ),
 			'USD at an automatic rate, provider'     => array( 'USD has an automatic rate from a running rate provider', 'PLN', null, array( 'PLN', 'USD' ), 'provider:0.23', 'pln', null, '434783|pln' ),
-			'USD listed without a rate'              => array( 'USD is enabled but no rate is stored', 'PLN', '1', array( 'PLN', 'USD' ), null, 'pln', null, '100000|usd' ),
+			'USD listed without a rate'              => array( 'USD is enabled but no rate is stored (decided answer)', 'PLN', '1', array( 'PLN', 'USD' ), null, 'pln', null, '100000|usd' ),
 			'USD not enabled'                        => array( 'the store currency differs from the account currency', 'EUR', null, array(), null, 'pln', null, '100000|eur' ),
 			'store currency is the account currency' => array( 'the store currency is the account currency', 'PLN', null, array(), null, 'pln', null, '100000|pln' ),
 			'filtered store currency'                => array( 'a filter answers another currency than the stored one', 'PLN', null, array(), null, 'pln', 'GBP', '100000|pln' ),
@@ -3020,6 +3024,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				'account_business_name'          => 'Old Name',
 			)
 		);
+		// The account cache in the client's wrapper (includes/class-database-cache.php:364-382), with the capabilities the
+		// client reads for the request (includes/class-wc-payments-account.php:2441-2462; gateway
+		// includes/class-wc-payment-gateway-wcpay.php:4696-4707).
 		update_option(
 			'wcpay_account_data',
 			array(
