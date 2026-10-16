@@ -2656,6 +2656,65 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 saves the fraud ruleset before the account update, and a failing platform call ends the save
+	 * (includes/admin/class-wc-rest-payments-settings-controller.php:633-640, :923-960).
+	 *
+	 * @testdox Should save the fraud ruleset before the account update when $label.
+	 * @dataProvider provide_platform_failures_around_the_fraud_save
+	 *
+	 * @param string $label          Case.
+	 * @param string $failing_call   The platform call that fails: "account" or "fraud".
+	 * @param string $account_key    The account setting the request changes.
+	 * @param string $stored_value   The account setting's stored value.
+	 * @param string $new_value      The account setting's requested value.
+	 * @param int    $fraud_saves    Expected fraud ruleset saves.
+	 * @param string $level          Expected stored protection level.
+	 * @param bool   $account_update Whether the account update reaches the platform.
+	 */
+	public function test_update_settings_saves_fraud_before_the_account_update( string $label, string $failing_call, string $account_key, string $stored_value, string $new_value, int $fraud_saves, string $level, bool $account_update ): void {
+		unset( $label );
+		$this->set_connected_account_data();
+		update_option( 'current_protection_level', 'standard' );
+		set_transient( 'wcpay_fraud_protection_settings', $this->get_standard_fraud_ruleset_fixture(), DAY_IN_SECONDS );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( $account_key => $stored_value ) );
+		update_option( 'wcpay_next_deposit_notice_dismissed', true );
+		if ( 'account' === $failing_call ) {
+			$this->api_client->update_account_exception = new WooPaymentsApiException( 'Error: The account update was rejected.', 'invalid_request_error', 400 );
+		} else {
+			$this->api_client->save_fraud_ruleset_exception = new WooPaymentsApiException( 'Platform unavailable.', 'wcpay_server_error', 500 );
+		}
+
+		$result = $this->sut->update_settings(
+			array(
+				$account_key                         => $new_value,
+				'current_protection_level'           => 'high',
+				'advanced_fraud_protection_settings' => array(),
+			)
+		);
+
+		$expected_ruleset = 'high' === $level ? $this->get_high_fraud_ruleset_fixture() : $this->get_standard_fraud_ruleset_fixture();
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( $fraud_saves, $this->api_client->fraud_ruleset_saves );
+		$this->assertSame( $level, get_option( 'current_protection_level' ) );
+		$this->assertSame( $expected_ruleset, get_transient( 'wcpay_fraud_protection_settings' ) );
+		$this->assertSame( $account_update, null !== $this->api_client->last_account_settings, 'The account update runs only after a successful fraud save.' );
+		$this->assertTrue( (bool) get_option( 'wcpay_next_deposit_notice_dismissed' ), 'A failed save keeps the next-deposit notice dismissal.' );
+	}
+
+	/**
+	 * Platform failures around the fraud save: the failing call, the account change, and what the platform and the store keep.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string,3:string,4:string,5:int,6:string,7:bool}>
+	 */
+	public function provide_platform_failures_around_the_fraud_save(): array {
+		return array(
+			'the account update is rejected' => array( 'the platform rejects the account update', 'account', 'account_business_name', 'Old Name', 'New Name', 1, 'high', true ),
+			'the fraud save fails'           => array( 'the platform fraud save fails', 'fraud', 'account_business_name', 'Old Name', 'New Name', 0, 'standard', false ),
+			'the fraud save fails with a payout schedule change' => array( 'the platform fraud save fails while the payout schedule changes', 'fraud', 'deposit_schedule_interval', 'daily', 'weekly', 0, 'standard', false ),
+		);
+	}
+
+	/**
 	 * @testdox Should clear the next-deposit notice dismissal when the payout schedule changes.
 	 */
 	public function test_update_settings_clears_next_deposit_notice_dismissal_on_schedule_change(): void {

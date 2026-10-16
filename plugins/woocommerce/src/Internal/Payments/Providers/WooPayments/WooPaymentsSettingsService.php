@@ -429,7 +429,7 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
-	 * Save a settings page update: account and fraud settings on the platform first, then the gateway settings in one
+	 * Save a settings page update: fraud and account settings on the platform first, then the gateway settings in one
 	 * write; answers the stored settings.
 	 *
 	 * @param array<string,mixed> $params Request parameters.
@@ -823,13 +823,19 @@ class WooPaymentsSettingsService {
 	}
 
 	/**
-	 * Update provider-backed account and fraud settings.
+	 * Save the fraud settings, then the changed account settings, on the platform; a failure stops before the next step.
 	 *
 	 * @param array<string,mixed> $params   Request parameters.
 	 * @param array<string,mixed> $settings Current gateway settings.
 	 * @return WP_Error|null
 	 */
 	private function update_provider_backed_settings( array $params, array $settings ): ?WP_Error {
+		try {
+			$this->fraud_ruleset_service->save_fraud_settings( $params );
+		} catch ( WooPaymentsApiException $e ) {
+			return $this->api_exception_to_wp_error( $e );
+		}
+
 		$account_response_fields = $this->get_account_backed_response_fields( $settings );
 		$account_settings        = array();
 		foreach ( self::ACCOUNT_SETTING_MAP as $request_key => $account_key ) {
@@ -862,12 +868,6 @@ class WooPaymentsSettingsService {
 			}
 		} catch ( WooPaymentsApiException $e ) {
 			return $this->account_update_exception_to_wp_error( $e );
-		}
-
-		try {
-			$this->fraud_ruleset_service->save_fraud_settings( $params );
-		} catch ( WooPaymentsApiException $e ) {
-			return $this->api_exception_to_wp_error( $e );
 		}
 
 		return null;
