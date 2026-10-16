@@ -377,12 +377,12 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 				);
 
 				return array(
-					'clientSecret'   => 'accs_secret_native',
-					'expiresAt'      => 1234567999,
-					'accountId'      => 'acct_native',
-					'isLive'         => true,
-					'accountCreated' => true,
-					'publishableKey' => 'pk_live_native',
+					'client_secret'   => 'accs_secret_native',
+					'expires_at'      => 1234567999,
+					'account_id'      => 'acct_native',
+					'is_live'         => true,
+					'account_created' => true,
+					'publishable_key' => 'pk_live_native',
 				);
 			}
 		};
@@ -1596,14 +1596,14 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 				);
 
 				return array(
-					'clientSecret'     => 'accs_secret_live',
-					'expiresAt'        => 1234567999,
-					'accountId'        => 'acct_live_native',
-					'isLive'           => true,
-					'accountCreated'   => true,
-					'publishableKey'   => 'pk_live_native',
-					'paymentsEnabled'  => true,
-					'detailsSubmitted' => true,
+					'client_secret'     => 'accs_secret_live',
+					'expires_at'        => 1234567999,
+					'account_id'        => 'acct_live_native',
+					'is_live'           => true,
+					'account_created'   => true,
+					'publishable_key'   => 'pk_live_native',
+					'payments_enabled'  => true,
+					'details_submitted' => true,
 				);
 			}
 		};
@@ -2488,12 +2488,12 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 
 				return array_merge(
 					array(
-						'clientSecret'   => 'accs_secret_finalized_native',
-						'expiresAt'      => 1234567999,
-						'accountId'      => 'acct_finalized_native',
-						'isLive'         => true,
-						'accountCreated' => false,
-						'publishableKey' => 'pk_live_finalized_native',
+						'client_secret'   => 'accs_secret_finalized_native',
+						'expires_at'      => 1234567999,
+						'account_id'      => 'acct_finalized_native',
+						'is_live'         => true,
+						'account_created' => false,
+						'publishable_key' => 'pk_live_finalized_native',
 					),
 					$this->session_extras
 				);
@@ -2721,12 +2721,12 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 
 				return array_merge(
 					array(
-						'clientSecret'   => 'accs_secret_native',
-						'expiresAt'      => 1234567999,
-						'accountId'      => 'acct_native',
-						'isLive'         => true,
-						'accountCreated' => false,
-						'publishableKey' => 'pk_live_native',
+						'client_secret'   => 'accs_secret_native',
+						'expires_at'      => 1234567999,
+						'account_id'      => 'acct_native',
+						'is_live'         => true,
+						'account_created' => false,
+						'publishable_key' => 'pk_live_native',
 					),
 					$this->platform_response
 				);

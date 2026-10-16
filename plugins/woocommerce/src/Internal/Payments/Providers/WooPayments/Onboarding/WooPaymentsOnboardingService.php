@@ -306,10 +306,10 @@ class WooPaymentsOnboardingService {
 			$this->proxy->call_function( 'set_transient', WooPaymentsPaymentsSettingsAdapter::WOOPAY_ENABLED_BY_DEFAULT_TRANSIENT, true, DAY_IN_SECONDS );
 		}
 
-		$success = ! empty( $response['success'] ) || ( array_key_exists( 'url', $response ) && false === $response['url'] );
+		$success = array_key_exists( 'url', $response ) && false === $response['url'];
 		if ( $success ) {
 			$this->update_gateway_settings_after_test_account_init( $capabilities, $response );
-			$is_live = $this->get_response_bool( $response, array( 'is_live', 'isLive' ), false );
+			$is_live = $this->get_response_bool( $response, array( 'is_live' ), false );
 			if ( ! $this->sync_account_cache_from_response( $response, $is_live, ! $is_live, true ) ) {
 				$this->get_account_service()->clear_cache();
 			}
@@ -369,7 +369,7 @@ class WooPaymentsOnboardingService {
 		);
 
 		if ( $this->is_account_created_response( $session ) ) {
-			$is_live = $this->get_response_bool( $session, array( 'is_live', 'isLive' ), 'live' === $setup_mode );
+			$is_live = $this->get_response_bool( $session, array( 'is_live' ), 'live' === $setup_mode );
 			if ( ! $this->sync_account_cache_from_response( $session, $is_live, false, false ) ) {
 				$this->get_account_service()->clear_cache();
 			}
@@ -391,13 +391,9 @@ class WooPaymentsOnboardingService {
 			$this->get_actioned_inbox_notes()
 		);
 
-		if ( ! isset( $response['success'] ) ) {
-			$response['success'] = true;
-		}
-
 		if ( ! empty( $response['success'] ) ) {
 			$mode    = isset( $response['mode'] ) && is_scalar( $response['mode'] ) ? (string) $response['mode'] : '';
-			$is_live = 'live' === $mode || $this->get_response_bool( $response, array( 'is_live', 'isLive' ), false );
+			$is_live = 'live' === $mode;
 			if ( ! $this->sync_account_cache_from_response( $response, $is_live, false, true ) ) {
 				$this->get_account_service()->clear_cache();
 			}
@@ -988,13 +984,13 @@ class WooPaymentsOnboardingService {
 	 */
 	private function normalize_kyc_session_response( array $session ): array {
 		return array(
-			'clientSecret'   => $session['clientSecret'] ?? $session['client_secret'] ?? '',
-			'expiresAt'      => $session['expiresAt'] ?? $session['expires_at'] ?? 0,
-			'accountId'      => $session['accountId'] ?? $session['account_id'] ?? '',
-			'isLive'         => $session['isLive'] ?? $session['is_live'] ?? false,
-			'accountCreated' => $session['accountCreated'] ?? $session['account_created'] ?? false,
-			'publishableKey' => $session['publishableKey'] ?? $session['publishable_key'] ?? '',
-			'locale'         => $session['locale'] ?? $this->proxy->call_function( 'get_user_locale' ),
+			'clientSecret'   => $session['client_secret'] ?? '',
+			'expiresAt'      => $session['expires_at'] ?? 0,
+			'accountId'      => $session['account_id'] ?? '',
+			'isLive'         => $session['is_live'] ?? false,
+			'accountCreated' => $session['account_created'] ?? false,
+			'publishableKey' => $session['publishable_key'] ?? '',
+			'locale'         => $this->proxy->call_function( 'get_user_locale' ),
 		);
 	}
 
@@ -1005,7 +1001,7 @@ class WooPaymentsOnboardingService {
 	 * @return bool
 	 */
 	private function is_account_created_response( array $response ): bool {
-		return $this->get_response_bool( $response, array( 'account_created', 'accountCreated' ), false );
+		return $this->get_response_bool( $response, array( 'account_created' ), false );
 	}
 
 	/**
@@ -1024,7 +1020,6 @@ class WooPaymentsOnboardingService {
 			$response,
 			array(
 				'publishable_key',
-				'publishableKey',
 				$is_live ? 'live_publishable_key' : 'test_publishable_key',
 			),
 			$existing_cache[ $is_live ? 'live_publishable_key' : 'test_publishable_key' ] ?? ''
@@ -1033,8 +1028,6 @@ class WooPaymentsOnboardingService {
 			$response,
 			array(
 				'account_id',
-				'accountId',
-				'id',
 			),
 			$existing_cache['account_id'] ?? ''
 		);
@@ -1057,7 +1050,6 @@ class WooPaymentsOnboardingService {
 			$response,
 			array(
 				'payments_enabled',
-				'paymentsEnabled',
 			),
 			$readiness_default['payments_enabled'] ?? $default_ready
 		);
@@ -1065,7 +1057,6 @@ class WooPaymentsOnboardingService {
 			$response,
 			array(
 				'details_submitted',
-				'detailsSubmitted',
 			),
 			$readiness_default['details_submitted'] ?? $default_ready
 		);
@@ -1157,7 +1148,7 @@ class WooPaymentsOnboardingService {
 		$settings              = $this->proxy->call_function( 'get_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
 		$settings              = is_array( $settings ) ? $settings : array();
 		$settings['enabled']   = 'yes';
-		$settings['test_mode'] = $this->get_response_bool( $response, array( 'is_live', 'isLive' ), false ) ? 'no' : 'yes';
+		$settings['test_mode'] = $this->get_response_bool( $response, array( 'is_live' ), false ) ? 'no' : 'yes';
 
 		// Keep the gateway settings autoloaded: the gateway reads them on every front-end request via WC_Payment_Gateway::init_settings().
 		$this->proxy->call_function( 'update_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, $settings );
