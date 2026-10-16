@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Log a warning whenever the native WooPayments order payment lock refuses a refund, capture, cancel or webhook update that the WooPayments plugin would have allowed.

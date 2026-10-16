@@ -1,0 +1,3 @@
+Significance: patch
+Type: fix
+Comment: Keep a native payment order reconcilable when applying the lifecycle outcome fails after a successful charge.

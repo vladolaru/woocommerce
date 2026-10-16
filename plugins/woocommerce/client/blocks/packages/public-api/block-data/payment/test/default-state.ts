@@ -51,7 +51,7 @@ const getDefaultPaymentStateWithMocks = ( {
 		} ) );
 
 		// Get a fresh copy of the state
-		// eslint-disable-next-line @typescript-eslint/no-var-requires -- Cloning using structuredClone is not supported in jsdom and Object.assign won't work as the state contains objects that need to be reset too. This is a clean way to get a fresh copy of the state.
+
 		state = require( '../default-state' ).defaultPaymentState;
 	} );
 
@@ -62,6 +62,31 @@ const getDefaultPaymentStateWithMocks = ( {
 
 	return state;
 };
+
+const createSavedPaymentMethod = ( {
+	gateway,
+	tokenId,
+	isDefault,
+}: {
+	gateway: string;
+	tokenId: number;
+	isDefault: boolean;
+} ): SavedPaymentMethod => ( {
+	method: {
+		gateway,
+		brand: 'visa',
+		last4: tokenId.toString().slice( -4 ).padStart( 4, '0' ),
+	},
+	tokenId,
+	is_default: isDefault,
+	expires: '10/99',
+	actions: {
+		delete: {
+			name: 'Delete',
+			url: 'https://example.com/delete',
+		},
+	},
+} );
 
 describe( 'defaultPaymentState', () => {
 	describe( 'Initial state', () => {
@@ -197,6 +222,101 @@ describe( 'defaultPaymentState', () => {
 					token: '123',
 					payment_method: 'stripe',
 					'wc-stripe-payment-token': '123',
+				} );
+			} );
+
+			it( 'should use the default saved token when multiple methods share the selected gateway', () => {
+				const state = getDefaultPaymentStateWithMocks( {
+					checkoutData: {
+						payment_method: 'woocommerce_payments',
+					},
+					customerPaymentMethods: {
+						cc: [
+							createSavedPaymentMethod( {
+								gateway: 'woocommerce_payments',
+								tokenId: 54,
+								isDefault: false,
+							} ),
+							createSavedPaymentMethod( {
+								gateway: 'woocommerce_payments',
+								tokenId: 55,
+								isDefault: true,
+							} ),
+						],
+					},
+				} );
+
+				expect( state.activePaymentMethod ).toBe(
+					'woocommerce_payments'
+				);
+				expect( state.paymentMethodData ).toEqual( {
+					token: '55',
+					payment_method: 'woocommerce_payments',
+					'wc-woocommerce_payments-payment-token': '55',
+				} );
+			} );
+
+			it( 'should use the first matching saved token when the selected gateway has no default', () => {
+				const state = getDefaultPaymentStateWithMocks( {
+					checkoutData: {
+						payment_method: 'woocommerce_payments',
+					},
+					customerPaymentMethods: {
+						cc: [
+							createSavedPaymentMethod( {
+								gateway: 'woocommerce_payments',
+								tokenId: 54,
+								isDefault: false,
+							} ),
+							createSavedPaymentMethod( {
+								gateway: 'woocommerce_payments',
+								tokenId: 55,
+								isDefault: false,
+							} ),
+						],
+					},
+				} );
+
+				expect( state.paymentMethodData ).toEqual( {
+					token: '54',
+					payment_method: 'woocommerce_payments',
+					'wc-woocommerce_payments-payment-token': '54',
+				} );
+			} );
+
+			it( 'should ignore a default token belonging to a different gateway', () => {
+				const state = getDefaultPaymentStateWithMocks( {
+					checkoutData: {
+						payment_method: 'woocommerce_payments',
+					},
+					customerPaymentMethods: {
+						cc: [
+							createSavedPaymentMethod( {
+								gateway: 'other_gateway',
+								tokenId: 91,
+								isDefault: true,
+							} ),
+							createSavedPaymentMethod( {
+								gateway: 'woocommerce_payments',
+								tokenId: 54,
+								isDefault: false,
+							} ),
+							createSavedPaymentMethod( {
+								gateway: 'woocommerce_payments',
+								tokenId: 55,
+								isDefault: false,
+							} ),
+						],
+					},
+				} );
+
+				expect( state.activePaymentMethod ).toBe(
+					'woocommerce_payments'
+				);
+				expect( state.paymentMethodData ).toEqual( {
+					token: '54',
+					payment_method: 'woocommerce_payments',
+					'wc-woocommerce_payments-payment-token': '54',
 				} );
 			} );
 		} );

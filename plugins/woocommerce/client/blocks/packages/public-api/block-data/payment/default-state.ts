@@ -54,9 +54,13 @@ function getDefaultPaymentMethodData() {
 	const flatSavedPaymentMethods = Object.keys( savedPaymentMethods ).flatMap(
 		( type ) => savedPaymentMethods[ type ]
 	);
-	const savedPaymentMethod = flatSavedPaymentMethods.find(
+	const matchingSavedPaymentMethods = flatSavedPaymentMethods.filter(
 		( method ) => method.method.gateway === defaultPaymentMethod
 	);
+	const savedPaymentMethod =
+		matchingSavedPaymentMethods.find(
+			( method ) => method.is_default === true
+		) || matchingSavedPaymentMethods[ 0 ];
 
 	// If a saved payment method is found that matches the default payment method,
 	// use it.

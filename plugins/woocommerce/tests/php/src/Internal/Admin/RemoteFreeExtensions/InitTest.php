@@ -320,6 +320,56 @@ class InitTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The woocommerce.com specs still list the WooPayments plugin in the core profiler bundle; WooPayments is native,
+	 * so the profiler must not install it (the default bundles already leave it out unless merged feature plugins
+	 * are allowed, DefaultFreeExtensions::get_all()).
+	 *
+	 * @testdox Should leave the WooPayments plugin out of remote extension bundles unless merged feature plugins are allowed.
+	 */
+	public function test_remote_bundles_do_not_offer_the_woopayments_plugin(): void {
+		update_option( 'woocommerce_default_country', 'US' );
+		$visible_in_us = (object) array(
+			'type'      => 'base_location_country',
+			'value'     => 'US',
+			'operation' => '=',
+		);
+		set_transient(
+			$this->get_specs_transient_name(),
+			array(
+				get_user_locale() => array(
+					(object) array(
+						'key'     => 'obw/core-profiler',
+						'title'   => 'Core profiler',
+						'plugins' => array(
+							(object) array(
+								'name'       => 'WooPayments',
+								'key'        => 'woocommerce-payments',
+								'is_visible' => $visible_in_us,
+							),
+							(object) array(
+								'name'       => 'mock-extension-2',
+								'key'        => 'mock-extension-2',
+								'is_visible' => $visible_in_us,
+							),
+						),
+					),
+				),
+			)
+		);
+
+		$native_keys = wp_list_pluck( RemoteFreeExtensions::get_extensions( array( 'obw/core-profiler' ) )[0]['plugins'], 'key' );
+		\Automattic\Jetpack\Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
+		try {
+			$merged_keys = wp_list_pluck( RemoteFreeExtensions::get_extensions( array( 'obw/core-profiler' ) )[0]['plugins'], 'key' );
+		} finally {
+			\Automattic\Jetpack\Constants::clear_single_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' );
+		}
+
+		$this->assertSame( array( 'mock-extension-2' ), $native_keys );
+		$this->assertContains( 'woocommerce-payments', $merged_keys );
+	}
+
+	/**
 	 * Test that empty bundles are replaced with defaults.
 	 */
 	public function test_empty_extensions() {

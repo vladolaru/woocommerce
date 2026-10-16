@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments no longer retries account reads or marks them failed while the store has no WordPress.com connection, and it refetches the account as soon as the connection is made again.

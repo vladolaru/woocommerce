@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+List multi-currency currencies by name, and let the Add enabled currencies dialog search by symbol and show each flag, symbol and code.

@@ -5,9 +5,14 @@
  * Handles requests to install and activate dependent plugins.
  */
 
+declare( strict_types=1 );
+
 namespace Automattic\WooCommerce\Admin\API;
 
 use Automattic\WooCommerce\Internal\Admin\Onboarding\OnboardingProfile;
+use Automattic\WooCommerce\Internal\Admin\Settings\Payments as SettingsPayments;
+use Automattic\WooCommerce\Internal\Admin\Settings\Utils as SettingsUtils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Admin\PluginsHelper;
 
 defined( 'ABSPATH' ) || exit;
@@ -240,12 +245,12 @@ class Plugins extends \WC_REST_Data_Controller {
 	 * @return \WP_Error|array Plugin Status
 	 */
 	public function install_plugins( $request ) {
-		$plugins = explode( ',', $request['plugins'] );
-		$source  = ! empty( $request['source'] ) ? $request['source'] : null;
-
-		if ( empty( $request['plugins'] ) || ! is_array( $plugins ) ) {
+		if ( empty( $request['plugins'] ) || ! is_string( $request['plugins'] ) ) {
 			return new \WP_Error( 'woocommerce_rest_invalid_plugins', __( 'Plugins must be a non-empty array.', 'woocommerce' ), 404 );
 		}
+
+		$plugins = explode( ',', $request['plugins'] );
+		$source  = ! empty( $request['source'] ) ? $request['source'] : null;
 
 		if ( isset( $request['async'] ) && $request['async'] ) {
 			$job_id = PluginsHelper::schedule_install_plugins( $plugins );
@@ -355,11 +360,11 @@ class Plugins extends \WC_REST_Data_Controller {
 	 * @return \WP_Error|array Plugin Status
 	 */
 	public function activate_plugins( $request ) {
-		$plugins = explode( ',', $request['plugins'] );
-
-		if ( empty( $request['plugins'] ) || ! is_array( $plugins ) ) {
+		if ( empty( $request['plugins'] ) || ! is_string( $request['plugins'] ) ) {
 			return new \WP_Error( 'woocommerce_rest_invalid_plugins', __( 'Plugins must be a non-empty array.', 'woocommerce' ), 404 );
 		}
+
+		$plugins = explode( ',', $request['plugins'] );
 
 		if ( isset( $request['async'] ) && $request['async'] ) {
 			$job_id = PluginsHelper::schedule_activate_plugins( $plugins );
@@ -634,8 +639,18 @@ class Plugins extends \WC_REST_Data_Controller {
 	 * @return \WP_Error|array Connect URL.
 	 */
 	public function connect_wcpay() {
-		if ( ! class_exists( 'WC_Payments' ) ) {
-			return new \WP_Error( 'woocommerce_rest_helper_connect', __( 'There was an error communicating with the WooPayments plugin.', 'woocommerce' ), 500 );
+		$extension_runtime = $this->get_woopayments_extension_runtime();
+		if ( null === $extension_runtime || ! $extension_runtime->is_loaded() ) {
+			// Unless the WooPayments extension owns payments, WooPayments is set up from the Payments settings: answer a 200
+			// with the Payments settings onboarding URL, not an error. Callers follow connectUrl on success.
+			return array(
+				'connectUrl' => SettingsUtils::wc_payments_settings_url(
+					'/woopayments/onboarding',
+					array(
+						'from' => SettingsPayments::FROM_PAYMENTS_TASK,
+					)
+				),
+			);
 		}
 
 		// Use a WooPayments connect link to let the WooPayments plugin handle the connection flow.
@@ -649,6 +664,21 @@ class Plugins extends \WC_REST_Data_Controller {
 				admin_url( 'admin.php' )
 			),
 		);
+	}
+
+	/**
+	 * Get the WooPayments extension runtime.
+	 *
+	 * @return WooPaymentsExtensionRuntime|null
+	 */
+	private function get_woopayments_extension_runtime(): ?WooPaymentsExtensionRuntime {
+		try {
+			$extension_runtime = wc_get_container()->get( WooPaymentsExtensionRuntime::class );
+		} catch ( \Throwable $e ) {
+			return null;
+		}
+
+		return $extension_runtime instanceof WooPaymentsExtensionRuntime ? $extension_runtime : null;
 	}
 
 	/**

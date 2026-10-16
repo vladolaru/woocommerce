@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments settings cards keep their frame on the white settings page, without extra rules between sections.

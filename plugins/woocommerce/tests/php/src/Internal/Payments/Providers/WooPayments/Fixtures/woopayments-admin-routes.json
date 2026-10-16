@@ -1,0 +1,93 @@
+{
+  "schema": "woopayments-plugin-inventory.v1",
+  "inventory": "admin-routes",
+  "source": {
+    "plugin": "woocommerce-payments",
+    "tag": "11.1.0",
+    "commit": "f85392666c9b543cd24dbbf903e0dbe4cb2c5cee"
+  },
+  "note": "WC Admin page=wc-admin&path= routes the plugin registers or redirects (client/index.js:145-361, includes/admin/class-wc-payments-admin.php:230-611). REST-only /payments/accounts is excluded.",
+  "admin_route_count": 20,
+  "admin_routes": [
+    {
+      "path": "/payments/connect",
+      "plugin_site": "client/index.js:145"
+    },
+    {
+      "path": "/payments/onboarding",
+      "plugin_site": "client/index.js:156"
+    },
+    {
+      "path": "/payments/onboarding/kyc",
+      "plugin_site": "client/index.js:170"
+    },
+    {
+      "path": "/payments/overview",
+      "plugin_site": "client/index.js:184"
+    },
+    {
+      "path": "/payments/payouts",
+      "plugin_site": "client/index.js:195"
+    },
+    {
+      "path": "/payments/payouts/details",
+      "plugin_site": "client/index.js:205"
+    },
+    {
+      "path": "/payments/transactions",
+      "plugin_site": "client/index.js:223"
+    },
+    {
+      "path": "/payments/transactions/details",
+      "plugin_site": "client/index.js:236"
+    },
+    {
+      "path": "/payments/disputes",
+      "plugin_site": "client/index.js:254"
+    },
+    {
+      "path": "/payments/disputes/details",
+      "plugin_site": "client/index.js:265"
+    },
+    {
+      "path": "/payments/disputes/challenge",
+      "plugin_site": "client/index.js:284"
+    },
+    {
+      "path": "/payments/multi-currency-setup",
+      "plugin_site": "client/index.js:309"
+    },
+    {
+      "path": "/payments/card-readers",
+      "plugin_site": "client/index.js:319"
+    },
+    {
+      "path": "/payments/loans",
+      "plugin_site": "client/index.js:332"
+    },
+    {
+      "path": "/payments/documents",
+      "plugin_site": "client/index.js:346"
+    },
+    {
+      "path": "/payments/fraud-protection",
+      "plugin_site": "client/index.js:361"
+    },
+    {
+      "path": "/payments/deposits",
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:230"
+    },
+    {
+      "path": "/payments/deposits/details",
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:231"
+    },
+    {
+      "path": "/payments/reports",
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:375"
+    },
+    {
+      "path": "/payments/additional-payment-methods",
+      "plugin_site": "includes/admin/class-wc-payments-admin.php:603"
+    }
+  ]
+}

@@ -29,7 +29,7 @@ export default [
 	{
 		files: [ 'js/**/*.js' ],
 		languageOptions: {
-			ecmaVersion: 8,
+			ecmaVersion: 2018,
 			/*
 			 * These are classic scripts, not modules. eslintrc defaulted to
 			 * `script`; flat config defaults `.js` to `module`, which would
@@ -55,6 +55,15 @@ export default [
 			indent: 'off',
 			'max-len': [ 'error', { code: 140 } ],
 			'no-console': 'warn',
+			// The Grunt build minifies these scripts with uglify-es, which parses ES2018 except `for await`.
+			'no-restricted-syntax': [
+				'error',
+				{
+					selector: 'ForOfStatement[await=true]',
+					message:
+						'uglify-es, which minifies these scripts, cannot parse `for await`.',
+				},
+			],
 		},
 	},
 ];

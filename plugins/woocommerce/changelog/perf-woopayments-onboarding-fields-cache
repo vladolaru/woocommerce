@@ -1,0 +1,4 @@
+Significance: patch
+Type: performance
+
+Cache the WooPayments onboarding fields so WooCommerce admin screens no longer wait for them on every load.

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The "Clear WooPayments account cache" tool in WooCommerce > Status > Tools now refetches the account so fresh account details are available right away.

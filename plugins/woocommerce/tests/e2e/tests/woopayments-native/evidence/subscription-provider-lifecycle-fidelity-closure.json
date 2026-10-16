@@ -1,0 +1,96 @@
+{
+	"schema_version": 2,
+	"slice_id": "subscription-provider-lifecycle-fidelity-closure",
+	"wc_base_commit": "95f5562f9f23993ed5cf39041b25bf67a9f987e5",
+	"verified_at_commit": "95f5562f9f23993ed5cf39041b25bf67a9f987e5",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-subscriptions.spec.ts"
+	],
+	"source_test_sha256": "d9f369a2ffe807f718cf7e474c0ce99cabe95bbad8e0fb4a6f625bc81149b3bf",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-purchase-free-trial.spec.ts:166::Shopper: Subscriptions - Purchase Free Trial › Merchant should be able to create an order with \"Setup Intent\"",
+		"default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-purchase-no-signup-fee.spec.ts:37::Shopper Subscriptions Purchase No Signup Fee › It should be able to purchase a subscription without a signup fee",
+		"default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-purchase-no-signup-fee.spec.ts:71::Shopper Subscriptions Purchase No Signup Fee › It should have a charge for subscription cost without fee & an active subscription",
+		"default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-purchase-sign-up-fee.spec.ts:32::Subscriptions › Purchase subscription with signup fee › should be able to purchase a subscription with signup fee",
+		"default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-purchase-sign-up-fee.spec.ts:43::Subscriptions › Purchase subscription with signup fee › should have a charge for subscription cost with fee & an active subscription",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-renew-subscription.spec.ts:34::Subscriptions › Renew a subscription in my account › should be able to purchase a subscription"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-subscriptions.spec.ts",
+			"contract": "the subscription-provider-lifecycle provider-fidelity family"
+		}
+	],
+	"implementation_commits": [],
+	"execution_fixture": {
+		"site": "http://store8889.localhost:8889",
+		"wpcom_blog_id": 4,
+		"account_id": "acct_1TrY2nBzWlxcwgpP",
+		"runtime_owner": "native",
+		"migration_state": "WooPayments client plugin inactive; native runtime owner; Stripe test mode"
+	},
+	"verification": [
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"(one signup-fee subscription checkout|one no-signup-fee subscription checkout|one free-trial signup)\"",
+			"exit_code": 0,
+			"summary": "Passed 3/3 in 2.5 minutes with one worker and zero retries, on approval 2026-08-20-subscriptions-s1-s3-closure. S1 signup fee, S2 no signup fee and S3 free-trial setup plus its journaled renewal all green; lock directory ended with zero quarantine receipts and zero unresolved provider write attempts. S1 and S2 were re-run against the corrected line-item shape rather than the original fee-line one: WooCommerce Subscriptions raises the product's own price for the initial payment, so the parent order carries one line at USD 11.98 and no fee line. See the 2026-08-20 correction in FIDELITY-CLAIMS.md."
+		},
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:subscription-provider-lifecycle\"",
+			"exit_code": 1,
+			"summary": "The full seven-case family does not pass and this packet closes none of the rows that depend on S4 to S7. S4's change-payment submission stalls: the click reaches native's handler, it takes the new-card branch and blocks the native submit, and its promise never settles - zero submission POSTs, no error in the shopper-facing error region, the form unblocked, the payment element frame unchanged between the card being typed and the submission, identical headed and headless across five reproductions, and no provider contact on any of them. Driving the same surface by hand works in all three of its states. The cause is unresolved. Because the family runs serially, S5 to S7 have never been attempted."
+		}
+	],
+	"reviews": [],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-purchase-free-trial.spec.ts:166::Shopper: Subscriptions - Purchase Free Trial › Merchant should be able to create an order with \"Setup Intent\"",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-subscriptions.spec.ts",
+				"contract": "one free-trial signup creates one zero-total order carrying a single succeeded provider SetupIntent and one reusable credential with no PaymentIntent or charge, and one separately journaled renewal then charges 999 usd on that exact credential"
+			},
+			"fidelity_claim": "subscription-provider-lifecycle"
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-purchase-no-signup-fee.spec.ts:37::Shopper Subscriptions Purchase No Signup Fee › It should be able to purchase a subscription without a signup fee",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-subscriptions.spec.ts",
+				"contract": "one no-signup-fee subscription checkout creates one USD 9.99 parent order whose single product line carries the recurring price alone, a single 999 usd succeeded intent and captured charge, one active subscription, and one token and provider-customer graph"
+			},
+			"fidelity_claim": "subscription-provider-lifecycle"
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-purchase-no-signup-fee.spec.ts:71::Shopper Subscriptions Purchase No Signup Fee › It should have a charge for subscription cost without fee & an active subscription",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-subscriptions.spec.ts",
+				"contract": "one no-signup-fee subscription checkout creates one USD 9.99 parent order whose single product line carries the recurring price alone, a single 999 usd succeeded intent and captured charge, one active subscription, and one token and provider-customer graph"
+			},
+			"fidelity_claim": "subscription-provider-lifecycle"
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-purchase-sign-up-fee.spec.ts:32::Subscriptions › Purchase subscription with signup fee › should be able to purchase a subscription with signup fee",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-subscriptions.spec.ts",
+				"contract": "one signup-fee subscription checkout creates one USD 11.98 parent order whose single product line carries the fee and matches a single 1198 usd succeeded intent and captured charge, one active subscription, one token and provider-customer graph, and zero renewal orders"
+			},
+			"fidelity_claim": "subscription-provider-lifecycle"
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-purchase-sign-up-fee.spec.ts:43::Subscriptions › Purchase subscription with signup fee › should have a charge for subscription cost with fee & an active subscription",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-subscriptions.spec.ts",
+				"contract": "one signup-fee subscription checkout creates one USD 11.98 parent order whose single product line carries the fee and matches a single 1198 usd succeeded intent and captured charge, one active subscription, one token and provider-customer graph, and zero renewal orders"
+			},
+			"fidelity_claim": "subscription-provider-lifecycle"
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-renew-subscription.spec.ts:34::Subscriptions › Renew a subscription in my account › should be able to purchase a subscription",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-subscriptions.spec.ts",
+				"contract": "one signup-fee subscription checkout creates one USD 11.98 parent order whose single product line carries the fee and matches a single 1198 usd succeeded intent and captured charge, one active subscription, one token and provider-customer graph, and zero renewal orders"
+			},
+			"fidelity_claim": "subscription-provider-lifecycle"
+		}
+	]
+}

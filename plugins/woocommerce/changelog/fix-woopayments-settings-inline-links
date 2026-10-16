@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show links inside WooPayments settings sentences, notices and the Disable dialog as plain links without the external-link arrow, as the WooPayments plugin does.

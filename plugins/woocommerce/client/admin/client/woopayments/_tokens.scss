@@ -1,0 +1,46 @@
+// Native WooPayments design tokens.
+// Only for values that the WP admin colour scheme, @wordpress/components and
+// WooCommerce's shared admin variables do not define. Each token states why.
+// See the native styling standard: use those upstream tokens first.
+// Silent comments only: every importing stylesheet would otherwise repeat this header.
+
+// stylelint-disable color-no-hex -- this file is where the literal values with no upstream token live.
+
+// Settings subsection headings and row titles are 14px; base-styles' type scale goes 13px → 15px.
+$woopayments-font-size-subheading: 14px;
+
+// The payment method logo box (the client's express checkout logos use the same box); the logo assets are drawn for 64×40.
+$woopayments-payment-method-logo-width: 64px;
+$woopayments-payment-method-logo-height: 40px;
+
+// The settings fee pill and the express checkout Beta badge share one height (an 18px line plus 1px borders); base-styles has no badge size.
+$woopayments-badge-min-height: 20px;
+
+// Bulleted lists inside settings modals indent 20px; base-styles has no list indent.
+$woopayments-list-indent: 20px;
+
+// Narrow settings fields stop at 500px (the client's narrow settings fields use the same width); base-styles has no form field width.
+$woopayments-field-max-width: 500px;
+
+// Native admin pages (Overview, loans) stop at 960px; no upstream page width token.
+$woopayments-admin-page-max-width: 960px;
+
+// base-styles' $alert-yellow, which WooCommerce's shared variables redefine as #ffb900; the client's dispute warnings use this one.
+$woopayments-warning-yellow: #f0b849;
+
+// Pages under the Payments settings tab (the settings page, Reports) stop at 1120px; no upstream page width token.
+$woopayments-wide-page-max-width: 1120px;
+
+// base-styles' $alert-red, which WooCommerce's shared variables redefine as #d94f4f; the client's error icons and urgent dates use this one.
+$woopayments-error-red: #cc1818;
+
+// Payment and payout details text is 14px like the client; base-styles' type scale goes 13px → 15px.
+$woopayments-font-size-detail: 14px;
+
+// The client's inline notices: a 22px icon, 5px before the text, and the client's info icon colour; no upstream notice icon tokens.
+$woopayments-notice-icon-size: 22px;
+$woopayments-notice-icon-gap: 5px;
+$woopayments-notice-info-icon-color: #0a4b78;
+
+// Small (12px) text sits on an 18px line in the fee pill, the Beta badge, the details popovers and muted settings text; base-styles' line heights go 16px to 20px.
+$woopayments-line-height-small: 18px;

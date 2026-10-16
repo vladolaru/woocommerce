@@ -1,0 +1,4 @@
+Significance: patch
+Type: performance
+
+Stores that run the WooPayments plugin no longer build the built-in payments integration on every request.

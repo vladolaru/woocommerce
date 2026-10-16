@@ -1,0 +1,983 @@
+<?php
+/**
+ * WooPaymentsWooPaySessionController class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay;
+
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Exception;
+use Throwable;
+use WP_Error;
+use WP_REST_Request;
+use WP_REST_Response;
+use WP_REST_Server;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderPayAccess;
+
+/**
+ * Registers WooPay's hooks: the `payments/woopay/session` route WooPay's servers call, the Store API request hooks,
+ * and, while WooPay is on, its AJAX actions, frontend assets, checkout email section and order metadata.
+ *
+ * WooPay's own hooks are decided on `init` (see register()).
+ *
+ * @since 11.0.0
+ * @internal
+ */
+class WooPaymentsWooPaySessionController implements RegisterHooksInterface {
+
+	private const NAMESPACE = 'payments/woopay';
+
+	private const CLASSIC_WOOPAY_SCRIPT_HANDLE = 'wc-woopayments-woopay';
+
+	private const CLASSIC_WOOPAY_STYLE_HANDLE = 'wc-woopayments-woopay';
+
+	/**
+	 * WooPay session service.
+	 *
+	 * @var WooPaymentsWooPaySessionService
+	 */
+	private WooPaymentsWooPaySessionService $session_service;
+
+	/**
+	 * WooPay eligibility rules.
+	 *
+	 * @var WooPaymentsWooPayEligibility
+	 */
+	private WooPaymentsWooPayEligibility $woopay_eligibility;
+
+	/**
+	 * WooPay checkout appearance store.
+	 *
+	 * @var WooPaymentsWooPayAppearanceStore
+	 */
+	private WooPaymentsWooPayAppearanceStore $appearance_store;
+
+	/**
+	 * Handler of WooPay's Store API requests.
+	 *
+	 * @var WooPaymentsWooPayStoreApiRequestHandler
+	 */
+	private WooPaymentsWooPayStoreApiRequestHandler $store_api_request_handler;
+
+	/**
+	 * Whether WooPay frontend assets have already been localized and enqueued.
+	 *
+	 * @var bool
+	 */
+	private bool $has_enqueued_frontend_assets = false;
+
+	/**
+	 * The order-pay params decided for this request, or null before the first decision.
+	 *
+	 * @var array<string,mixed>|null
+	 */
+	private ?array $pay_for_order_params = null;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param WooPaymentsWooPaySessionService         $session_service           WooPay session service.
+	 * @param WooPaymentsWooPayEligibility            $woopay_eligibility        WooPay eligibility rules.
+	 * @param WooPaymentsWooPayAppearanceStore        $appearance_store          WooPay checkout appearance store.
+	 * @param WooPaymentsWooPayStoreApiRequestHandler $store_api_request_handler Handler of WooPay's Store API requests.
+	 */
+	final public function init( WooPaymentsWooPaySessionService $session_service, WooPaymentsWooPayEligibility $woopay_eligibility, WooPaymentsWooPayAppearanceStore $appearance_store, WooPaymentsWooPayStoreApiRequestHandler $store_api_request_handler ): void {
+		$this->session_service           = $session_service;
+		$this->woopay_eligibility        = $woopay_eligibility;
+		$this->appearance_store          = $appearance_store;
+		$this->store_api_request_handler = $store_api_request_handler;
+	}
+
+	/**
+	 * Register WooPay REST and AJAX hooks.
+	 */
+	public function register() {
+		// The Store API request hooks are added whatever WooPay's state, which is not known yet while plugins load; each
+		// callback checks WooPay per request.
+		add_filter( 'determine_current_user', array( $this->store_api_request_handler, 'determine_current_user_for_woopay' ), 20 );
+
+		add_action( 'woocommerce_order_payment_status_changed', array( $this->store_api_request_handler, 'woopay_order_payment_status_changed' ) );
+
+		add_action( 'woocommerce_store_api_checkout_order_processed', array( $this->store_api_request_handler, 'catch_woopay_checkout_errors' ), 1, 1 );
+
+		add_filter( 'automatewoo/referrals/referred_order_advocate', array( $this->store_api_request_handler, 'automatewoo_refer_a_friend_referral_from_parameter' ) );
+
+		add_filter( 'woocommerce_order_needs_payment', array( $this->store_api_request_handler, 'woopay_trial_subscriptions_handler' ), 20, 3 );
+
+		// After the Store API session handler saves the session on shutdown (priority 20, StoreApi\SessionHandler::init()).
+		add_action( 'shutdown', array( $this->store_api_request_handler, 'refresh_woopay_browser_session_cache' ), 21 );
+
+		// The session route is registered whatever WooPay's state, never a 404 that would make WooPay's bootstrap fail
+		// without a reason. Its permission callback checks only that the request carries WooPay's user agent and a valid
+		// blog-token signature, not whether WooPay is enabled, as in client 11.1.0
+		// (class-wc-rest-woopay-session-controller.php:80-81). It registers on its own rest_api_init callback, as in
+		// client 11.1.0 (class-wc-payments.php:860, :2451-2452), so a plugin that empties WooCommerce's list of REST
+		// controllers does not remove it.
+		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
+
+		// WooPay's hooks depend on the account, so they are decided on init: while plugins load, Jetpack cannot confirm the
+		// connection owner yet and the account read serves only the cache, so a store without a cached account would read
+		// WooPay as disabled. Client 11.1.0 decides in a setup_theme callback (class-wc-payments.php:680-689); every hook
+		// added here fires after init.
+		if ( did_action( 'init' ) ) {
+			$this->register_woopay_hooks();
+		} elseif ( false === has_action( 'init', array( $this, 'register_woopay_hooks' ) ) ) {
+			add_action( 'init', array( $this, 'register_woopay_hooks' ), 15 );
+		}
+	}
+
+	/**
+	 * Register the WooPay AJAX, frontend and checkout hooks when WooPay is enabled.
+	 *
+	 * @internal
+	 */
+	public function register_woopay_hooks(): void {
+		if ( ! $this->woopay_eligibility->is_woopay_enabled() ) {
+			return;
+		}
+
+		foreach ( $this->get_ajax_hooks() as $hook => $callback ) {
+			if ( false === has_action( $hook, $callback ) ) {
+				add_action( $hook, $callback );
+			}
+		}
+
+		foreach ( $this->get_frontend_hooks() as $hook => $callback ) {
+			if ( false === has_action( $hook, $callback ) ) {
+				add_action( $hook, $callback );
+			}
+		}
+
+		if ( false === has_filter( 'wcpay_metadata_from_order', array( $this, 'maybe_add_woopay_user_metadata' ) ) ) {
+			add_filter( 'wcpay_metadata_from_order', array( $this, 'maybe_add_woopay_user_metadata' ), 10, 2 );
+		}
+
+		// With WooPay on, the classic billing email moves into a "Contact information" section above the billing fields,
+		// so the OTP popover anchors to it.
+		if ( false === has_action( 'woocommerce_checkout_billing', array( $this, 'woopay_fields_before_billing_details' ) ) ) {
+			add_action( 'woocommerce_checkout_billing', array( $this, 'woopay_fields_before_billing_details' ), -50 );
+		}
+
+		if ( false === has_filter( 'woocommerce_form_field_email', array( $this, 'filter_woocommerce_form_field_woopay_email' ) ) ) {
+			add_filter( 'woocommerce_form_field_email', array( $this, 'filter_woocommerce_form_field_woopay_email' ), 20, 4 );
+		}
+
+		if ( false === has_action( 'woocommerce_checkout_process', array( $this, 'maybe_show_woopay_phone_number_error' ) ) ) {
+			add_action( 'woocommerce_checkout_process', array( $this, 'maybe_show_woopay_phone_number_error' ) );
+		}
+
+		// Client 11.1.0 hooks the draft-order reuse only while direct checkout is enabled (class-wc-payments.php:1770-1777,
+		// class-wc-payments-woopay-direct-checkout.php:40-43).
+		if (
+			$this->woopay_eligibility->is_woopay_direct_checkout_enabled() &&
+			false === has_filter( 'woocommerce_create_order', array( $this->store_api_request_handler, 'maybe_use_store_api_draft_order_id' ) )
+		) {
+			add_filter( 'woocommerce_create_order', array( $this->store_api_request_handler, 'maybe_use_store_api_draft_order_id' ) );
+		}
+	}
+
+	/**
+	 * Reject a classic checkout that asks to save the shopper in WooPay without a phone number.
+	 *
+	 * The save-user form posts one `full` number (see set_woopay_phone_session_data()), so that is the value checked.
+	 */
+	public function maybe_show_woopay_phone_number_error(): void {
+		// phpcs:disable WordPress.Security.NonceVerification.Missing -- WooCommerce verifies the checkout nonce before firing woocommerce_checkout_process.
+		if ( ! isset( $_POST['save_user_in_woopay'] ) || 'true' !== $_POST['save_user_in_woopay'] ) {
+			return;
+		}
+
+		$phone = isset( $_POST['woopay_user_phone_field']['full'] ) && is_scalar( $_POST['woopay_user_phone_field']['full'] )
+			? trim( sanitize_text_field( wp_unslash( (string) $_POST['woopay_user_phone_field']['full'] ) ) )
+			: '';
+		// phpcs:enable WordPress.Security.NonceVerification.Missing
+
+		if ( '' === $phone ) {
+			wc_add_notice( '<strong>' . esc_html__( 'Mobile Number', 'woocommerce' ) . '</strong> ' . esc_html__( 'is required to create an WooPay account.', 'woocommerce' ), 'error' );
+		}
+	}
+
+	/**
+	 * Render the WooPay contact section carrying the billing email above the billing fields.
+	 */
+	public function woopay_fields_before_billing_details(): void {
+		$checkout = WC()->checkout();
+
+		echo '<div class="woocommerce-billing-fields" id="contact_details">';
+		echo '<h3>' . esc_html__( 'Contact information', 'woocommerce' ) . '</h3>';
+		echo '<div class="woocommerce-billing-fields__field-wrapper">';
+		woocommerce_form_field(
+			'billing_email',
+			array(
+				'type'        => 'email',
+				'label'       => __( 'Email address', 'woocommerce' ),
+				'class'       => array( 'form-row-wide woopay-billing-email' ),
+				'input_class' => array( 'woopay-billing-email-input' ),
+				'validate'    => array( 'email' ),
+				'required'    => true,
+			),
+			$checkout->get_value( 'billing_email' )
+		);
+		echo '</div>';
+		echo '</div>';
+
+		// Block themes with the classic checkout do not load the Blocks stylesheet the
+		// email spinner and notice borrow.
+		wp_enqueue_style( 'wc-blocks-style' );
+	}
+
+	/**
+	 * Hide the core billing email field on checkout: the WooPay contact section renders it.
+	 *
+	 * @param string $field         The rendered field markup.
+	 * @param string $key           The field key.
+	 * @param mixed  $args          Field arguments.
+	 * @param mixed  $_unused_value Field value.
+	 * @return string
+	 */
+	public function filter_woocommerce_form_field_woopay_email( $field, $key, $args, $_unused_value ) {
+		$class = is_array( $args ) && isset( $args['class'][0] ) ? (string) $args['class'][0] : '';
+		if ( false === strpos( $class, 'woopay-billing-email' ) && is_checkout() && ! is_checkout_pay_page() ) {
+			return '';
+		}
+
+		return $field;
+	}
+
+	/**
+	 * Register WooPay session routes.
+	 */
+	public function register_routes(): void {
+		register_rest_route(
+			self::NAMESPACE,
+			'/session',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_session' ),
+				'permission_callback' => array( $this, 'has_permission' ),
+				'args'                => array(
+					'email' => array(
+						'type'     => 'string',
+						'format'   => 'email',
+						'required' => true,
+					),
+				),
+			)
+		);
+	}
+
+	/**
+	 * Check WooPay route permissions.
+	 *
+	 * @param WP_REST_Request $request REST request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return bool|WP_Error
+	 */
+	public function has_permission( WP_REST_Request $request ) {
+		if ( 'WooPay' !== $request->get_header( 'user_agent' ) ) {
+			return new WP_Error( 'woocommerce_rest_cannot_view', __( 'Sorry, you cannot list resources.', 'woocommerce' ), array( 'status' => rest_authorization_required_code() ) );
+		}
+
+		if ( ! $this->store_api_request_handler->has_valid_request_signature() ) {
+			return new WP_Error( 'woocommerce_rest_cannot_view', __( 'Sorry, you cannot list resources.', 'woocommerce' ), array( 'status' => rest_authorization_required_code() ) );
+		}
+
+		return true;
+	}
+
+	/**
+	 * Get WooPay session data.
+	 *
+	 * @param WP_REST_Request $request REST request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_session( WP_REST_Request $request ) {
+		try {
+			$email = $request->get_param( 'email' );
+
+			return new WP_REST_Response(
+				$this->session_service->start_init_session_request( is_scalar( $email ) ? sanitize_email( (string) $email ) : null, null, $request ),
+				200
+			);
+		} catch ( Throwable $exception ) {
+			// The client logs the message and answers it (class-wc-rest-woopay-session-controller.php:67-71). It catches only
+			// an Exception, so WooPay never sees a PHP Error's text, which can name a server path; here that gets a fixed text.
+			wc_get_container()->get( WooPaymentsLogger::class )->log( 'Error validating cart token from WooPay request: ' . $exception->getMessage() );
+			$message = $exception instanceof Exception ? $exception->getMessage() : __( 'Unexpected server error', 'woocommerce' );
+
+			return new WP_Error( 'wcpay_server_error', $message, array( 'status' => 400 ) );
+		}
+	}
+
+	/**
+	 * Handle WooPay init AJAX.
+	 */
+	public function handle_init_woopay(): void {
+		if ( ! $this->is_ajax_nonce_valid( 'wcpay_init_woopay_nonce' ) ) {
+			wp_send_json( array( 'result' => 'failure' ), 403 );
+		}
+
+		wp_send_json( $this->session_service->init_woopay_session( wp_unslash( $_POST ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+	}
+
+	/**
+	 * Handle encrypted WooPay session AJAX.
+	 */
+	public function handle_get_woopay_session(): void {
+		if ( ! $this->is_ajax_nonce_valid( 'woopay_session_nonce' ) ) {
+			wp_send_json( array( 'result' => 'failure' ), 403 );
+		}
+
+		wp_send_json( $this->session_service->get_encrypted_session_data( wp_unslash( $_POST ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+	}
+
+	/**
+	 * Handle WooPay phone-number session AJAX.
+	 */
+	public function handle_set_woopay_phone_number(): void {
+		if ( ! $this->is_ajax_nonce_valid( 'woopay_session_nonce' ) ) {
+			wp_send_json( array( 'result' => 'failure' ), 403 );
+		}
+
+		$request = wp_unslash( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		if ( ! empty( $request['empty'] ) ) {
+			$this->session_service->clear_woopay_session_data();
+		} else {
+			$this->session_service->set_woopay_phone_session_data( $request );
+		}
+
+		wp_send_json( array( 'result' => 'success' ) );
+	}
+
+	/**
+	 * Handle WooPay request-signature AJAX.
+	 */
+	public function handle_get_woopay_signature(): void {
+		if ( ! $this->is_ajax_nonce_valid( 'woopay_signature_nonce' ) ) {
+			wp_send_json_error( array( 'result' => 'failure' ), 403 );
+		}
+
+		wp_send_json_success( array( 'signature' => $this->session_service->get_woopay_request_signature() ), 200 );
+	}
+
+	/**
+	 * Handle encrypted minimum WooPay session AJAX.
+	 */
+	public function handle_get_woopay_minimum_session_data(): void {
+		if ( ! $this->is_ajax_nonce_valid( 'woopay_session_nonce' ) ) {
+			wp_send_json( array( 'result' => 'failure' ), 403 );
+		}
+
+		wp_send_json( $this->session_service->get_encrypted_minimum_session_data() );
+	}
+
+	/**
+	 * Handle admin WooPay appearance persistence AJAX.
+	 */
+	public function handle_set_admin_woopay_appearance(): void {
+		if ( ! $this->is_ajax_nonce_valid( 'wcpay_admin_woopay_appearance_nonce' ) || ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( array( 'result' => 'failure' ), 403 );
+		}
+
+		$this->reject_appearance_write_without_global_theme_support();
+
+		$request = wp_unslash( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		if ( ! $this->is_valid_appearance_request( $request ) ) {
+			wp_send_json_error( array( 'result' => 'failure' ), 400 );
+		}
+
+		$this->save_admin_appearance( $request );
+
+		wp_send_json_success();
+	}
+
+	/**
+	 * Handle shopper WooPay appearance persistence AJAX.
+	 */
+	public function handle_set_shopper_woopay_appearance(): void {
+		if ( ! $this->is_ajax_nonce_valid( 'woopay_session_nonce' ) ) {
+			wp_send_json_error( array( 'result' => 'failure' ), 403 );
+		}
+
+		$this->reject_appearance_write_without_global_theme_support();
+
+		$request = wp_unslash( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		if ( ! $this->is_valid_appearance_request( $request ) ) {
+			wp_send_json_error( array( 'result' => 'failure' ), 400 );
+		}
+
+		wp_send_json_success( $this->maybe_save_shopper_appearance( $request ) );
+	}
+
+	/**
+	 * Enqueue the WooPay script, style and config on the pages that show WooPay.
+	 */
+	public function enqueue_frontend_assets(): void {
+		if ( $this->has_enqueued_frontend_assets ) {
+			return;
+		}
+
+		$supported_frontend_surface = $this->is_supported_frontend_surface();
+		$direct_checkout_surface    = $this->is_supported_direct_checkout_surface();
+		if ( ! $supported_frontend_surface && ! $direct_checkout_surface ) {
+			return;
+		}
+
+		$direct_checkout_runs = $this->woopay_eligibility->should_run_woopay_direct_checkout();
+		if ( ! $supported_frontend_surface ) {
+			if ( ! $direct_checkout_runs ) {
+				return;
+			}
+
+			// A page that only carries a mini-cart gets the light direct-checkout config, like client 11.1.0
+			// (class-wc-payments-woopay-direct-checkout.php:96-116): no button config, no shopper geolocation, no stylesheet.
+			if ( ! $this->is_cart_surface() ) {
+				$this->enqueue_direct_checkout_assets();
+				return;
+			}
+		}
+
+		$context = $this->get_current_button_context();
+		$config  = $this->get_woopay_frontend_config( $context );
+		if (
+			empty( $config['shouldShowWooPayButton'] ) &&
+			! $this->woopay_eligibility->should_load_woopay_save_user_assets( $context ) &&
+			! ( $direct_checkout_surface && $direct_checkout_runs )
+		) {
+			return;
+		}
+
+		// The classic script runs direct checkout on this flag; client 11.1.0 does not load its direct-checkout script for a
+		// shopper the guest rule keeps out (class-wc-payments-woopay-direct-checkout.php:92-94).
+		$config['isWooPayDirectCheckoutEnabled'] = $direct_checkout_runs;
+
+		$this->register_classic_woopay_assets();
+		wp_localize_script( self::CLASSIC_WOOPAY_SCRIPT_HANDLE, 'wcpay_core_woopay_config', $this->get_classic_woopay_config( $config ) );
+		wp_enqueue_style( self::CLASSIC_WOOPAY_STYLE_HANDLE );
+		wp_enqueue_script( self::CLASSIC_WOOPAY_SCRIPT_HANDLE );
+		$this->has_enqueued_frontend_assets = true;
+	}
+
+	/**
+	 * Enqueue the classic WooPay script with the light direct-checkout config only.
+	 */
+	private function enqueue_direct_checkout_assets(): void {
+		$this->register_classic_woopay_assets();
+		wp_localize_script(
+			self::CLASSIC_WOOPAY_SCRIPT_HANDLE,
+			'wcpay_core_woopay_config',
+			array_merge(
+				array( 'wcAjaxUrl' => \WC_AJAX::get_endpoint( '%%endpoint%%' ) ),
+				$this->session_service->get_woopay_direct_checkout_config()
+			)
+		);
+		wp_enqueue_script( self::CLASSIC_WOOPAY_SCRIPT_HANDLE );
+		$this->has_enqueued_frontend_assets = true;
+	}
+
+	/**
+	 * Get the WooPay button placeholder, which WooPaymentsExpressCheckoutController renders first in the one express
+	 * checkout wrapper (client 11.1.0 class-wc-payments-express-checkout-button-display-handler.php:125-152).
+	 *
+	 * @return string Escaped markup, or an empty string when the WooPay button does not show on this page.
+	 */
+	public function get_express_checkout_button_html(): string {
+		if ( ! $this->is_supported_frontend_surface() || ! $this->woopay_eligibility->is_woopay_enabled() ) {
+			return '';
+		}
+
+		$context = $this->get_current_button_context();
+		$config  = $this->get_woopay_frontend_config( $context );
+		if ( empty( $config['shouldShowWooPayButton'] ) ) {
+			return '';
+		}
+
+		$settings = $config['woopayButton'];
+
+		return '<div id="wcpay-woopay-button" data-product_page="' . esc_attr( 'product' === $context ? '1' : '0' ) . '">' .
+			'<div class="woopay-express-button is-placeholder" aria-label="' . esc_attr__( 'WooPay', 'woocommerce' ) . '" data-type="' . esc_attr( (string) $settings['type'] ) . '" data-theme="' . esc_attr( (string) $settings['theme'] ) . '" data-size="' . esc_attr( (string) $settings['size'] ) . '" style="height: ' . esc_attr( (string) $settings['height'] ) . 'px; border-radius: ' . esc_attr( (string) $settings['radius'] ) . 'px"></div>' .
+			'</div>';
+	}
+
+	/**
+	 * Handle WooPay product add-to-cart AJAX.
+	 */
+	public function handle_add_to_cart(): void {
+		check_ajax_referer( 'wcpay-add-to-cart', 'security' );
+
+		if ( ! defined( 'WOOCOMMERCE_CART' ) ) {
+			define( 'WOOCOMMERCE_CART', true );
+		}
+
+		WC()->shipping()->reset_shipping();
+
+		$request    = wp_unslash( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$product_id = isset( $request['product_id'] ) ? absint( $request['product_id'] ) : 0;
+		$product    = wc_get_product( $product_id );
+
+		if ( ! $product ) {
+			wp_send_json(
+				array(
+					'error' => array(
+						'code'    => 'invalid_product_id',
+						'message' => __( 'Invalid product ID.', 'woocommerce' ),
+					),
+				),
+				404
+			);
+		}
+
+		$quantity     = 1;
+		$raw_quantity = $request['quantity'] ?? null;
+		if ( is_scalar( $raw_quantity ) ) {
+			$clean_quantity = wc_clean( (string) $raw_quantity );
+			if ( ! is_string( $clean_quantity ) ) {
+				$clean_quantity = '';
+			}
+			$locale                    = localeconv();
+			$decimal_separators        = array_filter(
+				array(
+					'.',
+					wc_get_price_decimal_separator(),
+					$locale['decimal_point'],
+					$locale['mon_decimal_point'],
+				)
+			);
+			$normalized_quantity       = str_replace( array_unique( $decimal_separators ), '.', $clean_quantity );
+			$is_valid_decimal_quantity = 1 === preg_match( '/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/', $normalized_quantity );
+			if ( $is_valid_decimal_quantity ) {
+				$quantity = wc_stock_amount(
+					(float) wc_format_decimal( $normalized_quantity )
+				);
+				$quantity = $quantity > 0 ? $quantity : 1;
+			}
+		}
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WooCommerce's add-to-cart validation filter, fired as WC_Form_Handler::add_to_cart_handler_simple() fires it.
+		if ( ! apply_filters( 'woocommerce_add_to_cart_validation', true, $product_id, $quantity ) ) {
+			wp_send_json(
+				array(
+					'error'  => true,
+					'submit' => true,
+				),
+				400
+			);
+		}
+
+		WC()->cart->empty_cart();
+		$variation_id = isset( $request['variation_id'] ) ? absint( $request['variation_id'] ) : 0;
+		$attributes   = $this->get_add_to_cart_attributes( $request );
+		$added        = WC()->cart->add_to_cart( $product_id, $quantity, $variation_id, $attributes );
+		if ( ! $added ) {
+			wp_send_json(
+				array(
+					'error' => array(
+						'code'    => 'add_to_cart_failed',
+						'message' => __( 'Unable to add this product to the cart.', 'woocommerce' ),
+					),
+				),
+				400
+			);
+		}
+
+		WC()->cart->calculate_totals();
+
+		wp_send_json(
+			array(
+				'result' => 'success',
+				'cart'   => array(
+					'items_count' => WC()->cart->get_cart_contents_count(),
+					'total'       => WC()->cart->get_total( '' ),
+				),
+			)
+		);
+	}
+
+	/**
+	 * Get product variation attributes from a WooPay add-to-cart request.
+	 *
+	 * @param array<string,mixed> $request Unsigned add-to-cart request data.
+	 * @return array<string,mixed>
+	 */
+	private function get_add_to_cart_attributes( array $request ): array {
+		$attributes = array();
+		if ( isset( $request['attributes'] ) && is_array( $request['attributes'] ) ) {
+			$clean_attributes = wc_clean( $request['attributes'] );
+			$attributes       = is_array( $clean_attributes ) ? $clean_attributes : array();
+		}
+
+		foreach ( $request as $key => $value ) {
+			if ( 0 !== strpos( (string) $key, 'attribute_' ) || is_array( $value ) ) {
+				continue;
+			}
+
+			$attributes[ sanitize_key( $key ) ] = wc_clean( $value );
+		}
+
+		return $attributes;
+	}
+
+	/**
+	 * Handle WooPay frontend error notices.
+	 */
+	public function handle_show_error_notice(): void {
+		$is_nonce_valid = check_ajax_referer( 'woopay_button_nonce', false, false );
+
+		if ( ! $is_nonce_valid ) {
+			wp_send_json_error(
+				__( 'You aren’t authorized to do that.', 'woocommerce' ),
+				403
+			);
+		}
+
+		$request = wp_unslash( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$message = isset( $request['message'] ) && is_scalar( $request['message'] )
+			? sanitize_text_field( (string) $request['message'] )
+			: __( 'There was a problem processing the payment.', 'woocommerce' );
+
+		wc_add_notice( $message, 'error' );
+		wp_send_json_success(
+			array(
+				'notice' => wc_print_notices( true ),
+			)
+		);
+	}
+
+	/**
+	 * Clear WooPay session data when WooCommerce completes payment.
+	 */
+	public function handle_woocommerce_payment_complete(): void {
+		$this->session_service->clear_woopay_session_data();
+	}
+
+	/**
+	 * Add WooPay save-user session data to order metadata.
+	 *
+	 * @param mixed $metadata Metadata.
+	 * @param mixed $order    Order object.
+	 * @return mixed
+	 */
+	public function maybe_add_woopay_user_metadata( $metadata, $order ) {
+		if ( ! is_array( $metadata ) || ! $order instanceof \WC_Order ) {
+			return $metadata;
+		}
+
+		return $this->session_service->maybe_add_woopay_user_metadata( $metadata, $order );
+	}
+
+	/**
+	 * Store the appearance an admin posted, replacing any stored one.
+	 *
+	 * @param array<string,mixed> $request Request data.
+	 */
+	private function save_admin_appearance( array $request ): void {
+		$payload = $this->get_appearance_payload( $request );
+
+		$this->appearance_store->save_woopay_appearance( $payload['appearance'], $payload['font_rules'] );
+	}
+
+	/**
+	 * Store the appearance a shopper page posted when none is stored for the current styles version.
+	 *
+	 * @param array<string,mixed> $request Request data.
+	 * @return array{stored:bool} Whether it was stored.
+	 */
+	private function maybe_save_shopper_appearance( array $request ): array {
+		$payload = $this->get_appearance_payload( $request );
+
+		return array(
+			'stored' => $this->appearance_store->maybe_save_woopay_appearance( $payload['appearance'], $payload['font_rules'] ),
+		);
+	}
+
+	/**
+	 * Answer an appearance write with 403 while WooPay global theme support is off, as client 11.1.0 does
+	 * (class-woopay-session.php:1219-1224, :1273-1278), so nothing fills the slot WooPay would serve once it is turned on.
+	 */
+	private function reject_appearance_write_without_global_theme_support(): void {
+		if ( ! $this->woopay_eligibility->is_woopay_global_theme_support_enabled() ) {
+			wp_send_json_error( __( 'This action is not available.', 'woocommerce' ), 403 );
+		}
+	}
+
+	/**
+	 * Check an AJAX nonce without dying.
+	 *
+	 * @param string $action Nonce action.
+	 * @return bool
+	 */
+	private function is_ajax_nonce_valid( string $action ): bool {
+		return (bool) check_ajax_referer( $action, false, false );
+	}
+
+	/**
+	 * Check whether an appearance request carries a valid WooPay appearance payload.
+	 *
+	 * @param array<string,mixed> $request Request data.
+	 * @return bool
+	 */
+	private function is_valid_appearance_request( array $request ): bool {
+		return isset( $request['appearance'] ) &&
+			is_array( $request['appearance'] ) &&
+			$this->appearance_store->validate_appearance_schema( $request['appearance'] );
+	}
+
+	/**
+	 * Get appearance payload data from a request.
+	 *
+	 * @param array<string,mixed> $request Request data.
+	 * @return array{appearance:array<string,mixed>,font_rules:array<int,array<string,string>>}
+	 */
+	private function get_appearance_payload( array $request ): array {
+		$appearance = isset( $request['appearance'] ) && is_array( $request['appearance'] )
+			? $request['appearance']
+			: array();
+
+		$font_rules = array();
+		if ( isset( $request['font_rules'] ) ) {
+			$raw_font_rules = $request['font_rules'];
+			if ( is_string( $raw_font_rules ) ) {
+				$decoded        = json_decode( $raw_font_rules, true );
+				$raw_font_rules = is_array( $decoded ) ? $decoded : array();
+			}
+
+			if ( is_array( $raw_font_rules ) ) {
+				$font_rules = $this->appearance_store->sanitize_woopay_font_rules( $raw_font_rules );
+			}
+		}
+
+		return array(
+			'appearance' => $appearance,
+			'font_rules' => $font_rules,
+		);
+	}
+
+	/**
+	 * Get WooPay AJAX hooks and callbacks.
+	 *
+	 * @return array<string,callable>
+	 */
+	private function get_ajax_hooks(): array {
+		return array(
+			'wc_ajax_wcpay_init_woopay'                   => array( $this, 'handle_init_woopay' ),
+			'wc_ajax_wcpay_get_woopay_session'            => array( $this, 'handle_get_woopay_session' ),
+			'wc_ajax_wcpay_set_woopay_phone_number'       => array( $this, 'handle_set_woopay_phone_number' ),
+			'wc_ajax_wcpay_get_woopay_signature'          => array( $this, 'handle_get_woopay_signature' ),
+			'wc_ajax_wcpay_get_woopay_minimum_session_data' => array( $this, 'handle_get_woopay_minimum_session_data' ),
+			'wp_ajax_wcpay_admin_set_woopay_appearance'   => array( $this, 'handle_set_admin_woopay_appearance' ),
+			'wc_ajax_wcpay_shopper_set_woopay_appearance' => array( $this, 'handle_set_shopper_woopay_appearance' ),
+			'wc_ajax_wcpay_add_to_cart'                   => array( $this, 'handle_add_to_cart' ),
+			'wp_ajax_woopay_express_checkout_button_show_error_notice' => array( $this, 'handle_show_error_notice' ),
+			'wp_ajax_nopriv_woopay_express_checkout_button_show_error_notice' => array( $this, 'handle_show_error_notice' ),
+		);
+	}
+
+	/**
+	 * Get WooPay frontend hooks and callbacks.
+	 *
+	 * @return array<string,callable>
+	 */
+	private function get_frontend_hooks(): array {
+		return array(
+			'wp_enqueue_scripts'           => array( $this, 'enqueue_frontend_assets' ),
+			'wp_footer'                    => array( $this, 'enqueue_frontend_assets' ),
+			'woocommerce_payment_complete' => array( $this, 'handle_woocommerce_payment_complete' ),
+		);
+	}
+
+	/**
+	 * Register the classic WooPay assets; this controller is their only registrar.
+	 */
+	private function register_classic_woopay_assets(): void {
+		if ( ! wp_script_is( self::CLASSIC_WOOPAY_SCRIPT_HANDLE, 'registered' ) ) {
+			$suffix = defined( 'SCRIPT_DEBUG' ) && SCRIPT_DEBUG ? '' : '.min';
+			wp_register_script(
+				self::CLASSIC_WOOPAY_SCRIPT_HANDLE,
+				WC()->plugin_url() . '/assets/js/frontend/woopayments-woopay' . $suffix . '.js',
+				array( 'jquery', 'wp-i18n' ),
+				WC_VERSION,
+				true
+			);
+			wp_set_script_translations( self::CLASSIC_WOOPAY_SCRIPT_HANDLE, 'woocommerce' );
+		}
+
+		if ( ! wp_style_is( self::CLASSIC_WOOPAY_STYLE_HANDLE, 'registered' ) ) {
+			wp_register_style(
+				self::CLASSIC_WOOPAY_STYLE_HANDLE,
+				WC()->plugin_url() . '/assets/css/woopayments-woopay.css',
+				array(),
+				WC_VERSION
+			);
+			wp_style_add_data( self::CLASSIC_WOOPAY_STYLE_HANDLE, 'rtl', 'replace' );
+		}
+	}
+
+	/**
+	 * Get the WooPay frontend config for a context; on an order's pay page it carries the order, its key and billing email.
+	 *
+	 * WooPay then pays that order (client 11.1.0 class-wc-payments-express-checkout-button-display-handler.php:184-222). Without
+	 * them the button stays off, so an order's pay page never starts a cart session. The billing email is left empty on a page
+	 * that a page cache could serve to another visitor (WooPaymentsOrderPayAccess::may_put_shopper_email_in_page()). See
+	 * get_pay_for_order_params().
+	 *
+	 * @param string $context WooPay button context.
+	 * @return array<string,mixed>
+	 */
+	private function get_woopay_frontend_config( string $context ): array {
+		$config = $this->session_service->get_woopay_frontend_config( $context );
+		if ( 'pay_for_order' !== $context ) {
+			return $config;
+		}
+
+		$pay_for_order_params = $this->get_pay_for_order_params();
+		if ( array() === $pay_for_order_params ) {
+			$config['shouldShowWooPayButton'] = false;
+
+			return $config;
+		}
+
+		return array_merge( $config, $pay_for_order_params );
+	}
+
+	/**
+	 * Get the order-pay params for this request, decided once so the button rendered in the pay form follows the config.
+	 *
+	 * Empty unless the pay link lets the visitor pay the order and the Store API order the WooPay session preloads states
+	 * the order's total (WooPaymentsOrderPayAccess::store_api_states_order_total()). Multi-currency switches the active
+	 * currency to the order's only inside the pay form (before_woocommerce_pay), after the config is built at
+	 * wp_enqueue_scripts; the session request sees the shopper's.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_pay_for_order_params(): array {
+		if ( null !== $this->pay_for_order_params ) {
+			return $this->pay_for_order_params;
+		}
+
+		$params = WooPaymentsOrderPayAccess::get_pay_for_order_page_params();
+		$order  = array() === $params ? false : wc_get_order( $params['order_id'] );
+		if ( ! $order instanceof \WC_Order || ! WooPaymentsOrderPayAccess::store_api_states_order_total( $order ) ) {
+			$params = array();
+		}
+
+		$this->pay_for_order_params = $params;
+
+		return $params;
+	}
+
+	/**
+	 * Get localized classic WooPay config.
+	 *
+	 * @param array<string,mixed> $config WooPay frontend config.
+	 * @return array<string,mixed>
+	 */
+	private function get_classic_woopay_config( array $config ): array {
+		return array_merge(
+			array(
+				'wcAjaxUrl'                => \WC_AJAX::get_endpoint( '%%endpoint%%' ),
+				'confirmationErrorMessage' => __( 'There was a problem processing the payment. Please try again.', 'woocommerce' ),
+				// The save-user source URL is the checkout page permalink, which client 11.1.0 sends from
+				// wcSettings.storePages.checkout.permalink (`client/components/woopay/save-user/checkout-page-save-user.js:118-124, :355-360`),
+				// built the way core's Blocks settings build it (AssetDataRegistry::get_store_pages()); never the browser URL.
+				'woopaySourceUrl'          => (string) get_permalink( wc_get_page_id( 'checkout' ) ),
+			),
+			$config,
+			$this->session_service->get_save_user_checkout_data()
+		);
+	}
+
+	/**
+	 * Tell whether the current request is a supported shopper frontend surface.
+	 *
+	 * @return bool
+	 */
+	private function is_supported_frontend_surface(): bool {
+		// Core renders the classic checkout form on order-pay even under a Checkout block page (Blocks Checkout::render()).
+		// Client 11.1.0 loads no WooPay on the change-payment page (class-wc-payments-woopay-button-handler.php:124-126).
+		if ( $this->is_order_pay_surface() ) {
+			return ! isset( $_GET['change_payment_method'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only page flag.
+		}
+
+		if ( $this->is_block_cart_or_checkout_surface() ) {
+			return false;
+		}
+
+		return is_checkout() ||
+			is_cart() ||
+			is_product() ||
+			WooPaymentsFrontendAssets::current_post_has_shortcode( 'product_page' );
+	}
+
+	/**
+	 * Tell whether the current request supports WooPay direct checkout.
+	 *
+	 * Client 11.1.0 `should_enqueue_scripts()` (class-wc-payments-woopay-direct-checkout.php:130-134): a cart page, any page
+	 * where a Mini-Cart block rendered (the checkout page too), or a page other than checkout with the classic cart widget.
+	 *
+	 * @return bool
+	 */
+	private function is_supported_direct_checkout_surface(): bool {
+		if ( $this->is_cart_surface() || 0 < did_action( 'woocommerce_blocks_cart_enqueue_data' ) ) {
+			return true;
+		}
+
+		return wp_script_is( 'wc-cart-fragments', 'enqueued' ) &&
+			! ( is_checkout() || WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/checkout' ) );
+	}
+
+	/**
+	 * Tell whether the current request is a classic or Blocks cart page.
+	 *
+	 * @return bool
+	 */
+	private function is_cart_surface(): bool {
+		return is_cart() || WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/cart' );
+	}
+
+	/**
+	 * Tell whether the current request renders a Blocks cart or checkout page.
+	 *
+	 * @return bool
+	 */
+	private function is_block_cart_or_checkout_surface(): bool {
+		return WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/cart' ) || WooPaymentsFrontendAssets::current_post_has_block( 'woocommerce/checkout' );
+	}
+
+	/**
+	 * Get the current WooPay button context.
+	 *
+	 * @return string
+	 */
+	private function get_current_button_context(): string {
+		// Order-pay first, so a product shortcode on the checkout page cannot make the order's button a product button. Client
+		// 11.1.0 get_button_context() checks the product first (class-wc-payments-express-checkout-button-helper.php:450-468)
+		// but adds the order to its config whatever the context (express checkout display handler :184-222).
+		if ( $this->is_order_pay_surface() ) {
+			return 'pay_for_order';
+		}
+
+		if ( is_product() || WooPaymentsFrontendAssets::current_post_has_shortcode( 'product_page' ) ) {
+			return 'product';
+		}
+
+		// A cart page, or any page holding the Cart block (the checkout page too), counts as the cart before the checkout
+		// (class-wc-payments-express-checkout-button-helper.php:275-277, :450-468).
+		return $this->is_cart_surface() ? 'cart' : 'checkout';
+	}
+
+	/**
+	 * Tell whether the current request is the checkout page's order-pay endpoint.
+	 *
+	 * @return bool
+	 */
+	private function is_order_pay_surface(): bool {
+		return is_checkout() && is_wc_endpoint_url( 'order-pay' );
+	}
+}

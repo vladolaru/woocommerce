@@ -1,0 +1,4 @@
+Significance: minor
+Type: add
+
+Show the WooPayments "Your capital loan has been approved!" inbox note when a Capital loan is paid out, and remove it once the loan is no longer active.

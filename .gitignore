@@ -132,3 +132,6 @@ CLAUDE.local.md
 .docusaurus
 
 .mcp.json
+
+# Local Git worktrees
+.worktrees/

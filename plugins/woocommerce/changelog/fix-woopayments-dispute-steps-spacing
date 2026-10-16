@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Remove the extra space around "Steps you can take" on WooPayments disputes that need a response.

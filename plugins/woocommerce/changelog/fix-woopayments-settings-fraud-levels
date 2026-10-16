@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments settings fraud protection levels sit directly in their card with aligned descriptions, like the WooPayments plugin.

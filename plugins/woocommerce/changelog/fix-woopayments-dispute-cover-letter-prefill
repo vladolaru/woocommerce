@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments dispute cover letters are prefilled with the store's name, address, support contact, and the customer's bank, and use the reason-specific wording.

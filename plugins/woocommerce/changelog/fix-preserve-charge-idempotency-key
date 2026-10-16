@@ -1,0 +1,3 @@
+Significance: patch
+Type: fix
+Comment: Reuse the charge idempotency key after ambiguous transport failures.

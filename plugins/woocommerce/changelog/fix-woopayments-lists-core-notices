@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments lists now report load failures and export results in core notices, and no longer repeat the loading state in a line of text above the table.

@@ -1,0 +1,49 @@
+{
+  "schema_version": 2,
+  "slice_id": "manual-authorization-capture-fidelity-closure",
+  "wc_base_commit": "13bf3394e1f294c87651d155dfffc0b7eac2be47",
+  "verified_at_commit": "13bf3394e1f294c87651d155dfffc0b7eac2be47",
+  "reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+  "source_test_paths": [
+    "plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/merchant-manual-capture.spec.ts"
+  ],
+  "source_test_sha256": "ee041407d64ce6e5873c99126f29dd01cdb79d5fdf9b64470d55abc649066d24",
+  "contract_ids": [
+    "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-manual-capture.spec.ts:39::Order › Manual Capture › should create an \"On hold\" order then capture the charge"
+  ],
+  "targets": [
+    {
+      "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/merchant-manual-capture.spec.ts",
+      "contract": "the manual-authorization-capture provider-fidelity family"
+    }
+  ],
+  "implementation_commits": [],
+  "execution_fixture": {
+    "site": "http://store8889.localhost:8889",
+    "wpcom_blog_id": 4,
+    "account_id": "acct_1TrY2nBzWlxcwgpP",
+    "runtime_owner": "native",
+    "migration_state": "WooPayments client plugin inactive; native runtime owner; Stripe test mode; wpcom-local Transact listener forwarding throughout"
+  },
+  "verification": [
+    {
+      "command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep \"@fidelity:manual-authorization-capture\"",
+      "exit_code": 0,
+      "summary": "Passed 1/1 in 46.5 seconds with one worker and zero retries, on approval 2026-08-14-manual-capture-rerun. One authorization reached requires_capture on an on-hold order and one merchant capture moved that same intent and charge to captured exactly once, with the capture-mode setting byte-restored. Lock directory ended clean."
+    }
+  ],
+  "reviews": [],
+  "closures": [
+    {
+      "contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-orders-manual-capture.spec.ts:39::Order › Manual Capture › should create an \"On hold\" order then capture the charge",
+      "target": {
+        "path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/pilots/merchant-manual-capture.spec.ts",
+        "contract": "merchant manually captures one exact authorization and restores capture mode"
+      },
+      "fidelity_claim": "manual-authorization-capture",
+      "fidelity_case": "C1"
+    }
+  ],
+  "known_gaps": [],
+  "deferral": null
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Keep the payment methods a merchant enabled during a WooPayments test drive when they finish verifying their live account, even while those methods are still pending approval.

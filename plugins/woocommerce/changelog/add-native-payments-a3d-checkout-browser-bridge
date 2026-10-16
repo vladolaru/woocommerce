@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Add a core-owned WooPayments card checkout browser bridge for classic checkout and Checkout Blocks.

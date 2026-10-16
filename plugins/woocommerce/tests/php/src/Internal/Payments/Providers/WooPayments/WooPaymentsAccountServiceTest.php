@@ -1,0 +1,2749 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsDefaults;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
+use RuntimeException;
+use WC_Unit_Test_Case;
+
+/**
+ * Tests for the WooPaymentsAccountService class.
+ */
+class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
+
+	use ProviderTextLogAssertions;
+
+	/**
+	 * Countries where WooPayments accounts are supported, as client 11.1.0 lists them (includes/class-wc-payments-utils.php:263-305).
+	 *
+	 * @var string[]
+	 */
+	private const WOOPAYMENTS_COUNTRY_CODES = array( 'AE', 'AT', 'AU', 'BE', 'BG', 'CA', 'CH', 'CY', 'CZ', 'DE', 'DK', 'EE', 'FI', 'ES', 'FR', 'HR', 'JP', 'LU', 'GB', 'GR', 'HK', 'HU', 'IE', 'IT', 'LT', 'LV', 'MT', 'NL', 'NO', 'NZ', 'PL', 'PT', 'RO', 'SE', 'SI', 'SK', 'SG', 'US', 'PR' );
+
+	/**
+	 * Multisite blogs created by tests.
+	 *
+	 * @var int[]
+	 */
+	private array $multisite_blog_ids = array();
+
+	/**
+	 * Database cache of the service the last helper created.
+	 *
+	 * @var WooPaymentsDatabaseCache
+	 */
+	private WooPaymentsDatabaseCache $database_cache;
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		while ( function_exists( 'ms_is_switched' ) && ms_is_switched() ) {
+			restore_current_blog();
+		}
+		$multisite_blog_ids       = $this->multisite_blog_ids;
+		$this->multisite_blog_ids = array();
+		delete_option( 'wcpay_account_data' );
+		delete_option( 'woocommerce_woocommerce_payments_settings' );
+		delete_option( 'wcpay_onboarding_test_mode' );
+		delete_option( '_wcpay_onboarding_stripe_connected' );
+		delete_option( 'wcpay_connection_success_modal_dismissed' );
+		delete_option( 'wcpay_onboarding_embedded_kyc_in_progress' );
+		delete_option( 'wcpay_test_mode_enabled_date' );
+		delete_option( 'woocommerce_woopayments_nox_profile' );
+		delete_option( 'woocommerce_woopayments_nox_onboarding_locked' );
+		delete_option( '_wcpay_feature_reports_area' );
+		delete_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments' );
+		delete_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version' );
+		foreach ( $this->get_database_cache_keys() as $cache_key ) {
+			delete_option( $cache_key );
+		}
+		delete_transient( 'wcpay_stripe_onboarding_state' );
+		delete_transient( 'woopay_enabled_by_default' );
+		delete_transient( 'wcpay_onboarding_init_in_progress' );
+		delete_transient( 'wcpay_on_boarding_disabled' );
+		delete_transient( 'wcpay_test_to_live_eligible' );
+		delete_transient( 'wcpay_post_kyc_activation_eligible' );
+		remove_all_filters( 'pre_option_wcpay_account_data' );
+		remove_all_filters( 'wcpay_dev_mode' );
+		remove_all_filters( 'wcpay_test_mode' );
+		remove_all_filters( 'wcpay_test_mode_onboarding' );
+		remove_all_filters( 'allowed_redirect_hosts' );
+		set_current_screen( 'front' );
+		parent::tearDown();
+
+		if ( array() !== $multisite_blog_ids ) {
+			foreach ( $multisite_blog_ids as $blog_id ) {
+				if ( get_site( $blog_id ) ) {
+					wpmu_delete_blog( $blog_id, true );
+				}
+			}
+			wp_cache_flush();
+		}
+	}
+
+	/**
+	 * @testdox Should expose account ID, mode-specific publishable key, and readiness from the stored account cache.
+	 */
+	public function test_exposes_account_keys_and_readiness_from_account_cache(): void {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id'           => 'acct_123',
+					'test_publishable_key' => 'pk_test_123',
+					'live_publishable_key' => 'pk_live_123',
+					'is_live'              => true,
+					'payments_enabled'     => true,
+					'details_submitted'    => true,
+				),
+			)
+		);
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'no' ) );
+
+		$sut = $this->create_service();
+
+		$this->assertSame( 'acct_123', $sut->get_account_id() );
+		$this->assertSame( 'pk_live_123', $sut->get_publishable_key() );
+		$this->assertSame( 'live', $sut->get_mode() );
+		// Plugin 11.1.0 `Order_Mode::PRODUCTION` is `prod`, not the account mode `live` (class-order-mode.php:21).
+		$this->assertSame( 'prod', $sut->get_order_mode() );
+		$this->assertTrue( $sut->can_process_payments() );
+
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+
+		$this->assertSame( 'pk_test_123', $sut->get_publishable_key() );
+		$this->assertSame( 'test', $sut->get_mode() );
+		$this->assertSame( 'test', $sut->get_order_mode() );
+		$this->assertTrue( $sut->is_test_mode_enabled() );
+	}
+
+	/**
+	 * @testdox Eligibility should follow eligible, ineligible, and older-platform account payloads.
+	 * @dataProvider builtin_eligibility_payload_provider
+	 *
+	 * @param array<string,mixed> $builtin_eligibility Built-in eligibility payload, or an empty array when the field is absent.
+	 * @param bool                $include_field       Whether to include the native payments field.
+	 * @param bool                $expected_eligible   Expected native eligibility.
+	 */
+	public function test_exposes_builtin_eligibility( array $builtin_eligibility, bool $include_field, bool $expected_eligible ): void {
+		$account_data = array( 'is_live' => true );
+		if ( $include_field ) {
+			$account_data['native_payments'] = $builtin_eligibility;
+		}
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'    => $account_data,
+				'fetched' => time(),
+				'errored' => false,
+			)
+		);
+
+		$sut = $this->create_service();
+
+		$this->assertSame( $expected_eligible, $sut->is_builtin_eligible() );
+	}
+
+	/**
+	 * Built-in eligibility account payload fixtures.
+	 *
+	 * @return array<string,array{array<string,mixed>,bool,bool}>
+	 */
+	public static function builtin_eligibility_payload_provider(): array {
+		return array(
+			'eligible cohort'            => array(
+				array(
+					'eligible' => true,
+					'cohort'   => 'canary',
+					'reason'   => '',
+				),
+				true,
+				true,
+			),
+			'ineligible with reason'     => array(
+				array(
+					'eligible' => false,
+					'cohort'   => 'holdback',
+					'reason'   => 'manual_hold',
+				),
+				true,
+				false,
+			),
+			'older platform omits field' => array( array(), false, true ),
+		);
+	}
+
+	/**
+	 * @testdox Account readiness reads each multisite blog's stored cache after switching.
+	 * @group multisite
+	 */
+	public function test_account_cache_is_isolated_across_multisite_blog_switches(): void {
+		$this->skipWithoutMultisite();
+		$this->store_account_cache_fixture( 'acct_main' );
+
+		$sut = $this->create_service();
+		$this->assertSame( 'acct_main', $sut->get_account_id() );
+
+		$blog_id                    = self::factory()->blog->create();
+		$this->multisite_blog_ids[] = $blog_id;
+		switch_to_blog( $blog_id );
+		$this->store_account_cache_fixture( 'acct_subsite' );
+		$this->assertSame( 'acct_subsite', $sut->get_account_id() );
+
+		restore_current_blog();
+		$this->assertSame( 'acct_main', $sut->get_account_id() );
+	}
+
+	/**
+	 * @testdox Reports availability reads the stored server flag for each multisite blog.
+	 * @group multisite
+	 */
+	public function test_reports_availability_is_isolated_across_multisite_blog_switches(): void {
+		$this->skipWithoutMultisite();
+		update_option( 'wcpay_account_data', array( 'data' => array( 'reports_area_enabled' => true ) ) );
+		update_option( '_wcpay_feature_reports_area', '0' );
+
+		$sut = $this->create_service();
+		$this->assertTrue( $sut->is_reports_enabled() );
+
+		$blog_id                    = self::factory()->blog->create();
+		$this->multisite_blog_ids[] = $blog_id;
+		switch_to_blog( $blog_id );
+		update_option( 'wcpay_account_data', array( 'data' => array( 'reports_area_enabled' => false ) ) );
+		update_option( '_wcpay_feature_reports_area', '1' );
+		$this->assertFalse( $sut->is_reports_enabled() );
+
+		restore_current_blog();
+		$this->assertTrue( $sut->is_reports_enabled() );
+	}
+
+	/**
+	 * @testdox Should expose whether the WooPayments gateway is enabled, and fail closed when the setting is absent.
+	 * @dataProvider gateway_enabled_reads_provider
+	 *
+	 * @param array<int,array{0:array<string,mixed>|null,1:bool}> $reads Gateway settings to store before each read (null stores none), with the expected answer.
+	 */
+	public function test_exposes_gateway_enabled_state_from_gateway_settings( array $reads ): void {
+		$sut = null;
+		foreach ( $reads as $index => list( $settings, $expected ) ) {
+			if ( null !== $settings ) {
+				update_option( 'woocommerce_woocommerce_payments_settings', $settings );
+			}
+			$sut = $sut ?? $this->create_service();
+
+			$this->assertSame( $expected, $sut->is_gateway_enabled(), "Read {$index}." );
+		}
+	}
+
+	/**
+	 * Gateway enabled reads, in order, on one service.
+	 *
+	 * @return array<string,array{array<int,array{0:array<string,mixed>|null,1:bool}>}>
+	 */
+	public static function gateway_enabled_reads_provider(): array {
+		return array(
+			'yes, then no on the same service' => array(
+				array(
+					array( array( 'enabled' => 'yes' ), true ),
+					array( array( 'enabled' => 'no' ), false ),
+				),
+			),
+			'setting absent'                   => array(
+				array(
+					array( null, false ),
+				),
+			),
+		);
+	}
+
+	/**
+	 * @testdox Should use form-field defaults for absent settings while preserving explicit caller fallbacks and merchant values.
+	 */
+	public function test_get_gateway_setting_uses_form_field_defaults_for_absent_settings(): void {
+		$sut = $this->create_service();
+
+		$this->assertSame( 'yes', $sut->get_gateway_setting( 'saved_cards' ) );
+		$this->assertSame( array( 'payment_request', 'woopay', 'amazon_pay' ), $sut->get_gateway_setting( 'express_checkout_product_methods' ) );
+		$this->assertSame( 'no', $sut->get_gateway_setting( 'saved_cards', 'no' ) );
+		$this->assertSame( '', $sut->get_gateway_setting( 'express_checkout_enabled' ) );
+		$this->assertNull( $sut->get_gateway_setting( 'express_checkout_enabled', null ) );
+		$this->assertSame( 'fallback', $sut->get_gateway_setting( 'express_checkout_enabled', 'fallback' ) );
+
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'saved_cards'              => 'no',
+				'express_checkout_enabled' => false,
+			)
+		);
+
+		$this->assertSame( 'no', $sut->get_gateway_setting( 'saved_cards' ) );
+		$this->assertFalse( $sut->get_gateway_setting( 'express_checkout_enabled' ) );
+		$this->assertSame( array( 'payment_request', 'woopay', 'amazon_pay' ), $sut->get_gateway_setting( 'express_checkout_cart_methods' ) );
+	}
+
+	/**
+	 * @testdox Should expose whether onboarding was disabled by the WooPayments platform.
+	 */
+	public function test_exposes_onboarding_disabled_state_from_transient(): void {
+		$sut = $this->create_service();
+
+		$this->assertFalse( $sut->is_onboarding_disabled() );
+
+		set_transient( 'wcpay_on_boarding_disabled', true, 2 * HOUR_IN_SECONDS );
+
+		$this->assertTrue( $sut->is_onboarding_disabled() );
+	}
+
+	/**
+	 * @testdox Should preserve Stripe-hosted WooPayments redirects.
+	 */
+	public function test_registers_stripe_allowed_redirect_host(): void {
+		$sut = $this->create_service();
+		$sut->register();
+
+		$this->assertNotFalse( has_filter( 'allowed_redirect_hosts', array( $sut, 'allowed_redirect_hosts' ) ) );
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		$this->assertContains( 'connect.stripe.com', apply_filters( 'allowed_redirect_hosts', array() ) );
+	}
+
+	/**
+	 * @testdox Should expose the account default currency from the stored account cache, and fall back to USD when it has none.
+	 * @dataProvider account_default_currency_provider
+	 *
+	 * @param array<string,mixed> $account_data Stored account data.
+	 * @param string              $expected     Expected default currency.
+	 */
+	public function test_exposes_account_default_currency_from_account_cache( array $account_data, string $expected ): void {
+		update_option( 'wcpay_account_data', array( 'data' => $account_data ) );
+
+		$sut = $this->create_service();
+
+		$this->assertSame( $expected, $sut->get_account_default_currency() );
+	}
+
+	/**
+	 * Stored accounts with and without a default currency.
+	 *
+	 * @return array<string,array{array<string,mixed>,string}>
+	 */
+	public static function account_default_currency_provider(): array {
+		return array(
+			'default currency stored' => array(
+				array(
+					'account_id'       => 'acct_123',
+					'is_live'          => true,
+					'store_currencies' => array(
+						'default'   => 'eur',
+						'supported' => array( 'eur' ),
+					),
+				),
+				'eur',
+			),
+			'no currency stored'      => array(
+				array(
+					'account_id' => 'acct_123',
+					'is_live'    => true,
+				),
+				'usd',
+			),
+		);
+	}
+
+	/**
+	 * @testdox Should fail closed for invalid or incomplete account cache payloads.
+	 */
+	public function test_fails_closed_for_invalid_or_incomplete_account_cache_payloads(): void {
+		foreach (
+			array(
+				false,
+				'invalid',
+				array(),
+				array( 'data' => 'invalid' ),
+				array( 'data' => array() ),
+			) as $payload
+		) {
+			update_option( 'wcpay_account_data', $payload );
+
+			$sut = $this->create_service();
+
+			$this->assertSame( '', $sut->get_account_id() );
+			$this->assertSame( '', $sut->get_publishable_key() );
+			$this->assertFalse( $sut->can_process_payments() );
+		}
+	}
+
+	/**
+	 * @testdox Should expose cached account IDs and keys while failing readiness for disabled or incomplete accounts.
+	 */
+	public function test_exposes_cache_values_but_fails_readiness_for_disabled_or_incomplete_accounts(): void {
+		foreach (
+			array(
+				array(
+					'data' => array(
+						'account_id'           => 'acct_123',
+						'live_publishable_key' => 'pk_live_123',
+						'is_live'              => true,
+						'payments_enabled'     => false,
+						'details_submitted'    => true,
+					),
+				),
+				array(
+					'data' => array(
+						'account_id'           => 'acct_123',
+						'live_publishable_key' => 'pk_live_123',
+						'is_live'              => true,
+						'payments_enabled'     => true,
+						'details_submitted'    => false,
+					),
+				),
+			) as $payload
+		) {
+			update_option( 'wcpay_account_data', $payload );
+
+			$sut = $this->create_service();
+
+			$this->assertSame( 'acct_123', $sut->get_account_id() );
+			$this->assertSame( 'pk_live_123', $sut->get_publishable_key() );
+			$this->assertFalse( $sut->can_process_payments() );
+		}
+	}
+
+	/**
+	 * @testdox Should expose live, test-drive, and sandbox account state from the stored account cache.
+	 */
+	public function test_exposes_account_type_state_from_account_cache(): void {
+		update_option( 'wcpay_onboarding_test_mode', 'yes' );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id'        => 'acct_123',
+					'is_live'           => false,
+					'is_test_drive'     => true,
+					'payments_enabled'  => true,
+					'details_submitted' => true,
+				),
+			)
+		);
+
+		$sut = $this->create_service();
+
+		$this->assertTrue( $sut->has_account() );
+		$this->assertTrue( $sut->has_test_account() );
+		$this->assertFalse( $sut->has_sandbox_account() );
+		$this->assertFalse( $sut->has_live_account() );
+		$this->assertTrue( $sut->has_working_account() );
+
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id'        => 'acct_123',
+					'is_live'           => false,
+					'is_test_drive'     => false,
+					'payments_enabled'  => true,
+					'details_submitted' => true,
+				),
+			)
+		);
+		$sut = $this->create_service();
+
+		$this->assertTrue( $sut->has_sandbox_account() );
+		$this->assertFalse( $sut->has_test_account() );
+		$this->assertFalse( $sut->has_live_account() );
+
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id'    => 'acct_123',
+					'is_live'       => true,
+					'is_test_drive' => false,
+				),
+			)
+		);
+		$sut = $this->create_service();
+
+		$this->assertTrue( $sut->has_live_account() );
+		$this->assertFalse( $sut->has_test_account() );
+		$this->assertFalse( $sut->has_sandbox_account() );
+	}
+
+	/**
+	 * @testdox Should distinguish an indeterminate account refresh from a confirmed disconnected account.
+	 */
+	public function test_distinguishes_indeterminate_account_refresh_from_confirmed_disconnection(): void {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => null,
+				'fetched'            => time(),
+				'errored'            => true,
+				'consecutive_errors' => 1,
+			)
+		);
+
+		$indeterminate_service = $this->create_service();
+
+		$this->assertFalse( $indeterminate_service->has_account(), 'A transient refresh failure without stale data must not appear as a connected account to ordinary consumers.' );
+		$this->assertTrue( $indeterminate_service->has_account_or_is_connection_indeterminate(), 'Address-token cleanup must preserve state while account connection is indeterminate.' );
+
+		delete_option( 'wcpay_account_data' );
+		$empty_response_api_client = $this->create_account_api_client( array() );
+		$disconnected_service      = $this->create_service_with_api_client( $empty_response_api_client );
+
+		$this->assertFalse( $disconnected_service->has_account_or_is_connection_indeterminate(), 'A successful empty account response must remain a confirmed disconnection.' );
+		$this->assertSame( 1, $empty_response_api_client->calls, 'A confirmed disconnected account should be derived from one successful account response.' );
+	}
+
+	/**
+	 * @testdox Should accept only canonical no-stale errored account cache wrappers when refresh is disabled.
+	 *
+	 * @dataProvider indeterminate_account_cache_wrappers
+	 *
+	 * @param array<string,mixed>|false $cache_contents Cache contents, or false when no option exists.
+	 * @param bool                      $expected       Whether the wrapper is a canonical indeterminate state.
+	 */
+	public function test_accepts_only_canonical_no_stale_errored_account_cache_wrappers_when_refresh_is_disabled( $cache_contents, bool $expected ): void {
+		if ( false === $cache_contents ) {
+			delete_option( 'wcpay_account_data' );
+		} else {
+			update_option( 'wcpay_account_data', $cache_contents );
+		}
+
+		$sut = $this->create_service();
+		$this->database_cache->disable_refresh();
+
+		$this->assertSame( $expected, $sut->has_account_or_is_connection_indeterminate() );
+	}
+
+	/**
+	 * Provide account cache wrappers for indeterminate connection checks.
+	 *
+	 * @return array<string,array{0:array<string,mixed>|false,1:bool}>
+	 */
+	public function indeterminate_account_cache_wrappers(): array {
+		return array(
+			'canonical no-stale error' => array(
+				array(
+					'data'               => null,
+					'fetched'            => 1,
+					'errored'            => true,
+					'consecutive_errors' => 1,
+				),
+				true,
+			),
+			'missing data'             => array(
+				array(
+					'fetched'            => 1,
+					'errored'            => true,
+					'consecutive_errors' => 1,
+				),
+				false,
+			),
+			'scalar data'              => array(
+				array(
+					'data'               => 'unexpected',
+					'fetched'            => 1,
+					'errored'            => true,
+					'consecutive_errors' => 1,
+				),
+				false,
+			),
+			'empty data'               => array(
+				array(
+					'data'               => array(),
+					'fetched'            => 1,
+					'errored'            => true,
+					'consecutive_errors' => 1,
+				),
+				false,
+			),
+			'missing fetched'          => array(
+				array(
+					'data'               => null,
+					'errored'            => true,
+					'consecutive_errors' => 1,
+				),
+				false,
+			),
+			'nonnumeric fetched'       => array(
+				array(
+					'data'               => null,
+					'fetched'            => 'not-a-time',
+					'errored'            => true,
+					'consecutive_errors' => 1,
+				),
+				false,
+			),
+			'zero fetched'             => array(
+				array(
+					'data'               => null,
+					'fetched'            => 0,
+					'errored'            => true,
+					'consecutive_errors' => 1,
+				),
+				false,
+			),
+			'negative fetched'         => array(
+				array(
+					'data'               => null,
+					'fetched'            => -1,
+					'errored'            => true,
+					'consecutive_errors' => 1,
+				),
+				false,
+			),
+			'missing error count'      => array(
+				array(
+					'data'    => null,
+					'fetched' => 1,
+					'errored' => true,
+				),
+				false,
+			),
+			'nonnumeric error count'   => array(
+				array(
+					'data'               => null,
+					'fetched'            => 1,
+					'errored'            => true,
+					'consecutive_errors' => 'one',
+				),
+				false,
+			),
+			'zero error count'         => array(
+				array(
+					'data'               => null,
+					'fetched'            => 1,
+					'errored'            => true,
+					'consecutive_errors' => 0,
+				),
+				false,
+			),
+			'negative error count'     => array(
+				array(
+					'data'               => null,
+					'fetched'            => 1,
+					'errored'            => true,
+					'consecutive_errors' => -1,
+				),
+				false,
+			),
+			'integer errored flag'     => array(
+				array(
+					'data'               => null,
+					'fetched'            => 1,
+					'errored'            => 1,
+					'consecutive_errors' => 1,
+				),
+				false,
+			),
+			'string errored flag'      => array(
+				array(
+					'data'               => null,
+					'fetched'            => 1,
+					'errored'            => 'yes',
+					'consecutive_errors' => 1,
+				),
+				false,
+			),
+			'no option'                => array( false, false ),
+			'empty wrapper'            => array( array(), false ),
+			'successful empty account' => array(
+				array(
+					'data'               => array(),
+					'fetched'            => 1,
+					'errored'            => false,
+					'consecutive_errors' => 0,
+				),
+				false,
+			),
+		);
+	}
+
+	/**
+	 * @testdox Account liveness should be tri-state: live, test, or unknown when undetermined.
+	 */
+	public function test_get_account_is_live_reports_tristate_liveness(): void {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id' => 'acct_123',
+					'is_live'    => true,
+				),
+			)
+		);
+		$this->assertTrue( $this->create_service()->get_account_is_live() );
+
+		// A non-live cached account is only valid while onboarding test mode is on.
+		update_option( 'wcpay_onboarding_test_mode', 'yes' );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id' => 'acct_123',
+					'is_live'    => false,
+				),
+			)
+		);
+		$this->assertFalse( $this->create_service()->get_account_is_live() );
+
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id' => 'acct_123',
+				),
+			)
+		);
+		$this->assertNull( $this->create_service()->get_account_is_live(), 'A cached account without an is_live field must report unknown liveness.' );
+
+		delete_option( 'wcpay_account_data' );
+		$this->assertNull( $this->create_service()->get_account_is_live(), 'An unfetched account must report unknown liveness.' );
+	}
+
+	/**
+	 * @testdox Network saved cards should be off by default and opt-in via the force filter.
+	 */
+	public function test_is_network_saved_cards_enabled_follows_the_force_filter(): void {
+		$sut = $this->create_service();
+
+		$this->assertFalse( $sut->is_network_saved_cards_enabled() );
+
+		add_filter( 'wcpay_force_network_saved_cards', '__return_true' );
+		$this->assertTrue( $sut->is_network_saved_cards_enabled() );
+	}
+
+	/**
+	 * @testdox Should autoload the onboarding test-mode option when enabling it on the dev-mode cache path.
+	 */
+	public function test_dev_mode_cache_path_autoloads_onboarding_test_mode_option(): void {
+		// Arrange the write in ensure_onboarding_test_mode_for_dev_mode(): dev mode on, the
+		// option absent (so it would be re-created via add_option's autoload default),
+		// and a non-live cached account so the guarded write fires.
+		delete_option( 'wcpay_onboarding_test_mode' );
+		add_filter( 'wcpay_dev_mode', '__return_true' );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id'        => 'acct_123',
+					'is_live'           => false,
+					'payments_enabled'  => true,
+					'details_submitted' => true,
+				),
+			)
+		);
+
+		$sut = $this->create_service();
+		$this->database_cache->disable_refresh();
+
+		$sut->get_cached_account_data();
+
+		$this->assertSame( 'yes', get_option( 'wcpay_onboarding_test_mode' ) );
+		// Storefront renders read it through is_test_mode_enabled(); client 11.1.0 autoloads it (onboarding service :1086).
+		$this->assertOptionAutoloaded( 'wcpay_onboarding_test_mode' );
+	}
+
+	/**
+	 * With no cached account, the platform's answer is the only account the request checks, so the fetch is where onboarding
+	 * test mode gets turned on in dev mode; a live account leaves it off.
+	 *
+	 * @testdox Should turn onboarding test mode on in dev mode for a fetched test account only ($kind account).
+	 * @dataProvider provider_dev_mode_fetched_accounts
+	 *
+	 * @param string $kind     Account kind.
+	 * @param bool   $is_live  Whether the platform reports a live account.
+	 * @param string $expected The onboarding test-mode option after the read.
+	 */
+	public function test_dev_mode_fetch_turns_on_onboarding_test_mode_for_a_test_account( string $kind, bool $is_live, string $expected ): void {
+		delete_option( 'wcpay_onboarding_test_mode' );
+		delete_option( 'wcpay_account_data' );
+		add_filter( 'wcpay_dev_mode', '__return_true' );
+		// Fields the account checks read, as in the recorded account (Fixtures/platform-test-drive-account.json); `is_live` varied.
+		$account = array(
+			'account_id'        => 'acct_' . $kind,
+			'is_live'           => $is_live,
+			'payments_enabled'  => true,
+			'details_submitted' => true,
+		);
+		$sut     = $this->create_service_with_api_client( $this->create_account_api_client( $account ) );
+
+		$this->assertSame( 'acct_' . $kind, $sut->get_cached_account_data()['account_id'] ?? null );
+		$this->assertSame( $expected, get_option( 'wcpay_onboarding_test_mode', '(missing)' ) );
+	}
+
+	/**
+	 * Fetched accounts.
+	 *
+	 * @return array<string,array{string,bool,string}>
+	 */
+	public function provider_dev_mode_fetched_accounts(): array {
+		return array(
+			'test' => array( 'test', false, 'yes' ),
+			'live' => array( 'live', true, '(missing)' ),
+		);
+	}
+
+	/**
+	 * @testdox Should expose rejected and under-review account state from the stored account cache.
+	 */
+	public function test_exposes_rejected_and_under_review_account_state_from_account_cache(): void {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => $this->get_valid_live_account_payload(
+					array(
+						'status' => 'rejected.fraud',
+					)
+				),
+			)
+		);
+
+		$sut = $this->create_service();
+
+		$this->assertTrue( $sut->is_account_rejected() );
+		$this->assertFalse( $sut->is_account_under_review() );
+
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => $this->get_valid_live_account_payload(
+					array(
+						'status' => 'under_review',
+					)
+				),
+			)
+		);
+		$sut = $this->create_service();
+
+		$this->assertFalse( $sut->is_account_rejected() );
+		$this->assertTrue( $sut->is_account_under_review() );
+	}
+
+	/**
+	 * @testdox Should read the business profile and branding logo from the connected account, empty without them ($description).
+	 * @dataProvider business_profile_provider
+	 *
+	 * @param string                   $description Case.
+	 * @param array<string,mixed>|null $account     Cached account data, or null for no cached account.
+	 * @param bool                     $connected   Whether the site has a platform connection.
+	 * @param array<int,mixed>         $expected    Name, support address, support email, support phone, branding logo.
+	 */
+	public function test_business_profile_and_branding_logo_read_the_account( string $description, ?array $account, bool $connected, array $expected ): void {
+		unset( $description );
+		if ( null !== $account ) {
+			update_option(
+				'wcpay_account_data',
+				array(
+					'data'    => $account,
+					'fetched' => time(),
+					'errored' => false,
+				)
+			);
+		}
+		// Settings saved with other values must not be read: the account is the only source.
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'account_business_name'            => 'Saved Store',
+				'account_business_support_address' => array( 'line1' => '9 Saved Road' ),
+				'account_business_support_email'   => 'saved@example.test',
+				'account_business_support_phone'   => '+15550999',
+				'account_branding_logo'            => 'file_saved_logo',
+			)
+		);
+		$sut = $this->create_service_with_api_client( $this->create_account_api_client( array(), false, $connected ) );
+
+		$this->assertSame(
+			$expected,
+			array(
+				$sut->get_business_name(),
+				$sut->get_business_support_address(),
+				$sut->get_business_support_email(),
+				$sut->get_business_support_phone(),
+				$sut->get_branding_logo(),
+			)
+		);
+	}
+
+	/**
+	 * Provide business profile rows: case, cached account, connected, expected values.
+	 *
+	 * Expected values follow client includes/class-wc-payments-account.php:449-512: the account's field, '' or [] when the
+	 * account is not connected or lacks it (includes/class-wc-payment-gateway-wcpay.php:3318-3423).
+	 * Accounts keep the shape recorded in Fixtures/platform-test-drive-account.json `account.business_profile` and
+	 * `account.branding` (:597-609), with varied values; `is_live` true so the cache is accepted as it is.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>|null,2:bool,3:array<int,mixed>}>
+	 */
+	public function business_profile_provider(): array {
+		$address = array(
+			'city'        => 'San Francisco',
+			'country'     => 'US',
+			'line1'       => '123 Reader Street',
+			'line2'       => 'Suite 100',
+			'postal_code' => '94107',
+			'state'       => 'CA',
+		);
+		$account = array(
+			'account_id'       => 'acct_reader',
+			'is_live'          => true,
+			'business_profile' => array(
+				'name'            => 'Reader Store',
+				'url'             => 'https://reader.example.test',
+				'support_address' => $address,
+				'support_email'   => 'support@reader.example.test',
+				'support_phone'   => '+15550100',
+			),
+			'branding'         => array(
+				'icon'            => 'file_reader_icon',
+				'logo'            => 'file_reader_logo',
+				'primary_color'   => '#873eff',
+				'secondary_color' => '#2c045d',
+			),
+		);
+		$empty   = array( '', array(), '', '', '' );
+		$bare    = array(
+			'account_id' => 'acct_reader',
+			'is_live'    => true,
+		);
+
+		$no_address                                        = $account;
+		$no_address['business_profile']['support_address'] = array();
+		$nulls                                      = $account;
+		$nulls['business_profile']                  = array_fill_keys( array_keys( $account['business_profile'] ), null );
+		$nulls['branding']['logo']                  = null;
+		$odd                                        = $account;
+		$odd['business_profile']['name']            = array( 'Reader Store' );
+		$odd['business_profile']['support_address'] = '123 Reader Street';
+
+		return array(
+			'connected account'        => array( 'connected account', $account, true, array( 'Reader Store', $address, 'support@reader.example.test', '+15550100', 'file_reader_logo' ) ),
+			'empty support address'    => array( 'empty support address', $no_address, true, array( 'Reader Store', array(), 'support@reader.example.test', '+15550100', 'file_reader_logo' ) ),
+			'null fields'              => array( 'null fields', $nulls, true, $empty ),
+			'no profile or branding'   => array( 'no profile or branding', $bare, true, $empty ),
+			'values of the wrong type' => array( 'values of the wrong type', $odd, true, array( '', array(), 'support@reader.example.test', '+15550100', 'file_reader_logo' ) ),
+			'no account'               => array( 'no account', null, true, $empty ),
+			'no platform connection'   => array( 'no platform connection', $account, false, $empty ),
+		);
+	}
+
+	/**
+	 * @testdox Should read Apple Pay and Google Pay as on from their own gateway settings, and from the card settings only before either exists ($description).
+	 * @dataProvider payment_request_enabled_provider
+	 *
+	 * @param string              $description Case.
+	 * @param array<string,mixed> $wallet_rows Stored wallet gateway settings by payment method ID.
+	 * @param string              $card_switch Stored payment_request value in the card gateway settings.
+	 * @param bool                $expected    Whether Apple Pay or Google Pay reads as on.
+	 */
+	public function test_is_payment_request_enabled( string $description, array $wallet_rows, string $card_switch, bool $expected ): void {
+		unset( $description );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'payment_request' => $card_switch ) );
+		foreach ( $wallet_rows as $method_id => $row ) {
+			update_option( 'woocommerce_woocommerce_payments_' . $method_id . '_settings', $row );
+		}
+
+		$this->assertSame( $expected, $this->create_service()->is_payment_request_enabled() );
+	}
+
+	/**
+	 * Provide wallet rows: case, wallet gateway settings, card switch, expected.
+	 *
+	 * Client 11.1.0 reads the Google Pay and Apple Pay gateways' enabled setting (includes/class-wc-payment-gateway-wcpay.php:996-1009).
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:string,3:bool}>
+	 */
+	public function payment_request_enabled_provider(): array {
+		return array(
+			'no wallet rows, card switch on'  => array( 'no wallet rows, card switch on', array(), 'yes', true ),
+			'no wallet rows, card switch off' => array( 'no wallet rows, card switch off', array(), 'no', false ),
+			'Apple Pay on'                    => array( 'Apple Pay on', array( 'apple_pay' => array( 'enabled' => 'yes' ) ), 'no', true ),
+			'Google Pay on'                   => array(
+				'Google Pay on',
+				array(
+					'apple_pay'  => array( 'enabled' => 'no' ),
+					'google_pay' => array( 'enabled' => 'yes' ),
+				),
+				'no',
+				true,
+			),
+			'both off, card switch on'        => array(
+				'both off, card switch on',
+				array(
+					'apple_pay'  => array( 'enabled' => 'no' ),
+					'google_pay' => array( 'enabled' => 'no' ),
+				),
+				'yes',
+				false,
+			),
+			'a row not an array'              => array( 'a row not an array', array( 'google_pay' => 'corrupt' ), 'yes', false ),
+		);
+	}
+
+	/**
+	 * @testdox Should read one wallet gateway as on only from its own enabled setting ($description).
+	 * @dataProvider payment_request_method_enabled_provider
+	 *
+	 * @param string $description Case.
+	 * @param string $method_id   Payment method ID asked about.
+	 * @param mixed  $row         Stored gateway settings of that method, or null when never stored.
+	 * @param bool   $expected    Whether it reads as on.
+	 */
+	public function test_is_payment_request_method_enabled( string $description, string $method_id, $row, bool $expected ): void {
+		unset( $description );
+		if ( null !== $row ) {
+			update_option( 'woocommerce_woocommerce_payments_' . $method_id . '_settings', $row );
+		}
+
+		$this->assertSame( $expected, $this->create_service()->is_payment_request_method_enabled( $method_id ) );
+	}
+
+	/**
+	 * Provide wallet method rows: case, method, stored row, expected.
+	 *
+	 * @return array<string,array{0:string,1:string,2:mixed,3:bool}>
+	 */
+	public function payment_request_method_enabled_provider(): array {
+		return array(
+			'Apple Pay on'         => array( 'Apple Pay on', 'apple_pay', array( 'enabled' => 'yes' ), true ),
+			'Apple Pay off'        => array( 'Apple Pay off', 'apple_pay', array( 'enabled' => 'no' ), false ),
+			'Google Pay never set' => array( 'Google Pay never set', 'google_pay', null, false ),
+			'a row not an array'   => array( 'a row not an array', 'google_pay', 'corrupt', false ),
+			'card is not a wallet' => array( 'card is not a wallet', 'card', array( 'enabled' => 'yes' ), false ),
+		);
+	}
+
+	/**
+	 * @testdox Should read a yes/no gateway setting as on only for yes, 1 or true ($description).
+	 * @dataProvider gateway_setting_enabled_provider
+	 *
+	 * @param string $description Case.
+	 * @param mixed  $stored      Stored settings option.
+	 * @param bool   $expected    Whether the setting reads as on.
+	 * @param string $key         Setting key.
+	 */
+	public function test_is_gateway_setting_enabled( string $description, $stored, bool $expected, string $key = 'manual_capture' ): void {
+		unset( $description );
+		update_option( 'woocommerce_woocommerce_payments_settings', $stored );
+
+		$this->assertSame( $expected, $this->create_service()->is_gateway_setting_enabled( $key ) );
+	}
+
+	/**
+	 * Provide yes/no setting rows: case, stored option, expected, and the key when not manual_capture.
+	 *
+	 * A key never saved reads as its form default, as in client includes/class-wc-payment-gateway-wcpay.php:379-540
+	 * (WC_Settings_API::get_option(); manual_capture no, saved_cards yes).
+	 *
+	 * @return array<string,array{0:string,1:mixed,2:bool,3?:string}>
+	 */
+	public function gateway_setting_enabled_provider(): array {
+		return array(
+			'never saved'         => array( 'never saved', array( 'enabled' => 'yes' ), false ),
+			'on by default'       => array( 'never saved, on by default', array( 'enabled' => 'yes' ), true, 'saved_cards' ),
+			'no default'          => array( 'never saved, no default', array( 'enabled' => 'yes' ), false, 'is_woopay_global_theme_support_enabled' ),
+			'yes'                 => array( 'yes', array( 'manual_capture' => 'yes' ), true ),
+			'no'                  => array( 'no', array( 'manual_capture' => 'no' ), false ),
+			'empty string'        => array( 'empty string', array( 'manual_capture' => '' ), false ),
+			'string 0'            => array( 'string 0', array( 'manual_capture' => '0' ), false ),
+			'string 1'            => array( 'string 1', array( 'manual_capture' => '1' ), true ),
+			'integer 1'           => array( 'integer 1', array( 'manual_capture' => 1 ), true ),
+			'boolean true'        => array( 'boolean true', array( 'manual_capture' => true ), true ),
+			'option not an array' => array( 'option not an array', 'corrupt', false ),
+		);
+	}
+
+	/**
+	 * @testdox Should read the gateway settings with every key never saved as its form default.
+	 */
+	public function test_get_gateway_settings_reads_missing_keys_as_form_defaults(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card', 'link' ),
+				'apple_pay_domain_set'           => 'yes',
+			)
+		);
+
+		$settings = $this->create_service()->get_gateway_settings();
+
+		$this->assertSame( 'yes', $settings['enabled'], 'A stored value wins over its default.' );
+		$this->assertSame( array( 'card', 'link' ), $settings['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'yes', $settings['apple_pay_domain_set'], 'A stored key without a default is kept.' );
+		$this->assertSame( 'no', $settings['manual_capture'] );
+		$this->assertSame( array( 'payment_request', 'woopay', 'amazon_pay' ), $settings['express_checkout_checkout_methods'] );
+		$this->assertSame( array(), array_diff_key( WooPaymentsSettingsDefaults::all(), $settings ), 'Every form default is present.' );
+
+		update_option( 'woocommerce_woocommerce_payments_settings', 'corrupt' );
+		$this->assertSame( WooPaymentsSettingsDefaults::all(), $this->create_service()->get_gateway_settings(), 'A settings option that is not an array reads as the defaults.' );
+	}
+
+	/**
+	 * @testdox Should log a gateway settings read that a third-party option filter makes throw, and serve the defaults.
+	 */
+	public function test_throwing_gateway_settings_read_is_logged_and_read_as_defaults(): void {
+		add_filter(
+			'pre_option_woocommerce_woocommerce_payments_settings',
+			static function () {
+				throw new \RuntimeException( 'Filter failed for acct_secret.' );
+			}
+		);
+		$logger = RecordingWcLogger::install();
+
+		$this->assertSame( WooPaymentsSettingsDefaults::all(), $this->create_service()->get_gateway_settings() );
+		$this->assertNotEmpty( $logger->get_errors() );
+		$this->assertSame( array( 'woopayments' ), array_unique( array_column( $logger->get_errors(), 2 ) ) );
+		$this->assertStringNotContainsString( 'acct_secret', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
+	}
+
+	/**
+	 * @testdox Should log, not hide, an account cache read that a third-party option filter makes throw.
+	 */
+	public function test_throwing_account_cache_read_is_logged_and_read_as_missing(): void {
+		add_filter(
+			'pre_option_wcpay_account_data',
+			static function () {
+				throw new \RuntimeException( 'Filter failed for acct_secret.' );
+			}
+		);
+		$logger = RecordingWcLogger::install();
+		$sut    = $this->create_service();
+
+		$this->assertSame( '', $sut->get_account_id() );
+		$errors = $logger->get_errors();
+		$this->assertNotEmpty( $errors );
+		$this->assertSame( array( 'woopayments' ), array_unique( array_column( $errors, 2 ) ) );
+		$this->assertStringNotContainsString( 'acct_secret', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
+	}
+
+	/**
+	 * Capability statuses are the platform's vocabulary (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:908-913`
+	 * offers a method only on `active`); with none reported, card payments count as active (`:4696-4717`).
+	 *
+	 * @testdox Should report a capability active only when the platform says active, and card payments before any are reported.
+	 */
+	public function test_is_capability_active_reads_the_reported_status(): void {
+		$capabilities = array(
+			'card_payments'       => 'active',
+			'link_payments'       => 'pending',
+			'klarna_payments'     => 'inactive',
+			'sepa_debit_payments' => 'disabled',
+		);
+		update_option( 'wcpay_account_data', array( 'data' => $this->get_valid_live_account_payload( array( 'capabilities' => $capabilities ) ) ) );
+		$sut = $this->create_service();
+
+		$this->assertTrue( $sut->is_capability_active( 'card_payments' ) );
+		foreach ( array( 'link_payments', 'klarna_payments', 'sepa_debit_payments', 'affirm_payments' ) as $capability_key ) {
+			$this->assertFalse( $sut->is_capability_active( $capability_key ), $capability_key );
+		}
+
+		update_option( 'wcpay_account_data', array( 'data' => $this->get_valid_live_account_payload() ) );
+		$sut      = $this->create_service();
+		$registry = new WooPaymentsPaymentMethodRegistry();
+
+		// Before capabilities are reported, the methods backed by card payments stay active and the others do not.
+		$expectations = array(
+			'card'       => true,
+			'apple_pay'  => true,
+			'google_pay' => true,
+			'bancontact' => false,
+		);
+		foreach ( $expectations as $payment_method_id => $expected ) {
+			$this->assertSame( $expected, $sut->is_capability_active( $registry->get( $payment_method_id )->get_account_capability_key() ), $payment_method_id );
+		}
+	}
+
+	/**
+	 * @testdox Should expose details-submitted and admin-navigation validity from the stored account cache.
+	 */
+	public function test_exposes_details_submitted_and_admin_navigation_validity_from_account_cache(): void {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => $this->get_valid_live_account_payload(
+					array(
+						'capabilities' => array(
+							'card_payments' => 'active',
+						),
+					)
+				),
+			)
+		);
+
+		$sut = $this->create_service();
+
+		$this->assertTrue( $sut->is_details_submitted() );
+		$this->assertTrue( $sut->has_valid_account_for_admin_navigation() );
+
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => $this->get_valid_live_account_payload(
+					array(
+						'capabilities' => array(
+							'card_payments' => 'unrequested',
+						),
+					)
+				),
+			)
+		);
+		$sut = $this->create_service();
+
+		$this->assertFalse( $sut->has_valid_account_for_admin_navigation() );
+
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => $this->get_valid_live_account_payload(
+					array(
+						'details_submitted' => false,
+						'capabilities'      => array(
+							'card_payments' => 'active',
+						),
+					)
+				),
+			)
+		);
+		$sut = $this->create_service();
+
+		$this->assertFalse( $sut->is_details_submitted() );
+		$this->assertFalse( $sut->has_valid_account_for_admin_navigation() );
+	}
+
+	/**
+	 * @testdox Should expose card-reader and Capital visibility flags from the stored account cache.
+	 */
+	public function test_exposes_card_reader_and_capital_visibility_flags_from_account_cache(): void {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => $this->get_valid_live_account_payload(
+					array(
+						'card_present_eligible'      => true,
+						'has_card_readers_available' => true,
+						'capital'                    => array(
+							'has_previous_loans' => true,
+						),
+					)
+				),
+			)
+		);
+
+		$sut = $this->create_service();
+
+		$this->assertTrue( $sut->is_card_present_eligible() );
+		$this->assertTrue( $sut->has_card_readers_available() );
+		$this->assertTrue( $sut->has_previous_capital_loans() );
+
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => $this->get_valid_live_account_payload(),
+			)
+		);
+		$sut = $this->create_service();
+
+		$this->assertFalse( $sut->is_card_present_eligible() );
+		$this->assertFalse( $sut->has_card_readers_available() );
+		$this->assertFalse( $sut->has_previous_capital_loans() );
+	}
+
+	/**
+	 * @testdox Should expose Documents eligibility and VAT submission flags from the stored account cache, failing closed when they are missing or no account is cached.
+	 * @dataProvider document_flags_provider
+	 *
+	 * @param array<string,mixed>|null $overrides     Overrides of the valid live account, or null for an empty cached account.
+	 * @param bool                     $expected_docs Expected Documents eligibility.
+	 * @param bool                     $expected_vat  Expected VAT submission state.
+	 */
+	public function test_exposes_document_flags_from_account_cache( ?array $overrides, bool $expected_docs, bool $expected_vat ): void {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => null === $overrides ? array() : $this->get_valid_live_account_payload( $overrides ),
+			)
+		);
+
+		$sut = $this->create_service();
+
+		$this->assertSame( $expected_docs, $sut->is_documents_enabled() );
+		$this->assertSame( $expected_vat, $sut->has_submitted_vat_data() );
+	}
+
+	/**
+	 * Documents flag fixtures.
+	 *
+	 * @return array<string,array{array<string,mixed>|null,bool,bool}>
+	 */
+	public static function document_flags_provider(): array {
+		return array(
+			'both flags true'  => array(
+				array(
+					'is_documents_enabled'   => true,
+					'has_submitted_vat_data' => true,
+				),
+				true,
+				true,
+			),
+			'both flags false' => array(
+				array(
+					'is_documents_enabled'   => false,
+					'has_submitted_vat_data' => false,
+				),
+				false,
+				false,
+			),
+			'flags missing'    => array( array(), false, false ),
+			'empty account'    => array( null, false, false ),
+		);
+	}
+
+	/**
+	 * @testdox Reports availability follows stored server values before the local fallback without a refresh, with or without an account.
+	 * @dataProvider reports_availability_provider
+	 *
+	 * @param mixed  $server_value Server Reports flag.
+	 * @param bool   $include_server_value Whether to preserve the server Reports flag.
+	 * @param string $local_value Local Reports fallback value.
+	 * @param bool   $expected Whether Reports should be available.
+	 * @param bool   $account_cached Whether an account is cached.
+	 */
+	public function test_reports_availability_follows_stored_server_values_before_local_fallback( $server_value, bool $include_server_value, string $local_value, bool $expected, bool $account_cached ): void {
+		if ( $account_cached ) {
+			$account_data = $this->get_valid_live_account_payload();
+			if ( $include_server_value ) {
+				$account_data['reports_area_enabled'] = $server_value;
+			}
+			update_option( 'wcpay_account_data', array( 'data' => $account_data ) );
+		}
+		update_option( '_wcpay_feature_reports_area', $local_value );
+		$api_client = $this->create_account_api_client( $this->get_valid_live_account_payload() );
+		$sut        = $this->create_service_with_api_client( $api_client );
+
+		$this->assertSame( $expected, $sut->is_reports_enabled() );
+		$this->assertSame( 0, $api_client->calls, 'Resolving Reports availability should not refresh account data.' );
+	}
+
+	/**
+	 * Reports availability payload fixtures.
+	 *
+	 * @return array<string,array{mixed,bool,string,bool,bool}>
+	 */
+	public static function reports_availability_provider(): array {
+		return array(
+			'server true overrides local off'     => array( true, true, '0', true, true ),
+			'server false overrides local on'     => array( false, true, '1', false, true ),
+			'missing server value falls back on'  => array( null, false, '1', true, true ),
+			'missing server value falls back off' => array( null, false, '0', false, true ),
+			'null server value falls back on'     => array( null, true, '1', true, true ),
+			'null server value falls back off'    => array( null, true, '0', false, true ),
+			'truthy string server value enables'  => array( 'false', true, '0', true, true ),
+			'falsey string server value disables' => array( '0', true, '1', false, true ),
+			'no account, local fallback on'       => array( null, false, '1', true, false ),
+			'no account, local fallback off'      => array( null, false, '0', false, false ),
+		);
+	}
+
+	/**
+	 * @testdox Should clear the stored account cache so the next account read can refresh from the provider.
+	 */
+	public function test_clear_cache_deletes_stored_account_cache(): void {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id' => 'acct_123',
+				),
+			)
+		);
+
+		$sut = $this->create_service();
+		$sut->clear_cache();
+
+		$this->assertFalse( get_option( 'wcpay_account_data' ) );
+		$this->assertSame( '', $sut->get_account_id() );
+	}
+
+	/**
+	 * @testdox Should immediately overwrite the stored account cache with a connected-no-account payload.
+	 */
+	public function test_overwrite_cache_with_no_account_updates_stored_account_cache(): void {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id'        => 'acct_123',
+					'is_live'           => true,
+					'payments_enabled'  => true,
+					'details_submitted' => true,
+				),
+			)
+		);
+
+		$sut = $this->create_service();
+		$sut->overwrite_cache_with_no_account();
+
+		$cached = get_option( 'wcpay_account_data' );
+
+		$this->assertIsArray( $cached );
+		$this->assertSame( array(), $cached['data'] );
+		$this->assertSame( '', $sut->get_account_id() );
+		$this->assertFalse( $sut->can_process_payments() );
+	}
+
+	/**
+	 * @testdox Should reset stored gateway, onboarding, and NOX state after an account deletion.
+	 */
+	public function test_cleanup_after_account_reset_resets_stored_state(): void {
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'enabled'                        => 'yes',
+				'test_mode'                      => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card', 'link' ),
+				'payment_request_button_size'    => 'large',
+			)
+		);
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id' => 'acct_123',
+					'is_live'    => false,
+				),
+			)
+		);
+		update_option( '_wcpay_onboarding_stripe_connected', array( 'acct_123' => true ) );
+		update_option( 'wcpay_onboarding_test_mode', 'yes' );
+		update_option( 'wcpay_connection_success_modal_dismissed', 'yes' );
+		update_option( 'wcpay_onboarding_embedded_kyc_in_progress', 'yes' );
+		update_option( 'wcpay_test_mode_enabled_date', 123 );
+		update_option( 'woocommerce_woopayments_nox_profile', array( 'id' => 'nox_profile' ) );
+		update_option( 'woocommerce_woopayments_nox_onboarding_locked', 'yes' );
+		update_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments', 'yes' );
+		update_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version', 2 );
+		set_transient( 'wcpay_stripe_onboarding_state', 'state', DAY_IN_SECONDS );
+		set_transient( 'woopay_enabled_by_default', true, DAY_IN_SECONDS );
+		set_transient( 'wcpay_onboarding_init_in_progress', 'yes', DAY_IN_SECONDS );
+		set_transient( 'wcpay_test_to_live_eligible', true, DAY_IN_SECONDS );
+		set_transient( 'wcpay_post_kyc_activation_eligible', true, DAY_IN_SECONDS );
+
+		$sut = $this->create_service();
+		$sut->cleanup_after_account_reset();
+
+		$settings = get_option( 'woocommerce_woocommerce_payments_settings' );
+		$this->assertIsArray( $settings );
+		$this->assertSame( 'no', $settings['enabled'] );
+		$this->assertSame( 'no', $settings['test_mode'] );
+		$this->assertSame( array( 'card' ), $settings['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'large', $settings['payment_request_button_size'], 'Unrelated gateway settings should be preserved.' );
+		$this->assertSame( array(), get_option( '_wcpay_onboarding_stripe_connected' ) );
+		$this->assertSame( 'no', get_option( 'wcpay_onboarding_test_mode' ) );
+		$this->assertOptionAutoloaded( 'wcpay_onboarding_test_mode' );
+		$this->assertFalse( get_option( 'wcpay_account_data' ) );
+		$this->assertFalse( get_option( 'wcpay_connection_success_modal_dismissed' ) );
+		$this->assertFalse( get_option( 'wcpay_onboarding_embedded_kyc_in_progress' ) );
+		$this->assertFalse( get_option( 'wcpay_test_mode_enabled_date' ) );
+		$this->assertFalse( get_option( 'woocommerce_woopayments_nox_profile' ) );
+		$this->assertFalse( get_option( 'woocommerce_woopayments_nox_onboarding_locked' ) );
+		$this->assertFalse( get_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments' ) );
+		$this->assertFalse( get_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version' ) );
+		$this->assertFalse( get_transient( 'wcpay_stripe_onboarding_state' ) );
+		$this->assertFalse( get_transient( 'woopay_enabled_by_default' ) );
+		$this->assertFalse( get_transient( 'wcpay_onboarding_init_in_progress' ) );
+		$this->assertFalse( get_transient( 'wcpay_test_to_live_eligible' ) );
+		$this->assertFalse( get_transient( 'wcpay_post_kyc_activation_eligible' ) );
+	}
+
+	/**
+	 * @testdox Should clear incentive usage state only for the reset account's site.
+	 * @group multisite
+	 */
+	public function test_cleanup_after_account_reset_clears_incentive_usage_state_only_for_current_blog(): void {
+		$this->skipWithoutMultisite();
+		update_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments', 'yes' );
+		update_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version', 2 );
+
+		$blog_id                    = self::factory()->blog->create();
+		$this->multisite_blog_ids[] = $blog_id;
+		switch_to_blog( $blog_id );
+
+		try {
+			update_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments', 'yes' );
+			update_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version', 2 );
+
+			$this->create_service()->cleanup_after_account_reset();
+
+			$this->assertFalse( get_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments' ), 'The reset subsite should re-evaluate WooPayments usage.' );
+			$this->assertFalse( get_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version' ), 'The reset subsite should not retain the prior eligibility logic version.' );
+		} finally {
+			restore_current_blog();
+		}
+
+		$this->assertSame( 'yes', get_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments' ), 'Resetting a subsite should preserve the main-site usage value.' );
+		$this->assertSame( 2, get_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version' ), 'Resetting a subsite should preserve the main-site logic version.' );
+	}
+
+	/**
+	 * @testdox Should delete the incentive logic version and propagate when deleting the usage value throws.
+	 */
+	public function test_cleanup_after_account_reset_deletes_incentive_version_when_usage_deletion_throws(): void {
+		$usage_option   = 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments';
+		$version_option = 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version';
+		update_option( $usage_option, 'yes' );
+		update_option( $version_option, 2 );
+
+		$expected_exception = new RuntimeException( 'Incentive usage deletion failed.' );
+		$throw_on_delete    = static function () use ( $expected_exception ): void {
+			throw $expected_exception;
+		};
+		add_action( "delete_option_{$usage_option}", $throw_on_delete );
+
+		$caught_exception = null;
+		try {
+			$this->create_service()->cleanup_after_account_reset();
+		} catch ( RuntimeException $exception ) {
+			$caught_exception = $exception;
+		} finally {
+			remove_action( "delete_option_{$usage_option}", $throw_on_delete );
+		}
+
+		$this->assertSame( $expected_exception, $caught_exception, 'The original option-deletion exception should propagate.' );
+		$this->assertFalse( get_option( $version_option ), 'The paired logic version should still be deleted.' );
+	}
+
+	/**
+	 * @testdox Should clear all WooPayments database cache keys after an account reset.
+	 */
+	public function test_cleanup_after_account_reset_clears_database_cache_keys(): void {
+		foreach ( $this->get_database_cache_keys() as $cache_key ) {
+			update_option( $cache_key, array( 'stale' => true ), false );
+			wp_cache_set( $cache_key, array( 'stale' => true ), 'options' );
+		}
+
+		$sut = $this->create_service();
+		$sut->cleanup_after_account_reset();
+
+		foreach ( $this->get_database_cache_keys() as $cache_key ) {
+			$this->assertFalse( get_option( $cache_key, false ), "Expected {$cache_key} option to be deleted." );
+			$this->assertFalse( wp_cache_get( $cache_key, 'options' ), "Expected {$cache_key} object-cache entry to be deleted." );
+		}
+	}
+
+	/**
+	 * @testdox Should refetch the full account on the next read after onboarding caches a partial record, in $context requests.
+	 *
+	 * @dataProvider provide_account_read_contexts
+	 *
+	 * @param string $context Request context label.
+	 * @param string $screen  Screen to set, so is_admin() matches the context.
+	 */
+	public function test_partial_onboarding_record_is_replaced_by_the_full_account_on_the_next_read( string $context, string $screen ): void {
+		set_current_screen( $screen );
+		update_option( 'wcpay_onboarding_test_mode', 'yes' );
+		$full_account = $this->load_recorded_test_drive_account();
+		$api_client   = $this->create_account_api_client( $full_account );
+		$sut          = $this->create_service_with_api_client( $api_client );
+
+		$sut->cache_account_data_until_refreshed( $this->get_partial_onboarding_record() );
+		$account = $sut->get_cached_account_data();
+		$cached  = get_option( 'wcpay_account_data' );
+
+		$this->assertSame( 1, $api_client->calls, 'The client clears its cache after test-drive init (class-wc-payments-onboarding-service.php:796), so the next read fetches the account.' );
+		$this->assertSame( $full_account, $account );
+		$this->assertSame( $full_account, $cached['data'] );
+		$this->assertGreaterThan( 0, $cached['fetched'] );
+		$this->assertFalse( $cached['errored'] );
+		$this->assertSame( 'active', $account['capabilities']['card_payments'] );
+	}
+
+	/**
+	 * Request contexts an account read can run in; WP-CLI and REST reads take the front-end branch of the TTL.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public function provide_account_read_contexts(): array {
+		return array(
+			'admin'     => array( 'admin', 'dashboard' ),
+			'front-end' => array( 'front-end', 'front' ),
+		);
+	}
+
+	/**
+	 * Client 11.1.0 has no account after a failed refetch (it cleared its cache, class-wc-payments-onboarding-service.php:796),
+	 * so it cannot take payments until a read succeeds.
+	 *
+	 * @testdox Should keep the partial onboarding record and its publishable key when the refetch fails, and take payments only after a refetch succeeds.
+	 */
+	public function test_partial_onboarding_record_keeps_the_publishable_key_when_the_refetch_fails(): void {
+		set_current_screen( 'dashboard' );
+		update_option( 'wcpay_onboarding_test_mode', 'yes' );
+		$api_client = $this->create_account_api_client( $this->load_recorded_test_drive_account(), true );
+		$sut        = $this->create_service_with_api_client( $api_client );
+
+		$sut->cache_account_data_until_refreshed( $this->get_partial_onboarding_record() );
+		$account = $sut->get_cached_account_data();
+		$cached  = get_option( 'wcpay_account_data' );
+
+		$this->assertSame( 1, $api_client->calls );
+		$this->assertSame( 'acct_1UL3bQJQsm0lol5W', $account['account_id'] );
+		$this->assertSame( 'pk_test_partial', $account['test_publishable_key'], 'A failed refetch must not lose the key checkout needs (566fd534c3d).' );
+		$this->assertTrue( $cached['errored'] );
+		$this->assertFalse( $sut->can_process_payments(), 'The partial record cannot take payments before a refetch succeeds.' );
+		$this->assertSame( 1, $api_client->calls, 'The errored record is not refetched within its back-off.' );
+
+		$api_client->fail = false;
+		$sut->refresh_account_data();
+
+		$this->assertSame( 2, $api_client->calls );
+		$this->assertTrue( $sut->can_process_payments(), 'The full account read takes payments.' );
+	}
+
+	/**
+	 * @testdox Should refresh account data from the API client and persist the full account payload.
+	 */
+	public function test_refresh_account_data_fetches_and_caches_full_account_payload(): void {
+		update_option( 'woocommerce_store_id', 'store_123' );
+		update_option( 'wcpay_onboarding_test_mode', 'yes' );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id' => 'acct_stale',
+				),
+			)
+		);
+
+		$api_client = $this->create_account_api_client(
+			array(
+				'account_id'                => 'acct_native_123',
+				'email'                     => 'merchant@example.test',
+				'communications_email'      => 'support@example.test',
+				'test_publishable_key'      => 'pk_test_native',
+				'live_publishable_key'      => 'pk_live_native',
+				'is_live'                   => false,
+				'is_test_drive'             => true,
+				'payments_enabled'          => true,
+				'details_submitted'         => true,
+				'business_profile'          => array(
+					'name' => 'Native Merchant',
+				),
+				'fraud_mitigation_settings' => array(
+					'card_testing_protection' => array(
+						'enabled' => true,
+					),
+				),
+				'pre_check_save_my_info'    => true,
+				'reports_area_enabled'      => true,
+				'account_details'           => array(
+					'business_type' => 'individual',
+				),
+			)
+		);
+		$sut        = $this->create_service_with_api_client( $api_client );
+		$refreshed  = array();
+		$hook       = static function ( $account ) use ( &$refreshed ): void {
+			$refreshed = $account;
+		};
+
+		add_action( 'woocommerce_payments_account_refreshed', $hook );
+
+		try {
+			$result = $sut->refresh_account_data();
+		} finally {
+			remove_action( 'woocommerce_payments_account_refreshed', $hook );
+		}
+
+		$cached = get_option( 'wcpay_account_data' );
+
+		$this->assertSame( 'acct_native_123', $result['account_id'] );
+		$this->assertSame( 'store_123', $api_client->woocommerce_store_id );
+		$this->assertIsArray( $cached );
+		$this->assertSame( $result, $cached['data'] );
+		$this->assertSame( $result, $refreshed );
+		$this->assertArrayHasKey( 'fraud_mitigation_settings', $cached['data'] );
+		$this->assertArrayHasKey( 'account_details', $cached['data'] );
+		$this->assertTrue( $cached['data']['reports_area_enabled'] );
+		$this->assertTrue( $sut->is_reports_enabled() );
+		$this->assertSame( 'acct_native_123', $sut->get_account_id() );
+	}
+
+	/**
+	 * @testdox Should preserve stale account data and mark the cache errored when a forced refresh fails.
+	 */
+	public function test_refresh_account_data_preserves_stale_account_data_on_transport_error(): void {
+		$stale_account = $this->get_valid_live_account_payload(
+			array(
+				'account_id' => 'acct_stale',
+			)
+		);
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => $stale_account,
+				'fetched'            => time() - DAY_IN_SECONDS,
+				'errored'            => true,
+				'consecutive_errors' => 1,
+			)
+		);
+
+		$api_client = $this->create_account_api_client( array(), true );
+		$sut        = $this->create_service_with_api_client( $api_client );
+		$refreshed  = array();
+		$hook       = static function ( $account ) use ( &$refreshed ): void {
+			$refreshed = $account;
+		};
+
+		add_action( 'woocommerce_payments_account_refreshed', $hook );
+
+		try {
+			$result = $sut->refresh_account_data();
+		} finally {
+			remove_action( 'woocommerce_payments_account_refreshed', $hook );
+		}
+
+		$cached = get_option( 'wcpay_account_data' );
+
+		$this->assertSame( $stale_account, $result );
+		$this->assertSame( 1, $api_client->calls );
+		$this->assertTrue( $sut->has_account_or_is_connection_indeterminate(), 'Stale valid account data should remain connected after a failed refresh.' );
+		$this->assertSame( 1, $api_client->calls, 'Checking the connection state should reuse the refreshed cache.' );
+		$this->assertSame( array(), $refreshed );
+		$this->assertIsArray( $cached );
+		$this->assertSame( $stale_account, $cached['data'] );
+		$this->assertTrue( $cached['errored'] );
+		$this->assertSame( 2, $cached['consecutive_errors'] );
+	}
+
+	/**
+	 * @testdox Should log an account cache write that a third-party option filter makes throw, and return the fetched account.
+	 */
+	public function test_throwing_account_cache_write_is_logged_and_the_fetched_account_returned(): void {
+		set_current_screen( 'dashboard' );
+		add_filter(
+			'pre_update_option_wcpay_account_data',
+			static function () {
+				throw new RuntimeException( 'Filter failed on write for acct_secret.' );
+			}
+		);
+		$logger     = RecordingWcLogger::install();
+		$api_client = $this->create_account_api_client( $this->get_valid_live_account_payload( array( 'account_id' => 'acct_fetched' ) ) );
+
+		$this->assertSame( 'acct_fetched', $this->create_service_with_api_client( $api_client )->get_account_id() );
+		$this->assertCount( 1, $logger->get_errors() );
+		$this->get_logged_context_at_level( $logger, 'error' );
+		$this->assertStringNotContainsString( 'acct_secret', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
+		$this->assertFalse( get_option( 'wcpay_account_data' ), 'The fetched account is not stored while the filter throws.' );
+	}
+
+	/**
+	 * @testdox ECE confirmation tokens are on only for a cached account that does not turn them off ($description).
+	 * @dataProvider ece_confirmation_tokens_provider
+	 *
+	 * @param string              $description  Case.
+	 * @param array<string,mixed> $account_data Cached account data.
+	 * @param bool                $expected     Whether the tokens are on.
+	 */
+	public function test_ece_confirmation_tokens( string $description, array $account_data, bool $expected ): void {
+		unset( $description );
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_cached_account_data' ) )
+			->getMock();
+		$account_service->method( 'get_cached_account_data' )->willReturn( $account_data );
+
+		$this->assertSame( $expected, $account_service->is_ece_confirmation_tokens_enabled() );
+	}
+
+	/**
+	 * Provide confirmation-token rows: case, cached account, expected.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:bool}>
+	 */
+	public function ece_confirmation_tokens_provider(): array {
+		return array(
+			// No cached account reads as tokens off, as client 11.1.0 class-wc-payments-features.php:438-442 does.
+			'no cached account'      => array( 'no cached account', array(), false ),
+			'account turns them off' => array( 'account turns them off', array( 'ece_confirmation_tokens_disabled' => true ), false ),
+			'account leaves them on' => array( 'account leaves them on', array( 'account_id' => 'acct_1' ), true ),
+		);
+	}
+
+	/**
+	 * @testdox Should read the account cache stored as $description.
+	 * @dataProvider provide_stored_account_cache_wrappers
+	 *
+	 * @param string   $description        Stored shape.
+	 * @param string   $screen             Screen to set, so is_admin() matches the request.
+	 * @param int|null $age                Seconds since the fetch, or null for a record never fetched.
+	 * @param bool     $errored            Whether the stored entry is errored.
+	 * @param int|null $consecutive_errors Stored error count, or null when the wrapper has none.
+	 * @param string   $expected_account   Account ID the read returns.
+	 * @param int      $expected_calls     Account fetches the read makes.
+	 */
+	public function test_reads_the_stored_account_cache_until_it_is_due( string $description, string $screen, ?int $age, bool $errored, ?int $consecutive_errors, string $expected_account, int $expected_calls ): void {
+		unset( $description );
+		set_current_screen( $screen );
+		// Shapes as client 11.1.0 includes/class-database-cache.php:364-382 writes them, before and after its error count.
+		$wrapper = array(
+			'data'    => $this->get_valid_live_account_payload( array( 'account_id' => 'acct_stored' ) ),
+			'fetched' => null === $age ? 0 : time() - $age,
+			'errored' => $errored,
+		);
+		if ( null !== $consecutive_errors ) {
+			$wrapper['consecutive_errors'] = $consecutive_errors;
+		}
+		update_option( 'wcpay_account_data', $wrapper );
+		$api_client = $this->create_account_api_client( $this->get_valid_live_account_payload( array( 'account_id' => 'acct_fetched' ) ) );
+
+		$this->assertSame( $expected_account, $this->create_service_with_api_client( $api_client )->get_account_id() );
+		$this->assertSame( $expected_calls, $api_client->calls );
+	}
+
+	/**
+	 * Provide account cache wrappers as the current and earlier versions store them, read on front-end and admin requests.
+	 *
+	 * @return array<string,array{0:string,1:string,2:int|null,3:bool,4:int|null,5:string,6:int}>
+	 */
+	public static function provide_stored_account_cache_wrappers(): array {
+		return array(
+			'current shape, fresh'                      => array( 'the current shape, fresh', 'dashboard', 60, false, 0, 'acct_stored', 0 ),
+			'no error count, fresh'                     => array( 'a wrapper without an error count, fresh', 'dashboard', 60, false, null, 'acct_stored', 0 ),
+			'no error count, errored a minute ago'      => array( 'an errored wrapper without an error count, one minute old', 'dashboard', 60, true, null, 'acct_stored', 0 ),
+			'no error count, errored three minutes ago' => array( 'an errored wrapper without an error count, three minutes old', 'dashboard', 180, true, null, 'acct_fetched', 1 ),
+			// Built-in behaviour: cache_account_data_until_refreshed() stores the onboarding record with fetched 0.
+			'never fetched (partial onboarding record)' => array( 'a partial onboarding record never fetched', 'dashboard', null, false, 0, 'acct_fetched', 1 ),
+			'front-end, fetched 23 hours ago'           => array( 'a front-end cache fetched 23 hours ago', 'front', 23 * HOUR_IN_SECONDS, false, 0, 'acct_stored', 0 ),
+			'front-end, fetched 25 hours ago'           => array( 'a front-end cache fetched 25 hours ago', 'front', 25 * HOUR_IN_SECONDS, false, 0, 'acct_fetched', 1 ),
+			'admin, errored twice four minutes ago'     => array( 'an admin cache errored twice, four minutes old', 'dashboard', 4 * MINUTE_IN_SECONDS, true, 2, 'acct_stored', 0 ),
+			'admin, errored twice six minutes ago'      => array( 'an admin cache errored twice, six minutes old', 'dashboard', 6 * MINUTE_IN_SECONDS, true, 2, 'acct_fetched', 1 ),
+		);
+	}
+
+	/**
+	 * @testdox Should return no account without fetching or touching the cache when the platform is not connected.
+	 * @dataProvider provide_disconnected_account_caches
+	 *
+	 * @param array<string,mixed>|null $cached_data       Cached account data.
+	 * @param bool                     $errored           Whether the cached entry is errored.
+	 * @param bool                     $expected_eligible Expected native eligibility.
+	 */
+	public function test_get_cached_account_data_returns_no_account_without_a_platform_connection( ?array $cached_data, bool $errored, bool $expected_eligible ): void {
+		set_current_screen( 'dashboard' );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => $cached_data,
+				'fetched'            => time() - DAY_IN_SECONDS,
+				'errored'            => $errored,
+				'consecutive_errors' => $errored ? 1 : 0,
+			)
+		);
+		$cache_before = get_option( 'wcpay_account_data' );
+		$api_client   = $this->create_account_api_client( $this->get_valid_live_account_payload(), false, false );
+		$sut          = $this->create_service_with_api_client( $api_client );
+
+		$this->assertSame( array(), $sut->get_cached_account_data(), 'Client 11.1.0 returns [] before any cache read when the server is not connected (class-wc-payments-account.php:2442-2444).' );
+		$this->assertSame( array(), $sut->refresh_account_data(), 'A forced refresh returns [] the same way.' );
+		$this->assertSame( 0, $api_client->calls );
+		$this->assertSame( $cache_before, get_option( 'wcpay_account_data' ), 'No errored entry may replace the cache.' );
+		$this->assertFalse( $sut->has_account_or_is_connection_indeterminate(), 'Without a connection the state is known: not connected, like the client is_stripe_connected( true ).' );
+		$this->assertSame( $expected_eligible, $sut->is_builtin_eligible(), 'Native eligibility keeps the cached platform decision while disconnected.' );
+	}
+
+	/**
+	 * Account caches a disconnected store can hold.
+	 *
+	 * @return array<string,array{0:array<string,mixed>|null,1:bool,2:bool}>
+	 */
+	public function provide_disconnected_account_caches(): array {
+		return array(
+			'account the platform keeps off the built-in WooPayments' => array(
+				array(
+					'account_id'           => 'acct_stale',
+					'live_publishable_key' => 'pk_live_stale',
+					'is_live'              => true,
+					'payments_enabled'     => true,
+					'details_submitted'    => true,
+					'native_payments'      => array( 'eligible' => false ),
+				),
+				false,
+				false,
+			),
+			'errored entry from the old read' => array( null, true, true ),
+		);
+	}
+
+	/**
+	 * @testdox Should drop the cached account when the site registers with or disconnects from WordPress.com, so the next connected read fetches.
+	 * @testWith ["jetpack_site_registered"]
+	 *           ["jetpack_site_disconnected"]
+	 *
+	 * @param string $hook_name Jetpack connection hook.
+	 */
+	public function test_connection_change_drops_the_cached_account_so_the_next_read_fetches( string $hook_name ): void {
+		set_current_screen( 'dashboard' );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => null,
+				'fetched'            => time(),
+				'errored'            => true,
+				'consecutive_errors' => 1,
+			)
+		);
+		$fresh_account = $this->get_valid_live_account_payload( array( 'account_id' => 'acct_fresh' ) );
+		$api_client    = $this->create_account_api_client( $fresh_account );
+		$sut           = $this->create_service_with_api_client( $api_client );
+		$sut->register();
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment
+		do_action( $hook_name );
+
+		$this->assertFalse( get_option( 'wcpay_account_data' ), 'Client 11.1.0 clears the account cache on both hooks (class-wc-payments-account.php:140-141).' );
+		$this->assertSame( $fresh_account, $sut->get_cached_account_data() );
+		$this->assertSame( 1, $api_client->calls, 'The errored entry left by the old disconnected read must not hold back the first read after a reconnect.' );
+		$cached = get_option( 'wcpay_account_data' );
+		$this->assertSame( $fresh_account, $cached['data'] );
+		$this->assertFalse( $cached['errored'] );
+	}
+
+	/**
+	 * @testdox Should serve the cached account without fetching when read while plugins load, before the connection state is known.
+	 */
+	public function test_read_while_plugins_load_serves_the_cached_account_without_fetching(): void {
+		set_current_screen( 'dashboard' );
+		$cached_account = $this->get_valid_live_account_payload( array( 'is_documents_enabled' => true ) );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => $cached_account,
+				'fetched'            => time() - DAY_IN_SECONDS,
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			)
+		);
+		$api_client = $this->create_account_api_client( $this->get_valid_live_account_payload( array( 'account_id' => 'acct_fresh' ) ), false, false );
+		$sut        = $this->create_service_while_plugins_load( $api_client );
+
+		$this->assertSame( $cached_account, $sut->get_cached_account_data(), 'Before pluggable.php loads, the connection check reads false, so the read must not treat it as a known disconnect.' );
+		$this->assertTrue( $sut->is_documents_enabled() );
+		$this->assertTrue( $sut->has_account_or_is_connection_indeterminate(), 'An unknown connection state is indeterminate, not disconnected.' );
+		$this->assertSame( 0, $api_client->calls, 'No fetch may run before the connection state is known.' );
+	}
+
+	/**
+	 * @testdox Should leave the account cache untouched when read while plugins load, even when the entry is due for a refresh.
+	 * @dataProvider provide_account_caches_due_for_refresh
+	 *
+	 * @param array<string,mixed>|null $cached_data Cached account data.
+	 * @param bool                     $errored     Whether the cached entry is errored.
+	 */
+	public function test_read_while_plugins_load_writes_nothing( ?array $cached_data, bool $errored ): void {
+		set_current_screen( 'dashboard' );
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => $cached_data,
+				'fetched'            => time() - DAY_IN_SECONDS,
+				'errored'            => $errored,
+				'consecutive_errors' => $errored ? 1 : 0,
+			)
+		);
+		$cache_before = get_option( 'wcpay_account_data' );
+		$refreshes    = did_action( 'woocommerce_payments_account_refreshed' );
+		$api_client   = $this->create_account_api_client( $this->get_valid_live_account_payload(), false, false );
+		$sut          = $this->create_service_while_plugins_load( $api_client );
+
+		$sut->get_cached_account_data();
+		$sut->refresh_account_data();
+
+		$this->assertSame( $cache_before, get_option( 'wcpay_account_data' ), 'Before 42d357dca17 this read wrote an errored entry; the early read must write nothing.' );
+		$this->assertSame( 0, $api_client->calls );
+		$this->assertSame( $refreshes, did_action( 'woocommerce_payments_account_refreshed' ) );
+	}
+
+	/**
+	 * Account caches that a connected read would refresh.
+	 *
+	 * @return array<string,array{0:array<string,mixed>|null,1:bool}>
+	 */
+	public function provide_account_caches_due_for_refresh(): array {
+		return array(
+			'expired account'               => array(
+				array(
+					'account_id'           => 'acct_expired',
+					'live_publishable_key' => 'pk_live_expired',
+					'is_live'              => true,
+					'payments_enabled'     => true,
+					'details_submitted'    => true,
+				),
+				false,
+			),
+			'errored entry with no account' => array( null, true ),
+		);
+	}
+
+	/**
+	 * @testdox Should not refresh expired account data while Action Scheduler jobs are running.
+	 */
+	public function test_get_cached_account_data_does_not_refresh_during_action_scheduler_jobs(): void {
+		$stale_account = $this->get_valid_live_account_payload(
+			array(
+				'account_id' => 'acct_stale',
+			)
+		);
+		$fresh_account = $this->get_valid_live_account_payload(
+			array(
+				'account_id' => 'acct_fresh',
+			)
+		);
+		$api_client    = $this->create_account_api_client( $fresh_account );
+		$sut           = $this->create_service_with_api_client( $api_client );
+
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => $stale_account,
+				'fetched'            => time() - ( 25 * HOUR_IN_SECONDS ),
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			)
+		);
+
+		$sut->register();
+
+		/**
+		 * Fires before Action Scheduler executes an action.
+		 *
+		 * @since 11.0.0
+		 */
+		do_action( 'action_scheduler_before_execute' );
+
+		try {
+			$this->assertSame( $stale_account, $sut->get_cached_account_data() );
+		} finally {
+			remove_action( 'action_scheduler_before_execute', array( $this->database_cache, 'disable_refresh' ) );
+		}
+
+		$this->assertSame( 0, $api_client->calls );
+	}
+
+	/**
+	 * @testdox Should expose the stored account data without refreshing expired cache data.
+	 */
+	public function test_get_stored_account_data_does_not_refresh_expired_cache(): void {
+		$stale_account = $this->get_valid_live_account_payload(
+			array(
+				'account_id' => 'acct_stale',
+			)
+		);
+		$fresh_account = $this->get_valid_live_account_payload(
+			array(
+				'account_id' => 'acct_fresh',
+			)
+		);
+		$api_client    = $this->create_account_api_client( $fresh_account );
+		$sut           = $this->create_service_with_api_client( $api_client );
+
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => $stale_account,
+				'fetched'            => time() - ( 25 * HOUR_IN_SECONDS ),
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			)
+		);
+
+		$this->assertSame( $stale_account, $sut->get_stored_account_data() );
+		$this->assertSame( 0, $api_client->calls );
+	}
+
+	/**
+	 * @testdox Should force test mode and the test publishable key over live gateway settings.
+	 * @dataProvider provide_test_mode_sources
+	 *
+	 * @param string|null $onboarding_option Stored onboarding test mode option, or null for none.
+	 * @param string|null $filter            WooPayments extension filter that returns true, or null for none.
+	 */
+	public function test_mode_is_forced_by_onboarding_and_extension_filters( ?string $onboarding_option, ?string $filter ): void {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data' => array(
+					'account_id'           => 'acct_123',
+					'test_publishable_key' => 'pk_test_123',
+					'live_publishable_key' => 'pk_live_123',
+					'is_live'              => true,
+					'payments_enabled'     => true,
+					'details_submitted'    => true,
+				),
+			)
+		);
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'no' ) );
+		if ( null !== $onboarding_option ) {
+			update_option( 'wcpay_onboarding_test_mode', $onboarding_option );
+		}
+		if ( null !== $filter ) {
+			add_filter( $filter, '__return_true' );
+		}
+
+		$sut = $this->create_service();
+
+		$this->assertTrue( $sut->is_test_mode_enabled() );
+		$this->assertSame( 'test', $sut->get_mode() );
+		$this->assertSame( 'pk_test_123', $sut->get_publishable_key() );
+	}
+
+	/**
+	 * Sources that force test mode.
+	 *
+	 * @return array<string,array{?string,?string}>
+	 */
+	public static function provide_test_mode_sources(): array {
+		return array(
+			'onboarding test mode option'       => array( 'yes', null ),
+			'wcpay_test_mode filter'            => array( 'no', 'wcpay_test_mode' ),
+			'wcpay_test_mode_onboarding filter' => array( null, 'wcpay_test_mode_onboarding' ),
+			'wcpay_dev_mode filter'             => array( null, 'wcpay_dev_mode' ),
+		);
+	}
+
+	/**
+	 * @testdox Should fetch the onboarding fields once and store them in the WooPayments extension's database cache shape, locale marker included.
+	 */
+	public function test_onboarding_fields_data_is_fetched_once_and_stored_in_the_woopayments_extension_cache_shape(): void {
+		$api_client = $this->create_counting_fields_api_client( $this->get_onboarding_fields_payload() );
+		$expected   = array_merge( $this->get_onboarding_fields_payload(), array( '__locale' => 'en_US' ) );
+
+		$first  = $this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'en_US' );
+		$stored = get_option( 'wcpay_onboarding_fields_data' );
+		$second = $this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'en_US' );
+
+		$this->assertSame( 1, $api_client->calls, 'The second read, in a new request, must come from the cache.' );
+		$this->assertSame( $expected, $first );
+		$this->assertSame( $expected, $second );
+		$this->assertIsArray( $stored );
+		$this->assertEqualsWithDelta( time(), $stored['fetched'], 5 );
+		$this->assertSame(
+			array(
+				'data'               => $expected,
+				'fetched'            => $stored['fetched'],
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			),
+			$stored,
+			'Client 11.1.0 Database_Cache::write_to_cache() writes exactly these keys, in this order (class-database-cache.php:378-382), with __locale inside data (class-wc-payments-onboarding-service.php:161).'
+		);
+		$this->assertOptionNotAutoloaded( 'wcpay_onboarding_fields_data' );
+	}
+
+	/**
+	 * @testdox Should keep cached onboarding fields for a week and refetch them after that.
+	 * @testWith [6, 0]
+	 *           [8, 1]
+	 *
+	 * @param int $age_in_days    Age of the cached entry in days.
+	 * @param int $expected_calls Expected platform fetches.
+	 */
+	public function test_onboarding_fields_data_is_cached_for_a_week( int $age_in_days, int $expected_calls ): void {
+		$this->store_onboarding_fields_cache( 'en_US', time() - ( $age_in_days * DAY_IN_SECONDS ) );
+		$api_client = $this->create_counting_fields_api_client( array( 'business_types' => array() ) );
+
+		$this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'en_US' );
+
+		$this->assertSame( $expected_calls, $api_client->calls );
+	}
+
+	/**
+	 * @testdox Should refetch the onboarding fields when a different locale is requested.
+	 */
+	public function test_onboarding_fields_data_refetches_for_a_different_locale(): void {
+		$this->store_onboarding_fields_cache( 'en_US', time() );
+		$api_client = $this->create_counting_fields_api_client( $this->get_onboarding_fields_payload() );
+
+		$result = $this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'fr_FR' );
+
+		$this->assertSame( 1, $api_client->calls );
+		$this->assertSame( 'fr_FR', $result['__locale'] );
+		$this->assertSame( 'fr_FR', get_option( 'wcpay_onboarding_fields_data' )['data']['__locale'] );
+	}
+
+	/**
+	 * @testdox Should cache an empty onboarding fields response as valid data.
+	 */
+	public function test_onboarding_fields_data_caches_an_empty_response(): void {
+		$api_client = $this->create_counting_fields_api_client( array() );
+
+		$first  = $this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'en_US' );
+		$second = $this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'en_US' );
+
+		$this->assertSame( array( '__locale' => 'en_US' ), $first );
+		$this->assertSame( $first, $second );
+		$this->assertSame( 1, $api_client->calls, 'Client 11.1.0 treats only null or false as an error (class-database-cache.php:169).' );
+		$this->assertFalse( get_option( 'wcpay_onboarding_fields_data' )['errored'] );
+	}
+
+	/**
+	 * @testdox Should keep the old onboarding fields on a failed refetch and back off before trying again.
+	 */
+	public function test_onboarding_fields_data_failure_keeps_old_data_and_backs_off(): void {
+		$cached     = $this->store_onboarding_fields_cache( 'en_US', time() - ( 8 * DAY_IN_SECONDS ) );
+		$api_client = $this->create_counting_fields_api_client( null );
+
+		$this->assertSame( $cached, $this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'en_US' ) );
+		$stored = get_option( 'wcpay_onboarding_fields_data' );
+		$this->assertSame( $cached, $stored['data'] );
+		$this->assertTrue( $stored['errored'] );
+		$this->assertSame( 1, $stored['consecutive_errors'] );
+
+		$this->assertSame( $cached, $this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'en_US' ) );
+		$this->assertSame( 1, $api_client->calls, 'The first error backs off for 2 minutes (class-database-cache.php:466-468, 520-531).' );
+
+		$stored['fetched'] = time() - ( 3 * MINUTE_IN_SECONDS );
+		update_option( 'wcpay_onboarding_fields_data', $stored );
+		$this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'en_US' );
+
+		$this->assertSame( 2, $api_client->calls );
+		$this->assertSame( 2, get_option( 'wcpay_onboarding_fields_data' )['consecutive_errors'] );
+	}
+
+	/**
+	 * @testdox Should retry errored onboarding fields stored without an error count after two minutes, not before.
+	 * @testWith [60, 0]
+	 *           [180, 1]
+	 *
+	 * @param int $age            Seconds since the errored fetch.
+	 * @param int $expected_calls Fields fetches the read makes.
+	 */
+	public function test_onboarding_fields_data_errored_wrapper_without_an_error_count_backs_off_two_minutes( int $age, int $expected_calls ): void {
+		$cached = array(
+			'business_types' => array( array( 'key' => 'cached' ) ),
+			'__locale'       => 'en_US',
+		);
+		update_option(
+			'wcpay_onboarding_fields_data',
+			array(
+				'data'    => $cached,
+				'fetched' => time() - $age,
+				'errored' => true,
+			),
+			false
+		);
+		$api_client = $this->create_counting_fields_api_client( $this->get_onboarding_fields_payload() );
+
+		$this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'en_US' );
+
+		$this->assertSame( $expected_calls, $api_client->calls );
+	}
+
+	/**
+	 * @testdox Should serve cached onboarding fields without fetching during ajax requests and Action Scheduler jobs.
+	 * @testWith ["ajax"]
+	 *           ["action_scheduler"]
+	 *
+	 * @param string $context Request context that must not refresh.
+	 */
+	public function test_onboarding_fields_data_is_not_refreshed_during_ajax_or_action_scheduler_jobs( string $context ): void {
+		$cached     = $this->store_onboarding_fields_cache( 'en_US', time() - ( 8 * DAY_IN_SECONDS ) );
+		$api_client = $this->create_counting_fields_api_client( $this->get_onboarding_fields_payload() );
+		$sut        = $this->create_service_with_api_client( $api_client );
+		if ( 'ajax' === $context ) {
+			add_filter( 'wp_doing_ajax', '__return_true' );
+		} else {
+			$this->database_cache->disable_refresh();
+		}
+
+		$this->assertSame( $cached, $sut->get_onboarding_fields_data( 'en_US' ) );
+		$this->assertSame( 0, $api_client->calls );
+	}
+
+	/**
+	 * @testdox Should serve whatever onboarding fields are cached, regardless of expiry or locale, without a platform connection.
+	 */
+	public function test_onboarding_fields_data_serves_the_cache_without_a_platform_connection(): void {
+		$cached       = $this->store_onboarding_fields_cache( 'en_US', time() - ( 30 * DAY_IN_SECONDS ) );
+		$cache_before = get_option( 'wcpay_onboarding_fields_data' );
+		$api_client   = $this->create_counting_fields_api_client( $this->get_onboarding_fields_payload(), false );
+
+		$this->assertSame( $cached, $this->create_service_with_api_client( $api_client )->get_onboarding_fields_data( 'fr_FR' ), 'Client 11.1.0 reads Database_Cache::get( key, true ) when not connected (class-wc-payments-onboarding-service.php:145-147).' );
+		$this->assertSame( 0, $api_client->calls );
+		$this->assertSame( $cache_before, get_option( 'wcpay_onboarding_fields_data' ) );
+	}
+
+	/**
+	 * @testdox Should drop the cached onboarding fields when WooCommerce updates, so the next read fetches.
+	 */
+	public function test_woocommerce_update_drops_the_onboarding_fields_cache(): void {
+		$this->store_onboarding_fields_cache( 'en_US', time() );
+		$api_client = $this->create_counting_fields_api_client( $this->get_onboarding_fields_payload() );
+		$sut        = $this->create_service_with_api_client( $api_client );
+		$sut->get_onboarding_fields_data( 'en_US' );
+		$this->assertSame( 0, $api_client->calls, 'The seeded cache is served first.' );
+
+		$sut->clear_onboarding_fields_cache();
+
+		$this->assertFalse( get_option( 'wcpay_onboarding_fields_data' ), 'Client 11.1.0 clears this cache on its own update (class-wc-payments-onboarding-service.php:127, 967-970).' );
+		$sut->get_onboarding_fields_data( 'en_US' );
+		$this->assertSame( 1, $api_client->calls );
+	}
+
+	/**
+	 * @testdox Supported countries are the 39 WooPayments countries with WooCommerce's labels, with $label.
+	 * @testWith ["no country removed", ""]
+	 *           ["Puerto Rico removed by the woocommerce_countries filter", "PR"]
+	 *
+	 * @param string $label   Case.
+	 * @param string $removed Country code the woocommerce_countries filter removes.
+	 */
+	public function test_supported_countries_are_the_woopayments_countries_with_woocommerce_labels( string $label, string $removed ): void {
+		unset( $label );
+		$countries      = WC()->countries;
+		WC()->countries = new \WC_Countries();
+		add_filter(
+			'woocommerce_countries',
+			static function ( array $all ) use ( $removed ): array {
+				unset( $all[ $removed ] );
+				return $all;
+			}
+		);
+		try {
+			$supported = $this->create_service()->get_supported_countries();
+			$labels    = WC()->countries->get_countries();
+		} finally {
+			WC()->countries = $countries;
+		}
+
+		$codes    = array_keys( $supported );
+		$expected = array_values( array_diff( self::WOOPAYMENTS_COUNTRY_CODES, array( $removed ) ) );
+		sort( $codes );
+		sort( $expected );
+		$this->assertSame( $expected, $codes );
+		foreach ( $supported as $code => $name ) {
+			$this->assertSame( $labels[ $code ], $name, "The label of {$code} is WooCommerce's." );
+		}
+	}
+
+	/**
+	 * @testdox Supported countries follow the order of core's WooPayments country list.
+	 */
+	public function test_supported_countries_follow_core_list_order(): void {
+		$this->assertSame( DefaultPaymentGateways::get_wcpay_countries(), array_keys( $this->create_service()->get_supported_countries() ) );
+	}
+
+	/**
+	 * Create the service under test for a connected store whose account fetches fail, so reads serve the seeded cache.
+	 *
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_service(): WooPaymentsAccountService {
+		return $this->create_service_with_api_client( $this->create_account_api_client( array(), true ) );
+	}
+
+	/**
+	 * Load the recorded full account of a new test-drive account (REC-T60-2).
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function load_recorded_test_drive_account(): array {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-test-drive-account.json' ), true );
+
+		return $fixture['account'];
+	}
+
+	/**
+	 * The partial record native onboarding writes from a test-drive init response.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_partial_onboarding_record(): array {
+		return array(
+			'account_id'           => 'acct_1UL3bQJQsm0lol5W',
+			'test_publishable_key' => 'pk_test_partial',
+			'is_live'              => false,
+			'is_test_drive'        => true,
+			'payments_enabled'     => false,
+			'details_submitted'    => true,
+		);
+	}
+
+	/**
+	 * Create a transport double that returns an account or fails, counts fetches and records the store ID it was sent.
+	 *
+	 * @param array<string,mixed> $account   Account to return.
+	 * @param bool                $fail      Whether every fetch fails.
+	 * @param bool                $available Whether the site has a platform connection.
+	 * @return WooPaymentsApiClient
+	 */
+	private function create_account_api_client( array $account, bool $fail = false, bool $available = true ): WooPaymentsApiClient {
+		return new class( $account, $fail, $available ) extends WooPaymentsApiClient {
+			/**
+			 * Number of account fetch attempts.
+			 *
+			 * @var int
+			 */
+			public int $calls = 0;
+
+			/**
+			 * Store ID passed to the last account request.
+			 *
+			 * @var string
+			 */
+			public string $woocommerce_store_id = '';
+
+			/**
+			 * Account to return.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $account;
+
+			/**
+			 * Whether every fetch fails.
+			 *
+			 * @var bool
+			 */
+			public bool $fail;
+
+			/**
+			 * Whether the site has a platform connection.
+			 *
+			 * @var bool
+			 */
+			private bool $available;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed> $account   Account to return.
+			 * @param bool                $fail      Whether every fetch fails.
+			 * @param bool                $available Whether the site has a platform connection.
+			 */
+			public function __construct( array $account, bool $fail, bool $available ) {
+				$this->account   = $account;
+				$this->fail      = $fail;
+				$this->available = $available;
+			}
+
+			/**
+			 * Tell whether the fake client is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return $this->available;
+			}
+
+			/**
+			 * Return the account or fail.
+			 *
+			 * @param string $woocommerce_store_id WooCommerce store ID.
+			 * @return array<string,mixed>
+			 * @throws WooPaymentsApiException When set to fail.
+			 */
+			public function get_account( string $woocommerce_store_id = '' ): array {
+				++$this->calls;
+				$this->woocommerce_store_id = $woocommerce_store_id;
+				if ( $this->fail ) {
+					throw new WooPaymentsApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
+				}
+
+				return $this->account;
+			}
+		};
+	}
+
+	/**
+	 * Create the service under test with a fake native API client.
+	 *
+	 * @param WooPaymentsApiClient $api_client Fake API client.
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_service_with_api_client( WooPaymentsApiClient $api_client ): WooPaymentsAccountService {
+		$sut                  = new class( $api_client ) extends WooPaymentsAccountService {
+			/**
+			 * Fake native API client.
+			 *
+			 * @var WooPaymentsApiClient
+			 */
+			private WooPaymentsApiClient $api_client;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param WooPaymentsApiClient $api_client Fake API client.
+			 */
+			public function __construct( WooPaymentsApiClient $api_client ) {
+				$this->api_client = $api_client;
+			}
+
+			/**
+			 * Get the fake native API client.
+			 *
+			 * @return WooPaymentsApiClient|null
+			 */
+			protected function get_api_client(): ?WooPaymentsApiClient {
+				return $this->api_client;
+			}
+		};
+		$legacy_proxy         = new LegacyProxy();
+		$this->database_cache = new WooPaymentsDatabaseCache();
+		$this->database_cache->init( $legacy_proxy );
+		$sut->init( $legacy_proxy, $this->database_cache );
+
+		return $sut;
+	}
+
+	/**
+	 * Create the service under test as WooCommerce builds it while plugins load.
+	 *
+	 * WordPress defines get_userdata() in pluggable.php only after plugins load. Until then Jetpack's connection-owner
+	 * check throws, so the API client reads as unavailable.
+	 *
+	 * @param WooPaymentsApiClient $api_client Fake API client that reads as unavailable.
+	 * @return WooPaymentsAccountService
+	 */
+	private function create_service_while_plugins_load( WooPaymentsApiClient $api_client ): WooPaymentsAccountService {
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'function_exists' => static fn( string $name ): bool => 'get_userdata' !== $name && function_exists( $name ),
+			)
+		);
+		$sut                  = $this->create_service_with_api_client( $api_client );
+		$legacy_proxy         = wc_get_container()->get( LegacyProxy::class );
+		$this->database_cache = new WooPaymentsDatabaseCache();
+		$this->database_cache->init( $legacy_proxy );
+		$sut->init( $legacy_proxy, $this->database_cache );
+
+		return $sut;
+	}
+
+	/**
+	 * Get a valid live account payload for cache tests.
+	 *
+	 * @param array<string,mixed> $overrides Account overrides.
+	 * @return array<string,mixed>
+	 */
+	private function get_valid_live_account_payload( array $overrides = array() ): array {
+		return array_merge(
+			array(
+				'account_id'           => 'acct_123',
+				'live_publishable_key' => 'pk_live_123',
+				'is_live'              => true,
+				'payments_enabled'     => true,
+				'details_submitted'    => true,
+			),
+			$overrides
+		);
+	}
+
+	/**
+	 * Store a valid account cache fixture for the current blog.
+	 *
+	 * @param string $account_id Account ID.
+	 */
+	private function store_account_cache_fixture( string $account_id ): void {
+		update_option(
+			'wcpay_account_data',
+			array(
+				'data'               => $this->get_valid_live_account_payload( array( 'account_id' => $account_id ) ),
+				'fetched'            => time(),
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			)
+		);
+	}
+
+	/**
+	 * Get the WooPayments database cache keys cleared on account reset.
+	 *
+	 * @return string[]
+	 */
+	private function get_database_cache_keys(): array {
+		return array(
+			'wcpay_account_data',
+			'wcpay_address_autocomplete_jwt',
+			'wcpay_onboarding_fields_data',
+			'wcpay_business_types_data',
+			'wcpay_fraud_services_data',
+			'wcpay_recommended_payment_methods',
+			'wcpay_dispute_status_counts_cache',
+			'wcpay_test_dispute_status_counts_cache',
+			'wcpay_active_dispute_cache',
+			'wcpay_authorization_summary_cache',
+			'wcpay_test_authorization_summary_cache',
+			'wcpay_connect_incentive',
+			'wcpay_tracking_info_cache',
+		);
+	}
+
+	/**
+	 * Assert that a WordPress option is flagged for autoload.
+	 *
+	 * Reads the raw autoload column to stay robust across WordPress versions:
+	 * pre-6.6 stores 'yes' while 6.6+ stores 'on' for explicitly autoloaded options.
+	 *
+	 * @param string $option_name The option name to inspect.
+	 * @return void
+	 */
+	private function assertOptionAutoloaded( string $option_name ): void {
+		global $wpdb;
+
+		$autoload = $wpdb->get_var(
+			$wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", $option_name )
+		);
+
+		$this->assertContains( $autoload, array( 'yes', 'on' ), sprintf( 'Option %s should be autoloaded, got autoload value "%s".', $option_name, (string) $autoload ) );
+	}
+
+	/**
+	 * Get an onboarding fields payload as the platform returns it.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_onboarding_fields_payload(): array {
+		return array(
+			'business_types'    => array(
+				array(
+					'key'   => 'NZ',
+					'name'  => 'New Zealand',
+					'types' => array(
+						array(
+							'key'        => 'company',
+							'name'       => 'Company',
+							'structures' => array(),
+						),
+					),
+				),
+			),
+			'mccs_display_tree' => array(),
+		);
+	}
+
+	/**
+	 * Store a successful onboarding fields cache entry in the client's shape.
+	 *
+	 * @param string $locale  Locale stored with the data.
+	 * @param int    $fetched Fetch timestamp.
+	 * @return array<string,mixed> The cached data.
+	 */
+	private function store_onboarding_fields_cache( string $locale, int $fetched ): array {
+		$data = array(
+			'business_types' => array( array( 'key' => 'cached' ) ),
+			'__locale'       => $locale,
+		);
+		update_option(
+			'wcpay_onboarding_fields_data',
+			array(
+				'data'               => $data,
+				'fetched'            => $fetched,
+				'errored'            => false,
+				'consecutive_errors' => 0,
+			),
+			false
+		);
+
+		return $data;
+	}
+
+	/**
+	 * Create a fake API client that counts onboarding fields fetches.
+	 *
+	 * @param array<string,mixed>|null $fields_data Fields payload, or null to fail every fetch.
+	 * @param bool                     $available   Whether the site has a platform connection.
+	 * @return WooPaymentsApiClient
+	 */
+	private function create_counting_fields_api_client( ?array $fields_data, bool $available = true ): WooPaymentsApiClient {
+		return new class( $fields_data, $available ) extends WooPaymentsApiClient {
+			/**
+			 * Fields payload, or null to fail.
+			 *
+			 * @var array<string,mixed>|null
+			 */
+			private ?array $fields_data;
+
+			/**
+			 * Whether the site has a platform connection.
+			 *
+			 * @var bool
+			 */
+			private bool $available;
+
+			/**
+			 * Number of onboarding fields fetches.
+			 *
+			 * @var int
+			 */
+			public int $calls = 0;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed>|null $fields_data Fields payload, or null to fail.
+			 * @param bool                     $available   Whether the site has a platform connection.
+			 */
+			public function __construct( ?array $fields_data, bool $available ) {
+				$this->fields_data = $fields_data;
+				$this->available   = $available;
+			}
+
+			/**
+			 * Tell whether the fake client is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return $this->available;
+			}
+
+			/**
+			 * Return the fields payload or fail.
+			 *
+			 * @param string $locale User locale.
+			 * @return array<string,mixed>
+			 * @throws WooPaymentsApiException When set to fail.
+			 */
+			public function get_onboarding_fields_data( string $locale = '' ): array {
+				unset( $locale );
+				++$this->calls;
+				if ( null === $this->fields_data ) {
+					throw new WooPaymentsApiException( 'Temporary failure.', 'wcpay_temporary_failure', 500 );
+				}
+
+				return $this->fields_data;
+			}
+		};
+	}
+
+	/**
+	 * Assert that a WordPress option is not flagged for autoload.
+	 *
+	 * @param string $option_name The option name to inspect.
+	 * @return void
+	 */
+	private function assertOptionNotAutoloaded( string $option_name ): void {
+		global $wpdb;
+
+		$autoload = $wpdb->get_var(
+			$wpdb->prepare( "SELECT autoload FROM {$wpdb->options} WHERE option_name = %s", $option_name )
+		);
+
+		$this->assertContains( $autoload, array( 'no', 'off' ), sprintf( 'Option %s should not be autoloaded, got autoload value "%s".', $option_name, (string) $autoload ) );
+	}
+}

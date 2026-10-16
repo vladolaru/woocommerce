@@ -7,6 +7,7 @@ namespace Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions;
 
 defined( 'ABSPATH' ) || exit;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Admin\RemoteSpecs\RemoteSpecsEngine;
 
 /**
@@ -58,7 +59,7 @@ class Init extends RemoteSpecsEngine {
 			PaymentGatewaySuggestionsDataSourcePoller::get_instance()->set_specs_transient( array( $locale => $specs_to_save ), 3 * HOUR_IN_SECONDS );
 		}
 
-		return $specs_to_return;
+		return self::remove_woopayments_from_suggestions( $specs_to_return );
 	}
 
 	/**
@@ -83,7 +84,48 @@ class Init extends RemoteSpecsEngine {
 		 */
 		$specs   = apply_filters( 'woocommerce_admin_payment_gateway_suggestion_specs', $specs );
 		$results = EvaluateSuggestion::evaluate_specs( $specs );
-		return $results['suggestions'];
+		return self::remove_woopayments_from_suggestions( $results['suggestions'] );
+	}
+
+	/**
+	 * Remove the woocommerce-payments plugin from the plugins a WooPayments suggestion installs.
+	 *
+	 * WooPayments is built into WooCommerce, so its suggestion installs nothing. Remote suggestions still name the
+	 * plugin; with WC_ALLOW_MERGED_FEATURE_PLUGINS they are left as they are.
+	 *
+	 * @param array $suggestions Payment gateway suggestions.
+	 * @return array Normalized suggestions.
+	 */
+	private static function remove_woopayments_from_suggestions( array $suggestions ): array {
+		if ( Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' ) ) {
+			return $suggestions;
+		}
+
+		foreach ( $suggestions as $suggestion ) {
+			if ( ! is_object( $suggestion ) || empty( $suggestion->id ) ) {
+				continue;
+			}
+
+			$id = explode( ':', (string) $suggestion->id )[0];
+			if ( ! in_array( $id, array( 'woocommerce_payments', 'woocommerce-payments' ), true ) || empty( $suggestion->plugins ) || ! is_array( $suggestion->plugins ) ) {
+				continue;
+			}
+
+			$suggestion->plugins = array_values(
+				array_filter(
+					$suggestion->plugins,
+					static function ( $plugin ) {
+						return 'woocommerce-payments' !== $plugin;
+					}
+				)
+			);
+
+			if ( empty( $suggestion->plugins ) ) {
+				unset( $suggestion->plugins );
+			}
+		}
+
+		return $suggestions;
 	}
 
 	/**

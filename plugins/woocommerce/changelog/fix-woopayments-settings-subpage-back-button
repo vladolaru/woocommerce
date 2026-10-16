@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Give the WooPayments express checkout and advanced fraud protection pages one back arrow on the title, as the WooPayments plugin does, in place of the two differently worded text links.

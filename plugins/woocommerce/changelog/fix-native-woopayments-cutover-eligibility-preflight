@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Keep WooPayments running from the plugin when the store stops being eligible for the native switch after it was started.

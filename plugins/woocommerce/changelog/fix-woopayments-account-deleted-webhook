@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Acknowledge the WooPayments account deletion webhook and clear cached saved payment methods even when the account refresh that follows it fails.

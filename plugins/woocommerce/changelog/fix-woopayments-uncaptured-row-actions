@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show one Capture button per row on the WooPayments uncaptured transactions list, and open the payment details from its other cells.

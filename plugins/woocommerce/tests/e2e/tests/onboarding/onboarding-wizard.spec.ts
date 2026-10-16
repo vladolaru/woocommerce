@@ -120,12 +120,12 @@ test.describe(
 						name: 'Get a boost with our free features',
 					} )
 				).toBeVisible();
-				// check that WooPayments is displayed because Australia is a supported country
+				// WooPayments is built into core, so the profiler does not offer it as a plugin to install, even in a supported country.
 				await expect(
 					page.getByRole( 'heading', {
 						name: 'Get paid with WooPayments',
 					} )
-				).toBeVisible();
+				).not.toBeAttached();
 				// skip this step so that no extensions are installed
 				await page
 					.getByRole( 'button', { name: 'Skip this step' } )

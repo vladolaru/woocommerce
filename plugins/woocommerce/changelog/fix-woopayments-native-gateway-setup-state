@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show built-in WooPayments as needing setup until the account details are submitted and payments are enabled, matching the WooPayments extension.

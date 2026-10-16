@@ -1,0 +1,343 @@
+/**
+ * External dependencies
+ */
+import { dispatch, useSelect } from '@wordpress/data';
+import { useRef, useState } from '@wordpress/element';
+import { __, _n } from '@wordpress/i18n';
+import { notesStore, QUERY_DEFAULTS } from '@woocommerce/data';
+import { Section } from '@woocommerce/components';
+import { recordEvent } from '@woocommerce/tracks';
+import {
+	InboxDismissConfirmationModal,
+	InboxNoteCard,
+	InboxNotePlaceholder,
+} from '@woocommerce/experimental';
+import type { InboxNote, InboxNoteAction } from '@woocommerce/experimental';
+
+const INBOX_QUERY = {
+	page: 1,
+	per_page: QUERY_DEFAULTS.pageSize,
+	status: 'unactioned',
+	type: QUERY_DEFAULTS.noteTypes,
+	orderby: 'date',
+	order: 'desc',
+	source: 'woocommerce-payments',
+	_fields: [
+		'id',
+		'name',
+		'title',
+		'content',
+		'type',
+		'status',
+		'actions',
+		'date_created',
+		'date_created_gmt',
+		'layout',
+		'image',
+		'is_deleted',
+		'is_read',
+		'source',
+	],
+} as const;
+
+type WooPaymentsInboxNoteAction = {
+	id: number;
+	url: string;
+	label: string;
+	actioned_text?: string;
+};
+
+type WooPaymentsInboxNote = {
+	id: number;
+	status: string;
+	title: string;
+	name: string;
+	content: string;
+	date_created: string;
+	date_created_gmt: string;
+	actions?: WooPaymentsInboxNoteAction[];
+	is_deleted: boolean;
+	type: string;
+	is_read: boolean;
+	layout?: string;
+	image?: string;
+};
+
+type NotesSelector = {
+	getNotes: ( query: typeof INBOX_QUERY ) => WooPaymentsInboxNote[];
+	getNotesError: ( selector: string, args: unknown[] ) => unknown;
+	isResolving?: ( selector: string, args: unknown[] ) => boolean;
+	hasFinishedResolution?: ( selector: string, args: unknown[] ) => boolean;
+};
+
+const getInboxNote = ( note: WooPaymentsInboxNote ): InboxNote => ( {
+	id: note.id,
+	status: note.status,
+	title: note.title,
+	name: note.name,
+	content: note.content,
+	date_created: note.date_created,
+	date_created_gmt: note.date_created_gmt,
+	actions: ( note.actions ?? [] ).map(
+		( action ): InboxNoteAction => ( {
+			id: action.id,
+			url: action.url,
+			label: action.label,
+			primary: false,
+			actioned_text: action.actioned_text
+				? Boolean( action.actioned_text )
+				: undefined,
+		} )
+	),
+	is_deleted: note.is_deleted,
+	type: note.type,
+	is_read: note.is_read,
+	layout: note.layout,
+	image: note.image,
+} );
+
+const getNotesDispatch = () =>
+	dispatch( notesStore ) as {
+		removeNote: ( noteId: number ) => Promise< WooPaymentsInboxNote >;
+		triggerNoteAction: ( noteId: number, actionId: number ) => void;
+		updateNote: (
+			noteId: number,
+			noteFields: Partial< WooPaymentsInboxNote >
+		) => void;
+	};
+
+const getNoticesDispatch = () =>
+	dispatch( 'core/notices' ) as unknown as {
+		createSuccessNotice: ( message: string, options?: unknown ) => void;
+		createErrorNotice: ( message: string ) => void;
+	};
+
+export const InboxNotifications = () => {
+	const [ noteToDismiss, setNoteToDismiss ] = useState< InboxNote | null >(
+		null
+	);
+	const headingRef = useRef< HTMLHeadingElement >( null );
+	const noteToDismissElementRef = useRef< HTMLElement | null >( null );
+	const { isError, isLoading, notes } = useSelect( ( select ) => {
+		const store = select( notesStore ) as unknown as NotesSelector;
+		const args = [ INBOX_QUERY ];
+
+		return {
+			notes: store.getNotes( INBOX_QUERY ),
+			isError: Boolean( store.getNotesError( 'getNotes', args ) ),
+			isLoading: store.isResolving
+				? store.isResolving( 'getNotes', args )
+				: ! store.hasFinishedResolution?.( 'getNotes', args ),
+		};
+	}, [] );
+	const visibleNotes = notes.filter( ( note ) => ! note.is_deleted );
+	const shouldRestoreFocusAfterDismissal = () => {
+		const ownerDocument = headingRef.current?.ownerDocument;
+		const activeElement = ownerDocument?.activeElement;
+
+		if ( ! ownerDocument || ! activeElement ) {
+			return false;
+		}
+
+		return (
+			activeElement === ownerDocument.body ||
+			!! activeElement.closest( '[role="dialog"]' ) ||
+			!! noteToDismissElementRef.current?.contains( activeElement )
+		);
+	};
+	const focusInboxHeading = () => {
+		const requestAnimationFrame =
+			headingRef.current?.ownerDocument.defaultView
+				?.requestAnimationFrame ?? window.requestAnimationFrame;
+
+		requestAnimationFrame( () => headingRef.current?.focus() );
+	};
+	const openDismissConfirmation = ( note: InboxNote ) => {
+		const activeElement = headingRef.current?.ownerDocument.activeElement;
+		const noteElement = activeElement?.closest(
+			'.woocommerce-inbox-message'
+		) as HTMLElement | null | undefined;
+
+		noteToDismissElementRef.current = noteElement ?? null;
+		setNoteToDismiss( note );
+	};
+	// Client 11.1.0 `overview/inbox-notifications/index.js:199-207`.
+	const recordDismissed = ( note: InboxNote, confirmed: boolean ) =>
+		recordEvent( 'wcpay_inbox_action_dismissed', {
+			note_name: note.name,
+			note_title: note.title,
+			note_name_dismiss_all: false,
+			note_name_dismiss_confirmation: confirmed,
+		} );
+	const dismissNote = async () => {
+		if ( ! noteToDismiss ) {
+			return;
+		}
+		recordDismissed( noteToDismiss, true );
+
+		try {
+			const removedNote = await getNotesDispatch().removeNote(
+				noteToDismiss.id
+			);
+			const shouldRestoreFocus = shouldRestoreFocusAfterDismissal();
+			setNoteToDismiss( null );
+			noteToDismissElementRef.current = null;
+
+			if ( shouldRestoreFocus ) {
+				focusInboxHeading();
+			}
+
+			getNoticesDispatch().createSuccessNotice(
+				__( 'Message dismissed', 'woocommerce' ),
+				{
+					actions: [
+						{
+							label: __( 'Undo', 'woocommerce' ),
+							onClick: () =>
+								getNotesDispatch().updateNote( removedNote.id, {
+									is_deleted: false,
+								} ),
+						},
+					],
+				}
+			);
+		} catch ( error ) {
+			setNoteToDismiss( null );
+			noteToDismissElementRef.current = null;
+			getNoticesDispatch().createErrorNotice(
+				_n(
+					'Message could not be dismissed',
+					'Messages could not be dismissed',
+					1,
+					'woocommerce'
+				)
+			);
+		}
+	};
+
+	if ( isLoading ) {
+		return (
+			<section
+				className="woocommerce-woopayments-inbox-notifications"
+				aria-busy
+				aria-labelledby="woocommerce-woopayments-inbox-heading"
+			>
+				<h2
+					id="woocommerce-woopayments-inbox-heading"
+					className="screen-reader-text"
+				>
+					{ __( 'Inbox', 'woocommerce' ) }
+				</h2>
+				<p className="screen-reader-text" role="status">
+					{ __( 'Loading inbox notifications…', 'woocommerce' ) }
+				</p>
+				<InboxNotePlaceholder className="banner message-is-unread" />
+			</section>
+		);
+	}
+
+	if ( isError ) {
+		return (
+			<section
+				className="woocommerce-woopayments-inbox-notifications"
+				aria-labelledby="woocommerce-woopayments-inbox-heading"
+			>
+				<h2
+					id="woocommerce-woopayments-inbox-heading"
+					className="screen-reader-text"
+				>
+					{ __( 'Inbox', 'woocommerce' ) }
+				</h2>
+				<p role="status">
+					{ __(
+						'There was an error getting your inbox. Please try again.',
+						'woocommerce'
+					) }
+				</p>
+			</section>
+		);
+	}
+
+	return (
+		<>
+			<section
+				className="woocommerce-woopayments-inbox-notifications"
+				aria-labelledby="woocommerce-woopayments-inbox-heading"
+			>
+				{ /* Client 11.1.0 `overview/inbox-notifications/index.js:282-309` shows the notes without a heading; this one names the region and takes focus after a dismissal. */ }
+				<h2
+					id="woocommerce-woopayments-inbox-heading"
+					className="screen-reader-text"
+					ref={ headingRef }
+					tabIndex={ -1 }
+				>
+					{ __( 'Inbox', 'woocommerce' ) }
+				</h2>
+				{ visibleNotes.length === 0 ? (
+					// Client 11.1.0 `overview/inbox-notifications/index.js:48-56,85-87`.
+					<section className="woocommerce-empty-activity-card">
+						{ __(
+							'As things begin to happen in your store your inbox will start to fill up. ' +
+								"You'll see things like achievements, new feature announcements, extension recommendations and more!",
+							'woocommerce'
+						) }
+					</section>
+				) : (
+					<Section component={ false }>
+						{ visibleNotes.map( ( note ) => {
+							const inboxNote = getInboxNote( note );
+
+							return (
+								<InboxNoteCard
+									key={ inboxNote.id }
+									note={ inboxNote }
+									onDismiss={ openDismissConfirmation }
+									onNoteActionClick={ (
+										selectedNote,
+										action
+									) =>
+										getNotesDispatch().triggerNoteAction(
+											selectedNote.id,
+											action.id
+										)
+									}
+									onBodyLinkClick={ (
+										selectedNote,
+										innerLink
+									) =>
+										recordEvent(
+											'wcpay_inbox_action_click',
+											{
+												note_name: selectedNote.name,
+												note_title: selectedNote.title,
+												note_content_inner_link:
+													innerLink,
+											}
+										)
+									}
+									onNoteVisible={ ( selectedNote ) =>
+										recordEvent( 'wcpay_inbox_note_view', {
+											note_content: selectedNote.content,
+											note_name: selectedNote.name,
+											note_title: selectedNote.title,
+											note_type: selectedNote.type,
+										} )
+									}
+								/>
+							);
+						} ) }
+					</Section>
+				) }
+			</section>
+			{ noteToDismiss && (
+				<InboxDismissConfirmationModal
+					onClose={ () => {
+						recordDismissed( noteToDismiss, false );
+						setNoteToDismiss( null );
+					} }
+					onDismiss={ dismissNote }
+				/>
+			) }
+		</>
+	);
+};

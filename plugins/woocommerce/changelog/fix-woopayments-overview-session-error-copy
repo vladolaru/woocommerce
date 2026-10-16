@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Stop showing an onboarding error on the WooPayments Overview when Stripe account notifications fail to load.

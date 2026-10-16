@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Give native WooPayments refunds a per-refund idempotency key so equal-amount partial refunds are not dropped as provider replays.

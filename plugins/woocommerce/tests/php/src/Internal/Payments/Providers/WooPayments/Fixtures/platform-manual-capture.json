@@ -1,0 +1,521 @@
+{
+	"_meta": {
+		"recording": "REC-CAP",
+		"customers": {
+			"user_1": "cus_UsIeTbmGHPc9jY (store user 1 test customer, wp__wcpay_customer_id_test)"
+		},
+		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (default currency USD), Stripe test mode",
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at 29b78cbae6, WooPayments plugin inactive, test mode, store currency USD)",
+		"captured_via": "wcpay_api_request_response filter (raw transport response before native parsing) and wcpay_api_request_params at PHP_INT_MAX (the exact params request() sends); one transport attempt per entry (Idempotent-Replayed header empty on all), no retries",
+		"sanitized": "client_secret, receipt_url, request_log_url, emails, order_key and fraud_prevention_data_shopper_ip_hash / _ua_hash / _ip_country replaced with REDACTED where non-null; customer id in the request summary abstracted (response bodies keep test-mode ids); response bodies are JSON-decoded and otherwise verbatim (next_action.use_stripe_sdk keeps the public Visa directory-server certificate)",
+		"notes": "data/rec-t3-api-recordings.md in the 2026-09-03-native-payments-program-orientation session folder"
+	},
+	"entries": [
+		{
+			"pair": "authorize_manual_capture",
+			"test_card": "4242424242424242 (pm_card_visa)",
+			"recorded_at": "2026-09-25T22:15:14+00:00",
+			"context": "10.99 USD with capture_method manual; returns requires_capture",
+			"request": {
+				"transport": "WooPaymentsApiClient::create_and_confirm_payment_intention",
+				"method": "POST",
+				"path": "/sites/4/wcpay/intentions (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true,
+					"amount": 1099,
+					"currency": "usd",
+					"customer": "cus_* (see _meta.customers)",
+					"description": "REC-CAP manual capture recording",
+					"metadata": {
+						"rec": "REC-CAP"
+					},
+					"payment_method_types": [
+						"card"
+					],
+					"payment_method": "pm_card_visa",
+					"capture_method": "manual",
+					"confirm": "true",
+					"idempotency_key": "2cb78291-24ae-4488-b97b-070a4c68eff9"
+				},
+				"body_note": "the params request() JSON-encodes (wcpay_api_request_params at PHP_INT_MAX); idempotency_key is a body param; request() also sends an Idempotency-Key header"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"id": "pi_3UJhOgBzWlxcwgpP0AOgQE2z",
+					"object": "payment_intent",
+					"allowed_payment_method_types": null,
+					"amount": 1099,
+					"amount_capturable": 1099,
+					"amount_details": {
+						"tip": []
+					},
+					"amount_received": 0,
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"application_fee_amount": 62,
+					"automatic_payment_methods": null,
+					"canceled_at": null,
+					"cancellation_reason": null,
+					"capture_method": "manual",
+					"charges": {
+						"object": "list",
+						"data": [
+							{
+								"id": "ch_3UJhOgBzWlxcwgpP0NcK21bQ",
+								"object": "charge",
+								"amount": 1099,
+								"amount_captured": 0,
+								"amount_refunded": 0,
+								"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+								"application_fee": null,
+								"application_fee_amount": 62,
+								"balance_transaction": null,
+								"billing_details": {
+									"address": {
+										"city": null,
+										"country": null,
+										"line1": null,
+										"line2": null,
+										"postal_code": null,
+										"state": null
+									},
+									"email": null,
+									"name": null,
+									"phone": null,
+									"tax_id": null
+								},
+								"calculated_statement_descriptor": "WOOCOMMERCE",
+								"captured": false,
+								"created": 1790374514,
+								"currency": "usd",
+								"customer": "cus_UsIeTbmGHPc9jY",
+								"description": "REC-CAP manual capture recording",
+								"destination": null,
+								"dispute": null,
+								"disputed": false,
+								"failure_balance_transaction": null,
+								"failure_code": null,
+								"failure_message": null,
+								"fraud_details": [],
+								"invoice": null,
+								"livemode": false,
+								"metadata": {
+									"rec": "REC-CAP"
+								},
+								"on_behalf_of": null,
+								"order": null,
+								"outcome": {
+									"advice_code": null,
+									"network_advice_code": null,
+									"network_decline_code": null,
+									"network_status": "approved_by_network",
+									"reason": null,
+									"risk_level": "normal",
+									"risk_score": 4,
+									"seller_message": "Payment complete.",
+									"type": "authorized"
+								},
+								"paid": true,
+								"payment_intent": "pi_3UJhOgBzWlxcwgpP0AOgQE2z",
+								"payment_method": "pm_1UJhOgBzWlxcwgpPvmthvwHB",
+								"payment_method_details": {
+									"card": {
+										"amount_authorized": 1099,
+										"authorization_code": "914585",
+										"brand": "visa",
+										"capture_before": 1790979314,
+										"checks": {
+											"address_line1_check": null,
+											"address_postal_code_check": null,
+											"cvc_check": "pass"
+										},
+										"country": "US",
+										"description": "Visa Classic",
+										"electronic_commerce_indicator": "07",
+										"exp_month": 9,
+										"exp_year": 2027,
+										"extended_authorization": {
+											"status": "disabled"
+										},
+										"fingerprint": "GPNBuIQZKl9E7Sku",
+										"funding": "credit",
+										"iin": "424242",
+										"incremental_authorization": {
+											"status": "unavailable"
+										},
+										"installments": null,
+										"issuer": "Stripe Payments UK Limited",
+										"last4": "4242",
+										"mandate": null,
+										"moto": null,
+										"multicapture": {
+											"status": "unavailable"
+										},
+										"network": "visa",
+										"network_token": {
+											"used": false
+										},
+										"network_transaction_id": "119727611598658",
+										"overcapture": {
+											"maximum_amount_capturable": 1099,
+											"status": "unavailable"
+										},
+										"regulated_status": "unregulated",
+										"three_d_secure": null,
+										"transaction_link_id": null,
+										"wallet": null
+									},
+									"type": "card"
+								},
+								"radar_options": [],
+								"receipt_email": null,
+								"receipt_number": null,
+								"receipt_url": "REDACTED",
+								"refunded": false,
+								"refunds": {
+									"object": "list",
+									"data": [],
+									"has_more": false,
+									"total_count": 0,
+									"url": "/v1/charges/ch_3UJhOgBzWlxcwgpP0NcK21bQ/refunds"
+								},
+								"review": null,
+								"shipping": null,
+								"source": null,
+								"source_transfer": null,
+								"statement_descriptor": null,
+								"statement_descriptor_suffix": null,
+								"status": "succeeded",
+								"transfer_data": null,
+								"transfer_group": null
+							}
+						],
+						"has_more": false,
+						"total_count": 1,
+						"url": "/v1/charges?payment_intent=pi_3UJhOgBzWlxcwgpP0AOgQE2z"
+					},
+					"client_secret": "REDACTED",
+					"confirmation_method": "automatic",
+					"created": 1790374514,
+					"currency": "usd",
+					"customer": "cus_UsIeTbmGHPc9jY",
+					"customer_account": null,
+					"description": "REC-CAP manual capture recording",
+					"excluded_payment_method_types": null,
+					"invoice": null,
+					"last_payment_error": null,
+					"latest_charge": "ch_3UJhOgBzWlxcwgpP0NcK21bQ",
+					"level3": null,
+					"livemode": false,
+					"managed_payments": {
+						"enabled": false
+					},
+					"metadata": {
+						"rec": "REC-CAP"
+					},
+					"next_action": null,
+					"on_behalf_of": null,
+					"payment_method": "pm_1UJhOgBzWlxcwgpPvmthvwHB",
+					"payment_method_configuration_details": null,
+					"payment_method_options": {
+						"card": {
+							"installments": null,
+							"mandate_options": null,
+							"network": null,
+							"request_three_d_secure": "automatic"
+						}
+					},
+					"payment_method_types": [
+						"card"
+					],
+					"payment_record": null,
+					"processing": null,
+					"receipt_email": null,
+					"review": null,
+					"setup_future_usage": null,
+					"shared_payment_granted_token": null,
+					"shipping": null,
+					"source": null,
+					"statement_descriptor": null,
+					"statement_descriptor_suffix": null,
+					"status": "requires_capture",
+					"transfer_data": null,
+					"transfer_group": null,
+					"fee_history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						}
+					]
+				}
+			}
+		},
+		{
+			"pair": "capture_full_amount",
+			"test_card": null,
+			"recorded_at": "2026-09-25T22:15:28+00:00",
+			"context": "POST intentions/{pi}/capture for the full 1099 with metadata {rec} and empty level3 (the adapter always sends level3)",
+			"request": {
+				"transport": "WooPaymentsApiClient::capture_intention",
+				"method": "POST",
+				"path": "/sites/4/wcpay/intentions/pi_3UJhOgBzWlxcwgpP0AOgQE2z/capture (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true,
+					"amount_to_capture": 1099,
+					"metadata": {
+						"rec": "REC-CAP"
+					},
+					"level3": []
+				},
+				"body_note": "the params request() JSON-encodes (wcpay_api_request_params at PHP_INT_MAX); idempotency_key is a body param; request() also sends an Idempotency-Key header"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"id": "pi_3UJhOgBzWlxcwgpP0AOgQE2z",
+					"object": "payment_intent",
+					"allowed_payment_method_types": null,
+					"amount": 1099,
+					"amount_capturable": 0,
+					"amount_details": {
+						"tip": []
+					},
+					"amount_received": 1099,
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"application_fee_amount": 62,
+					"automatic_payment_methods": null,
+					"canceled_at": null,
+					"cancellation_reason": null,
+					"capture_method": "manual",
+					"charges": {
+						"object": "list",
+						"data": [
+							{
+								"id": "ch_3UJhOgBzWlxcwgpP0NcK21bQ",
+								"object": "charge",
+								"amount": 1099,
+								"amount_captured": 1099,
+								"amount_refunded": 0,
+								"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+								"application_fee": "fee_1UJhOtBzWlxcwgpPbfwj4CAf",
+								"application_fee_amount": 62,
+								"balance_transaction": {
+									"id": "txn_3UJhOgBzWlxcwgpP0h2Nzmzw",
+									"object": "balance_transaction",
+									"amount": 1099,
+									"available_on": 1790640000,
+									"balance_type": "payments",
+									"created": 1790374527,
+									"currency": "usd",
+									"description": "REC-CAP manual capture recording",
+									"exchange_rate": null,
+									"fee": 62,
+									"fee_details": [
+										{
+											"amount": 62,
+											"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+											"currency": "usd",
+											"description": "DEV Shared Account WCPay application fee",
+											"type": "application_fee"
+										}
+									],
+									"net": 1037,
+									"reporting_category": "charge",
+									"source": "ch_3UJhOgBzWlxcwgpP0NcK21bQ",
+									"status": "pending",
+									"type": "charge"
+								},
+								"billing_details": {
+									"address": {
+										"city": null,
+										"country": null,
+										"line1": null,
+										"line2": null,
+										"postal_code": null,
+										"state": null
+									},
+									"email": null,
+									"name": null,
+									"phone": null,
+									"tax_id": null
+								},
+								"calculated_statement_descriptor": "WOOCOMMERCE",
+								"captured": true,
+								"created": 1790374514,
+								"currency": "usd",
+								"customer": "cus_UsIeTbmGHPc9jY",
+								"description": "REC-CAP manual capture recording",
+								"destination": null,
+								"dispute": null,
+								"disputed": false,
+								"failure_balance_transaction": null,
+								"failure_code": null,
+								"failure_message": null,
+								"fraud_details": [],
+								"invoice": null,
+								"livemode": false,
+								"metadata": {
+									"rec": "REC-CAP"
+								},
+								"on_behalf_of": null,
+								"order": null,
+								"outcome": {
+									"advice_code": null,
+									"network_advice_code": null,
+									"network_decline_code": null,
+									"network_status": "approved_by_network",
+									"reason": null,
+									"risk_level": "normal",
+									"risk_score": 4,
+									"seller_message": "Payment complete.",
+									"type": "authorized"
+								},
+								"paid": true,
+								"payment_intent": "pi_3UJhOgBzWlxcwgpP0AOgQE2z",
+								"payment_method": "pm_1UJhOgBzWlxcwgpPvmthvwHB",
+								"payment_method_details": {
+									"card": {
+										"amount_authorized": 1099,
+										"authorization_code": "914585",
+										"brand": "visa",
+										"capture_before": 1790979314,
+										"checks": {
+											"address_line1_check": null,
+											"address_postal_code_check": null,
+											"cvc_check": "pass"
+										},
+										"country": "US",
+										"description": "Visa Classic",
+										"electronic_commerce_indicator": "07",
+										"exp_month": 9,
+										"exp_year": 2027,
+										"extended_authorization": {
+											"status": "disabled"
+										},
+										"fingerprint": "GPNBuIQZKl9E7Sku",
+										"funding": "credit",
+										"iin": "424242",
+										"incremental_authorization": {
+											"status": "unavailable"
+										},
+										"installments": null,
+										"issuer": "Stripe Payments UK Limited",
+										"last4": "4242",
+										"mandate": null,
+										"moto": null,
+										"multicapture": {
+											"status": "unavailable"
+										},
+										"network": "visa",
+										"network_token": {
+											"used": false
+										},
+										"network_transaction_id": "119727611598658",
+										"overcapture": {
+											"maximum_amount_capturable": 1099,
+											"status": "unavailable"
+										},
+										"regulated_status": "unregulated",
+										"three_d_secure": null,
+										"transaction_link_id": null,
+										"wallet": null
+									},
+									"type": "card"
+								},
+								"radar_options": [],
+								"receipt_email": null,
+								"receipt_number": null,
+								"receipt_url": "REDACTED",
+								"refunded": false,
+								"refunds": {
+									"object": "list",
+									"data": [],
+									"has_more": false,
+									"total_count": 0,
+									"url": "/v1/charges/ch_3UJhOgBzWlxcwgpP0NcK21bQ/refunds"
+								},
+								"review": null,
+								"shipping": null,
+								"source": null,
+								"source_transfer": null,
+								"statement_descriptor": null,
+								"statement_descriptor_suffix": null,
+								"status": "succeeded",
+								"transfer_data": null,
+								"transfer_group": null
+							}
+						],
+						"has_more": false,
+						"total_count": 1,
+						"url": "/v1/charges?payment_intent=pi_3UJhOgBzWlxcwgpP0AOgQE2z"
+					},
+					"client_secret": "REDACTED",
+					"confirmation_method": "automatic",
+					"created": 1790374514,
+					"currency": "usd",
+					"customer": "cus_UsIeTbmGHPc9jY",
+					"customer_account": null,
+					"description": "REC-CAP manual capture recording",
+					"excluded_payment_method_types": null,
+					"invoice": null,
+					"last_payment_error": null,
+					"latest_charge": "ch_3UJhOgBzWlxcwgpP0NcK21bQ",
+					"level3": null,
+					"livemode": false,
+					"managed_payments": {
+						"enabled": false
+					},
+					"metadata": {
+						"rec": "REC-CAP"
+					},
+					"next_action": null,
+					"on_behalf_of": null,
+					"payment_method": "pm_1UJhOgBzWlxcwgpPvmthvwHB",
+					"payment_method_configuration_details": null,
+					"payment_method_options": {
+						"card": {
+							"installments": null,
+							"mandate_options": null,
+							"network": null,
+							"request_three_d_secure": "automatic"
+						}
+					},
+					"payment_method_types": [
+						"card"
+					],
+					"payment_record": null,
+					"processing": null,
+					"receipt_email": null,
+					"review": null,
+					"setup_future_usage": null,
+					"shared_payment_granted_token": null,
+					"shipping": null,
+					"source": null,
+					"statement_descriptor": null,
+					"statement_descriptor_suffix": null,
+					"status": "succeeded",
+					"transfer_data": null,
+					"transfer_group": null,
+					"fee_history": [
+						{
+							"type": "base",
+							"additional_type": "",
+							"fee_id": "base-us-card-fee",
+							"percentage_rate": 0.029,
+							"fixed_rate": 30,
+							"currency": "usd"
+						}
+					]
+				}
+			}
+		}
+	]
+}

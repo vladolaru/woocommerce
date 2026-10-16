@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Document intentional backwards-compatibility removals from the native WooPayments merge. The deprecated WooPayments onboarding task no longer fires the public filters woocommerce_admin_woopayments_onboarding_task_badge (since 8.2.0) or woocommerce_admin_woopayments_onboarding_task_additional_data (since 9.4.0); native Settings Payments onboarding owns that surface. The connect-wcpay REST endpoint now returns 200 with a native onboarding connectUrl instead of a 500 WP_Error when the WooPayments plugin runtime is absent; consumers should follow connectUrl on success. The wcpay_welcome_page_* options are no longer exposed via the wc-admin/options REST allowlist, the Admin\Features\WcPayWelcomePage and Admin\Features\WcPayPromotion\Init class aliases are removed, and the WC_Admin_Notes_WooCommerce_Payments compatibility facade (deprecated since 4.8.0) is removed alongside the deleted welcome-page and promotion surfaces.

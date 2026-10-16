@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPayments error messages when a transactions, disputes, payouts or uncaptured list fails to load, instead of the raw server response and an empty-list message.

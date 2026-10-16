@@ -1,0 +1,314 @@
+.woocommerce-multi-currency-settings {
+	max-width: 1032px;
+	margin-top: 24px;
+
+	> .components-notice {
+		margin: 0 0 24px;
+	}
+
+	// The shell's section spacing, plus the client's 32px under the enabled currencies.
+	.settings-section {
+		margin-bottom: 32px;
+	}
+
+	&__card.components-card {
+		box-shadow: none;
+		border: 1px solid #e0e0e0;
+	}
+
+	// Client 11.1.0 multi-currency/style.scss: 24px card padding, controls spaced like its store settings card.
+	&__store-settings.components-card__body {
+		display: grid;
+		gap: 24px;
+		padding: 24px;
+	}
+
+	&__save {
+		display: flex;
+		justify-content: flex-end;
+	}
+
+	&__cache-recommendation-content {
+		display: flex;
+		gap: 8px;
+		align-items: flex-start;
+
+		p {
+			margin-top: 0;
+		}
+	}
+
+	// Client 11.1.0 enabled-currencies-list/style.scss: the currency list scrolls under the search, the actions stay in view.
+	&__currency-choices {
+		display: grid;
+		gap: 8px;
+		max-height: min(420px, 50vh);
+		overflow-y: auto;
+		padding: 2px;
+	}
+
+	&__currency-flag {
+		display: inline-block;
+		min-width: 1.5em;
+		margin-inline-end: 4px;
+		font-size: 20px;
+		vertical-align: middle;
+	}
+
+	// Client 11.1.0 enabled-currencies-list/style.scss:9-110: header row, then one row per currency;
+	// the store currency row is shaded, rates and codes are grey, actions sit on the right.
+	&__currencies.widefat {
+		table-layout: fixed;
+		border: 0;
+		box-shadow: none;
+
+		th,
+		td {
+			padding: 16px 12px;
+			vertical-align: middle;
+			overflow-wrap: break-word;
+		}
+
+		tr > :first-child {
+			padding-inline-start: 24px;
+		}
+
+		tr > :last-child {
+			padding-inline-end: 24px;
+		}
+
+		thead th {
+			border-bottom: 1px solid #e0e0e0;
+		}
+
+		tbody th {
+			font-weight: 400;
+		}
+
+		tbody tr + tr > * {
+			border-top: 1px solid #e0e0e0;
+		}
+
+		tbody tr.is-default > * {
+			background: #f6f7f7;
+		}
+
+		thead th:nth-child(1) {
+			width: 50%;
+		}
+
+		thead th:nth-child(2) {
+			width: 30%;
+		}
+
+		thead th:nth-child(3) {
+			width: 20%;
+		}
+
+		// WordPress admin grey: 5.15:1 on the default row's #f6f7f7, where #757575 was 4.29:1 (WCAG 1.4.3).
+		td:nth-child(2),
+		.woocommerce-multi-currency-settings__currency-code {
+			color: #646970;
+		}
+	}
+
+	// On a phone Remove wraps under Manage inside the cell instead of spilling over the rate.
+	&__currency-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px 12px;
+		align-items: center;
+		justify-content: flex-end;
+	}
+
+	&__currencies-footer.components-card__body {
+		padding: 16px 24px;
+		border-top: 1px solid #e0e0e0;
+		border-radius: 0;
+	}
+
+	&__currency-settings {
+		display: grid;
+		gap: 16px;
+		min-width: min(420px, 100%);
+
+		.components-radio-control__option {
+			margin-bottom: 12px;
+		}
+
+		.components-base-control__help {
+			margin-bottom: 0;
+		}
+	}
+
+	&__preview {
+		h3 {
+			margin: 8px 0 0;
+			font-size: 14px;
+		}
+
+		p {
+			margin: 4px 0 12px;
+			color: #757575;
+		}
+	}
+
+	// Client 11.1.0 single-currency/style.scss:44-96: the store price and the converted price side by side,
+	// the converted price as plain bold text.
+	&__preview-fields {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 12px;
+		align-items: end;
+
+		.components-base-control__field {
+			margin: 0;
+		}
+
+		.text-control-with-affixes.disabled input {
+			border: none;
+			box-shadow: none;
+			color: inherit;
+			background: none;
+			font-weight: 600;
+		}
+	}
+
+	// The actions stay in view at the bottom of a long dialog, like the client's dialog footers.
+	&__modal-actions {
+		position: sticky;
+		bottom: -32px;
+		display: flex;
+		gap: 8px;
+		justify-content: flex-end;
+		margin: 8px 0 -32px;
+		padding: 16px 0 32px;
+		border-top: 1px solid #dcdcde;
+		background: #fff;
+	}
+
+	.components-spinner {
+		margin-right: 8px;
+		vertical-align: middle;
+	}
+}
+
+// Client 11.1.0 enabled-currencies-list/style.scss:192-222 and currency-delete-illustration/styles.scss:
+// a 495px dialog with the currency symbol crossed out above the methods that need it.
+.woocommerce-multi-currency-settings__remove-modal {
+	max-width: 495px;
+
+	p {
+		font-size: 14px;
+		line-height: 19px;
+	}
+}
+
+.woocommerce-multi-currency-settings__remove-illustration {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 96px;
+	height: 72px;
+	margin: 30px auto 24px;
+	background-color: #000580;
+	color: #ffe600;
+	font-size: 48px;
+	line-height: 72px;
+
+	svg {
+		position: absolute;
+		top: -17px;
+		inset-inline-end: -17px;
+		fill: #cc1818;
+		background: #fff;
+		border-radius: 50%;
+	}
+}
+
+.woocommerce-multi-currency-settings__remove-methods {
+	margin: 14px 0 22px;
+
+	li {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+		margin-bottom: 12px;
+	}
+
+	// Client 11.1.0 settings/payment-method-icon/style.scss:21-25.
+	img {
+		max-width: 45px;
+		height: auto;
+	}
+}
+
+// Client 11.1.0 components/preview-modal/index.scss: a near full-screen dialog around the store page.
+.woocommerce-multi-currency-settings__preview-modal {
+	width: calc(100vw - 64px);
+	min-width: calc(100vw - 64px);
+	min-height: calc(100vh - 64px);
+	display: flex;
+	flex-direction: column;
+
+	.components-modal__content {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		padding: 0;
+	}
+
+	.components-modal__header {
+		margin: 0;
+		padding: 0 32px;
+	}
+}
+
+.woocommerce-multi-currency-settings__preview-frame {
+	flex: 1;
+	width: 100%;
+	height: 100%;
+	border: 0;
+}
+
+// Core's settings shell leaves a narrower card than the client's page on a phone: tighter cells and a wider actions column.
+@media screen and (max-width: 600px) {
+	.woocommerce-multi-currency-settings__currencies.widefat {
+		th,
+		td {
+			padding-inline: 8px;
+		}
+
+		tr > :first-child {
+			padding-inline-start: 16px;
+		}
+
+		tr > :last-child {
+			padding-inline-end: 16px;
+		}
+
+		thead th:nth-child(1) {
+			width: 45%;
+		}
+
+		thead th:nth-child(3) {
+			width: 25%;
+		}
+	}
+}
+
+@media screen and (max-width: 782px) {
+	.woocommerce-multi-currency-settings {
+		&__modal-actions {
+			align-items: stretch;
+			flex-direction: column;
+		}
+
+		&__modal-actions {
+			.components-button {
+				justify-content: center;
+			}
+		}
+	}
+}

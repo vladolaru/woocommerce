@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the WooPayments payment timeline with an icon for each event, the date as a heading and the time of each event, as WooPayments did.

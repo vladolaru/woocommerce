@@ -1,0 +1,1776 @@
+/**
+ * External dependencies
+ */
+import { registerPaymentMethod } from '@woocommerce/blocks-registry';
+import { getPaymentMethodData, getSetting } from '@woocommerce/settings';
+import { decodeEntities } from '@wordpress/html-entities';
+import { __ } from '@wordpress/i18n';
+import {
+	createInterpolateElement,
+	createRoot,
+	useEffect,
+	useRef,
+	useState,
+} from '@wordpress/element';
+import { dispatch, useSelect } from '@wordpress/data';
+import { StoreNotice } from '@woocommerce/blocks-components';
+import FingerprintJS from '@fingerprintjs/fingerprintjs';
+
+/**
+ * Internal dependencies
+ */
+import {
+	getCachedAppearance,
+	getBlocksCheckoutAppearance,
+	getFontRulesFromPage,
+} from './upe-styles';
+import { recordWooPaymentsUserEvent } from './tracks';
+import { StripeWaitTimeoutError, waitForStripe } from './wait-for-stripe';
+import {
+	handleWooPayEmailInput,
+	shouldHandleWooPayEmailInput,
+} from './woopay/email-input-iframe';
+
+const PAYMENT_METHOD_NAME = 'woocommerce_payments';
+const defaultSettings = getPaymentMethodData( PAYMENT_METHOD_NAME, {} );
+const defaultLabel = __( 'Card', 'woocommerce' );
+const testModeBadgeLabel = __( 'Test Mode', 'woocommerce' );
+const saveUserRoots = new WeakMap();
+const copyTestNumberSuccessDuration = 2000;
+const EMPTY_BILLING_DATA = {};
+
+// The buyer *device* fingerprint the platform's risk rules score on — the
+// FingerprintJS visitor ID, the same signal the WooPayments plugin posts.
+// Computed once per page, warmed at load so checkout submission never waits
+// on it; best-effort, so failures resolve to an empty value.
+let deviceFingerprintPromise = null;
+const getDeviceFingerprint = () => {
+	if ( ! deviceFingerprintPromise ) {
+		deviceFingerprintPromise = FingerprintJS.load( { monitoring: false } )
+			.then( ( agent ) => agent.get() )
+			.then( ( result ) => result?.visitorId || '' )
+			.catch( () => '' );
+	}
+
+	return deviceFingerprintPromise;
+};
+
+const getPrimaryPaymentMethodConfig = ( paymentSettings = defaultSettings ) => {
+	const paymentMethodsConfig = paymentSettings?.paymentMethodsConfig || {};
+	const paymentMethodId =
+		paymentSettings?.paymentMethodId ||
+		Object.keys( paymentMethodsConfig )[ 0 ] ||
+		'card';
+
+	return (
+		paymentMethodsConfig[ paymentMethodId ] ||
+		paymentMethodsConfig.card ||
+		{}
+	);
+};
+
+const getPaymentMethodLabel = ( paymentSettings = defaultSettings ) => {
+	const paymentMethodConfig =
+		getPrimaryPaymentMethodConfig( paymentSettings );
+
+	return (
+		decodeEntities(
+			paymentMethodConfig?.title ||
+				paymentMethodConfig?.label ||
+				paymentSettings?.title ||
+				''
+		) || defaultLabel
+	);
+};
+
+const getTestingInstructions = ( paymentSettings = defaultSettings ) =>
+	getPrimaryPaymentMethodConfig( paymentSettings )?.testingInstructions ||
+	paymentSettings?.testingInstructions ||
+	'';
+
+const getCardBrandIcons = ( paymentSettings = defaultSettings ) => {
+	const paymentMethodConfig =
+		getPrimaryPaymentMethodConfig( paymentSettings );
+
+	return Array.isArray( paymentMethodConfig?.cardBrandIcons )
+		? paymentMethodConfig.cardBrandIcons
+		: [];
+};
+
+const getCachedBlocksTheme = ( paymentSettings = defaultSettings ) =>
+	getCachedAppearance(
+		'blocks_checkout',
+		paymentSettings?.stylesCacheVersion
+	)?.theme || 'stripe';
+
+const getAriaLabel = ( paymentSettings = defaultSettings ) => {
+	const label = getPaymentMethodLabel( paymentSettings );
+
+	return paymentSettings?.testMode
+		? `${ label } ${ testModeBadgeLabel }`
+		: label;
+};
+
+const getFraudPreventionToken = ( paymentSettings = defaultSettings ) =>
+	window.wcpayFraudPreventionToken ??
+	paymentSettings?.fraudPreventionToken ??
+	'';
+
+const TestModeBadge = ( { paymentSettings } ) => {
+	if ( ! paymentSettings?.testMode ) {
+		return null;
+	}
+
+	return <span className="test-mode badge">{ testModeBadgeLabel }</span>;
+};
+
+// Mirrors the classic card-brand popover (woopayments-checkout.js createCardBrandPopover() and updateCardBrandLogos()):
+// a dialog trigger, every brand named for screen readers, focus moved into the dialog, and Escape (focus back on the
+// trigger) or an outside click closing it.
+const CardBrandIcons = ( { paymentSettings } ) => {
+	const cardBrandIcons = getCardBrandIcons( paymentSettings );
+	const [ isPopoverOpen, setIsPopoverOpen ] = useState( false );
+	const triggerRef = useRef( null );
+	const popoverRef = useRef( null );
+
+	useEffect( () => {
+		if ( ! isPopoverOpen ) {
+			return undefined;
+		}
+
+		popoverRef.current?.focus();
+
+		const close = ( returnFocus ) => {
+			setIsPopoverOpen( false );
+			if ( returnFocus ) {
+				triggerRef.current?.focus();
+			}
+		};
+		const onKeyDown = ( event ) => {
+			if ( event.key === 'Escape' ) {
+				event.preventDefault();
+				close( true );
+			}
+		};
+		const onMouseDown = ( event ) => {
+			if (
+				! popoverRef.current?.contains( event.target ) &&
+				! triggerRef.current?.contains( event.target )
+			) {
+				close( false );
+			}
+		};
+
+		document.addEventListener( 'keydown', onKeyDown );
+		document.addEventListener( 'mousedown', onMouseDown );
+		return () => {
+			document.removeEventListener( 'keydown', onKeyDown );
+			document.removeEventListener( 'mousedown', onMouseDown );
+		};
+	}, [ isPopoverOpen ] );
+
+	if ( ! cardBrandIcons.length ) {
+		return null;
+	}
+
+	const visibleIcons = cardBrandIcons.slice( 0, 4 );
+	const additionalIcons = cardBrandIcons.slice( visibleIcons.length );
+	const hasAdditionalIcons = additionalIcons.length > 0;
+	const popoverId = 'wcpay-core-payment-methods-popover';
+	const togglePopover = () => setIsPopoverOpen( ( isOpen ) => ! isOpen );
+
+	return (
+		<div className="payment-methods--logos">
+			<div
+				{ ...( hasAdditionalIcons
+					? {
+							ref: triggerRef,
+							role: 'button',
+							tabIndex: 0,
+							'aria-haspopup': 'dialog',
+							'aria-label': __(
+								'Show all supported credit card brands',
+								'woocommerce'
+							),
+							'aria-expanded': isPopoverOpen,
+							'aria-controls': popoverId,
+							onClick: togglePopover,
+							onKeyDown: ( event ) => {
+								if (
+									event.key === 'Enter' ||
+									event.key === ' '
+								) {
+									event.preventDefault();
+									togglePopover();
+								}
+							},
+					  }
+					: {} ) }
+				data-testid="payment-methods-logos"
+			>
+				{ visibleIcons.map( ( icon ) => (
+					<img
+						key={ icon.id || icon.src }
+						src={ icon.src }
+						alt={ icon.alt || icon.id || '' }
+						width="38"
+						height="24"
+					/>
+				) ) }
+				{ hasAdditionalIcons ? (
+					<div className="payment-methods--logos-count">
+						{ `+ ${ additionalIcons.length }` }
+					</div>
+				) : null }
+			</div>
+			{ hasAdditionalIcons && isPopoverOpen ? (
+				<div
+					ref={ popoverRef }
+					id={ popoverId }
+					className="logo-popover payment-methods--logos-popover"
+					role="dialog"
+					tabIndex={ -1 }
+					aria-label={ __(
+						'Supported credit card brands',
+						'woocommerce'
+					) }
+					aria-describedby={ `${ popoverId }-description` }
+				>
+					<span
+						id={ `${ popoverId }-description` }
+						className="screen-reader-text"
+					>
+						{ cardBrandIcons
+							.map( ( icon ) => icon.alt || icon.id || '' )
+							.filter( Boolean )
+							.join( ', ' ) }
+					</span>
+					{ additionalIcons.map( ( icon ) => (
+						<img
+							key={ icon.id || icon.src }
+							src={ icon.src }
+							alt={ icon.alt || icon.id || '' }
+							width="38"
+							height="24"
+						/>
+					) ) }
+				</div>
+			) : null }
+		</div>
+	);
+};
+
+const PaymentMethodIcon = ( { paymentSettings } ) => {
+	const paymentMethodConfig =
+		getPrimaryPaymentMethodConfig( paymentSettings );
+	const icon = paymentMethodConfig?.icon || '';
+	const darkIcon = paymentMethodConfig?.darkIcon || '';
+	const [ theme, setTheme ] = useState( () =>
+		getCachedBlocksTheme( paymentSettings )
+	);
+
+	useEffect( () => {
+		if ( ! icon ) {
+			return undefined;
+		}
+
+		const updateTheme = () =>
+			setTheme( getCachedBlocksTheme( paymentSettings ) );
+		window.addEventListener( 'wcpay-appearance-cached', updateTheme );
+		updateTheme();
+
+		return () =>
+			window.removeEventListener(
+				'wcpay-appearance-cached',
+				updateTheme
+			);
+	}, [ icon, paymentSettings ] );
+
+	let paymentMethodIcon = null;
+	if ( getCardBrandIcons( paymentSettings ).length ) {
+		paymentMethodIcon = (
+			<CardBrandIcons paymentSettings={ paymentSettings } />
+		);
+	} else if ( icon ) {
+		paymentMethodIcon = (
+			<img
+				className="wcpay-payment-method-icon"
+				src={ theme === 'night' && darkIcon ? darkIcon : icon }
+				alt={ getPaymentMethodLabel( paymentSettings ) }
+			/>
+		);
+	}
+
+	return (
+		<>
+			<TestModeBadge paymentSettings={ paymentSettings } />
+			{ paymentMethodIcon }
+		</>
+	);
+};
+
+const getSuccessResponse = (
+	emitResponse,
+	paymentMethodData,
+	redirectUrl = ''
+) => ( {
+	type: emitResponse.responseTypes.SUCCESS,
+	...( redirectUrl ? { redirectUrl } : {} ),
+	meta: {
+		paymentMethodData,
+	},
+} );
+
+// Sentinel submitted in place of a payment method when client-side payment
+// method creation failed, so the server records a failed order. Matches the
+// WooPayments plugin's Payment_Information::PAYMENT_METHOD_ERROR.
+const PAYMENT_METHOD_ERROR_SENTINEL =
+	'woocommerce_payments_payment_method_error';
+
+const getErrorResponse = ( emitResponse, message ) => ( {
+	type: emitResponse.responseTypes.ERROR,
+	message,
+	messageContext: emitResponse.noticeContexts.PAYMENTS,
+} );
+
+const parseConfirmationRedirect = ( value ) => {
+	if ( typeof value === 'string' ) {
+		const match = value.match(
+			/#wcpay-confirm-(pi|si):([^:]+):([^:]+):([^:]+)(?::(.+))?$/
+		);
+
+		if ( ! match ) {
+			return null;
+		}
+
+		const clientSecret = decodeURIComponent( match[ 3 ] );
+
+		return {
+			type: match[ 1 ],
+			orderId: decodeURIComponent( match[ 2 ] ),
+			clientSecret,
+			nonce: decodeURIComponent( match[ 4 ] ),
+			confirmationToken: match[ 5 ]
+				? decodeURIComponent( match[ 5 ] )
+				: '',
+			intentId: clientSecret.split( '_secret_' )[ 0 ],
+		};
+	}
+
+	if ( ! value || typeof value !== 'object' ) {
+		return null;
+	}
+
+	return Object.values( value ).reduce( ( confirmation, child ) => {
+		return confirmation || parseConfirmationRedirect( child );
+	}, null );
+};
+
+const isChangingPaymentMethodForSubscription = () => {
+	if ( typeof window !== 'undefined' ) {
+		const search = window.location?.search || '';
+		if ( /[?&]change_payment_method=/.test( search ) ) {
+			return true;
+		}
+	}
+
+	if ( typeof document !== 'undefined' ) {
+		return !! document.querySelector(
+			'input[name="change_payment_method"]'
+		);
+	}
+
+	return false;
+};
+
+const updateOrderStatusAfterConfirmation = async (
+	confirmation,
+	intentId,
+	shouldSavePaymentMethod = false,
+	paymentSettings = defaultSettings
+) => {
+	if (
+		! paymentSettings.ajaxUrl ||
+		! confirmation?.orderId ||
+		! confirmation?.nonce ||
+		! intentId ||
+		! window.fetch
+	) {
+		return;
+	}
+
+	const body = new window.URLSearchParams();
+	body.append( 'action', 'update_order_status' );
+	body.append( 'order_id', confirmation.orderId );
+	body.append( '_ajax_nonce', confirmation.nonce );
+	body.append( 'intent_id', intentId );
+	body.append(
+		'should_save_payment_method',
+		shouldSavePaymentMethod ? 'true' : 'false'
+	);
+	body.append(
+		'is_changing_payment',
+		isChangingPaymentMethodForSubscription() ? 'true' : 'false'
+	);
+
+	const response = await window.fetch( paymentSettings.ajaxUrl, {
+		method: 'POST',
+		credentials: 'same-origin',
+		headers: {
+			'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+		},
+		body,
+	} );
+
+	if ( ! response || typeof response.json !== 'function' ) {
+		return;
+	}
+
+	const result = await response.json();
+	if ( result?.error?.message ) {
+		throw new Error( result.error.message );
+	}
+
+	return result?.return_url || '';
+};
+
+const handleConfirmationResponse = async (
+	response,
+	emitResponse,
+	shouldSavePaymentMethod,
+	getStripeClient,
+	paymentSettings = defaultSettings
+) => {
+	const confirmation = parseConfirmationRedirect( response );
+	if ( ! confirmation ) {
+		return getSuccessResponse( emitResponse, {} );
+	}
+
+	const confirmationErrorMessage = __(
+		'There was a problem confirming your payment.',
+		'woocommerce'
+	);
+
+	// Like client 11.1.0 confirm-card-payment.js, every failure after the order exists returns an error response
+	// with its message: a throw from an observer reaches the shopper only as Blocks' generic notice.
+	try {
+		let stripeClient = getStripeClient();
+
+		// Client 11.1.0 api.confirmIntent() reaches Stripe through getStripe(), which waits for Stripe.js.
+		if ( ! stripeClient && paymentSettings.publishableKey ) {
+			await waitForStripe();
+			stripeClient = getStripeClient();
+		}
+
+		if ( ! stripeClient ) {
+			return getErrorResponse( emitResponse, confirmationErrorMessage );
+		}
+
+		let result;
+
+		if ( confirmation.type === 'si' ) {
+			result = confirmation.confirmationToken
+				? await stripeClient.confirmSetup( {
+						clientSecret: confirmation.clientSecret,
+						confirmParams: {
+							confirmation_token: confirmation.confirmationToken,
+						},
+						redirect: 'if_required',
+				  } )
+				: await stripeClient.handleNextAction( {
+						clientSecret: confirmation.clientSecret,
+				  } );
+		} else {
+			result = await stripeClient.handleNextAction( {
+				clientSecret: confirmation.clientSecret,
+			} );
+		}
+
+		const intentId =
+			result.paymentIntent?.id ||
+			result.setupIntent?.id ||
+			result.error?.payment_intent?.id ||
+			result.error?.setup_intent?.id ||
+			confirmation.intentId;
+
+		if ( result.error ) {
+			// Let the server record the failed confirmation without waiting for it; the shopper sees Stripe's error.
+			updateOrderStatusAfterConfirmation(
+				confirmation,
+				intentId,
+				shouldSavePaymentMethod,
+				paymentSettings
+			).catch( () => {} );
+
+			return getErrorResponse(
+				emitResponse,
+				result.error.message || confirmationErrorMessage
+			);
+		}
+
+		const redirectUrl = await updateOrderStatusAfterConfirmation(
+			confirmation,
+			intentId,
+			shouldSavePaymentMethod,
+			paymentSettings
+		);
+
+		return getSuccessResponse( emitResponse, {}, redirectUrl );
+	} catch ( error ) {
+		// The client shows error.message as is; native shows its translated message when there is none and when
+		// Stripe.js never loads, instead of the client's English "Stripe object not found".
+		return getErrorResponse(
+			emitResponse,
+			error instanceof StripeWaitTimeoutError
+				? confirmationErrorMessage
+				: error?.message || confirmationErrorMessage
+		);
+	}
+};
+
+// Client 11.1.0 getStripeForUPE() reads only the selected method's flag, which is false for every method but card
+// (includes/class-wc-payments-checkout.php:598-599); the top-level flag is the card's and must not leak to others.
+const shouldUsePlatformStripeForCard = ( paymentSettings = defaultSettings ) =>
+	Boolean(
+		getPrimaryPaymentMethodConfig( paymentSettings )?.forceNetworkSavedCards
+	);
+
+const isLinkEnabled = ( paymentSettings = defaultSettings ) =>
+	Boolean(
+		paymentSettings.paymentMethodsConfig?.link !== undefined &&
+			paymentSettings.paymentMethodsConfig?.card !== undefined
+	);
+
+const createStripe = (
+	paymentSettings = defaultSettings,
+	forceAccountRequest = false
+) => {
+	if ( ! paymentSettings.publishableKey || ! window.Stripe ) {
+		return null;
+	}
+
+	const stripeOptions = {
+		locale: paymentSettings.locale || 'auto',
+	};
+
+	if (
+		paymentSettings.accountId &&
+		( forceAccountRequest ||
+			! shouldUsePlatformStripeForCard( paymentSettings ) )
+	) {
+		stripeOptions.stripeAccount = paymentSettings.accountId;
+		// The reference client requests these betas on every
+		// connected-account instance; the platform instance gets none.
+		stripeOptions.betas = [ 'card_country_event_beta_1' ];
+
+		if ( isLinkEnabled( paymentSettings ) ) {
+			stripeOptions.betas.push( 'link_autofill_modal_beta_1' );
+		}
+	}
+
+	return window.Stripe( paymentSettings.publishableKey, stripeOptions );
+};
+
+const getReusablePaymentMethodTerms = (
+	paymentSettings = defaultSettings,
+	value
+) => {
+	return Object.entries( paymentSettings.paymentMethodsConfig || {} ).reduce(
+		( terms, [ paymentMethodId, paymentMethodConfig ] ) => {
+			if (
+				paymentMethodId !== 'link' &&
+				paymentMethodConfig?.isReusable
+			) {
+				terms[ paymentMethodId ] = value;
+			}
+
+			return terms;
+		},
+		{}
+	);
+};
+
+const getStripePaymentMethodTypes = ( paymentSettings = defaultSettings ) => {
+	if (
+		Array.isArray( paymentSettings.paymentMethodTypes ) &&
+		paymentSettings.paymentMethodTypes.length
+	) {
+		return paymentSettings.paymentMethodTypes;
+	}
+
+	return isLinkEnabled( paymentSettings ) ? [ 'card', 'link' ] : [ 'card' ];
+};
+
+const getStripeElementsOptions = ( paymentSettings = defaultSettings ) => {
+	const amount = Number( paymentSettings.cartTotal || 0 );
+	const options = {
+		mode: amount > 0 && Number.isFinite( amount ) ? 'payment' : 'setup',
+		loader: 'never',
+		currency: ( paymentSettings.currency || 'usd' ).toLowerCase(),
+		paymentMethodCreation: 'manual',
+		paymentMethodTypes: getStripePaymentMethodTypes( paymentSettings ),
+	};
+
+	const appearance = getBlocksCheckoutAppearance(
+		paymentSettings.stylesCacheVersion,
+		document,
+		paymentSettings
+	);
+	if ( appearance ) {
+		options.appearance = appearance;
+	}
+
+	const fonts = getFontRulesFromPage();
+	if ( fonts.length ) {
+		options.fonts = fonts;
+	}
+
+	if ( options.mode === 'payment' ) {
+		options.amount = amount;
+	}
+
+	return options;
+};
+
+const getStripePaymentElementOptions = (
+	paymentSettings = defaultSettings,
+	shouldSavePayment = false
+) => ( {
+	fields: {
+		billingDetails: {
+			name: 'never',
+			email: 'never',
+			phone: 'never',
+			address: {
+				country: 'never',
+				line1: 'never',
+				line2: 'never',
+				city: 'never',
+				state: 'never',
+				postalCode: 'never',
+			},
+		},
+	},
+	wallets: {
+		applePay: 'never',
+		googlePay: 'never',
+		link: isLinkEnabled( paymentSettings ) ? 'auto' : 'never',
+	},
+	terms: getReusablePaymentMethodTerms(
+		paymentSettings,
+		shouldSavePayment || paymentSettings.cartContainsSubscription
+			? 'always'
+			: 'never'
+	),
+} );
+
+const getFieldValue = ( selector ) => {
+	const field = document.querySelector( selector );
+	return field ? field.value : '';
+};
+
+const buildWooPayAjaxUrl = ( paymentSettings = defaultSettings, endpoint ) => {
+	return ( paymentSettings.wcAjaxUrl || '/?wc-ajax=%%endpoint%%' ).replace(
+		'%%endpoint%%',
+		`wcpay_${ endpoint }`
+	);
+};
+
+const getWooPayViewport = () =>
+	`${ window.document.documentElement.clientWidth }x${ window.document.documentElement.clientHeight }`;
+
+const getWooPayInitialPhone = () =>
+	getFieldValue( '#billing-phone' ) ||
+	getFieldValue( '#phone' ) ||
+	getFieldValue( '#shipping-phone' ) ||
+	'';
+
+const shouldRenderWooPaySaveUser = ( paymentSettings = defaultSettings ) => {
+	return Boolean(
+		paymentSettings.isWooPayEnabled &&
+			paymentSettings.forceNetworkSavedCards &&
+			paymentSettings.woopaySessionNonce
+	);
+};
+
+// Client 11.1.0 checkout-page-save-user.js:118-124 sends the checkout page permalink, never the browser URL, which can
+// carry query strings and exceed the 500-character limit of Stripe metadata.
+const getWooPaySourceUrl = () =>
+	getSetting( 'storePages', {} )?.checkout?.permalink || '';
+
+// Client 11.1.0 checkout-page-save-user.js:116-144: `empty` clears the stored opt-in; otherwise the details are stored.
+const persistWooPaySaveUser = async (
+	paymentSettings = defaultSettings,
+	isSavingUser,
+	phone,
+	shouldClear = false
+) => {
+	if ( ! paymentSettings.woopaySessionNonce || ! window.fetch ) {
+		return false;
+	}
+
+	const body = new window.URLSearchParams();
+	body.append( '_wpnonce', paymentSettings.woopaySessionNonce );
+	if ( shouldClear ) {
+		body.append( 'empty', '1' );
+	} else {
+		body.append( 'save_user_in_woopay', isSavingUser ? 'true' : 'false' );
+		body.append( 'woopay_source_url', getWooPaySourceUrl() );
+		body.append( 'woopay_is_blocks', 'true' );
+		body.append( 'woopay_viewport', getWooPayViewport() );
+		body.append( 'woopay_user_phone_field[full]', phone || '' );
+	}
+
+	// Resolves whether the request went through; a failed one leaves the session as it was.
+	try {
+		const response = await window.fetch(
+			buildWooPayAjaxUrl( paymentSettings, 'set_woopay_phone_number' ),
+			{
+				method: 'POST',
+				credentials: 'same-origin',
+				headers: {
+					'Content-Type':
+						'application/x-www-form-urlencoded; charset=UTF-8',
+				},
+				body,
+			}
+		);
+		return Boolean( response ) && response.ok !== false;
+	} catch {
+		return false;
+	}
+};
+
+// Client 11.1.0 client/components/woopay/save-user/additional-information.js.
+const WooPaySaveUserAdditionalInfo = () => (
+	<div className="additional-information">
+		{ __(
+			"Next time you buy here and on other Woo-powered stores, we'll send you a code to securely purchase with WooPay.",
+			'woocommerce'
+		) }
+	</div>
+);
+
+// Client 11.1.0 client/components/woopay/save-user/agreement.js.
+const WooPaySaveUserAgreement = ( { paymentSettings } ) => (
+	<div className="tos">
+		{ createInterpolateElement(
+			__(
+				"By continuing, you agree to WooPay's <termsOfService/> and <privacyPolicy/>.",
+				'woocommerce'
+			),
+			{
+				termsOfService: (
+					<a
+						target="_blank"
+						href="https://wordpress.com/tos/"
+						rel="noopener noreferrer"
+						onClick={ () => {
+							recordWooPaymentsUserEvent(
+								paymentSettings,
+								'checkout_save_my_info_tos_click'
+							);
+						} }
+					>
+						{ __( 'Terms of Service', 'woocommerce' ) }
+					</a>
+				),
+				privacyPolicy: (
+					<a
+						target="_blank"
+						href="https://automattic.com/privacy/"
+						rel="noopener noreferrer"
+						onClick={ () => {
+							recordWooPaymentsUserEvent(
+								paymentSettings,
+								'checkout_save_my_info_privacy_policy_click'
+							);
+						} }
+					>
+						{ __( 'Privacy Policy', 'woocommerce' ) }
+					</a>
+				),
+			}
+		) }
+	</div>
+);
+
+const WOOPAY_PHONE_ERROR_ID = 'invalid-woopay-phone-number';
+let phoneValidationPromise = null;
+
+// Core's mobile phone validation, built once as its own script (phone-validation.js) and loaded only when the
+// shopper opts in (WooPaymentsFrontendAssets::get_phone_validation_script_url()). Resolves null when it cannot load.
+const loadPhoneValidation = ( url ) => {
+	if ( window.wcWooPaymentsPhoneValidation ) {
+		return Promise.resolve( window.wcWooPaymentsPhoneValidation );
+	}
+	if ( ! url ) {
+		return Promise.resolve( null );
+	}
+	if ( ! phoneValidationPromise ) {
+		phoneValidationPromise = new Promise( ( resolve ) => {
+			const script = document.createElement( 'script' );
+			script.src = url;
+			script.async = true;
+			script.onload = () =>
+				resolve( window.wcWooPaymentsPhoneValidation || null );
+			script.onerror = () => {
+				phoneValidationPromise = null;
+				resolve( null );
+			};
+			document.head.appendChild( script );
+		} );
+	}
+	return phoneValidationPromise;
+};
+
+// Client 11.1.0 checkout-page-save-user.js:93-111: keep digits and +, and read a number without a country code as US
+// (WooPay is US-only).
+const normalizeWooPayPhone = ( phone ) => {
+	const value = String( phone || '' ).replace( /[^\d+]*/g, '' );
+	return value.startsWith( '+' ) ? value : '+1' + value;
+};
+
+// Client 11.1.0 use-woopay-user.js: the WooPay email check announces a WooPay user with this window event.
+const useIsWooPayUser = () => {
+	const [ isWooPayUser, setIsWooPayUser ] = useState( false );
+
+	useEffect( () => {
+		const handleUserCheck = ( event ) =>
+			setIsWooPayUser( Boolean( event?.detail?.isRegisteredUser ) );
+
+		window.addEventListener( 'woopayUserCheck', handleUserCheck );
+		return () =>
+			window.removeEventListener( 'woopayUserCheck', handleUserCheck );
+	}, [] );
+
+	return isWooPayUser;
+};
+
+const WooPaySaveUserSection = ( { paymentSettings } ) => {
+	// Client 11.1.0 checkout-page-save-user.js:52-58, :274-302: the offer applies only while WooPayments is the
+	// selected method and the shopper is not a WooPay user.
+	const isWooPaymentsChosen = useSelect(
+		( select ) =>
+			select( 'wc/store/payment' ).getActivePaymentMethod() ===
+			'woocommerce_payments'
+	);
+	const isWooPayUser = useIsWooPayUser();
+	const isOfferApplicable = isWooPaymentsChosen && ! isWooPayUser;
+	// What the session holds as far as this section knows: null (nothing stored), 'empty', the stored number, or
+	// 'unknown' after a failed request.
+	const storedUserData = useRef( null );
+	const initialIsSavingUser = useRef(
+		Boolean( paymentSettings.PRE_CHECK_SAVE_MY_INFO )
+	);
+	const [ isSavingUser, setIsSavingUser ] = useState(
+		initialIsSavingUser.current
+	);
+	const [ phone, setPhone ] = useState( getWooPayInitialPhone );
+	const [ phoneValidation, setPhoneValidation ] = useState(
+		() => window.wcWooPaymentsPhoneValidation || null
+	);
+	const [ isPhoneValidationUnavailable, setIsPhoneValidationUnavailable ] =
+		useState( false );
+	const [ isPhoneTouched, setIsPhoneTouched ] = useState( false );
+	const fullPhone = normalizeWooPayPhone( phone );
+	// Unknown (null) while the validation script loads, as the client's lazy phone input is.
+	const isPhoneValid = phoneValidation
+		? phoneValidation.validatePhoneNumber( fullPhone )
+		: null;
+	const phoneError = useSelect( ( select ) =>
+		select( 'wc/store/validation' ).getValidationError(
+			WOOPAY_PHONE_ERROR_ID
+		)
+	);
+
+	useEffect( () => {
+		if ( ! isSavingUser || phoneValidation ) {
+			return undefined;
+		}
+
+		let isMounted = true;
+		loadPhoneValidation(
+			paymentSettings.woopayPhoneValidationScriptUrl
+		).then( ( validation ) => {
+			if ( ! isMounted ) {
+				return;
+			}
+			if ( validation ) {
+				setPhoneValidation( validation );
+			} else {
+				setIsPhoneValidationUnavailable( true );
+			}
+		} );
+
+		return () => {
+			isMounted = false;
+		};
+	}, [ isSavingUser, phoneValidation, paymentSettings ] );
+
+	// Client 11.1.0 checkout-page-save-user.js:184-223: while opted in, an invalid or not yet validated number blocks
+	// the checkout through the validation store, hidden until the shopper leaves the field or places the order. A
+	// validation script that failed to load does not block the checkout.
+	useEffect( () => {
+		const validation = dispatch( 'wc/store/validation' );
+		if (
+			isOfferApplicable &&
+			isSavingUser &&
+			isPhoneValid !== true &&
+			! ( isPhoneValid === null && isPhoneValidationUnavailable )
+		) {
+			validation.setValidationErrors( {
+				[ WOOPAY_PHONE_ERROR_ID ]: {
+					message: __(
+						'Please enter a valid mobile phone number.',
+						'woocommerce'
+					),
+					hidden: ! isPhoneTouched,
+				},
+			} );
+			return;
+		}
+
+		validation.clearValidationError( WOOPAY_PHONE_ERROR_ID );
+	}, [
+		isOfferApplicable,
+		isSavingUser,
+		isPhoneValid,
+		isPhoneValidationUnavailable,
+		isPhoneTouched,
+	] );
+
+	useEffect(
+		() => () =>
+			dispatch( 'wc/store/validation' ).clearValidationError(
+				WOOPAY_PHONE_ERROR_ID
+			),
+		[]
+	);
+
+	// Client 11.1.0 checkout-page-save-user.js:115-144, :155-160, :184-223, :274-302 keeps the session in step from one
+	// place: the number is stored whenever the box is checked and the number valid (so each valid change, and a return to
+	// WooPayments, stores it again), and a stored opt-in is cleared on uncheck or once the offer stops applying. Only a
+	// change of what should be stored sends a request. After a failed request the session may still hold an earlier
+	// opt-in, so it counts as unknown: the next change sends again, and an uncheck still clears.
+	useEffect( () => {
+		const canStore =
+			isPhoneValid === true ||
+			( isPhoneValid === null && isPhoneValidationUnavailable );
+		let next = null;
+
+		if ( isOfferApplicable && isSavingUser ) {
+			next = canStore ? fullPhone : null;
+		} else if (
+			storedUserData.current &&
+			storedUserData.current !== 'empty'
+		) {
+			next = 'empty';
+		}
+
+		if ( next === null || next === storedUserData.current ) {
+			return;
+		}
+
+		storedUserData.current = next;
+		persistWooPaySaveUser(
+			paymentSettings,
+			next !== 'empty',
+			next === 'empty' ? '' : next,
+			next === 'empty'
+		).then( ( isStored ) => {
+			if ( ! isStored && storedUserData.current === next ) {
+				storedUserData.current = 'unknown';
+			}
+		} );
+	}, [
+		isOfferApplicable,
+		isSavingUser,
+		isPhoneValid,
+		isPhoneValidationUnavailable,
+		fullPhone,
+		paymentSettings,
+	] );
+
+	// Client 11.1.0 checkout-page-save-user.js:169-174 records this once the number is valid.
+	useEffect( () => {
+		if ( isPhoneValid ) {
+			recordWooPaymentsUserEvent(
+				paymentSettings,
+				'checkout_woopay_save_my_info_mobile_enter'
+			);
+		}
+	}, [ isPhoneValid, paymentSettings ] );
+
+	const updateSaveUser = ( checked ) => {
+		setIsSavingUser( checked );
+		if ( ! checked ) {
+			setPhone( '' );
+		}
+		recordWooPaymentsUserEvent(
+			paymentSettings,
+			'checkout_save_my_info_click',
+			{
+				status: checked ? 'checked' : 'unchecked',
+			}
+		);
+	};
+
+	if ( ! isOfferApplicable ) {
+		return null;
+	}
+
+	// The former fallbacks for woopaySaveUserLabel and woopayPhoneLabel, which carried the same
+	// text (WooPaymentsWooPaySessionService::get_woopay_frontend_config()); the Blocks data drops them.
+	const saveUserLabel = __(
+		'Securely save my information for 1-click checkout',
+		'woocommerce'
+	);
+	const phoneLabel = __( 'Mobile phone number', 'woocommerce' );
+
+	return (
+		<div className="woopay-save-new-user-container">
+			<div className="wc-block-components-checkout-step__heading-container">
+				<div className="wc-block-components-checkout-step__heading">
+					<h2 className="wc-block-components-title wc-block-components-checkout-step__title">
+						{ __( 'Save my info', 'woocommerce' ) }
+					</h2>
+				</div>
+			</div>
+			<div className="save-details">
+				<div className="save-details-header">
+					<div className="wc-block-components-checkbox">
+						<label htmlFor="save_user_in_woopay">
+							<input
+								type="checkbox"
+								checked={ isSavingUser }
+								onChange={ ( event ) => {
+									const checked = event.target.checked;
+									const nextPhone = checked
+										? phone || getWooPayInitialPhone()
+										: '';
+									if ( checked ) {
+										setPhone( nextPhone );
+									}
+									updateSaveUser( checked );
+								} }
+								name="save_user_in_woopay"
+								id="save_user_in_woopay"
+								value="true"
+								className="save-details-checkbox wc-block-components-checkbox__input"
+							/>
+							<svg
+								className="wc-block-components-checkbox__mark"
+								aria-hidden="true"
+								xmlns="http://www.w3.org/2000/svg"
+								viewBox="0 0 24 20"
+							>
+								<path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z" />
+							</svg>
+							<span className="wc-block-components-checkbox__label">
+								{ saveUserLabel }
+							</span>
+						</label>
+					</div>
+				</div>
+				{ isSavingUser ? (
+					<div className="save-details-form">
+						<input
+							type="hidden"
+							name="woopay_source_url"
+							value={ getWooPaySourceUrl() }
+							readOnly
+						/>
+						<input
+							type="hidden"
+							name="woopay_viewport"
+							value={ getWooPayViewport() }
+							readOnly
+						/>
+						<label htmlFor="woopay_user_phone_field_full">
+							{ phoneLabel }
+						</label>
+						<input
+							type="tel"
+							id="woopay_user_phone_field_full"
+							autoComplete="tel"
+							value={ phone }
+							aria-invalid={
+								phoneError && ! phoneError.hidden
+									? 'true'
+									: undefined
+							}
+							aria-describedby={
+								phoneError && ! phoneError.hidden
+									? 'validate-error-invalid-woopay-phone-number'
+									: undefined
+							}
+							onChange={ ( event ) =>
+								setPhone( event.target.value )
+							}
+							onBlur={ () => setIsPhoneTouched( true ) }
+						/>
+						{ /* The number WooPay receives, with its country code, as the client's phone input posts. */ }
+						<input
+							type="hidden"
+							name="woopay_user_phone_field[full]"
+							value={ fullPhone }
+							readOnly
+						/>
+						{ phoneError && ! phoneError.hidden ? (
+							<div
+								className="wc-block-components-validation-error"
+								role="alert"
+							>
+								<p id="validate-error-invalid-woopay-phone-number">
+									{ phoneError.message }
+								</p>
+							</div>
+						) : null }
+						<WooPaySaveUserAdditionalInfo />
+						<WooPaySaveUserAgreement
+							paymentSettings={ paymentSettings }
+						/>
+					</div>
+				) : null }
+			</div>
+		</div>
+	);
+};
+
+const renderWooPaySaveUserSection = ( paymentSettings = defaultSettings ) => {
+	if ( ! shouldRenderWooPaySaveUser( paymentSettings ) ) {
+		return;
+	}
+
+	const paymentOptions = document.querySelector(
+		'.wp-block-woocommerce-checkout-payment-block'
+	);
+	if ( ! paymentOptions ) {
+		return;
+	}
+
+	let container = document.getElementById( 'remember-me' );
+	if ( ! container ) {
+		container = document.createElement( 'fieldset' );
+		container.className =
+			'wc-block-checkout__payment-method wp-block-woocommerce-checkout-remember-block wc-block-components-checkout-step';
+		container.id = 'remember-me';
+		paymentOptions.parentNode.insertBefore(
+			container,
+			paymentOptions.nextSibling
+		);
+	}
+
+	if ( ! saveUserRoots.has( container ) ) {
+		saveUserRoots.set( container, createRoot( container ) );
+	}
+
+	saveUserRoots
+		.get( container )
+		.render(
+			<WooPaySaveUserSection paymentSettings={ paymentSettings } />
+		);
+};
+
+const getBillingDetails = ( billingData = EMPTY_BILLING_DATA ) => {
+	const firstName = billingData.first_name || '';
+	const lastName = billingData.last_name || '';
+	const name = `${ firstName } ${ lastName }`.trim();
+
+	return {
+		name,
+		email: billingData.email || '',
+		phone: billingData.phone || '',
+		address: {
+			city: billingData.city || '',
+			country: billingData.country || '',
+			line1: billingData.address_1 || '',
+			line2: billingData.address_2 || '',
+			postal_code: ( billingData.postcode || '' ).trim(),
+			state: billingData.state || '',
+		},
+	};
+};
+
+const SavedTokenHandler = ( {
+	eventRegistration,
+	emitResponse,
+	paymentSettings = defaultSettings,
+} ) => {
+	const { onPaymentSetup, onCheckoutSuccess } = eventRegistration || {};
+	const accountStripe = useRef( null );
+	const emitResponseRef = useRef( emitResponse );
+	const paymentMethodData = useSelect( ( select ) => {
+		const store = select( 'wc/store/payment' );
+		return store.getPaymentMethodData();
+	} );
+
+	emitResponseRef.current = emitResponse;
+
+	useEffect( () => {
+		if ( ! onPaymentSetup ) {
+			return undefined;
+		}
+
+		const unsubscribe = onPaymentSetup( () => {
+			return getSuccessResponse( emitResponseRef.current, {
+				...paymentMethodData,
+				'wcpay-fraud-prevention-token':
+					getFraudPreventionToken( paymentSettings ),
+			} );
+		} );
+
+		return typeof unsubscribe === 'function' ? unsubscribe : undefined;
+	}, [ onPaymentSetup, paymentMethodData, paymentSettings ] );
+
+	useEffect( () => {
+		if ( ! onCheckoutSuccess ) {
+			return undefined;
+		}
+
+		const unsubscribe = onCheckoutSuccess( async ( response ) =>
+			handleConfirmationResponse(
+				response,
+				emitResponseRef.current,
+				false,
+				() => {
+					accountStripe.current =
+						accountStripe.current ||
+						createStripe( paymentSettings, true );
+
+					return accountStripe.current;
+				},
+				paymentSettings
+			)
+		);
+
+		return typeof unsubscribe === 'function' ? unsubscribe : undefined;
+	}, [ onCheckoutSuccess, paymentSettings ] );
+
+	return null;
+};
+
+// Client 11.1.0 client/checkout/blocks/payment-processor.js:83-98: Stripe lays the
+// card fields out in one row from 660px, two rows from 415px and three rows below.
+const getCardRowsForWidth = ( width ) => {
+	if ( width >= 660 ) {
+		return 1;
+	}
+	return width >= 415 ? 2 : 3;
+};
+const CARD_MIN_HEIGHT_BY_ROWS = { 1: '70px', 2: '145px', 3: '220px' };
+
+// Client 11.1.0 client/checkout/blocks/components/card-skeleton.tsx.
+const CardSkeletonRows = ( { Skeleton, rowCount } ) => {
+	if ( rowCount === 1 ) {
+		return (
+			<div className="wcpay-core-skeleton-row">
+				<Skeleton width="50%" height="3rem" borderRadius="4px" />
+				<Skeleton width="25%" height="3rem" borderRadius="4px" />
+				<Skeleton width="25%" height="3rem" borderRadius="4px" />
+			</div>
+		);
+	}
+	if ( rowCount === 3 ) {
+		return [ 0, 1, 2 ].map( ( row ) => (
+			<Skeleton
+				key={ row }
+				className="wcpay-core-skeleton-row"
+				height="3.5rem"
+				borderRadius="4px"
+			/>
+		) );
+	}
+	return (
+		<>
+			<Skeleton height="3.5rem" borderRadius="4px" />
+			<div className="wcpay-core-skeleton-row">
+				<Skeleton height="3.5rem" borderRadius="4px" />
+				<Skeleton height="3.5rem" borderRadius="4px" />
+			</div>
+		</>
+	);
+};
+
+// Client 11.1.0 client/checkout/blocks/components/{card,apm}-skeleton.tsx: an overlay
+// over the Payment Element mount point that fades out once Stripe is ready.
+const PaymentElementSkeleton = ( {
+	Skeleton,
+	isCardMethod,
+	isHidden,
+	rowCount,
+	onTransitionEnd,
+} ) => (
+	<div
+		className={ `wcpay-core-blocks-payment-element-skeleton${
+			isHidden ? ' is-hidden' : ''
+		}` }
+		aria-hidden={ isHidden }
+		onTransitionEnd={ onTransitionEnd }
+	>
+		{ isCardMethod ? (
+			<CardSkeletonRows Skeleton={ Skeleton } rowCount={ rowCount } />
+		) : (
+			<Skeleton height="6rem" borderRadius="4px" />
+		) }
+	</div>
+);
+
+const WooPaymentsContent = ( {
+	eventRegistration,
+	emitResponse,
+	shouldSavePayment,
+	billing,
+	components,
+	paymentSettings = defaultSettings,
+} ) => {
+	const { onPaymentSetup, onCheckoutSuccess } = eventRegistration || {};
+	const wrapperRef = useRef( null );
+	const [ isStripeReady, setIsStripeReady ] = useState( false );
+	const [ isStripeLoaded, setIsStripeLoaded ] = useState(
+		() => typeof window.Stripe === 'function'
+	);
+	const [ loadErrorMessage, setLoadErrorMessage ] = useState( '' );
+	const hasLoadError = useRef( false );
+	const [ showSkeleton, setShowSkeleton ] = useState( true );
+	// Unset until the first observation, so nothing is reserved before the width is known.
+	const [ cardRowCount, setCardRowCount ] = useState( null );
+	const isCardMethod =
+		getStripePaymentMethodTypes( paymentSettings )[ 0 ] === 'card';
+	const Skeleton = components?.Skeleton;
+	const elementContainer = useRef( null );
+	const stripe = useRef( null );
+	const accountStripe = useRef( null );
+	const elements = useRef( null );
+	const paymentElement = useRef( null );
+	const emitResponseRef = useRef( emitResponse );
+	const shouldSavePaymentRef = useRef( shouldSavePayment );
+	const billingData =
+		billing?.billingAddress || billing?.billingData || EMPTY_BILLING_DATA;
+
+	emitResponseRef.current = emitResponse;
+	shouldSavePaymentRef.current = shouldSavePayment;
+
+	useEffect( () => {
+		const copyTestNumber = ( event ) => {
+			if ( ! ( event.target instanceof window.Element ) ) {
+				return;
+			}
+
+			const button = event.target.closest(
+				'.js-woopayments-copy-test-number'
+			);
+			const testNumber = button?.textContent?.trim();
+
+			if ( ! button || ! testNumber ) {
+				return;
+			}
+
+			event.preventDefault();
+			button.querySelector( 'i' )?.setAttribute( 'aria-hidden', 'true' );
+
+			// The status after the button announces the copy (WooPaymentsCheckoutAssets::get_card_testing_instructions()).
+			const showCopied = () => {
+				const status = button.parentNode?.querySelector(
+					'.js-woopayments-copy-test-number-status'
+				);
+				if ( status ) {
+					status.textContent = status.dataset.copiedMessage || '';
+				}
+
+				button.classList.add( 'state--success' );
+				window.setTimeout( () => {
+					button.classList.remove( 'state--success' );
+					if ( status ) {
+						status.textContent = '';
+					}
+				}, copyTestNumberSuccessDuration );
+			};
+
+			// Success shows only once the clipboard write resolves; the prompt fallback leaves the copy to the shopper.
+			if (
+				typeof window.navigator?.clipboard?.writeText === 'function'
+			) {
+				Promise.resolve(
+					window.navigator.clipboard.writeText( testNumber )
+				).then( showCopied, () => {} );
+			} else if ( typeof window.prompt === 'function' ) {
+				// eslint-disable-next-line no-alert
+				window.prompt(
+					__( 'Copy test card number:', 'woocommerce' ),
+					testNumber
+				);
+			}
+		};
+
+		document.addEventListener( 'click', copyTestNumber );
+
+		return () => {
+			document.removeEventListener( 'click', copyTestNumber );
+		};
+	}, [] );
+
+	// Client 11.1.0 client/checkout/blocks/payment-processor.js:75-108: reserve the
+	// card fields' height for the wrapper's width before Stripe renders them. The
+	// height is rendered from state rather than written in the callback, which would
+	// resize the observed element inside its own callback (a "ResizeObserver loop" error).
+	useEffect( () => {
+		if ( ! isCardMethod || ! wrapperRef.current ) {
+			return undefined;
+		}
+
+		const observer = new window.ResizeObserver( ( entries ) => {
+			setCardRowCount(
+				getCardRowsForWidth( entries[ 0 ].contentRect.width )
+			);
+		} );
+
+		observer.observe( wrapperRef.current );
+		return () => observer.disconnect();
+	}, [ isCardMethod ] );
+
+	useEffect( () => {
+		if (
+			isStripeLoaded ||
+			! paymentSettings.publishableKey ||
+			! paymentSettings.isCoreNativeCheckoutAvailable
+		) {
+			return undefined;
+		}
+
+		let isMounted = true;
+		waitForStripe().then(
+			() => isMounted && setIsStripeLoaded( true ),
+			() => {}
+		);
+
+		return () => {
+			isMounted = false;
+		};
+	}, [
+		isStripeLoaded,
+		paymentSettings.publishableKey,
+		paymentSettings.isCoreNativeCheckoutAvailable,
+	] );
+
+	useEffect( () => {
+		if (
+			! elementContainer.current ||
+			! paymentSettings.isCoreNativeCheckoutAvailable ||
+			! isStripeLoaded
+		) {
+			return;
+		}
+
+		const paymentElementOptions = getStripePaymentElementOptions(
+			paymentSettings,
+			Boolean( shouldSavePayment )
+		);
+		if ( paymentElement.current ) {
+			paymentElement.current.update( {
+				terms: paymentElementOptions.terms,
+			} );
+			return;
+		}
+
+		stripe.current = createStripe( paymentSettings );
+		if ( ! stripe.current ) {
+			return;
+		}
+
+		elements.current = stripe.current.elements(
+			getStripeElementsOptions( paymentSettings )
+		);
+		paymentElement.current = elements.current.create(
+			'payment',
+			paymentElementOptions
+		);
+		paymentElement.current.on( 'ready', () => setIsStripeReady( true ) );
+		// Client 11.1.0 client/checkout/blocks/payment-processor.js:250-253, :296 and payment-elements.js:108-120.
+		paymentElement.current.on( 'loaderror', ( event ) => {
+			hasLoadError.current = true;
+			setLoadErrorMessage( event?.error?.message || '' );
+		} );
+		paymentElement.current.mount( elementContainer.current );
+	}, [ isStripeLoaded, paymentSettings, shouldSavePayment ] );
+
+	useEffect( () => {
+		renderWooPaySaveUserSection( paymentSettings );
+	}, [ paymentSettings ] );
+
+	useEffect( () => {
+		if ( ! onPaymentSetup ) {
+			return undefined;
+		}
+
+		const unsubscribe = onPaymentSetup( async () => {
+			recordWooPaymentsUserEvent(
+				paymentSettings,
+				'checkout_place_order_button_click'
+			);
+
+			const paymentMethodData = {
+				'wcpay-payment-method': '',
+				'wcpay-payment-method-error-code': '',
+				'wcpay-payment-method-error-message': '',
+				'wcpay-fingerprint': '',
+				'wcpay-is-platform-payment-method':
+					shouldUsePlatformStripeForCard( paymentSettings )
+						? 'true'
+						: 'false',
+				'wcpay-fraud-prevention-token':
+					getFraudPreventionToken( paymentSettings ),
+			};
+
+			// Client 11.1.0 client/checkout/blocks/payment-processor.js:133-140 refuses a Payment Element that failed
+			// to load; one that never mounted (Stripe.js missing) has no payment method to submit either.
+			if (
+				hasLoadError.current ||
+				! stripe.current ||
+				! elements.current
+			) {
+				return getErrorResponse(
+					emitResponseRef.current,
+					__(
+						'Invalid or missing payment details. Please ensure the provided payment method is correctly entered.',
+						'woocommerce'
+					)
+				);
+			}
+
+			if ( typeof elements.current.submit === 'function' ) {
+				const submitResult = await elements.current.submit();
+				if ( submitResult?.error ) {
+					paymentMethodData[ 'wcpay-payment-method-error-code' ] =
+						submitResult.error.code || '';
+					paymentMethodData[ 'wcpay-payment-method-error-message' ] =
+						submitResult.error.message || '';
+
+					return {
+						type: emitResponseRef.current.responseTypes.ERROR,
+						message:
+							submitResult.error.message ||
+							__(
+								'There was a problem validating your payment details.',
+								'woocommerce'
+							),
+					};
+				}
+			}
+
+			const result = await stripe.current.createPaymentMethod( {
+				elements: elements.current,
+				params: {
+					billing_details: getBillingDetails( billingData ),
+				},
+			} );
+
+			if ( result.error ) {
+				// Return success with the error sentinel so the checkout
+				// request goes through and the attempt is recorded as a
+				// failed order carrying the decline reason.
+				paymentMethodData[ 'wcpay-payment-method' ] =
+					PAYMENT_METHOD_ERROR_SENTINEL;
+				paymentMethodData[ 'wcpay-payment-method-error-code' ] =
+					result.error.code || '';
+				paymentMethodData[ 'wcpay-payment-method-error-decline-code' ] =
+					result.error.decline_code || '';
+				paymentMethodData[ 'wcpay-payment-method-error-message' ] =
+					result.error.message || '';
+				paymentMethodData[ 'wcpay-payment-method-error-type' ] =
+					result.error.type || '';
+				paymentMethodData[ 'wcpay-fingerprint' ] =
+					await getDeviceFingerprint();
+
+				return getSuccessResponse(
+					emitResponseRef.current,
+					paymentMethodData
+				);
+			}
+
+			if ( ! result.paymentMethod ) {
+				return getErrorResponse(
+					emitResponseRef.current,
+					__(
+						'There was a problem validating your payment details.',
+						'woocommerce'
+					)
+				);
+			}
+
+			paymentMethodData[ 'wcpay-payment-method' ] =
+				result.paymentMethod.id || '';
+			// The device fingerprint — never the Stripe card fingerprint,
+			// which is a different signal entirely.
+			paymentMethodData[ 'wcpay-fingerprint' ] =
+				await getDeviceFingerprint();
+
+			return getSuccessResponse(
+				emitResponseRef.current,
+				paymentMethodData
+			);
+		} );
+
+		return typeof unsubscribe === 'function' ? unsubscribe : undefined;
+	}, [ billingData, onPaymentSetup, paymentSettings ] );
+
+	useEffect( () => {
+		if ( ! onCheckoutSuccess ) {
+			return undefined;
+		}
+
+		const unsubscribe = onCheckoutSuccess( async ( response ) =>
+			handleConfirmationResponse(
+				response,
+				emitResponseRef.current,
+				Boolean( shouldSavePaymentRef.current ),
+				() => {
+					accountStripe.current =
+						accountStripe.current ||
+						createStripe( paymentSettings, true );
+
+					return accountStripe.current;
+				},
+				paymentSettings
+			)
+		);
+
+		return typeof unsubscribe === 'function' ? unsubscribe : undefined;
+	}, [ onCheckoutSuccess, paymentSettings ] );
+
+	return (
+		<>
+			{ paymentSettings.testMode &&
+			getTestingInstructions( paymentSettings ) ? (
+				<p
+					className="wcpay-core-test-mode-instructions"
+					dangerouslySetInnerHTML={ {
+						__html: getTestingInstructions( paymentSettings ),
+					} }
+				/>
+			) : null }
+			{ loadErrorMessage ? (
+				<div className="wc-block-components-notices">
+					<StoreNotice status="error" isDismissible={ false }>
+						{ loadErrorMessage }
+					</StoreNotice>
+				</div>
+			) : null }
+			<div
+				ref={ wrapperRef }
+				className={ `wcpay-core-blocks-payment-element-wrapper${
+					isCardMethod ? '' : ' is-apm'
+				}` }
+				style={
+					isCardMethod && cardRowCount
+						? { minHeight: CARD_MIN_HEIGHT_BY_ROWS[ cardRowCount ] }
+						: undefined
+				}
+			>
+				{ showSkeleton && Skeleton ? (
+					<PaymentElementSkeleton
+						Skeleton={ Skeleton }
+						isCardMethod={ isCardMethod }
+						isHidden={ isStripeReady }
+						rowCount={ cardRowCount ?? 2 }
+						onTransitionEnd={ () => setShowSkeleton( false ) }
+					/>
+				) : null }
+				<div
+					id="wcpay-core-blocks-payment-element"
+					className="wcpay-core-blocks-payment-element"
+					ref={ elementContainer }
+					aria-live="polite"
+				/>
+			</div>
+		</>
+	);
+};
+
+const Label = ( props ) => {
+	const { PaymentMethodLabel } = props.components;
+	const paymentSettings = props.paymentSettings || defaultSettings;
+
+	return (
+		<PaymentMethodLabel
+			text={ getPaymentMethodLabel( paymentSettings ) }
+			icon={ <PaymentMethodIcon paymentSettings={ paymentSettings } /> }
+		/>
+	);
+};
+
+const isWooPaymentsGatewayId = ( paymentMethodId ) =>
+	paymentMethodId === PAYMENT_METHOD_NAME ||
+	paymentMethodId.startsWith( `${ PAYMENT_METHOD_NAME }_` );
+
+const getWooPaymentsGatewayIds = () => {
+	const paymentMethodData = getSetting( 'paymentMethodData', {} );
+	const gatewayIds = Object.keys( paymentMethodData ).filter(
+		isWooPaymentsGatewayId
+	);
+
+	return gatewayIds.length ? gatewayIds : [ PAYMENT_METHOD_NAME ];
+};
+
+export const getWooPaymentsPaymentMethod = (
+	paymentSettings = defaultSettings
+) => {
+	const paymentMethodConfig =
+		getPrimaryPaymentMethodConfig( paymentSettings );
+	const paymentMethodName = paymentSettings.gatewayId || PAYMENT_METHOD_NAME;
+	const supportedCountries = Array.isArray( paymentMethodConfig?.countries )
+		? paymentMethodConfig.countries
+		: [];
+
+	return {
+		name: paymentMethodName,
+		label: <Label paymentSettings={ paymentSettings } />,
+		content: <WooPaymentsContent paymentSettings={ paymentSettings } />,
+		edit: <WooPaymentsContent paymentSettings={ paymentSettings } />,
+		savedTokenComponent: (
+			<SavedTokenHandler paymentSettings={ paymentSettings } />
+		),
+		canMakePayment: ( { paymentMethods = [], billingAddress = {} } = {} ) =>
+			Boolean( paymentSettings.isCoreNativeCheckoutAvailable ) &&
+			( paymentSettings.isCheckout === false ||
+				( paymentMethods.includes( paymentMethodName ) &&
+					( supportedCountries.length === 0 ||
+						supportedCountries.includes(
+							billingAddress.country
+						) ) ) ),
+		ariaLabel: getAriaLabel( paymentSettings ),
+		supports: {
+			features: paymentSettings?.supports ?? [],
+			showSavedCards: paymentSettings?.isSavedCardsEnabled ?? false,
+			showSaveOption: paymentMethodConfig?.showSaveOption ?? false,
+		},
+	};
+};
+
+const registerWooPayments = () => {
+	const paymentMethods = getWooPaymentsGatewayIds()
+		.map( ( paymentMethodId ) =>
+			getPaymentMethodData( paymentMethodId, null )
+		)
+		.filter( Boolean )
+		.map( getWooPaymentsPaymentMethod );
+
+	paymentMethods.forEach( registerPaymentMethod );
+
+	return paymentMethods[ 0 ] || getWooPaymentsPaymentMethod();
+};
+
+registerWooPayments();
+
+// The WooPay email lookup runs on the checkout block only, mirroring the
+// WooPayments plugin's blocks entry point.
+if ( shouldHandleWooPayEmailInput( defaultSettings ) ) {
+	handleWooPayEmailInput( '#email', defaultSettings );
+}
+
+window.addEventListener( 'load', () => {
+	getDeviceFingerprint();
+} );
+
+export default registerWooPayments;

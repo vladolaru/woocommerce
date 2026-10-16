@@ -1,0 +1,321 @@
+{
+	"_meta": {
+		"recording": "REC-RM",
+		"customers": {
+			"guest": "cus_VKNzSRD1l0jVpv (platform customer created for the guest shopper of order 4855; no WP user maps to it)"
+		},
+		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (default currency USD), Stripe test mode",
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at 94738aeaf0, WooPayments plugin inactive, test mode, store currency USD)",
+		"produced_by": "one run of tests/e2e/tests/woopayments-native/shopper/provider-fidelity-redirect-methods.spec.ts:874 (Alipay classic checkout, hosted authorize followed, real return through WooPaymentsRedirectReturnController::handle_wp) through run-provider-families.sh, unmodified; 1 passed, quarantine 0, provider-write attempts 0",
+		"captured_via": "API-only GET of the resulting PaymentIntent through native WooPaymentsApiClient::get_payment_intention (the call WooPaymentsRedirectReturnController makes on return), raw body via the wcpay_api_request_response filter and sent params via wcpay_api_request_params at PHP_INT_MAX; one transport attempt, Idempotent-Replayed header empty, no retries",
+		"sanitized": "client_secret, receipt_url, request_log_url, emails, order_key and fraud_prevention_data_shopper_ip_hash / _ua_hash / _ip_country replaced with REDACTED where non-null; response body JSON-decoded and otherwise verbatim (billing name, address and phone are the e2e fixture test data)",
+		"notes": "data/rec-t3-manual-recordings.md in the 2026-09-03-native-payments-program-orientation session folder"
+	},
+	"entries": [
+		{
+			"pair": "alipay_redirect_return_succeeded",
+			"test_method": "alipay (Stripe test-mode hosted authorize page, Authorize clicked by the spec)",
+			"recorded_at": "2026-09-26T00:12:35+00:00",
+			"context": "12.00 USD guest order 4855 after the Alipay hosted authorize and the redirect return; PaymentIntent succeeded with one captured py_ charge; the store order was processing with _intent_id, _charge_id and _intention_status succeeded, and 0 payment tokens (order tokens 0; no woocommerce_payment_tokens row for the payment method)",
+			"store_observation": {
+				"order_id": 4855,
+				"order_status": "processing",
+				"payment_method": "woocommerce_payments_alipay",
+				"customer_id": 0,
+				"intent_id": "pi_3UJjDMBzWlxcwgpP1fyiQTMm",
+				"charge_id": "py_3UJjDMBzWlxcwgpP1P6NMtfy",
+				"intention_status": "succeeded",
+				"payment_method_id": "pm_1UJjDJBzWlxcwgpPgGZcwEK2",
+				"order_payment_tokens": 0,
+				"token_rows_for_payment_method": 0,
+				"label": "native store state after the run, NOT an expectation source"
+			},
+			"request": {
+				"transport": "WooPaymentsApiClient::get_payment_intention",
+				"method": "GET",
+				"path": "/sites/4/wcpay/intentions/pi_3UJjDMBzWlxcwgpP1fyiQTMm (wpcom/v2 via Jetpack blog token)",
+				"body": {
+					"test_mode": true
+				},
+				"body_note": "the params request() sends (wcpay_api_request_params at PHP_INT_MAX); request() adds test_mode"
+			},
+			"response": {
+				"http_status": 200,
+				"content_type": "application/json; charset=UTF-8",
+				"idempotent_replayed": null,
+				"body": {
+					"id": "pi_3UJjDMBzWlxcwgpP1fyiQTMm",
+					"object": "payment_intent",
+					"allowed_payment_method_types": null,
+					"amount": 1200,
+					"amount_capturable": 0,
+					"amount_details": {
+						"tip": []
+					},
+					"amount_received": 1200,
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"application_fee_amount": 65,
+					"automatic_payment_methods": null,
+					"canceled_at": null,
+					"cancellation_reason": null,
+					"capture_method": "automatic",
+					"charges": {
+						"object": "list",
+						"data": [
+							{
+								"id": "py_3UJjDMBzWlxcwgpP1P6NMtfy",
+								"object": "charge",
+								"amount": 1200,
+								"amount_captured": 1200,
+								"amount_refunded": 0,
+								"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+								"application_fee": "fee_1UJjDRBzWlxcwgpPgPY3Jccq",
+								"application_fee_amount": 65,
+								"balance_transaction": {
+									"id": "txn_3UJjDMBzWlxcwgpP1jZ0scyW",
+									"object": "balance_transaction",
+									"amount": 1200,
+									"available_on": 1790726400,
+									"balance_type": "payments",
+									"created": 1790381505,
+									"currency": "usd",
+									"description": "Online Payment for Order #4855 for store8889.localhost:8889 blog_id 4",
+									"exchange_rate": null,
+									"fee": 65,
+									"fee_details": [
+										{
+											"amount": 65,
+											"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+											"currency": "usd",
+											"description": "DEV Shared Account WCPay application fee",
+											"type": "application_fee"
+										}
+									],
+									"net": 1135,
+									"reporting_category": "charge",
+									"source": "py_3UJjDMBzWlxcwgpP1P6NMtfy",
+									"status": "pending",
+									"type": "payment"
+								},
+								"billing_details": {
+									"address": {
+										"city": "San Francisco",
+										"country": "US",
+										"line1": "123 Test Street",
+										"line2": "",
+										"postal_code": "94107",
+										"state": "CA"
+									},
+									"email": "REDACTED",
+									"name": "E2E WooPayments",
+									"phone": "5555550100",
+									"tax_id": null
+								},
+								"calculated_statement_descriptor": null,
+								"captured": true,
+								"created": 1790381505,
+								"currency": "usd",
+								"customer": "cus_VKNzSRD1l0jVpv",
+								"description": "Online Payment for Order #4855 for store8889.localhost:8889 blog_id 4",
+								"destination": null,
+								"dispute": null,
+								"disputed": false,
+								"failure_balance_transaction": null,
+								"failure_code": null,
+								"failure_message": null,
+								"fraud_details": [],
+								"invoice": null,
+								"livemode": false,
+								"metadata": {
+									"checkout_type": "checkout",
+									"client_version": "11.1.0",
+									"customer_email": "REDACTED",
+									"customer_name": "E2E WooPayments",
+									"fraud_outcome": "allow",
+									"fraud_prevention_data_available": "1",
+									"fraud_prevention_data_cart_contents": "1",
+									"fraud_prevention_data_ip_country": "REDACTED",
+									"fraud_prevention_data_shopper_ip_hash": "REDACTED",
+									"fraud_prevention_data_shopper_ua_hash": "REDACTED",
+									"order_id": "4855",
+									"order_key": "REDACTED",
+									"order_number": "4855",
+									"payment_type": "single",
+									"site_url": "http://store8889.localhost:8889",
+									"subscription_payment": "no"
+								},
+								"on_behalf_of": null,
+								"order": null,
+								"outcome": {
+									"advice_code": null,
+									"network_advice_code": null,
+									"network_decline_code": null,
+									"network_status": "approved_by_network",
+									"reason": null,
+									"risk_level": "normal",
+									"seller_message": "Payment complete.",
+									"type": "authorized"
+								},
+								"paid": true,
+								"payment_intent": "pi_3UJjDMBzWlxcwgpP1fyiQTMm",
+								"payment_method": "pm_1UJjDJBzWlxcwgpPgGZcwEK2",
+								"payment_method_details": {
+									"alipay": {
+										"fingerprint": null,
+										"transaction_id": null
+									},
+									"type": "alipay"
+								},
+								"radar_options": [],
+								"receipt_email": null,
+								"receipt_number": null,
+								"receipt_url": "REDACTED",
+								"refunded": false,
+								"refunds": {
+									"object": "list",
+									"data": [],
+									"has_more": false,
+									"total_count": 0,
+									"url": "/v1/charges/py_3UJjDMBzWlxcwgpP1P6NMtfy/refunds"
+								},
+								"review": null,
+								"shipping": null,
+								"source": null,
+								"source_transfer": null,
+								"statement_descriptor": null,
+								"statement_descriptor_suffix": null,
+								"status": "succeeded",
+								"transfer_data": null,
+								"transfer_group": null,
+								"fee_breakdown_v1": {
+									"rows": [
+										{
+											"key": "base",
+											"kind": "fee",
+											"label": null,
+											"amount": 65,
+											"display_amount": -65,
+											"currency": "usd",
+											"rate": null,
+											"meta": null
+										}
+									],
+									"totals": {
+										"fee": {
+											"key": null,
+											"amount": 65,
+											"display_amount": -65,
+											"currency": "usd",
+											"rate": null
+										},
+										"tax": {
+											"amount": 0,
+											"display_amount": 0,
+											"currency": "usd"
+										},
+										"net": {
+											"amount": 1135,
+											"currency": "usd"
+										},
+										"capture_net": {
+											"amount": 1135,
+											"currency": "usd"
+										},
+										"gross": {
+											"amount": 1200,
+											"currency": "usd"
+										},
+										"fee_plus_tax": {
+											"amount": 65,
+											"currency": "usd"
+										}
+									},
+									"notes": [],
+									"sources": {
+										"balance_transaction_exchange_rate": 0,
+										"refunded_fee_amount_store": 0
+									}
+								}
+							}
+						],
+						"has_more": false,
+						"total_count": 1,
+						"url": "/v1/charges?payment_intent=pi_3UJjDMBzWlxcwgpP1fyiQTMm"
+					},
+					"client_secret": "REDACTED",
+					"confirmation_method": "automatic",
+					"created": 1790381500,
+					"currency": "usd",
+					"customer": "cus_VKNzSRD1l0jVpv",
+					"customer_account": null,
+					"description": "Online Payment for Order #4855 for store8889.localhost:8889 blog_id 4",
+					"excluded_payment_method_types": null,
+					"invoice": null,
+					"last_payment_error": null,
+					"latest_charge": "py_3UJjDMBzWlxcwgpP1P6NMtfy",
+					"level3": {
+						"customer_reference": "4855",
+						"line_items": [
+							{
+								"discount_amount": 0,
+								"product_code": "4854",
+								"product_description": "WooPayments native E2E woo",
+								"quantity": 1,
+								"tax_amount": 0,
+								"unit_cost": 1200
+							}
+						],
+						"merchant_reference": "4855",
+						"shipping_amount": 0,
+						"shipping_from_zip": "94107"
+					},
+					"livemode": false,
+					"managed_payments": {
+						"enabled": false
+					},
+					"metadata": {
+						"checkout_type": "checkout",
+						"client_version": "11.1.0",
+						"customer_email": "REDACTED",
+						"customer_name": "E2E WooPayments",
+						"fraud_outcome": "allow",
+						"fraud_prevention_data_available": "1",
+						"fraud_prevention_data_cart_contents": "1",
+						"fraud_prevention_data_ip_country": "REDACTED",
+						"fraud_prevention_data_shopper_ip_hash": "REDACTED",
+						"fraud_prevention_data_shopper_ua_hash": "REDACTED",
+						"order_id": "4855",
+						"order_key": "REDACTED",
+						"order_number": "4855",
+						"payment_type": "single",
+						"site_url": "http://store8889.localhost:8889",
+						"subscription_payment": "no"
+					},
+					"next_action": null,
+					"on_behalf_of": null,
+					"payment_method": "pm_1UJjDJBzWlxcwgpPgGZcwEK2",
+					"payment_method_configuration_details": null,
+					"payment_method_options": {
+						"alipay": []
+					},
+					"payment_method_types": [
+						"alipay"
+					],
+					"payment_record": null,
+					"processing": null,
+					"receipt_email": null,
+					"review": null,
+					"setup_future_usage": null,
+					"shared_payment_granted_token": null,
+					"shipping": null,
+					"source": null,
+					"statement_descriptor": null,
+					"statement_descriptor_suffix": null,
+					"status": "succeeded",
+					"transfer_data": null,
+					"transfer_group": null
+				}
+			}
+		}
+	]
+}

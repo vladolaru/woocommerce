@@ -1,0 +1,4 @@
+Significance: patch
+Type: performance
+
+Cache the multi-currency cart subscription-type lookup per request.

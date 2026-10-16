@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Make WooPayments express checkout available for Amazon Pay even when no checkout location lists it, as WooPayments does.
