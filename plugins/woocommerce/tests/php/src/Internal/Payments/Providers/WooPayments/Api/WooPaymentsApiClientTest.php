@@ -669,6 +669,21 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 				true,
 				array( 'secret' => 'cnctok_test_secret' ),
 			),
+			// Live mode asks the platform for a live token (wpcom class-base-controller.php test_mode, default false).
+			'create_terminal_connection_token live'  => array(
+				static fn( WooPaymentsApiClient $sut ) => $sut->create_terminal_connection_token(),
+				false,
+				false,
+				array( 'secret' => 'cnctok_live_secret' ),
+				'POST',
+				'/sites/123/wcpay/terminal/connection_tokens',
+				array(),
+				array( 'test_mode' => false ),
+				true,
+				false,
+				true,
+				array( 'secret' => 'cnctok_live_secret' ),
+			),
 			'get_address_autocomplete_token'         => array(
 				static fn( WooPaymentsApiClient $sut ) => $sut->get_address_autocomplete_token(),
 				false,

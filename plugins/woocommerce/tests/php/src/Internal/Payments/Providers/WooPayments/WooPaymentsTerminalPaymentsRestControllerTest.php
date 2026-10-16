@@ -1945,6 +1945,50 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
+	 * The card reader token answer tells the app the store's mode, so it pairs test readers in test mode and live readers in
+	 * live mode: client 11.1.0 adds WC_Payments::mode()->is_test() to the platform's token
+	 * (includes/admin/class-wc-rest-payments-connection-tokens-controller.php:42-55).
+	 *
+	 * @testdox The connection token answer in $mode mode carries test_mode $expected_test_mode.
+	 * @dataProvider provide_connection_token_modes
+	 *
+	 * @param string $mode               Store mode.
+	 * @param bool   $expected_test_mode Expected test_mode flag.
+	 */
+	public function test_connection_token_tells_the_app_the_store_mode( string $mode, bool $expected_test_mode ): void {
+		$this->sut = $this->create_controller( 'test' === $mode );
+		// A Stripe ConnectionToken, which the platform proxies (https://docs.stripe.com/api/terminal/connection_tokens/object).
+		$this->api_client->connection_token_response = array(
+			'object' => 'terminal.connection_token',
+			'secret' => 'pst_terminal',
+		);
+
+		$response = $this->sut->create_connection_token( new WP_REST_Request( 'POST', '/wc/v3/payments/connection_tokens' ) );
+
+		$this->assertInstanceOf( WP_REST_Response::class, $response );
+		$this->assertSame(
+			array(
+				'object'    => 'terminal.connection_token',
+				'secret'    => 'pst_terminal',
+				'test_mode' => $expected_test_mode,
+			),
+			$response->get_data()
+		);
+	}
+
+	/**
+	 * Store modes for the connection token answer.
+	 *
+	 * @return array<string,array{string,bool}>
+	 */
+	public function provide_connection_token_modes(): array {
+		return array(
+			'test' => array( 'test', true ),
+			'live' => array( 'live', false ),
+		);
+	}
+
+	/**
 	 * The mobile routes answer a failure as the extension's controllers do, so the apps read the same status and code.
 	 *
 	 * Faked failures are WooPaymentsApiException( message, code, status ), the shape the API client builds from a platform
