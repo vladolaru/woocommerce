@@ -158,6 +158,9 @@ class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider imple
 
 	/**
 	 * Initialize parent provider hooks once the provider is actually registered.
+	 *
+	 * The parent constructor adds the provider's hooks, so it runs only once WooPayments joins the provider list: a store
+	 * with the gateway off, or a rejected or under-review account, loads none of them.
 	 */
 	private function initialize_provider_hooks(): void {
 		if ( $this->provider_hooks_initialized ) {

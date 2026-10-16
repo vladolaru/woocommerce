@@ -53,6 +53,9 @@ abstract class WooPaymentsPaginatedListRequest extends AbstractWooPaymentsApiReq
 	/**
 	 * Set filters.
 	 *
+	 * Null values are skipped. A key with a typed `set_<key>()` setter goes through it, with its type check; any other key
+	 * is sent to the platform as is.
+	 *
 	 * @param array<string,mixed> $filters Filters to set.
 	 */
 	public function set_filters( array $filters ): void {

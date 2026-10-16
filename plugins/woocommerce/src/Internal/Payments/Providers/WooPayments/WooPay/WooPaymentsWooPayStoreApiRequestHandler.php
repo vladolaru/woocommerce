@@ -30,6 +30,10 @@ use WP_Error;
  * Client 11.1.0 keeps these hooks in `WooPay_Session` (includes/woopay/class-woopay-session.php:101-323, :1146) and the
  * draft reuse in `WC_Payments_WooPay_Direct_Checkout` (includes/class-wc-payments-woopay-direct-checkout.php:56-79).
  *
+ * Its hooks are added by `WooPaymentsWooPaySessionController`: `register()` adds the Store API request hooks, including
+ * `determine_current_user` at priority 20 (client 11.1.0 `includes/woopay/class-woopay-session.php:58`), and
+ * `register_woopay_hooks()` adds the draft order filter while WooPay direct checkout is enabled.
+ *
  * @since 11.2.0
  * @internal
  */

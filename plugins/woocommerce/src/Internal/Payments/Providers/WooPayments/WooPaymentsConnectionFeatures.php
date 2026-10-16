@@ -78,6 +78,9 @@ class WooPaymentsConnectionFeatures implements RegisterHooksInterface {
 	 * stores its default setting the first time it is read; this keeps both as they were on stores where nothing runs Sync.
 	 * Every plugin that turns Sync on fills Sync's data settings when it calls Config::ensure( 'sync' ).
 	 *
+	 * Hooked from WooCommerce's main class (`init_jetpack_connection_config()`), not from `register()`, so it applies on
+	 * every store, set up or not.
+	 *
 	 * @internal
 	 *
 	 * @param mixed $pre The value an earlier pre_option filter returned, or false.

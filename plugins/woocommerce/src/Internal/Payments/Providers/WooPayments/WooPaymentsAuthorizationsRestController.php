@@ -356,6 +356,9 @@ class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
 	/**
 	 * Apply the `wcpay_list_authorizations_request` filter to the list params.
 	 *
+	 * The filter runs here once, on the params this route built; the API client call passes `false` so it does not run
+	 * again.
+	 *
 	 * @param array<string,mixed> $params Request params.
 	 * @return array<string,mixed>
 	 * @throws WooPaymentsApiException When a filter callback returns no request.

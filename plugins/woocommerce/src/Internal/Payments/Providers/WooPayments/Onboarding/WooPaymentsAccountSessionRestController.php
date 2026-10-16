@@ -85,6 +85,9 @@ class WooPaymentsAccountSessionRestController extends RestApiControllerBase {
 	 * Get the cached account data, or a no-account answer built from the store's country and currency, with the test-mode
 	 * flags added.
 	 *
+	 * This route always answers `card_present_eligible` false (client 11.1.0
+	 * `includes/admin/class-wc-rest-payments-accounts-controller.php:60,83`); the Card Readers menu reads the account's own flag.
+	 *
 	 * @return WP_REST_Response
 	 */
 	public function get_account_data(): WP_REST_Response {

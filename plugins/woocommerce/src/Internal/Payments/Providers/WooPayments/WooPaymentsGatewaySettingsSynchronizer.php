@@ -448,7 +448,9 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	}
 
 	/**
-	 * Get a split WooPayments gateway option name.
+	 * Get the settings option of one payment method's own gateway (a split gateway),
+	 * `woocommerce_woocommerce_payments_<method>_settings`, the option the WooPayments extension's split gateways use
+	 * (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:292,3122-3124`).
 	 *
 	 * @param string $method_id Payment method ID.
 	 * @return string

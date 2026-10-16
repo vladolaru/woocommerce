@@ -444,6 +444,9 @@ class WooPaymentsDisputeReadinessService {
 	/**
 	 * Determines whether a descriptor looks recognizable enough to complete automatically.
 	 *
+	 * A non-generic descriptor of five or more characters after normalizing counts as recognizable; the store-name match
+	 * decides only shorter ones.
+	 *
 	 * @param string              $descriptor   Statement descriptor.
 	 * @param array<string,mixed> $account_data Stored account data.
 	 * @return bool

@@ -450,6 +450,8 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 
 		$this->database_cache->delete_all();
 
+		// The version option is deleted even when a delete hook throws, so a stale usage answer is never left paired with
+		// the current logic version.
 		try {
 			$this->legacy_proxy->call_function( 'delete_option', self::INCENTIVES_USAGE_OPTION );
 		} finally {

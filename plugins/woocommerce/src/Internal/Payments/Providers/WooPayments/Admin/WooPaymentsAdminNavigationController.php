@@ -31,6 +31,9 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 
 	/**
 	 * Client 11.1.0 runs its child-page onboarding redirect after its account redirects (admin_init priority 16).
+	 *
+	 * It runs after `redirect_payments_paths()` (`admin_init`, priority 10), so an old `/payments/*` link reaches its
+	 * Payments settings route before the onboarding redirect looks at the request.
 	 */
 	private const ONBOARDING_REDIRECT_HOOK_PRIORITY = 16;
 

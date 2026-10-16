@@ -444,6 +444,11 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 	/**
 	 * Map WooPayments payment method IDs to Transact Platform capability keys.
 	 *
+	 * Its own map, not the payment method registry's: the registry has no definition for `giropay`, `sofort` or `jcb`,
+	 * which an account can still have enabled. The map is client 11.1.0
+	 * `includes/class-wc-payment-gateway-wcpay.php:304-326`, which the client's store setup report reads
+	 * (`includes/class-wc-payments-account.php:2917`).
+	 *
 	 * @param string[] $payment_method_ids Payment method IDs.
 	 * @return string[]
 	 */
