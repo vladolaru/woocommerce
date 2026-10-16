@@ -1461,10 +1461,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_wp_environment_dev_mode(): bool {
-		if ( ! function_exists( 'wp_get_environment_type' ) ) {
-			return false;
-		}
-
 		return in_array( wp_get_environment_type(), self::DEV_MODE_ENVIRONMENTS, true );
 	}
 
@@ -1474,7 +1470,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_wp_development_mode_enabled(): bool {
-		return function_exists( 'wp_get_development_mode' ) && '' !== wp_get_development_mode();
+		return '' !== wp_get_development_mode();
 	}
 
 	/**
@@ -1487,10 +1483,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return WooPaymentsApiClient|null
 	 */
 	protected function get_api_client(): ?WooPaymentsApiClient {
-		if ( ! function_exists( 'wc_get_container' ) ) {
-			return null;
-		}
-
 		try {
 			return wc_get_container()->get( WooPaymentsApiClient::class );
 		} catch ( \Throwable $e ) {
@@ -1506,12 +1498,8 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return string
 	 */
 	public function get_woocommerce_store_id(): string {
-		$option_name = class_exists( '\WC_Install' ) && defined( '\WC_Install::STORE_ID_OPTION' )
-			? \WC_Install::STORE_ID_OPTION
-			: 'woocommerce_store_id';
-
 		try {
-			$store_id = $this->legacy_proxy->call_function( 'get_option', $option_name, '' );
+			$store_id = $this->legacy_proxy->call_function( 'get_option', \WC_Install::STORE_ID_OPTION, '' );
 		} catch ( \Throwable $e ) {
 			$this->log_read_failure( 'the store ID', $e );
 			return '';
