@@ -1147,9 +1147,9 @@ class PaymentsProvidersTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should enrich native WooPayments gateways with WooPayments suggestion details while keeping the core plugin owner.
+	 * @testdox Should enrich built-in WooPayments gateways with WooPayments suggestion details while keeping the core plugin owner.
 	 */
-	public function test_get_payment_gateway_details_enriches_native_woopayments_from_suggestion(): void {
+	public function test_get_payment_gateway_details_enriches_builtin_woopayments_from_suggestion(): void {
 		$fake_gateway = new FakePaymentGateway(
 			'woocommerce_payments',
 			array(
@@ -1202,11 +1202,11 @@ class PaymentsProvidersTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should prefer the localized WooPayments suggestion without exposing plugin install metadata for a native gateway.
+	 * @testdox Should prefer the localized WooPayments suggestion without exposing plugin install metadata for a built-in gateway.
 	 *
 	 * WooPayments 11.1.0's WC_Payments_Incentives_Service::get_connect_incentive() is the oracle that an unconnected gateway retains its eligible incentive; native onboarding intentionally omits plugin metadata per Task 3.3.
 	 */
-	public function test_get_payment_gateway_details_prefers_localized_native_woopayments_suggestion(): void {
+	public function test_get_payment_gateway_details_prefers_localized_builtin_woopayments_suggestion(): void {
 		$fake_gateway = new FakePaymentGateway(
 			'woocommerce_payments',
 			array(
@@ -1266,7 +1266,7 @@ class PaymentsProvidersTest extends WC_Unit_Test_Case {
 	 * @param bool   $test_mode_onboarding Whether the account is a test (test-drive or sandbox) account.
 	 * @param string $expected_cta_label   The expected incentive call to action.
 	 */
-	public function test_get_payment_gateway_details_words_native_woopayments_incentive_for_account_state( bool $account_connected, bool $test_mode_onboarding, string $expected_cta_label ): void {
+	public function test_get_payment_gateway_details_words_builtin_woopayments_incentive_for_account_state( bool $account_connected, bool $test_mode_onboarding, string $expected_cta_label ): void {
 		$this->mock_woopayments_suggestion_with_install_incentive();
 		$fake_gateway = new FakePaymentGateway(
 			'woocommerce_payments',
@@ -1305,15 +1305,15 @@ class PaymentsProvidersTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should mark only the built-in WooPayments gateway as native: $plugin_slug.
+	 * @testdox Should mark only the built-in WooPayments gateway as built-in: $plugin_slug.
 	 *
 	 * @testWith ["woocommerce", true]
 	 *           ["woocommerce-payments", false]
 	 *
-	 * @param string $plugin_slug     The plugin that registers the WooPayments gateway.
-	 * @param bool   $expected_native Whether the gateway details should mark it as native.
+	 * @param string $plugin_slug      The plugin that registers the WooPayments gateway.
+	 * @param bool   $expected_builtin Whether the gateway details should mark it as built-in.
 	 */
-	public function test_get_payment_gateway_details_marks_only_built_in_woopayments_as_native( string $plugin_slug, bool $expected_native ): void {
+	public function test_get_payment_gateway_details_marks_only_builtin_woopayments_as_builtin( string $plugin_slug, bool $expected_builtin ): void {
 		$this->mock_woopayments_suggestion_with_install_incentive();
 		$fake_gateway = new FakePaymentGateway(
 			'woocommerce_payments',
@@ -1325,7 +1325,7 @@ class PaymentsProvidersTest extends WC_Unit_Test_Case {
 
 		$gateway_details = $this->sut->get_payment_gateway_details( $fake_gateway, 0, 'US' );
 
-		$this->assertSame( $expected_native, $gateway_details['_native'] ?? false );
+		$this->assertSame( $expected_builtin, $gateway_details['_native'] ?? false );
 	}
 
 	/**
@@ -1789,9 +1789,9 @@ class PaymentsProvidersTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not return the WooPayments suggestion when the native WooPayments gateway is registered.
+	 * @testdox Should not return the WooPayments suggestion when the built-in WooPayments gateway is registered.
 	 */
-	public function test_get_extension_suggestions_skips_woopayments_when_native_gateway_is_registered(): void {
+	public function test_get_extension_suggestions_skips_woopayments_when_the_builtin_gateway_is_registered(): void {
 		$this->mock_payment_gateways(
 			array(
 				'woocommerce_payments' => array(

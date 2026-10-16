@@ -85,7 +85,7 @@ class PaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fold the deprecated additional-data filter into the native array while keeping native keys.
+	 * @testdox Should fold the deprecated additional-data filter into the built-in array while keeping its keys.
 	 */
 	public function test_get_additional_data_folds_in_deprecated_filter(): void {
 		$this->setExpectedDeprecated( 'woocommerce_admin_woopayments_onboarding_task_additional_data' );
@@ -106,9 +106,9 @@ class PaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not let the deprecated additional-data filter override native keys.
+	 * @testdox Should not let the deprecated additional-data filter override the built-in keys.
 	 */
-	public function test_get_additional_data_native_keys_win_on_collision(): void {
+	public function test_get_additional_data_builtin_keys_win_on_collision(): void {
 		$this->setExpectedDeprecated( 'woocommerce_admin_woopayments_onboarding_task_additional_data' );
 
 		add_filter(
@@ -133,9 +133,9 @@ class PaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return the native additional data unchanged when nothing hooks the filter.
+	 * @testdox Should return the built-in additional data unchanged when nothing hooks the filter.
 	 */
-	public function test_get_additional_data_returns_native_array_without_filter(): void {
+	public function test_get_additional_data_returns_its_array_without_filter(): void {
 		$result = $this->sut->get_additional_data();
 
 		$this->assertIsArray( $result, 'Additional data should be an array.' );
@@ -144,9 +144,9 @@ class PaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep the task open for a native test-drive account, like the WooPayments plugin does.
+	 * @testdox Should keep the task open for a built-in test-drive account.
 	 */
-	public function test_native_test_drive_account_keeps_task_open(): void {
+	public function test_builtin_test_drive_account_keeps_task_open(): void {
 		$this->arrange( false, 'yes', $this->woopayments_provider( 'woocommerce', true, true, true, true ) );
 
 		$data = $this->sut->get_additional_data();
@@ -161,9 +161,9 @@ class PaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should complete the task for a native live account that finished onboarding.
+	 * @testdox Should complete the task for a built-in live account that finished onboarding.
 	 */
-	public function test_native_live_onboarded_account_completes_task(): void {
+	public function test_builtin_live_onboarded_account_completes_task(): void {
 		$this->arrange( false, 'yes', $this->woopayments_provider( 'woocommerce', true, true, true, false ) );
 
 		$data = $this->sut->get_additional_data();
@@ -175,18 +175,18 @@ class PaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should complete the task for a native live account even when no gateway is enabled.
+	 * @testdox Should complete the task for a built-in live account even when no gateway is enabled.
 	 */
-	public function test_native_live_onboarded_account_completes_task_without_enabled_gateways(): void {
+	public function test_builtin_live_onboarded_account_completes_task_without_enabled_gateways(): void {
 		$this->arrange( false, 'no', $this->woopayments_provider( 'woocommerce', true, true, true, false ) );
 
 		$this->assertTrue( $this->sut->is_complete(), 'Completion follows onboarding, not enabled gateways, once WooPayments is active.' );
 	}
 
 	/**
-	 * @testdox Should show the action needed label while native live onboarding is started but not finished.
+	 * @testdox Should show the action needed label while built-in live onboarding is started but not finished.
 	 */
-	public function test_native_started_live_onboarding_shows_action_needed(): void {
+	public function test_builtin_started_live_onboarding_shows_action_needed(): void {
 		$this->arrange( false, 'yes', $this->woopayments_provider( 'woocommerce', false, true, false, false ) );
 
 		$data = $this->sut->get_additional_data();
@@ -199,9 +199,9 @@ class PaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should treat a native store that never started WooPayments like a store without WooPayments.
+	 * @testdox Should treat a built-in store that never started WooPayments like a store without WooPayments.
 	 */
-	public function test_native_never_started_follows_enabled_gateways(): void {
+	public function test_builtin_never_started_follows_enabled_gateways(): void {
 		$this->arrange( false, 'yes', $this->woopayments_provider( 'woocommerce', false, false, false, false ) );
 
 		$data = $this->sut->get_additional_data();
@@ -215,7 +215,7 @@ class PaymentsTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should not treat a WooPayments entry from another plugin as the built-in gateway.
 	 */
-	public function test_non_builtin_woopayments_entry_is_not_active_without_plugin_runtime(): void {
+	public function test_non_builtin_woopayments_entry_is_not_active_without_the_woopayments_extension_runtime(): void {
 		$this->arrange( false, 'yes', $this->woopayments_provider( 'woocommerce-payments', true, true, true, true ) );
 
 		$data = $this->sut->get_additional_data();
@@ -239,7 +239,7 @@ class PaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep the task open for a test-drive account when the WooPayments plugin runtime is loaded.
+	 * @testdox Should keep the task open for a test-drive account when the WooPayments extension runtime is loaded.
 	 */
 	public function test_extension_runtime_test_drive_account_keeps_task_open(): void {
 		$this->arrange( true, 'yes', $this->woopayments_provider( 'woocommerce-payments', true, true, true, true ) );
@@ -252,7 +252,7 @@ class PaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should count WooPayments as active whenever the plugin runtime is loaded, even before onboarding.
+	 * @testdox Should count WooPayments as active whenever the WooPayments extension runtime is loaded, even before onboarding.
 	 */
 	public function test_extension_runtime_is_active_before_onboarding(): void {
 		$this->arrange( true, 'yes', $this->woopayments_provider( 'woocommerce-payments', false, false, false, false ) );
@@ -266,11 +266,11 @@ class PaymentsTest extends WC_Unit_Test_Case {
 	/**
 	 * Register the WooPayments gateway and replace the services the task reads.
 	 *
-	 * @param bool   $legacy_loaded    Whether the WooPayments plugin runtime is loaded.
-	 * @param string $gateway_enabled  The WooPayments gateway enabled setting ('yes' or 'no').
-	 * @param array  $woopayments      The WooPayments entry in the providers list.
+	 * @param bool   $extension_runtime_loaded Whether the WooPayments extension runtime is loaded.
+	 * @param string $gateway_enabled          The WooPayments gateway enabled setting ('yes' or 'no').
+	 * @param array  $woopayments              The WooPayments entry in the providers list.
 	 */
-	private function arrange( bool $legacy_loaded, string $gateway_enabled, array $woopayments ): void {
+	private function arrange( bool $extension_runtime_loaded, string $gateway_enabled, array $woopayments ): void {
 		WC()->payment_gateways()->payment_gateways = array( $this->gateway( 'woocommerce_payments', $gateway_enabled ) );
 
 		$woopayments['state']['enabled'] = 'yes' === $gateway_enabled;
@@ -281,7 +281,7 @@ class PaymentsTest extends WC_Unit_Test_Case {
 		$settings->method( 'get_payment_extension_suggestions' )->willReturn( array() );
 
 		wc_get_container()->replace( SettingsPaymentsService::class, $settings );
-		wc_get_container()->replace( WooPaymentsExtensionRuntime::class, $this->extension_runtime( $legacy_loaded ) );
+		wc_get_container()->replace( WooPaymentsExtensionRuntime::class, $this->extension_runtime( $extension_runtime_loaded ) );
 	}
 
 	/**

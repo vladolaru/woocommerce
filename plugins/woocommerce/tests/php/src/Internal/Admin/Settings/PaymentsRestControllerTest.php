@@ -421,7 +421,7 @@ class PaymentsRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Test the providers response keeps the native WooPayments marker and adds none to other providers.
 	 */
-	public function test_get_payment_providers_keeps_native_marker() {
+	public function test_get_payment_providers_keeps_builtin_marker() {
 		// Arrange.
 		$this->mock_service
 			->expects( $this->once() )

@@ -92,9 +92,9 @@ class PaymentsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep the Core Payments settings menu when the standalone WooPayments runtime is not loaded.
+	 * @testdox Should keep the Core Payments settings menu when the WooPayments extension runtime is not loaded.
 	 */
-	public function test_add_menu_keeps_core_payments_menu_when_native_runtime_owns_payments(): void {
+	public function test_add_menu_keeps_core_payments_menu_when_builtin_owns_payments(): void {
 		global $menu;
 
 		// phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Isolate admin menu assertions in this test.

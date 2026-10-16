@@ -310,7 +310,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should hide incentives when the built-in WooPayments runtime owns the site and has a live account.
 	 */
-	public function test_is_visible_with_native_runtime_and_has_account_data(): void {
+	public function test_is_visible_with_builtin_runtime_and_has_account_data(): void {
 		// Arrange.
 		$this->extension_runtime->method( 'is_loaded' )->willReturn( false );
 		$this->extension_runtime->method( 'has_live_cached_account_data' )->willReturn( true );
@@ -332,7 +332,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should keep incentives visible when the built-in WooPayments runtime owns the site without a live account.
 	 */
-	public function test_is_visible_with_native_runtime_and_no_account_data(): void {
+	public function test_is_visible_with_builtin_runtime_and_no_account_data(): void {
 		// Arrange.
 		$this->extension_runtime->method( 'is_loaded' )->willReturn( false );
 		$this->extension_runtime->method( 'has_live_cached_account_data' )->willReturn( false );

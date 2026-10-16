@@ -465,9 +465,9 @@ class PaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should key native WooPayments provider state snapshots by the WooPayments extension slug.
+	 * @testdox Should key WooPayments provider state snapshots by the WooPayments extension slug.
 	 */
-	public function test_provider_state_snapshots_use_suggestion_plugin_slug_for_native_woopayments(): void {
+	public function test_provider_state_snapshots_use_suggestion_plugin_slug_for_builtin_woopayments(): void {
 		delete_option( Payments::PAYMENTS_PROVIDER_STATE_SNAPSHOTS_KEY );
 		$this->mock_woopayments_suggestion_lookup();
 
@@ -516,7 +516,7 @@ class PaymentsTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should not read suggestion metadata from unrelated Core providers when stale snapshots use the Core slug.
 	 */
-	public function test_provider_state_tracking_ignores_core_provider_slug_collision_for_stale_native_snapshot(): void {
+	public function test_provider_state_tracking_ignores_core_provider_slug_collision_for_stale_builtin_snapshot(): void {
 		update_option(
 			Payments::PAYMENTS_PROVIDER_STATE_SNAPSHOTS_KEY,
 			array(

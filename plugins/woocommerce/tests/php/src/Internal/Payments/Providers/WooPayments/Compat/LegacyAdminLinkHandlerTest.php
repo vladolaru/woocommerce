@@ -737,7 +737,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox The KYC reminder hook runs before the legacy route redirect at the default priority.
 	 */
-	public function test_registers_kyc_reminder_hook_before_legacy_route_redirects(): void {
+	public function test_registers_kyc_reminder_hook_before_payments_path_redirects(): void {
 		$this->sut->register();
 
 		$this->assertSame( 9, has_action( 'admin_init', array( $this->sut, 'handle_kyc_reminder_return' ) ) );
@@ -746,7 +746,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox The hosted KYC return handler runs before the legacy route redirect, and only while native owns the runtime.
 	 */
-	public function test_registers_hosted_kyc_return_hook_before_legacy_route_redirects(): void {
+	public function test_registers_hosted_kyc_return_hook_before_payments_path_redirects(): void {
 		$this->sut->register();
 		$this->assertSame( 9, has_action( 'admin_init', array( $this->sut, 'handle_hosted_kyc_return' ) ) );
 

@@ -185,7 +185,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should clean the obsolete inbox note for a disconnected provider without attaching a settings notice.
 	 */
-	public function test_get_details_cleans_legacy_note_for_disconnected_account(): void {
+	public function test_get_details_cleans_obsolete_note_for_disconnected_account(): void {
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		foreach ( array( 'wc-payments-notes-test-to-live', 'unrelated-note' ) as $name ) {
 			$note = new Note();
@@ -254,9 +254,9 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should point WooPayments settings to the native routed settings page.
+	 * @testdox Should point WooPayments settings to the routed settings page.
 	 */
-	public function test_get_settings_url_points_to_native_routed_settings_page(): void {
+	public function test_get_settings_url_points_to_the_routed_settings_page(): void {
 		$fake_gateway = new FakePaymentGateway( 'woocommerce_payments' );
 		$this->mockable_proxy->register_function_mocks(
 			array(
@@ -278,9 +278,9 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * At the merge base the provider had no override, so a plugin store keeps the plugin gateway's own settings page
 	 * (PaymentGateway::get_settings_url()); the native routes are not registered while the plugin owns the runtime.
 	 *
-	 * @testdox Should keep the plugin's settings page while the WooPayments plugin owns the runtime.
+	 * @testdox Should keep the WooPayments extension's settings page while it owns the runtime.
 	 */
-	public function test_get_settings_url_keeps_plugin_settings_page_while_plugin_owns_runtime(): void {
+	public function test_get_settings_url_keeps_the_woopayments_extension_settings_page_while_the_extension_owns_runtime(): void {
 		// The plugin gateway's own settings link: client 11.1.0 WC_Payment_Gateway_WCPay::get_settings_url()
 		// (includes/class-wc-payment-gateway-wcpay.php:793-794) returns WC_Payments_Admin_Settings::get_settings_url()
 		// (includes/admin/class-wc-payments-admin-settings.php:32-36, :336-337); `marker` proves it is passed through.
@@ -1038,7 +1038,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	/**
 	 * Test a core-native suggestion does not retain an extension-install incentive action.
 	 */
-	public function test_enhance_core_native_suggestion_uses_setup_incentive_copy(): void {
+	public function test_enhance_builtin_suggestion_uses_setup_incentive_copy(): void {
 		$extension_suggestion = array(
 			'id'         => '_wc_pes_woopayments',
 			'plugin'     => array(
@@ -1062,10 +1062,10 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * @testWith ["", true]
 	 *           ["woocommerce-payments", false]
 	 *
-	 * @param string $plugin_slug     The suggestion's plugin slug; the core-native suggestion has none.
-	 * @param bool   $expected_native Whether the enhanced suggestion should be marked as native.
+	 * @param string $plugin_slug      The suggestion's plugin slug; the core-native suggestion has none.
+	 * @param bool   $expected_builtin Whether the enhanced suggestion should be marked as built-in.
 	 */
-	public function test_enhance_extension_suggestion_marks_only_core_native_suggestion_as_native( string $plugin_slug, bool $expected_native ): void {
+	public function test_enhance_extension_suggestion_marks_only_the_builtin_suggestion_as_builtin( string $plugin_slug, bool $expected_builtin ): void {
 		$extension_suggestion = array(
 			'id'         => '_wc_pes_woopayments',
 			'plugin'     => array(
@@ -1078,7 +1078,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 
 		$enhanced = $this->sut->enhance_extension_suggestion( $extension_suggestion );
 
-		$this->assertSame( $expected_native, $enhanced['_native'] ?? false );
+		$this->assertSame( $expected_builtin, $enhanced['_native'] ?? false );
 	}
 
 	/**
@@ -1443,9 +1443,9 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should use native onboarding adapter account state for test-mode onboarding.
+	 * @testdox Should use the settings adapter account state for test-mode onboarding.
 	 */
-	public function test_is_in_test_mode_onboarding_uses_native_onboarding_adapter_account_state(): void {
+	public function test_is_in_test_mode_onboarding_uses_settings_adapter_account_state(): void {
 		$fake_gateway = new FakePaymentGateway( 'woocommerce_payments', array() );
 		$adapter      = $this->getMockBuilder( WooPaymentsPaymentsSettingsAdapter::class )
 			->disableOriginalConstructor()
@@ -2009,8 +2009,8 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should report the built-in gateway's sandbox account without submitted details as started but not completed.
 	 */
-	public function test_native_gateway_account_without_submitted_details_is_not_onboarded(): void {
-		$gateway = $this->native_gateway_with_account(
+	public function test_builtin_gateway_account_without_submitted_details_is_not_onboarded(): void {
+		$gateway = $this->builtin_gateway_with_account(
 			array(
 				'account_id'        => 'acct_test123',
 				'status'            => 'restricted',
@@ -2030,8 +2030,8 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should report the built-in gateway without an account as not connected and needing setup.
 	 */
-	public function test_native_gateway_without_account_is_not_connected(): void {
-		$gateway = $this->native_gateway_with_account( array() );
+	public function test_builtin_gateway_without_account_is_not_connected(): void {
+		$gateway = $this->builtin_gateway_with_account( array() );
 
 		$this->assertFalse( $this->sut->is_account_connected( $gateway ), 'No cached account means no connected account.' );
 		$this->assertFalse( $this->sut->is_onboarding_started( $gateway ), 'Onboarding has not started without an account.' );
@@ -2042,8 +2042,8 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should report the built-in gateway's fully onboarded account as completed and set up.
 	 */
-	public function test_native_gateway_onboarded_account_is_completed(): void {
-		$gateway = $this->native_gateway_with_account(
+	public function test_builtin_gateway_onboarded_account_is_completed(): void {
+		$gateway = $this->builtin_gateway_with_account(
 			array(
 				'account_id'        => 'acct_test123',
 				'status'            => 'complete',
@@ -2064,7 +2064,7 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * @param array $account_data Cached account data.
 	 * @return WooPaymentsGateway
 	 */
-	private function native_gateway_with_account( array $account_data ): WooPaymentsGateway {
+	private function builtin_gateway_with_account( array $account_data ): WooPaymentsGateway {
 		$gateway         = new WooPaymentsGateway();
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()

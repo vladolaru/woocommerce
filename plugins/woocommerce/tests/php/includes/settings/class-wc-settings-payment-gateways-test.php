@@ -136,9 +136,9 @@ class WC_Settings_Payment_Gateways_Test extends WC_Settings_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not render WooPayments settings as a React section while the plugin owns the runtime.
+	 * @testdox Should not render WooPayments settings as a React section while the WooPayments extension owns the runtime.
 	 */
-	public function test_woopayments_section_is_not_reactified_while_plugin_owns_runtime() {
+	public function test_woopayments_section_is_not_reactified_while_the_extension_owns_runtime() {
 		$this->set_runtime_owner( WooPaymentsRuntimeArbiter::OWNER_EXTENSION );
 
 		$sut = new WC_Settings_Payment_Gateways();
@@ -147,9 +147,9 @@ class WC_Settings_Payment_Gateways_Test extends WC_Settings_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should render WooPayments settings as a React section when native owns the runtime.
+	 * @testdox Should render WooPayments settings as a React section when the built-in WooPayments owns the runtime.
 	 */
-	public function test_woopayments_section_is_reactified_when_native_owns_runtime() {
+	public function test_woopayments_section_is_reactified_when_builtin_owns_runtime() {
 		$this->set_runtime_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 
 		$sut = new WC_Settings_Payment_Gateways();
@@ -169,7 +169,7 @@ class WC_Settings_Payment_Gateways_Test extends WC_Settings_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not allow the optional sections filter to force WooPayments reactification when native does not own the runtime.
+	 * @testdox Should not allow the optional sections filter to force WooPayments reactification when the built-in WooPayments does not own the runtime.
 	 *
 	 * @testWith ["plugin"]
 	 *           ["none"]
@@ -207,7 +207,7 @@ class WC_Settings_Payment_Gateways_Test extends WC_Settings_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should emit WooPayments gateway notices inside the native React settings section.
+	 * @testdox Should emit WooPayments gateway notices inside the React settings section.
 	 */
 	public function test_woopayments_section_outputs_gateway_admin_notices() {
 		global $current_section;
@@ -231,9 +231,9 @@ class WC_Settings_Payment_Gateways_Test extends WC_Settings_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not fire the WooPayments settings notices on the settings route while the plugin owns payments.
+	 * @testdox Should not fire the WooPayments settings notices on the settings route while the WooPayments extension owns payments.
 	 */
-	public function test_woopayments_settings_route_does_not_fire_admin_notices_while_plugin_owns_runtime() {
+	public function test_woopayments_settings_route_does_not_fire_admin_notices_while_the_extension_owns_runtime() {
 		$this->set_runtime_owner( WooPaymentsRuntimeArbiter::OWNER_EXTENSION );
 
 		$output = $this->render_with_woopayments_notice_counter( '', array( 'path' => '/woopayments/settings' ), $fired );
@@ -243,9 +243,9 @@ class WC_Settings_Payment_Gateways_Test extends WC_Settings_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fire the WooPayments settings notices once on the native settings route.
+	 * @testdox Should fire the WooPayments settings notices once on the settings route.
 	 */
-	public function test_woopayments_settings_route_fires_admin_notices_once_when_native_owns_runtime() {
+	public function test_woopayments_settings_route_fires_admin_notices_once_when_builtin_owns_runtime() {
 		$this->set_runtime_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 
 		$output = $this->render_with_woopayments_notice_counter( '', array( 'path' => '/woopayments/settings' ), $fired );
@@ -255,9 +255,9 @@ class WC_Settings_Payment_Gateways_Test extends WC_Settings_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fire the WooPayments settings notices before the classic native settings form, as the client's admin_options() does.
+	 * @testdox Should fire the WooPayments settings notices before the classic settings form, as the WooPayments extension's admin_options() does.
 	 */
-	public function test_classic_native_woopayments_settings_fire_admin_notices_before_the_form() {
+	public function test_classic_builtin_woopayments_settings_fire_admin_notices_before_the_form() {
 		$this->set_runtime_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 		$filter_callback = static function ( $fields ) {
 			$fields['custom_extension_field'] = array(
@@ -281,9 +281,9 @@ class WC_Settings_Payment_Gateways_Test extends WC_Settings_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave the WooPayments settings notices to the plugin's own gateway screen while the plugin owns payments.
+	 * @testdox Should leave the WooPayments settings notices to the WooPayments extension's own gateway screen while it owns payments.
 	 */
-	public function test_classic_plugin_woopayments_settings_do_not_fire_admin_notices_from_core() {
+	public function test_classic_woopayments_extension_settings_do_not_fire_admin_notices_from_core() {
 		$this->set_runtime_owner( WooPaymentsRuntimeArbiter::OWNER_EXTENSION );
 
 		$output = $this->render_with_woopayments_notice_counter( WC_Settings_Payment_Gateways::WOOPAYMENTS_SECTION_NAME, array(), $fired, $this->create_woopayments_gateway_stub() );

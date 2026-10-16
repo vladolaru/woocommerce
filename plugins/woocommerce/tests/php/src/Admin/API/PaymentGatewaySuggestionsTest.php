@@ -143,7 +143,7 @@ class PaymentGatewaySuggestionsTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox WooPayments reads as active when native payments are enabled and the kill switch is off, and as inactive otherwise.
+	 * @testdox WooPayments reads as active when the built-in WooPayments is enabled and the kill switch is off, and as inactive otherwise.
 	 * @testWith ["yes", "0", true]
 	 *           ["yes", "yes", false]
 	 *           ["yes", "YES", false]
@@ -152,12 +152,12 @@ class PaymentGatewaySuggestionsTest extends WC_REST_Unit_Test_Case {
 	 *           ["yes", "on", true]
 	 *           ["no", "0", false]
 	 *
-	 * @param string $native_enabled Stored native payments enablement.
-	 * @param string $kill_switch    Stored native payments kill switch.
-	 * @param bool   $expected       Whether WooPayments should read as active.
+	 * @param string $builtin_enabled Stored built-in WooPayments enablement.
+	 * @param string $kill_switch     Stored native payments kill switch.
+	 * @param bool   $expected        Whether WooPayments should read as active.
 	 */
-	public function test_woopayments_activation_rules_follow_native_enablement_and_kill_switch( string $native_enabled, string $kill_switch, bool $expected ) {
-		update_option( 'woocommerce_woopayments_builtin_enabled', $native_enabled );
+	public function test_woopayments_activation_rules_follow_builtin_enablement_and_kill_switch( string $builtin_enabled, string $kill_switch, bool $expected ) {
+		update_option( 'woocommerce_woopayments_builtin_enabled', $builtin_enabled );
 		update_option( 'woocommerce_woopayments_builtin_kill_switch', $kill_switch );
 		$evaluator = new RuleEvaluator();
 
@@ -168,7 +168,7 @@ class PaymentGatewaySuggestionsTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * The WooPayments plugin cannot be activated in unit tests, so its operand is checked by shape.
 	 *
-	 * @testdox WooPayments also reads as active while the WooPayments plugin is active.
+	 * @testdox WooPayments also reads as active while the WooPayments extension is active.
 	 */
 	public function test_woopayments_activation_rules_count_the_active_plugin() {
 		$active_rule = DefaultPaymentGateways::get_rules_for_wcpay_activated( true );
@@ -186,7 +186,7 @@ class PaymentGatewaySuggestionsTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should strip legacy WooPayments plugin install metadata from remote suggestions.
+	 * @testdox Should strip WooPayments plugin install metadata from remote suggestions.
 	 */
 	public function test_remote_woopayments_suggestions_do_not_include_plugin_install_metadata() {
 		Init::delete_specs_transient();
