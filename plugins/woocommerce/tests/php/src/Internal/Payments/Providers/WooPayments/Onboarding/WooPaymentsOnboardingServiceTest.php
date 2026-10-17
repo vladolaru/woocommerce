@@ -730,6 +730,53 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The current user's names, and the individual the test-drive account request should carry.
+	 *
+	 * @return array<string,array{0:string,1:string,2:array<string,string>|null}>
+	 */
+	public function provide_test_drive_merchant_names(): array {
+		return array(
+			'a user with both names' => array(
+				'Ada',
+				'Lovelace',
+				array(
+					'first_name' => 'Ada',
+					'last_name'  => 'Lovelace',
+				),
+			),
+			'a user without names'   => array( '', '', null ),
+		);
+	}
+
+	/**
+	 * Client 11.1.0 init_test_drive_account() puts the current user's first and last name in the test-drive request
+	 * (includes/class-wc-payments-onboarding-service.php:731-742); empty values are filtered out before the request
+	 * (:748), and the platform then fills a placeholder name (wpcom class-account-test-drive-service.php:775-778).
+	 *
+	 * @testdox The test-drive account request carries the merchant's name ($first $last).
+	 * @dataProvider provide_test_drive_merchant_names
+	 *
+	 * @param string                    $first      User first name.
+	 * @param string                    $last       User last name.
+	 * @param array<string,string>|null $individual Expected individual in the account data, or null for none.
+	 */
+	public function test_test_drive_request_carries_the_merchant_name( string $first, string $last, ?array $individual ): void {
+		wp_update_user(
+			array(
+				'ID'         => get_current_user_id(),
+				'first_name' => $first,
+				'last_name'  => $last,
+			)
+		);
+		$fixture = $this->arrange_nox_picks( array( 'card' => true ), array( 'upe_enabled_payment_method_ids' => array( 'card' ) ), 'no' );
+
+		$response = $fixture['server']->dispatch( $this->create_nox_pick_request( WooPaymentsService::ONBOARDING_STEP_TEST_ACCOUNT . '/init' ) );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( $individual, $fixture['api_client']->test_drive_account_data['individual'] ?? null );
+	}
+
+	/**
 	 * Client 11.1.0 WC_Payments_Onboarding_Service::get_actioned_notes() (includes/class-wc-payments-onboarding-service.php:1019-1060)
 	 * feeds test-drive init (:760), the embedded session (:356) and finalize (includes/admin/class-wc-rest-payments-onboarding-controller.php:278).
 	 * The platform picks the accepted promotion only from these note names.
@@ -2711,6 +2758,13 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			public array $actioned_notes_by_call = array();
 
 			/**
+			 * Account data the test-drive init sent.
+			 *
+			 * @var array<string,mixed>|null
+			 */
+			public ?array $test_drive_account_data = null;
+
+			/**
 			 * Extra fields the platform adds to its responses.
 			 *
 			 * @var array<string,mixed>
@@ -2780,8 +2834,9 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			 * @return array
 			 */
 			public function initialize_onboarding( bool $live_account, string $return_url, array $site_data = array(), array $user_data = array(), array $account_data = array(), array $actioned_notes = array(), bool $collect_payout_requirements = false, ?string $referral_code = null ): array {
-				unset( $live_account, $return_url, $site_data, $user_data, $account_data, $collect_payout_requirements, $referral_code );
+				unset( $live_account, $return_url, $site_data, $user_data, $collect_payout_requirements, $referral_code );
 				$this->actioned_notes_by_call['initialize_onboarding'] = $actioned_notes;
+				$this->test_drive_account_data                         = $account_data;
 				$this->enabled_at_platform_call                        = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION )['upe_enabled_payment_method_ids'] ?? null;
 
 				return array_merge(

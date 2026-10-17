@@ -293,11 +293,18 @@ class WooPaymentsOnboardingService {
 	private function init_test_drive_account( string $location, array $capabilities ): array {
 		$this->set_onboarding_test_mode( true );
 
+		// The merchant's own name goes with the test account, as client 11.1.0 sends it
+		// (includes/class-wc-payments-onboarding-service.php:731-742); the platform fills a placeholder name otherwise.
+		$current_user = wp_get_current_user();
 		$account_data = $this->build_account_creation_data(
 			'test_drive',
 			array(
 				'business_type' => 'individual',
 				'country'       => $location,
+				'individual'    => array(
+					'first_name' => $current_user->first_name ?? null,
+					'last_name'  => $current_user->last_name ?? null,
+				),
 			),
 			$capabilities
 		);
