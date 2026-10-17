@@ -386,21 +386,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the account ID stored in the local account cache without forcing a refresh.
-	 *
-	 * @since 11.0.0
-	 * @return string
-	 */
-	public function get_stored_account_id(): string {
-		$cache = $this->get_account_cache();
-		$data  = is_array( $cache ) && isset( $cache['data'] ) && is_array( $cache['data'] ) ? $cache['data'] : array();
-
-		return isset( $data['account_id'] ) && is_scalar( $data['account_id'] )
-			? (string) $data['account_id']
-			: '';
-	}
-
-	/**
 	 * Get the account data stored in the local account cache without forcing a refresh.
 	 *
 	 * @since 11.0.0

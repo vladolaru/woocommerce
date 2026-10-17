@@ -3,16 +3,26 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Webhooks;
 
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountEventHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingActionSchedulerService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsEventHandlerTestTrait;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsRefundEventHandler;
 use InvalidArgumentException;
 use RuntimeException;
 use WC_REST_Unit_Test_Case;
@@ -26,6 +36,7 @@ use WP_REST_Server;
 class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 
 	use ProviderTextLogAssertions;
+	use WooPaymentsEventHandlerTestTrait;
 
 	/**
 	 * Scheduler the controller's reliability service schedules retries on.
@@ -435,6 +446,173 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
+	 * The account event bodies the platform sends, each the bytes its sender's wp_json_encode() produces.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function provider_platform_account_event_bodies(): array {
+		return array(
+			// wpcom service/class-admin-service.php:1190 (also class-payment-rate-limit-service.php:208, :396,
+			// service/class-account-details-service.php:332, and MissionControl's class-accounts-controller.php:1179 when card
+			// testing prevention is turned on), sent through remote-site/class-remote-site-client.php:85.
+			'account.updated, type only'   => array( '{"type":"account.updated"}' ),
+			// A Stripe account event forwarded by event-handler/class-account-event-handler.php:724-728 with
+			// stripe/class-event.php:203-216 get_body_for_forwarding( false ): no data.
+			'account.updated, from Stripe' => array( '{"id":"evt_1UR1c0qForwarded","type":"account.updated","livemode":false,"account":"acct_1UR1MzJIIUYbFCYM"}' ),
+			// service/class-account-deletion-service.php:873-875, sent during the account deletion.
+			'account.deleted, type only'   => array( '{"type":"account.deleted"}' ),
+		);
+	}
+
+	/**
+	 * @testdox The platform's $body through the webhook route answers 200, refreshes the account and clears the saved payment method caches.
+	 *
+	 * Client 11.1.0 reads only the type of either event (includes/class-wc-payments-webhook-processing-service.php:205-221):
+	 * account.updated refreshes and clears the cached payment methods; account.deleted also resets the store's account
+	 * state and clears the NOX profile and lock, on every delivery, with no account check. The deletion runs while the
+	 * store's own delete call waits, after it read the account as gone, so no account ID is stored.
+	 *
+	 * @dataProvider provider_platform_account_event_bodies
+	 *
+	 * @param string $body Request body.
+	 */
+	public function test_platform_account_events_through_the_webhook_route( string $body ): void {
+		global $wpdb, $wp_rest_server;
+
+		$settings = array(
+			'enabled'                        => 'yes',
+			'test_mode'                      => 'yes',
+			'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ),
+		);
+		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, $settings );
+		update_option( WooPaymentsService::NOX_PROFILE_OPTION_KEY, array( 'onboarding' => array() ) );
+		update_option( WooPaymentsService::NOX_ONBOARDING_LOCKED_KEY, 1 );
+		update_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments', 'yes' );
+		$user_id = $this->factory->user->create( array( 'role' => 'customer' ) );
+		update_user_meta( $user_id, '_wcpay_payment_methods', array( 'cus_route' => array() ) );
+		update_option( 'wcpay_pm_cus_route', array( 'data' => array() ), false );
+		$account_service = $this->create_account_service_counting_refreshes();
+		$handler         = new WooPaymentsAccountEventHandler();
+		$handler->init( $account_service, new WooPaymentsTokenService() );
+		$controller = $this->create_controller_with_ingestor(
+			$this->build_event_ingestor(
+				wc_get_container()->get( OrderPaymentLifecycleService::class ),
+				new class() extends WooPaymentsApiClient {},
+				$this->create_dispute_event_handler( new class() extends WooPaymentsApiClient {} ),
+				wc_get_container()->get( WooPaymentsRefundEventHandler::class ),
+				$handler,
+				$this->create_notification_event_handler()
+			)
+		);
+		// The platform's Jetpack-signed request runs as the connection owner, an administrator.
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
+		$wp_rest_server = new WP_REST_Server();
+		$controller->register_routes();
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/webhook' );
+		$request->set_header( 'Content-Type', 'application/json' );
+		$request->set_body( $body );
+
+		$response = $wp_rest_server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( array( 'result' => 'success' ), $response->get_data() );
+		$this->assertSame( 1, $account_service->refreshes, 'The account is read again from the platform.' );
+		$this->assertSame( '', get_user_meta( $user_id, '_wcpay_payment_methods', true ), 'The cached saved payment methods are cleared.' );
+		$this->assertFalse( get_option( 'wcpay_pm_cus_route' ) );
+		$stored = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
+		if ( '{"type":"account.deleted"}' !== $body ) {
+			$this->assertSame( $settings, $stored );
+			$this->assertSame( array( 'onboarding' => array() ), get_option( WooPaymentsService::NOX_PROFILE_OPTION_KEY ) );
+			return;
+		}
+
+		$this->assertSame( 'no', $stored['enabled'] );
+		$this->assertSame( 'no', $stored['test_mode'] );
+		$this->assertSame( array( 'card' ), $stored['upe_enabled_payment_method_ids'] );
+		$this->assertFalse( get_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments' ) );
+		$this->assertFalse( get_option( WooPaymentsService::NOX_PROFILE_OPTION_KEY ) );
+		$this->assertFalse( get_option( WooPaymentsService::NOX_ONBOARDING_LOCKED_KEY ) );
+	}
+
+	/**
+	 * @testdox The platform's {"type":"test"} delivery check answers 200 and fires both delivery hooks.
+	 *
+	 * The platform sends it with no ID and no object from Admin_Service::send_webhook() (wpcom
+	 * service/class-admin-service.php:1211-1216), for the support "send webhook" tool and its blog switch check
+	 * (:1522-1531). Client 11.1.0 has no case for the type, fires both hooks and answers 200
+	 * (includes/class-wc-payments-webhook-processing-service.php:180-255).
+	 */
+	public function test_platform_test_delivery_is_acknowledged(): void {
+		global $wp_rest_server;
+
+		$fired = array();
+		foreach ( array( 'woocommerce_payments_before_webhook_delivery', 'woocommerce_payments_after_webhook_delivery' ) as $hook ) {
+			add_action(
+				$hook,
+				static function ( $event_type ) use ( &$fired, $hook ) {
+					$fired[] = array( $hook, $event_type );
+				}
+			);
+		}
+		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( WooPaymentsEventIngestor::class ) );
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
+		$wp_rest_server = new WP_REST_Server();
+		$controller->register_routes();
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/webhook' );
+		$request->set_header( 'Content-Type', 'application/json' );
+		$request->set_body( '{"type":"test"}' );
+
+		$response = $wp_rest_server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( array( 'result' => 'success' ), $response->get_data() );
+		$this->assertSame(
+			array(
+				array( 'woocommerce_payments_before_webhook_delivery', 'test' ),
+				array( 'woocommerce_payments_after_webhook_delivery', 'test' ),
+			),
+			$fired
+		);
+	}
+
+	/**
+	 * @testdox A $event_type push without data.object, whose handler needs one, is still refused with 400.
+	 *
+	 * Client 11.1.0 refuses a refund or dispute event whose object fields are missing (class-wc-payments-webhook-processing-service.php:933).
+	 *
+	 * @testWith ["charge.refunded"]
+	 *           ["charge.dispute.created"]
+	 *
+	 * @param string $event_type Event type.
+	 */
+	public function test_object_less_event_of_a_type_that_needs_an_object_is_refused( string $event_type ): void {
+		global $wp_rest_server;
+
+		// A test-mode store, so the test-mode event is not skipped as another mode's.
+		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( 'test_mode' => 'yes' ) );
+		$controller = $this->create_controller_with_ingestor( wc_get_container()->get( WooPaymentsEventIngestor::class ) );
+		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
+		$wp_rest_server = new WP_REST_Server();
+		$controller->register_routes();
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/webhook' );
+		$request->set_header( 'Content-Type', 'application/json' );
+		$request->set_body(
+			(string) wp_json_encode(
+				array(
+					'id'       => 'evt_no_object',
+					'type'     => $event_type,
+					'livemode' => false,
+				)
+			)
+		);
+
+		$response = $wp_rest_server->dispatch( $request );
+
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertSame( array( 'result' => 'bad_request' ), $response->get_data() );
+	}
+
+	/**
 	 * @testdox A charge.dispute.created push refused while another dispute event holds the order payment lock is kept, and its retry puts the order on hold with the dispute note and the open dispute.
 	 *
 	 * The platform forwards each event of a dispute from its own job, so created and funds_withdrawn can arrive together.
@@ -709,6 +887,56 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	private function remove_rest_hook(): void {
 		remove_action( 'rest_api_init', array( $this->sut, 'register_routes' ) );
+	}
+
+	/**
+	 * Create a real account service whose platform account read answers the recorded test-drive account and is counted.
+	 *
+	 * @return WooPaymentsAccountService&object{refreshes:int}
+	 */
+	private function create_account_service_counting_refreshes(): WooPaymentsAccountService {
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads a local immutable test fixture.
+		$fixture         = json_decode( (string) file_get_contents( __DIR__ . '/../Fixtures/platform-test-drive-account.json' ), true );
+		$account_service = new class( $fixture['account'] ) extends WooPaymentsAccountService {
+			/**
+			 * Number of platform account reads.
+			 *
+			 * @var int
+			 */
+			public int $refreshes = 0;
+
+			/**
+			 * Recorded platform account.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $account;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed> $account Recorded platform account.
+			 */
+			public function __construct( array $account ) {
+				$this->account = $account;
+			}
+
+			/**
+			 * Read the account again, counting the reads.
+			 *
+			 * @return array<string,mixed>
+			 */
+			public function refresh_account_data(): array {
+				++$this->refreshes;
+
+				return $this->account;
+			}
+		};
+		$database_cache  = new WooPaymentsDatabaseCache();
+		$database_cache->init( new LegacyProxy() );
+		$account_service->init( new LegacyProxy(), $database_cache );
+
+		return $account_service;
 	}
 
 	/**

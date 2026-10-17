@@ -277,29 +277,19 @@ class WooPaymentsEventIngestor {
 			return;
 		}
 
-		$event_object = $this->get_event_object( $event );
-		if ( $this->early_fraud_warning_event_handler->is_supported_event( $event_type ) ) {
-			$this->early_fraud_warning_event_handler->process( $event_type, $event_object );
-			return;
-		}
-
-		if ( $this->dispute_event_handler->is_supported_event( $event_type ) ) {
-			$this->dispute_event_handler->process( $event_type, $event_object );
-			return;
-		}
-
-		if ( $this->refund_event_handler->is_supported_event( $event_type ) ) {
-			$this->refund_event_handler->process( $event_type, $event_object );
-			return;
-		}
-
+		// Account events carry no object: the platform sends the type alone, or a Stripe event's ID, type, livemode and account.
 		if ( $this->account_event_handler->is_supported_event( $event_type ) ) {
-			$this->account_event_handler->process( $event_type, $event_object );
+			$this->account_event_handler->process( $event_type );
 			return;
 		}
 
-		if ( $this->payment_intent_event_handler->is_supported_event( $event_type ) ) {
-			$this->payment_intent_event_handler->process( $event_type, $event_object );
+		// The object is read only once a handler takes the type: the platform's {"type":"test"} delivery check has neither.
+		$handlers = array( $this->early_fraud_warning_event_handler, $this->dispute_event_handler, $this->refund_event_handler, $this->payment_intent_event_handler );
+		foreach ( $handlers as $handler ) {
+			if ( $handler->is_supported_event( $event_type ) ) {
+				$handler->process( $event_type, $this->get_event_object( $event ) );
+				return;
+			}
 		}
 	}
 
