@@ -692,6 +692,62 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
+	 * Orders in a currency with more decimals than the store's prices, the requested refund, and what is refunded.
+	 *
+	 * @return array<string,array{0:string,1:int,2:float|null}>
+	 */
+	public function provide_refunds_on_a_store_with_whole_prices(): array {
+		return array(
+			// The full amount the Transactions page posts (client/data/payment-intents/actions.ts in the extension).
+			'full refund of 10.50'          => array( '10.50', 1050, 10.5 ),
+			'partial refund of 5.25'        => array( '10.25', 525, 5.25 ),
+			'one cent'                      => array( '10.00', 1, 0.01 ),
+			// WooCommerce rounds the remaining amount to the store's decimals (10), so 10.25 is above it on both stores.
+			'full refund of 10.25, refused' => array( '10.25', 1025, null ),
+		);
+	}
+
+	/**
+	 * @testdox On a store whose prices have no decimals, a payment details refund of $amount minor units on a $total USD order refunds the converted amount unrounded.
+	 *
+	 * Client 11.1.0 passes WC_Payments_Utils::interpret_stripe_amount() of the amount in the order currency to wc_create_refund()
+	 * (includes/admin/class-wc-rest-payments-refunds-controller.php:87-96, includes/class-wc-payments-utils.php:166-174).
+	 *
+	 * @dataProvider provide_refunds_on_a_store_with_whole_prices
+	 *
+	 * @param string     $total    Order total, in USD.
+	 * @param int        $amount   Requested refund, in minor units.
+	 * @param float|null $refunded Amount refunded, or null when the refund is refused.
+	 */
+	public function test_payment_detail_refund_route_refunds_the_unrounded_amount( string $total, int $amount, ?float $refunded ): void {
+		$gateway = $this->register_refund_gateway( true );
+		$order   = $this->create_refundable_order_with_charge( $total, 'ch_order' );
+		// The order was placed in USD with its own decimals, as core Multi-Currency stores it; the store's prices have none.
+		update_option( 'woocommerce_price_num_decimals', 0 );
+		$this->create_payment_details_controller()->register_routes();
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/refund' );
+		$request->set_body_params(
+			array(
+				'charge_id' => 'ch_order',
+				'amount'    => $amount,
+				'order_id'  => $order->get_id(),
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		if ( null === $refunded ) {
+			$this->assertSame( 400, $response->get_status() );
+			$this->assertSame( array(), $gateway->refund_calls );
+			return;
+		}
+
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertSame( $refunded, (float) $order->get_refunds()[0]->get_amount() );
+		$this->assertSame( $refunded, $gateway->refund_calls[0]['amount'] );
+	}
+
+	/**
 	 * @testdox Payment detail refund route returns gateway failures without keeping a local refund row.
 	 */
 	public function test_payment_detail_refund_route_returns_gateway_failure(): void {

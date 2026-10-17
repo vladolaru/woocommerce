@@ -816,7 +816,9 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 			return $this->get_invalid_refund_amount_error();
 		}
 
-		return (float) wc_format_decimal( $refund_amount, wc_get_price_decimals() );
+		// The converted amount is refunded as it is, as client 11.1.0 passes it (includes/admin/class-wc-rest-payments-refunds-controller.php:87-96):
+		// rounding to the store's price decimals would change an amount in an order currency with more decimals.
+		return $refund_amount;
 	}
 
 	/**
