@@ -3,7 +3,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsFraudOutcomeTransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
@@ -372,7 +375,6 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->assertSame( 200, $response->get_status() );
 		$this->assertSame( 'pi_created', $data['id'] );
 		$this->assertSame( 'create_and_confirm_payment_intention', $this->api_client->last_call['method'] );
-		$this->assertSame( 'payment_intent_order_' . $order->get_id(), $this->api_client->last_call['idempotency_key'] );
 
 		$request_data = $this->api_client->last_call['request_data'];
 		$this->assertSame( 1234, $request_data['amount'] );
@@ -437,6 +439,61 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		if ( $sent ) {
 			$this->assertSame( (string) $order->get_id(), $request_data['level3']['merchant_reference'] );
 		}
+	}
+
+	/**
+	 * @testdox Payment detail create-intent route sends a fresh idempotency key on every request for the same order.
+	 *
+	 * Client 11.1.0 sets no key on this request, so its transport mints a UUID per request
+	 * (includes/wc-payment-api/class-wc-payments-api-client.php:2660-2690); the platform forwards the key to Stripe, which
+	 * would replay the first answer, or refuse another payment method, under a fixed key.
+	 */
+	public function test_payment_detail_create_intent_route_sends_a_fresh_idempotency_key_per_request(): void {
+		$order       = $this->create_order_for_generated_charge();
+		$http_client = new FakeWooPaymentsHttpClient();
+
+		$http_client->response = array(
+			'response' => array( 'code' => 200 ),
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => (string) wp_json_encode(
+				array(
+					'id'      => 'pi_created',
+					'status'  => 'succeeded',
+					'amount'  => 1234,
+					'charges' => array( 'data' => array() ),
+				)
+			),
+		);
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_test_mode_enabled' ) )
+			->getMock();
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$api_client = new WooPaymentsApiClient();
+		$api_client->init( $http_client, $account_service, wc_get_container()->get( WooPaymentsTransportLog::class ) );
+		$controller = new WooPaymentsPaymentDetailsRestController();
+		$controller->init( $api_client, $this->create_order_service(), wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$controller->register_routes();
+
+		foreach ( array( 'pm_declined', 'pm_other' ) as $payment_method ) {
+			$request = new WP_REST_Request( 'POST', '/wc/v3/payments/payment_intents' );
+			$request->set_body_params(
+				array(
+					'order_id'       => $order->get_id(),
+					'customer'       => 'cus_test',
+					'payment_method' => $payment_method,
+				)
+			);
+			$this->assertSame( 200, $this->server->dispatch( $request )->get_status() );
+		}
+
+		$keys = array_map( static fn( array $sent ): string => (string) ( $sent['headers']['Idempotency-Key'] ?? '' ), $http_client->requests );
+		$this->assertCount( 2, $keys );
+		foreach ( $keys as $key ) {
+			$this->assertMatchesRegularExpression( '/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', $key );
+		}
+		$this->assertNotSame( $keys[0], $keys[1], 'Each request carries its own key.' );
 	}
 
 	/**

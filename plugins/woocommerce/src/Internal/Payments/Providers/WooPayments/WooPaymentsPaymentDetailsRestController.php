@@ -200,7 +200,9 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 					(string) $request->get_param( 'payment_method' ),
 					$this->is_manual_capture_enabled()
 				),
-				'payment_intent_order_' . $order->get_id()
+				// No caller key: the transport mints one per request, so a new attempt for the same order is not a replay
+				// (client 11.1.0 sets none either, includes/wc-payment-api/class-wc-payments-api-client.php:2660-2690).
+				''
 			);
 
 			return new WP_REST_Response( $this->prepare_payment_intent_for_response( $intent, $request ) );
