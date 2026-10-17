@@ -320,10 +320,13 @@ class WooPaymentsWooPayBlocksDataExtractor {
 	/**
 	 * Replace WooPay custom message terms/privacy placeholders.
 	 *
+	 * The session's store data sends the message formatted too, as client 11.1.0 get_formatted_custom_terms() does
+	 * (includes/woopay/class-woopay-session.php:942-960).
+	 *
 	 * @param string $custom_message WooPay custom message.
 	 * @return string
 	 */
-	private function format_custom_terms( string $custom_message ): string {
+	public function format_custom_terms( string $custom_message ): string {
 		$terms_value          = $this->get_policy_page_link_value( wc_terms_and_conditions_page_id(), __( 'Terms of Service', 'woocommerce' ) );
 		$privacy_policy_value = $this->get_policy_page_link_value( wc_privacy_policy_page_id(), __( 'Privacy Policy', 'woocommerce' ) );
 		$replacement_map      = array(

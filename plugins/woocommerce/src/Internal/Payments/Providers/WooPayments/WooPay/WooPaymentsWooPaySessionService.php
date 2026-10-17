@@ -1009,7 +1009,7 @@ class WooPaymentsWooPaySessionService {
 		return array(
 			'store_name'                     => get_bloginfo( 'name' ),
 			'store_logo'                     => $store_logo,
-			'custom_message'                 => $custom_message,
+			'custom_message'                 => $blocks_data->format_custom_terms( $custom_message ),
 			'blog_id'                        => $this->get_store_blog_id(),
 			'blog_url'                       => get_site_url(),
 			'blog_checkout_url'              => $checkout_url,

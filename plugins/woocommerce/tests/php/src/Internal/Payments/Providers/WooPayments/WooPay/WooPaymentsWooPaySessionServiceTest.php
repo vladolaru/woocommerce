@@ -269,6 +269,36 @@ class WooPaymentsWooPaySessionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox WooPay session data sends the custom message with the terms link and the privacy label filled in.
+	 *
+	 * Client 11.1.0 sends get_formatted_custom_terms() as store_data.custom_message (includes/woopay/class-woopay-session.php:551,
+	 * :942-960); WooPay shows it under its pay button when a block checkout has no Terms block.
+	 */
+	public function test_init_session_request_sends_the_formatted_custom_message(): void {
+		$terms_page = self::factory()->post->create(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'publish',
+				'post_title'  => 'Terms',
+			)
+		);
+		update_option( 'woocommerce_terms_page_id', $terms_page );
+		update_option( 'wp_page_for_privacy_policy', 0 );
+		$sut = $this->create_service(
+			array(
+				'platform_checkout_custom_message' => 'By placing this order, you agree to our [terms] and understand our [privacy_policy].',
+			)
+		);
+
+		$result = $sut->start_init_session_request( 'shopper@example.com' );
+
+		$this->assertSame(
+			'By placing this order, you agree to our <a href="' . esc_url( (string) get_permalink( $terms_page ) ) . '">Terms of Service</a> and understand our Privacy Policy.',
+			$result['store_data']['custom_message']
+		);
+	}
+
+	/**
 	 * @testdox WooPay session data names the versioned Store API base, wc/store/v1.
 	 *
 	 * Client 11.1.0 class-woopay-session.php:908-919 sends the Store API cart route's namespace.
