@@ -487,9 +487,10 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 					);
 			} catch ( WooPaymentsApiException $capture_exception ) {
 				// Only a failed capture call marks the order; pre-check failures must not.
-				$this->reconcile_failed_terminal_capture( $order, $intent_id, $this->get_capture_failure_note_message( $capture_exception ) );
-
-				return $this->get_terminal_capture_error( $this->get_capture_exception_result( $capture_exception ) );
+				$result = $this->reconcile_failed_terminal_capture( $order, $intent_id, $this->get_capture_failure_note_message( $capture_exception ) );
+				if ( null === $result ) {
+					return $this->get_terminal_capture_error( $this->get_capture_exception_result( $capture_exception ) );
+				}
 			}
 
 			if ( 'succeeded' !== (string) ( $result['status'] ?? '' ) ) {
@@ -876,28 +877,38 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 	 * Reconcile a terminal capture that failed with an API error.
 	 *
 	 * The intent is read again to catch an authorization that already expired (the site may have missed the charge.expired
-	 * webhook). A canceled intent fails the order with the expired note; anything else records the plain capture failure.
+	 * webhook) and a capture that went through although the call failed, for example on a timeout. A canceled intent fails
+	 * the order with the expired note; a succeeded one is returned so the caller records the capture as it does any
+	 * capture; anything else records the plain capture failure.
 	 *
 	 * @param WC_Order $order     Order.
 	 * @param string   $intent_id Intent ID.
 	 * @param string   $message   Capture error message.
+	 * @return array<string,mixed>|null The captured intent, or null when the capture failed.
 	 */
-	private function reconcile_failed_terminal_capture( WC_Order $order, string $intent_id, string $message ): void {
+	private function reconcile_failed_terminal_capture( WC_Order $order, string $intent_id, string $message ): ?array {
 		try {
 			$intent = $this->api_client->get_payment_intention( $intent_id );
 		} catch ( WooPaymentsApiException $fetch_exception ) {
 			$this->record_failed_terminal_capture( $order, $intent_id, $message );
 
-			return;
+			return null;
 		}
 
-		if ( 'canceled' === (string) ( $intent['status'] ?? '' ) ) {
+		$status = (string) ( $intent['status'] ?? '' );
+		if ( 'succeeded' === $status ) {
+			return $intent;
+		}
+
+		if ( 'canceled' === $status ) {
 			$this->record_expired_terminal_capture( $order, $intent_id );
 
-			return;
+			return null;
 		}
 
 		$this->record_failed_terminal_capture( $order, $intent_id, $message );
+
+		return null;
 	}
 
 	/**

@@ -1755,6 +1755,47 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
+	 * @testdox A capture call that fails although the platform captured is recorded as captured, and a capture of another intent is refused.
+	 *
+	 * A timeout can fail the call after Stripe captured. The intent read after the failure says succeeded, so the order is
+	 * recorded as paid, as a successful capture records it. Client 11.1.0 records any failed call as a failure with
+	 * requires_capture in capture_charge() (gw:3991-4053), completes the order when the app retries the
+	 * same intent (includes/admin/class-wc-rest-payments-orders-controller.php:222-228) and refuses a new one by the stored intent (:211).
+	 */
+	public function test_capture_that_fails_after_the_platform_captured_is_recorded_as_captured(): void {
+		global $wp_rest_server;
+
+		$order = $this->create_order( 12.34, 'USD' );
+		$order->update_status( 'on-hold' );
+		$read = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'requires_capture',
+			'currency' => 'usd',
+			'metadata' => array( 'order_id' => (string) $order->get_id() ),
+		);
+		$this->api_client->payment_intention_response_queue = array( $read, array_merge( $read, array( 'status' => 'succeeded' ) ) );
+		$this->api_client->captured_intention_exception     = new WooPaymentsApiException( 'Request timed out.', 'wcpay_http_request_failed', 504 );
+		$wp_rest_server                                     = new WP_REST_Server();
+		$this->sut->register_routes();
+
+		$first = $wp_rest_server->dispatch( $this->make_route_capture_request( $order, 'pi_terminal' ) );
+
+		$this->assertSame( 200, $first->get_status() );
+		$this->assertSame( 'succeeded', $first->get_data()['status'] );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'completed', $order->get_status() );
+		$this->assertSame( 'succeeded', $order->get_meta( '_intention_status' ) );
+		$this->assertSame( 'pi_terminal', $order->get_meta( '_intent_id' ) );
+		$this->assertStringEndsWith( '/payments/readers/receipts/pi_terminal', (string) $order->get_meta( 'receipt_url' ) );
+
+		$this->api_client->captured_intention_exception = null;
+		$this->api_client->payment_intention_response   = $read;
+		$second = $wp_rest_server->dispatch( $this->make_route_capture_request( $order, 'pi_another' ) );
+		$this->assertSame( 409, $second->get_status() );
+		$this->assertSame( array( 'pi_terminal' ), array_column( $this->api_client->captures, 'intent_id' ), 'The other intent is never captured.' );
+	}
+
+	/**
 	 * @testdox An in-person purchase without subscriptions saves no generated card.
 	 */
 	public function test_capture_terminal_payment_saves_no_card_without_subscriptions(): void {
