@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
 use WC_Order;
 
 /**
@@ -22,7 +23,7 @@ trait WooPaymentsMoneyMovementControllerTestTrait {
 	 */
 	private function create_order_service(): WooPaymentsOrderDetailsService {
 		$service = new WooPaymentsOrderDetailsService();
-		$service->init( new WooPaymentsOrderDataService() );
+		$service->init( new WooPaymentsOrderDataService(), wc_get_container()->get( WooPaymentsLevel3Service::class ) );
 
 		return $service;
 	}

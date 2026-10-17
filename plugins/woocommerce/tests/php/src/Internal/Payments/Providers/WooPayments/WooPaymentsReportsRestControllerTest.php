@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsReportsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransactionsListRequest;
 use WC_Order;
@@ -687,7 +688,7 @@ class WooPaymentsReportsRestControllerTest extends WC_REST_Unit_Test_Case {
 	 */
 	private function create_order_service(): WooPaymentsOrderDetailsService {
 		$service = new WooPaymentsOrderDetailsService();
-		$service->init( new WooPaymentsOrderDataService() );
+		$service->init( new WooPaymentsOrderDataService(), wc_get_container()->get( WooPaymentsLevel3Service::class ) );
 
 		return $service;
 	}

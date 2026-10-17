@@ -30,14 +30,23 @@ class WooPaymentsOrderDetailsService {
 	private WooPaymentsOrderDataService $order_data_service;
 
 	/**
+	 * WooPayments Level 3 data service.
+	 *
+	 * @var WooPaymentsLevel3Service
+	 */
+	private WooPaymentsLevel3Service $level3_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
 	 * @param WooPaymentsOrderDataService $order_data_service Order data service.
+	 * @param WooPaymentsLevel3Service    $level3_service     Level 3 data service.
 	 */
-	final public function init( WooPaymentsOrderDataService $order_data_service ): void {
+	final public function init( WooPaymentsOrderDataService $order_data_service, WooPaymentsLevel3Service $level3_service ): void {
 		$this->order_data_service = $order_data_service;
+		$this->level3_service     = $level3_service;
 	}
 
 	/**
@@ -176,7 +185,7 @@ class WooPaymentsOrderDetailsService {
 
 	/**
 	 * Build the create-and-confirm payment intent request for an order: an off-session card payment of the order total,
-	 * with the order's metadata.
+	 * with the order's metadata and Level 3 data.
 	 *
 	 * @since 11.0.0
 	 *
@@ -187,7 +196,7 @@ class WooPaymentsOrderDetailsService {
 	 * @return array<string,mixed>
 	 */
 	public function build_create_payment_intent_request_from_order( WC_Order $order, string $customer_id, string $payment_method, bool $manual_capture ): array {
-		return array(
+		$request = array(
 			'amount'               => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), (string) $order->get_currency() ),
 			'capture_method'       => $manual_capture ? 'manual' : 'automatic',
 			'currency'             => strtolower( (string) $order->get_currency() ),
@@ -197,6 +206,15 @@ class WooPaymentsOrderDetailsService {
 			'payment_method_types' => array( 'card' ),
 			'off_session'          => true,
 		);
+
+		// Level 3 data goes only with a US account's order, as on checkout and in client 11.1.0
+		// (includes/admin/class-wc-rest-payments-payment-intents-controller.php:137).
+		$level3 = $this->level3_service->get_data_from_order( $order );
+		if ( array() !== $level3 ) {
+			$request['level3'] = $level3;
+		}
+
+		return $request;
 	}
 
 	/**

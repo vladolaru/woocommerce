@@ -6,6 +6,9 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsFraudOutcomeTransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLevel3Service;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentDetailsRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransactionsListRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTransactionsRestController;
@@ -383,6 +386,57 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$this->assertSame( $order->get_order_number(), $request_data['metadata']['order_number'] );
 		$this->assertSame( 'single', (string) $request_data['metadata']['payment_type'] );
 		$this->assertSame( 'no', $request_data['metadata']['subscription_payment'] );
+	}
+
+	/**
+	 * @testdox Payment detail create-intent route sends Level 3 data for a $country account's order: $sent.
+	 *
+	 * Client 11.1.0 sets the Level 3 data on the request (includes/admin/class-wc-rest-payments-payment-intents-controller.php:137),
+	 * which the request leaves out when it is empty (includes/core/server/request/class-create-intention.php:153-159); the Level 3
+	 * service returns data only for a US account.
+	 *
+	 * @testWith ["US", true]
+	 *           ["PL", false]
+	 *
+	 * @param string $country Account country.
+	 * @param bool   $sent    Whether the request carries Level 3 data.
+	 */
+	public function test_payment_detail_create_intent_route_sends_level3_data_for_us_accounts( string $country, bool $sent ): void {
+		$order                      = $this->create_order_for_generated_charge();
+		$this->api_client->response = array(
+			'id'      => 'pi_created',
+			'amount'  => 1234,
+			'charges' => array( 'data' => array() ),
+		);
+		$account_service            = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_account_country' ) )
+			->getMock();
+		$account_service->method( 'get_account_country' )->willReturn( $country );
+		$level3_service = new WooPaymentsLevel3Service();
+		$level3_service->init( $account_service );
+		$order_service = new WooPaymentsOrderDetailsService();
+		$order_service->init( new WooPaymentsOrderDataService(), $level3_service );
+		$controller = new WooPaymentsPaymentDetailsRestController();
+		$controller->init( $this->api_client, $order_service, wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$controller->register_routes();
+
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/payment_intents' );
+		$request->set_body_params(
+			array(
+				'order_id'       => $order->get_id(),
+				'customer'       => 'cus_test',
+				'payment_method' => 'pm_test',
+			)
+		);
+		$response = $this->server->dispatch( $request );
+
+		$this->assertSame( 200, $response->get_status() );
+		$request_data = $this->api_client->last_call['request_data'];
+		$this->assertSame( $sent, array_key_exists( 'level3', $request_data ) );
+		if ( $sent ) {
+			$this->assertSame( (string) $order->get_id(), $request_data['level3']['merchant_reference'] );
+		}
 	}
 
 	/**
