@@ -23,6 +23,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTracks;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Throwable;
@@ -741,7 +742,7 @@ class WooPaymentsOnboardingService {
 	}
 
 	/**
-	 * Delete the connected account, reading as no account while the platform deletes it.
+	 * Delete the connected account, reading as no account while the platform deletes it, then reset the store's account state.
 	 *
 	 * @param bool $test_mode Whether to delete a test-mode account.
 	 * @return array
@@ -759,7 +760,13 @@ class WooPaymentsOnboardingService {
 
 		$success = 'success' === ( $response['result'] ?? '' );
 		if ( $success ) {
-			$this->set_onboarding_test_mode( false );
+			// Client 11.1.0 resets the store after both deletions (includes/class-wc-payments-onboarding-service.php:837, :896).
+			$this->get_account_service()->cleanup_after_account_reset();
+			// Its account.deleted webhook, sent during the delete, also clears these (includes/class-wc-payments-webhook-processing-service.php:209-221).
+			// It cannot land here: with the account cache emptied above, the store no longer registers its webhook route.
+			$this->proxy->call_function( 'delete_option', WooPaymentsService::NOX_PROFILE_OPTION_KEY );
+			$this->proxy->call_function( 'delete_option', WooPaymentsService::NOX_ONBOARDING_LOCKED_KEY );
+			wc_get_container()->get( WooPaymentsTokenService::class )->clear_all_cached_payment_methods();
 		} else {
 			$this->get_account_service()->clear_cache();
 		}

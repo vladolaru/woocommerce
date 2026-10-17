@@ -116,7 +116,7 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox account.deleted resets account state, refreshes account data, and clears the payment method caches.
+	 * @testdox account.deleted resets account state, clears the NOX profile and lock, refreshes account data, and clears the payment method caches.
 	 */
 	public function test_account_deleted_cleans_state_refreshes_account_data_and_clears_payment_method_caches(): void {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
@@ -140,8 +140,14 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 			->method( 'clear_all_cached_payment_methods' );
 
 		$sut = $this->create_ingestor_with_account_services( $account_service, $token_service );
+		update_option( 'woocommerce_woopayments_nox_profile', array( 'onboarding' => array() ) );
+		update_option( 'woocommerce_woopayments_nox_onboarding_locked', 1 );
 
 		$sut->process( $this->create_account_event( 'account.deleted' ) );
+
+		// Client 11.1.0 clears the NOX profile and lock in its webhook branch (includes/class-wc-payments-webhook-processing-service.php:210-215).
+		$this->assertFalse( get_option( 'woocommerce_woopayments_nox_profile' ) );
+		$this->assertFalse( get_option( 'woocommerce_woopayments_nox_onboarding_locked' ) );
 	}
 
 	/**

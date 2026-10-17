@@ -1406,7 +1406,7 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should reset stored gateway, onboarding, and NOX state after an account deletion.
+	 * @testdox Should reset stored gateway and onboarding state after an account deletion, leaving the NOX profile and lock to the webhook.
 	 */
 	public function test_cleanup_after_account_reset_resets_stored_state(): void {
 		update_option(
@@ -1458,8 +1458,8 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertFalse( get_option( 'wcpay_connection_success_modal_dismissed' ) );
 		$this->assertFalse( get_option( 'wcpay_onboarding_embedded_kyc_in_progress' ) );
 		$this->assertFalse( get_option( 'wcpay_test_mode_enabled_date' ) );
-		$this->assertFalse( get_option( 'woocommerce_woopayments_nox_profile' ) );
-		$this->assertFalse( get_option( 'woocommerce_woopayments_nox_onboarding_locked' ) );
+		$this->assertSame( array( 'id' => 'nox_profile' ), get_option( 'woocommerce_woopayments_nox_profile' ) );
+		$this->assertSame( 'yes', get_option( 'woocommerce_woopayments_nox_onboarding_locked' ) );
 		$this->assertFalse( get_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments' ) );
 		$this->assertFalse( get_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version' ) );
 		$this->assertFalse( get_transient( 'wcpay_stripe_onboarding_state' ) );

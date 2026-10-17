@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use InvalidArgumentException;
 use RuntimeException;
 
@@ -79,6 +80,10 @@ class WooPaymentsAccountEventHandler {
 				}
 
 				$this->account_service->cleanup_after_account_reset();
+				// The webhook also clears the NOX onboarding profile and lock (client 11.1.0
+				// includes/class-wc-payments-webhook-processing-service.php:210-215).
+				delete_option( WooPaymentsService::NOX_PROFILE_OPTION_KEY );
+				delete_option( WooPaymentsService::NOX_ONBOARDING_LOCKED_KEY );
 				$this->account_service->refresh_account_data();
 				$this->token_service->clear_all_cached_payment_methods();
 				return;

@@ -53,10 +53,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 
 	private const POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT = 'wcpay_post_kyc_activation_eligible';
 
-	private const NOX_PROFILE_OPTION = 'woocommerce_woopayments_nox_profile';
-
-	private const NOX_ONBOARDING_LOCKED_OPTION = 'woocommerce_woopayments_nox_onboarding_locked';
-
 	private const INCENTIVES_USAGE_OPTION = 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments';
 
 	private const INCENTIVES_USAGE_VERSION_OPTION = 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version';
@@ -421,7 +417,9 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * Reset the store's WooPayments account and onboarding state after the platform deleted the account.
 	 *
 	 * The gateway is turned off and leaves test mode with only cards enabled; the onboarding and incentive options and every
-	 * database cache entry go. No account refresh runs here: the webhook handler refreshes after the reset.
+	 * database cache entry go. Runs after the store's own account deletion and on the account.deleted webhook, as client
+	 * 11.1.0 cleanup_on_account_reset() does (includes/class-wc-payments-onboarding-service.php:932-965). The NOX profile and
+	 * lock and the cached saved payment methods are left to the callers, and no account refresh runs here.
 	 *
 	 * @since 11.0.0
 	 * @return void
@@ -445,8 +443,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		$this->legacy_proxy->call_function( 'delete_transient', self::TEST_TO_LIVE_NOTICE_ELIGIBLE_TRANSIENT );
 		$this->legacy_proxy->call_function( 'delete_transient', self::POST_KYC_ACTIVATION_ELIGIBLE_TRANSIENT );
 		$this->legacy_proxy->call_function( 'delete_transient', self::ONBOARDING_DISABLED_TRANSIENT );
-		$this->legacy_proxy->call_function( 'delete_option', self::NOX_PROFILE_OPTION );
-		$this->legacy_proxy->call_function( 'delete_option', self::NOX_ONBOARDING_LOCKED_OPTION );
 
 		$this->database_cache->delete_all();
 

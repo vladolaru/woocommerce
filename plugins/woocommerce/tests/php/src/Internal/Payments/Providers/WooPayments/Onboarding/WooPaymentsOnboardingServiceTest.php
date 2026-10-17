@@ -1888,7 +1888,8 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_reset_onboarding_uses_the_api_client_and_overwrites_stale_account_cache(): void {
 		$deleted_test_mode = null;
-		$api_client        = new class( $deleted_test_mode ) extends WooPaymentsApiClient {
+		$cache_at_delete   = null;
+		$api_client        = new class( $deleted_test_mode, $cache_at_delete ) extends WooPaymentsApiClient {
 			/**
 			 * Captured deleted account mode.
 			 *
@@ -1897,12 +1898,21 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			private ?bool $deleted_test_mode;
 
 			/**
+			 * The account cache the store held while the platform deleted the account.
+			 *
+			 * @var mixed
+			 */
+			private $cache_at_delete;
+
+			/**
 			 * Constructor.
 			 *
 			 * @param bool|null $deleted_test_mode Captured deleted account mode.
+			 * @param mixed     $cache_at_delete   Captured account cache.
 			 */
-			public function __construct( ?bool &$deleted_test_mode ) {
+			public function __construct( ?bool &$deleted_test_mode, &$cache_at_delete ) {
 				$this->deleted_test_mode = &$deleted_test_mode;
+				$this->cache_at_delete   = &$cache_at_delete;
 			}
 
 			/**
@@ -1922,6 +1932,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			 */
 			public function delete_account( bool $test_mode = false ): array {
 				$this->deleted_test_mode = $test_mode;
+				$this->cache_at_delete   = get_option( 'wcpay_account_data' );
 
 				return array(
 					'result' => 'success',
@@ -1998,12 +2009,14 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$result = $this->sut->reset_onboarding( 'US' );
-		$cached = get_option( 'wcpay_account_data' );
 
 		$this->assertSame( true, $result['success'] );
 		$this->assertTrue( $deleted_test_mode );
-		$this->assertIsArray( $cached );
-		$this->assertSame( array(), $cached['data'] );
+		$this->assertIsArray( $cache_at_delete );
+		$this->assertSame( array(), $cache_at_delete['data'], 'The store reads as having no account while the platform deletes it.' );
+		// After the delete the reset empties the database cache, account included, so the next read asks the platform, as client
+		// 11.1.0 cleanup_on_account_reset() does (includes/class-wc-payments-onboarding-service.php:953, includes/class-database-cache.php:78-79).
+		$this->assertFalse( get_option( 'wcpay_account_data' ) );
 		$this->assertSame( 'no', get_option( 'wcpay_onboarding_test_mode' ) );
 		$this->assertFalse( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) );
 	}
@@ -3145,6 +3158,92 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $result['success'] );
 		$this->assertSame( $is_test_drive, is_array( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ) ) );
+	}
+
+	/**
+	 * Store state seeded before an account deletion, and the platform's answer to the delete call.
+	 *
+	 * @return array<string,array{0:string,1:array<int,mixed>,2:array<string,string>,3:bool}>
+	 */
+	public function provide_account_deletions(): array {
+		// The success and failure bodies client 11.1.0 reads after delete_account() (includes/class-wc-payments-onboarding-service.php:831-832).
+		return array(
+			'reset onboarding'                  => array( 'reset_onboarding', array(), array( 'result' => 'success' ), true ),
+			'set up live payments (test drive)' => array( 'disable_test_account', array( true ), array( 'result' => 'success' ), true ),
+			'platform refuses the delete'       => array( 'reset_onboarding', array(), array( 'result' => 'error' ), false ),
+		);
+	}
+
+	/**
+	 * @testdox Deleting the account through onboarding ($method) resets the store's account state when the platform deletes it.
+	 *
+	 * Client 11.1.0 runs cleanup_on_account_reset() after both deletions (includes/class-wc-payments-onboarding-service.php:837,
+	 * :896, :932-965): gateway off, out of test mode, cards only, the incentive pair and onboarding transients gone, the
+	 * database cache emptied. Its account.deleted webhook, sent during the delete, also clears the NOX profile and lock and the
+	 * cached saved payment methods (includes/class-wc-payments-webhook-processing-service.php:209-221); the store's webhook route
+	 * is gone once the account cache is empty, so the delete clears them itself.
+	 *
+	 * @dataProvider provide_account_deletions
+	 *
+	 * @param string               $method    Onboarding service method.
+	 * @param array<int,mixed>     $args      Method arguments.
+	 * @param array<string,string> $response  Platform answer to the delete call.
+	 * @param bool                 $deleted   Whether the platform deleted the account.
+	 */
+	public function test_account_deletion_resets_the_store_account_state( string $method, array $args, array $response, bool $deleted ): void {
+		$settings = array(
+			'enabled'                        => 'yes',
+			'test_mode'                      => 'yes',
+			'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ),
+		);
+		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, $settings );
+		update_option( 'wcpay_onboarding_test_mode', 'yes' );
+		update_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments', 'yes' );
+		update_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version', 2 );
+		update_option( WooPaymentsDatabaseCache::RECOMMENDED_PAYMENT_METHODS_KEY, array( 'data' => array( 'card' ) ) );
+		update_option( WooPaymentsService::NOX_PROFILE_OPTION_KEY, array( 'onboarding' => array( 'PL' => array( 'steps' => array() ) ) ) );
+		update_option( WooPaymentsService::NOX_ONBOARDING_LOCKED_KEY, 0 );
+		set_transient( 'wcpay_stripe_onboarding_state', 'state', DAY_IN_SECONDS );
+		$shopper_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		update_user_meta( $shopper_id, '_wcpay_payment_methods', array( 'cus_deleted' => array() ) );
+		update_option( 'wcpay_pm_cus_deleted', array( 'data' => array() ), false );
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_available', 'delete_account' ) )
+			->getMock();
+		$api_client->method( 'is_available' )->willReturn( true );
+		$api_client->expects( $this->once() )->method( 'delete_account' )->with( true )->willReturn( $response );
+		$this->set_onboarding_collaborators( $api_client );
+
+		$result = $this->onboarding_service->{$method}( ...$args );
+
+		$this->assertSame( $deleted, $result['success'] );
+		$stored = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION );
+		if ( ! $deleted ) {
+			$this->assertSame( $settings, $stored );
+			$this->assertSame( array( 'onboarding' => array( 'PL' => array( 'steps' => array() ) ) ), get_option( WooPaymentsService::NOX_PROFILE_OPTION_KEY ) );
+			$this->assertNotFalse( get_option( WooPaymentsService::NOX_ONBOARDING_LOCKED_KEY ) );
+			$this->assertNotSame( '', get_user_meta( $shopper_id, '_wcpay_payment_methods', true ) );
+			$this->assertSame( 'yes', get_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments' ) );
+			$this->assertSame( 'state', get_transient( 'wcpay_stripe_onboarding_state' ) );
+			return;
+		}
+
+		$this->assertSame( 'no', $stored['enabled'] );
+		$this->assertSame( 'no', $stored['test_mode'] );
+		$this->assertSame( array( 'card' ), $stored['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'no', get_option( 'wcpay_onboarding_test_mode' ) );
+		$this->assertFalse( get_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments' ) );
+		$this->assertFalse( get_option( 'woocommerce_admin_pes_incentive_woopayments_store_had_woopayments_version' ) );
+		$this->assertFalse( get_option( WooPaymentsDatabaseCache::RECOMMENDED_PAYMENT_METHODS_KEY ) );
+		$this->assertFalse( get_transient( 'wcpay_stripe_onboarding_state' ) );
+		$this->assertFalse( get_option( WooPaymentsService::NOX_PROFILE_OPTION_KEY ) );
+		$this->assertFalse( get_option( WooPaymentsService::NOX_ONBOARDING_LOCKED_KEY ) );
+		$this->assertSame( '', get_user_meta( $shopper_id, '_wcpay_payment_methods', true ), 'The cached saved payment methods are cleared.' );
+		$this->assertFalse( get_option( 'wcpay_pm_cus_deleted' ) );
+		if ( 'disable_test_account' === $method ) {
+			$this->assertIsArray( get_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT ), 'The test-drive methods stay saved for the live account.' );
+		}
 	}
 
 	/**
