@@ -21,6 +21,7 @@ use WC_REST_Unit_Test_Case;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
+use WP_REST_Server;
 
 /**
  * Tests for the WooPaymentsTerminalPaymentsRestController class.
@@ -1014,7 +1015,8 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$this->assertSame( 'wcpay_capture_error', $response->get_error_code() );
 		$this->assertSame( 400, $response->get_error_data()['status'] );
 		$this->assertStringContainsString( 'Capture failed.', $response->get_error_message() );
-		$this->assertSame( '', $order->get_meta( '_intent_id', true ) );
+		// Client 11.1.0 stores the intent before its capture (includes/admin/class-wc-rest-payments-orders-controller.php:211), so it stays after a failure.
+		$this->assertSame( 'pi_terminal', $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status', true ), 'A failed capture must record the still-capturable authorization like the plugin.' );
 		$this->assertNotEmpty( $this->get_order_note_containing( $order, 'failed' ), 'A failed capture must leave a failure note on the order.' );
 	}
@@ -1668,6 +1670,91 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 	}
 
 	/**
+	 * @testdox After a capture whose card cannot be saved fails the request, a capture of another intent for the order is refused and a retry of the same intent completes it.
+	 *
+	 * Client 11.1.0 refuses a capture when the order holds another intent (includes/admin/class-wc-rest-payments-orders-controller.php:187-194,
+	 * tests/unit/admin/test-class-wc-rest-payments-orders-controller.php:1860-1902), and it stores the intent before its capture (:211), so a
+	 * failure after the capture cannot let a second intent charge the order again.
+	 */
+	public function test_capture_after_a_failed_recording_refuses_another_intent_and_completes_on_a_retry(): void {
+		global $wp_rest_server;
+
+		list( $order, , $user_id ) = $this->set_up_in_person_subscription_purchase();
+		$wp_rest_server            = new WP_REST_Server();
+		$this->sut->register_routes();
+		$capture = function ( \WC_Order $order, string $intent_id ) use ( &$wp_rest_server ) {
+			return $wp_rest_server->dispatch( $this->make_route_capture_request( $order, $intent_id ) );
+		};
+
+		try {
+			// The token service answers null when it cannot read the payment method's details.
+			$this->replace_token_service( $this->once(), null );
+			$first = $capture( $order, 'pi_terminal' );
+			$this->assertSame( 500, $first->get_status() );
+			$this->assertSame( 'wcpay_server_error', $first->get_data()['code'] );
+			$this->assertSame( 'pi_terminal', wc_get_order( $order->get_id() )->get_meta( '_intent_id' ) );
+
+			$second = $capture( $order, 'pi_another' );
+			$this->assertSame( 409, $second->get_status() );
+			$this->assertSame( 'wcpay_payment_uncapturable', $second->get_data()['code'] );
+			$this->assertSame( array( 'pi_terminal' ), array_column( $this->api_client->captures, 'intent_id' ), 'The other intent is never captured.' );
+
+			// The app retries the same intent, which the platform now reads as captured.
+			$this->api_client->payment_intention_response['status'] = 'succeeded';
+			$this->replace_token_service( $this->once(), $this->create_card_token( $user_id ) );
+			$retry = $capture( $order, 'pi_terminal' );
+			$this->assertSame( 200, $retry->get_status() );
+			$order = wc_get_order( $order->get_id() );
+			$this->assertSame( 'completed', $order->get_status() );
+			$this->assertSame( 'succeeded', $order->get_meta( '_intention_status' ) );
+			$this->assertStringEndsWith( '/payments/readers/receipts/pi_terminal', (string) $order->get_meta( 'receipt_url' ) );
+			$this->assertSame( array( 'pi_terminal' ), array_column( $this->api_client->captures, 'intent_id' ), 'The retry captures nothing again.' );
+		} finally {
+			$this->reset_subscription_doubles();
+		}
+	}
+
+	/**
+	 * @testdox After a declined capture the order holds the intent, so a capture of another intent is refused and the same intent can be captured again.
+	 *
+	 * Client 11.1.0 stores the intent before its capture (includes/admin/class-wc-rest-payments-orders-controller.php:211) and
+	 * refuses another intent while the stored one is requires_capture (:187-194; tests/unit/admin/test-class-wc-rest-payments-orders-controller.php:1894,
+	 * the row pi_abc requires_capture, pi_xyz, added with "Prevent double-charging of terminal orders", woocommerce-payments #6670).
+	 */
+	public function test_capture_after_a_declined_capture_refuses_another_intent(): void {
+		global $wp_rest_server;
+
+		$order = $this->create_order( 12.34, 'USD' );
+		$this->set_capturable_terminal_intent( $order );
+		$this->api_client->captured_intention_response = array(
+			'id'      => 'pi_terminal',
+			'status'  => 'requires_capture',
+			'message' => 'The card was declined at capture.',
+		);
+		$wp_rest_server                                = new WP_REST_Server();
+		$this->sut->register_routes();
+
+		$first = $wp_rest_server->dispatch( $this->make_route_capture_request( $order, 'pi_terminal' ) );
+		$this->assertSame( 'wcpay_capture_error', $first->get_data()['code'] );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( 'pi_terminal', $order->get_meta( '_intent_id' ) );
+		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status' ) );
+
+		$second = $wp_rest_server->dispatch( $this->make_route_capture_request( $order, 'pi_another' ) );
+		$this->assertSame( 409, $second->get_status() );
+		$this->assertSame( 'wcpay_payment_uncapturable', $second->get_data()['code'] );
+
+		$this->api_client->captured_intention_response = array(
+			'id'       => 'pi_terminal',
+			'status'   => 'succeeded',
+			'currency' => 'usd',
+		);
+		$retry = $wp_rest_server->dispatch( $this->make_route_capture_request( $order, 'pi_terminal' ) );
+		$this->assertSame( 200, $retry->get_status() );
+		$this->assertSame( array( 'pi_terminal', 'pi_terminal' ), array_column( $this->api_client->captures, 'intent_id' ), 'Only the stored intent is captured.' );
+	}
+
+	/**
 	 * @testdox An in-person purchase without subscriptions saves no generated card.
 	 */
 	public function test_capture_terminal_payment_saves_no_card_without_subscriptions(): void {
@@ -1837,6 +1924,20 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
 		$request->set_param( 'order_id', $order->get_id() );
 		$request->set_param( 'payment_intent_id', 'pi_terminal' );
+
+		return $request;
+	}
+
+	/**
+	 * Build a capture request for the registered route, with the intent in the body as the apps send it.
+	 *
+	 * @param \WC_Order $order     Order.
+	 * @param string    $intent_id Intent ID.
+	 * @return WP_REST_Request
+	 */
+	private function make_route_capture_request( \WC_Order $order, string $intent_id ): WP_REST_Request {
+		$request = new WP_REST_Request( 'POST', '/wc/v3/payments/orders/' . $order->get_id() . '/capture_terminal_payment' );
+		$request->set_body_params( array( 'payment_intent_id' => $intent_id ) );
 
 		return $request;
 	}

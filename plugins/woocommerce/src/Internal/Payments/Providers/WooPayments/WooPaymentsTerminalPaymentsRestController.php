@@ -465,6 +465,10 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 			if ( '' !== $ipp_channel ) {
 				$order->update_meta_data( '_wcpay_ipp_channel', $ipp_channel );
 			}
+			// The intent is stored before the capture, so a capture of another intent for this order is refused once this one
+			// was tried, whatever happens to it; a retry of this intent still passes and completes the order. Client 11.1.0
+			// stores it there for the same check (includes/admin/class-wc-rest-payments-orders-controller.php:187-194, :211).
+			$order->update_meta_data( '_intent_id', $intent_id );
 			$order->save();
 
 			if ( 'succeeded' !== $status ) {
@@ -749,7 +753,6 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 		$charge = WooPaymentsIntentCodec::latest_charge( $intent );
 
 		$order->set_transaction_id( $intent_id );
-		$order->update_meta_data( '_intent_id', $intent_id );
 		$order->update_meta_data( '_intention_status', $status );
 		$order->update_meta_data( '_wcpay_mode', $this->account_service->get_order_mode() );
 		$order->update_meta_data( 'receipt_url', get_rest_url( null, $this->route_namespace . '/payments/readers/receipts/' . $intent_id ) );
