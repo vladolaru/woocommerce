@@ -66,10 +66,39 @@ class WooPaymentsWooPayPreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 	private array $original_options = array();
 
 	/**
+	 * The request globals this test sets, as they were before it: each key's value, or null when it was absent.
+	 *
+	 * @var array<string,array<string,mixed>>
+	 */
+	private array $original_request_globals = array();
+
+	/**
+	 * The current user before the test, and the global WordPress keeps it in.
+	 *
+	 * @var array{0:int,1:mixed}
+	 */
+	private array $original_user = array( 0, null );
+
+	/**
+	 * The customer before the test; the test checks out with its own session and customer.
+	 *
+	 * @var \WC_Customer|null
+	 */
+	private $original_customer = null;
+
+	/**
 	 * Set up the Store API server, the guard and a cart with a coupon at its usage limit.
 	 */
 	public function setUp(): void {
 		$this->fixture_set_up();
+		$this->save_request_globals();
+		$this->original_user     = array( get_current_user_id(), $GLOBALS['current_user'] ?? null );
+		$this->original_customer = WC()->customer;
+		// A session and customer of the test's own, so the checkout's address and email stay out of later tests; the
+		// fixture puts the original session back.
+		WC()->session = new \WC_Session_Handler();
+		WC()->session->init();
+		WC()->customer = new \WC_Customer( 0, true );
 
 		foreach ( array( 'woocommerce_enable_guest_checkout', 'woocommerce_enable_signup_and_login_from_checkout' ) as $option ) {
 			$this->original_options[ $option ] = get_option( $option, null );
@@ -101,7 +130,8 @@ class WooPaymentsWooPayPreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Remove this test's callbacks and the REST server.
+	 * Remove this test's callbacks and the REST server, and put back every request global, the current user, the session and
+	 * the customer the test replaced.
 	 */
 	public function tearDown(): void {
 		try {
@@ -113,12 +143,19 @@ class WooPaymentsWooPayPreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 			foreach ( $this->original_options as $option => $value ) {
 				null === $value ? delete_option( $option ) : update_option( $option, $value );
 			}
-			unset( $_SERVER['REQUEST_URI'] );
+			remove_action( 'shutdown', array( WC()->session, 'save_data' ), 20 );
+			WC()->customer                             = $this->original_customer;
 			$GLOBALS['wp_rest_server']                 = null;
 			WC()->payment_gateways()->payment_gateways = $this->gateways_before;
-			wp_set_current_user( 0 );
 		} finally {
-			$this->fixture_tear_down();
+			try {
+				$this->fixture_tear_down();
+			} finally {
+				// After the fixture, which clears the user agent and the current user for every WooPay test.
+				$this->restore_request_globals();
+				wp_set_current_user( $this->original_user[0] );
+				$GLOBALS['current_user'] = $this->original_user[1]; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restores the user object the test replaced.
+			}
 		}
 	}
 
@@ -220,8 +257,12 @@ class WooPaymentsWooPayPreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 	 * @param bool $signed Whether the request is a signed WooPay request.
 	 */
 	private function resolve_current_user( bool $signed ): void {
-		$_SERVER['REQUEST_URI'] = '/wp-json/wc/store/v1/checkout';
-		$handler                = $this->create_handler();
+		// A REST checkout is a POST; WordPress reads the method while it validates a login cookie. No login cookie: the
+		// shopper is a guest, whatever an earlier test left in $_COOKIE.
+		$_SERVER['REQUEST_METHOD'] = 'POST';
+		$_SERVER['REQUEST_URI']    = '/wp-json/wc/store/v1/checkout';
+		unset( $_COOKIE[ LOGGED_IN_COOKIE ], $_COOKIE[ AUTH_COOKIE ], $_COOKIE[ SECURE_AUTH_COOKIE ] );
+		$handler = $this->create_handler();
 		if ( $signed ) {
 			$_SERVER['HTTP_USER_AGENT'] = 'WooPay';
 			$this->force_real_blog_token_signed();
@@ -324,6 +365,38 @@ class WooPaymentsWooPayPreflightGuardStoreApiTest extends WC_Unit_Test_Case {
 				),
 			),
 		);
+	}
+
+	/**
+	 * Save the request globals this test sets: the server keys and the login cookies.
+	 */
+	private function save_request_globals(): void {
+		foreach ( array( 'REQUEST_METHOD', 'REQUEST_URI', 'HTTP_USER_AGENT' ) as $key ) {
+			$this->original_request_globals['server'][ $key ] = $_SERVER[ $key ] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Saved as is, to be put back as is.
+		}
+		foreach ( array( LOGGED_IN_COOKIE, AUTH_COOKIE, SECURE_AUTH_COOKIE ) as $key ) {
+			$this->original_request_globals['cookie'][ $key ] = $_COOKIE[ $key ] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Saved as is, to be put back as is.
+		}
+	}
+
+	/**
+	 * Put the saved request globals back, absent keys absent.
+	 */
+	private function restore_request_globals(): void {
+		foreach ( $this->original_request_globals['server'] ?? array() as $key => $value ) {
+			if ( null === $value ) {
+				unset( $_SERVER[ $key ] );
+			} else {
+				$_SERVER[ $key ] = $value;
+			}
+		}
+		foreach ( $this->original_request_globals['cookie'] ?? array() as $key => $value ) {
+			if ( null === $value ) {
+				unset( $_COOKIE[ $key ] );
+			} else {
+				$_COOKIE[ $key ] = $value;
+			}
+		}
 	}
 
 	/**
