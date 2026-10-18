@@ -163,21 +163,18 @@ class DefaultFreeExtensionsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Default extension bundles should offer the WooPayments extension while the WooPayments feature is off.
+	 * @testdox The default $bundle_key bundle should offer the WooPayments extension only while the WooPayments feature is off.
+	 * @testWith ["obw/core-profiler"]
+	 *           ["obw/basics"]
+	 *
+	 * @param string $bundle_key The default bundle that lists WooPayments on trunk.
 	 */
-	public function test_default_extension_bundles_offer_woopayments_while_the_feature_is_off(): void {
+	public function test_default_bundle_offers_woopayments_only_while_the_feature_is_off( string $bundle_key ): void {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+		$this->assertContains( 'woocommerce-payments', $this->get_default_bundle_plugin_slugs( $bundle_key ) );
 
-		$this->assertContains( 'woocommerce-payments', $this->get_default_extension_plugin_slugs() );
-	}
-
-	/**
-	 * @testdox Default extension bundles should not offer the WooPayments extension while the WooPayments feature is on.
-	 */
-	public function test_default_extension_bundles_do_not_offer_woopayments_while_the_feature_is_on(): void {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-
-		$this->assertNotContains( 'woocommerce-payments', $this->get_default_extension_plugin_slugs() );
+		$this->assertNotContains( 'woocommerce-payments', $this->get_default_bundle_plugin_slugs( $bundle_key ) );
 	}
 
 	/**
@@ -206,20 +203,19 @@ class DefaultFreeExtensionsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Get all plugin slugs from the default extension bundles.
+	 * Get the plugin slugs of one default extension bundle.
 	 *
+	 * @param string $bundle_key The bundle key.
 	 * @return string[]
 	 */
-	private function get_default_extension_plugin_slugs(): array {
-		$plugin_slugs = array();
-
+	private function get_default_bundle_plugin_slugs( string $bundle_key ): array {
 		foreach ( DefaultFreeExtensions::get_all() as $bundle ) {
-			foreach ( $bundle->plugins as $plugin ) {
-				$plugin_slugs[] = $plugin->key;
+			if ( $bundle_key === $bundle->key ) {
+				return wp_list_pluck( $bundle->plugins, 'key' );
 			}
 		}
 
-		return $plugin_slugs;
+		$this->fail( "No default bundle {$bundle_key}." );
 	}
 
 	/**

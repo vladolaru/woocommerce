@@ -288,4 +288,76 @@ class PaymentGatewaySuggestionsTest extends WC_REST_Unit_Test_Case {
 			EvaluateSuggestion::reset_memo();
 		}
 	}
+
+	/**
+	 * Remote specs with nothing visible make the suggestions fall back to the defaults, cached for three hours. The defaults
+	 * depend on the WooPayments feature, so a feature change drops the cache and the next request builds them again.
+	 *
+	 * @testdox Should serve cached default suggestions that follow a WooPayments feature change: $_dataName.
+	 * @testWith ["yes", "no", ["woocommerce-payments"]]
+	 *           ["no", "yes", []]
+	 *
+	 * @param string $before   The feature when the defaults are cached.
+	 * @param string $after    The feature on the next request.
+	 * @param array  $expected The plugins the WooPayments suggestion installs on the next request.
+	 */
+	public function test_cached_default_suggestions_follow_a_feature_change( string $before, string $after, array $expected ) {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $before );
+		// An admin request constructs the suggestions feature, which watches the WooPayments feature.
+		new Init();
+		$no_data_sources = static fn() => array();
+		add_filter( 'data_source_poller_data_sources', $no_data_sources );
+		// The WooPayments defaults carry store rules (selling venues, plugin versions) this test is not about; showing them
+		// leaves their plugins as the specs hold them.
+		$show_woopayments = static function ( $specs ) {
+			foreach ( $specs as $index => $spec ) {
+				$id = is_array( $spec ) ? ( $spec['id'] ?? '' ) : ( $spec->id ?? '' );
+				if ( str_starts_with( (string) $id, 'woocommerce_payments' ) ) {
+					if ( is_array( $spec ) ) {
+						$specs[ $index ]['is_visible'] = true;
+					} else {
+						$specs[ $index ]->is_visible = true;
+					}
+				}
+			}
+			return $specs;
+		};
+		add_filter( 'woocommerce_admin_payment_gateway_suggestion_specs', $show_woopayments );
+		// Remote specs whose only suggestion is hidden, so the defaults are served and cached.
+		set_transient(
+			'woocommerce_admin_payment_gateway_suggestions_specs',
+			array(
+				get_user_locale() => array(
+					(object) array(
+						'id'         => 'hidden-mock-gateway',
+						'is_visible' => false,
+					),
+				),
+			)
+		);
+		EvaluateSuggestion::reset_memo();
+
+		try {
+			Init::get_suggestions();
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $after );
+			EvaluateSuggestion::reset_memo();
+			$woopayments = array_values(
+				array_filter(
+					Init::get_suggestions(),
+					static fn( $suggestion ) => isset( $suggestion->id ) && str_starts_with( $suggestion->id, 'woocommerce_payments' )
+				)
+			);
+		} finally {
+			remove_filter( 'data_source_poller_data_sources', $no_data_sources );
+			remove_filter( 'woocommerce_admin_payment_gateway_suggestion_specs', $show_woopayments );
+			Init::delete_specs_transient();
+			EvaluateSuggestion::reset_memo();
+		}
+
+		$this->assertNotEmpty( $woopayments );
+		foreach ( $woopayments as $suggestion ) {
+			$this->assertSame( $expected, $suggestion->plugins ?? array() );
+		}
+	}
 }

@@ -8,6 +8,7 @@ namespace Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions;
 defined( 'ABSPATH' ) || exit;
 
 use Automattic\WooCommerce\Admin\RemoteSpecs\RemoteSpecsEngine;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 
 /**
@@ -26,6 +27,10 @@ class Init extends RemoteSpecsEngine {
 	public function __construct() {
 		PaymentGatewaysController::init();
 		add_action( 'update_option_woocommerce_default_country', array( $this, 'delete_specs_transient' ) );
+		// The fallback defaults cached with these specs depend on the WooPayments feature, so a feature change drops them.
+		foreach ( array( 'add_option_', 'update_option_', 'delete_option_' ) as $hook ) {
+			add_action( $hook . WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, array( __CLASS__, 'delete_specs_transient' ), 10, 0 );
+		}
 	}
 
 	/**
