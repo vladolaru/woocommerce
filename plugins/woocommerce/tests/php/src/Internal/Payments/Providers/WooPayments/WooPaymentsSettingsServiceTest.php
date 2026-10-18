@@ -2682,7 +2682,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Client 11.1.0 prices the Standard and High purchase-price rule at $1,000 in the store currency, converted at the
-	 * Multi-Currency USD rate when USD is an enabled currency, and in USD while its Multi-Currency flag is off
+	 * Multi-Currency USD rate when USD is an enabled currency, whatever its Multi-Currency flag says
 	 * (includes/fraud-prevention/class-fraud-risk-tools.php:167-261, :396-445; automatic rates from the rates cache,
 	 * includes/multi-currency/MultiCurrency.php:1707-1731); the platform converts the order total into the rule's currency.
 	 * The "USD listed without a rate" row is the decided 100000|usd answer, where client 11.1.0 writes 100000|pln at its 1.0 rate.
@@ -2785,7 +2785,8 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_preset_threshold_cases(): array {
 		return array(
-			'Multi-Currency flag off'                => array( 'the WooPayments Multi-Currency flag is off', 'EUR', '0', array(), null, 'pln', null, '100000|usd' ),
+			'Multi-Currency flag off'                => array( 'the WooPayments Multi-Currency flag is off', 'EUR', '0', array(), null, 'pln', null, '100000|eur' ),
+			'flag off, USD at a manual rate'         => array( 'the flag is off and USD is enabled at a manual rate', 'EUR', '0', array( 'EUR', 'USD' ), 'manual:1.08', 'pln', null, '92593|eur' ),
 			'USD enabled at a manual rate'           => array( 'USD is an enabled currency at a manual rate', 'PLN', null, array( 'PLN', 'USD' ), 'manual:0.23', 'pln', null, '434783|pln' ),
 			'zero-decimal store, USD manual rate'    => array( 'a zero-decimal store currency converts at a manual USD rate', 'JPY', null, array( 'JPY', 'USD' ), 'manual:0.0066667', 'pln', null, '149999|jpy' ),
 			'two-decimal store, USD manual rate'     => array( 'a two-decimal store currency converts at a manual USD rate', 'EUR', null, array( 'EUR', 'USD' ), 'manual:1.08', 'pln', null, '92593|eur' ),

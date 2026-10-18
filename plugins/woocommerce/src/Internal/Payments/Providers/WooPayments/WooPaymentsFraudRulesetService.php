@@ -369,18 +369,14 @@ class WooPaymentsFraudRulesetService {
 
 	/**
 	 * Get the Standard and High purchase-price threshold: $1,000 in the store currency, converted at the Multi-Currency USD
-	 * rate when USD is an enabled currency, or in USD while the WooPayments Multi-Currency flag is off, as client 11.1.0
-	 * builds it (includes/fraud-prevention/class-fraud-risk-tools.php:396-445). The platform converts the order total into
-	 * the rule's currency, so with no USD rate at all the threshold stays in USD. The converted amount is written in the store
-	 * currency's own minor units (whole yen for JPY), where client 11.1.0 treats it as cents whatever the currency.
+	 * rate when USD is an enabled currency, as client 11.1.0 builds it whatever its Multi-Currency flag says
+	 * (includes/fraud-prevention/class-fraud-risk-tools.php:396-445). The platform converts the order total into the rule's
+	 * currency, so with no USD rate at all the threshold stays in USD. The converted amount is written in the store currency's
+	 * own minor units (whole yen for JPY), where client 11.1.0 treats it as cents whatever the currency.
 	 *
 	 * @return string
 	 */
 	private function get_fraud_threshold_amount(): string {
-		if ( '1' !== (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ) ) {
-			return '100000|usd';
-		}
-
 		$amount         = 100000;
 		$store_currency = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
 		$enabled_codes  = get_option( 'wcpay_multi_currency_enabled_currencies', array() );
