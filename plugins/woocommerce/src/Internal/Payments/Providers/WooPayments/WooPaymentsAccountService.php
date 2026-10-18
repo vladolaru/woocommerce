@@ -147,8 +147,9 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get normalized WooPayments account cache data.
+	 * Get normalized WooPayments account data, refreshing the cache from the platform when it is stale or a refresh is forced.
 	 *
+	 * A refresh fetches the account, rewrites the cache and, on success, fires `woocommerce_payments_account_refreshed`.
 	 * Without a platform connection this returns no account and leaves the cache alone. While plugins load the
 	 * connection state is not known yet, so this serves the cache as it is, with no fetch and no write.
 	 *
