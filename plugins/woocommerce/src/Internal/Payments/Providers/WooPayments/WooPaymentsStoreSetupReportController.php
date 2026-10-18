@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -376,8 +377,8 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 				'custom_message'          => $settings['platform_checkout_custom_message'] ?? '',
 				'invalid_extension_found' => (bool) get_option( 'woopay_invalid_extension_found', false ),
 			),
-			// Client 11.1.0 reads the Multi-Currency feature flag with a default of enabled (class-wc-payments-features.php:67-68).
-			'multi_currency_enabled'                      => '1' === (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ),
+			// Whether Multi-Currency runs, as client 11.1.0 sends its own module's state (class-wc-payments-account.php:2976).
+			'multi_currency_enabled'                      => wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->should_core_register(),
 			'stripe_billing_enabled'                      => wc_get_container()->get( WooPaymentsStripeBillingModule::class )->is_stripe_billing_enabled(),
 			// Client 11.1.0 sends its own version (class-wc-payments-account.php:2981): the version the user agent reports too.
 			'plugin'                                      => array(

@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use ActionScheduler_Store;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistrarInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
@@ -18,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicateGatewayMethodsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStoreSetupReportController;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
@@ -46,6 +48,9 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 
 		delete_option( 'WPLANG' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
+		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
+		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_option( MultiCurrencyCacheInterface::CURRENCIES_KEY );
 		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
@@ -482,16 +487,18 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report real duplicate gateways and the Multi-Currency flag in the store setup snapshot: $_dataName.
+	 * @testdox Should report real duplicate gateways and whether core Multi-Currency runs in the store setup snapshot: $_dataName.
 	 * @dataProvider provider_store_setup_sync_multi_currency_flag
 	 *
-	 * @param array<string,string>   $flag_options        Multi-Currency flag option to write; none leaves it never written.
+	 * @param array<string,string>   $options             Multi-Currency options to write; the WooPayments flag is never written unless listed.
 	 * @param array<string,string[]> $duplicates          Duplicate gateways found, by payment method.
-	 * @param bool                   $expected_mc_enabled The Multi-Currency flag the snapshot reports.
+	 * @param bool                   $expected_mc_enabled Whether the snapshot reports Multi-Currency enabled.
 	 */
-	public function test_store_setup_sync_reports_duplicates_and_multi_currency( array $flag_options, array $duplicates, bool $expected_mc_enabled ): void {
+	public function test_store_setup_sync_reports_duplicates_and_multi_currency( array $options, array $duplicates, bool $expected_mc_enabled ): void {
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		delete_option( '_wcpay_feature_customer_multi_currency' );
-		foreach ( $flag_options as $option => $value ) {
+		foreach ( $options as $option => $value ) {
 			update_option( $option, $value );
 		}
 
@@ -509,19 +516,24 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Multi-Currency flag states and duplicate gateways, with the flag the snapshot should report.
+	 * Core Multi-Currency states against the WooPayments flag an earlier plugin install left, and duplicate gateways.
+	 *
+	 * Client 11.1.0 sends its own module's state (includes/class-wc-payments-account.php:2976); on a store whose payments
+	 * WooCommerce runs, that is whether core Multi-Currency runs, whatever the flag says.
 	 *
 	 * @return array<string,array{array<string,string>,array<string,string[]>,bool}>
 	 */
 	public static function provider_store_setup_sync_multi_currency_flag(): array {
 		return array(
-			'flag off, one duplicate'           => array(
-				array( '_wcpay_feature_customer_multi_currency' => '0' ),
+			'core Multi-Currency on, flag off, one duplicate'     => array(
+				array(
+					MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION => 'yes',
+					'_wcpay_feature_customer_multi_currency' => '0',
+				),
 				array( 'card' => array( 'woocommerce_payments', 'stripe' ) ),
-				false,
+				true,
 			),
-			// The WooPayments extension defaults the flag to enabled.
-			'flag never written, no duplicates' => array( array(), array(), true ),
+			'core Multi-Currency off, flag never written, no duplicates' => array( array( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION => 'no' ), array(), false ),
 		);
 	}
 
