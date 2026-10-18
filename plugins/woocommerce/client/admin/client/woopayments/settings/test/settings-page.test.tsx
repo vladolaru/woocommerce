@@ -4574,6 +4574,57 @@ describe( 'WooPaymentsSettingsPage', () => {
 		).toHaveAttribute( 'aria-disabled', 'true' );
 	} );
 
+	it.each( [
+		[
+			'a refused Multi-Currency untick',
+			{
+				server_error:
+					'Disabling Multi-Currency stops currency switching but keeps your currency settings and order data.',
+				disable_url:
+					'http://example.org/wp-admin/admin.php?page=wc-settings&tab=advanced&section=features&multi_currency=0',
+			},
+			'Disabling Multi-Currency stops currency switching but keeps your currency settings and order data.',
+			false,
+		],
+		[
+			'an account-update rejection',
+			{ server_error: 'The request could not be completed.' },
+			'The request could not be completed.',
+			false,
+		],
+		[
+			"the descriptor's own error",
+			{
+				server_error:
+					'Invalid parameter(s): account_statement_descriptor',
+				data: {
+					details: {
+						account_statement_descriptor: {
+							message:
+								'The statement descriptor contains invalid characters.',
+						},
+					},
+				},
+			},
+			'The statement descriptor contains invalid characters.',
+			true,
+		],
+	] )(
+		"shows a save error under the bank statement field only when it is the descriptor's own: %s",
+		( _case, savingError, message, shown ) => {
+			// Client 11.1.0 client/settings/transactions/index.js:47-49; other save errors are the page notice
+			// (data/actions.ts saveSettings()).
+			mockUseGetSavingError.mockImplementation( () => savingError );
+
+			render( <WooPaymentsSettingsPage /> );
+
+			const section = getSettingsSectionByName( 'Transactions' );
+			expect( within( section ).queryByText( message ) !== null ).toBe(
+				shown
+			);
+		}
+	);
+
 	it( 'focuses the first field with server validation details after a failed save', async () => {
 		const scrollIntoView = jest.fn();
 		const originalScrollIntoView = Element.prototype.scrollIntoView;

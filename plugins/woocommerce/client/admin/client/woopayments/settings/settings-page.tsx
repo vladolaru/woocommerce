@@ -1479,13 +1479,12 @@ const TransactionsSettingsSection = ( {
 		string | undefined
 	>();
 	const savingError = useGetSavingError();
-	const savingErrorRecord = asSettingsRecord( savingError );
-	const serverErrorMessage =
-		asString( savingErrorRecord.server_error ) ||
-		getSavingErrorDetailMessage(
-			savingError,
-			'account_statement_descriptor'
-		);
+	// Only the descriptor's own error shows under the field; any other save error is the page notice (client 11.1.0
+	// client/settings/transactions/index.js:47-49).
+	const serverErrorMessage = getSavingErrorDetailMessage(
+		savingError,
+		'account_statement_descriptor'
+	);
 	const accountCountry = asString( settings.account_country );
 	const isTestModeOnboarding = Boolean( useTestModeOnboarding() );
 	const supportEmailServerError = getSavingErrorDetailMessage(
