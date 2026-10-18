@@ -123,7 +123,7 @@ describe( 'JetpackStep', () => {
 		).toBeInTheDocument();
 		expect(
 			screen.getByText(
-				'Your store is still connected to WordPress.com, but the account that authorized the connection is no longer linked. Reconnect to restore WooPayments.'
+				'Your store is connected to WordPress.com, but the account that authorized it is no longer linked. Reconnect to restore WooPayments.'
 			)
 		).toBeInTheDocument();
 

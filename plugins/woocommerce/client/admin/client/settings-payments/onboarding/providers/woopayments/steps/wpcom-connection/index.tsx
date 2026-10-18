@@ -59,7 +59,7 @@ export const JetpackStep: React.FC = () => {
 					<p className="settings-payments-onboarding-modal__step--content-jetpack-description">
 						{ isOwnerless
 							? __(
-									'Your store is still connected to WordPress.com, but the account that authorized the connection is no longer linked. Reconnect to restore WooPayments.',
+									'Your store is connected to WordPress.com, but the account that authorized it is no longer linked. Reconnect to restore WooPayments.',
 									'woocommerce'
 							  )
 							: __(
