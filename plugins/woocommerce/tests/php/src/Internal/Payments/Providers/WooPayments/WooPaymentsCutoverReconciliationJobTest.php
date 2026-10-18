@@ -454,17 +454,32 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A switch held for eligibility past the retry window ($markers) closes on its next attempt even when eligibility has returned.
-	 * @testWith ["both markers"]
-	 *           ["the ineligibility deferral only"]
-	 *           ["the eligibility_withdrawn outcome only"]
+	 * @testdox A switch held for eligibility ($markers, past the window: $past_window) settles on its next attempt from the account's eligibility now ($eligible_now): $expected.
 	 *
-	 * @param string $markers Which eligibility markers the aged claim keeps.
+	 * @dataProvider held_switch_provider
+	 *
+	 * @param string $markers      Which eligibility markers the held claim keeps.
+	 * @param bool   $past_window  Whether the merchant's click is older than the fast retry window.
+	 * @param bool   $eligible_now Whether the account is eligible on the next attempt.
+	 * @param string $expected     The next attempt's disposition: proceeds, closes or defers.
 	 */
-	public function test_expired_held_switch_does_not_complete_on_the_old_click( string $markers ): void {
+	public function test_held_switch_settles_from_current_eligibility( string $markers, bool $past_window, bool $eligible_now, string $expected ): void {
 		$this->arrange_plugin_era_store();
-		$preflight = $this->create_plugin_deactivating_preflight();
-		$origin    = $this->create_state_writing_job( true, $preflight );
+		$job    = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @var array<int,array<string,mixed>> */
+			public array $errors = array();
+
+			/**
+			 * Capture errors.
+			 *
+			 * @param string              $message Error message.
+			 * @param array<string,mixed> $context Error context.
+			 */
+			protected function write_log_error( string $message, array $context ): void {
+				$this->errors[] = array_merge( array( 'message' => $message ), $context );
+			}
+		};
+		$origin = $this->create_job( true, $this->create_plugin_deactivating_preflight(), $job, true, $this->create_noop_normalization(), true, wc_get_container()->get( WooPaymentsAccountService::class ) );
 		$this->assertTrue( $origin->enqueue( 'merchant' ) );
 		$pending = $this->require_state_store()->get_record();
 		$this->assertIsArray( $pending );
@@ -474,30 +489,67 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$deferred = $this->require_state_store()->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( array( 'builtin_ineligible' ), $deferred['deferred_codes'] );
-		$aged               = $deferred;
-		$aged['revision']   = $deferred['revision'] + 1;
-		$aged['started_at'] = time() - DAY_IN_SECONDS - 1;
+		$held             = $deferred;
+		$held['revision'] = $deferred['revision'] + 1;
+		if ( $past_window ) {
+			$held['started_at'] = time() - DAY_IN_SECONDS - 1;
+		}
 		if ( 'the ineligibility deferral only' === $markers ) {
-			$aged['informational_outcomes'] = array_values(
+			$held['informational_outcomes'] = array_values(
 				array_filter(
-					$aged['informational_outcomes'],
+					$held['informational_outcomes'],
 					static fn( $outcome ): bool => array( 'code' => 'eligibility_withdrawn' ) !== $outcome
 				)
 			);
 		} elseif ( 'the eligibility_withdrawn outcome only' === $markers ) {
-			$aged['deferred_codes'] = array();
+			$held['deferred_codes'] = array();
 		}
-		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $deferred, $aged ) );
-		$this->require_scheduler()->cancel( $aged['generation'], 2 );
-		$this->set_native_eligibility( true );
+		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $deferred, $held ) );
+		$this->require_scheduler()->cancel( $held['generation'], 2 );
+		$this->set_native_eligibility( $eligible_now );
+		$job->errors = array();
 
-		$origin->handle_reconcile( $aged['generation'], 2 );
+		$origin->handle_reconcile( $held['generation'], 2 );
 
-		$closed = $this->require_state_store()->get_record();
-		$this->assertIsArray( $closed );
-		$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $closed['state'] );
-		$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ), 'A claim held for eligibility past the window closes instead of switching the store.' );
-		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The tier follows the account again, so the start notice can offer a fresh switch.' );
+		$after = $this->require_state_store()->get_record();
+		$this->assertIsArray( $after );
+		if ( 'proceeds' === $expected ) {
+			$this->assertSame( WooPaymentsCutoverState::PENDING, $after['state'] );
+			$this->assertSame( 'verify_builtin_ownership', $after['current_step'], 'An account eligible again finishes the switch the merchant started; the held history does not close it.' );
+			$this->assertSame( array(), get_option( 'active_plugins' ) );
+			$this->assertSame( array(), $job->errors );
+		} elseif ( 'closes' === $expected ) {
+			$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $after['state'] );
+			$this->assertSame( array( 'builtin_ineligible' ), $after['deferred_codes'] );
+			$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $after['generation'], 3 ) );
+			$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ), 'Closing the switch must never leave the store without a payments runtime.' );
+			$this->assertSame( WooPaymentsSetupTier::DISABLED, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The tier is re-synced from the ineligible account.' );
+			$this->assertCount( 1, $job->errors );
+			$this->assertStringContainsString( 'held past the retry window', $job->errors[0]['message'] );
+			$this->assertSame( $held['generation'], $job->errors[0]['generation'] );
+		} else {
+			$this->assertSame( WooPaymentsCutoverState::DEFERRED, $after['state'] );
+			$this->assertSame( array( 'builtin_ineligible' ), $after['deferred_codes'] );
+			$this->assertContains( array( 'code' => 'eligibility_withdrawn' ), $after['informational_outcomes'] );
+			$this->assertSame( $after['action_id'], $this->require_scheduler()->get_scheduled_action_id( $after['generation'], 3 ) );
+			$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ) );
+			$this->assertSame( array(), $job->errors );
+		}
+	}
+
+	/**
+	 * Held switches: which markers they keep, whether the window has passed, and the account's eligibility on the next attempt.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:bool,3:string}>
+	 */
+	public function held_switch_provider(): array {
+		return array(
+			'past the window, both markers, eligible again' => array( 'both markers', true, true, 'proceeds' ),
+			'past the window, the ineligibility deferral only, eligible again' => array( 'the ineligibility deferral only', true, true, 'proceeds' ),
+			'past the window, the eligibility_withdrawn outcome only, eligible again' => array( 'the eligibility_withdrawn outcome only', true, true, 'proceeds' ),
+			'past the window, still ineligible'   => array( 'both markers', true, false, 'closes' ),
+			'inside the window, still ineligible' => array( 'both markers', false, false, 'defers' ),
+		);
 	}
 
 	/**

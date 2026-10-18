@@ -939,10 +939,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					return;
 				}
 			}
-			if ( $this->is_expired_held_claim( $claimed ) ) {
-				$this->close_held_claim( $claimed );
-				return;
-			}
 			if ( ! $this->account_service->is_builtin_eligible() ) {
 				$this->hold_ineligible_claim( $claimed );
 				return;
@@ -1020,25 +1016,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		}
 
 		$this->close_held_claim( $claimed );
-	}
-
-	/**
-	 * Tell whether a switch held back past the fast retry window for eligibility is still waiting on the merchant's old click.
-	 *
-	 * Held means deferred because the account was not eligible. A first attempt that simply ran late is not held: the
-	 * merchant's click is the decision and everything after it is automatic, so the switch proceeds once native runs,
-	 * however long the queue or a disabled tier delayed it.
-	 *
-	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
-	 * @return bool
-	 */
-	private function is_expired_held_claim( array $claimed ): bool {
-		if ( time() - $claimed['started_at'] < self::FAST_RETRY_WINDOW || ! $this->arbiter->is_extension_owner() ) {
-			return false;
-		}
-
-		return in_array( self::INELIGIBLE_CODE, $claimed['deferred_codes'], true )
-			|| $this->has_information_outcome( $claimed['informational_outcomes'], array( 'code' => 'eligibility_withdrawn' ) );
 	}
 
 	/**
