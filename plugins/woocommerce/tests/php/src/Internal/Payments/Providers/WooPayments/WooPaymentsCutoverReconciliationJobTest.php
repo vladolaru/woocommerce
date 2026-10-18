@@ -764,6 +764,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	/**
 	 * Set the cached account's native eligibility, as a platform account refresh would.
 	 *
+	 * A minimal payload: the platform's account endpoint sends `native_payments` as `eligible`, `cohort` and
+	 * `reason` (WPCOM `wp-content/rest-api-plugins/endpoints/wcpay/class-accounts-controller.php:1100-1104`
+	 * and `:1206` at `748c7406e24`, not yet on WPCOM trunk); the job reads only `eligible`.
+	 *
 	 * @param bool $eligible Whether the platform keeps the account eligible.
 	 */
 	private function set_native_eligibility( bool $eligible ): void {
