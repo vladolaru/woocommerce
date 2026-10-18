@@ -338,6 +338,22 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Builds before the WooPayments feature read a support kill switch. The install seeds it as '0' but never overwrites a
+	 * stored '1', so a store can keep one after upgrading.
+	 *
+	 * @testdox A kill switch stored by an earlier build does not turn the built-in WooPayments off.
+	 */
+	public function test_stored_legacy_kill_switch_does_not_disable_the_builtin(): void {
+		$this->fake_plugin();
+		update_option( 'woocommerce_woopayments_builtin_kill_switch', '1' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$this->sut->invalidate();
+
+		$this->assertTrue( $this->sut->is_builtin_enabled() );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner() );
+	}
+
+	/**
 	 * @testdox is_builtin_enabled() reads the WooPayments feature option, whoever owns payments ($_dataName).
 	 * @dataProvider provide_feature_option_values
 	 *

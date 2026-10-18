@@ -62,6 +62,9 @@ class WooPaymentsFeatureController {
 	 * @param FeaturesController $features_controller Feature controller receiving the definition.
 	 */
 	public function add_feature_definition( FeaturesController $features_controller ): void {
+		// The Features page shows the off choice disabled; a stale Features tab can still post it.
+		add_filter( 'woocommerce_admin_settings_sanitize_option_' . self::FEATURE_ENABLE_OPTION, array( $this, 'refuse_protected_disable' ) );
+
 		$features_controller->add_feature_definition(
 			self::FEATURE_ID,
 			__( 'WooPayments', 'woocommerce' ),
@@ -121,6 +124,25 @@ class WooPaymentsFeatureController {
 	public function is_disable_protected(): bool {
 		return $this->arbiter->is_builtin_owner()
 			&& in_array( $this->setup_tier->get_stored_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true );
+	}
+
+	/**
+	 * Keep the stored value when a Features page save turns WooPayments off while the disable choice is protected.
+	 *
+	 * The disable link writes through update_option() and still turns the feature off.
+	 *
+	 * @since 11.2.0
+	 * @internal
+	 *
+	 * @param mixed $value The sanitized value the Features page save would store.
+	 * @return mixed The value to store.
+	 */
+	public function refuse_protected_disable( $value ) {
+		if ( 'no' !== $value || ! $this->is_disable_protected() ) {
+			return $value;
+		}
+
+		return get_option( self::FEATURE_ENABLE_OPTION, wc_bool_to_string( self::ENABLED_BY_DEFAULT ) );
 	}
 
 	/**

@@ -115,6 +115,74 @@ class WooPaymentsFeatureControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * A Features tab opened before WooPayments took payments still posts "Disable"; the save keeps the stored value only
+	 * while the disable choice is protected.
+	 *
+	 * @testdox A Features page save that turns WooPayments off is refused only while the built-in WooPayments takes payments ($_dataName).
+	 * @dataProvider provide_features_page_saves
+	 *
+	 * @param string $owner       Runtime owner.
+	 * @param string $stored_tier Stored setup tier.
+	 * @param string $expected    The feature option after the save.
+	 */
+	public function test_features_page_save_refuses_the_off_choice_only_while_protected( string $owner, string $stored_tier, string $expected ): void {
+		$sut = $this->create_protectable_sut( $owner, $stored_tier );
+
+		\WC_Admin_Settings::save_fields( array( $sut->get_feature_setting() ), array( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION => 'no' ) );
+
+		$this->assertSame( $expected, get_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION ) );
+	}
+
+	/**
+	 * Owner and stored tier combinations for a save that posts "Disable", and the stored value after it.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string}>
+	 */
+	public function provide_features_page_saves(): array {
+		return array(
+			'built-in owner, connected (stale tab)' => array( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, WooPaymentsSetupTier::CONNECTED, 'yes' ),
+			'built-in owner, available'             => array( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, WooPaymentsSetupTier::AVAILABLE, 'no' ),
+			'extension owner, connected stored'     => array( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, WooPaymentsSetupTier::CONNECTED, 'no' ),
+		);
+	}
+
+	/**
+	 * @testdox The disable link still turns WooPayments off while the Features page save refuses it.
+	 */
+	public function test_disable_link_turns_the_feature_off_while_protected(): void {
+		$sut = $this->create_protectable_sut( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, WooPaymentsSetupTier::CONNECTED );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
+		parse_str( (string) wp_parse_url( $sut->get_disable_anyway_url(), PHP_URL_QUERY ), $query );
+		$_GET = $query;
+		add_filter( 'wp_redirect', '__return_false' );
+
+		wc_get_container()->get( FeaturesController::class )->change_feature_enable_from_query_params();
+
+		$this->assertSame( 'no', get_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION ) );
+	}
+
+	/**
+	 * Create the controller for a store with the WooPayments feature on, and register its hooks as the Features page does.
+	 *
+	 * The controller WooCommerce built for this test run is unhooked first, so only this one decides.
+	 *
+	 * @param string $owner       Runtime owner.
+	 * @param string $stored_tier Stored setup tier.
+	 * @return WooPaymentsFeatureController
+	 */
+	private function create_protectable_sut( string $owner, string $stored_tier ): WooPaymentsFeatureController {
+		include_once WC_ABSPATH . 'includes/admin/class-wc-admin-settings.php';
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, $stored_tier );
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+		remove_all_filters( 'woocommerce_admin_settings_sanitize_option_' . WooPaymentsFeatureController::FEATURE_ENABLE_OPTION );
+		$sut = $this->create_sut( $owner );
+		$sut->add_feature_definition( $this->createMock( FeaturesController::class ) );
+
+		return $sut;
+	}
+
+	/**
 	 * Create the controller with a runtime owner.
 	 *
 	 * @param string $owner Runtime owner.

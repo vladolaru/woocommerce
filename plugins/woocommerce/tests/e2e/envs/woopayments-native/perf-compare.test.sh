@@ -112,6 +112,9 @@ fake_pnpm() {
 			if [[ "$3" == 'woocommerce_feature_multi_currency_enabled' ]]; then
 				printf 'CORE_MULTI_CURRENCY_FEATURE\t%s\n' "$4" >> "$root/events.log"
 			fi
+			if [[ "$3" == 'woocommerce_feature_woopayments_enabled' ]]; then
+				printf 'WOOPAYMENTS_FEATURE\t%s\t%s\n' "$(< "$root/current-state")" "$4" >> "$root/events.log"
+			fi
 			if [[ "$3" == 'e2e_woopayments_perf_probe_control' ]]; then
 				state="$(printf '%s' "$4" | sed -n 's/.*"state":"\([^"]*\)".*/\1/p')"
 				printf '%s\n' "$state" > "$root/current-state"
@@ -511,6 +514,8 @@ done
 [[ "$(grep -c $'^DB_IMPORT\t' "$local_root/events.log")" == 51 ]] || fail 'The disposable database reset count is wrong.'
 [[ "$(grep -c $'^MULTI_CURRENCY_FEATURE\t"0"$' "$local_root/events.log")" == 40 ]] || fail 'Every local state preparation must disable Multi-Currency before native-tier measurement.'
 [[ "$(grep -c $'^CORE_MULTI_CURRENCY_FEATURE\t"no"$' "$local_root/events.log")" == 40 ]] || fail 'Every local state preparation must disable the independent Core Multi-Currency feature before native-tier measurement.'
+[[ "$(grep -c $'^WOOPAYMENTS_FEATURE\t' "$local_root/events.log")" == "$(grep -c $'^STATE\t' "$local_root/events.log")" ]] || fail 'Every local state preparation must write the WooPayments feature.'
+awk -F'\t' '$1 == "WOOPAYMENTS_FEATURE" { want = ($2 == "baseline_noop" || $2 == "disabled") ? "\"no\"" : "\"yes\""; if ($3 != want) exit 1 }' "$local_root/events.log" || fail 'The WooPayments feature must be "no" for baseline_noop and disabled, and "yes" for every other local state.'
 [[ "$(grep -c $'^REFERENCE_ACTIVATE$' "$local_root/events.log")" == 13 ]] || fail 'The isolated reference was not activated for its thirteen samples.'
 awk '/^DB_EXPORT/{seen=1} /^DB_IMPORT/ && !seen{exit 1}' "$local_root/events.log" || fail 'Database import preceded the one export.'
 [[ "$(awk '$1 == "SEED" || $1 == "STORE_OPEN" || $1 == "PRODUCT_READY" || $1 == "DB_EXPORT" { printf "%s ", $1 }' "$local_root/events.log" | head -c 40)" == 'SEED STORE_OPEN PRODUCT_READY DB_EXPORT ' ]] || fail 'The open store and product were not ready after seed and before the one database export.'
@@ -601,6 +606,8 @@ grep -Fq $'disabled\tgateway\t3\t0\tNA\tbaseline_noop\t1\tNA\tNA\tpass' "$ci_out
 grep -Fq $'active_native\tgateway\t6\t0\tNA\tnot_evaluated\tNA\tNA\tNA\tnot_evaluated' "$ci_output" || fail 'CI did not keep active_native gateway not_evaluated.'
 [[ "$(grep -c $'^DB_EXPORT\t' "$ci_root/events.log")" == 1 && "$(grep -c $'^DB_IMPORT\t' "$ci_root/events.log")" == 10 ]] || fail 'CI did not use one export and ten resets (three STATE_SAMPLES attempts per sampled state, plus the final cleanup restore).'
 [[ "$(grep -c $'^MULTI_CURRENCY_FEATURE\t"0"$' "$ci_root/events.log")" == 9 ]] || fail 'Every CI state preparation attempt must disable Multi-Currency before native-tier measurement.'
+[[ "$(grep -c $'^WOOPAYMENTS_FEATURE\t' "$ci_root/events.log")" == "$(grep -c $'^STATE\t' "$ci_root/events.log")" ]] || fail 'Every CI state preparation must write the WooPayments feature.'
+awk -F'\t' '$1 == "WOOPAYMENTS_FEATURE" { want = ($2 == "baseline_noop" || $2 == "disabled") ? "\"no\"" : "\"yes\""; if ($3 != want) exit 1 }' "$ci_root/events.log" || fail 'The WooPayments feature must be "no" for baseline_noop and disabled, and "yes" for every other CI state.'
 if grep -Eq '^REFERENCE_(INSTALL|ACTIVATE)' "$ci_root/events.log"; then fail 'CI touched the reference plugin.'; fi
 grep -Fq $'active_native\tassets:checkout\t4\t1326\t100\tNA\tNA\tNA\tNA\tinformational' "$ci_output" || fail 'CI did not record the active_native checkout assets.'
 grep -Fq $'disabled\tassets:checkout\t0\t0\t0\tNA\tNA\tNA\tNA\tpass' "$ci_output" || fail 'The CI disabled checkout asset row did not pass.'
