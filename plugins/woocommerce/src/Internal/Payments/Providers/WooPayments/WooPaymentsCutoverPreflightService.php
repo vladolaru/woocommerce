@@ -54,11 +54,13 @@ class WooPaymentsCutoverPreflightService {
 
 
 	/**
-	 * Action Scheduler hooks with native Core consumers.
+	 * Action Scheduler hooks the built-in WooPayments handles, so a queued action on one does not block the cutover.
+	 *
+	 * The reconciliation job's ADOPTED_QUEUE_HOOKS lists the ones it records as carried over.
 	 *
 	 * @var string[]
 	 */
-	private const NATIVE_OWNED_OPERATIONAL_QUEUE_HOOKS = array(
+	private const BUILTIN_HANDLED_QUEUE_HOOKS = array(
 		WooPaymentsStoreSetupReportController::STORE_SETUP_SYNC_ACTION,
 		WooPaymentsTokenService::UPDATE_SAVED_PAYMENT_METHOD_ACTION,
 		WooPaymentsFeeDetailsNoteController::ADD_FEE_BREAKDOWN_TO_ORDER_NOTES_ACTION,
@@ -212,7 +214,7 @@ class WooPaymentsCutoverPreflightService {
 		if ( $this->has_unavailable_multi_currency_rate_provider() ) {
 			$failures[] = self::FAILURE_MULTI_CURRENCY_RATES_UNAVAILABLE;
 		}
-		if ( array() !== $this->get_pending_operational_queue_hooks() ) {
+		if ( array() !== $this->get_unhandled_queue_hooks() ) {
 			$failures[] = self::FAILURE_QUEUE_HOOKS_UNHANDLED;
 		}
 		if ( ! $this->get_fee_remediation_service()->can_schedule_cutover_remediation() ) {
@@ -226,7 +228,7 @@ class WooPaymentsCutoverPreflightService {
 	}
 
 	/**
-	 * Get pending or running plugin-prefixed Action Scheduler actions, one per hook and group.
+	 * Get pending or running WooPayments Action Scheduler actions (wcpay_ and woocommerce_woopayments_ hooks), one per hook and group.
 	 *
 	 * Callers only decide by hook and group, so a queue of thousands of same-hook actions is read as one row. On a database
 	 * without identifier placeholders or a failed query, returns one sentinel row (action_id 0) whose hook is one of the
@@ -234,7 +236,7 @@ class WooPaymentsCutoverPreflightService {
 	 *
 	 * @return array<int,array{action_id:int,hook:string,group:string}> The lowest action ID of each hook and group, ordered by it.
 	 */
-	public function get_queued_plugin_actions(): array {
+	public function get_queued_woopayments_actions(): array {
 		$wpdb = $this->get_database();
 		if ( ! class_exists( '\\ActionScheduler_Store' ) || empty( $wpdb->actionscheduler_actions ) || empty( $wpdb->actionscheduler_groups ) ) {
 			return array();
@@ -288,7 +290,7 @@ class WooPaymentsCutoverPreflightService {
 	 * @return array<int,array{action_id:int,hook:string,group:string}> Actions ordered by ID.
 	 */
 	public function get_queued_operational_actions(): array {
-		return array_values( array_filter( $this->get_queued_plugin_actions(), array( $this, 'is_not_cutover_action' ) ) );
+		return array_values( array_filter( $this->get_queued_woopayments_actions(), array( $this, 'is_not_cutover_action' ) ) );
 	}
 
 	/**
@@ -435,17 +437,17 @@ class WooPaymentsCutoverPreflightService {
 	}
 
 	/**
-	 * Get operational queue hooks that still need disposition.
+	 * Get the queued WooPayments hooks the built-in WooPayments does not handle.
 	 *
 	 * @return string[]
 	 */
-	private function get_pending_operational_queue_hooks(): array {
+	private function get_unhandled_queue_hooks(): array {
 		$actions = $this->get_queued_operational_actions();
 		$hooks   = self::normalize_string_list( array_column( $actions, 'hook' ) );
 		if ( in_array( self::IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK, $hooks, true ) ) {
 			return array( self::IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK );
 		}
-		return array_values( array_diff( $hooks, self::NATIVE_OWNED_OPERATIONAL_QUEUE_HOOKS ) );
+		return array_values( array_diff( $hooks, self::BUILTIN_HANDLED_QUEUE_HOOKS ) );
 	}
 
 	/**

@@ -119,12 +119,13 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	private const PLUGIN_UPDATE_LOCK_TTL = 5 * MINUTE_IN_SECONDS;
 
 	/**
-	 * Operational actions whose native callbacks continue after cutover.
+	 * Queued WooPayments actions the cutover carries over: their callbacks continue after the cutover.
 	 *
-	 * The Stripe Billing migration actions are among them: native's migrator takes them with the same arguments, so a migration
-	 * off Stripe Billing started by the plugin finishes after the switch.
+	 * The Stripe Billing migration actions are among them: the built-in migrator takes them with the same arguments, so a
+	 * migration off Stripe Billing started by the WooPayments extension finishes after the cutover. The preflight's
+	 * BUILTIN_HANDLED_QUEUE_HOOKS lists every hook that does not block the cutover.
 	 */
-	private const ADOPTED_OPERATIONAL_QUEUE_HOOKS = array(
+	private const ADOPTED_QUEUE_HOOKS = array(
 		WooPaymentsStoreSetupReportController::STORE_SETUP_SYNC_ACTION,
 		WooPaymentsAccountMilestonesController::POST_KYC_ACTIVATION_EMAIL_SEND_ACTION,
 		WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK,
@@ -1033,7 +1034,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				$plugin_update_succeeded = $this->update_woopayments_plugin();
 			}
 
-			$outcomes = array_merge( $outcomes, $this->disposition_operational_queue() );
+			$outcomes = array_merge( $outcomes, $this->get_adopted_queue_action_outcomes() );
 
 			$this->preflight_service->invalidate_current_blog_memoization();
 			$remaining_failures = $this->normalize_codes( $this->preflight_service->get_failures() );
@@ -1929,17 +1930,17 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Record the queued plugin actions native adopts; their callbacks run natively after the switch.
+	 * Record the queued WooPayments actions the cutover carries over; their callbacks run after the cutover.
 	 *
 	 * @return array<int,mixed> Informational operational-action outcomes.
 	 */
-	private function disposition_operational_queue(): array {
+	private function get_adopted_queue_action_outcomes(): array {
 		$outcomes = array();
 		foreach ( $this->preflight_service->get_queued_operational_actions() as $action ) {
 			if ( WooPaymentsCutoverActionScheduler::ACTION_HOOK === $action['hook'] && WooPaymentsCutoverActionScheduler::ACTION_GROUP === $action['group'] ) {
 				continue;
 			}
-			if ( in_array( $action['hook'], self::ADOPTED_OPERATIONAL_QUEUE_HOOKS, true ) ) {
+			if ( in_array( $action['hook'], self::ADOPTED_QUEUE_HOOKS, true ) ) {
 				$outcomes[] = array(
 					'code' => 'operational_action_adopted',
 					'hook' => $action['hook'],

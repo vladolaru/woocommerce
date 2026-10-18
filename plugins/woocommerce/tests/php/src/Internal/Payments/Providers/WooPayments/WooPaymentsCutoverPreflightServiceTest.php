@@ -206,7 +206,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 		$other_group_id = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_preflight_service_test', array( 'order_id' => 4 ), 'other-group', true );
 		$this->assertIsInt( $other_group_id );
 
-		$actions = $this->create_sut()->get_queued_plugin_actions();
+		$actions = $this->create_sut()->get_queued_woopayments_actions();
 
 		$this->assertCount( 2, $actions, 'A store with thousands of queued plugin actions must not read each one.' );
 		$this->assertSame( array( $first_id, $other_group_id ), array_column( $actions, 'action_id' ) );
@@ -249,7 +249,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 					'group'     => '',
 				),
 			),
-			$sut->get_queued_plugin_actions()
+			$sut->get_queued_woopayments_actions()
 		);
 		$this->assertSame( array( 'operational_queue_hooks_unhandled' ), $sut->get_failures() );
 	}

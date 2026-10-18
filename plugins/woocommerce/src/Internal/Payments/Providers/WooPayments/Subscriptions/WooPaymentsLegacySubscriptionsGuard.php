@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions;
 
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 
 /**
  * Detects stores on the bundled WooPayments subscriptions flavor, which stay on the plugin at cutover.
@@ -32,14 +33,9 @@ class WooPaymentsLegacySubscriptionsGuard {
 	private const STRIPE_BILLED_META_KEY = '_wcpay_subscription_id';
 
 	/**
-	 * Option that turns the bundled WooPayments subscriptions on (client 11.1.0 `WC_Payments_Features::WCPAY_SUBSCRIPTIONS_FLAG_NAME`).
-	 */
-	private const BUNDLED_SUBSCRIPTIONS_FLAG_OPTION = '_wcpay_feature_subscriptions';
-
-	/**
 	 * Plugin file of WooCommerce Subscriptions, whatever folder it is installed in.
 	 */
-	private const SUBSCRIPTIONS_PLUGIN_FILE = 'woocommerce-subscriptions.php';
+	public const SUBSCRIPTIONS_PLUGIN_FILE = 'woocommerce-subscriptions.php';
 
 	/**
 	 * Cached results for each blog visited during the current request.
@@ -62,7 +58,7 @@ class WooPaymentsLegacySubscriptionsGuard {
 		}
 
 		$this->is_bundled_store[ $blog_id ] = ! $this->is_subscriptions_plugin_active()
-			&& ( '1' === get_option( self::BUNDLED_SUBSCRIPTIONS_FLAG_OPTION, '0' ) || $this->query_stripe_billed_subscription_exists() );
+			&& ( '1' === get_option( WooPaymentsStripeBillingModule::BUNDLED_SUBSCRIPTIONS_FLAG_OPTION, '0' ) || $this->query_stripe_billed_subscription_exists() );
 
 		return $this->is_bundled_store[ $blog_id ];
 	}

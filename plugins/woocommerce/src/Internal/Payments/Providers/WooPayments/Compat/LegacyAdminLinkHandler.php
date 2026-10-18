@@ -29,11 +29,6 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 class LegacyAdminLinkHandler implements RegisterHooksInterface {
 
 	/**
-	 * The plugin's `WC_Payments_Account::ONBOARDING_STATE_TRANSIENT`, holding the hosted KYC state secret.
-	 */
-	private const ONBOARDING_STATE_TRANSIENT = 'wcpay_stripe_onboarding_state';
-
-	/**
 	 * Runtime owner arbiter.
 	 *
 	 * @var WooPaymentsRuntimeArbiter
@@ -187,11 +182,11 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 		);
 		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 
-		if ( get_transient( self::ONBOARDING_STATE_TRANSIENT ) !== $state ) {
+		if ( get_transient( WooPaymentsAccountService::ONBOARDING_STATE_TRANSIENT ) !== $state ) {
 			$this->redirect_to_connect_page( $params );
 		}
 
-		delete_transient( self::ONBOARDING_STATE_TRANSIENT );
+		delete_transient( WooPaymentsAccountService::ONBOARDING_STATE_TRANSIENT );
 		$this->account_service->clear_cache();
 		wc_get_container()->get( WooPaymentsOnboardingService::class )->finish_hosted_kyc_connection( 'live' === $mode, ! $connection_error );
 
@@ -300,7 +295,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 
 			if ( '' !== $url ) {
 				if ( 'complete_kyc_link' === ( $args['type'] ?? '' ) && isset( $link['state'] ) ) {
-					set_transient( self::ONBOARDING_STATE_TRANSIENT, $link['state'], DAY_IN_SECONDS );
+					set_transient( WooPaymentsAccountService::ONBOARDING_STATE_TRANSIENT, $link['state'], DAY_IN_SECONDS );
 				}
 
 				wp_safe_redirect( $url );

@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsLegacySubscriptionsGuard;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Utilities\OrderUtil;
@@ -95,12 +96,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @var string
 	 */
 	public const DISMISS_NONCE_ACTION = 'woocommerce_woopayments_cutover_dismiss_notice';
-
-	/** WooPayments' canonical payment gateway identity. */
-	private const WOOPAYMENTS_GATEWAY_ID = 'woocommerce_payments';
-
-	/** Prefix used by WooPayments payment-method variants. */
-	private const WOOPAYMENTS_GATEWAY_PREFIX = 'woocommerce_payments_';
 
 	/**
 	 * Runtime owner arbiter.
@@ -333,7 +328,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @param string $plugin Activated or deactivated plugin path.
 	 */
 	private function maybe_forget_admin_classification( string $plugin ): void {
-		if ( 'woocommerce-subscriptions.php' === basename( $plugin ) ) {
+		if ( WooPaymentsLegacySubscriptionsGuard::SUBSCRIPTIONS_PLUGIN_FILE === basename( $plugin ) ) {
 			$this->reconciliation_job->forget_admin_classification();
 		}
 	}
@@ -385,14 +380,14 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 */
 	private function store_has_woopayments_order(): bool {
 		global $wpdb;
-		$gateway_prefix = $wpdb->esc_like( self::WOOPAYMENTS_GATEWAY_PREFIX ) . '%';
+		$gateway_prefix = $wpdb->esc_like( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) . '%';
 
 		if ( OrderUtil::custom_orders_table_usage_is_enabled() ) {
 			$table_name = OrdersTableDataStore::get_orders_table_name();
 			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table_name is a trusted WooCommerce table name.
 			$query = $wpdb->prepare(
 				"SELECT id FROM {$table_name} WHERE payment_method = %s OR payment_method LIKE %s LIMIT 1",
-				self::WOOPAYMENTS_GATEWAY_ID,
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				$gateway_prefix
 			);
 			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -400,7 +395,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			$query = $wpdb->prepare(
 				"SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = %s AND ( meta_value = %s OR meta_value LIKE %s ) LIMIT 1",
 				'_payment_method',
-				self::WOOPAYMENTS_GATEWAY_ID,
+				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				$gateway_prefix
 			);
 		}
@@ -415,12 +410,12 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 */
 	private function store_has_woopayments_token(): bool {
 		global $wpdb;
-		$gateway_prefix = $wpdb->esc_like( self::WOOPAYMENTS_GATEWAY_PREFIX ) . '%';
+		$gateway_prefix = $wpdb->esc_like( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) . '%';
 		$table_name     = $wpdb->prefix . 'woocommerce_payment_tokens';
 		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table_name is a trusted WordPress table name.
 		$query = $wpdb->prepare(
 			"SELECT token_id FROM {$table_name} WHERE gateway_id = %s OR gateway_id LIKE %s LIMIT 1",
-			self::WOOPAYMENTS_GATEWAY_ID,
+			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 			$gateway_prefix
 		);
 		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared

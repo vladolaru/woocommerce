@@ -41,7 +41,8 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 
 	private const ONBOARDING_CONNECTION_SUCCESS_MODAL_OPTION = 'wcpay_connection_success_modal_dismissed';
 
-	private const ONBOARDING_STATE_TRANSIENT = 'wcpay_stripe_onboarding_state';
+	/** Transient holding the hosted KYC state secret (the WooPayments extension's `WC_Payments_Account::ONBOARDING_STATE_TRANSIENT`). */
+	public const ONBOARDING_STATE_TRANSIENT = 'wcpay_stripe_onboarding_state';
 
 	private const EMBEDDED_KYC_IN_PROGRESS_OPTION = 'wcpay_onboarding_embedded_kyc_in_progress';
 
