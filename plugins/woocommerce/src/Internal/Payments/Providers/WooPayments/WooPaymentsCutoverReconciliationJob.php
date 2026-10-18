@@ -362,7 +362,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				if ( ! is_array( $record ) ) {
 					return false;
 				}
-				if ( WooPaymentsCutoverStateStore::STATE_PENDING === $record['state'] && self::STEP_AWAITING_MERCHANT_START === $record['current_step'] ) {
+				if ( $this->is_awaiting_start( $record ) ) {
 					return true;
 				}
 				if ( WooPaymentsCutoverStateStore::STATE_DONE === $record['state'] ) {
@@ -370,7 +370,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				}
 				// The hook fires only for an inactive extension, and a merchant's own deactivation makes the record manual, so an
 				// open merchant start sees this only after finalize deactivated the extension.
-				if ( ! in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED, WooPaymentsCutoverStateStore::STATE_RUNNING ), true ) || true === ( $record['network_cutover'] ?? false ) ) {
+				if ( ! in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED, WooPaymentsCutoverStateStore::STATE_RUNNING ), true ) || $this->is_network( $record ) ) {
 					return false;
 				}
 
@@ -405,14 +405,14 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				$site_ids,
 				function () use ( &$maximum_generation, &$awaiting_generation, &$has_completed_cutover ): void {
 					$record = $this->state_store->get_record();
-					if ( ! is_array( $record ) || true !== ( $record['network_cutover'] ?? false ) ) {
+					if ( ! is_array( $record ) || ! $this->is_network( $record ) ) {
 						return;
 					}
 					$maximum_generation = max( $maximum_generation, $record['generation'] );
 					if ( WooPaymentsCutoverStateStore::STATE_DONE === $record['state'] ) {
 						$has_completed_cutover = true;
 					}
-					if ( WooPaymentsCutoverStateStore::STATE_PENDING === $record['state'] && self::STEP_AWAITING_MERCHANT_START === $record['current_step'] ) {
+					if ( $this->is_awaiting_start( $record ) ) {
 						$awaiting_generation = max( $awaiting_generation, $record['generation'] );
 					}
 				}
@@ -438,7 +438,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 						continue;
 					}
 					if ( is_array( $record ) && $record['generation'] === $generation ) {
-						if ( WooPaymentsCutoverStateStore::STATE_PENDING === $record['state'] && self::STEP_AWAITING_MERCHANT_START === $record['current_step'] ) {
+						if ( $this->is_awaiting_start( $record ) ) {
 							continue;
 						}
 						$complete = false;
@@ -494,8 +494,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	public function classify_for_admin_notice(): ?array {
 		$record = $this->state_store->get_record();
 		if ( is_array( $record ) ) {
-			if ( WooPaymentsCutoverStateStore::STATE_PENDING === $record['state'] && self::STEP_AWAITING_MERCHANT_START === $record['current_step'] && $this->record_has_stripe_billing_failure( $record ) ) {
-				if ( true === ( $record['network_cutover'] ?? false ) ) {
+			if ( $this->is_awaiting_start( $record ) && $this->record_has_stripe_billing_failure( $record ) ) {
+				if ( $this->is_network( $record ) ) {
 					if ( $this->schedule_network_exclusion_convergence( $record, WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS ) ) {
 						$this->propagate_network_exclusion( $record['generation'], WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
 					}
@@ -563,7 +563,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		if ( ! is_array( $record ) ) {
 			return true;
 		}
-		if ( WooPaymentsCutoverStateStore::STATE_PENDING === $record['state'] && self::STEP_AWAITING_MERCHANT_START === $record['current_step'] ) {
+		if ( $this->is_awaiting_start( $record ) ) {
 			return ! $this->record_has_stripe_billing_failure( $record );
 		}
 
@@ -711,7 +711,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					$record             = $this->state_store->get_record();
 					$record_generation  = is_array( $record ) ? $record['generation'] : 0;
 					$maximum_generation = max( $maximum_generation, $record_generation );
-					if ( is_array( $record ) && true === ( $record['network_cutover'] ?? false ) ) {
+					if ( is_array( $record ) && $this->is_network( $record ) ) {
 						if ( in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_RUNNING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
 							$active_generations[] = $record_generation;
 						} else {
@@ -746,12 +746,12 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 							continue;
 						}
 						$record = $this->state_store->get_record();
-						if ( is_array( $record ) && $generation === $record['generation'] && true === ( $record['network_cutover'] ?? false ) ) {
+						if ( is_array( $record ) && $generation === $record['generation'] && $this->is_network( $record ) ) {
 							if ( null !== $origin_plugin_file && null !== $origin_plugin_scope && in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
 								$scheduled_somewhere = $this->replace_pending_with_manual_origin( $record, $source, $origin_plugin_file, $origin_plugin_scope, time() ) || $scheduled_somewhere;
 							} elseif ( null !== $origin_plugin_file && null !== $origin_plugin_scope && WooPaymentsCutoverStateStore::STATE_RUNNING === $record['state'] ) {
 								$scheduled_somewhere = $this->replace_running_with_manual_origin( $record, $source, $origin_plugin_file, $origin_plugin_scope, time() ) || $scheduled_somewhere;
-							} elseif ( WooPaymentsCutoverStateStore::STATE_PENDING === $record['state'] && self::STEP_AWAITING_MERCHANT_START === $record['current_step'] ) {
+							} elseif ( $this->is_awaiting_start( $record ) ) {
 								$scheduled_somewhere = $this->start_awaiting_generation( $record, $source, time() ) || $scheduled_somewhere;
 							} elseif ( in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
 								$scheduled_somewhere = $this->ensure_record_scheduled( $record, time() ) || $scheduled_somewhere;
@@ -964,11 +964,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		try {
 			// A merchant who deactivated the extension by hand and turned it back on chose the extension: the rollback, not the
 			// switch. The request reads ownership once, so this sees an activation made before the request started.
-			if ( true !== ( $claimed['network_cutover'] ?? false ) && $this->is_manual_deactivation_claim( $claimed ) && $this->arbiter->is_extension_owner() ) {
+			if ( ! $this->is_network( $claimed ) && $this->is_manual_deactivation( $claimed ) && $this->arbiter->is_extension_owner() ) {
 				$this->roll_back_claim( $claimed );
 				return;
 			}
-			if ( true === ( $claimed['network_cutover'] ?? false ) ) {
+			if ( $this->is_network( $claimed ) ) {
 				$fanout = $this->repair_network_generation_fanout( $claimed );
 				if ( 'superseded' === $fanout['status'] ) {
 					$this->supersede_network_claim( $claimed, $fanout['generation'], $fanout['phase'], $fanout['origin_plugin_file'], $fanout['origin_plugin_scope'] );
@@ -992,7 +992,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$this->log_late_first_attempt( $claimed );
 			$failures = $this->normalize_codes( $this->preflight_service->get_failures() );
 			if ( in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $failures, true ) ) {
-				if ( true === ( $claimed['network_cutover'] ?? false ) ) {
+				if ( $this->is_network( $claimed ) ) {
 					if ( ! $this->propagate_network_exclusion( $claimed['generation'], WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS ) ) {
 						$this->defer( $claimed, array( 'network_exclusion_propagation_pending' ) );
 					}
@@ -1017,7 +1017,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$this->preflight_service->invalidate_current_blog_memoization();
 			$remaining_failures = $this->normalize_codes( $this->preflight_service->get_failures() );
 			if ( in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $remaining_failures, true ) ) {
-				if ( true === ( $claimed['network_cutover'] ?? false ) ) {
+				if ( $this->is_network( $claimed ) ) {
 					if ( ! $this->propagate_network_exclusion( $claimed['generation'], WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS ) ) {
 						$this->defer( $claimed, array( 'network_exclusion_propagation_pending' ), $outcomes );
 					}
@@ -1036,7 +1036,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				return;
 			}
 
-			if ( true === ( $claimed['network_cutover'] ?? false ) ) {
+			if ( $this->is_network( $claimed ) ) {
 				$this->finalize_network_claim( $claimed, $outcomes );
 			} else {
 				$this->finalize_site_claim( $claimed, $outcomes );
@@ -1071,7 +1071,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
 	 */
 	private function close_held_claim( array $claimed ): void {
-		if ( true === ( $claimed['network_cutover'] ?? false ) ) {
+		if ( $this->is_network( $claimed ) ) {
 			if ( ! $this->propagate_network_exclusion( $claimed['generation'], self::INELIGIBLE_CODE ) ) {
 				$this->defer( $claimed, array( 'network_exclusion_propagation_pending' ) );
 				return;
@@ -1124,7 +1124,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					}
 					if ( is_array( $record ) && $record['generation'] > $highest_generation ) {
 						$highest_generation      = $record['generation'];
-						$highest_phase           = WooPaymentsCutoverStateStore::STATE_PENDING === $record['state'] && self::STEP_AWAITING_MERCHANT_START === $record['current_step'] ? 'awaiting_merchant_start' : 'active';
+						$highest_phase           = $this->is_awaiting_start( $record ) ? 'awaiting_merchant_start' : 'active';
 						$highest_origin_file     = null;
 						$highest_origin_scope    = null;
 						$highest_origin_conflict = false;
@@ -1202,8 +1202,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 						$complete = false;
 						continue;
 					}
-					if ( is_array( $record ) && $record['generation'] === $claimed['generation'] && true === ( $record['network_cutover'] ?? false ) ) {
-						if ( WooPaymentsCutoverStateStore::STATE_PENDING === $record['state'] && self::STEP_AWAITING_MERCHANT_START === $record['current_step'] ) {
+					if ( is_array( $record ) && $record['generation'] === $claimed['generation'] && $this->is_network( $record ) ) {
+						if ( $this->is_awaiting_start( $record ) ) {
 							$complete = $this->start_awaiting_generation( $record, self::SOURCE_NETWORK_FANOUT_REPAIR, time() ) && $complete;
 						} elseif ( in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
 							$complete = $this->ensure_record_scheduled( $record, time() ) && $complete;
@@ -1316,7 +1316,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		}
 
 		$deactivated = true;
-		if ( ! $this->is_manual_deactivation_claim( $claimed ) ) {
+		if ( ! $this->is_manual_deactivation( $claimed ) ) {
 			try {
 				$this->internal_plugin_lifecycle_change = true;
 				$deactivated                            = $this->preflight_service->deactivate_woopayments_plugin();
@@ -1647,7 +1647,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return;
 		}
 		if ( $plugin_active ) {
-			if ( $this->is_manual_deactivation_claim( $claimed ) ) {
+			if ( $this->is_manual_deactivation( $claimed ) ) {
 				$this->roll_back_claim( $claimed );
 				return;
 			}
@@ -1698,13 +1698,33 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the claim originated from WordPress's manual deactivation hook.
+	 * Tell whether a record is a generation waiting for the merchant's start.
 	 *
-	 * @param array<string,mixed> $claimed Cutover claim.
+	 * @param array<string,mixed> $record Cutover record.
 	 * @return bool
 	 */
-	private function is_manual_deactivation_claim( array $claimed ): bool {
-		return is_string( $claimed['origin_plugin_file'] ?? null ) && '' !== $claimed['origin_plugin_file'] && in_array( $claimed['origin_plugin_scope'] ?? null, array( 'site', 'network' ), true );
+	public function is_awaiting_start( array $record ): bool {
+		return WooPaymentsCutoverStateStore::STATE_PENDING === $record['state'] && self::STEP_AWAITING_MERCHANT_START === ( $record['current_step'] ?? null );
+	}
+
+	/**
+	 * Tell whether a record belongs to a network-wide cutover.
+	 *
+	 * @param array<string,mixed> $record Cutover record.
+	 * @return bool
+	 */
+	private function is_network( array $record ): bool {
+		return true === ( $record['network_cutover'] ?? false );
+	}
+
+	/**
+	 * Tell whether a record was opened by WordPress's manual deactivation hook.
+	 *
+	 * @param array<string,mixed> $record Cutover record.
+	 * @return bool
+	 */
+	public function is_manual_deactivation( array $record ): bool {
+		return is_string( $record['origin_plugin_file'] ?? null ) && '' !== $record['origin_plugin_file'] && in_array( $record['origin_plugin_scope'] ?? null, array( 'site', 'network' ), true );
 	}
 	/**
 	 * Persist a future ownership-verification attempt after plugin deactivation, then move the tier to the built-in.
@@ -1881,7 +1901,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			function () use ( $record, $now, $code ): bool {
 				$current = $this->state_store->get_record();
 				if ( ! is_array( $current ) || $current !== $record ) {
-					return is_array( $current ) && ! ( WooPaymentsCutoverStateStore::STATE_PENDING === $current['state'] && self::STEP_AWAITING_MERCHANT_START === $current['current_step'] );
+					return is_array( $current ) && ! $this->is_awaiting_start( $current );
 				}
 
 				$deferred                               = $current;
@@ -2210,7 +2230,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		$record = $this->state_store->get_record();
 		if (
 			! is_array( $record )
-			|| ( WooPaymentsCutoverStateStore::STATE_PENDING === $record['state'] && self::STEP_AWAITING_MERCHANT_START === $record['current_step'] )
+			|| $this->is_awaiting_start( $record )
 			|| (
 				! in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true )
 				&& ( WooPaymentsCutoverStateStore::STATE_RUNNING !== $record['state'] || $record[ self::CLAIM_EXPIRES_AT_KEY ] > $now )
@@ -2278,7 +2298,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_settled_network_peer( ?array $record, int $generation ): bool {
-		if ( ! is_array( $record ) || $record['generation'] !== $generation || true !== ( $record['network_cutover'] ?? false ) ) {
+		if ( ! is_array( $record ) || $record['generation'] !== $generation || ! $this->is_network( $record ) ) {
 			return false;
 		}
 		if ( ! in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
@@ -2404,7 +2424,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		$replacement['generation']      = $record['generation'] + 1;
 		$replacement['revision']        = $record['revision'] + 1;
 		$replacement['current_step']    = self::STEP_AWAITING_MERCHANT_START;
-		$replacement['network_cutover'] = true === ( $record['network_cutover'] ?? false );
+		$replacement['network_cutover'] = $this->is_network( $record );
 		$replacement['step_log']        = array(
 			array(
 				'step'    => self::STEP_AWAITING_MERCHANT_START,
@@ -2461,7 +2481,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		if ( $for_admin_notice ) {
 			return false === $this->get_admin_stripe_billing_classification( $record );
 		}
-		if ( true === ( $record['network_cutover'] ?? false ) && is_multisite() ) {
+		if ( $this->is_network( $record ) && is_multisite() ) {
 			return ! $this->network_has_stripe_billing_failure();
 		}
 
@@ -2494,7 +2514,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool|null Whether the marker is present, or null when the preflight failed.
 	 */
 	private function get_admin_stripe_billing_classification( ?array $record ): ?bool {
-		$network = is_array( $record ) && true === ( $record['network_cutover'] ?? false ) && is_multisite();
+		$network = is_array( $record ) && $this->is_network( $record ) && is_multisite();
 		$key     = is_array( $record ) ? $record['generation'] . ':' . $record['revision'] . ( $network ? ':network' : '' ) : 'none';
 		$cached  = get_option( self::ADMIN_CLASSIFICATION_OPTION, null );
 		if ( is_array( $cached ) && ( $cached['key'] ?? null ) === $key && is_bool( $cached['present'] ?? null ) && time() < (int) ( $cached['expires_at'] ?? 0 ) ) {

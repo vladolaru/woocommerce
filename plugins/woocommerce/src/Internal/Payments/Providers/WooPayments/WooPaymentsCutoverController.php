@@ -511,14 +511,14 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private function output_reconciliation_notice(): void {
 		$record = $this->reconciliation_job->classify_for_admin_notice();
 		if ( is_array( $record ) ) {
-			if ( WooPaymentsCutoverStateStore::STATE_PENDING === $record['state'] && 'awaiting_merchant_start' === ( $record['current_step'] ?? null ) ) {
+			if ( $this->reconciliation_job->is_awaiting_start( $record ) ) {
 				if ( $this->is_start_eligible() && $this->reconciliation_job->should_offer_start() ) {
 					$this->output_soft_cutover_notice();
 				}
 				return;
 			}
 			if ( in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_RUNNING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
-				$is_manual_deactivation = is_string( $record['origin_plugin_file'] ?? null ) && '' !== $record['origin_plugin_file'] && in_array( $record['origin_plugin_scope'] ?? null, array( 'site', 'network' ), true );
+				$is_manual_deactivation = $this->reconciliation_job->is_manual_deactivation( $record );
 				if ( ! $is_manual_deactivation ) {
 					?>
 						<div class="notice notice-info"><p><?php esc_html_e( 'Switch in progress', 'woocommerce' ); ?></p></div>
