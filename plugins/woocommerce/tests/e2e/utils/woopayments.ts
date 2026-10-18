@@ -288,7 +288,10 @@ const ORDERS_ROUTE = 'wc/v3/orders';
 const SETTLE_BUDGET_MS = 60_000;
 const POLL_INTERVAL_MS = 2_000;
 /** Reads a `meta_data` value off a raw order object, or `''` when absent. */
-function metaValue( order: Record< string, unknown >, key: string ): string {
+export function metaValue(
+	order: Record< string, unknown >,
+	key: string
+): string {
 	const entries = Array.isArray( order.meta_data )
 		? ( order.meta_data as Array< { key?: unknown; value?: unknown } > )
 		: [];
