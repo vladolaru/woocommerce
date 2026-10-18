@@ -371,7 +371,8 @@ class WooPaymentsFraudRulesetService {
 	 * Get the Standard and High purchase-price threshold: $1,000 in the store currency, converted at the Multi-Currency USD
 	 * rate when USD is an enabled currency, or in USD while the WooPayments Multi-Currency flag is off, as client 11.1.0
 	 * builds it (includes/fraud-prevention/class-fraud-risk-tools.php:396-445). The platform converts the order total into
-	 * the rule's currency, so with no USD rate at all the threshold stays in USD.
+	 * the rule's currency, so with no USD rate at all the threshold stays in USD. The converted amount is written in the store
+	 * currency's own minor units (whole yen for JPY), where client 11.1.0 treats it as cents whatever the currency.
 	 *
 	 * @return string
 	 */
@@ -399,7 +400,7 @@ class WooPaymentsFraudRulesetService {
 			if ( $usd_rate <= 0 ) {
 				return '100000|usd';
 			}
-			$amount = (int) round( $amount * ( 1 / $usd_rate ) );
+			$amount = WooPaymentsCurrencyUtils::amount_to_minor_units( 1000 / $usd_rate, $store_currency );
 		}
 
 		return $amount . '|' . strtolower( $store_currency );

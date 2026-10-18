@@ -2770,6 +2770,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Preset threshold cases: the store, its Multi-Currency setup, the account currency and the expected rule value.
+	 * A zero-decimal store currency (JPY) gets the converted $1,000 in its own minor units, whole yen.
 	 *
 	 * @return array<string,array{0:string,1:string,2:string|null,3:string[],4:string|null,5:string,6:string|null,7:string}>
 	 */
@@ -2777,6 +2778,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		return array(
 			'Multi-Currency flag off'                => array( 'the WooPayments Multi-Currency flag is off', 'EUR', '0', array(), null, 'pln', null, '100000|usd' ),
 			'USD enabled at a manual rate'           => array( 'USD is an enabled currency at a manual rate', 'PLN', null, array( 'PLN', 'USD' ), 'manual:0.23', 'pln', null, '434783|pln' ),
+			'zero-decimal store, USD manual rate'    => array( 'a zero-decimal store currency converts at a manual USD rate', 'JPY', null, array( 'JPY', 'USD' ), 'manual:0.0066667', 'pln', null, '149999|jpy' ),
+			'two-decimal store, USD manual rate'     => array( 'a two-decimal store currency converts at a manual USD rate', 'EUR', null, array( 'EUR', 'USD' ), 'manual:1.08', 'pln', null, '92593|eur' ),
+			'zero-decimal store, USD not enabled'    => array( 'a zero-decimal store currency has no USD rate', 'JPY', null, array(), null, 'pln', null, '100000|jpy' ),
 			'USD at an automatic rate, rates stored' => array( 'USD has an automatic rate only in the rates cache (Multi-Currency off)', 'PLN', null, array( 'PLN', 'USD' ), 'stored:0.25:PLN', 'pln', null, '400000|pln' ),
 			'rates stored for another currency'      => array( 'the rates cache was fetched for the previous store currency (decided answer)', 'EUR', null, array( 'EUR', 'USD' ), 'stored:0.25:PLN', 'pln', null, '100000|usd' ),
 			'USD at an automatic rate, provider'     => array( 'USD has an automatic rate from a running rate provider', 'PLN', null, array( 'PLN', 'USD' ), 'provider:0.23', 'pln', null, '434783|pln' ),
