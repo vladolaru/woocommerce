@@ -33,6 +33,8 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function set_up(): void {
 		parent::set_up();
+		// WooCommerce's own load registers the mirror on a test site without a payments owner; the cases register it themselves.
+		remove_action( FeaturesController::FEATURE_ENABLED_CHANGED_ACTION, array( MultiCurrencyFeatureController::class, 'mirror_extension_flag' ), 10 );
 		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );

@@ -61,9 +61,11 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyAdminNoteController',
 	);
 
-	/** Start each case without the options the Multi-Currency handover reads and writes. */
+	/** Start each case without the extension-flag mirror and the options the Multi-Currency handover reads and writes. */
 	public function setUp(): void {
 		parent::setUp();
+		// WooCommerce's own load registers the mirror on a test site without a payments owner; the cases register it themselves.
+		remove_action( FeaturesController::FEATURE_ENABLED_CHANGED_ACTION, array( MultiCurrencyFeatureController::class, 'mirror_extension_flag' ), 10 );
 		$this->delete_handover_options();
 	}
 
@@ -135,17 +137,18 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 *
 	 * @dataProvider provide_feature_changes
 	 *
-	 * @param string $feature_id The feature the Features page changes.
-	 * @param string $before     The feature's option before the change.
-	 * @param string $flag       The extension's flag before the change.
-	 * @param bool   $enable     The new feature state.
-	 * @param string $expected   The extension's flag after the change.
+	 * @param string $feature_id     The feature the Features page changes.
+	 * @param string $before         The feature's option before the change.
+	 * @param string $flag           The extension's flag before the change.
+	 * @param bool   $enable         The new feature state.
+	 * @param string $expected       The extension's flag after the change.
+	 * @param string $payments_owner The payments owner of the request.
 	 */
-	public function test_features_page_change_mirrors_the_extension_flag( string $feature_id, string $before, string $flag, bool $enable, string $expected ): void {
+	public function test_features_page_change_mirrors_the_extension_flag( string $feature_id, string $before, string $flag, bool $enable, string $expected, string $payments_owner ): void {
 		$features = wc_get_container()->get( FeaturesController::class );
 		$features->change_feature_enable( $feature_id, 'yes' === $before );
 		update_option( '_wcpay_feature_customer_multi_currency', $flag );
-		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
+		$this->register_for_payments_owner( $payments_owner );
 
 		$features->change_feature_enable( $feature_id, $enable );
 
@@ -153,15 +156,18 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Features page changes: Multi-Currency disabled and enabled, and another feature.
+	 * Features page changes: Multi-Currency disabled and enabled, and another feature, under each payments owner.
 	 *
-	 * @return array<string,array{string,string,string,bool,string}>
+	 * @return array<string,array{string,string,string,bool,string,string}>
 	 */
 	public function provide_feature_changes(): array {
 		return array(
-			'disabled on the Features page' => array( MultiCurrencyFeatureController::FEATURE_ID, 'yes', '1', false, '0' ),
-			'enabled on the Features page'  => array( MultiCurrencyFeatureController::FEATURE_ID, 'no', '0', true, '1' ),
-			'another feature changed'       => array( 'cost_of_goods_sold', 'yes', '1', false, '1' ),
+			'disabled on the Features page'         => array( MultiCurrencyFeatureController::FEATURE_ID, 'yes', '1', false, '0', WooPaymentsRuntimeArbiter::OWNER_BUILTIN ),
+			'enabled on the Features page'          => array( MultiCurrencyFeatureController::FEATURE_ID, 'no', '0', true, '1', WooPaymentsRuntimeArbiter::OWNER_BUILTIN ),
+			'another feature changed'               => array( 'cost_of_goods_sold', 'yes', '1', false, '1', WooPaymentsRuntimeArbiter::OWNER_BUILTIN ),
+			'disabled without a payments owner'     => array( MultiCurrencyFeatureController::FEATURE_ID, 'yes', '1', false, '0', WooPaymentsRuntimeArbiter::OWNER_NONE ),
+			'enabled without a payments owner'      => array( MultiCurrencyFeatureController::FEATURE_ID, 'no', '0', true, '1', WooPaymentsRuntimeArbiter::OWNER_NONE ),
+			'not mirrored while the extension owns' => array( MultiCurrencyFeatureController::FEATURE_ID, 'yes', '1', false, '1', WooPaymentsRuntimeArbiter::OWNER_EXTENSION ),
 		);
 	}
 
@@ -189,6 +195,55 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assertSame( 'no', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ), 'The seed adds the option only when it is unset.' );
+	}
+
+	/**
+	 * @testdox Should hand the extension's Multi-Currency state over when the extension is deactivated and nothing owns payments: $_dataName.
+	 *
+	 * @testWith ["0", "yes", "no"]
+	 *           ["1", "no", "yes"]
+	 *
+	 * @param string $flag     The extension's own Multi-Currency flag when it is deactivated.
+	 * @param string $stored   The core feature option at that moment (the upgrade seed, or a Features page save).
+	 * @param string $expected The core feature option after the first request without the extension.
+	 */
+	public function test_extension_deactivation_without_a_payments_owner_hands_over( string $flag, string $stored, string $expected ): void {
+		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_EXTENSION );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, $stored );
+		update_option( '_wcpay_feature_customer_multi_currency', $flag );
+
+		$container = $this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_NONE );
+
+		$this->assertSame( $expected, get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ), 'Core Multi-Currency follows the extension\'s last state.' );
+		$this->assertSame( $expected, $container->get( MultiCurrencyRuntimeArbiter::class )->feature_option_reads[0], 'The arbiter must read the handed-over value.' );
+	}
+
+	/**
+	 * @testdox Should write no option on a request without a payments owner on a store that never ran the extension: feature $feature.
+	 *
+	 * @testWith ["yes"]
+	 *           ["no"]
+	 *
+	 * @param string $feature The core Multi-Currency feature option.
+	 */
+	public function test_store_without_the_extension_writes_no_option_without_a_payments_owner( string $feature ): void {
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, $feature );
+		$written = array();
+		$record  = static function ( $option ) use ( &$written ): void {
+			$written[] = $option;
+		};
+		add_action( 'added_option', $record );
+		add_action( 'updated_option', $record );
+
+		try {
+			$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_NONE );
+		} finally {
+			remove_action( 'added_option', $record );
+			remove_action( 'updated_option', $record );
+		}
+
+		$this->assertSame( array(), $written );
 	}
 
 	/** @testdox Should write nothing when no payments runtime owns the site. */

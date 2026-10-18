@@ -26,7 +26,8 @@ class MultiCurrencyFeatureController {
 	public const FEATURE_ENABLE_OPTION = 'woocommerce_feature_multi_currency_enabled';
 
 	/**
-	 * Per-blog option recording the payments owner this site last ran under ('extension' or 'builtin').
+	 * Per-blog option recording whether the WooPayments extension owned payments on this site's last request ('extension'), or
+	 * the extension's Multi-Currency state was handed over or never existed ('builtin').
 	 */
 	public const LAST_PAYMENTS_OWNER_OPTION = 'woocommerce_multi_currency_last_payments_owner';
 
@@ -36,7 +37,7 @@ class MultiCurrencyFeatureController {
 	public const LAST_PAYMENTS_OWNER_EXTENSION = 'extension';
 
 	/**
-	 * Stored marker value: the site last ran with the built-in WooPayments owning payments.
+	 * Stored marker value: the site last ran without the WooPayments extension owning payments, with any handover done.
 	 */
 	public const LAST_PAYMENTS_OWNER_BUILTIN = 'builtin';
 
@@ -113,11 +114,13 @@ class MultiCurrencyFeatureController {
 	}
 
 	/**
-	 * Record the payments owner this site runs under, and hand the plugin's Multi-Currency state over on the first request after the plugin stops owning it.
+	 * Record whether the WooPayments extension owns payments, and hand its Multi-Currency state over on the first request after it stops owning
+	 * them, whether the built-in WooPayments or nothing owns them next.
 	 *
 	 * The marker is a per-blog option read with get_option(), not a network-wide site option, so each site of a network hands over on its own first
-	 * native-owned request. A plugin-owned request re-arms it, so a reactivation hands over again at the next switch. A native-owned request with no
-	 * marker gets the upgrade seed and the 'builtin' marker. Runs before the Multi-Currency arbiter reads the feature option.
+	 * request without the extension. An extension-owned request re-arms it, so a reactivation hands over again at the next switch. A native-owned
+	 * request with no marker gets the upgrade seed and the 'builtin' marker; a request with no owner and no marker writes nothing. Runs before the
+	 * Multi-Currency arbiter reads the feature option.
 	 *
 	 * @since 11.2.0
 	 *
@@ -133,10 +136,11 @@ class MultiCurrencyFeatureController {
 			return;
 		}
 
-		if ( ! $builtin_owns_payments ) {
-			return;
-		}
 		if ( false === $last_owner ) {
+			if ( ! $builtin_owns_payments ) {
+				return;
+			}
+
 			// No plugin-owned request was recorded (a network site may get none before a network deactivation). Apply the upgrade seed,
 			// which never overwrites a stored choice, and mark the site so later requests read the autoloaded marker instead of a missing option.
 			self::seed_from_prior_use();
@@ -149,10 +153,10 @@ class MultiCurrencyFeatureController {
 	}
 
 	/**
-	 * Claim the plugin-to-native transition with one conditional update of the marker row.
+	 * Claim the transition away from the extension with one conditional update of the marker row.
 	 *
-	 * Two first native-owned requests can both read 'extension'; only the one whose update changes the row hands over, so a choice the
-	 * merchant saves after the first handover is never overwritten by the second.
+	 * Two first requests without the extension can both read 'extension'; only the one whose update changes the row hands over, so a choice
+	 * the merchant saves after the first handover is never overwritten by the second.
 	 *
 	 * @return bool True when this request moved the marker from 'extension' to 'builtin'.
 	 */

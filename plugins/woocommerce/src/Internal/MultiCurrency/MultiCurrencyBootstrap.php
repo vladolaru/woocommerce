@@ -148,10 +148,10 @@ final class MultiCurrencyBootstrap {
 	 */
 	public function register( $container, callable $is_rest_api_request ): void {
 		$arbiter = $container->get( MultiCurrencyRuntimeArbiter::class );
-		// Before the arbiter reads the feature option, so the first native-owned request after the plugin runs on the handed-over value.
+		// Before the arbiter reads the feature option, so the first request after the extension stops owning payments runs on the handed-over value.
 		MultiCurrencyFeatureController::track_payments_owner( $arbiter->is_payments_extension_owner(), $arbiter->is_payments_builtin_owner() );
-		// Also while core Multi-Currency is off, so an enable on the Features page reaches the extension's flag too.
-		if ( $arbiter->is_payments_builtin_owner() && false === has_action( FeaturesController::FEATURE_ENABLED_CHANGED_ACTION, array( MultiCurrencyFeatureController::class, 'mirror_extension_flag' ) ) ) {
+		// Whenever the Features page decides Multi-Currency, also while it is off, so an enable reaches the extension's flag too.
+		if ( ! $arbiter->is_payments_extension_owner() && false === has_action( FeaturesController::FEATURE_ENABLED_CHANGED_ACTION, array( MultiCurrencyFeatureController::class, 'mirror_extension_flag' ) ) ) {
 			add_action( FeaturesController::FEATURE_ENABLED_CHANGED_ACTION, array( MultiCurrencyFeatureController::class, 'mirror_extension_flag' ), 10, 2 );
 		}
 		$owner = $arbiter->get_runtime_owner();
