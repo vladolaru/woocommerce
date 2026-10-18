@@ -187,7 +187,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 
 		$nonce = isset( $_GET[ self::NONCE_NAME ] ) ? sanitize_text_field( wp_unslash( $_GET[ self::NONCE_NAME ] ) ) : '';
 		if ( ! wp_verify_nonce( $nonce, self::NONCE_ACTION ) ) {
-			wp_die( esc_html__( 'Action failed. Please refresh the page and retry.', 'woocommerce' ) );
+			$this->refuse_action();
 		}
 
 		$this->disable_woopayments_plugin();
@@ -201,7 +201,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private function dismiss_completion_notice(): void {
 		$nonce = isset( $_GET[ self::NONCE_NAME ] ) ? sanitize_text_field( wp_unslash( $_GET[ self::NONCE_NAME ] ) ) : '';
 		if ( ! wp_verify_nonce( $nonce, self::DISMISS_NONCE_ACTION ) ) {
-			wp_die( esc_html__( 'Action failed. Please refresh the page and retry.', 'woocommerce' ) );
+			$this->refuse_action();
 		}
 		if ( ! $this->legacy_proxy->call_function( 'current_user_can', 'manage_woocommerce' ) ) {
 			wp_die( esc_html__( 'Sorry, you are not allowed to do that.', 'woocommerce' ), '', array( 'response' => 403 ) );
@@ -275,7 +275,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 
 		// An eligible store manager asked for the switch and nothing was queued, for example while another request held the lease.
 		$this->legacy_proxy->call_function( 'wc_get_logger' )->error( 'WooPayments cutover: the merchant asked to start the switch, but no reconciliation was queued.', array( 'source' => 'woocommerce-woopayments-cutover' ) );
-		wp_die( esc_html__( 'Action failed. Please refresh the page and retry.', 'woocommerce' ) );
+		$this->refuse_action();
 	}
 
 	/**
@@ -613,5 +613,14 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			<p><?php esc_html_e( 'WooPayments is now fully native in WooCommerce. Everything works as before.', 'woocommerce' ); ?></p>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Stop a cutover admin action that cannot go ahead, asking the store manager to refresh and retry.
+	 *
+	 * @return never
+	 */
+	private function refuse_action(): void {
+		wp_die( esc_html__( 'Action failed. Please refresh the page and retry.', 'woocommerce' ) );
 	}
 }
