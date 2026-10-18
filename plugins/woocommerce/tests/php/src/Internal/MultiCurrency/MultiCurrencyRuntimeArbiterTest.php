@@ -199,6 +199,8 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	 * @testdox Should report which WooPayments runtime owns payments, as the payments arbiter resolves it.
 	 */
 	public function test_reports_the_payments_owner(): void {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+		$this->payments_arbiter->invalidate();
 		$this->fake_plugin( true );
 		$this->assertTrue( $this->sut->is_payments_extension_owner() );
 		$this->assertFalse( $this->sut->is_payments_builtin_owner() );
@@ -230,6 +232,8 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	 * @testdox Should run core multi-currency on its feature alone when no payments runtime owns the site, as on manual rates.
 	 */
 	public function test_core_multi_currency_runs_without_a_payments_owner(): void {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+		$this->payments_arbiter->invalidate();
 		$this->fake_plugin( false, false, false, false );
 		$this->enable_core_multi_currency();
 

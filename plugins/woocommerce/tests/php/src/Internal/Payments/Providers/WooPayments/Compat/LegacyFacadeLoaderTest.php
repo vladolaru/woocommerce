@@ -138,6 +138,9 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 	 * @preserveGlobalState disabled
 	 */
 	public function test_facades_stay_absent_when_native_does_not_own_payments(): void {
+		if ( 'yes' === getenv( 'WOOPAYMENTS_FEATURE' ) ) {
+			$this->markTestSkipped( 'The feature-on run loads the built-in WooPayments at boot, which declares the facades for the whole process.' );
+		}
 		$this->register_legacy_facades( false );
 
 		$this->assertFalse( class_exists( 'WC_Payments', false ), 'The plugin or ownerless runtime must retain authority over the WC_Payments symbol.' );

@@ -859,6 +859,9 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 * Test get_details with unsupported country code.
 	 */
 	public function test_get_details_with_unsupported_country() {
+		// The gateway's own not-supported message is the WooPayments extension's, read while the WooPayments feature is off.
+		update_option( 'woocommerce_feature_woopayments_enabled', 'no' );
+
 		// Arrange - Create a gateway that doesn't support onboarding for a specific country.
 		$fake_gateway = new FakePaymentGateway(
 			'woocommerce_payments',

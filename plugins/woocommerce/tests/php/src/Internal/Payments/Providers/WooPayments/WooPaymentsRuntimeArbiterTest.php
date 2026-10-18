@@ -111,6 +111,7 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_owner_is_none_when_plugin_absent_and_native_disabled(): void {
 		$this->fake_plugin();
+		$this->answer_feature_reads( static fn() => 'no' );
 
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'With no plugin and native off, nobody owns the runtime.' );
 		$this->assertFalse( $this->sut->is_builtin_owner(), 'Native must not register when it does not own the runtime.' );
@@ -161,6 +162,8 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 				},
 			)
 		);
+
+		$this->answer_feature_reads( static fn() => 'no' );
 
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
 		$this->assertSame( 0, $network_reads );

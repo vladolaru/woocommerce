@@ -672,6 +672,9 @@ class PaymentsRestControllerIntegrationTest extends WC_Unit_Test_Case {
 	 * Test getting payment providers with no partner gateway active returns all the data.
 	 */
 	public function test_get_payment_providers_has_all_the_data_with_no_partner_gateway_active() {
+		// The WooPayments feature is off, the install default: the suggestion installs the extension.
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+
 		// Arrange.
 		// Reset the WooCommerce gateway order.
 		delete_option( 'woocommerce_gateway_order' );

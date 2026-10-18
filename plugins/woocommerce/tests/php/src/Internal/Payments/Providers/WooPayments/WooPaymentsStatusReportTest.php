@@ -219,6 +219,8 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 * @testdox Site Health registers an asynchronous cutover check that reports runtime ownership and preflight state.
 	 */
 	public function test_site_health_registers_async_cutover_check_with_runtime_and_preflight_state(): void {
+		// The failed switch checks below include the feature being off.
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		$this->fake_plugin( true );
 
 		$tests = $this->get_sut()->add_site_status_tests(

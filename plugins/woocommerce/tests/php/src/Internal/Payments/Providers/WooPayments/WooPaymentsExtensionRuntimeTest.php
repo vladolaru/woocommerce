@@ -314,6 +314,9 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 	 * @param bool|null $expected        Expected answer.
 	 */
 	public function test_compares_extension_version( $version, string $minimum_version, ?bool $expected ): void {
+		if ( null === $version && 'yes' === getenv( 'WOOPAYMENTS_FEATURE' ) ) {
+			$this->markTestSkipped( 'The feature-on run loads the built-in WooPayments at boot, which defines WCPAY_VERSION_NUMBER for the whole process.' );
+		}
 		Constants::clear_constants();
 		if ( null !== $version ) {
 			Constants::set_constant( 'WCPAY_VERSION_NUMBER', $version );

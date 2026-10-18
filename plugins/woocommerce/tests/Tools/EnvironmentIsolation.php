@@ -53,15 +53,10 @@ final class EnvironmentIsolation {
 	);
 
 	/**
-	 * Options a development store may have changed, with the install value a test starts from. A test that needs another
-	 * value writes it itself.
-	 *
-	 * @var array<string,string>
+	 * Environment variable that sets the run's WooPayments feature baseline: 'yes' runs the suite with the feature on (the
+	 * second CI leg); anything else keeps the install value, 'no'.
 	 */
-	private const RESTORED_OPTIONS = array(
-		// The WooPayments feature turns the built-in WooPayments on; the program's stores keep it on.
-		WooPaymentsFeatureController::FEATURE_ENABLE_OPTION => 'no',
-	);
+	private const WOOPAYMENTS_FEATURE_ENV = 'WOOPAYMENTS_FEATURE';
 
 	/**
 	 * Native payments test namespaces kept off the network: no native test may depend on an outside service, so they get a fixed geolocation answer and any un-mocked HTTP request fails.
@@ -91,9 +86,22 @@ final class EnvironmentIsolation {
 			Constants::set_constant( $name, $value );
 		}
 
-		foreach ( self::RESTORED_OPTIONS as $option => $value ) {
+		foreach ( self::get_restored_options() as $option => $value ) {
 			update_option( $option, $value );
 		}
+	}
+
+	/**
+	 * Options a development store may have changed, with the value a test starts from. A test that needs another value
+	 * writes it itself.
+	 *
+	 * @return array<string,string>
+	 */
+	private static function get_restored_options(): array {
+		return array(
+			// The WooPayments feature turns the built-in WooPayments on; the program's stores keep it on.
+			WooPaymentsFeatureController::FEATURE_ENABLE_OPTION => 'yes' === getenv( self::WOOPAYMENTS_FEATURE_ENV ) ? 'yes' : 'no',
+		);
 	}
 
 	/**
@@ -154,7 +162,7 @@ final class EnvironmentIsolation {
 	public static function get_expected_baseline(): array {
 		return array(
 			'pinned_constants' => self::PINNED_CONSTANTS,
-			'restored_options' => self::RESTORED_OPTIONS,
+			'restored_options' => self::get_restored_options(),
 		);
 	}
 }

@@ -48,11 +48,14 @@ class EnvironmentIsolationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave native payments unowned unless a test asks for it.
+	 * @testdox Should run the built-in WooPayments only on the run that asks for it through WOOPAYMENTS_FEATURE.
 	 */
-	public function test_native_payments_is_unowned_by_default(): void {
-		// The end the isolation exists to protect: a store where the WooPayments feature is on must not make every test run under the built-in WooPayments.
-		$this->assertSame( 'no', get_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION ) );
-		$this->assertFalse( wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_enabled(), 'Native payments ownership must be opt-in per test, not an ambient property of the environment.' );
+	public function test_builtin_woopayments_follows_the_run_baseline(): void {
+		// The end the isolation exists to protect: a store where the WooPayments feature is on must not make every test run under the
+		// built-in WooPayments. Only the feature-on CI leg sets WOOPAYMENTS_FEATURE=yes.
+		$feature_on = 'yes' === getenv( 'WOOPAYMENTS_FEATURE' );
+
+		$this->assertSame( $feature_on ? 'yes' : 'no', get_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION ) );
+		$this->assertSame( $feature_on, wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_enabled(), 'The built-in WooPayments runs only on the leg that asks for it.' );
 	}
 }
