@@ -163,13 +163,6 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 	);
 
 	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
-
-	/**
 	 * Canonical-to-split gateway settings synchronizer.
 	 *
 	 * @var WooPaymentsGatewaySettingsSynchronizer
@@ -181,22 +174,18 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter              $arbiter                       Runtime owner arbiter.
 	 * @param WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer Gateway settings synchronizer.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer ): void {
-		$this->arbiter                       = $arbiter;
+	final public function init( WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer ): void {
 		$this->gateway_settings_synchronizer = $gateway_settings_synchronizer;
 	}
 
 	/**
 	 * Register the one-shot normalization hook.
+	 *
+	 * The setup tier lists this class only on the active tier, which exists only while the built-in WooPayments owns the store.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		add_action( 'init', array( $this, 'maybe_run' ), 1 );
 	}
 

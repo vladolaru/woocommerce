@@ -119,31 +119,13 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The legacy admin link hook is registered only while native owns the runtime.
+	 * @testdox The platform link and the Overview "Edit details" link are handled at admin_init; the setup tier decides on which stores the handler loads.
 	 */
-	public function test_registers_only_when_native_owns_runtime(): void {
+	public function test_registers_the_link_and_login_handlers_at_admin_init(): void {
 		$this->sut->register();
 
 		$this->assertNotFalse( has_action( 'admin_init', array( $this->sut, 'handle_request' ) ) );
-
-		remove_action( 'admin_init', array( $this->sut, 'handle_request' ) );
-		$this->sut = $this->create_handler( false );
-		$this->sut->register();
-
-		$this->assertFalse( has_action( 'admin_init', array( $this->sut, 'handle_request' ) ) );
-	}
-
-	/**
-	 * @testdox The Overview "Edit details" link is handled at admin_init only while native owns the runtime.
-	 */
-	public function test_registers_login_handler_only_when_native_owns_runtime(): void {
-		$this->sut->register();
 		$this->assertNotFalse( has_action( 'admin_init', array( $this->sut, 'handle_login_request' ) ) );
-
-		remove_action( 'admin_init', array( $this->sut, 'handle_login_request' ) );
-		$this->sut = $this->create_handler( false );
-		$this->sut->register();
-		$this->assertFalse( has_action( 'admin_init', array( $this->sut, 'handle_login_request' ) ) );
 	}
 
 	/**
@@ -512,16 +494,12 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The hosted KYC return handler runs before the legacy route redirect, and only while native owns the runtime.
+	 * @testdox The hosted KYC return handler runs before the payments path redirect.
 	 */
 	public function test_registers_hosted_kyc_return_hook_before_payments_path_redirects(): void {
 		$this->sut->register();
-		$this->assertSame( 9, has_action( 'admin_init', array( $this->sut, 'handle_hosted_kyc_return' ) ) );
 
-		remove_action( 'admin_init', array( $this->sut, 'handle_hosted_kyc_return' ), 9 );
-		$this->sut = $this->create_handler( false );
-		$this->sut->register();
-		$this->assertFalse( has_action( 'admin_init', array( $this->sut, 'handle_hosted_kyc_return' ) ) );
+		$this->assertSame( 9, has_action( 'admin_init', array( $this->sut, 'handle_hosted_kyc_return' ) ) );
 	}
 
 	/**

@@ -1646,7 +1646,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woopayments_cutover_normalization_version' );
 		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
 		$normalization = new WooPaymentsCutoverNormalizationRunner();
-		$normalization->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
+		$normalization->init( wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
 		$sut = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true, $normalization );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $this->require_state_store()->get_record();
@@ -1709,7 +1709,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woopayments_cutover_normalization_version' );
 		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
 		$normalization = new WooPaymentsCutoverNormalizationRunner();
-		$normalization->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
+		$normalization->init( wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
 		$sut = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true, $normalization );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $this->require_state_store()->get_record();
@@ -1843,7 +1843,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woopayments_cutover_normalization_version' );
 		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
 		$normalization = new WooPaymentsCutoverNormalizationRunner();
-		$normalization->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
+		$normalization->init( wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
 		$sut = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true, $normalization );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $this->require_state_store()->get_record();

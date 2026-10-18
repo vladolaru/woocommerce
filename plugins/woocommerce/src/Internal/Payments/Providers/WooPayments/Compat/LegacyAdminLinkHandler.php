@@ -83,13 +83,12 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register the legacy admin-link hook.
+	 * Register the admin-link hooks.
+	 *
+	 * The setup tier lists this class only on connected and active admin requests, which exist only while the built-in
+	 * WooPayments owns the store. Each callback still checks ownership when it runs.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->is_builtin_owner() ) {
-			return;
-		}
-
 		add_action( 'admin_init', array( $this, 'handle_request' ) );
 
 		add_action( 'admin_init', array( $this, 'handle_login_request' ) );

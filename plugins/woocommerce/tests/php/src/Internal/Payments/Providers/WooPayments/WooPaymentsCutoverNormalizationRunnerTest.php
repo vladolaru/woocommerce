@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
@@ -106,20 +105,14 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Registers the one-shot normalization hook only when native owns WooPayments.
+	 * @testdox Registers the one-shot normalization hook early on init; the setup tier decides on which stores it loads.
 	 */
-	public function test_register_is_native_runtime_gated(): void {
-		$inactive_runner = $this->create_runner( false );
+	public function test_register_adds_the_one_shot_hook_early_on_init(): void {
+		$runner = $this->create_runner();
 
-		$inactive_runner->register();
+		$runner->register();
 
-		$this->assertFalse( has_action( 'init', array( $inactive_runner, 'maybe_run' ) ) );
-
-		$active_runner = $this->create_runner( true );
-
-		$active_runner->register();
-
-		$this->assertSame( 1, has_action( 'init', array( $active_runner, 'maybe_run' ) ) );
+		$this->assertSame( 1, has_action( 'init', array( $runner, 'maybe_run' ) ) );
 	}
 
 	/**
@@ -898,20 +891,13 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the runner under test.
 	 *
-	 * @param bool $native_register Whether native runtime should own registration.
 	 * @return WooPaymentsCutoverNormalizationRunner
 	 */
-	private function create_runner( bool $native_register = true ): WooPaymentsCutoverNormalizationRunner {
+	private function create_runner(): WooPaymentsCutoverNormalizationRunner {
 		$this->assertTrue( class_exists( WooPaymentsCutoverNormalizationRunner::class ), 'WooPaymentsCutoverNormalizationRunner should exist.' );
 
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
-
 		$this->runner = new WooPaymentsCutoverNormalizationRunner();
-		$this->runner->init( $arbiter, wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
+		$this->runner->init( wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
 
 		return $this->runner;
 	}
