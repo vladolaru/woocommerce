@@ -4855,29 +4855,13 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Build an early fraud warning event.
+	 * An early fraud warning event the platform forwarded (Fixtures/platform-early-fraud-warning-events.json).
 	 *
-	 * Client 11.1.0 handles the created and updated types alike and reads the charge, id, actionable and created fields
-	 * (class-wc-payments-webhook-processing-service.php:201-203, :867-879).
-	 *
-	 * @param string $event_id   Provider event ID.
 	 * @param string $event_type Event type.
 	 * @return array<string,mixed>
 	 */
-	private function create_early_fraud_warning_event( string $event_id, string $event_type = 'radar.early_fraud_warning.created' ): array {
-		return array(
-			'id'       => $event_id,
-			'type'     => $event_type,
-			'livemode' => false,
-			'data'     => array(
-				'object' => array(
-					'charge'     => 'ch_early_warning',
-					'id'         => 'efw_123',
-					'actionable' => true,
-					'created'    => 123,
-				),
-			),
-		);
+	private function create_early_fraud_warning_event( string $event_type = 'radar.early_fraud_warning.created' ): array {
+		return RecordedPlatformEvents::body( 'platform-early-fraud-warning-events.json', 'radar.early_fraud_warning.updated' === $event_type ? 'early_fraud_warning_updated' : 'early_fraud_warning_created' );
 	}
 
 	/**
@@ -4897,7 +4881,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			new class() extends WooPaymentsApiClient {},
 			$handler
 		);
-		$event      = $this->create_early_fraud_warning_event( 'evt_early_warning_hooks', $event_type );
+		$event      = $this->create_early_fraud_warning_event( $event_type );
 		$hook_calls = array();
 		add_action(
 			'woocommerce_payments_before_webhook_delivery',
@@ -4947,16 +4931,15 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 				$hook_calls[] = 'before';
 			}
 		);
-		$event                             = $this->create_early_fraud_warning_event( 'evt_early_warning_mode_mismatch' );
-		$event['livemode']                 = true;
-		$event['data']['object']['charge'] = 'ch_that_does_not_exist';
+		$event             = $this->create_early_fraud_warning_event();
+		$event['livemode'] = true;
 
 		$logger = RecordingWcLogger::install();
 
 		$sut->process( $event );
 
 		$this->assertSame( array(), $hook_calls );
-		$this->assertSame( array( array( 'error', 'Webhook event mode did not match the gateway mode (event ID: evt_early_warning_mode_mismatch)', 'woopayments' ) ), $logger->get_errors() );
+		$this->assertSame( array( array( 'error', 'Webhook event mode did not match the gateway mode (event ID: ' . $event['id'] . ')', 'woopayments' ) ), $logger->get_errors() );
 	}
 
 	/**

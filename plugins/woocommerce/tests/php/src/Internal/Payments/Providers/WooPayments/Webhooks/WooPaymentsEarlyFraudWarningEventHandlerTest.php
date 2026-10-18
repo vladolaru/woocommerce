@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooP
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use WC_Order;
@@ -29,31 +30,28 @@ class WooPaymentsEarlyFraudWarningEventHandlerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should persist a valid created warning and add its private merchant note.
+	 *
+	 * The warning is the one the platform forwarded (Fixtures/platform-early-fraud-warning-events.json), on the order paid
+	 * by its charge and intent.
 	 */
 	public function test_persists_created_warning_and_adds_private_note(): void {
-		$order   = $this->create_woopayments_order();
+		$warning = RecordedPlatformEvents::body( 'platform-early-fraud-warning-events.json', 'early_fraud_warning_created' )['data']['object'];
+		$order   = $this->create_woopayments_order( $warning['charge'] );
+		$order->update_meta_data( '_intent_id', $warning['payment_intent'] );
+		$order->save();
 		$logger  = RecordingWcLogger::install();
 		$handler = $this->create_handler();
 
-		$handler->process(
-			'radar.early_fraud_warning.created',
-			array(
-				'charge'     => 'ch_early_warning',
-				'id'         => 'efw_123',
-				'actionable' => true,
-				'created'    => 123,
-				'fraud_type' => 'made_with_stolen_card',
-			)
-		);
+		$handler->process( 'radar.early_fraud_warning.created', $warning );
 
 		$fresh_order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $fresh_order );
 		$this->assertSame(
 			array(
-				'efw_id'         => 'efw_123',
+				'efw_id'         => $warning['id'],
 				'efw_actionable' => true,
 				'efw_type'       => 'made_with_stolen_card',
-				'created'        => 123,
+				'created'        => $warning['created'],
 			),
 			$fresh_order->get_meta( '_wcpay_early_fraud_warning', true )
 		);
