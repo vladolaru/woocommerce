@@ -217,6 +217,7 @@ describe( 'fraud protection advanced ruleset utilities', () => {
 				},
 			],
 			{
+				storeCurrency: 'USD',
 				isReviewFeatureActive: false,
 				isAvsFailureDeclineEnabled: false,
 			}
@@ -274,6 +275,9 @@ describe( 'fraud protection advanced ruleset utilities', () => {
 			settingsWindow.wcSettings = previousWcSettings;
 		} );
 
+		// The provider's purchase-price rule: an "or" of order_total checks, as client 11.1.0 builds it
+		// (client/settings/fraud-protection/advanced-settings/utils.ts:183). The amounts differ on purpose: native
+		// writes the currency's own minor units, where the client multiplies by 100 for every currency.
 		const priceRule = ( min: string | null, max: string | null ) => ( {
 			key: Rules.RULE_PURCHASE_PRICE_THRESHOLD,
 			outcome: Outcomes.BLOCK,
@@ -363,9 +367,17 @@ describe( 'fraud protection advanced ruleset utilities', () => {
 		);
 
 		it.each( [
-			[ 'zero-decimal rule (JPY)', '500|JPY', '50000|JPY', 500, 50000 ],
+			[
+				'zero-decimal rule (JPY)',
+				'JPY',
+				'500|JPY',
+				'50000|JPY',
+				500,
+				50000,
+			],
 			[
 				'two-decimal rule (USD)',
+				'USD',
 				'50000|USD',
 				'5000000|USD',
 				500,
@@ -374,23 +386,26 @@ describe( 'fraud protection advanced ruleset utilities', () => {
 			// No migration: a JPY rule saved before the fix shows the amount the platform enforces.
 			[
 				'JPY rule saved as cents before the fix',
+				'JPY',
 				null,
 				'5000000|JPY',
 				'',
 				5000000,
 			],
-			// A preset kept in USD on another store currency reads in its own currency.
+			// A preset kept in USD reads in the store currency, keeping its number, as in client 11.1.0.
 			[
 				'USD preset on a zero-decimal store',
+				'JPY',
 				null,
 				'100000|usd',
 				'',
-				1000,
+				100000,
 			],
 		] )(
 			'reads the limits back for a %s',
-			( _label, min, max, expectedMin, expectedMax ) => {
+			( _label, storeCurrency, min, max, expectedMin, expectedMax ) => {
 				const uiSettings = readRuleset( [ priceRule( min, max ) ], {
+					storeCurrency,
 					isReviewFeatureActive: false,
 					isAvsFailureDeclineEnabled: false,
 				} );
@@ -403,6 +418,53 @@ describe( 'fraud protection advanced ruleset utilities', () => {
 						min_amount: expectedMin,
 						max_amount: expectedMax,
 					} )
+				);
+			}
+		);
+
+		// A save rewrites the price rule from what the page loaded, so a rule kept in another currency must keep its
+		// number; only the suffix becomes the store currency's, as in client 11.1.0.
+		it.each( [
+			[
+				'JPY rule on a USD store',
+				'USD',
+				'500|JPY',
+				'50000|JPY',
+				'500|USD',
+				'50000|USD',
+			],
+			[
+				'USD preset on a JPY store',
+				'JPY',
+				null,
+				'100000|usd',
+				null,
+				'100000|JPY',
+			],
+		] )(
+			'saves a %s with its number unchanged',
+			( _label, storeCurrency, min, max, expectedMin, expectedMax ) => {
+				const environment = {
+					storeCurrency,
+					isReviewFeatureActive: false,
+					isAvsFailureDeclineEnabled: false,
+					allowedCountriesType: 'all',
+					settingCountries: [],
+				};
+
+				const [ rule ] = writeRuleset(
+					readRuleset( [ priceRule( min, max ) ], environment ),
+					environment
+				);
+
+				expect( rule.check ).toEqual(
+					expectedMin
+						? priceRule( expectedMin, expectedMax ).check
+						: {
+								key: Checks.CHECK_ORDER_TOTAL,
+								operator: CheckOperators.OPERATOR_GT,
+								value: expectedMax,
+						  }
 				);
 			}
 		);
@@ -942,6 +1004,8 @@ describe( 'FraudProtectionAdvancedSettingsPage', () => {
 	} );
 
 	it( 'shows a saved JPY maximum in yen and saves a new minimum in yen', async () => {
+		// A single order_total check, as client 11.1.0 writes one limit
+		// (client/settings/fraud-protection/advanced-settings/utils.ts:203-213); the yen amount is native's departure.
 		const priceRule = {
 			key: Rules.RULE_PURCHASE_PRICE_THRESHOLD,
 			outcome: Outcomes.BLOCK,

@@ -78,15 +78,19 @@ const buildFormattedRulePrice = (
 	].join( '|' );
 };
 
-// Read in the rule's own currency, which can differ from the store's (a preset kept in USD).
-const readFormattedRulePrice = ( value: unknown ) => {
+// Read in the store currency, the exact inverse of the write, so a save keeps the stored number even for a rule kept in
+// another currency (a preset in USD); only the suffix becomes the store's, as in client 11.1.0.
+const readFormattedRulePrice = ( value: unknown, storeCurrency: string ) => {
 	if ( ! value ) {
 		return '';
 	}
 
-	const [ amount, currency = '' ] = `${ value }`.split( '|' );
+	const [ amount ] = `${ value }`.split( '|' );
 
-	return getWooPaymentsAmountFromMinorUnits( Number( amount ), currency );
+	return getWooPaymentsAmountFromMinorUnits(
+		Number( amount ),
+		storeCurrency
+	);
 };
 
 const getRuleBase = (
@@ -382,10 +386,12 @@ export const readRuleset = (
 						enabled: true,
 						block: getRuleBlockStatus( rule.outcome, environment ),
 						min_amount: readFormattedRulePrice(
-							getThresholdCheckValue( minAmountCheck )
+							getThresholdCheckValue( minAmountCheck ),
+							environment.storeCurrency
 						),
 						max_amount: readFormattedRulePrice(
-							getThresholdCheckValue( maxAmountCheck )
+							getThresholdCheckValue( maxAmountCheck ),
+							environment.storeCurrency
 						),
 					};
 					break;

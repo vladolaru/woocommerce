@@ -56,6 +56,7 @@ export type FraudProtectionEnvironment = {
 };
 
 export type FraudProtectionReadEnvironment = {
+	storeCurrency: string;
 	isReviewFeatureActive: boolean;
 	isAvsFailureDeclineEnabled: boolean;
 };
