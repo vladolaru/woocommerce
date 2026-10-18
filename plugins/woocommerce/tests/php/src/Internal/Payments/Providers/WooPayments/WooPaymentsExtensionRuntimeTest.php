@@ -56,7 +56,6 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 		$this->assertSame( $gateway, $sut->get_gateway() );
 		$this->assertSame( $account, $sut->get_account_service() );
 		$this->assertSame( $api_client, $sut->get_payments_api_client() );
-		$this->assertSame( $logger, $sut->get_logger() );
 	}
 
 	/**
@@ -379,7 +378,6 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 		$this->assertNull( $sut->get_gateway() );
 		$this->assertNull( $sut->get_account_service() );
 		$this->assertNull( $sut->get_payments_api_client() );
-		$this->assertNull( $sut->get_logger() );
 		$this->assertNull( $sut->get_account_connect_url( 'native-payments' ) );
 		$this->assertNull( $sut->is_test_mode() );
 		$this->assertNull( $sut->is_dev_mode() );

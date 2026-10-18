@@ -110,21 +110,6 @@ class WooPaymentsExtensionRuntime {
 	}
 
 	/**
-	 * Get the WooCommerce logger.
-	 *
-	 * @return object|null
-	 */
-	public function get_logger(): ?object {
-		try {
-			$logger = $this->legacy_proxy->call_function( 'wc_get_logger' );
-		} catch ( \Throwable $e ) {
-			return null;
-		}
-
-		return is_object( $logger ) ? $logger : null;
-	}
-
-	/**
 	 * Get the WooPayments extension's account connect URL.
 	 *
 	 * @param string $source Source context.
