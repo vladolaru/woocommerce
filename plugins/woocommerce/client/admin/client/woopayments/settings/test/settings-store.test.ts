@@ -283,6 +283,12 @@ describe( 'WooPayments settings store', () => {
 		} );
 
 		await expect( store.dispatch().saveSettings() ).resolves.toBe( false );
+		// The untick itself is sent; the route refused it.
+		expect( store.apiFetch ).toHaveBeenCalledWith( {
+			path: SETTINGS_PATH,
+			method: 'post',
+			data: { is_multi_currency_enabled: false },
+		} );
 
 		const data = await import( '@wordpress/data' );
 		const notices = (
