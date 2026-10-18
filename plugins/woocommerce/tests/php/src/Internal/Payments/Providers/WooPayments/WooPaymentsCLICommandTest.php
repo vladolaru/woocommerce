@@ -64,15 +64,21 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Status lines report whether core Multi-Currency runs and the WooPayments rate provider's availability: $_dataName.
 	 *
+	 * The command is registered whoever owns payments (includes/class-wc-cli.php:80), so it also reports while the
+	 * WooPayments extension does, when core Multi-Currency never runs.
+	 *
 	 * @dataProvider provide_multi_currency_lines
 	 *
-	 * @param string $core_option The core Multi-Currency feature option.
-	 * @param string $flag        The WooPayments Multi-Currency flag an earlier plugin install left.
-	 * @param string $expected    Expected status line.
+	 * @param string $core_option   The core Multi-Currency feature option.
+	 * @param string $flag          The WooPayments Multi-Currency flag an earlier plugin install left.
+	 * @param bool   $builtin_owner Whether the built-in WooPayments owns payments, rather than the extension.
+	 * @param string $expected      Expected status line.
 	 */
-	public function test_status_lines_report_multi_currency_and_rate_provider( string $core_option, string $flag, string $expected ): void {
-		$this->fake_plugin( false );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+	public function test_status_lines_report_multi_currency_and_rate_provider( string $core_option, string $flag, bool $builtin_owner, string $expected ): void {
+		$this->fake_plugin( ! $builtin_owner );
+		if ( $builtin_owner ) {
+			add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		}
 		$this->seed_connected_store();
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, $core_option );
 		update_option( '_wcpay_feature_customer_multi_currency', $flag );
@@ -86,12 +92,13 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 	/**
 	 * Core Multi-Currency states against the WooPayments flag, and the line each prints.
 	 *
-	 * @return array<string,array{string,string,string}>
+	 * @return array<string,array{string,string,bool,string}>
 	 */
 	public function provide_multi_currency_lines(): array {
 		return array(
-			'core Multi-Currency on, flag off' => array( 'yes', '0', 'Multi-currency: enabled (rate provider: woopayments, unavailable)' ),
-			'core Multi-Currency off, flag on' => array( 'no', '1', 'Multi-currency: disabled (rate provider: woopayments, unavailable)' ),
+			'core Multi-Currency on, flag off' => array( 'yes', '0', true, 'Multi-currency: enabled (rate provider: woopayments, unavailable)' ),
+			'core Multi-Currency off, flag on' => array( 'no', '1', true, 'Multi-currency: disabled (rate provider: woopayments, unavailable)' ),
+			'core option on, extension owner'  => array( 'yes', '1', false, 'Multi-currency: disabled (rate provider: woopayments, unavailable)' ),
 		);
 	}
 

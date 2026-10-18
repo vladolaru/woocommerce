@@ -172,7 +172,7 @@ class WooPaymentsSellingLocationsFraudSyncTest extends WC_Unit_Test_Case {
 	 * @testdox Should keep the merchant's outcome with the new check: $_dataName.
 	 *
 	 * Client 11.1.0 rebuilds the whole rule with the review feature's default outcome
-	 * (includes/class-wc-payment-gateway-wcpay.php:3832-3840), so a block became review and a review became block.
+	 * (includes/class-wc-payment-gateway-wcpay.php:3832-3843), so a block became review and a review became block.
 	 *
 	 * @dataProvider provide_merchant_outcomes
 	 *

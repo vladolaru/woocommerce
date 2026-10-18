@@ -29,7 +29,7 @@ class FakeWooPayAffiliateApi {
 	 *
 	 * @param int                 $order_id     Order ID.
 	 * @param int                 $affiliate_id Affiliate ID.
-	 * @param string              $type         Conversion type, as AFWC names it (order, pageview).
+	 * @param string              $type         Conversion type, as AFWC names it (AFWC 9.17.0 includes/class-afwc-api.php:153-160).
 	 * @param array<string,mixed> $params       Extra parameters.
 	 */
 	public function track_conversion( $order_id, $affiliate_id, $type = '', $params = array() ): void {

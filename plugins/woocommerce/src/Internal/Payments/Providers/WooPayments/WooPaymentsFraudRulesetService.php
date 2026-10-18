@@ -454,7 +454,7 @@ class WooPaymentsFraudRulesetService {
 	 *
 	 * Only an advanced ruleset carries the merchant's country check, and the platform is called only when that check
 	 * changed (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:3818-3853`). The rule keeps the merchant's
-	 * block or review outcome, where client 11.1.0 replaces the whole rule (`:3832-3840`).
+	 * block or review outcome, where client 11.1.0 replaces the whole rule (`:3832-3843`).
 	 *
 	 * @since 11.2.0
 	 *
