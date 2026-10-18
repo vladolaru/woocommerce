@@ -69,6 +69,7 @@ export const NativeBadge = ( { suggestionId }: NativeBadgeProps ) => {
 		<Pill className="woocommerce-official-extension-badge">
 			<span
 				className="woocommerce-official-extension-badge__container"
+				data-testid="woocommerce-builtin-badge"
 				tabIndex={ 0 }
 				role="button"
 				ref={ buttonRef }
