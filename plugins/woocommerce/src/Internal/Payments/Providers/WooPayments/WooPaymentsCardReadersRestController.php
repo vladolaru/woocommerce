@@ -534,7 +534,9 @@ class WooPaymentsCardReadersRestController extends RestApiControllerBase {
 	}
 
 	/**
-	 * Get receipt line items.
+	 * Get receipt line items: the unit price the shopper paid on each order line (its subtotal per unit, so no strike-through)
+	 * and the product's SKU, where client 11.1.0 passes the product's current prices and the template prints the ID
+	 * (includes/in-person-payments/class-wc-payments-in-person-payments-receipts-service.php:96-106).
 	 *
 	 * @param WC_Order $order Order.
 	 * @return array<int,array<string,mixed>>
@@ -549,8 +551,7 @@ class WooPaymentsCardReadersRestController extends RestApiControllerBase {
 			$product       = $item->get_product();
 			$quantity      = max( 1, (int) $item->get_quantity() );
 			$line_subtotal = (float) $item->get_subtotal();
-			$price         = $product instanceof \WC_Product && '' !== $product->get_price() ? (float) $product->get_price() : ( $quantity > 0 ? $line_subtotal / $quantity : $line_subtotal );
-			$regular_price = $product instanceof \WC_Product && '' !== $product->get_regular_price() ? (float) $product->get_regular_price() : $price;
+			$unit_price    = round( $line_subtotal / $quantity, wc_get_price_decimals() );
 
 			$items[] = array(
 				'name'     => $item->get_name(),
@@ -558,8 +559,9 @@ class WooPaymentsCardReadersRestController extends RestApiControllerBase {
 				'subtotal' => $line_subtotal,
 				'product'  => array(
 					'id'            => $product instanceof \WC_Product ? $product->get_id() : $item->get_product_id(),
-					'price'         => $price,
-					'regular_price' => $regular_price,
+					'price'         => $unit_price,
+					'regular_price' => $unit_price,
+					'sku'           => $product instanceof \WC_Product ? $product->get_sku() : '',
 				),
 			);
 		}

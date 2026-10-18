@@ -159,7 +159,7 @@ $payment_method_display_name = $payment_method_display_name ?? '';
 					<td class="align-left">
 						<div><?php echo esc_html( $item['name'] ); ?></div>
 						<div><?php echo esc_html( $item['quantity'] ); ?> @ <?php echo wp_kses( wcpay_format_price_helper( $item['product'], $order['currency'] ), 'post' ); ?></div>
-						<div><?php printf( '%s: %s', esc_html__( 'SKU', 'woocommerce' ), esc_html( $item['product']['id'] ) ); ?></div>
+						<div><?php printf( '%s: %s', esc_html__( 'SKU', 'woocommerce' ), esc_html( ! empty( $item['product']['sku'] ) ? $item['product']['sku'] : $item['product']['id'] ) ); ?></div>
 					</td>
 					<td class="align-right align-top"><?php echo wp_kses( wc_price( $item['subtotal'], array( 'currency' => $order['currency'] ) ), 'post' ); ?></td>
 				</tr>
