@@ -2694,8 +2694,10 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @param string      $store_currency    Store currency.
 	 * @param string|null $flag              The WooPayments Multi-Currency flag, or null for never saved.
 	 * @param string[]    $enabled           Multi-Currency enabled currencies.
-	 * @param string|null $usd_rate          The USD rate as "manual:<rate>", "stored:<rate>:<store currency the cache was fetched
-	 *                                       for>" (rates cache only) or "provider:<rate>" (a running rate provider), or null for none.
+	 * @param string|null $usd_rate          The USD rate as "manual:<rate>[:<store currency it was set for>]", "stored:<rate>:<store
+	 *                                       currency the cache was fetched for>" (rates cache only) or "provider:<rate>" (a running
+	 *                                       rate provider), or null for none; manual and provider rates belong to the store currency
+	 *                                       unless named.
 	 * @param string      $account_currency  The account's default currency.
 	 * @param string|null $filtered_currency A currency a woocommerce_currency filter answers, or null for none.
 	 * @param string      $expected          Expected threshold value.
@@ -2715,6 +2717,10 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		}
 		update_option( 'wcpay_multi_currency_enabled_currencies', $enabled );
 		list( $rate_source, $rate, $cache_currency ) = array_pad( null === $usd_rate ? array() : explode( ':', $usd_rate ), 3, null );
+		if ( 'manual' === $rate_source || 'provider' === $rate_source ) {
+			// The store currency the rate was set for; a running Multi-Currency records the current one on every request.
+			update_option( 'wcpay_multi_currency_store_currency', $cache_currency ?? $store_currency );
+		}
 		if ( 'manual' === $rate_source ) {
 			update_option( 'wcpay_multi_currency_exchange_rate_usd', 'manual' );
 			update_option( 'wcpay_multi_currency_manual_rate_usd', $rate );
@@ -2757,6 +2763,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			$this->assertIsArray( $result );
 			$this->assertSame( $expected_standard, $this->api_client->last_fraud_ruleset );
 			$this->assertSame( 'standard', $this->sut->get_settings()['current_protection_level'], 'A ruleset the extension built for this store reads back as Standard.' );
+			if ( 'manual' === $rate_source ) {
+				$this->assertSame( $rate, (string) get_option( 'wcpay_multi_currency_manual_rate_usd' ), 'The manual rate is never changed.' );
+			}
 		} finally {
 			$registry_factory->set_provider_registrars( $registrars );
 			// Through delete_option(), so the shared Multi-Currency state sees the change.
@@ -2783,6 +2792,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			'zero-decimal store, USD not enabled'    => array( 'a zero-decimal store currency has no USD rate', 'JPY', null, array(), null, 'pln', null, '100000|jpy' ),
 			'USD at an automatic rate, rates stored' => array( 'USD has an automatic rate only in the rates cache (Multi-Currency off)', 'PLN', null, array( 'PLN', 'USD' ), 'stored:0.25:PLN', 'pln', null, '400000|pln' ),
 			'rates stored for another currency'      => array( 'the rates cache was fetched for the previous store currency (decided answer)', 'EUR', null, array( 'EUR', 'USD' ), 'stored:0.25:PLN', 'pln', null, '100000|usd' ),
+			'manual rate set for another currency'   => array( 'the manual USD rate was set for the previous store currency (decided answer)', 'EUR', null, array( 'EUR', 'USD' ), 'manual:0.25:PLN', 'pln', null, '100000|usd' ),
 			'USD at an automatic rate, provider'     => array( 'USD has an automatic rate from a running rate provider', 'PLN', null, array( 'PLN', 'USD' ), 'provider:0.23', 'pln', null, '434783|pln' ),
 			'USD listed without a rate'              => array( 'USD is enabled but no rate is stored (decided answer)', 'PLN', '1', array( 'PLN', 'USD' ), null, 'pln', null, '100000|usd' ),
 			'USD not enabled'                        => array( 'the store currency differs from the account currency', 'EUR', null, array(), null, 'pln', null, '100000|eur' ),
