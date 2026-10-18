@@ -55,6 +55,8 @@ class WooPaymentsWooPayPreflightGuardTest extends WC_Unit_Test_Case {
 
 		$this->post_snapshot = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing -- The fixture restores the inherited request state exactly.
 		$this->snapshot_and_remove_guarded_hooks();
+		// Each request below is a signed WooPay request naming the WooPayments gateway; each row fails on one other condition.
+		add_filter( 'wcpay_is_woopay_store_api_request', '__return_true' );
 	}
 
 	/**
@@ -62,6 +64,7 @@ class WooPaymentsWooPayPreflightGuardTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		try {
+			remove_filter( 'wcpay_is_woopay_store_api_request', '__return_true' );
 			$this->restore_guarded_hook_snapshots();
 			$_POST = $this->post_snapshot;
 			wc_clear_notices();
@@ -168,7 +171,12 @@ class WooPaymentsWooPayPreflightGuardTest extends WC_Unit_Test_Case {
 			++$expected_callback_count;
 			$request  = new WP_REST_Request( 'POST', $request_data[0] );
 			$response = new \stdClass();
-			$request->set_body_params( array( 'payment_data' => $request_data[1] ) );
+			$request->set_body_params(
+				array(
+					'payment_method' => 'woocommerce_payments',
+					'payment_data'   => $request_data[1],
+				)
+			);
 
 			$this->assertSame( $response, apply_filters( 'rest_request_before_callbacks', $response, array(), $request ), $label );
 			do_action( 'woocommerce_store_api_checkout_update_order_meta' );
@@ -187,7 +195,7 @@ class WooPaymentsWooPayPreflightGuardTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected_callback_count, $per_user_limit_calls );
 	}
 
-	/** @testdox Suppresses checkout and coupon side effects for an exact WooPay preflight request. */
+	/** @testdox Suppresses checkout and coupon side effects for a signed WooPay preflight request naming the WooPayments gateway. */
 	public function test_preflight_request_suppresses_checkout_and_coupon_side_effects(): void {
 		$guard              = new WooPaymentsWooPayPreflightGuard();
 		$order              = $this->create_order();
@@ -252,7 +260,8 @@ class WooPaymentsWooPayPreflightGuardTest extends WC_Unit_Test_Case {
 		$response = new \stdClass();
 		$request->set_body_params(
 			array(
-				'payment_data' => array(
+				'payment_method' => 'woocommerce_payments',
+				'payment_data'   => array(
 					array(
 						'key'   => 'is-woopay-preflight-check',
 						'value' => true,
@@ -383,7 +392,8 @@ class WooPaymentsWooPayPreflightGuardTest extends WC_Unit_Test_Case {
 		$preflight_response = new \stdClass();
 		$preflight_request->set_body_params(
 			array(
-				'payment_data' => array(
+				'payment_method' => 'woocommerce_payments',
+				'payment_data'   => array(
 					array(
 						'key'   => 'is-woopay-preflight-check',
 						'value' => true,
@@ -416,7 +426,8 @@ class WooPaymentsWooPayPreflightGuardTest extends WC_Unit_Test_Case {
 		$following_response = new \stdClass();
 		$following_request->set_body_params(
 			array(
-				'payment_data' => array(
+				'payment_method' => 'woocommerce_payments',
+				'payment_data'   => array(
 					array(
 						'key'   => 'ordinary-request',
 						'value' => true,
