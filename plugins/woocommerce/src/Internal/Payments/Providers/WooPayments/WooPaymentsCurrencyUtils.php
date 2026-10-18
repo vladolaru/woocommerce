@@ -153,8 +153,7 @@ final class WooPaymentsCurrencyUtils {
 	/**
 	 * Format an amount for an order note: in its own currency, with the order's currency code added where prices show it.
 	 *
-	 * The code follows WooCommerce's explicit admin price setting; while the WooPayments extension is loaded, its
-	 * explicit price formatter decides instead. An empty currency means the order's.
+	 * The code follows WooCommerce's explicit admin price setting. An empty currency means the order's.
 	 *
 	 * @since 11.2.0
 	 *
@@ -166,11 +165,6 @@ final class WooPaymentsCurrencyUtils {
 	public static function format_explicit_order_price( float $amount, string $currency, WC_Order $order ): string {
 		$currency        = strtoupper( '' !== $currency ? $currency : $order->get_currency() );
 		$formatted_price = self::format_price_in_currency( $amount, $currency );
-		$formatter       = array( 'WC_Payments_Explicit_Price_Formatter', 'get_explicit_price' );
-
-		if ( class_exists( 'WC_Payments_Explicit_Price_Formatter' ) && is_callable( $formatter ) ) {
-			return (string) call_user_func( $formatter, $formatted_price, $order );
-		}
 
 		return MultiCurrencyExplicitPriceProjectionService::get_explicit_price_with_currency(
 			$formatted_price,

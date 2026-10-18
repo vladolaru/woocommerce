@@ -1688,9 +1688,7 @@ class WooPaymentsOrderNoteService {
 	/**
 	 * Format the amount as notes in the woocommerce-payments wording carry it.
 	 *
-	 * When client 11.1.0's explicit price formatter is loaded (class-wc-payments-explicit-price-formatter.php:106), it
-	 * decides; otherwise, with additional currencies configured, both renderings are returned rather than starting
-	 * Multi-Currency from a note.
+	 * With additional currencies configured, both renderings are returned rather than starting Multi-Currency from a note.
 	 *
 	 * @param WC_Order $order    Order object.
 	 * @param float    $amount   Amount to format.
@@ -1700,11 +1698,6 @@ class WooPaymentsOrderNoteService {
 	private function format_amount_candidates( WC_Order $order, float $amount, string $currency ): array {
 		$currency        = strtoupper( '' !== $currency ? $currency : $order->get_currency() );
 		$formatted_price = wc_price( $amount, array( 'currency' => $currency ) );
-		$formatter       = array( 'WC_Payments_Explicit_Price_Formatter', 'get_explicit_price' );
-
-		if ( class_exists( 'WC_Payments_Explicit_Price_Formatter' ) && is_callable( $formatter ) ) {
-			return array( (string) call_user_func( $formatter, $formatted_price, $order ) );
-		}
 
 		if ( ! $this->is_multi_currency_feature_enabled() || ! $this->has_configured_additional_currency() ) {
 			return array( $formatted_price );
