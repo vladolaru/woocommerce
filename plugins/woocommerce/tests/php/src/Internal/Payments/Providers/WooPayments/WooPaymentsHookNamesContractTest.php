@@ -142,7 +142,8 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 	 * both fire it via `self::FILTER_SHADOW_ENABLED`. The retired gate's `expected.total() == 25` predates that
 	 * second site (it then fired through a cross-class reference its `self::`-only regex did not match), so its
 	 * 24 names fired from 26 sites. Less the five deleted cutover filters, the ten test-only filters (eleven
-	 * sites) and the three filters nothing listened to, the total below is 7 fire sites for 6 names.
+	 * sites), the three filters nothing listened to and the soft-cutover filter (deleted, nothing listened to it either), the
+	 * total below is 6 fire sites for 5 names.
 	 *
 	 * @var array<string,int>
 	 */
@@ -151,7 +152,6 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 		'woocommerce_native_payments_shadow_mode_enabled' => 1,
 		'woocommerce_native_payments_shadow_mode_log_full_surfaces' => 2,
 		'woocommerce_native_payments_shadow_mode_allow_live_reads' => 2,
-		'woocommerce_woopayments_soft_cutover_enabled'    => 1,
 		'woocommerce_woopayments_mandatory_cutover_enabled' => 1,
 	);
 
@@ -273,7 +273,7 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The 6 hooks only the built-in WooPayments fires keep exactly their pinned names and arity, at 7 fire sites total.
+	 * @testdox The 5 hooks only the built-in WooPayments fires keep exactly their pinned names and arity, at 6 fire sites total.
 	 */
 	public function test_builtin_only_hooks_keep_their_names_and_arity(): void {
 		$sites       = $this->builtin_hook_fire_sites();
@@ -298,7 +298,7 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array(), $missing, "Every native-only hook must have at least one fire site:\n" . implode( "\n", $missing ) );
 		$this->assertSame( array(), $wrong_arity, "Every native-only hook fire site must keep its pinned arity:\n" . implode( "\n", $wrong_arity ) );
-		$this->assertSame( 7, $total_sites, 'The 6 hooks only the built-in WooPayments fires must fire from exactly 7 sites total (see the BUILTIN_ONLY_HOOKS docblock).' );
+		$this->assertSame( 6, $total_sites, 'The 5 hooks only the built-in WooPayments fires must fire from exactly 6 sites total (see the BUILTIN_ONLY_HOOKS docblock).' );
 	}
 
 	/**

@@ -33,13 +33,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	public const ACTION_DISABLE = 'disable_woopayments';
 
 	/**
-	 * Filter that controls the soft cutover admin notice.
-	 *
-	 * @var string
-	 */
-	public const FILTER_SOFT_CUTOVER_ENABLED = 'woocommerce_woopayments_soft_cutover_enabled';
-
-	/**
 	 * Filter that controls mandatory WooPayments auto-deactivation.
 	 *
 	 * @var string
@@ -439,22 +432,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the soft cutover notice is enabled.
-	 *
-	 * @return bool
-	 */
-	private function is_soft_cutover_enabled(): bool {
-		/**
-		 * Filters whether the WooPayments native soft cutover notice is enabled.
-		 *
-		 * @since 11.2.0
-		 *
-		 * @param bool $enabled Whether the soft cutover notice is enabled.
-		 */
-		return (bool) apply_filters( self::FILTER_SOFT_CUTOVER_ENABLED, true );
-	}
-
-	/**
 	 * Tell whether mandatory native cutover is enabled.
 	 *
 	 * @return bool
@@ -588,7 +565,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_start_eligible(): bool {
-		return $this->account_service->is_builtin_eligible() && $this->is_soft_cutover_enabled() && $this->arbiter->is_extension_owner() && $this->current_user_can_cutover();
+		return $this->account_service->is_builtin_eligible() && $this->arbiter->is_extension_owner() && $this->current_user_can_cutover();
 	}
 
 	/**
