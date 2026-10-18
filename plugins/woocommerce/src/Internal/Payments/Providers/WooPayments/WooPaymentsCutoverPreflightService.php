@@ -27,8 +27,6 @@ class WooPaymentsCutoverPreflightService {
 
 	private const WOOPAYMENTS_VERSION_OPTION = 'woocommerce_woocommerce_payments_version';
 
-	private const NETWORK_PREFLIGHT_BATCH_SIZE = 100;
-
 	private const IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK = 'woocommerce_woopayments_identifier_placeholders_unavailable';
 
 	private const OPERATIONAL_QUEUE_QUERY_FAILED_HOOK = 'woocommerce_woopayments_operational_queue_query_failed';
@@ -124,13 +122,6 @@ class WooPaymentsCutoverPreflightService {
 	private array $reconciliation_memo = array();
 
 	/**
-	 * Request-local network preflight failures.
-	 *
-	 * @var int[]|null
-	 */
-	private ?array $network_preflight_failing_site_ids_memo = null;
-
-	/**
 	 * Initialize the service instance.
 	 *
 	 * The check collaborators are resolved when a preflight runs, so registering the cutover surfaces loads none of them.
@@ -151,7 +142,6 @@ class WooPaymentsCutoverPreflightService {
 	public function invalidate_current_blog_memoization(): void {
 		$blog_id = get_current_blog_id();
 		unset( $this->reconciliation_memo[ $blog_id ] );
-		$this->network_preflight_failing_site_ids_memo = null;
 	}
 
 	/**
@@ -212,56 +202,6 @@ class WooPaymentsCutoverPreflightService {
 		}
 
 		return self::normalize_string_list( $failures );
-	}
-
-	/**
-	 * Get site IDs whose preflight blocks network-wide deactivation.
-	 *
-	 * @return int[] Failing site IDs in ascending order.
-	 */
-	public function get_network_preflight_failing_site_ids(): array {
-		if ( ! is_multisite() || ! $this->is_woopayments_network_active() ) {
-			return array();
-		}
-		if ( null !== $this->network_preflight_failing_site_ids_memo ) {
-			return $this->network_preflight_failing_site_ids_memo;
-		}
-
-		$failing_site_ids = array();
-		$offset           = 0;
-		do {
-			$site_ids = get_sites(
-				array(
-					'fields'     => 'ids',
-					'network_id' => get_current_network_id(),
-					'number'     => self::NETWORK_PREFLIGHT_BATCH_SIZE,
-					'offset'     => $offset,
-					'orderby'    => 'id',
-					'order'      => 'ASC',
-				)
-			);
-			foreach ( $site_ids as $site_id ) {
-				$site_id  = (int) $site_id;
-				$switched = get_current_blog_id() !== $site_id;
-				if ( $switched ) {
-					switch_to_blog( $site_id );
-				}
-				try {
-					if ( array() !== $this->get_reconciliation_failures() ) {
-						$failing_site_ids[] = $site_id;
-					}
-				} finally {
-					if ( $switched ) {
-						restore_current_blog();
-					}
-				}
-			}
-			$site_count = count( $site_ids );
-			$offset    += $site_count;
-		} while ( self::NETWORK_PREFLIGHT_BATCH_SIZE === $site_count );
-
-		$this->network_preflight_failing_site_ids_memo = $failing_site_ids;
-		return $this->network_preflight_failing_site_ids_memo;
 	}
 
 	/**

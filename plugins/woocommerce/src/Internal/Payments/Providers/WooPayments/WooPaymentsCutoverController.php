@@ -446,15 +446,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get site IDs whose per-site preflight blocks network-wide deactivation.
-	 *
-	 * @return int[] Failing site IDs in ascending order.
-	 */
-	public function get_network_preflight_failing_site_ids(): array {
-		return $this->preflight_service->get_network_preflight_failing_site_ids();
-	}
-
-	/**
 	 * Auto-deactivate WooPayments when mandatory cutover is enabled and safe.
 	 */
 	private function maybe_auto_deactivate_plugin(): void {
