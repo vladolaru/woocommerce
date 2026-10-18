@@ -32,7 +32,7 @@ class WooPaymentsCutoverActionScheduler {
 	 * @param int $attempt    Monotonic attempt number.
 	 * @return array{generation:int,attempt:int}
 	 */
-	public static function get_action_args( int $generation, int $attempt ): array {
+	private static function get_action_args( int $generation, int $attempt ): array {
 		return array(
 			'generation' => $generation,
 			'attempt'    => $attempt,

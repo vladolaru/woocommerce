@@ -612,7 +612,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	/**
 	 * Output the successful cutover notice.
 	 */
-	public function output_success_notice(): void {
+	private function output_success_notice(): void {
 		?>
 		<div class="notice notice-success" style="position:relative;">
 			<?php echo $this->get_dismiss_notice_link( WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?>
