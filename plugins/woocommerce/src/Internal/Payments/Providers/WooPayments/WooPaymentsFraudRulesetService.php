@@ -450,10 +450,11 @@ class WooPaymentsFraudRulesetService {
 	}
 
 	/**
-	 * Rebuild the advanced ruleset's international IP rule from the current selling locations; can fetch the ruleset from the platform, and create the Basic ruleset there, when none is cached.
+	 * Rebuild the advanced ruleset's international IP check from the current selling locations; can fetch the ruleset from the platform, and create the Basic ruleset there, when none is cached.
 	 *
 	 * Only an advanced ruleset carries the merchant's country check, and the platform is called only when that check
-	 * changed (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:3818-3853`).
+	 * changed (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:3818-3853`). The rule keeps the merchant's
+	 * block or review outcome, where client 11.1.0 replaces the whole rule (`:3832-3840`).
 	 *
 	 * @since 11.2.0
 	 *
@@ -475,10 +476,10 @@ class WooPaymentsFraudRulesetService {
 				continue;
 			}
 
-			$new_rule = $this->get_international_ip_address_rule( $this->get_reviewable_fraud_outcome() );
-			if ( isset( $rule['check'] ) && wp_json_encode( $rule['check'] ) !== wp_json_encode( $new_rule['check'] ) ) {
-				$rule         = $new_rule;
-				$needs_update = true;
+			$new_check = $this->get_check( 'ip_country', $this->get_selling_locations_type_operator(), $this->get_selling_locations_string() );
+			if ( isset( $rule['check'] ) && wp_json_encode( $rule['check'] ) !== wp_json_encode( $new_check ) ) {
+				$rule['check'] = $new_check;
+				$needs_update  = true;
 			}
 		}
 		unset( $rule );

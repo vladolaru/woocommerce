@@ -169,16 +169,38 @@ class WooPaymentsSellingLocationsFraudSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should give the rebuilt rule the review outcome when the review feature is on.
+	 * @testdox Should keep the merchant's outcome with the new check: $_dataName.
+	 *
+	 * Client 11.1.0 rebuilds the whole rule with the review feature's default outcome
+	 * (includes/class-wc-payment-gateway-wcpay.php:3832-3840), so a block became review and a review became block.
+	 *
+	 * @dataProvider provide_merchant_outcomes
+	 *
+	 * @param string $outcome        The international IP rule's outcome before the change.
+	 * @param string $review_feature The wcpay_frt_review_feature_active option.
 	 */
-	public function test_rebuilt_rule_uses_review_outcome_when_review_feature_is_on(): void {
-		update_option( 'wcpay_frt_review_feature_active', '1' );
+	public function test_selling_locations_change_keeps_the_rule_outcome( string $outcome, string $review_feature ): void {
+		update_option( 'wcpay_frt_review_feature_active', $review_feature );
+		set_transient( 'wcpay_fraud_protection_settings', $this->get_advanced_ruleset( 'in', '', $outcome ), DAY_IN_SECONDS );
 		update_option( 'woocommerce_allowed_countries', 'specific' );
 		update_option( 'woocommerce_specific_allowed_countries', array( 'FR' ) );
 
 		$this->sut->refresh_fraud_rules();
 
-		$this->assertSame( 'review', $this->api_client->last_fraud_ruleset[0]['outcome'] );
+		$this->assertSame( 1, $this->api_client->fraud_ruleset_saves );
+		$this->assertSame( $this->get_advanced_ruleset( 'not_in', 'fr', $outcome ), $this->api_client->last_fraud_ruleset );
+	}
+
+	/**
+	 * Merchant outcomes that differ from the review feature's default.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public function provide_merchant_outcomes(): array {
+		return array(
+			'block with the review feature on'   => array( 'block', '1' ),
+			'review with the review feature off' => array( 'review', '0' ),
+		);
 	}
 
 	/**
@@ -272,13 +294,14 @@ class WooPaymentsSellingLocationsFraudSyncTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string $operator Country check operator.
 	 * @param string $value    Lower-case pipe-separated countries.
+	 * @param string $outcome  The international IP rule's outcome.
 	 * @return array<int,array<string,mixed>>
 	 */
-	private function get_advanced_ruleset( string $operator, string $value ): array {
+	private function get_advanced_ruleset( string $operator, string $value, string $outcome = 'block' ): array {
 		return array(
 			array(
 				'key'     => 'international_ip_address',
-				'outcome' => 'block',
+				'outcome' => $outcome,
 				'check'   => array(
 					'key'      => 'ip_country',
 					'operator' => $operator,
