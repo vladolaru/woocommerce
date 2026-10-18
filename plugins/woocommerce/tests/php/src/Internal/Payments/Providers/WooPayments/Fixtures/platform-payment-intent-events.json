@@ -3,7 +3,7 @@
 		"recording": "C0s, the first full live lane run (2026-10-18)",
 		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (US, default currency USD, test mode): Stripe events the platform forwarded to the store (Event::get_body_for_forwarding(true)), WPCOM at 8c43425a763.",
 		"store": "native WooCommerce :8889 (woocommerce-develop-2, exp/core-native-payments at 75488974986), test mode.",
-		"captured_via": "The store's WooPayments log, WEBHOOK RECEIVED lines, during the lane run. The store logger redacts emails, names, URLs and some metadata. Each redacted field the payment intent handler reads is restored as the entry's restored list says; the other redacted fields (billing details, receipt email and URL, descriptions, card country and description, client secret, and metadata the handler does not read for that event type, such as fraud_outcome on payment_failed, amount_capturable_updated and canceled) are left as logged."
+		"captured_via": "The store's WooPayments log, WEBHOOK RECEIVED lines, during the lane run. The store logger redacts emails, names, URLs and some metadata. Each redacted field the payment intent handler decides on is restored as the entry's restored list says. Two redacted fields it reads stay as logged: the charge's payment_method_details card country and description, which the order effects copy opaquely into _wcpay_payment_method_details (WooPaymentsOrderEffects.php:299-303) and no test asserts. The other redacted fields (billing details, receipt email and URL, descriptions, client secret, and metadata the handler does not read for that event type, such as fraud_outcome on payment_failed, amount_capturable_updated and canceled) are not read."
 	},
 	"entries": [
 		{
@@ -11,7 +11,7 @@
 			"context": "An online card checkout (4242, visa credit) paying order 5831 for 10.99 USD, with the platform's fee_breakdown_v1 envelope on the intent and its charge (fee 62, net 1037).",
 			"logged_at": "2026-10-18T08:31:43+00:00",
 			"restored": {
-				"data.object.metadata.fraud_outcome and charges.data[0].metadata.fraud_outcome": "allow: the platform writes the rule engine outcome into the intent metadata (WPCOM wcpay class-intentions-controller.php:1467-1494); a block never reaches a charge, and a review stores fraud_ruleset_results beside it and holds the payment for manual capture, so this automatic-capture intent with no fraud_ruleset_results key was allowed.",
+				"data.object.metadata.fraud_outcome and charges.data[0].metadata.fraud_outcome": "allow: the platform writes the rule engine outcome into the intent metadata (WPCOM wcpay class-intentions-controller.php:1486-1494). It turns every executed review outcome into block (service/class-fraud-ruleset-service.php:377-380), and a block throws before the intent is charged (class-intentions-controller.php:1468-1472), so an intent that was charged carries allow.",
 				"metadata.order_id and order_key": "The run's order no longer exists; each test points them at its own order (order_key was redacted)."
 			},
 			"body": {
@@ -389,7 +389,7 @@
 			"context": "A Bancontact checkout paying order 5901 for 10.99 EUR on the US account, with the platform's fee_breakdown_v1 envelope in EUR (fee 69, net 1030).",
 			"logged_at": "2026-10-18T09:12:20+00:00",
 			"restored": {
-				"data.object.metadata.fraud_outcome and charges.data[0].metadata.fraud_outcome": "allow: the platform writes the rule engine outcome into the intent metadata (WPCOM wcpay class-intentions-controller.php:1467-1494); a block never reaches a charge, and a review stores fraud_ruleset_results beside it and holds the payment for manual capture, so this automatic-capture intent with no fraud_ruleset_results key was allowed.",
+				"data.object.metadata.fraud_outcome and charges.data[0].metadata.fraud_outcome": "allow: the platform writes the rule engine outcome into the intent metadata (WPCOM wcpay class-intentions-controller.php:1486-1494). It turns every executed review outcome into block (service/class-fraud-ruleset-service.php:377-380), and a block throws before the intent is charged (class-intentions-controller.php:1468-1472), so an intent that was charged carries allow.",
 				"metadata.order_id and order_key": "As above."
 			},
 			"body": {
