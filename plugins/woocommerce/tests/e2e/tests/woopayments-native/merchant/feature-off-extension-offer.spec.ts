@@ -6,13 +6,16 @@ test.use( { storageState: ADMIN_STATE_PATH } );
 
 /**
  * The release-1 default funnel (N-495): a store with the WooPayments feature off and no WooPayments extension is offered
- * the extension exactly as trunk offers it. Every expectation is trunk's rendering (a1caf7b9200), not native's:
+ * the extension exactly as trunk offers it. The extension-offer screens follow trunk's rendering (a1caf7b9200):
  *
  * - Payments settings: the WooPayments suggestion keeps its `plugin` (`PaymentsExtensionSuggestions.php:4457`), so the
  *   list item's action reads "Install" (`payment-extension-suggestion-list-item.tsx:83`).
  * - The profiler's extensions step lists "Get paid with WooPayments" from the default and remote bundles
  *   (`RemoteFreeExtensions/DefaultFreeExtensions.php:40,82`, `RemoteFreeExtensions/Init.php:65`).
- * - The Features page shows the WooPayments row off, with both choices enabled and the plain description.
+ *
+ * The built-in badge and the Features page row are native requirements, not trunk's (N-482, N-495, N-498): the badge
+ * shows with the feature on and not with it off, and the Features row is off, with both choices enabled and no
+ * protected message.
  *
  * The secretless fixture store runs with the feature on, so the case first finds the built-in badge in the WooPayments
  * row (the badge selector is not vacuous), then turns the feature off. It records every option it touches first and puts
@@ -21,15 +24,18 @@ test.use( { storageState: ADMIN_STATE_PATH } );
 
 const FEATURE_OPTION = 'woocommerce_feature_woopayments_enabled';
 const ABSENT_MARKER = '__woopayments_native_e2e_feature_off_option_absent__';
-// Walking the profiler to its extensions step writes the store details and the onboarding profile (seen on a program
-// store); nothing is completed or installed.
+// Walking the profiler to its extensions step writes the store details, the store currency endpoint's seven options
+// (`Admin/API/OnboardingProfile.php` update_store_currency_and_measurement_units()) and the onboarding profile; nothing
+// is completed or installed.
 const RECORDED_OPTIONS = [
 	FEATURE_OPTION,
 	'woocommerce_onboarding_profile',
 	'woocommerce_onboarding_profile_progress',
 	'blogname',
 	'woocommerce_default_country',
+	'woocommerce_currency',
 	'woocommerce_currency_pos',
+	'woocommerce_price_num_decimals',
 	'woocommerce_price_decimal_sep',
 	'woocommerce_price_thousand_sep',
 	'woocommerce_dimension_unit',
@@ -47,6 +53,7 @@ const PLUGIN_INSTALL_API = /\/wc-admin\/plugins\/(install|activate)\b/;
 
 test.describe( 'Store with the WooPayments feature off and no extension', () => {
 	const recorded = new Map< string, string >();
+	let trackingAllowed = false;
 
 	test.beforeAll( async () => {
 		// The case is about a store without the extension; a store that has it is not this funnel.
@@ -74,6 +81,15 @@ test.describe( 'Store with the WooPayments feature off and no extension', () => 
 				).stdout.trim()
 			);
 		}
+		trackingAllowed =
+			(
+				await wpCLI( [
+					'wp',
+					'option',
+					'get',
+					'woocommerce_allow_tracking',
+				] ).catch( () => ( { stdout: 'no' } ) )
+			).stdout.trim() === 'yes';
 	} );
 
 	test.afterAll( async () => {
@@ -167,11 +183,13 @@ test.describe( 'Store with the WooPayments feature off and no extension', () => 
 				await page.goto(
 					'wp-admin/admin.php?page=wc-admin&path=%2Fsetup-wizard'
 				);
+				// Leave data sharing as the store has it: a change to it schedules a WordPress.com pattern fetch
+				// (`PTKPatternsStore::flush_or_fetch_patterns()`), a request the secretless fixture refuses.
 				await page
 					.getByRole( 'checkbox', {
 						name: 'I agree to share my data',
 					} )
-					.uncheck();
+					.setChecked( trackingAllowed );
 				await page
 					.getByRole( 'button', { name: 'Set up my store' } )
 					.click();
