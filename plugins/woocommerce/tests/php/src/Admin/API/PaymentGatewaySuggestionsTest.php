@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Admin\Marketing\MarketingChannelInterface;
 use Automattic\WooCommerce\Admin\Marketing\MarketingChannels as MarketingChannelsService;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 
 /**
  * PaymentGatewaySuggestionsTest API controller test.
@@ -143,22 +144,20 @@ class PaymentGatewaySuggestionsTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox WooPayments reads as active when the built-in WooPayments is enabled and the kill switch is off, and as inactive otherwise.
-	 * @testWith ["yes", "0", true]
-	 *           ["yes", "yes", false]
-	 *           ["yes", "YES", false]
-	 *           ["yes", "1", false]
-	 *           ["yes", "true", false]
-	 *           ["yes", "on", true]
-	 *           ["no", "0", false]
+	 * @testdox WooPayments reads as active while the WooPayments feature is on, and as inactive while it is off or unset.
+	 * @testWith ["yes", true]
+	 *           ["no", false]
+	 *           [null, false]
 	 *
-	 * @param string $builtin_enabled Stored built-in WooPayments enablement.
-	 * @param string $kill_switch     Stored native payments kill switch.
-	 * @param bool   $expected        Whether WooPayments should read as active.
+	 * @param string|null $feature  Stored WooPayments feature option, or null when absent.
+	 * @param bool        $expected Whether WooPayments should read as active.
 	 */
-	public function test_woopayments_activation_rules_follow_builtin_enablement_and_kill_switch( string $builtin_enabled, string $kill_switch, bool $expected ) {
-		update_option( 'woocommerce_woopayments_builtin_enabled', $builtin_enabled );
-		update_option( 'woocommerce_woopayments_builtin_kill_switch', $kill_switch );
+	public function test_woopayments_activation_rules_follow_the_woopayments_feature( ?string $feature, bool $expected ) {
+		if ( null === $feature ) {
+			delete_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION );
+		} else {
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $feature );
+		}
 		$evaluator = new RuleEvaluator();
 
 		$this->assertSame( $expected, $evaluator->evaluate( DefaultPaymentGateways::get_rules_for_wcpay_activated( true ) ) );

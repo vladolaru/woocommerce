@@ -9,6 +9,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -35,10 +36,9 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( 'active_plugins', array() );
 		delete_site_option( 'active_sitewide_plugins' );
-		delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
 
 		$container                   = wc_get_container();
 		$this->state                 = $container->get( WooPaymentsSetupTier::class );
@@ -53,12 +53,10 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		remove_all_filters( 'pre_update_option_' . WooPaymentsSetupTier::OPTION_NAME );
 		remove_all_filters( 'pre_update_option_wcpay_account_data' );
 		remove_all_filters( 'option_' . WooPaymentsSetupTier::OPTION_NAME );
 		delete_option( WooPaymentsSetupTier::OPTION_NAME );
-		delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'active_plugins' );
@@ -186,7 +184,7 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	public function test_get_effective_tier_returns_disabled_without_overwriting_the_stored_state_when_no_runtime_owns_the_site( string $stored_state ): void {
 		update_option( WooPaymentsSetupTier::OPTION_NAME, $stored_state );
 		$this->state->invalidate();
-		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 
 		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_effective_tier() );
 		$this->assertSame( $stored_state, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
@@ -205,6 +203,8 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 		$blog_id = self::factory()->blog->create();
 		try {
 			switch_to_blog( $blog_id );
+			// The WooPayments feature is a per-site option.
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 			update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::CONNECTED );
 			$this->assertSame( WooPaymentsSetupTier::CONNECTED, $this->state->get_effective_tier() );
 			restore_current_blog();
@@ -289,7 +289,7 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Kill-switch and authoritative ineligibility inputs disable native payments.
+	 * @testdox A turned-off WooPayments feature and authoritative ineligibility inputs disable native payments.
 	 */
 	public function test_account_writer_applies_disable_precedence(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
@@ -302,8 +302,7 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_effective_tier() );
 
 		$this->state->write_tier( WooPaymentsSetupTier::ACTIVE );
-		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
-		update_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION, true );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		$this->account_service->cache_account_data( array( 'account_id' => 'acct_456' ) );
 		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_effective_tier() );
 	}

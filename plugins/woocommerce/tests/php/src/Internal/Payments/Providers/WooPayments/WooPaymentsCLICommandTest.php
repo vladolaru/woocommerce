@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCLICommand;
@@ -28,13 +29,11 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		$this->reset_container_replacements();
-		delete_option( 'woocommerce_woopayments_builtin_kill_switch' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'wcpay_account_data' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
 		delete_option( self::EXPECTED_LAST_FETCH_OPTION );
-		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		$this->reset_legacy_proxy_mocks();
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
@@ -42,21 +41,19 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Status lines report owner, filter resolution, preflight failures, and account summary.
+	 * @testdox Status lines report owner, the WooPayments feature, preflight failures, and account summary.
 	 */
-	public function test_status_lines_report_runtime_filter_preflight_and_account_summary(): void {
+	public function test_status_lines_report_runtime_feature_preflight_and_account_summary(): void {
 		$this->fake_plugin( false );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->seed_connected_store();
 
 		$lines = wc_get_container()->get( WooPaymentsCLICommand::class )->get_status_lines();
 		$text  = implode( "\n", $lines );
 
 		$this->assertStringContainsString( 'Runtime owner: builtin', $text );
-		$this->assertStringContainsString( 'Built-in WooPayments enabled: yes', $text );
-		$this->assertStringContainsString( 'Built-in WooPayments filter: woocommerce_woopayments_builtin_enabled (source: filter)', $text );
-		$this->assertStringContainsString( 'woocommerce_woopayments_builtin_kill_switch', $text );
-		$this->assertStringContainsString( 'final authority', $text );
+		$this->assertStringContainsString( 'Built-in WooPayments feature: yes', $text );
+		$this->assertStringNotContainsString( 'filter', $text );
 		$this->assertStringContainsString( 'Cutover preflight failures:', $text );
 		$this->assertStringContainsString( 'Account: acct_native_test (connected)', $text );
 	}
@@ -77,7 +74,7 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 	public function test_status_lines_report_multi_currency_and_rate_provider( string $core_option, string $flag, bool $builtin_owner, string $expected ): void {
 		$this->fake_plugin( ! $builtin_owner );
 		if ( $builtin_owner ) {
-			add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		}
 		$this->seed_connected_store();
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, $core_option );

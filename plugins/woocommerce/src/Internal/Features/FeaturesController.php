@@ -17,6 +17,7 @@ use Automattic\WooCommerce\Internal\Caches\ProductCacheController;
 use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController;
 use Automattic\WooCommerce\Internal\CostOfGoodsSold\CostOfGoodsSoldController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\ProductGallery\ProductMediaGallery;
 use Automattic\WooCommerce\Internal\PushNotifications\PushNotifications;
 use Automattic\WooCommerce\Internal\StockNotifications\StockNotifications;
@@ -277,6 +278,7 @@ class FeaturesController {
 			$container->get( CustomOrdersTableController::class )->add_feature_definition( $this );
 			$container->get( CostOfGoodsSoldController::class )->add_feature_definition( $this );
 			$container->get( MultiCurrencyFeatureController::class )->add_feature_definition( $this );
+			$container->get( WooPaymentsFeatureController::class )->add_feature_definition( $this );
 
 			$this->init_compatibility_info_by_feature();
 		}

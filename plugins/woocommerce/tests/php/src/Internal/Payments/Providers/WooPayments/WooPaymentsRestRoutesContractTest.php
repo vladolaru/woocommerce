@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDocumentsRestController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
@@ -142,7 +143,7 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( 'active_plugins', array() );
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
@@ -176,7 +177,6 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		try {
-			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 			delete_option( WooPaymentsSetupTier::OPTION_NAME );
 			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 			wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();

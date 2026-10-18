@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
 use Automattic\WooCommerce\Utilities\OrderUtil;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -259,7 +260,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			delete_option( 'woocommerce_woocommerce_payments_settings' );
 			delete_option( 'wcpay_account_data' );
 			delete_option( 'woocommerce_currency' );
-			delete_option( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION );
+			delete_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION );
 			delete_option( WooPaymentsSetupTier::OPTION_NAME );
 			wp_set_current_user( 0 );
 			wc_get_container()->reset_all_resolved();
@@ -284,8 +285,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 		$this->assertIsInt( $secondary_blog_id );
 
 		try {
-			update_option( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION, 'yes' );
-			delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 			update_option( 'wcpay_account_data', $this->account_cache( 'primary', 'US' ) );
 			update_option( 'woocommerce_currency', 'USD' );
 			update_option(
@@ -322,8 +322,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			// blog ID would get wrong.
 			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner(), 'The secondary site must not inherit the primary site\'s native ownership before it enables native itself.' );
 
-			update_option( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION, 'yes' );
-			delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 			update_option( 'wcpay_account_data', $this->account_cache( 'secondary', 'GB' ) );
 			update_option( 'woocommerce_currency', 'GBP' );
 			update_option(
@@ -340,12 +339,12 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 			$this->assertTrue( $gateway->is_available(), 'The gateway should be available for checkout on the secondary site, resolving its own account.' );
 			$this->assertSame( 'acct_secondary', $account_service->get_account_id() );
 
-			// The kill switch is a per-site option, not a network one: flipping it on the
+			// The WooPayments feature is a per-site option, not a network one: turning it off on the
 			// secondary site alone must disable native there without reaching the primary site.
-			update_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION, true );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 			$runtime_arbiter->invalidate();
-			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner(), 'The kill switch enabled on the secondary site alone must disable native there.' );
-			delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
+			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner(), 'The feature turned off on the secondary site alone must disable native there.' );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 			$runtime_arbiter->invalidate();
 
 			restore_current_blog();
@@ -361,8 +360,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 				restore_current_blog();
 			}
 
-			delete_option( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION );
-			delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
+			delete_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION );
 			delete_option( 'woocommerce_woocommerce_payments_settings' );
 			delete_option( 'wcpay_account_data' );
 			delete_option( 'woocommerce_currency' );
@@ -419,8 +417,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	 * These tests write the account cache and gateway settings as raw options, which bypass that sync.
 	 */
 	private function make_builtin_active_on_current_site(): void {
-		update_option( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION, 'yes' );
-		delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->write_tier( WooPaymentsSetupTier::ACTIVE );
 	}
@@ -455,8 +452,8 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	 * @return array<string,mixed>
 	 */
 	private function create_site_fixture( int $user_id, string $slug, string $country, int $generation ): array {
-		update_option( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION, 'primary' === $slug ? 'yes' : 'no' );
-		delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'primary' === $slug ? 'yes' : 'no' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
@@ -573,8 +570,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 	 * Delete the current site's fixture options.
 	 */
 	private function delete_site_fixture_options(): void {
-		delete_option( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION );
-		delete_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION );
+		delete_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'wcpay_account_data' );
 		delete_option( WooPaymentsCutoverStateStore::OPTION_NAME );

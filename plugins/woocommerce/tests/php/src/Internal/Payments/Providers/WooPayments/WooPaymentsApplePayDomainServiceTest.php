@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
@@ -750,7 +751,7 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 
 		// Core fires the settings notices only while native owns payments.
 		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$arbiter->invalidate();
 
 		$buffer_level = ob_get_level();
@@ -764,7 +765,7 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 			while ( ob_get_level() > $buffer_level ) {
 				ob_end_clean();
 			}
-			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 			$arbiter->invalidate();
 			$_GET            = $previous_get;
 			$current_section = $previous_section;

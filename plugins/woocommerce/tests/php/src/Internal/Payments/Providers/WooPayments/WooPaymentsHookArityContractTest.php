@@ -20,6 +20,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocaliza
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelectedCurrencyPersistenceService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -171,7 +172,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( 'active_plugins', array() );
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
@@ -236,7 +237,6 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		try {
-			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 			delete_option( WooPaymentsSetupTier::OPTION_NAME );
 			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 			wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();

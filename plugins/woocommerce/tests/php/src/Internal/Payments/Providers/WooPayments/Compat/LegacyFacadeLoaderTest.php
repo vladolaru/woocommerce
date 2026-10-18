@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Compat;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyFacadeLoader;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
@@ -446,7 +447,7 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 				'wc_payments_features_file' => class_exists( 'WC_Payments_Features', false ) ? ( new \ReflectionClass( 'WC_Payments_Features' ) )->getFileName() : null,
 				'autoloaders'               => $autoloaders,
 				'runtime_owner'             => wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->get_runtime_owner(),
-				'native_option'             => get_option( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION, null ),
+				'feature_option'            => get_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, null ),
 				'version_constant'          => defined( 'WCPAY_VERSION_NUMBER' ) ? constant( 'WCPAY_VERSION_NUMBER' ) : null,
 				'active_plugins'            => get_option( 'active_plugins', array() ),
 			)

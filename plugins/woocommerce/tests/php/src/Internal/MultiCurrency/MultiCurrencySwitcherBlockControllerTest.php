@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherBlockController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherProjectionService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
 use WP_Block_Type_Registry;
@@ -44,7 +45,6 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 		wp_deregister_script( self::LEGACY_EDITOR_SCRIPT_HANDLE );
 
 		unset( $_GET['currency'], $_GET['orderby'] );
-		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
@@ -66,7 +66,7 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register the init hook only when the Core feature is enabled.
 	 */
 	public function test_registers_init_hook_only_when_core_feature_is_enabled(): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$arbiter = wc_get_container()->get( MultiCurrencyRuntimeArbiter::class );
 

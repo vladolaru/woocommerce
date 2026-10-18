@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -138,7 +139,6 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'wcpay_onboarding_test_mode' );
-		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		$this->legacy_proxy->reset();
 
 		parent::tearDown();
@@ -265,7 +265,7 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 				'class_exists' => fn() => false,
 			)
 		);
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->provider->method( 'can_process_payments' )->willReturn( true );
 		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
@@ -386,7 +386,7 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 				'class_exists' => fn() => false,
 			)
 		);
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $builtin_owner ? '__return_true' : '__return_false' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $builtin_owner ? 'yes' : 'no' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$this->provider->method( 'can_manage_onboarding' )->willReturn( $can_manage );
 		$this->set_adapter_api_client( $api_available );
@@ -466,7 +466,7 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 				'class_exists' => fn() => false,
 			)
 		);
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $builtin_owner ? '__return_true' : '__return_false' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $builtin_owner ? 'yes' : 'no' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$this->provider->method( 'can_manage_onboarding' )->willReturn( true );
 		if ( $asked ) {
@@ -499,7 +499,7 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	 * @param int  $clears        Expected cache clears.
 	 */
 	public function test_onboarding_fields_cache_is_cleared_only_for_the_builtin_owner( bool $builtin_owner, int $clears ): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $builtin_owner ? '__return_true' : '__return_false' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $builtin_owner ? 'yes' : 'no' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$account_service = $this->createMock( WooPaymentsAccountService::class );
 		$account_service->expects( $this->exactly( $clears ) )->method( 'clear_onboarding_fields_cache' );
@@ -560,7 +560,7 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 			)
 		);
 		if ( null !== $builtin_enabled ) {
-			add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $builtin_enabled ? '__return_true' : '__return_false' );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $builtin_enabled ? 'yes' : 'no' );
 		}
 		if ( null !== $can_manage ) {
 			$this->provider->method( 'can_manage_onboarding' )->willReturn( $can_manage );

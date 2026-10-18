@@ -8,6 +8,7 @@
 use Automattic\WooCommerce\Admin\Settings\SettingsSection;
 use Automattic\WooCommerce\Admin\Settings\SettingsSectionInterface;
 use Automattic\WooCommerce\Admin\Settings\SettingsSectionRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Testing\Tools\CodeHacking\Hacks\FunctionsMockerHack;
 use Automattic\WooCommerce\Testing\Tools\CodeHacking\Hacks\StaticMockerHack;
@@ -37,7 +38,6 @@ class WC_Settings_Payment_Gateways_Test extends WC_Settings_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		SettingsSectionRegistry::get_instance()->unregister_all();
-		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		remove_all_filters( 'experimental_woocommerce_admin_payment_reactify_render_sections' );
 		$this->reset_legacy_proxy_mocks();
 
@@ -571,10 +571,10 @@ class WC_Settings_Payment_Gateways_Test extends WC_Settings_Unit_Test_Case {
 		);
 
 		if ( WooPaymentsRuntimeArbiter::OWNER_BUILTIN === $owner ) {
-			add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 			return;
 		}
 
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 	}
 }

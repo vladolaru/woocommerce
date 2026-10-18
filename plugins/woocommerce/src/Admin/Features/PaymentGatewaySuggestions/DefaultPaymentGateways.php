@@ -8,6 +8,7 @@ namespace Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions;
 defined( 'ABSPATH' ) || exit;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use WC_Gateway_BACS;
 use WC_Gateway_COD;
 
@@ -1082,9 +1083,7 @@ class DefaultPaymentGateways {
 	/**
 	 * Get default rules for WooPayments being active.
 	 *
-	 * WooPayments is active when the WooPayments extension is active, or when the built-in WooPayments is enabled and its
-	 * kill switch is off. Rules read stored options only, so a site that enables the built-in WooPayments through the
-	 * woocommerce_woopayments_builtin_enabled filter alone reads as inactive here.
+	 * WooPayments is active when the WooPayments extension is active, or when the WooPayments feature is on.
 	 *
 	 * @param bool $should_be Whether WooPayments should be activated.
 	 *
@@ -1103,19 +1102,10 @@ class DefaultPaymentGateways {
 				array(
 					(object) array(
 						'type'        => 'option',
-						'option_name' => 'woocommerce_woopayments_builtin_enabled',
+						'option_name' => WooPaymentsFeatureController::FEATURE_ENABLE_OPTION,
 						'operation'   => '=',
 						'value'       => 'yes',
-						'default'     => 'no',
-					),
-					(object) array(
-						'type'        => 'option',
-						'option_name' => 'woocommerce_woopayments_builtin_kill_switch',
-						'operation'   => '!in',
-						// The usual stored spellings of the values wc_string_to_bool() reads as true, which the runtime arbiter
-						// applies to the kill switch. Rules compare strings as stored, so other casings are not matched.
-						'value'       => array( '1', 'yes', 'Yes', 'YES', 'true', 'True', 'TRUE' ),
-						'default'     => '0',
+						'default'     => wc_bool_to_string( WooPaymentsFeatureController::ENABLED_BY_DEFAULT ),
 					),
 				),
 			),

@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicateGatewayMethodsService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStoreSetupReportController;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -49,7 +50,6 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 		delete_option( 'WPLANG' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
-		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_option( MultiCurrencyCacheInterface::CURRENCIES_KEY );
@@ -495,7 +495,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	 * @param bool                   $expected_mc_enabled Whether the snapshot reports Multi-Currency enabled.
 	 */
 	public function test_store_setup_sync_reports_duplicates_and_multi_currency( array $options, array $duplicates, bool $expected_mc_enabled ): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		foreach ( $options as $option => $value ) {

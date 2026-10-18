@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
@@ -46,7 +47,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_after_checkout_form_bootstraps_payment_list_wallets_without_card_fields(): void {
 		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 
 		$account_service = $this->create_account_service(
 			true,
@@ -71,7 +72,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			$output = (string) ob_get_clean();
 		} finally {
 			delete_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings' );
-			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		}
 		$script_data = (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' );
 
@@ -90,7 +91,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * @testdox Should localize no checkout config from the fallback while the WooPayments extension owns payments.
 	 */
 	public function test_after_checkout_form_fallback_does_nothing_when_builtin_does_not_own_payments(): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		$sut = new WooPaymentsCheckoutAssets();
 		$sut->init( $this->create_account_service( true ), $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
 
@@ -100,7 +101,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			do_action( 'woocommerce_after_checkout_form', WC()->checkout() );
 		} finally {
 			delete_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings' );
-			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		}
 
@@ -113,7 +114,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_order_pay_before_payment_bootstraps_payment_list_wallets_without_card_fields(): void {
 		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		$order       = wc_create_order( array( 'customer_id' => $customer_id ) );
 		$order->set_currency( 'USD' );
@@ -146,7 +147,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			$output = (string) ob_get_clean();
 		} finally {
 			delete_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings' );
-			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		}
 		$script_data = (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' );
 
@@ -162,7 +163,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * @testdox Should not relocalize base checkout config after ordinary card fields render.
 	 */
 	public function test_after_checkout_form_does_not_duplicate_rendered_card_config(): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 
 		$account_service = $this->create_account_service( true );
 		$sut             = new WooPaymentsCheckoutAssets();
@@ -177,7 +178,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			ob_get_clean();
 		} finally {
 			delete_option( 'woocommerce_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID . '_settings' );
-			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		}
 		$script_data = (string) wp_scripts()->get_data( 'wc-woopayments-checkout', 'data' );
 
@@ -1439,7 +1440,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * @param string $changed Which input of the config base changes before the last render.
 	 */
 	public function test_classic_payment_list_builds_the_shared_config_once( string $surface, string $changed ): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$account_service = $this->create_account_service( true );
 		$assets          = new WooPaymentsCheckoutAssets();
 		$assets->init( $account_service, $this->create_woopay_session_service( false ), $this->create_woopay_eligibility( false ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
@@ -1511,7 +1512,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		} finally {
 			remove_filter( 'wc_payments_account_id_for_intent_confirmation', $count );
 			remove_filter( 'wcpay_payment_fields_js_config', $filter );
-			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 			remove_filter( 'wp_doing_ajax', '__return_true' );
 			set_query_var( 'order-pay', '' );
 			WC()->cart->empty_cart();

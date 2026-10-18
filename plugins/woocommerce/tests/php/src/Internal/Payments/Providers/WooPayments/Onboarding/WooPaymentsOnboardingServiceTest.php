@@ -15,6 +15,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
@@ -275,7 +276,6 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 		unset( $_GET['wcpay-connection-success'] );
 		remove_all_filters( 'woocommerce_tracks_event_properties' );
 		remove_all_filters( 'wcpay_tracks_event_properties' );
-		remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		$this->clear_rest_server();
@@ -555,7 +555,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A store that leaves onboarding before an account exists stays in the available tier after the card gateway is enabled.
 	 */
 	public function test_kyc_session_without_an_account_keeps_the_store_out_of_the_active_tier(): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$state = wc_get_container()->get( WooPaymentsSetupTier::class );
 		$state->invalidate();
@@ -1105,7 +1105,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * @param string              $promo             Expected promo redirect param.
 	 */
 	public function test_kyc_finalize_route_enables_gateway( array $finalize_response, bool $is_live, string $promo ): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$state = wc_get_container()->get( WooPaymentsSetupTier::class );
 		$state->invalidate();
@@ -1196,7 +1196,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 			10,
 			2
 		);
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$this->arrange_kyc_finalize(
 			array( $this->get_finalized_account_data( array( 'is_live' => true ) ) ),

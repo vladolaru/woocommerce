@@ -11,6 +11,7 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
 use Automattic\WooCommerce\Internal\DataStores\Orders\DataSynchronizer;
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
@@ -348,7 +349,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_option( 'wcpay_multi_currency_exchange_rate_gbp' );
 
-		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		remove_all_filters( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED );
 		remove_all_filters( 'wp_die_handler' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
@@ -423,7 +423,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_job_backed_notice_is_shown_while_preflight_is_blocked(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$job = new class() extends WooPaymentsCutoverReconciliationJob {
 			/** @return array<string,mixed>|null */
 			public function classify_for_admin_notice(): ?array {
@@ -490,7 +490,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_bundled_store_is_told_why_it_cannot_switch_until_dismissed(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$job        = $this->create_excluded_notice_job( 'bundled_stripe_billing_subscriptions_present' );
 		$controller = $this->create_cutover_controller( $job );
 		$this->register_exit_mock( static fn() => null );
@@ -516,7 +516,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_bundled_store_notice_follows_the_start_notice_eligibility(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 
 		$this->assertSame( '', trim( $this->render_admin_notices( $this->create_cutover_controller( $this->create_excluded_notice_job( 'some_other_exclusion' ) ) ) ) );
 
@@ -607,7 +607,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_blocked_plugin_update_explains_the_waiting_switch( bool $blocked ): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		add_filter(
 			'file_mod_allowed',
 			static function ( $allowed, $context ) use ( $blocked ) {
@@ -653,7 +653,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_active_job_states_show_only_progress( string $state ): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$job = new class( $state ) extends WooPaymentsCutoverReconciliationJob {
 			/** @var string */
 			private string $state;
@@ -692,7 +692,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_awaiting_generation_requires_start_notice_eligibility(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( false );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$job = new class() extends WooPaymentsCutoverReconciliationJob {
 			/** @return array<string,mixed>|null */
 			public function classify_for_admin_notice(): ?array {
@@ -803,7 +803,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$renamed_plugin_file = 'renamed-woocommerce-payments/woocommerce-payments.php';
 		$this->fake_plugin_active( true, false, $renamed_plugin_file );
 		$this->fake_current_user_caps( true );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
 			/** @var string[] */
 			public array $sources = array();
@@ -991,7 +991,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	/** @testdox Plugin activation remains available while native WooPayments does not own the runtime. */
 	public function test_native_activation_guard_allows_plugin_activation_when_native_does_not_own_the_runtime(): void {
 		delete_option( 'woocommerce_woocommerce_payments_version' );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
 		$this->sut->guard_woopayments_activation();
@@ -1053,7 +1053,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_starting_the_switch_requires_the_capabilities_for_the_plugin_scope( string $scope, array $capabilities, array $expected ): void {
 		$this->fake_plugin_active( 'site' === $scope, 'network' === $scope );
 		$this->fake_current_user_capabilities( $capabilities );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
 			/** @var string[] */
 			public array $sources = array();
@@ -1199,14 +1199,14 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 *           ["disabled", false, "sent to the plugins screen without an error"]
 	 *
 	 * @param string $label          Readable state of native payments.
-	 * @param bool   $native_enabled Whether native payments is enabled.
+	 * @param bool   $feature_on     Whether the WooPayments feature is on.
 	 * @param string $outcome        Readable expected outcome.
 	 */
-	public function test_click_that_queues_nothing( string $label, bool $native_enabled, string $outcome ): void {
+	public function test_click_that_queues_nothing( string $label, bool $feature_on, string $outcome ): void {
 		unset( $label, $outcome );
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $native_enabled ? '__return_true' : '__return_false' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $feature_on ? 'yes' : 'no' );
 		$this->fake_wp_die_handler();
 		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
 			/**
@@ -1223,7 +1223,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$_GET[ WooPaymentsCutoverController::QUERY_ACTION ] = WooPaymentsCutoverController::ACTION_DISABLE;
 		$_GET[ WooPaymentsCutoverController::NONCE_NAME ]   = wp_create_nonce( WooPaymentsCutoverController::NONCE_ACTION );
 		$logger = $this->createMock( \WC_Logger_Interface::class );
-		$logger->expects( $native_enabled ? $this->once() : $this->never() )
+		$logger->expects( $feature_on ? $this->once() : $this->never() )
 			->method( 'error' )
 			->with( $this->stringContains( 'switch' ), array( 'source' => 'woocommerce-woopayments-cutover' ) );
 		$this->register_legacy_proxy_function_mocks(
@@ -1248,7 +1248,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			remove_filter( 'wp_redirect', $capture );
 		}
 
-		if ( $native_enabled ) {
+		if ( $feature_on ) {
 			$this->assertSame( 'Action failed. Please refresh the page and retry.', $message );
 			$this->assertSame( array(), $redirects );
 		} else {
@@ -1323,7 +1323,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Cutover preflight short-circuits expensive checks while native runtime is disabled.
 	 */
 	public function test_preflight_short_circuits_when_native_runtime_is_disabled(): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
 		$failures = $this->preflight_service->get_failures();
@@ -1338,7 +1338,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Cutover preflight memoizes expensive checks for the current request.
 	 */
 	public function test_preflight_memoizes_expensive_checks_within_request(): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->native_provider_ready = true;
 
 		$first_failures  = $this->preflight_service->get_failures();
@@ -1444,7 +1444,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_preflight_blocks_when_unknown_woopayments_action_is_pending(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->native_provider_ready = true;
 
 		$hook_name                      = 'wcpay_synthetic_cutover_probe';
@@ -1466,7 +1466,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_preflight_allows_pending_native_owned_operational_action( string $hook_name ): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->native_provider_ready = true;
 
 		$this->scheduled_action_hooks[] = $hook_name;
@@ -1522,7 +1522,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_preflight_closes_the_queue_blocker_by_default(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->native_provider_ready = true;
 
 		$failures = $this->preflight_service->get_failures();
@@ -1834,7 +1834,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * Make the native cutover preflight ready.
 	 */
 	private function enable_ready_cutover(): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->native_provider_ready = true;
 	}
 
@@ -1842,7 +1842,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * Make the native runtime own the current site.
 	 */
 	private function enable_native_runtime_owner(): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 	}
 

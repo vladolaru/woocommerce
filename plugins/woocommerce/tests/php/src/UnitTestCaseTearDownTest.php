@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 
 /**
@@ -54,7 +55,7 @@ class UnitTestCaseTearDownTest extends \WC_Unit_Test_Case {
 		$runtime_arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner(), 'The initial runtime owner should be none.' );
 
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner(), 'The runtime owner should remain memoized before cleanup.' );
 
 		$locale_filter = function ( $locale ) {

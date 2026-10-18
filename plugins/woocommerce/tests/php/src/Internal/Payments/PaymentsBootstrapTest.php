@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDet
 use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\ProviderGatewaysController;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderInterface;
@@ -285,7 +286,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 	 * @testdox With the real bootstrap, registry and arbiter, the WooPayments gateways leave the gateway list once the built-in WooPayments stops owning payments.
 	 */
 	public function test_gateway_list_follows_the_arbiter_after_the_built_in_runtime_loses_ownership(): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( 'active_plugins', array_values( array_diff( (array) get_option( 'active_plugins', array() ), array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ) ) );
 		wc_get_container()->reset_all_resolved();
 		$gateway  = new class() extends \WC_Payment_Gateway {
@@ -321,8 +322,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 			$this->assertSame( array( $gateway ), apply_filters( 'woocommerce_payment_gateways', array() ), 'The gateway must be listed while the built-in WooPayments owns payments.' );
 			$this->assertSame( 1, $provider->gateway_reads );
 
-			remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
-			add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
 			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Building the gateway list as WooCommerce does.
@@ -350,7 +350,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'Outbound HTTP is blocked in this test.' ) );
 		add_filter( 'pre_option_stylesheet', static fn() => $theme );
 		add_filter( 'pre_option_template', static fn() => $theme );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( 'active_plugins', array_values( array_diff( (array) get_option( 'active_plugins', array() ), array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ) ) );
 		update_option( WooPaymentsSetupTier::OPTION_NAME, $state );
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );

@@ -16,7 +16,7 @@ use WC_Unit_Test_Case;
  *
  * Every fixture hook is covered by exactly one of three routes: proven at runtime by the arity
  * test's `probed_hooks()` (70 names), resolved here by a static native fire-site scan, or listed in
- * `ALLOWED_DIFFERENCES` with its recorded authority. `BUILTIN_ONLY_HOOKS` (D6) separately pins the 9
+ * `ALLOWED_DIFFERENCES` with its recorded authority. `BUILTIN_ONLY_HOOKS` (D6) separately pins the 4
  * native-only filters that carry no plugin fixture entry at all.
  *
  * @since 11.2.0
@@ -129,10 +129,10 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 
 	/**
 	 * The native-only filters `test-native-hook-naming-gate.py` pinned (D6), less the five cutover readiness
-	 * filters deleted with their overrides, the ten that only tests read and the three that nothing listened
-	 * to. Not plugin data, so not part of `woopayments-hooks.json`. The retired gate itself pinned per-hook *site counts*
+	 * filters deleted with their overrides, the ten that only tests read, the three that nothing listened
+	 * to and the built-in enable filter the WooPayments feature replaced. Not plugin data, so not part of `woopayments-hooks.json`. The retired gate itself pinned per-hook *site counts*
 	 * (a `Counter`, `expected.total() == 25`), not arity; the arities below come from reading each
-	 * hook's fire site directly (`WooPaymentsRuntimeArbiter`, `NativePaymentsShadowMode`, and the
+	 * hook's fire site directly (`NativePaymentsShadowMode` and the
 	 * `WooPaymentsEventIngestor`/`WooPaymentsSettingsService`/
 	 * `WooPaymentsTokenService`/`WooPaymentsGateway`/`WooPaymentsWooPaySessionService`/
 	 * `WooPaymentsExpressCheckoutService`/`WooPaymentsCutoverController` sites the gate's `PROVIDER_HOOKS` names).
@@ -142,13 +142,12 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 	 * both fire it via `self::FILTER_SHADOW_ENABLED`. The retired gate's `expected.total() == 25` predates that
 	 * second site (it then fired through a cross-class reference its `self::`-only regex did not match), so its
 	 * 24 names fired from 26 sites. Less the five deleted cutover filters, the ten test-only filters (eleven
-	 * sites), the three filters nothing listened to and the soft-cutover filter (deleted, nothing listened to it either), the
-	 * total below is 6 fire sites for 5 names.
+	 * sites), the three filters nothing listened to, the soft-cutover filter (deleted, nothing listened to it either) and the
+	 * built-in enable filter, the total below is 5 fire sites for 4 names.
 	 *
 	 * @var array<string,int>
 	 */
 	private const BUILTIN_ONLY_HOOKS = array(
-		'woocommerce_woopayments_builtin_enabled'         => 1,
 		'woocommerce_native_payments_shadow_mode_enabled' => 1,
 		'woocommerce_native_payments_shadow_mode_log_full_surfaces' => 2,
 		'woocommerce_native_payments_shadow_mode_allow_live_reads' => 2,
@@ -273,7 +272,7 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The 5 hooks only the built-in WooPayments fires keep exactly their pinned names and arity, at 6 fire sites total.
+	 * @testdox The 4 hooks only the built-in WooPayments fires keep exactly their pinned names and arity, at 5 fire sites total.
 	 */
 	public function test_builtin_only_hooks_keep_their_names_and_arity(): void {
 		$sites       = $this->builtin_hook_fire_sites();
@@ -298,7 +297,7 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array(), $missing, "Every native-only hook must have at least one fire site:\n" . implode( "\n", $missing ) );
 		$this->assertSame( array(), $wrong_arity, "Every native-only hook fire site must keep its pinned arity:\n" . implode( "\n", $wrong_arity ) );
-		$this->assertSame( 6, $total_sites, 'The 5 hooks only the built-in WooPayments fires must fire from exactly 6 sites total (see the BUILTIN_ONLY_HOOKS docblock).' );
+		$this->assertSame( 5, $total_sites, 'The 4 hooks only the built-in WooPayments fires must fire from exactly 5 sites total (see the BUILTIN_ONLY_HOOKS docblock).' );
 	}
 
 	/**

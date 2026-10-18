@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAjaxController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderAdminActionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -84,7 +85,6 @@ class WooPaymentsFeeDetailsJobSchedulingTest extends WC_Unit_Test_Case {
 			$GLOBALS['_SERVER']['REQUEST_METHOD'] = $this->original_request_method;
 		}
 		remove_all_filters( 'woocommerce_is_order_received_page' );
-		remove_all_filters( 'woocommerce_woopayments_builtin_enabled' );
 		as_unschedule_all_actions( self::FEE_DETAILS_JOB );
 		$this->reset_container_replacements();
 		$this->reset_container_resolutions();
@@ -313,7 +313,7 @@ class WooPaymentsFeeDetailsJobSchedulingTest extends WC_Unit_Test_Case {
 			}
 		};
 		wc_get_container()->replace( WooPaymentsApiClient::class, $api );
-		add_filter( 'woocommerce_woopayments_builtin_enabled', '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->reset_container_resolutions();
 	}
 

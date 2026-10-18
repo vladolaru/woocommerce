@@ -77,13 +77,8 @@ class WooPaymentsCLICommand {
 		return array(
 			'Runtime owner: ' . (string) $data['runtime_owner'],
 			sprintf(
-				'Built-in WooPayments enabled: %s',
+				'Built-in WooPayments feature: %s',
 				(bool) $data['builtin_enabled'] ? 'yes' : 'no'
-			),
-			sprintf(
-				'Built-in WooPayments filter: %s (source: %s)',
-				(string) $data['builtin_enabled_filter'],
-				(string) $data['builtin_enabled_source']
 			),
 			'Cutover preflight failures: ' . ( empty( $preflight_failures ) ? 'none' : implode( ', ', $preflight_failures ) ),
 			sprintf(
@@ -97,7 +92,6 @@ class WooPaymentsCLICommand {
 			'WooPay: ' . ( (bool) $data['woopay']['enabled'] ? 'enabled' : 'disabled' ) . ' (' . ( empty( $woopay_locations ) ? 'no locations enabled' : implode( ', ', $woopay_locations ) ) . ')',
 			'Multi-currency: ' . ( ! empty( $multi_currency['enabled'] ) ? 'enabled' : 'disabled' ) . ' (rate provider: ' . $rate_provider . ', ' . $rate_available . ')',
 			'Last fetch of failed webhook events: ' . ( (int) $data['last_webhook_fetch'] > 0 ? (string) $data['last_webhook_fetch'] : 'never' ),
-			'Built-in WooPayments enabled note: ' . (string) $data['builtin_enabled_note'],
 		);
 	}
 }

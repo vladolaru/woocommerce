@@ -124,7 +124,7 @@ final class WooPaymentsSetupTier {
 	/**
 	 * Get the stored setup tier for the current blog, before runtime ownership clamps it.
 	 *
-	 * Support surfaces use it: a connected store keeps its stored tier while the kill switch disables it.
+	 * Support surfaces use it: a connected store keeps its stored tier while its WooPayments feature is off.
 	 *
 	 * @since 11.2.0
 	 *

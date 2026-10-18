@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use WC_Order;
@@ -54,7 +55,6 @@ class WooPaymentsOrderNoteDedupeTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		remove_all_filters( 'woocommerce_woopayments_builtin_enabled' );
 		$this->reset_container_replacements();
 		$this->reset_container_resolutions();
 		parent::tearDown();
@@ -195,7 +195,7 @@ class WooPaymentsOrderNoteDedupeTest extends WC_Unit_Test_Case {
 			}
 		};
 		wc_get_container()->replace( WooPaymentsApiClient::class, $api );
-		add_filter( 'woocommerce_woopayments_builtin_enabled', '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->reset_container_resolutions();
 	}
 

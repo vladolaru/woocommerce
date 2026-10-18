@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -66,8 +67,6 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		delete_transient( 'wcpay_fraud_protection_settings' );
 		delete_option( 'current_protection_level' );
 		wc_get_container()->reset_replacement( WooPaymentsCanceledAuthorizationFeeRemediationService::class );
-		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
-		update_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION, '0', true );
 		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::DISABLED, true );
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
@@ -117,10 +116,9 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 */
 	public function test_registers_nothing_without_a_connected_account_or_the_plugin( string $state ): void {
 		$this->fake_plugin( false );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes', true );
 		$this->set_native_state( $state );
-		// WC_Install::create_options() seeds these autoloaded, so a dormant store reads them for free.
-		update_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION, '0', true );
+		// WC_Install::create_options() seeds this autoloaded, so a dormant store reads it for free.
 		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
@@ -153,7 +151,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 */
 	public function test_registers_supportability_hooks_for_a_connected_native_store(): void {
 		$this->fake_plugin( false );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->set_native_state( WooPaymentsSetupTier::CONNECTED );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
@@ -164,13 +162,13 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A connected native store keeps the supportability hooks after support turns on the kill switch, which clamps its state to disabled.
+	 * @testdox A connected store whose WooPayments feature is off keeps the supportability hooks, although its effective tier reads disabled.
 	 */
-	public function test_registers_supportability_hooks_for_a_killswitched_connected_store(): void {
+	public function test_registers_supportability_hooks_for_a_connected_store_with_the_feature_off(): void {
 		$this->fake_plugin( false );
-		update_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION, '1', true );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		$this->set_native_state( WooPaymentsSetupTier::CONNECTED );
-		$this->assertSame( WooPaymentsSetupTier::DISABLED, wc_get_container()->get( WooPaymentsSetupTier::class )->get_effective_tier(), 'The kill switch should clamp the effective state.' );
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, wc_get_container()->get( WooPaymentsSetupTier::class )->get_effective_tier(), 'A store with the feature off reads as disabled.' );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
 
@@ -182,56 +180,11 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A connected store whose native runtime the rollout filter turns off keeps the supportability hooks.
-	 */
-	public function test_registers_supportability_hooks_for_a_connected_store_with_the_runtime_off(): void {
-		$this->fake_plugin( false );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
-		$this->set_native_state( WooPaymentsSetupTier::ACTIVE );
-		$sut = $this->get_sut();
-		$this->remove_status_hooks( $sut );
-
-		$sut->register();
-
-		$this->assertSame( 1, has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
-	}
-
-	/**
-	 * @testdox A store with the kill switch on registers the supportability hooks even before it connects.
-	 */
-	public function test_registers_supportability_hooks_while_the_kill_switch_is_on(): void {
-		$this->fake_plugin( false );
-		update_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION, '1', true );
-		$this->set_native_state( WooPaymentsSetupTier::AVAILABLE );
-		$sut = $this->get_sut();
-		$this->remove_status_hooks( $sut );
-
-		$sut->register();
-
-		$this->assertSame( 1, has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
-	}
-
-	/**
-	 * @testdox A kill switch stored as a non-empty array registers the supportability hooks without an error.
-	 */
-	public function test_registers_supportability_hooks_while_the_kill_switch_is_stored_as_an_array(): void {
-		$this->fake_plugin( false );
-		update_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION, array( 'on' ), true );
-		$this->set_native_state( WooPaymentsSetupTier::AVAILABLE );
-		$sut = $this->get_sut();
-		$this->remove_status_hooks( $sut );
-
-		$sut->register();
-
-		$this->assertSame( 1, has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
-	}
-
-	/**
 	 * @testdox A store with a cutover record registers the supportability hooks even when its state is not connected.
 	 */
 	public function test_registers_supportability_hooks_when_a_cutover_record_exists(): void {
 		$this->fake_plugin( false );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->set_native_state( WooPaymentsSetupTier::AVAILABLE );
 		$this->assertTrue(
 			( new WooPaymentsCutoverStateStore() )->create_record(
@@ -295,9 +248,9 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Status data reports runtime, account, checkout, multi-currency, and webhook state.
 	 */
-	public function test_status_data_uses_native_services_and_runtime_filter_resolution(): void {
+	public function test_status_data_uses_native_services_and_the_feature_option(): void {
 		$this->fake_plugin( false );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		// A connected store: without a connection the account read returns no account, like the client.
 		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
@@ -308,9 +261,6 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $data['runtime_owner'] );
 		$this->assertTrue( $data['builtin_enabled'] );
-		$this->assertSame( 'filter', $data['builtin_enabled_source'] );
-		$this->assertSame( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, $data['builtin_enabled_filter'] );
-		$this->assertStringContainsString( 'mu-plugin', $data['builtin_enabled_note'] );
 		$this->assertSame( 'acct_native_test', $data['account_id'] );
 		$this->assertTrue( $data['account_connected'] );
 		$this->assertTrue( $data['gateway_enabled'] );
@@ -364,7 +314,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 */
 	public function test_status_data_reports_rate_provider_unavailable_from_registry_state(): void {
 		$this->fake_plugin( false );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		// A connected store: without a connection the account read returns no account, like the client.
 		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
@@ -464,7 +414,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		$this->fake_plugin( false );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->seed_connected_store();
 		$this->set_native_state( WooPaymentsSetupTier::CONNECTED );
 		$sut = $this->get_sut();
@@ -505,7 +455,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		$this->fake_plugin( false );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->seed_connected_store();
 		$this->set_native_state( WooPaymentsSetupTier::CONNECTED );
 		$cache_before = get_option( 'wcpay_account_data' );
@@ -564,11 +514,11 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Site Health debug info exposes the native status fields and rollout note.
+	 * @testdox Site Health debug info exposes the native status fields and the WooPayments feature.
 	 */
 	public function test_site_health_debug_info_exposes_status_values(): void {
 		$this->fake_plugin( false );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		// A connected store: without a connection the account read returns no account, like the client.
 		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
@@ -581,7 +531,8 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'Built-in WooPayments', $info['woocommerce_native_payments']['label'] );
 		$this->assertSame( 'builtin', $info['woocommerce_native_payments']['fields']['runtime_owner']['value'] );
 		$this->assertSame( 'acct_native_test', $info['woocommerce_native_payments']['fields']['account_id']['value'] );
-		$this->assertStringContainsString( 'mu-plugin', $info['woocommerce_native_payments']['fields']['native_enabled_note']['value'] );
+		$this->assertSame( 'Built-in WooPayments feature', $info['woocommerce_native_payments']['fields']['builtin_enabled']['label'] );
+		$this->assertSame( 'Enabled', $info['woocommerce_native_payments']['fields']['builtin_enabled']['value'] );
 	}
 
 	/**
@@ -804,7 +755,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 */
 	private function render_report_for_connected_store( array $account_extra = array(), array $settings_extra = array(), string $protection_level = 'basic', array $fraud_ruleset = array(), array $options = array() ): string {
 		$this->fake_plugin( false );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
 		$connected_api_client->method( 'is_available' )->willReturn( true );
 		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );

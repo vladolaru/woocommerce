@@ -11,8 +11,7 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
  * Decides per site whether the WooPayments extension, the built-in WooPayments or nothing owns payments.
- * Three inputs decide whether the built-in WooPayments is enabled: the option install and upgrade write, the kill switch
- * that turns it off without changing that option, and the filter that overrides both from a mu-plugin.
+ * The WooPayments feature (WooPaymentsFeatureController) decides whether the built-in WooPayments is enabled.
  *
  * At most one WooPayments runtime owns payments on a site; the WooPayments extension wins while it is active. The extension is
  * found by its main file name, in any folder, in the per-site and network active-plugins lists, with `WCPAY_PLUGIN_FILE` as
@@ -59,41 +58,10 @@ class WooPaymentsRuntimeArbiter {
 	private const PLUGIN_MAIN_FILE_NAME = 'woocommerce-payments.php';
 
 	/**
-	 * Option that enables the built-in WooPayments for this site ('yes' or 'no').
-	 *
-	 * @var string
-	 */
-	public const BUILTIN_ENABLED_OPTION = 'woocommerce_woopayments_builtin_enabled';
-
-	/**
-	 * Filter that reports whether the built-in WooPayments is enabled for this site.
-	 *
-	 * The filter has the option's name because its default is the stored option, unless the kill switch is on. Even
-	 * when enabled, the WooPayments extension still wins while it is active.
-	 *
-	 * Registrations made while WooCommerce loads resolve this filter early. To affect every
-	 * registration in a request, set the filter from a mu-plugin or earlier bootstrap code.
-	 * Filters added from ordinary plugins may run too late for services registered during WooCommerce
-	 * inclusion.
-	 *
-	 * @var string
-	 */
-	public const BUILTIN_ENABLED_FILTER = 'woocommerce_woopayments_builtin_enabled';
-
-	/**
-	 * Option that turns the built-in WooPayments off in the enabled filter's default.
-	 *
-	 * The enabled filter keeps the final say and may override this option. Payment gateway suggestions also read this option.
-	 *
-	 * @var string
-	 */
-	public const BUILTIN_KILL_SWITCH_OPTION = 'woocommerce_woopayments_builtin_kill_switch';
-
-	/**
 	 * The legacy proxy, used for mockable calls to global functions.
 	 *
 	 * The plugin lists, the multisite check and the WCPAY_PLUGIN_FILE constant are read through it so tests can stand in
-	 * for them; the built-in WooPayments options are plain options, read with get_option().
+	 * for them; the WooPayments feature option is a plain option, read with get_option().
 	 *
 	 * @var LegacyProxy
 	 */
@@ -173,7 +141,7 @@ class WooPaymentsRuntimeArbiter {
 	}
 
 	/**
-	 * Tell whether the built-in WooPayments is enabled for this site.
+	 * Tell whether the built-in WooPayments is enabled for this site: the WooPayments feature is on.
 	 *
 	 * This is the enabled setting, independent of ownership: the built-in WooPayments can be enabled
 	 * while the WooPayments extension owns payments, and the extension still wins.
@@ -183,40 +151,7 @@ class WooPaymentsRuntimeArbiter {
 	 * @return bool True when the built-in WooPayments is enabled.
 	 */
 	public function is_builtin_enabled(): bool {
-		$option_enabled = 'yes' === get_option( self::BUILTIN_ENABLED_OPTION, 'no' );
-		$filter_default = $this->is_kill_switch_active() ? false : $option_enabled;
-
-		/**
-		 * Filters whether the built-in WooPayments is enabled for this site.
-		 *
-		 * This value is resolved while WooCommerce loads, for early registrations. Use a mu-plugin or
-		 * earlier bootstrap when the filter must control every built-in WooPayments registration in the
-		 * request.
-		 *
-		 * @since 11.0.0
-		 *
-		 * @param bool $enabled Whether the built-in WooPayments is enabled.
-		 */
-		return (bool) apply_filters( self::BUILTIN_ENABLED_FILTER, $filter_default );
-	}
-
-	/**
-	 * Tell whether the stored kill switch is on.
-	 *
-	 * Scalar values follow wc_string_to_bool(); any other stored value (such as an array) is cast to bool.
-	 *
-	 * @since 11.2.0
-	 *
-	 * @return bool True when the kill switch option is on.
-	 */
-	public function is_kill_switch_active(): bool {
-		$stored = get_option( self::BUILTIN_KILL_SWITCH_OPTION, false );
-
-		if ( ! is_scalar( $stored ) && null !== $stored ) {
-			return (bool) $stored;
-		}
-
-		return wc_string_to_bool( is_bool( $stored ) ? $stored : (string) $stored );
+		return 'yes' === get_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, wc_bool_to_string( WooPaymentsFeatureController::ENABLED_BY_DEFAULT ) );
 	}
 
 	/**

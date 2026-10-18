@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
 
@@ -34,11 +35,6 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		delete_option( 'woocommerce_woopayments_builtin_enabled' );
-		delete_option( 'woocommerce_woopayments_builtin_kill_switch' );
-		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
-		remove_all_filters( 'option_woocommerce_woopayments_builtin_enabled' );
-		remove_all_filters( 'option_woocommerce_woopayments_builtin_kill_switch' );
 		$this->sut->invalidate();
 		$this->reset_legacy_proxy_mocks();
 		parent::tearDown();
@@ -92,10 +88,22 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Enable the native runtime feature flag.
+	 * Turn the WooPayments feature on.
 	 */
 	private function enable_native_runtime(): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+	}
+
+	/**
+	 * Answer every read of the WooPayments feature option from a callback, on every site, without writing the option.
+	 *
+	 * A write would reach the verified-email restore service, which resets the owner memo this file tests.
+	 *
+	 * @param callable $read Returns the stored value.
+	 */
+	private function answer_feature_reads( callable $read ): void {
+		$this->sut->invalidate();
+		add_filter( 'pre_option_' . WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $read );
 	}
 
 	/**
@@ -181,11 +189,21 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Plugin wins even when the native runtime is enabled.
+	 * @testdox The active plugin wins whatever the WooPayments feature says ($_dataName).
+	 * @testWith ["yes"]
+	 *           ["no"]
+	 *           [null]
+	 *
+	 * @param string|null $stored Stored feature option, or null when absent.
 	 */
-	public function test_plugin_wins_even_when_native_enabled(): void {
+	public function test_plugin_wins_whatever_the_feature_says( ?string $stored ): void {
 		$this->fake_plugin( true );
-		$this->enable_native_runtime();
+		if ( null === $stored ) {
+			delete_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION );
+		} else {
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $stored );
+		}
+		$this->sut->invalidate();
 
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'Plugin-wins is the only allowed state while the plugin is active.' );
 		$this->assertFalse( $this->sut->is_builtin_owner(), 'Native must not register even when enabled, as long as the plugin is active.' );
@@ -219,12 +237,11 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_runtime_ownership_is_computed_once_for_repeated_owner_and_helper_calls(): void {
 		$this->fake_plugin();
-		$native_enabled_queries = 0;
-		add_filter(
-			WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER,
-			static function () use ( &$native_enabled_queries ): bool {
-				++$native_enabled_queries;
-				return true;
+		$feature_reads = 0;
+		$this->answer_feature_reads(
+			static function () use ( &$feature_reads ): string {
+				++$feature_reads;
+				return 'yes';
 			}
 		);
 
@@ -232,7 +249,7 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $this->sut->is_builtin_owner() );
 		$this->assertFalse( $this->sut->is_extension_owner() );
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner() );
-		$this->assertSame( 1, $native_enabled_queries, 'The owner decision should be resolved once for all repeated owner and helper calls.' );
+		$this->assertSame( 1, $feature_reads, 'The owner decision should be resolved once for all repeated owner and helper calls.' );
 	}
 
 	/**
@@ -240,16 +257,15 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	 */
 	public function test_explicit_invalidation_recomputes_the_runtime_owner(): void {
 		$this->fake_plugin();
-		$native_enabled = false;
-		add_filter(
-			WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER,
-			static function () use ( &$native_enabled ): bool {
-				return $native_enabled;
+		$feature_on = false;
+		$this->answer_feature_reads(
+			static function () use ( &$feature_on ): string {
+				return $feature_on ? 'yes' : 'no';
 			}
 		);
 
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
-		$native_enabled = true;
+		$feature_on = true;
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'The current request keeps its first owner decision until explicitly invalidated.' );
 
 		$this->sut->invalidate();
@@ -264,13 +280,12 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	public function test_runtime_ownership_memoization_is_isolated_by_blog(): void {
 		$this->skipWithoutMultisite();
 		$this->fake_plugin();
-		$native_enabled_queries = 0;
-		$main_blog_id           = get_current_blog_id();
-		add_filter(
-			WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER,
-			static function () use ( &$native_enabled_queries, $main_blog_id ): bool {
-				++$native_enabled_queries;
-				return get_current_blog_id() !== $main_blog_id;
+		$feature_reads = 0;
+		$main_blog_id  = get_current_blog_id();
+		$this->answer_feature_reads(
+			static function () use ( &$feature_reads, $main_blog_id ): string {
+				++$feature_reads;
+				return get_current_blog_id() !== $main_blog_id ? 'yes' : 'no';
 			}
 		);
 
@@ -282,7 +297,7 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 			restore_current_blog();
 
 			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
-			$this->assertSame( 2, $native_enabled_queries, 'Each blog should resolve and retain its own owner decision.' );
+			$this->assertSame( 2, $feature_reads, 'Each blog should resolve and retain its own owner decision.' );
 		} finally {
 			while ( ms_is_switched() ) {
 				restore_current_blog();
@@ -323,117 +338,38 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox is_builtin_enabled reflects the feature flag independently of ownership.
+	 * @testdox is_builtin_enabled() reads the WooPayments feature option, whoever owns payments ($_dataName).
+	 * @dataProvider provide_feature_option_values
+	 *
+	 * @param string|null $stored          Stored feature option, or null when absent.
+	 * @param bool        $plugin_active   Whether the WooPayments extension is active.
+	 * @param bool        $expected        Whether the built-in WooPayments reads as enabled.
 	 */
-	public function test_is_builtin_enabled_reflects_flag(): void {
-		$this->fake_plugin( true );
+	public function test_is_builtin_enabled_reads_the_feature_option( ?string $stored, bool $plugin_active, bool $expected ): void {
+		$this->fake_plugin( $plugin_active );
+		if ( null === $stored ) {
+			delete_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION );
+		} else {
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $stored );
+		}
+		$this->sut->invalidate();
 
-		$this->assertFalse( $this->sut->is_builtin_enabled(), 'The native flag is off by default.' );
-
-		$this->enable_native_runtime();
-
-		$this->assertTrue( $this->sut->is_builtin_enabled(), 'The native flag reports enabled even while the plugin still owns the runtime.' );
+		$this->assertSame( $expected, $this->sut->is_builtin_enabled() );
+		$this->assertSame( $expected && ! $plugin_active ? WooPaymentsRuntimeArbiter::OWNER_BUILTIN : ( $plugin_active ? WooPaymentsRuntimeArbiter::OWNER_EXTENSION : WooPaymentsRuntimeArbiter::OWNER_NONE ), $this->sut->get_runtime_owner() );
 	}
 
 	/**
-	 * @testdox An absent native runtime option fails closed.
+	 * Stored feature option values with and without the WooPayments extension.
+	 *
+	 * @return array<string,array{0:string|null,1:bool,2:bool}>
 	 */
-	public function test_absent_native_runtime_option_fails_closed(): void {
-		$this->fake_plugin();
-
-		$this->assertFalse( $this->sut->is_builtin_enabled(), 'An absent native runtime option must remain disabled until the upgrade enables it.' );
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'With no plugin and an absent native runtime option, nobody owns the runtime.' );
-	}
-
-	/**
-	 * @testdox An enabled native runtime option enables native when the plugin is absent.
-	 */
-	public function test_enabled_native_runtime_option_enables_native_when_plugin_is_absent(): void {
-		$this->fake_plugin();
-		update_option( 'woocommerce_woopayments_builtin_enabled', 'yes' );
-
-		$this->assertTrue( $this->sut->is_builtin_enabled(), 'The native runtime option should enable native payments.' );
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner(), 'Native should own the runtime when the plugin is absent and the option is enabled.' );
-	}
-
-	/**
-	 * @testdox The option-backed kill switch makes an enabled native runtime filter default false.
-	 */
-	public function test_kill_switch_option_disables_native_filter_default(): void {
-		$this->fake_plugin();
-		update_option( 'woocommerce_woopayments_builtin_enabled', 'yes' );
-		update_option( 'woocommerce_woopayments_builtin_kill_switch', true );
-		$filter_default = null;
-		add_filter(
-			WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER,
-			static function ( bool $enabled ) use ( &$filter_default ): bool {
-				$filter_default = $enabled;
-				return $enabled;
-			}
+	public function provide_feature_option_values(): array {
+		return array(
+			'on, no extension'      => array( 'yes', false, true ),
+			'off, no extension'     => array( 'no', false, false ),
+			'absent, no extension'  => array( null, false, false ),
+			'on, extension active'  => array( 'yes', true, true ),
+			'off, extension active' => array( 'no', true, false ),
 		);
-
-		$this->assertFalse( $this->sut->is_builtin_enabled() );
-		$this->assertFalse( $filter_default, 'The kill switch must hand the filter a false default even when the enabled option is on.' );
-	}
-
-	/**
-	 * @testdox The runtime filter retains final authority over the option-backed kill switch.
-	 */
-	public function test_native_enabled_filter_can_override_kill_switch_option(): void {
-		$this->fake_plugin();
-		update_option( 'woocommerce_woopayments_builtin_kill_switch', true );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
-
-		$this->assertTrue( $this->sut->is_builtin_enabled() );
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner() );
-	}
-
-	/**
-	 * @testdox The kill switch stays off for stored false-like values.
-	 * @testWith ["no"]
-	 *           ["false"]
-	 *           ["0"]
-	 *           [""]
-	 *
-	 * @param string $stored Stored kill-switch value.
-	 */
-	public function test_kill_switch_stays_off_for_false_like_values( string $stored ): void {
-		$this->fake_plugin();
-		update_option( 'woocommerce_woopayments_builtin_enabled', 'yes' );
-		update_option( 'woocommerce_woopayments_builtin_kill_switch', $stored );
-
-		$this->assertTrue( $this->sut->is_builtin_enabled(), "A kill switch stored as '{$stored}' must leave native enabled." );
-	}
-
-	/**
-	 * @testdox The kill switch engages for stored true-like values.
-	 * @testWith ["yes"]
-	 *           ["true"]
-	 *           ["1"]
-	 *
-	 * @param string $stored Stored kill-switch value.
-	 */
-	public function test_kill_switch_engages_for_true_like_values( string $stored ): void {
-		$this->fake_plugin();
-		update_option( 'woocommerce_woopayments_builtin_enabled', 'yes' );
-		update_option( 'woocommerce_woopayments_builtin_kill_switch', $stored );
-
-		$this->assertFalse( $this->sut->is_builtin_enabled(), "A kill switch stored as '{$stored}' must disable native." );
-	}
-
-	/**
-	 * @testdox A kill switch stored as an array reads as on when non-empty and off when empty, without an error.
-	 */
-	public function test_kill_switch_reads_a_stored_array_as_bool(): void {
-		$this->fake_plugin();
-		update_option( 'woocommerce_woopayments_builtin_enabled', 'yes' );
-
-		update_option( 'woocommerce_woopayments_builtin_kill_switch', array( 'on' ) );
-		$this->assertTrue( $this->sut->is_kill_switch_active(), 'A non-empty array must read as on.' );
-		$this->assertFalse( $this->sut->is_builtin_enabled(), 'A non-empty array must disable native.' );
-
-		update_option( 'woocommerce_woopayments_builtin_kill_switch', array() );
-		$this->assertFalse( $this->sut->is_kill_switch_active(), 'An empty array must read as off.' );
-		$this->assertTrue( $this->sut->is_builtin_enabled(), 'An empty array must leave native enabled.' );
 	}
 }

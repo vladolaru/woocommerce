@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use WC_Unit_Test_Case;
 
 /**
@@ -21,15 +22,14 @@ class WooPaymentsExtensionOwnedSetupTierSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox On a store the WooPayments extension owns, with the built-in WooPayments enabled and the stored setup tier disabled, an eligible account cache write in a $request_type request stores the available tier.
+	 * @testdox On a store the WooPayments extension owns, with the WooPayments feature on and the stored setup tier disabled, an eligible account cache write in a $request_type request stores the available tier.
 	 * @dataProvider request_types
 	 *
 	 * @param string $request_type Request type: front, admin, ajax, rest, cron or cli.
 	 */
 	public function test_extension_account_cache_write_moves_a_disabled_store_to_available( string $request_type ): void {
 		update_option( 'active_plugins', array( 'woocommerce-payments/woocommerce-payments.php' ) );
-		update_option( 'woocommerce_woopayments_builtin_enabled', 'yes' );
-		delete_option( 'woocommerce_woopayments_builtin_kill_switch' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( 'woocommerce_woopayments_setup_tier', 'disabled' );
 		delete_option( 'wcpay_account_data' );
 		remove_all_actions( 'add_option_wcpay_account_data' );

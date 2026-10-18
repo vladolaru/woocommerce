@@ -11,6 +11,7 @@ use ActionScheduler;
 use ActionScheduler_QueueRunner;
 use ActionScheduler_Store;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -111,7 +112,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		if ( $this->state_store instanceof WooPaymentsCutoverStateStore ) {
 			$this->cleanup_state();
 		}
-		remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		delete_option( WooPaymentsSetupTier::OPTION_NAME );
 		delete_option( 'wcpay_account_data' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
@@ -4540,9 +4540,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$main_site_id   = get_current_blog_id();
 		$second_site_id = $this->create_cutover_multisite_site( 'cutover-barrier-state.example.org' );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
 			switch_to_blog( $site_id );
+			// The WooPayments feature is a per-site option.
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 			// The account cache envelope (data, fetched, errored, consecutive_errors): client 11.1.0 includes/class-database-cache.php:377-382; the account_id and is_live fields: includes/class-wc-payments-account.php:164-171, :757-759.
 			update_option(
 				'wcpay_account_data',
@@ -6506,7 +6507,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * Arrange a store that upgraded WooCommerce with WooPayments active and a connected, enabled account.
 	 */
 	private function arrange_plugin_era_store(): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
 		// The account cache envelope (data, fetched, errored, consecutive_errors): client 11.1.0 includes/class-database-cache.php:377-382; the account_id and is_live fields: includes/class-wc-payments-account.php:164-171, :757-759.

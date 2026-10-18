@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestC
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
@@ -200,7 +201,6 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 				$this->format_controller = null;
 			}
 			delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
-			remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 			unset(
 				$GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ],
@@ -323,7 +323,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	 */
 	private function format_prices_in_selected_currency( string $selected_code ): void {
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( 'active_plugins', array() );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$this->assertTrue( wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->should_core_register() );

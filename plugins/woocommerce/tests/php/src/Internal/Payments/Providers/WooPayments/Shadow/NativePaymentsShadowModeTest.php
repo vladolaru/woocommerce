@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Shadow;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -46,7 +47,6 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 		remove_all_filters( NativePaymentsShadowMode::FILTER_SHADOW_ENABLED );
 		remove_all_filters( NativePaymentsShadowMode::FILTER_LOG_FULL_SURFACES );
 		remove_all_filters( NativePaymentsShadowMode::FILTER_ALLOW_LIVE_READS );
-		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		remove_all_filters( 'nonce_user_logged_out' );
 		remove_all_filters( 'wcpay_payment_request_payment_method_title_suffix' );
 		$this->reset_legacy_proxy_mocks();
@@ -122,7 +122,7 @@ class NativePaymentsShadowModeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_register_hooks_when_native_owns_runtime(): void {
 		$this->fake_plugin( false );
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		add_filter( NativePaymentsShadowMode::FILTER_SHADOW_ENABLED, '__return_true' );
 
 		$this->sut->register();

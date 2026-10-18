@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Order;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 
 defined( 'ABSPATH' ) || exit;
@@ -84,12 +85,9 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 		self::$registered_instance = $this;
 
 		add_action( self::RESTORE_CUSTOMER_ID_HOOK, array( $this, 'restore_order_customer_id' ), 10, 1 );
-		foreach ( array( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION, WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION ) as $option_name ) {
-			foreach ( array( 'add', 'update', 'delete' ) as $operation ) {
-				$hook_name = "{$operation}_option_{$option_name}";
-				add_action( $hook_name, array( $this, 'handle_builtin_runtime_option_change' ), 10, 0 );
-			}
-		}
+		add_action( 'add_option_' . WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, array( $this, 'handle_feature_option_change' ), 10, 0 );
+		add_action( 'update_option_' . WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, array( $this, 'handle_feature_option_change' ), 10, 0 );
+		add_action( 'delete_option_' . WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, array( $this, 'handle_feature_option_change' ), 10, 0 );
 	}
 
 	/**
@@ -179,17 +177,20 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 	}
 
 	/**
-	 * Restore detached orders once no WooPayments runtime owns payments any more.
+	 * Restore detached orders once the WooPayments feature is off and nothing owns payments.
+	 *
+	 * Only a store the built-in WooPayments owned before the change drains: a Features page save on another store changes nothing here.
 	 *
 	 * @internal
 	 */
-	public function handle_builtin_runtime_option_change(): void {
+	public function handle_feature_option_change(): void {
 		if ( self::$registered_instance !== $this ) {
 			return;
 		}
 
+		$owner_before = $this->arbiter->get_runtime_owner();
 		$this->arbiter->invalidate();
-		if ( WooPaymentsRuntimeArbiter::OWNER_NONE !== $this->arbiter->get_runtime_owner() ) {
+		if ( WooPaymentsRuntimeArbiter::OWNER_BUILTIN !== $owner_before || WooPaymentsRuntimeArbiter::OWNER_NONE !== $this->arbiter->get_runtime_owner() ) {
 			return;
 		}
 
@@ -285,10 +286,8 @@ class WooPaymentsWooPayVerifiedEmailRestoreService implements RegisterHooksInter
 		remove_action( self::RESTORE_CUSTOMER_ID_HOOK, array( $this, 'restore_order_customer_id' ), 10 );
 		remove_action( self::ORDER_CRUD_READY_HOOK, array( $this, 'drain_current_blog' ), 10 );
 		$this->pending_drain_blog_ids = array();
-		foreach ( array( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_OPTION, WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION ) as $option_name ) {
-			foreach ( array( 'add', 'update', 'delete' ) as $operation ) {
-				remove_action( "{$operation}_option_{$option_name}", array( $this, 'handle_builtin_runtime_option_change' ), 10 );
-			}
-		}
+		remove_action( 'add_option_' . WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, array( $this, 'handle_feature_option_change' ), 10 );
+		remove_action( 'update_option_' . WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, array( $this, 'handle_feature_option_change' ), 10 );
+		remove_action( 'delete_option_' . WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, array( $this, 'handle_feature_option_change' ), 10 );
 	}
 }

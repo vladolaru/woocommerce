@@ -35,9 +35,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 */
 	private const NATIVE_RUNTIME_FIELDS = array(
 		'runtime_owner'                => 'Runtime owner',
-		'native_enabled'               => 'Built-in WooPayments enabled',
-		'native_enabled_filter'        => 'Built-in WooPayments filter',
-		'native_enabled_note'          => 'Built-in WooPayments enabled note',
+		'builtin_enabled'              => 'Built-in WooPayments feature',
 		'preflight_failures'           => 'Cutover preflight failures',
 		'multi_currency_rate_provider' => 'WooPayments rate provider',
 		'last_webhook_fetch'           => 'Last fetch of failed webhook events',
@@ -124,7 +122,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 *
 	 * Registered where the WooPayments client would report too: a connected native store, or
 	 * while the plugin owns payments (cutover diagnostics during coexistence). Support also needs them
-	 * once the kill switch is on or a cutover started. Other stores skip the preflight and account read.
+	 * once a cutover started. Other stores skip the preflight and account read.
 	 */
 	public function register(): void {
 		if ( ! $this->has_support_diagnostics() ) {
@@ -141,14 +139,13 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	/**
 	 * Tell whether this store has native payments state for support to read. Every read is autoloaded.
 	 *
-	 * The stored tier is checked, not the effective one, because the kill switch clamps a connected store to disabled.
+	 * The stored tier is checked, not the effective one, because a connected store whose WooPayments feature is off reads as disabled.
 	 *
 	 * @return bool
 	 */
 	private function has_support_diagnostics(): bool {
 		return in_array( $this->setup_tier->get_stored_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true )
 			|| $this->arbiter->is_extension_owner()
-			|| $this->arbiter->is_kill_switch_active()
 			|| null !== $this->get_cutover_state_store()->get_record();
 	}
 
@@ -242,9 +239,6 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		return array(
 			'runtime_owner'           => $this->arbiter->get_runtime_owner(),
 			'builtin_enabled'         => $this->arbiter->is_builtin_enabled(),
-			'builtin_enabled_source'  => $this->get_native_enabled_source(),
-			'builtin_enabled_filter'  => WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER,
-			'builtin_enabled_note'    => $this->get_native_enabled_note(),
 			'preflight_failures'      => $this->get_preflight_failures(),
 			'account_id'              => $this->get_account_service()->get_account_id(),
 			'account_connected'       => $account_connected,
@@ -284,22 +278,9 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 				'label' => __( 'Runtime owner', 'woocommerce' ),
 				'value' => (string) $data['runtime_owner'],
 			),
-			'native_enabled'               => array(
-				'label' => __( 'Built-in WooPayments enabled', 'woocommerce' ),
+			'builtin_enabled'              => array(
+				'label' => __( 'Built-in WooPayments feature', 'woocommerce' ),
 				'value' => $this->format_enabled( (bool) $data['builtin_enabled'] ),
-			),
-			'native_enabled_filter'        => array(
-				'label' => __( 'Built-in WooPayments filter', 'woocommerce' ),
-				'value' => sprintf(
-					/* translators: 1: filter name, 2: resolution source. */
-					__( '%1$s (source: %2$s)', 'woocommerce' ),
-					(string) $data['builtin_enabled_filter'],
-					(string) $data['builtin_enabled_source']
-				),
-			),
-			'native_enabled_note'          => array(
-				'label' => __( 'Built-in WooPayments enabled note', 'woocommerce' ),
-				'value' => (string) $data['builtin_enabled_note'],
 			),
 			'preflight_failures'           => array(
 				'label' => __( 'Cutover preflight failures', 'woocommerce' ),
@@ -915,29 +896,6 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		} catch ( Throwable $exception ) {
 			return false;
 		}
-	}
-
-	/**
-	 * Tell where the native enabled value resolved from.
-	 *
-	 * @return string
-	 */
-	private function get_native_enabled_source(): string {
-		return false === has_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER ) ? 'default' : 'filter';
-	}
-
-	/**
-	 * Get the native runtime enabled support note.
-	 *
-	 * @return string
-	 */
-	private function get_native_enabled_note(): string {
-		return sprintf(
-			/* translators: 1: option name, 2: filter name. */
-			__( 'The %1$s option turns off the built-in WooPayments by default when set to true. The %2$s filter has final authority and is resolved while WooCommerce is being loaded. Use a mu-plugin or earlier bootstrap code to override this value.', 'woocommerce' ),
-			WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION,
-			WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER
-		);
 	}
 
 	/**

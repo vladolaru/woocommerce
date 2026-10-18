@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use WC_Data_Store;
@@ -30,46 +31,10 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Missing E2E constant leaves built-in WooPayments disabled.
-	 */
-	public function test_missing_constant_leaves_builtin_disabled(): void {
-		$this->load_bootstrap();
-
-		// wp-env defines the constant for every environment including this container; state the absent precondition on the
-		// layer that decides, so the case stays reachable on a machine configured to run the WooPayments E2E suite.
-		Constants::set_constant( 'E2E_WOOPAYMENTS_NATIVE', null );
-
-		$this->assertFalse(
-			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the bootstrap filter in a test.
-			(bool) apply_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, false ),
-			'The test bootstrap must not change runtime ownership without the exact E2E constant.'
-		);
-		$this->assertTrue(
-			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the bootstrap filter in a test.
-			(bool) apply_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, true ),
-			'The test bootstrap must preserve an existing rollout signal without the exact E2E constant.'
-		);
-	}
-
-	/**
-	 * @testdox Exact true E2E constant enables built-in WooPayments before owner resolution.
-	 */
-	public function test_true_constant_enables_builtin_before_owner_resolution(): void {
-		$this->define_native_e2e_constant();
-		$this->load_bootstrap();
-
-		$this->assertTrue(
-			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising the bootstrap filter in a test.
-			(bool) apply_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, false ),
-			'The mu-plugin filter must enable the built-in WooPayments before the arbiter resolves ownership.'
-		);
-	}
-
-	/**
 	 * @testdox Active WooPayments extension wins over the built-in E2E bootstrap.
 	 */
 	public function test_active_woopayments_extension_still_wins(): void {
-		$this->define_native_e2e_constant();
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->load_bootstrap();
 		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 
@@ -79,24 +44,6 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 			WooPaymentsRuntimeArbiter::OWNER_EXTENSION,
 			$arbiter->get_runtime_owner(),
 			'Extension-wins ownership must remain authoritative when the WooPayments extension is active.'
-		);
-	}
-
-	/**
-	 * @testdox Built-in kill switch disables the E2E built-in owner.
-	 */
-	public function test_kill_switch_disables_builtin_owner(): void {
-		$this->define_native_e2e_constant();
-		$this->load_bootstrap();
-		update_option( 'active_plugins', array() );
-		update_option( WooPaymentsRuntimeArbiter::BUILTIN_KILL_SWITCH_OPTION, true );
-
-		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
-
-		$this->assertSame(
-			WooPaymentsRuntimeArbiter::OWNER_NONE,
-			$arbiter->get_runtime_owner(),
-			'The host-controlled kill switch must disable E2E built-in ownership.'
 		);
 	}
 
@@ -174,7 +121,7 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 	 * @testdox Named saved-card evidence proves the exact local mapping and provider customer.
 	 */
 	public function test_named_saved_card_evidence_proves_local_mapping_and_provider_customer(): void {
-		$this->define_native_e2e_constant();
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->load_bootstrap();
 		$user_id          = self::factory()->user->create(
 			array(
@@ -220,7 +167,7 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 	 * @testdox Named saved-card evidence rejects a mismatched provider payment-method ID.
 	 */
 	public function test_named_saved_card_evidence_rejects_mismatched_local_mapping(): void {
-		$this->define_native_e2e_constant();
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->load_bootstrap();
 		$user_id = self::factory()->user->create(
 			array(
@@ -247,7 +194,7 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 	 * @testdox The E2E runtime does not register a surrogate WooPayments cutover action.
 	 */
 	public function test_runtime_does_not_register_surrogate_cutover_action(): void {
-		$this->define_native_e2e_constant();
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->define_transition_e2e_constant();
 		$this->load_bootstrap();
 
@@ -261,7 +208,7 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 	 * @testdox Runtime status never trusts locally writable callback proof.
 	 */
 	public function test_status_rejects_locally_writable_callback_proof(): void {
-		$this->define_native_e2e_constant();
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->define_transition_e2e_constant();
 		$this->load_bootstrap();
 		\Jetpack_Options::update_option( 'id', 321 );
@@ -291,7 +238,7 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 			$response->get_data()['callback_probe'],
 			'The local runtime must not be able to invent callback readiness.'
 		);
-		$this->assertTrue( $response->get_data()['builtin_enabled'], 'The status route must report the built-in WooPayments enabled by the E2E constant.' );
+		$this->assertTrue( $response->get_data()['builtin_enabled'], 'The status route must report the built-in WooPayments enabled by the WooPayments feature.' );
 	}
 
 	/**
@@ -302,7 +249,7 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $proof Invalid callback proof.
 	 */
 	public function test_status_rejects_invalid_callback_proof( array $proof ): void {
-		$this->define_native_e2e_constant();
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->define_transition_e2e_constant();
 		$this->load_bootstrap();
 		\Jetpack_Options::update_option( 'id', 321 );
@@ -350,15 +297,6 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 				),
 			),
 		);
-	}
-
-	/**
-	 * Define the exact opt-in constant.
-	 */
-	private function define_native_e2e_constant(): void {
-		// The runtime reads the constant through Constants, whose override decides; no real define(), so nothing outlives
-		// the case.
-		Constants::set_constant( 'E2E_WOOPAYMENTS_NATIVE', true );
 	}
 
 	/**

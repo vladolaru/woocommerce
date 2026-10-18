@@ -3,6 +3,7 @@ declare( strict_types=1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Orders;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
@@ -262,7 +263,7 @@ class PaymentInfoTest extends WC_Unit_Test_Case {
 				},
 			)
 		);
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		$container = wc_get_container();
 		$arbiter   = $container->get( WooPaymentsRuntimeArbiter::class );
 		$arbiter->invalidate();
@@ -300,7 +301,7 @@ class PaymentInfoTest extends WC_Unit_Test_Case {
 			$card_info = $order->get_payment_card_info();
 		} finally {
 			$container->reset_all_replacements();
-			remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 			$arbiter->invalidate();
 		}
 

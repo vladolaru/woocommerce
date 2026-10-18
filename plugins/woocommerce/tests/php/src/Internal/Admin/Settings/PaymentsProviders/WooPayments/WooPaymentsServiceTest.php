@@ -249,7 +249,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 		delete_transient( 'woopayments_referral_code' );
 		remove_all_filters( 'woocommerce_tracks_event_properties' );
 		remove_all_filters( 'wcpay_tracks_event_properties' );
-		remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		$this->clear_rest_server();

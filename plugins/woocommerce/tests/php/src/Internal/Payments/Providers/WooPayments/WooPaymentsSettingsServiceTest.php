@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingPaymentProcessingService;
@@ -147,7 +148,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		remove_all_actions( 'wc_payment_gateways_initialized' );
 		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
-		remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		if ( function_exists( 'WC' ) && WC()->payment_gateways() ) {
 			WC()->payment_gateways()->payment_gateways = array();
@@ -3767,7 +3767,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * Make the built-in WooPayments own payments, which core Multi-Currency needs to run.
 	 */
 	private function own_payments(): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 	}
 
@@ -3775,7 +3775,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * Make the built-in WooPayments the payments owner in the active tier, where the gateway is offered at checkout.
 	 */
 	private function make_builtin_active(): void {
-		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE, true );
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
@@ -3786,7 +3786,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function clear_builtin_active(): void {
 		$this->clear_rest_server();
-		remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		delete_option( WooPaymentsSetupTier::OPTION_NAME );
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
