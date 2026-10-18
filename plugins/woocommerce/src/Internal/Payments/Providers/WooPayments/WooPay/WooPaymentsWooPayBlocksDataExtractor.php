@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay;
 
 use Automattic\WooCommerce\Blocks\Integrations\IntegrationInterface;
 use Automattic\WooCommerce\Blocks\Integrations\IntegrationRegistry;
+use Automattic\WooCommerce\Blocks\Utils\CartCheckoutUtils;
 use Automattic\WooCommerce\StoreApi\Schemas\ExtendSchema;
 use Automattic\WooCommerce\StoreApi\Schemas\V1\CheckoutSchema;
 use Automattic\WooCommerce\StoreApi\StoreApi;
@@ -100,9 +101,11 @@ class WooPaymentsWooPayBlocksDataExtractor {
 	 * @return array{company:string,address_2:string,phone:string,terms_checkbox:bool,custom_terms:string}
 	 */
 	public function get_optional_fields_status( string $custom_message = '' ): array {
-		$company                       = $this->get_checkout_field_status_option( 'woocommerce_checkout_company_field', 'optional' );
-		$address_2                     = $this->get_checkout_field_status_option( 'woocommerce_checkout_address_2_field', 'optional' );
-		$phone                         = $this->get_checkout_field_status_option( 'woocommerce_checkout_phone_field', 'required' );
+		// The checkout's own field settings, which the Checkout block sidebar writes and the checkout's required flags read
+		// (CoreCheckoutFields); the getters move an unmigrated block's attributes into them first.
+		$company                       = (string) CartCheckoutUtils::get_company_field_visibility();
+		$address_2                     = (string) CartCheckoutUtils::get_address_2_field_visibility();
+		$phone                         = (string) CartCheckoutUtils::get_phone_field_visibility();
 		$has_terms_and_condition_page  = ! empty( get_option( 'woocommerce_terms_page_id', null ) );
 		$terms_and_conditions          = wp_kses_post( wc_replace_policy_page_link_placeholders( wc_get_terms_and_conditions_checkbox_text() ) );
 		$has_privacy_policy_page       = ! empty( get_option( 'wp_page_for_privacy_policy', null ) );
@@ -131,34 +134,6 @@ class WooPaymentsWooPayBlocksDataExtractor {
 				'terms_checkbox' => $show_terms_checkbox,
 				'custom_terms'   => $below_place_order_button_text,
 			);
-		}
-
-		$company                       = 'optional';
-		$address_2                     = 'optional';
-		$phone                         = 'optional';
-		$below_place_order_button_text = $custom_terms;
-		$checkout_block_attrs          = $this->get_block_attrs( $checkout_block );
-
-		if ( array() !== $checkout_block_attrs ) {
-			if ( ! empty( $checkout_block_attrs['requireCompanyField'] ) ) {
-				$company = 'required';
-			}
-
-			if ( ! empty( $checkout_block_attrs['requirePhoneField'] ) ) {
-				$phone = 'required';
-			}
-
-			if ( empty( $checkout_block_attrs['showCompanyField'] ) ) {
-				$company = 'hidden';
-			}
-
-			if ( isset( $checkout_block_attrs['showApartmentField'] ) && false === $checkout_block_attrs['showApartmentField'] ) {
-				$address_2 = 'hidden';
-			}
-
-			if ( isset( $checkout_block_attrs['showPhoneField'] ) && false === $checkout_block_attrs['showPhoneField'] ) {
-				$phone = 'hidden';
-			}
 		}
 
 		$fields_block                  = $this->get_inner_block( $checkout_block, 'woocommerce/checkout-fields-block' );
@@ -302,19 +277,6 @@ class WooPaymentsWooPayBlocksDataExtractor {
 		}
 
 		return $settings;
-	}
-
-	/**
-	 * Get a checkout field status option as a string.
-	 *
-	 * @param string $option_name    Option name.
-	 * @param string $default_status Default status.
-	 * @return string
-	 */
-	private function get_checkout_field_status_option( string $option_name, string $default_status ): string {
-		$status = get_option( $option_name, $default_status );
-
-		return is_string( $status ) ? $status : $default_status;
 	}
 
 	/**
