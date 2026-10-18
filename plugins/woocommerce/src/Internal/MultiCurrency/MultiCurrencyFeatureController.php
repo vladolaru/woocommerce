@@ -53,14 +53,23 @@ class MultiCurrencyFeatureController {
 	private MultiCurrencyUsageDetector $usage_detector;
 
 	/**
+	 * Multi-Currency runtime owner arbiter.
+	 *
+	 * @var MultiCurrencyRuntimeArbiter
+	 */
+	private MultiCurrencyRuntimeArbiter $runtime_arbiter;
+
+	/**
 	 * Initialize the feature controller.
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyUsageDetector $usage_detector Persisted usage detector.
+	 * @param MultiCurrencyUsageDetector  $usage_detector  Persisted usage detector.
+	 * @param MultiCurrencyRuntimeArbiter $runtime_arbiter Multi-Currency runtime owner arbiter.
 	 */
-	final public function init( MultiCurrencyUsageDetector $usage_detector ): void {
-		$this->usage_detector = $usage_detector;
+	final public function init( MultiCurrencyUsageDetector $usage_detector, MultiCurrencyRuntimeArbiter $runtime_arbiter ): void {
+		$this->usage_detector  = $usage_detector;
+		$this->runtime_arbiter = $runtime_arbiter;
 	}
 
 	/**
@@ -210,7 +219,8 @@ class MultiCurrencyFeatureController {
 				'option_key'                   => self::FEATURE_ENABLE_OPTION,
 				'description'                  => __( 'Let customers shop and pay in their own currency.', 'woocommerce' ),
 				'enabled_by_default'           => false,
-				'disable_ui'                   => false,
+				// While the WooPayments extension is active, its own Multi-Currency setting decides and this one would do nothing.
+				'disable_ui'                   => $this->runtime_arbiter->is_payments_extension_owner(),
 				'is_experimental'              => false,
 				'default_plugin_compatibility' => FeaturePluginCompatibility::COMPATIBLE,
 				'setting'                      => $this->get_feature_setting(),

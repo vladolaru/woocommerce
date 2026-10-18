@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Enums\FeaturePluginCompatibility;
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStoreMeta;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
@@ -40,7 +41,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
 		$this->previous_user_id = get_current_user_id();
 		$this->sut              = new MultiCurrencyFeatureController();
-		$this->sut->init( new MultiCurrencyUsageDetector() );
+		$this->sut->init( new MultiCurrencyUsageDetector(), $this->create_runtime_arbiter( false ) );
 	}
 
 	/**
@@ -164,6 +165,49 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox The Multi-Currency row is hidden on the Features page only while the WooPayments extension is active ($_dataName).
+	 * @testWith [true, true]
+	 *           [false, false]
+	 *
+	 * @param bool $extension_active Whether the WooPayments extension is active.
+	 * @param bool $hidden           Whether the row is hidden.
+	 */
+	public function test_feature_row_is_hidden_only_while_the_extension_is_active( bool $extension_active, bool $hidden ): void {
+		$this->sut->init( new MultiCurrencyUsageDetector(), $this->create_runtime_arbiter( $extension_active ) );
+		$features_controller = $this->createMock( FeaturesController::class );
+		$features_controller
+			->expects( $this->once() )
+			->method( 'add_feature_definition' )
+			->with(
+				MultiCurrencyFeatureController::FEATURE_ID,
+				'Multi-currency',
+				$this->callback(
+					function ( array $definition ) use ( $hidden ): bool {
+						return $hidden === $definition['disable_ui'];
+					}
+				)
+			);
+
+		$this->sut->add_feature_definition( $features_controller );
+	}
+
+	/**
+	 * Create a Multi-Currency arbiter that reports whether the WooPayments extension is active.
+	 *
+	 * @param bool $extension_active Whether the WooPayments extension is active.
+	 * @return MultiCurrencyRuntimeArbiter
+	 */
+	private function create_runtime_arbiter( bool $extension_active ): MultiCurrencyRuntimeArbiter {
+		$arbiter = $this->getMockBuilder( MultiCurrencyRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'is_payments_extension_owner' ) )
+			->getMock();
+		$arbiter->method( 'is_payments_extension_owner' )->willReturn( $extension_active );
+
+		return $arbiter;
+	}
+
+	/**
 	 * @testdox Should register the stable Multi-Currency feature with its dynamic radio setting.
 	 */
 	public function test_add_feature_definition_registers_dynamic_radio_setting(): void {
@@ -244,7 +288,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		$detector = new MultiCurrencyUsageDetector();
 		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
 		$this->sut = new MultiCurrencyFeatureController();
-		$this->sut->init( $detector );
+		$this->sut->init( $detector, $this->create_runtime_arbiter( false ) );
 		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
 
 		$this->assertSame( array( 'no' ), $this->sut->get_feature_setting()['disabled']() );
@@ -268,7 +312,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		$detector = new MultiCurrencyUsageDetector();
 		$detector->set_hpos_enabled_resolver( static fn(): bool => true );
 		$this->sut = new MultiCurrencyFeatureController();
-		$this->sut->init( $detector );
+		$this->sut->init( $detector, $this->create_runtime_arbiter( false ) );
 		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
 
 		$this->assertSame( array( 'no' ), $this->sut->get_feature_setting()['disabled']() );
@@ -284,7 +328,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		$detector = new MultiCurrencyUsageDetector();
 		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
 		$this->sut = new MultiCurrencyFeatureController();
-		$this->sut->init( $detector );
+		$this->sut->init( $detector, $this->create_runtime_arbiter( false ) );
 		$original_postmeta = $wpdb->postmeta;
 		$suppress_errors   = $wpdb->suppress_errors( true );
 		$wpdb->postmeta    = "{$wpdb->prefix}missing_multi_currency_order_meta";

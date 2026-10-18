@@ -298,6 +298,25 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $container->registered );
 	}
 
+	/**
+	 * @testdox Should register only the explicit price filter on an empty front request when no payments runtime owns the store.
+	 */
+	public function test_empty_front_request_without_a_payments_owner_registers_only_the_explicit_price_filter(): void {
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false, false, null, WooPaymentsRuntimeArbiter::OWNER_NONE );
+		$resolver_calls = 0;
+		$sut            = new MultiCurrencyBootstrap(
+			static function () use ( &$resolver_calls ): array {
+				++$resolver_calls;
+				return array( 'ProviderRoot' );
+			}
+		);
+
+		$sut->register( $container, '__return_false' );
+
+		$this->assertSame( 0, $resolver_calls );
+		$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $container->registered );
+	}
+
 	/** @testdox Should not resolve provider roots for an empty front request. */
 	public function test_empty_front_request_does_not_resolve_provider_roots(): void {
 		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
@@ -484,6 +503,24 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$method->setAccessible( true );
 
 		$this->assertSame( $expected, $method->invoke( $sut, $container, $request ) );
+	}
+
+	/**
+	 * @testdox Should select the same core root matrix when no payments runtime owns the store ($_dataName).
+	 *
+	 * @dataProvider core_root_matrix
+	 *
+	 * @param bool              $configured Whether an additional currency is configured.
+	 * @param bool              $historical Whether historical Multi-Currency data exists.
+	 * @param string            $request    Request class.
+	 * @param array<int,string> $expected   Expected roots.
+	 */
+	public function test_selects_the_same_core_root_matrix_without_a_payments_owner( bool $configured, bool $historical, string $request, array $expected ): void {
+		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $configured, $historical, false, null, WooPaymentsRuntimeArbiter::OWNER_NONE );
+		$method    = new \ReflectionMethod( MultiCurrencyBootstrap::class, 'get_core_roots' );
+		$method->setAccessible( true );
+
+		$this->assertSame( $expected, $method->invoke( new MultiCurrencyBootstrap( static fn(): array => array() ), $container, $request ) );
 	}
 
 	/** @return array<string,array{bool,bool,string,array<int,string>}> */

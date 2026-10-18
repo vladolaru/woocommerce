@@ -13,10 +13,10 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 /**
  * Decides which multi-currency runtime owns the price/currency pipeline.
  *
- * During the WooPayments merge, the standalone plugin still contains the legacy
- * multi-currency module. Core-native multi-currency must therefore use the same
- * ownership signal as native payments: plugin-mode keeps plugin multi-currency,
- * and native payments mode flips the price/currency pipeline to core.
+ * The WooPayments extension carries its own Multi-Currency module, whose classes share names with the facades core
+ * declares, so the two never run together: while the extension is active its own flag decides, and core
+ * Multi-Currency runs on its feature only while the extension is not active. Core Multi-Currency does not need a
+ * payments provider; without one it runs on manual rates.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native multi-currency runtime.
@@ -109,15 +109,11 @@ class MultiCurrencyRuntimeArbiter {
 	 * @return string One of self::OWNER_EXTENSION, self::OWNER_BUILTIN, self::OWNER_NONE.
 	 */
 	public function get_runtime_owner(): string {
-		if ( $this->is_payments_extension_owner() && $this->is_plugin_multi_currency_enabled() ) {
-			return self::OWNER_EXTENSION;
+		if ( $this->is_payments_extension_owner() ) {
+			return $this->is_plugin_multi_currency_enabled() ? self::OWNER_EXTENSION : self::OWNER_NONE;
 		}
 
-		if ( $this->is_payments_builtin_owner() && $this->feature_is_enabled() ) {
-			return self::OWNER_BUILTIN;
-		}
-
-		return self::OWNER_NONE;
+		return $this->feature_is_enabled() ? self::OWNER_BUILTIN : self::OWNER_NONE;
 	}
 
 	/**

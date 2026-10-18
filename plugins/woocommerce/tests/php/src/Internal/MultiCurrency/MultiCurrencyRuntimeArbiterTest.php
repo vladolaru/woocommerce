@@ -218,14 +218,27 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave multi-currency unowned when no payments runtime owns the site.
+	 * @testdox Should leave multi-currency unowned when no payments runtime owns the site and its core feature is off.
 	 */
 	public function test_no_payments_owner_leaves_multi_currency_unowned(): void {
 		$this->fake_plugin();
 
-		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'Without a payments owner, core multi-currency should stay dormant.' );
-		$this->assertFalse( $this->sut->should_core_register(), 'Core multi-currency must not register without native payments ownership.' );
+		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'With its core feature off, core multi-currency should stay dormant.' );
+		$this->assertFalse( $this->sut->should_core_register(), 'Core multi-currency must not register while its feature is off.' );
 		$this->assertFalse( $this->sut->should_plugin_register(), 'Plugin multi-currency is absent when the plugin is absent.' );
+	}
+
+	/**
+	 * @testdox Should run core multi-currency on its feature alone when no payments runtime owns the site, as on manual rates.
+	 */
+	public function test_core_multi_currency_runs_without_a_payments_owner(): void {
+		$this->fake_plugin( false, false, false, false );
+		$this->enable_core_multi_currency();
+
+		$this->assertFalse( $this->sut->is_payments_builtin_owner(), 'The fixture has no built-in WooPayments owner.' );
+		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner(), 'Core multi-currency needs only its feature and the extension inactive.' );
+		$this->assertTrue( $this->sut->should_core_register() );
+		$this->assertFalse( $this->sut->should_plugin_register() );
 	}
 
 	/**
