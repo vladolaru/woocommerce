@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Offer the WooPayments switch to stores whose account becomes eligible after the WooCommerce update, without waiting for a repair.

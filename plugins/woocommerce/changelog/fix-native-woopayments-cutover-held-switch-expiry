@@ -1,4 +1,0 @@
-Significance: patch
-Type: fix
-
-Finish a WooPayments switch held back for an ineligible account from the merchant's original click once the account is eligible again; past a day it closes only while the account is still ineligible and the WooPayments extension still takes payments.
