@@ -1,0 +1,1574 @@
+{
+	"_meta": {
+		"recording": "C0s, the first full live lane run (2026-10-18)",
+		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (US, default currency USD, test mode): Stripe events the platform forwarded to the store (Event::get_body_for_forwarding(true)), WPCOM at 8c43425a763.",
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, exp/core-native-payments at 75488974986), test mode.",
+		"captured_via": "The store's WooPayments log, WEBHOOK RECEIVED lines, during the lane run. The store logger redacts emails, names, URLs and some metadata. Each redacted field the payment intent handler reads is restored as the entry's restored list says; the other redacted fields (billing details, receipt email and URL, descriptions, card country and description, client secret, and metadata the handler does not read for that event type, such as fraud_outcome on payment_failed, amount_capturable_updated and canceled) are left as logged."
+	},
+	"entries": [
+		{
+			"pair": "card_checkout_succeeded",
+			"context": "An online card checkout (4242, visa credit) paying order 5831 for 10.99 USD, with the platform's fee_breakdown_v1 envelope on the intent and its charge (fee 62, net 1037).",
+			"logged_at": "2026-10-18T08:31:43+00:00",
+			"restored": {
+				"data.object.metadata.fraud_outcome and charges.data[0].metadata.fraud_outcome": "allow: the platform writes the rule engine outcome into the intent metadata (WPCOM wcpay class-intentions-controller.php:1467-1494); a block never reaches a charge, and a review stores fraud_ruleset_results beside it and holds the payment for manual capture, so this automatic-capture intent with no fraud_ruleset_results key was allowed.",
+				"metadata.order_id and order_key": "The run's order no longer exists; each test points them at its own order (order_key was redacted)."
+			},
+			"body": {
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"allowed_payment_method_types": null,
+						"amount": 1099,
+						"amount_capturable": 0,
+						"amount_details": {
+							"tip": []
+						},
+						"amount_received": 1099,
+						"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+						"application_fee_amount": 62,
+						"automatic_payment_methods": null,
+						"canceled_at": null,
+						"cancellation_reason": null,
+						"capture_method": "automatic",
+						"charges": {
+							"data": [
+								{
+									"amount": 1099,
+									"amount_captured": 1099,
+									"amount_refunded": 0,
+									"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+									"application_fee": "fee_1URpVDBzWlxcwgpPEZmKiXiV",
+									"application_fee_amount": 62,
+									"balance_transaction": "txn_3URpVCBzWlxcwgpP1SQjpoe4",
+									"billing_details": {
+										"address": {
+											"city": "(redacted)",
+											"country": "(redacted)",
+											"line1": "(redacted)",
+											"line2": "(redacted)",
+											"postal_code": "(redacted)",
+											"state": "(redacted)"
+										},
+										"email": "(redacted)",
+										"name": "(redacted)",
+										"phone": "(redacted)",
+										"tax_id": null
+									},
+									"calculated_statement_descriptor": "WOOCOMMERCE",
+									"captured": true,
+									"created": 1792312294,
+									"currency": "usd",
+									"customer": "cus_VSl1v58us2sQMM",
+									"description": "(redacted)",
+									"destination": null,
+									"dispute": null,
+									"disputed": false,
+									"failure_balance_transaction": null,
+									"failure_code": null,
+									"failure_message": null,
+									"fee_breakdown_v1": {
+										"notes": [],
+										"rows": [
+											{
+												"amount": 62,
+												"currency": "usd",
+												"display_amount": -62,
+												"key": "base",
+												"kind": "fee",
+												"label": null,
+												"meta": null,
+												"rate": null
+											}
+										],
+										"sources": {
+											"balance_transaction_exchange_rate": 0,
+											"refunded_fee_amount_store": 0
+										},
+										"totals": {
+											"capture_net": {
+												"amount": 1037,
+												"currency": "usd"
+											},
+											"fee": {
+												"amount": 62,
+												"currency": "usd",
+												"display_amount": -62,
+												"key": null,
+												"rate": null
+											},
+											"fee_plus_tax": {
+												"amount": 62,
+												"currency": "usd"
+											},
+											"gross": {
+												"amount": 1099,
+												"currency": "usd"
+											},
+											"net": {
+												"amount": 1037,
+												"currency": "usd"
+											},
+											"tax": {
+												"amount": 0,
+												"currency": "usd",
+												"display_amount": 0
+											}
+										}
+									},
+									"fraud_details": [],
+									"id": "ch_3URpVCBzWlxcwgpP17OjBnX1",
+									"invoice": null,
+									"level3": {
+										"customer_reference": "5831",
+										"line_items": [
+											{
+												"discount_amount": 0,
+												"product_code": "5830",
+												"product_description": "WooPayments card-payment 1",
+												"quantity": 1,
+												"tax_amount": 0,
+												"unit_cost": 1099
+											}
+										],
+										"merchant_reference": "5831",
+										"shipping_address_zip": "94107",
+										"shipping_amount": 0,
+										"shipping_from_zip": "94107"
+									},
+									"livemode": false,
+									"metadata": {
+										"checkout_type": "(redacted)",
+										"client_version": "(redacted)",
+										"customer_email": "(redacted)",
+										"customer_name": "(redacted)",
+										"fraud_outcome": "allow",
+										"fraud_prevention_data_available": "(redacted)",
+										"fraud_prevention_data_cart_contents": "(redacted)",
+										"fraud_prevention_data_ip_country": "(redacted)",
+										"fraud_prevention_data_shopper_ip_hash": "(redacted)",
+										"fraud_prevention_data_shopper_ua_hash": "(redacted)",
+										"order_id": "5831",
+										"order_key": "(redacted)",
+										"order_number": "5831",
+										"payment_type": "single",
+										"site_url": "(redacted)",
+										"subscription_payment": "(redacted)"
+									},
+									"object": "charge",
+									"on_behalf_of": null,
+									"order": null,
+									"outcome": {
+										"advice_code": null,
+										"network_advice_code": null,
+										"network_decline_code": null,
+										"network_status": "approved_by_network",
+										"reason": null,
+										"risk_level": "normal",
+										"risk_score": 52,
+										"seller_message": "Payment complete.",
+										"type": "authorized"
+									},
+									"paid": true,
+									"payment_intent": "pi_3URpVCBzWlxcwgpP138iAteu",
+									"payment_method": "pm_1URpVBBzWlxcwgpPQru7SWGb",
+									"payment_method_details": {
+										"card": {
+											"amount_authorized": 1099,
+											"authorization_code": "426801",
+											"brand": "visa",
+											"checks": {
+												"address_line1_check": "pass",
+												"address_postal_code_check": "pass",
+												"cvc_check": "pass"
+											},
+											"country": "(redacted)",
+											"description": "(redacted)",
+											"electronic_commerce_indicator": "07",
+											"exp_month": 2,
+											"exp_year": 2045,
+											"extended_authorization": {
+												"status": "disabled"
+											},
+											"fingerprint": "GPNBuIQZKl9E7Sku",
+											"funding": "credit",
+											"iin": "424242",
+											"incremental_authorization": {
+												"status": "unavailable"
+											},
+											"installments": null,
+											"issuer": "Stripe Payments UK Limited",
+											"last4": "4242",
+											"mandate": null,
+											"moto": null,
+											"multicapture": {
+												"status": "unavailable"
+											},
+											"network": "visa",
+											"network_token": {
+												"used": false
+											},
+											"network_transaction_id": "119727611598658",
+											"overcapture": {
+												"maximum_amount_capturable": 1099,
+												"status": "unavailable"
+											},
+											"regulated_status": "unregulated",
+											"three_d_secure": null,
+											"transaction_link_id": null,
+											"wallet": null
+										},
+										"type": "card"
+									},
+									"radar_options": [],
+									"receipt_email": "(redacted)",
+									"receipt_number": null,
+									"receipt_url": "https://pay.stripe.com/(redacted)",
+									"refunded": false,
+									"refunds": {
+										"data": [],
+										"has_more": false,
+										"object": "list",
+										"total_count": 0,
+										"url": "/v1/charges/ch_3URpVCBzWlxcwgpP17OjBnX1/refunds"
+									},
+									"review": null,
+									"shipping": null,
+									"source": null,
+									"source_transfer": null,
+									"statement_descriptor": null,
+									"statement_descriptor_suffix": null,
+									"status": "succeeded",
+									"transfer_data": null,
+									"transfer_group": null
+								}
+							],
+							"has_more": false,
+							"object": "list",
+							"total_count": 1,
+							"url": "/v1/charges?payment_intent=pi_3URpVCBzWlxcwgpP138iAteu"
+						},
+						"client_secret": "(redacted)",
+						"confirmation_method": "automatic",
+						"created": 1792312294,
+						"currency": "usd",
+						"customer": "cus_VSl1v58us2sQMM",
+						"customer_account": null,
+						"description": "(redacted)",
+						"excluded_payment_method_types": null,
+						"fee_breakdown_v1": {
+							"notes": [],
+							"rows": [
+								{
+									"amount": 62,
+									"currency": "usd",
+									"display_amount": -62,
+									"key": "base",
+									"kind": "fee",
+									"label": null,
+									"meta": null,
+									"rate": null
+								}
+							],
+							"sources": {
+								"balance_transaction_exchange_rate": 0,
+								"refunded_fee_amount_store": 0
+							},
+							"totals": {
+								"capture_net": {
+									"amount": 1037,
+									"currency": "usd"
+								},
+								"fee": {
+									"amount": 62,
+									"currency": "usd",
+									"display_amount": -62,
+									"key": null,
+									"rate": null
+								},
+								"fee_plus_tax": {
+									"amount": 62,
+									"currency": "usd"
+								},
+								"gross": {
+									"amount": 1099,
+									"currency": "usd"
+								},
+								"net": {
+									"amount": 1037,
+									"currency": "usd"
+								},
+								"tax": {
+									"amount": 0,
+									"currency": "usd",
+									"display_amount": 0
+								}
+							}
+						},
+						"id": "pi_3URpVCBzWlxcwgpP138iAteu",
+						"invoice": null,
+						"last_payment_error": null,
+						"latest_charge": "ch_3URpVCBzWlxcwgpP17OjBnX1",
+						"level3": {
+							"customer_reference": "5831",
+							"line_items": [
+								{
+									"discount_amount": 0,
+									"product_code": "5830",
+									"product_description": "WooPayments card-payment 1",
+									"quantity": 1,
+									"tax_amount": 0,
+									"unit_cost": 1099
+								}
+							],
+							"merchant_reference": "5831",
+							"shipping_address_zip": "94107",
+							"shipping_amount": 0,
+							"shipping_from_zip": "94107"
+						},
+						"livemode": false,
+						"managed_payments": {
+							"enabled": false
+						},
+						"metadata": {
+							"checkout_type": "(redacted)",
+							"client_version": "(redacted)",
+							"customer_email": "(redacted)",
+							"customer_name": "(redacted)",
+							"fraud_outcome": "allow",
+							"fraud_prevention_data_available": "(redacted)",
+							"fraud_prevention_data_cart_contents": "(redacted)",
+							"fraud_prevention_data_ip_country": "(redacted)",
+							"fraud_prevention_data_shopper_ip_hash": "(redacted)",
+							"fraud_prevention_data_shopper_ua_hash": "(redacted)",
+							"order_id": "5831",
+							"order_key": "(redacted)",
+							"order_number": "5831",
+							"payment_type": "single",
+							"site_url": "(redacted)",
+							"subscription_payment": "(redacted)"
+						},
+						"next_action": null,
+						"object": "payment_intent",
+						"on_behalf_of": null,
+						"payment_method": "pm_1URpVBBzWlxcwgpPQru7SWGb",
+						"payment_method_configuration_details": null,
+						"payment_method_options": {
+							"card": {
+								"installments": null,
+								"mandate_options": null,
+								"network": null,
+								"request_three_d_secure": "automatic"
+							}
+						},
+						"payment_method_types": [
+							"card"
+						],
+						"payment_record": null,
+						"processing": null,
+						"receipt_email": "(redacted)",
+						"review": null,
+						"setup_future_usage": null,
+						"shared_payment_granted_token": null,
+						"shipping": null,
+						"source": null,
+						"statement_descriptor": null,
+						"statement_descriptor_suffix": null,
+						"status": "succeeded",
+						"transfer_data": null,
+						"transfer_group": null
+					}
+				},
+				"id": "evt_3URpVCBzWlxcwgpP1gE1vUmV",
+				"livemode": false,
+				"type": "payment_intent.succeeded"
+			}
+		},
+		{
+			"pair": "bancontact_checkout_succeeded",
+			"context": "A Bancontact checkout paying order 5901 for 10.99 EUR on the US account, with the platform's fee_breakdown_v1 envelope in EUR (fee 69, net 1030).",
+			"logged_at": "2026-10-18T09:12:20+00:00",
+			"restored": {
+				"data.object.metadata.fraud_outcome and charges.data[0].metadata.fraud_outcome": "allow: the platform writes the rule engine outcome into the intent metadata (WPCOM wcpay class-intentions-controller.php:1467-1494); a block never reaches a charge, and a review stores fraud_ruleset_results beside it and holds the payment for manual capture, so this automatic-capture intent with no fraud_ruleset_results key was allowed.",
+				"metadata.order_id and order_key": "As above."
+			},
+			"body": {
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"allowed_payment_method_types": null,
+						"amount": 1099,
+						"amount_capturable": 0,
+						"amount_details": {
+							"tip": []
+						},
+						"amount_received": 1099,
+						"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+						"application_fee_amount": 69,
+						"automatic_payment_methods": null,
+						"canceled_at": null,
+						"cancellation_reason": null,
+						"capture_method": "automatic",
+						"charges": {
+							"data": [
+								{
+									"amount": 1099,
+									"amount_captured": 1099,
+									"amount_refunded": 0,
+									"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+									"application_fee": "fee_1URq8UBzWlxcwgpPAApWqWft",
+									"application_fee_amount": 69,
+									"balance_transaction": "txn_3URq8RBzWlxcwgpP0uUwvOiF",
+									"billing_details": {
+										"address": {
+											"city": "(redacted)",
+											"country": "(redacted)",
+											"line1": "(redacted)",
+											"line2": "(redacted)",
+											"postal_code": "(redacted)",
+											"state": "(redacted)"
+										},
+										"email": "(redacted)",
+										"name": "(redacted)",
+										"phone": "(redacted)",
+										"tax_id": null
+									},
+									"calculated_statement_descriptor": null,
+									"captured": true,
+									"created": 1792314730,
+									"currency": "eur",
+									"customer": "cus_VSlfVGJtdkFdbP",
+									"description": "(redacted)",
+									"destination": null,
+									"dispute": null,
+									"disputed": false,
+									"failure_balance_transaction": null,
+									"failure_code": null,
+									"failure_message": null,
+									"fee_breakdown_v1": {
+										"notes": [],
+										"rows": [
+											{
+												"amount": 69,
+												"currency": "eur",
+												"display_amount": -69,
+												"key": "base",
+												"kind": "fee",
+												"label": null,
+												"meta": null,
+												"rate": null
+											}
+										],
+										"sources": {
+											"balance_transaction_exchange_rate": 0,
+											"refunded_fee_amount_store": 0
+										},
+										"totals": {
+											"capture_net": {
+												"amount": 1030,
+												"currency": "eur"
+											},
+											"fee": {
+												"amount": 69,
+												"currency": "eur",
+												"display_amount": -69,
+												"key": null,
+												"rate": null
+											},
+											"fee_plus_tax": {
+												"amount": 69,
+												"currency": "eur"
+											},
+											"gross": {
+												"amount": 1099,
+												"currency": "eur"
+											},
+											"net": {
+												"amount": 1030,
+												"currency": "eur"
+											},
+											"tax": {
+												"amount": 0,
+												"currency": "eur",
+												"display_amount": 0
+											}
+										}
+									},
+									"fraud_details": [],
+									"id": "py_3URq8RBzWlxcwgpP0tXIPiEC",
+									"invoice": null,
+									"livemode": false,
+									"metadata": {
+										"checkout_type": "(redacted)",
+										"client_version": "(redacted)",
+										"customer_email": "(redacted)",
+										"customer_name": "(redacted)",
+										"fraud_outcome": "allow",
+										"fraud_prevention_data_available": "(redacted)",
+										"fraud_prevention_data_cart_contents": "(redacted)",
+										"fraud_prevention_data_ip_country": "(redacted)",
+										"fraud_prevention_data_shopper_ip_hash": "(redacted)",
+										"fraud_prevention_data_shopper_ua_hash": "(redacted)",
+										"order_id": "5901",
+										"order_key": "(redacted)",
+										"order_number": "5901",
+										"payment_type": "single",
+										"site_url": "(redacted)",
+										"subscription_payment": "(redacted)"
+									},
+									"object": "charge",
+									"on_behalf_of": null,
+									"order": null,
+									"outcome": {
+										"advice_code": null,
+										"network_advice_code": null,
+										"network_decline_code": null,
+										"network_status": "approved_by_network",
+										"reason": null,
+										"risk_level": "normal",
+										"seller_message": "Payment complete.",
+										"type": "authorized"
+									},
+									"paid": true,
+									"payment_intent": "pi_3URq8RBzWlxcwgpP0l0ohubV",
+									"payment_method": "pm_1URq8OBzWlxcwgpPbuyIbFEy",
+									"payment_method_details": {
+										"bancontact": {
+											"bank_code": "VAPE",
+											"bank_name": "VAN DE PUT & CO",
+											"bic": "VAPEBE22",
+											"generated_sepa_debit": null,
+											"generated_sepa_debit_mandate": null,
+											"iban_last4": "7061",
+											"preferred_language": "en",
+											"verified_name": "Jenny Rosen"
+										},
+										"type": "bancontact"
+									},
+									"radar_options": [],
+									"receipt_email": "(redacted)",
+									"receipt_number": null,
+									"receipt_url": "https://pay.stripe.com/(redacted)",
+									"refunded": false,
+									"refunds": {
+										"data": [],
+										"has_more": false,
+										"object": "list",
+										"total_count": 0,
+										"url": "/v1/charges/py_3URq8RBzWlxcwgpP0tXIPiEC/refunds"
+									},
+									"review": null,
+									"shipping": null,
+									"source": null,
+									"source_transfer": null,
+									"statement_descriptor": null,
+									"statement_descriptor_suffix": null,
+									"status": "succeeded",
+									"transfer_data": null,
+									"transfer_group": null
+								}
+							],
+							"has_more": false,
+							"object": "list",
+							"total_count": 1,
+							"url": "/v1/charges?payment_intent=pi_3URq8RBzWlxcwgpP0l0ohubV"
+						},
+						"client_secret": "(redacted)",
+						"confirmation_method": "automatic",
+						"created": 1792314727,
+						"currency": "eur",
+						"customer": "cus_VSlfVGJtdkFdbP",
+						"customer_account": null,
+						"description": "(redacted)",
+						"excluded_payment_method_types": null,
+						"fee_breakdown_v1": {
+							"notes": [],
+							"rows": [
+								{
+									"amount": 69,
+									"currency": "eur",
+									"display_amount": -69,
+									"key": "base",
+									"kind": "fee",
+									"label": null,
+									"meta": null,
+									"rate": null
+								}
+							],
+							"sources": {
+								"balance_transaction_exchange_rate": 0,
+								"refunded_fee_amount_store": 0
+							},
+							"totals": {
+								"capture_net": {
+									"amount": 1030,
+									"currency": "eur"
+								},
+								"fee": {
+									"amount": 69,
+									"currency": "eur",
+									"display_amount": -69,
+									"key": null,
+									"rate": null
+								},
+								"fee_plus_tax": {
+									"amount": 69,
+									"currency": "eur"
+								},
+								"gross": {
+									"amount": 1099,
+									"currency": "eur"
+								},
+								"net": {
+									"amount": 1030,
+									"currency": "eur"
+								},
+								"tax": {
+									"amount": 0,
+									"currency": "eur",
+									"display_amount": 0
+								}
+							}
+						},
+						"id": "pi_3URq8RBzWlxcwgpP0l0ohubV",
+						"invoice": null,
+						"last_payment_error": null,
+						"latest_charge": "py_3URq8RBzWlxcwgpP0tXIPiEC",
+						"level3": {
+							"customer_reference": "5901",
+							"line_items": [
+								{
+									"discount_amount": 0,
+									"product_code": "5900",
+									"product_description": "WooPayments eligibility db",
+									"quantity": 1,
+									"tax_amount": 0,
+									"unit_cost": 1099
+								}
+							],
+							"merchant_reference": "5901",
+							"shipping_amount": 0,
+							"shipping_from_zip": "94107"
+						},
+						"livemode": false,
+						"managed_payments": {
+							"enabled": false
+						},
+						"metadata": {
+							"checkout_type": "(redacted)",
+							"client_version": "(redacted)",
+							"customer_email": "(redacted)",
+							"customer_name": "(redacted)",
+							"fraud_outcome": "allow",
+							"fraud_prevention_data_available": "(redacted)",
+							"fraud_prevention_data_cart_contents": "(redacted)",
+							"fraud_prevention_data_ip_country": "(redacted)",
+							"fraud_prevention_data_shopper_ip_hash": "(redacted)",
+							"fraud_prevention_data_shopper_ua_hash": "(redacted)",
+							"order_id": "5901",
+							"order_key": "(redacted)",
+							"order_number": "5901",
+							"payment_type": "single",
+							"site_url": "(redacted)",
+							"subscription_payment": "(redacted)"
+						},
+						"next_action": null,
+						"object": "payment_intent",
+						"on_behalf_of": null,
+						"payment_method": "pm_1URq8OBzWlxcwgpPbuyIbFEy",
+						"payment_method_configuration_details": null,
+						"payment_method_options": {
+							"bancontact": {
+								"preferred_language": "en"
+							}
+						},
+						"payment_method_types": [
+							"bancontact"
+						],
+						"payment_record": null,
+						"processing": null,
+						"receipt_email": "(redacted)",
+						"review": null,
+						"setup_future_usage": null,
+						"shared_payment_granted_token": null,
+						"shipping": null,
+						"source": null,
+						"statement_descriptor": null,
+						"statement_descriptor_suffix": null,
+						"status": "succeeded",
+						"transfer_data": null,
+						"transfer_group": null
+					}
+				},
+				"id": "evt_3URq8RBzWlxcwgpP0Q9vmm2Q",
+				"livemode": false,
+				"type": "payment_intent.succeeded"
+			}
+		},
+		{
+			"pair": "card_declined_failed",
+			"context": "A declined online card checkout (generic_decline) for order 5845: last_payment_error carries the full PaymentMethod and the failed charge; the intent's own payment_method is null.",
+			"logged_at": "2026-10-18T08:36:14+00:00",
+			"restored": {
+				"metadata.order_id and order_key": "Each test points them at its own order (order_key was redacted)."
+			},
+			"body": {
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"allowed_payment_method_types": null,
+						"amount": 1001,
+						"amount_capturable": 0,
+						"amount_details": {
+							"tip": []
+						},
+						"amount_received": 0,
+						"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+						"application_fee_amount": 59,
+						"automatic_payment_methods": null,
+						"canceled_at": null,
+						"cancellation_reason": null,
+						"capture_method": "automatic",
+						"charges": {
+							"data": [
+								{
+									"amount": 1001,
+									"amount_captured": 0,
+									"amount_refunded": 0,
+									"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+									"application_fee": null,
+									"application_fee_amount": 59,
+									"balance_transaction": null,
+									"billing_details": {
+										"address": {
+											"city": "(redacted)",
+											"country": "(redacted)",
+											"line1": "(redacted)",
+											"line2": "(redacted)",
+											"postal_code": "(redacted)",
+											"state": "(redacted)"
+										},
+										"email": "(redacted)",
+										"name": "(redacted)",
+										"phone": "(redacted)",
+										"tax_id": null
+									},
+									"calculated_statement_descriptor": "WOOCOMMERCE",
+									"captured": false,
+									"created": 1792312569,
+									"currency": "usd",
+									"customer": "cus_VSl5r7DNukKIPR",
+									"description": "(redacted)",
+									"destination": null,
+									"dispute": null,
+									"disputed": false,
+									"failure_balance_transaction": null,
+									"failure_code": "card_declined",
+									"failure_message": "Your card was declined.",
+									"fraud_details": [],
+									"id": "ch_3URpZdBzWlxcwgpP1c2nN8iW",
+									"invoice": null,
+									"level3": {
+										"customer_reference": "5845",
+										"line_items": [
+											{
+												"discount_amount": 0,
+												"product_code": "5844",
+												"product_description": "WooPayments card-recovery ",
+												"quantity": 1,
+												"tax_amount": 0,
+												"unit_cost": 1001
+											}
+										],
+										"merchant_reference": "5845",
+										"shipping_amount": 0,
+										"shipping_from_zip": "94107"
+									},
+									"livemode": false,
+									"metadata": {
+										"checkout_type": "(redacted)",
+										"client_version": "(redacted)",
+										"customer_email": "(redacted)",
+										"customer_name": "(redacted)",
+										"fraud_outcome": "(redacted)",
+										"fraud_prevention_data_available": "(redacted)",
+										"fraud_prevention_data_cart_contents": "(redacted)",
+										"fraud_prevention_data_ip_country": "(redacted)",
+										"fraud_prevention_data_shopper_ip_hash": "(redacted)",
+										"fraud_prevention_data_shopper_ua_hash": "(redacted)",
+										"order_id": "5845",
+										"order_key": "(redacted)",
+										"order_number": "5845",
+										"payment_type": "single",
+										"site_url": "(redacted)",
+										"subscription_payment": "(redacted)"
+									},
+									"object": "charge",
+									"on_behalf_of": null,
+									"order": null,
+									"outcome": {
+										"advice_code": "try_again_later",
+										"network_advice_code": null,
+										"network_decline_code": "01",
+										"network_status": "declined_by_network",
+										"reason": "generic_decline",
+										"risk_level": "normal",
+										"risk_score": 49,
+										"seller_message": "The bank did not return any further details with this decline.",
+										"type": "issuer_declined"
+									},
+									"paid": false,
+									"payment_intent": "pi_3URpZdBzWlxcwgpP1lP5xb99",
+									"payment_method": "pm_1URpZcBzWlxcwgpP8cxdmXMW",
+									"payment_method_details": {
+										"card": {
+											"amount_authorized": null,
+											"authorization_code": "043651",
+											"brand": "visa",
+											"checks": {
+												"address_line1_check": "pass",
+												"address_postal_code_check": "pass",
+												"cvc_check": "pass"
+											},
+											"country": "(redacted)",
+											"description": "(redacted)",
+											"electronic_commerce_indicator": "07",
+											"exp_month": 2,
+											"exp_year": 2045,
+											"extended_authorization": {
+												"status": "disabled"
+											},
+											"fingerprint": "bKwxG6zhlhKoiLa8",
+											"funding": "credit",
+											"iin": "400000",
+											"incremental_authorization": {
+												"status": "unavailable"
+											},
+											"installments": null,
+											"issuer": "Stripe Test (multi-country)",
+											"last4": "0002",
+											"mandate": null,
+											"moto": null,
+											"multicapture": {
+												"status": "unavailable"
+											},
+											"network": "visa",
+											"network_token": {
+												"used": false
+											},
+											"network_transaction_id": "491001197672851",
+											"overcapture": {
+												"maximum_amount_capturable": 1001,
+												"status": "unavailable"
+											},
+											"regulated_status": "unregulated",
+											"three_d_secure": null,
+											"transaction_link_id": null,
+											"wallet": null
+										},
+										"type": "card"
+									},
+									"radar_options": [],
+									"receipt_email": "(redacted)",
+									"receipt_number": null,
+									"receipt_url": null,
+									"refunded": false,
+									"refunds": {
+										"data": [],
+										"has_more": false,
+										"object": "list",
+										"total_count": 0,
+										"url": "/v1/charges/ch_3URpZdBzWlxcwgpP1c2nN8iW/refunds"
+									},
+									"review": null,
+									"shipping": null,
+									"source": null,
+									"source_transfer": null,
+									"statement_descriptor": null,
+									"statement_descriptor_suffix": null,
+									"status": "failed",
+									"transfer_data": null,
+									"transfer_group": null
+								}
+							],
+							"has_more": false,
+							"object": "list",
+							"total_count": 1,
+							"url": "/v1/charges?payment_intent=pi_3URpZdBzWlxcwgpP1lP5xb99"
+						},
+						"client_secret": "(redacted)",
+						"confirmation_method": "automatic",
+						"created": 1792312569,
+						"currency": "usd",
+						"customer": "cus_VSl5r7DNukKIPR",
+						"customer_account": null,
+						"description": "(redacted)",
+						"excluded_payment_method_types": null,
+						"id": "pi_3URpZdBzWlxcwgpP1lP5xb99",
+						"invoice": null,
+						"last_payment_error": {
+							"advice_code": "try_again_later",
+							"charge": "ch_3URpZdBzWlxcwgpP1c2nN8iW",
+							"code": "card_declined",
+							"decline_code": "generic_decline",
+							"doc_url": "https://stripe.com/(redacted)",
+							"message": "Your card was declined.",
+							"network_decline_code": "01",
+							"payment_method": {
+								"allow_redisplay": "unspecified",
+								"billing_details": {
+									"address": {
+										"city": "(redacted)",
+										"country": "(redacted)",
+										"line1": "(redacted)",
+										"line2": "(redacted)",
+										"postal_code": "(redacted)",
+										"state": "(redacted)"
+									},
+									"email": "(redacted)",
+									"name": "(redacted)",
+									"phone": "(redacted)",
+									"tax_id": null
+								},
+								"card": {
+									"brand": "visa",
+									"checks": {
+										"address_line1_check": "pass",
+										"address_postal_code_check": "pass",
+										"cvc_check": "pass"
+									},
+									"country": "(redacted)",
+									"description": "(redacted)",
+									"display_brand": "visa",
+									"exp_month": 2,
+									"exp_year": 2045,
+									"fingerprint": "bKwxG6zhlhKoiLa8",
+									"funding": "credit",
+									"generated_from": null,
+									"iin": "400000",
+									"issuer": "Stripe Test (multi-country)",
+									"last4": "0002",
+									"networks": {
+										"available": [
+											"visa"
+										],
+										"preferred": null
+									},
+									"regulated_status": "unregulated",
+									"three_d_secure_usage": {
+										"supported": true
+									},
+									"wallet": null
+								},
+								"created": 1792312568,
+								"customer": null,
+								"customer_account": null,
+								"id": "pm_1URpZcBzWlxcwgpP8cxdmXMW",
+								"livemode": false,
+								"metadata": [],
+								"object": "payment_method",
+								"shared_payment_granted_token": null,
+								"type": "card"
+							},
+							"payment_method_type": "card",
+							"type": "card_error"
+						},
+						"latest_charge": "ch_3URpZdBzWlxcwgpP1c2nN8iW",
+						"level3": {
+							"customer_reference": "5845",
+							"line_items": [
+								{
+									"discount_amount": 0,
+									"product_code": "5844",
+									"product_description": "WooPayments card-recovery ",
+									"quantity": 1,
+									"tax_amount": 0,
+									"unit_cost": 1001
+								}
+							],
+							"merchant_reference": "5845",
+							"shipping_amount": 0,
+							"shipping_from_zip": "94107"
+						},
+						"livemode": false,
+						"managed_payments": {
+							"enabled": false
+						},
+						"metadata": {
+							"checkout_type": "(redacted)",
+							"client_version": "(redacted)",
+							"customer_email": "(redacted)",
+							"customer_name": "(redacted)",
+							"fraud_outcome": "(redacted)",
+							"fraud_prevention_data_available": "(redacted)",
+							"fraud_prevention_data_cart_contents": "(redacted)",
+							"fraud_prevention_data_ip_country": "(redacted)",
+							"fraud_prevention_data_shopper_ip_hash": "(redacted)",
+							"fraud_prevention_data_shopper_ua_hash": "(redacted)",
+							"order_id": "5845",
+							"order_key": "(redacted)",
+							"order_number": "5845",
+							"payment_type": "single",
+							"site_url": "(redacted)",
+							"subscription_payment": "(redacted)"
+						},
+						"next_action": null,
+						"object": "payment_intent",
+						"on_behalf_of": null,
+						"payment_method": null,
+						"payment_method_configuration_details": null,
+						"payment_method_options": {
+							"card": {
+								"installments": null,
+								"mandate_options": null,
+								"network": null,
+								"request_three_d_secure": "automatic"
+							}
+						},
+						"payment_method_types": [
+							"card"
+						],
+						"payment_record": null,
+						"processing": null,
+						"receipt_email": "(redacted)",
+						"review": null,
+						"setup_future_usage": null,
+						"shared_payment_granted_token": null,
+						"shipping": null,
+						"source": null,
+						"statement_descriptor": null,
+						"statement_descriptor_suffix": null,
+						"status": "requires_payment_method",
+						"transfer_data": null,
+						"transfer_group": null
+					}
+				},
+				"id": "evt_3URpZdBzWlxcwgpP1QwyD4k8",
+				"livemode": false,
+				"type": "payment_intent.payment_failed"
+			}
+		},
+		{
+			"pair": "manual_capture_amount_capturable_updated",
+			"context": "An online card checkout authorized for manual capture (order 5869), now requires_capture.",
+			"logged_at": "2026-10-18T08:44:06+00:00",
+			"restored": {
+				"metadata.order_id and order_key": "Each test points them at its own order, or removes them for an intent of no order (order_key was redacted)."
+			},
+			"body": {
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"allowed_payment_method_types": null,
+						"amount": 1099,
+						"amount_capturable": 1099,
+						"amount_details": {
+							"tip": []
+						},
+						"amount_received": 0,
+						"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+						"application_fee_amount": 62,
+						"automatic_payment_methods": null,
+						"canceled_at": null,
+						"cancellation_reason": null,
+						"capture_method": "manual",
+						"charges": {
+							"data": [
+								{
+									"amount": 1099,
+									"amount_captured": 0,
+									"amount_refunded": 0,
+									"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+									"application_fee": null,
+									"application_fee_amount": 62,
+									"balance_transaction": null,
+									"billing_details": {
+										"address": {
+											"city": "(redacted)",
+											"country": "(redacted)",
+											"line1": "(redacted)",
+											"line2": "(redacted)",
+											"postal_code": "(redacted)",
+											"state": "(redacted)"
+										},
+										"email": "(redacted)",
+										"name": "(redacted)",
+										"phone": "(redacted)",
+										"tax_id": null
+									},
+									"calculated_statement_descriptor": "WOOCOMMERCE",
+									"captured": false,
+									"created": 1792313042,
+									"currency": "usd",
+									"customer": "cus_VSlD0iUIMwuMAE",
+									"description": "(redacted)",
+									"destination": null,
+									"dispute": null,
+									"disputed": false,
+									"failure_balance_transaction": null,
+									"failure_code": null,
+									"failure_message": null,
+									"fraud_details": [],
+									"id": "ch_3URphFBzWlxcwgpP0girrKhN",
+									"invoice": null,
+									"level3": {
+										"customer_reference": "5869",
+										"line_items": [
+											{
+												"discount_amount": 0,
+												"product_code": "5868",
+												"product_description": "WooPayments manual capture",
+												"quantity": 1,
+												"tax_amount": 0,
+												"unit_cost": 1099
+											}
+										],
+										"merchant_reference": "5869",
+										"shipping_address_zip": "94107",
+										"shipping_amount": 0,
+										"shipping_from_zip": "94107"
+									},
+									"livemode": false,
+									"metadata": {
+										"checkout_type": "(redacted)",
+										"client_version": "(redacted)",
+										"customer_email": "(redacted)",
+										"customer_name": "(redacted)",
+										"fraud_outcome": "(redacted)",
+										"fraud_prevention_data_available": "(redacted)",
+										"fraud_prevention_data_cart_contents": "(redacted)",
+										"fraud_prevention_data_ip_country": "(redacted)",
+										"fraud_prevention_data_shopper_ip_hash": "(redacted)",
+										"fraud_prevention_data_shopper_ua_hash": "(redacted)",
+										"order_id": "5869",
+										"order_key": "(redacted)",
+										"order_number": "5869",
+										"payment_type": "single",
+										"site_url": "(redacted)",
+										"subscription_payment": "(redacted)"
+									},
+									"object": "charge",
+									"on_behalf_of": null,
+									"order": null,
+									"outcome": {
+										"advice_code": null,
+										"network_advice_code": null,
+										"network_decline_code": null,
+										"network_status": "approved_by_network",
+										"reason": null,
+										"risk_level": "normal",
+										"risk_score": 22,
+										"seller_message": "Payment complete.",
+										"type": "authorized"
+									},
+									"paid": true,
+									"payment_intent": "pi_3URphFBzWlxcwgpP0icvvDN4",
+									"payment_method": "pm_1URphFBzWlxcwgpPlxM5eNLg",
+									"payment_method_details": {
+										"card": {
+											"amount_authorized": 1099,
+											"authorization_code": "208814",
+											"brand": "visa",
+											"capture_before": 1792917842,
+											"checks": {
+												"address_line1_check": "pass",
+												"address_postal_code_check": "pass",
+												"cvc_check": "pass"
+											},
+											"country": "(redacted)",
+											"description": "(redacted)",
+											"electronic_commerce_indicator": "07",
+											"exp_month": 2,
+											"exp_year": 2045,
+											"extended_authorization": {
+												"status": "disabled"
+											},
+											"fingerprint": "GPNBuIQZKl9E7Sku",
+											"funding": "credit",
+											"iin": "424242",
+											"incremental_authorization": {
+												"status": "unavailable"
+											},
+											"installments": null,
+											"issuer": "Stripe Payments UK Limited",
+											"last4": "4242",
+											"mandate": null,
+											"moto": null,
+											"multicapture": {
+												"status": "unavailable"
+											},
+											"network": "visa",
+											"network_token": {
+												"used": false
+											},
+											"network_transaction_id": "119727611598658",
+											"overcapture": {
+												"maximum_amount_capturable": 1099,
+												"status": "unavailable"
+											},
+											"regulated_status": "unregulated",
+											"three_d_secure": null,
+											"transaction_link_id": null,
+											"wallet": null
+										},
+										"type": "card"
+									},
+									"radar_options": [],
+									"receipt_email": "(redacted)",
+									"receipt_number": null,
+									"receipt_url": "https://pay.stripe.com/(redacted)",
+									"refunded": false,
+									"refunds": {
+										"data": [],
+										"has_more": false,
+										"object": "list",
+										"total_count": 0,
+										"url": "/v1/charges/ch_3URphFBzWlxcwgpP0girrKhN/refunds"
+									},
+									"review": null,
+									"shipping": null,
+									"source": null,
+									"source_transfer": null,
+									"statement_descriptor": null,
+									"statement_descriptor_suffix": null,
+									"status": "succeeded",
+									"transfer_data": null,
+									"transfer_group": null
+								}
+							],
+							"has_more": false,
+							"object": "list",
+							"total_count": 1,
+							"url": "/v1/charges?payment_intent=pi_3URphFBzWlxcwgpP0icvvDN4"
+						},
+						"client_secret": "(redacted)",
+						"confirmation_method": "automatic",
+						"created": 1792313042,
+						"currency": "usd",
+						"customer": "cus_VSlD0iUIMwuMAE",
+						"customer_account": null,
+						"description": "(redacted)",
+						"excluded_payment_method_types": null,
+						"id": "pi_3URphFBzWlxcwgpP0icvvDN4",
+						"invoice": null,
+						"last_payment_error": null,
+						"latest_charge": "ch_3URphFBzWlxcwgpP0girrKhN",
+						"level3": {
+							"customer_reference": "5869",
+							"line_items": [
+								{
+									"discount_amount": 0,
+									"product_code": "5868",
+									"product_description": "WooPayments manual capture",
+									"quantity": 1,
+									"tax_amount": 0,
+									"unit_cost": 1099
+								}
+							],
+							"merchant_reference": "5869",
+							"shipping_address_zip": "94107",
+							"shipping_amount": 0,
+							"shipping_from_zip": "94107"
+						},
+						"livemode": false,
+						"managed_payments": {
+							"enabled": false
+						},
+						"metadata": {
+							"checkout_type": "(redacted)",
+							"client_version": "(redacted)",
+							"customer_email": "(redacted)",
+							"customer_name": "(redacted)",
+							"fraud_outcome": "(redacted)",
+							"fraud_prevention_data_available": "(redacted)",
+							"fraud_prevention_data_cart_contents": "(redacted)",
+							"fraud_prevention_data_ip_country": "(redacted)",
+							"fraud_prevention_data_shopper_ip_hash": "(redacted)",
+							"fraud_prevention_data_shopper_ua_hash": "(redacted)",
+							"order_id": "5869",
+							"order_key": "(redacted)",
+							"order_number": "5869",
+							"payment_type": "single",
+							"site_url": "(redacted)",
+							"subscription_payment": "(redacted)"
+						},
+						"next_action": null,
+						"object": "payment_intent",
+						"on_behalf_of": null,
+						"payment_method": "pm_1URphFBzWlxcwgpPlxM5eNLg",
+						"payment_method_configuration_details": null,
+						"payment_method_options": {
+							"card": {
+								"installments": null,
+								"mandate_options": null,
+								"network": null,
+								"request_three_d_secure": "automatic"
+							}
+						},
+						"payment_method_types": [
+							"card"
+						],
+						"payment_record": null,
+						"processing": null,
+						"receipt_email": "(redacted)",
+						"review": null,
+						"setup_future_usage": null,
+						"shared_payment_granted_token": null,
+						"shipping": null,
+						"source": null,
+						"statement_descriptor": null,
+						"statement_descriptor_suffix": null,
+						"status": "requires_capture",
+						"transfer_data": null,
+						"transfer_group": null
+					}
+				},
+				"id": "evt_3URphFBzWlxcwgpP0CbcN4Ek",
+				"livemode": false,
+				"type": "payment_intent.amount_capturable_updated"
+			}
+		},
+		{
+			"pair": "in_person_canceled",
+			"context": "An in-person authorization (order 5881) canceled before capture.",
+			"logged_at": "2026-10-18T08:48:58+00:00",
+			"restored": {
+				"metadata.order_id and order_key": "Each test points them at its own order, or removes them for an intent of no order."
+			},
+			"body": {
+				"account": "acct_1TrY2nBzWlxcwgpP",
+				"data": {
+					"object": {
+						"allowed_payment_method_types": null,
+						"amount": 2000,
+						"amount_capturable": 0,
+						"amount_details": {
+							"tip": []
+						},
+						"amount_received": 0,
+						"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+						"application_fee_amount": 88,
+						"automatic_payment_methods": null,
+						"canceled_at": 1792313332,
+						"cancellation_reason": null,
+						"capture_method": "manual",
+						"charges": {
+							"data": [
+								{
+									"amount": 2000,
+									"amount_captured": 0,
+									"amount_refunded": 2000,
+									"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+									"application_fee": null,
+									"application_fee_amount": 88,
+									"authorization_code": "947342",
+									"balance_transaction": null,
+									"billing_details": {
+										"address": {
+											"city": "(redacted)",
+											"country": "(redacted)",
+											"line1": "(redacted)",
+											"line2": "(redacted)",
+											"postal_code": "(redacted)",
+											"state": "(redacted)"
+										},
+										"email": "(redacted)",
+										"name": "(redacted)",
+										"phone": "(redacted)",
+										"tax_id": null
+									},
+									"calculated_statement_descriptor": "WOOCOMMERCE",
+									"captured": false,
+									"created": 1792313328,
+									"currency": "usd",
+									"customer": "cus_VSlHAx5V86QpMS",
+									"description": "(redacted)",
+									"destination": null,
+									"dispute": null,
+									"disputed": false,
+									"failure_balance_transaction": null,
+									"failure_code": null,
+									"failure_message": null,
+									"fraud_details": [],
+									"id": "ch_3URploBzWlxcwgpP1tscJIFG",
+									"invoice": null,
+									"livemode": false,
+									"metadata": {
+										"fraud_outcome": "(redacted)",
+										"order_id": "5881",
+										"order_number": "5881"
+									},
+									"object": "charge",
+									"on_behalf_of": null,
+									"order": null,
+									"outcome": {
+										"advice_code": null,
+										"network_advice_code": null,
+										"network_decline_code": null,
+										"network_status": "approved_by_network",
+										"reason": null,
+										"risk_level": "not_assessed",
+										"seller_message": "Payment complete.",
+										"type": "authorized"
+									},
+									"paid": true,
+									"payment_intent": "pi_3URploBzWlxcwgpP1CRE0s4i",
+									"payment_method": "pm_1URplqBzWlxcwgpPklfWV1x8",
+									"payment_method_details": {
+										"card_present": {
+											"amount_authorized": 2000,
+											"brand": "visa",
+											"brand_product": "A",
+											"capture_before": 1792745328,
+											"cardholder_name": null,
+											"country": "(redacted)",
+											"description": "(redacted)",
+											"emv_auth_data": "8A023030",
+											"exp_month": 12,
+											"exp_year": 2027,
+											"fingerprint": "GPNBuIQZKl9E7Sku",
+											"funding": "credit",
+											"generated_card": null,
+											"iin": "424242",
+											"incremental_authorization_supported": false,
+											"issuer": "Stripe Payments UK Limited",
+											"last4": "4242",
+											"location": "tml_Gr2QlAAxKHEwQW",
+											"network": "visa",
+											"network_transaction_id": "119727611598658",
+											"offline": {
+												"stored_at": null,
+												"type": null
+											},
+											"overcapture_supported": false,
+											"preferred_locales": [],
+											"read_method": "contact_emv",
+											"reader": "tmr_GtFLSwemaKtHIU",
+											"receipt": {
+												"account_type": "credit",
+												"application_cryptogram": null,
+												"application_preferred_name": null,
+												"authorization_code": "947342",
+												"authorization_response_code": "3030",
+												"cardholder_verification_method": null,
+												"dedicated_file_name": null,
+												"terminal_verification_results": null,
+												"transaction_status_information": null
+											}
+										},
+										"type": "card_present"
+									},
+									"radar_options": [],
+									"receipt_email": "(redacted)",
+									"receipt_number": null,
+									"receipt_url": "https://pay.stripe.com/(redacted)",
+									"refunded": true,
+									"refunds": {
+										"data": [
+											{
+												"amount": 2000,
+												"balance_transaction": null,
+												"charge": "ch_3URploBzWlxcwgpP1tscJIFG",
+												"created": 1792313332,
+												"currency": "usd",
+												"customer": "cus_VSlHAx5V86QpMS",
+												"customer_account": null,
+												"destination_details": {
+													"card": "(recursion limit reached)",
+													"type": "card"
+												},
+												"id": "re_3URploBzWlxcwgpP1mJEkkqb",
+												"metadata": [],
+												"object": "refund",
+												"payment_intent": "pi_3URploBzWlxcwgpP1CRE0s4i",
+												"payment_method": "card_1URplqBzWlxcwgpPDPzO8zXR",
+												"payment_method_details": {
+													"card": "(recursion limit reached)",
+													"type": "card"
+												},
+												"reason": null,
+												"receipt_number": null,
+												"source_transfer_reversal": null,
+												"status": "succeeded",
+												"transfer_reversal": null
+											}
+										],
+										"has_more": false,
+										"object": "list",
+										"total_count": 1,
+										"url": "/v1/charges/ch_3URploBzWlxcwgpP1tscJIFG/refunds"
+									},
+									"review": null,
+									"shipping": null,
+									"source": null,
+									"source_transfer": null,
+									"statement_descriptor": null,
+									"statement_descriptor_suffix": null,
+									"status": "succeeded",
+									"transfer_data": null,
+									"transfer_group": null
+								}
+							],
+							"has_more": false,
+							"object": "list",
+							"total_count": 1,
+							"url": "/v1/charges?payment_intent=pi_3URploBzWlxcwgpP1CRE0s4i"
+						},
+						"client_secret": "(redacted)",
+						"confirmation_method": "automatic",
+						"created": 1792313324,
+						"currency": "usd",
+						"customer": "cus_VSlHAx5V86QpMS",
+						"customer_account": null,
+						"description": "(redacted)",
+						"excluded_payment_method_types": null,
+						"id": "pi_3URploBzWlxcwgpP1CRE0s4i",
+						"invoice": null,
+						"last_payment_error": null,
+						"latest_charge": "ch_3URploBzWlxcwgpP1tscJIFG",
+						"level3": null,
+						"livemode": false,
+						"managed_payments": {
+							"enabled": false
+						},
+						"metadata": {
+							"fraud_outcome": "(redacted)",
+							"order_id": "5881",
+							"order_number": "5881"
+						},
+						"next_action": null,
+						"object": "payment_intent",
+						"on_behalf_of": null,
+						"payment_method": "pm_1URplqBzWlxcwgpPklfWV1x8",
+						"payment_method_configuration_details": null,
+						"payment_method_options": {
+							"card_present": {
+								"request_extended_authorization": false,
+								"request_incremental_authorization_support": false
+							}
+						},
+						"payment_method_types": [
+							"card_present"
+						],
+						"payment_record": null,
+						"processing": null,
+						"receipt_email": "(redacted)",
+						"review": null,
+						"setup_future_usage": null,
+						"shared_payment_granted_token": null,
+						"shipping": null,
+						"source": null,
+						"statement_descriptor": null,
+						"statement_descriptor_suffix": null,
+						"status": "canceled",
+						"transfer_data": null,
+						"transfer_group": null
+					}
+				},
+				"id": "evt_3URploBzWlxcwgpP1Mpo41Vx",
+				"livemode": false,
+				"type": "payment_intent.canceled"
+			}
+		}
+	]
+}

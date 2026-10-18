@@ -169,28 +169,25 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox A $event_type delivery refused by a held order payment lock fails, is not marked processed, and applies once the lock is free.
+	 * The events are the ones the platform forwarded for a card checkout and a card decline (Fixtures/platform-payment-intent-events.json).
+	 *
 	 * @dataProvider lock_refused_lifecycle_events
 	 *
-	 * @param string $event_type      Payment intent event type.
+	 * @param string $pair            Recorded payment intent event.
 	 * @param string $expected_status Order status once the event applies.
 	 */
-	public function test_lifecycle_event_refused_by_the_order_payment_lock_is_not_acknowledged( string $event_type, string $expected_status ): void {
-		$order = $this->create_woopayments_order();
-		$order->update_meta_data( '_payment_method_id', 'pm_123' );
+	public function test_lifecycle_event_refused_by_the_order_payment_lock_is_not_acknowledged( string $pair, string $expected_status ): void {
+		// The recorded events are test-mode deliveries (livemode false), so the store runs in test mode, as the recording account did.
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order  = $this->create_woopayments_order();
+		$event  = $this->recorded_payment_intent_event( $pair, $order );
+		$intent = $event['data']['object'];
+		// The order's payment method is the one the checkout used: the succeeded intent's, or the declined card's.
+		$order->update_meta_data( '_payment_method_id', (string) ( $intent['last_payment_error']['payment_method']['id'] ?? $intent['payment_method'] ) );
 		$order->save();
 		$vocabulary = new WooPaymentsPersistenceVocabulary();
 		// A checkout that died after the platform captured keeps the lock until its TTL runs out.
-		$this->hold_order_payment_lock( $order, $vocabulary, 'pi_123' );
-		$failed_overrides = array(
-			'status'             => 'requires_payment_method',
-			'last_payment_error' => array(
-				'payment_method' => array(
-					'id'   => 'pm_123',
-					'type' => 'card',
-				),
-			),
-		);
-		$event            = $this->create_payment_intent_event( $event_type, $order, 'payment_intent.payment_failed' === $event_type ? $failed_overrides : array(), array( 'id' => 'evt_lock_refused_' . $event_type ) );
+		$this->hold_order_payment_lock( $order, $vocabulary, (string) $intent['id'] );
 
 		$refusal = null;
 		try {
@@ -215,8 +212,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	/** @return array<string,array{string,string}> */
 	public static function lock_refused_lifecycle_events(): array {
 		return array(
-			'succeeded'      => array( 'payment_intent.succeeded', 'completed' ),
-			'payment failed' => array( 'payment_intent.payment_failed', 'failed' ),
+			'succeeded'      => array( 'card_checkout_succeeded', 'completed' ),
+			'payment failed' => array( 'card_declined_failed', 'failed' ),
 		);
 	}
 
@@ -910,28 +907,25 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order->save();
 		$email = $this->create_recording_ipp_receipt_email();
 		$this->register_ipp_receipt_email( $email );
-
-		$this->sut->process(
-			$this->create_payment_intent_event(
-				'payment_intent.succeeded',
-				$order,
-				array(
-					'metadata' => array(
-						'ipp_channel' => 'mobile_store_management',
-					),
-					'charges'  => array(
-						'data' => array(
-							$this->create_card_present_charge(),
-						),
-					),
-				)
+		$card_present_charge = $this->create_card_present_charge();
+		$event               = $this->create_payment_intent_event(
+			'payment_intent.succeeded',
+			$order,
+			array(
+				'metadata' => array(
+					'ipp_channel' => 'mobile_store_management',
+				),
 			)
 		);
+		// The reader's charge as recorded, not merged into the built charge's card fields.
+		$event['data']['object']['charges']['data'] = array( $card_present_charge );
+
+		$this->sut->process( $event );
 
 		$this->assertCount( 1, $email->triggered, 'A card-present successful payment should trigger one receipt email.' );
 		$this->assertSame( $order->get_id(), $email->triggered[0]['order']->get_id() );
 		$this->assertSame( $expected, $email->triggered[0]['merchant_settings'] );
-		$this->assertSame( 'ch_card_present', $email->triggered[0]['charge']['id'] );
+		$this->assertSame( $card_present_charge['id'], $email->triggered[0]['charge']['id'] );
 		$this->assertSame( 'card_present', $email->triggered[0]['charge']['payment_method_details']['type'] );
 	}
 
@@ -1121,18 +1115,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 								'payment_method'         => 'pm_replayed',
 								'application_fee_amount' => 75,
 								'payment_method_details' => array( 'card' => array( 'mandate' => 'mandate_replayed' ) ),
-								'fee_breakdown_v1'       => array(
-									'totals' => array(
-										'fee' => array(
-											'amount'   => 85,
-											'currency' => 'usd',
-										),
-										'net' => array(
-											'amount'   => 1321,
-											'currency' => 'usd',
-										),
-									),
-								),
+								// The platform's envelope as recorded on a card checkout (Fixtures/platform-payment-intent-events.json).
+								'fee_breakdown_v1'       => $this->recorded_fee_envelope( 'card_checkout_succeeded' ),
 							),
 						),
 					),
@@ -1148,8 +1132,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'pm_replayed', $order->get_meta( '_payment_method_id', true ) );
 		$this->assertSame( 'eur', $order->get_meta( '_wcpay_intent_currency', true ) );
 		$this->assertSame( 'mandate_replayed', $order->get_meta( '_stripe_mandate_id', true ) );
-		$this->assertSame( '0.85', $order->get_meta( '_wcpay_transaction_fee', true ) );
-		$this->assertSame( '13.21', $order->get_meta( '_wcpay_net', true ) );
+		$this->assertSame( '0.62', $order->get_meta( '_wcpay_transaction_fee', true ) );
+		$this->assertSame( '10.37', $order->get_meta( '_wcpay_net', true ) );
 	}
 
 	/**
@@ -1227,47 +1211,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 										'mandate'     => 'webhook_mandate',
 									),
 								),
-								'fee_breakdown_v1'       => array(
-									'rows'   => array(
-										array(
-											'key'      => 'base',
-											'kind'     => 'fee',
-											'amount'   => 233,
-											'currency' => 'eur',
-											'rate'     => array(
-												'percentage' => 0,
-												'fixed' => 80,
-												'fixed_currency' => 'eur',
-											),
-										),
-										array(
-											'key'      => 'additional.international',
-											'kind'     => 'fee',
-											'amount'   => 0,
-											'currency' => 'eur',
-											'rate'     => array(
-												'percentage' => 0.015,
-												'fixed' => 0,
-												'fixed_currency' => 'eur',
-											),
-										),
-									),
-									'totals' => array(
-										'fee' => array(
-											'amount'   => 233,
-											'currency' => 'eur',
-											'rate'     => array(
-												'percentage' => 0.015,
-												'fixed' => 80,
-												'fixed_currency' => 'eur',
-											),
-										),
-										'net' => array(
-											'amount'   => 6267,
-											'currency' => 'eur',
-										),
-									),
-								),
+								// The platform's EUR envelope as recorded on a Bancontact checkout (Fixtures/platform-payment-intent-events.json).
+								'fee_breakdown_v1'       => $this->recorded_fee_envelope( 'bancontact_checkout_succeeded' ),
 							),
 						),
 					),
@@ -1286,8 +1231,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'normal', $order->get_meta( '_charge_risk_level', true ) );
 		$this->assertFalse( $order->meta_exists( '_wcpay_fraud_outcome_status' ) );
 		$this->assertSame( 'not_card', $order->get_meta( '_wcpay_fraud_meta_box_type', true ) );
-		$this->assertSame( '2.33', $order->get_meta( '_wcpay_transaction_fee', true ) );
-		$this->assertSame( '62.67', $order->get_meta( '_wcpay_net', true ) );
+		$this->assertSame( '0.69', $order->get_meta( '_wcpay_transaction_fee', true ) );
+		$this->assertSame( '10.3', $order->get_meta( '_wcpay_net', true ) );
 		$this->assertSame( $checkout_payment_method_details, $order->get_meta( '_wcpay_payment_method_details', true ) );
 		$this->assertOrderHasNoteContaining( $order, array( 'A payment of', 'successfully charged', 'WooPayments', 'pi_123' ) );
 		$this->assertOrderHasNote( $order, 'Payment via SEPA Direct Debit (pi_123).' );
@@ -1485,30 +1430,47 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Build a payment_intent.succeeded event around the recorded basic card PaymentIntent.
+	 * The payment_intent.succeeded the platform forwarded for an online card checkout (4242, visa credit), for an order.
 	 *
-	 * The intent, its charge and the charge's card details (brand visa, funding credit, last4 4242) are the platform's
-	 * answer in Fixtures/platform-intention-basic-card.json (pair basic_card_usd_create_and_confirm); the event envelope
-	 * (id, type) is a minimal stand-in, the metadata names the order and the intent amounts are set to its 10.00.
+	 * Fixtures/platform-payment-intent-events.json, pair card_checkout_succeeded; the metadata names the order and the intent
+	 * amounts are set to its 10.00.
 	 *
 	 * @param WC_Order $order Order the event pays.
 	 * @return array<string,mixed>
 	 */
 	private function create_recorded_card_succeeded_event( WC_Order $order ): array {
-		$recording                 = json_decode( (string) file_get_contents( dirname( __DIR__ ) . '/Fixtures/platform-intention-basic-card.json' ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local test fixture.
-		$intent                    = $recording['entries'][0]['response']['body'];
-		$intent['metadata']        = array(
-			'order_id'  => (string) $order->get_id(),
-			'order_key' => $order->get_order_key(),
-		);
-		$intent['amount']          = 1000;
-		$intent['amount_received'] = 1000;
+		$event                                      = $this->recorded_payment_intent_event( 'card_checkout_succeeded', $order );
+		$event['data']['object']['amount']          = 1000;
+		$event['data']['object']['amount_received'] = 1000;
 
-		return array(
-			'id'   => 'evt_recorded_basic_card',
-			'type' => 'payment_intent.succeeded',
-			'data' => array( 'object' => $intent ),
-		);
+		return $event;
+	}
+
+	/**
+	 * A recorded payment intent event (Fixtures/platform-payment-intent-events.json) whose metadata names the order.
+	 *
+	 * The run's own order is gone and the logged order key was redacted, so the order ID and key are the test's.
+	 *
+	 * @param string   $pair  Recorded entry.
+	 * @param WC_Order $order Order the event names.
+	 * @return array<string,mixed>
+	 */
+	private function recorded_payment_intent_event( string $pair, WC_Order $order ): array {
+		$event = RecordedPlatformEvents::body( 'platform-payment-intent-events.json', $pair );
+		$event['data']['object']['metadata']['order_id']  = (string) $order->get_id();
+		$event['data']['object']['metadata']['order_key'] = $order->get_order_key();
+
+		return $event;
+	}
+
+	/**
+	 * The fee_breakdown_v1 envelope of a recorded payment_intent.succeeded charge.
+	 *
+	 * @param string $pair Recorded entry.
+	 * @return array<string,mixed>
+	 */
+	private function recorded_fee_envelope( string $pair ): array {
+		return RecordedPlatformEvents::body( 'platform-payment-intent-events.json', $pair )['data']['object']['charges']['data'][0]['fee_breakdown_v1'];
 	}
 
 	/**
@@ -1673,19 +1635,24 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox payment_intent.payment_failed with a failed $payment_method_type payment method fails the order and records the intent.
 	 *
+	 * The card row is the event the platform forwarded for a declined card checkout (Fixtures/platform-payment-intent-events.json,
+	 * card_declined_failed), whose last_payment_error carries the full PaymentMethod. No AU BECS or terminal decline was
+	 * delivered locally, so those rows keep the fields the handler reads.
+	 *
 	 * @dataProvider provider_actionable_payment_failures
 	 *
-	 * @param string $order_payment_method_id `_payment_method_id` on the order.
+	 * @param string $order_payment_method_id `_payment_method_id` on the order, or '' for the recorded event's.
 	 * @param string $payment_method_id       Failed payment method ID in the event.
 	 * @param string $payment_method_type     Failed payment method type in the event.
+	 * @param string $pair                    Recorded event, or '' for a built one.
 	 */
-	public function test_payment_intent_failed_marks_order_failed( string $order_payment_method_id, string $payment_method_id, string $payment_method_type ): void {
+	public function test_payment_intent_failed_marks_order_failed( string $order_payment_method_id, string $payment_method_id, string $payment_method_type, string $pair = '' ): void {
+		// The recorded events are test-mode deliveries (livemode false), so the store runs in test mode, as the recording account did.
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$order = $this->create_woopayments_order();
-		$order->update_meta_data( '_payment_method_id', $order_payment_method_id );
-		$order->save();
-
-		$this->sut->process(
-			$this->create_payment_intent_event(
+		$event = '' !== $pair
+			? $this->recorded_payment_intent_event( $pair, $order )
+			: $this->create_payment_intent_event(
 				'payment_intent.payment_failed',
 				$order,
 				array(
@@ -1697,25 +1664,28 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 						),
 					),
 				)
-			)
-		);
+			);
+		$order->update_meta_data( '_payment_method_id', '' !== $order_payment_method_id ? $order_payment_method_id : (string) $event['data']['object']['last_payment_error']['payment_method']['id'] );
+		$order->save();
+
+		$this->sut->process( $event );
 
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'failed', $order->get_status() );
-		$this->assertSame( 'pi_123', $order->get_meta( '_intent_id', true ) );
+		$this->assertSame( $event['data']['object']['id'], $order->get_meta( '_intent_id', true ) );
 		$this->assertSame( 'requires_payment_method', $order->get_meta( '_intention_status', true ) );
 	}
 
 	/**
 	 * Failures the order is failed for.
 	 *
-	 * @return array<string,array{0:string,1:string,2:string}>
+	 * @return array<string,array{0:string,1:string,2:string,3?:string}>
 	 */
 	public function provider_actionable_payment_failures(): array {
 		return array(
-			'card'                                 => array( 'pm_123', 'pm_123', 'card' ),
+			'card'                                 => array( '', '', 'card', 'card_declined_failed' ),
 			'AU BECS debit'                        => array( 'pm_123', 'pm_123', 'au_becs_debit' ),
 			'card present, another payment method' => array( 'pm_current', 'pm_terminal', 'card_present' ),
 		);
@@ -2097,22 +2067,18 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox payment_intent.canceled is a successful order no-op.
+	 *
+	 * The event is the canceled authorization the platform forwarded (Fixtures/platform-payment-intent-events.json), naming the order.
 	 */
 	public function test_payment_intent_canceled_is_successful_order_noop(): void {
+		// The recorded events are test-mode deliveries (livemode false), so the store runs in test mode, as the recording account did.
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$order = $this->create_woopayments_order();
 		$order->update_meta_data( '_wcpay_transaction_fee', '100' );
 		$order->update_meta_data( '_wcpay_net', '900' );
 		$order->save();
 
-		$this->sut->process(
-			$this->create_payment_intent_event(
-				'payment_intent.canceled',
-				$order,
-				array(
-					'status' => 'canceled',
-				)
-			)
-		);
+		$this->sut->process( $this->recorded_payment_intent_event( 'in_person_canceled', $order ) );
 
 		$order = wc_get_order( $order->get_id() );
 
@@ -2137,39 +2103,24 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			2
 		);
 
-		// payment_intent.canceled invalidates even when no order resolves, like the plugin.
+		// payment_intent.canceled invalidates even when no order resolves, like the plugin. The recorded events
+		// (Fixtures/platform-payment-intent-events.json) lose their order metadata: the run's orders are gone. They are
+		// test-mode deliveries (livemode false), so the store runs in test mode, as the recording account did.
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$this->seed_authorization_summary_caches();
-		$this->sut->process(
-			array(
-				'id'   => 'evt_cache_canceled',
-				'type' => 'payment_intent.canceled',
-				'data' => array(
-					'object' => array(
-						'id'     => 'pi_cache_canceled',
-						'status' => 'canceled',
-					),
-				),
-			)
-		);
+		$canceled = RecordedPlatformEvents::body( 'platform-payment-intent-events.json', 'in_person_canceled' );
+		unset( $canceled['data']['object']['metadata']['order_id'], $canceled['data']['object']['metadata']['order_key'] );
+		$this->sut->process( $canceled );
 		$this->assertAuthorizationSummaryCachesCleared( 'payment_intent.canceled' );
-		$this->assertSame( array( array( 'payment_intent.canceled', 'evt_cache_canceled' ) ), $delivered, 'The cache-only event completes its delivery.' );
+		$this->assertSame( array( array( 'payment_intent.canceled', $canceled['id'] ) ), $delivered, 'The cache-only event completes its delivery.' );
 
 		// payment_intent.amount_capturable_updated does the same.
 		$this->seed_authorization_summary_caches();
-		$this->sut->process(
-			array(
-				'id'   => 'evt_cache_acu',
-				'type' => 'payment_intent.amount_capturable_updated',
-				'data' => array(
-					'object' => array(
-						'id'     => 'pi_cache_acu',
-						'status' => 'requires_capture',
-					),
-				),
-			)
-		);
+		$capturable = RecordedPlatformEvents::body( 'platform-payment-intent-events.json', 'manual_capture_amount_capturable_updated' );
+		unset( $capturable['data']['object']['metadata']['order_id'], $capturable['data']['object']['metadata']['order_key'] );
+		$this->sut->process( $capturable );
 		$this->assertAuthorizationSummaryCachesCleared( 'payment_intent.amount_capturable_updated' );
-		$this->assertSame( array( 'payment_intent.amount_capturable_updated', 'evt_cache_acu' ), $delivered[1] ?? null, 'The cache-only event completes its delivery.' );
+		$this->assertSame( array( 'payment_intent.amount_capturable_updated', $capturable['id'] ), $delivered[1] ?? null, 'The cache-only event completes its delivery.' );
 
 		// payment_intent.succeeded invalidates after the order effects apply.
 		$order = $this->create_woopayments_order();
@@ -5669,33 +5620,15 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a card-present charge fixture.
+	 * The charge of the payment_intent.succeeded the platform received for a simulated reader payment
+	 * (Fixtures/platform-card-present-succeeded-event.json).
 	 *
 	 * @return array<string,mixed>
 	 */
 	private function create_card_present_charge(): array {
-		return array(
-			'id'                     => 'ch_card_present',
-			'payment_method'         => 'pm_123',
-			'application_fee_amount' => 123,
-			'amount_captured'        => 1234,
-			'currency'               => 'usd',
-			'payment_method_details' => array(
-				'type'         => 'card_present',
-				'card_present' => array(
-					'brand'   => 'visa',
-					'last4'   => '4242',
-					'receipt' => array(
-						'application_preferred_name' => 'Visa Credit',
-						'dedicated_file_name'        => 'A0000000031010',
-						'account_type'               => 'credit',
-					),
-				),
-				'card'         => array(
-					'mandate' => 'mandate_123',
-				),
-			),
-		);
+		$recording = json_decode( (string) file_get_contents( dirname( __DIR__ ) . '/Fixtures/platform-card-present-succeeded-event.json' ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local test fixture.
+
+		return $recording['events'][0]['data']['object']['charges']['data'][0];
 	}
 
 	/**
