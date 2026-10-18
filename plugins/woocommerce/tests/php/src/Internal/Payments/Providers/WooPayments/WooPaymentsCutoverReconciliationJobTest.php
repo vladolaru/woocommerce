@@ -553,6 +553,107 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A claim past the retry window on an ineligible account ($entry) closes only while the extension owns payments, and otherwise defers until eligibility returns and the switch finishes.
+	 *
+	 * @dataProvider held_claim_owner_provider
+	 *
+	 * @param string $entry How the claim reaches the eligibility read.
+	 */
+	public function test_held_claim_closes_only_while_the_extension_owns_payments( string $entry ): void {
+		$scheduling_calls = 0;
+		$schedulable      = true;
+		$throws           = false;
+		$preflight        = $this->create_preflight_with_fee_remediation( $scheduling_calls, $schedulable, $throws );
+		$attempt          = function ( int $generation, int $next_attempt, bool $eligible, bool $extension_owner ) use ( $preflight ): WooPaymentsCutoverReconciliationJob {
+			$this->require_scheduler()->cancel( $generation, $next_attempt );
+			$this->start_fresh_request();
+			$job = new class() extends WooPaymentsCutoverReconciliationJob {
+				/** @var array<int,array<string,mixed>> */
+				public array $errors = array();
+
+				/**
+				 * Capture errors.
+				 *
+				 * @param string              $message Error message.
+				 * @param array<string,mixed> $context Error context.
+				 */
+				protected function write_log_error( string $message, array $context ): void {
+					$this->errors[] = array_merge( array( 'message' => $message ), $context );
+				}
+			};
+			$this->create_job( true, $preflight, $job, $extension_owner, $this->create_noop_normalization(), $eligible )->handle_reconcile( $generation, $next_attempt );
+
+			return $job;
+		};
+
+		if ( 'a manual-deactivation record' === $entry ) {
+			$this->assertTrue( $this->create_job( true, $preflight, null, false, $this->create_noop_normalization() )->enqueue_manual_deactivation( 'woocommerce-payments/woocommerce-payments.php', false ) );
+		} else {
+			$this->assertTrue( $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() )->enqueue( 'merchant' ) );
+		}
+		$record = $this->require_state_store()->get_record();
+		$this->assertIsArray( $record );
+		$this->require_scheduler()->cancel( $record['generation'], 1 );
+		if ( 'an attempt after finalizing, whose ownership check deferred' === $entry ) {
+			$attempt( $record['generation'], 1, true, true );
+			$verification = $this->require_state_store()->get_record();
+			$this->assertIsArray( $verification );
+			$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
+			$schedulable = false;
+			$attempt( $verification['generation'], 2, true, false );
+			$record = $this->require_state_store()->get_record();
+			$this->assertIsArray( $record );
+			$this->assertSame( array( 'financial_migrations_unavailable' ), $record['deferred_codes'] );
+			$this->assertSame( 'deferred', $record['current_step'], 'The next attempt runs the reconciliation, not the ownership check.' );
+			$schedulable = true;
+		}
+		$aged               = $record;
+		$aged['revision']   = $record['revision'] + 1;
+		$aged['started_at'] = time() - DAY_IN_SECONDS - 1;
+		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $record, $aged ) );
+		$extension_owner = 'the extension still owns payments' === $entry;
+
+		$job = $attempt( $aged['generation'], $aged['attempt'] + 1, false, $extension_owner );
+
+		$after = $this->require_state_store()->get_record();
+		$this->assertIsArray( $after );
+		$this->assertSame( array( 'builtin_ineligible' ), $after['deferred_codes'] );
+		if ( $extension_owner ) {
+			$this->assertSame( WooPaymentsCutoverState::EXCLUDED, $after['state'] );
+			$this->assertCount( 1, $job->errors );
+			$this->assertStringContainsString( 'closed without switching', $job->errors[0]['message'] );
+			return;
+		}
+		$this->assertSame( WooPaymentsCutoverState::DEFERRED, $after['state'], 'A switch the built-in already runs must not be closed half-finished.' );
+		$this->assertSame( $after['action_id'], $this->require_scheduler()->get_scheduled_action_id( $after['generation'], $after['attempt'] + 1 ) );
+		$this->assertSame( array(), $job->errors );
+
+		// Eligibility returns: the retries finish the switch and schedule the fee remediation.
+		$scheduling_calls = 0;
+		$record           = $after;
+		for ( $step = 0; $step < 4 && WooPaymentsCutoverState::DONE !== $record['state']; ++$step ) {
+			$attempt( $record['generation'], $record['attempt'] + 1, true, false );
+			$record = $this->require_state_store()->get_record();
+			$this->assertIsArray( $record );
+		}
+		$this->assertSame( WooPaymentsCutoverState::DONE, $record['state'] );
+		$this->assertSame( 1, $scheduling_calls );
+	}
+
+	/**
+	 * Ways a claim reaches the eligibility read past the retry window.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function held_claim_owner_provider(): array {
+		return array(
+			'a manual-deactivation record'      => array( 'a manual-deactivation record' ),
+			'an attempt after finalizing, whose ownership check deferred' => array( 'an attempt after finalizing, whose ownership check deferred' ),
+			'the extension still owns payments' => array( 'the extension still owns payments' ),
+		);
+	}
+
+	/**
 	 * @testdox A first attempt that runs on time logs no delay warning.
 	 */
 	public function test_on_time_first_attempt_logs_no_delay_warning(): void {
@@ -5171,7 +5272,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$record = $this->require_state_store()->get_record();
 		$this->assertIsArray( $record );
 		$scheduler->cancel( $record['generation'], 1 );
-		// A first attempt a day after the start is a held switch and closes, so the cadence is read on a second attempt.
+		// The cadence is read on a retry, so the record is set to its second attempt.
 		$aged               = $record;
 		$aged['revision']   = $record['revision'] + 1;
 		$aged['attempt']    = 1;

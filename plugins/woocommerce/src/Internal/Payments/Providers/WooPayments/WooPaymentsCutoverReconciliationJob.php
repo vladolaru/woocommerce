@@ -1004,13 +1004,14 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Keep the plugin running a switch whose account lost native eligibility after the merchant started it.
 	 *
-	 * The attempt retries with the usual backoff. Past the fast retry window the generation closes without finalizing and
-	 * the tier goes back to disabled, so the start notice offers the switch again if eligibility returns.
+	 * The attempt retries with the usual backoff. Past the fast retry window, while the extension still owns payments, the
+	 * generation closes without finalizing and the tier goes back to disabled, so the start notice offers the switch again
+	 * if eligibility returns. Once the built-in owns payments it keeps retrying, so the switch finishes when eligibility returns.
 	 *
 	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
 	 */
 	private function hold_ineligible_claim( array $claimed ): void {
-		if ( time() - $claimed['started_at'] < self::FAST_RETRY_WINDOW ) {
+		if ( time() - $claimed['started_at'] < self::FAST_RETRY_WINDOW || ! $this->arbiter->is_extension_owner() ) {
 			$this->defer( $claimed, array( self::INELIGIBLE_CODE ), array( array( 'code' => 'eligibility_withdrawn' ) ) );
 			return;
 		}
