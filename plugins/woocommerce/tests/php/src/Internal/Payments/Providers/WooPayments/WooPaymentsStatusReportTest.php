@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
@@ -60,6 +61,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'wcpay_account_data' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
+		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
 		delete_option( self::EXPECTED_LAST_FETCH_OPTION );
 		wc_get_container()->reset_replacement( WooPaymentsApiClient::class );
 		wc_get_container()->reset_replacement( WooPaymentsHttpClient::class );
@@ -324,14 +326,39 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Status data defaults Multi-Currency to enabled when the option is absent.
+	 * @testdox Status data and the Multi-currency row report whether core Multi-Currency runs: $_dataName.
+	 *
+	 * Client 11.1.0 reports its own module's state (includes/class-wc-payments-status.php:600); the WooPayments flag an
+	 * earlier plugin install left decides nothing once WooCommerce runs the payments.
+	 *
+	 * @dataProvider provide_multi_currency_states
+	 *
+	 * @param string      $core_option The core Multi-Currency feature option.
+	 * @param string|null $flag        The WooPayments Multi-Currency flag, or null for never written.
+	 * @param bool        $expected    Whether Multi-Currency is reported enabled.
 	 */
-	public function test_status_data_defaults_multi_currency_to_enabled_when_option_is_absent(): void {
-		delete_option( '_wcpay_feature_customer_multi_currency' );
+	public function test_status_reports_whether_core_multi_currency_runs( string $core_option, ?string $flag, bool $expected ): void {
+		$options = array(
+			MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION => $core_option,
+			'_wcpay_feature_customer_multi_currency' => $flag,
+		);
 
-		$data = $this->get_sut()->get_status_data();
+		$section = $this->get_status_tables( $this->render_report_for_connected_store( array(), array(), 'basic', array(), $options ) )['WooPayments'];
 
-		$this->assertTrue( $data['multi_currency']['enabled'] );
+		$this->assertSame( $expected, $this->get_sut()->get_status_data()['multi_currency']['enabled'] );
+		$this->assertSame( $expected ? 'Enabled' : 'Disabled', $section['Multi-currency'] );
+	}
+
+	/**
+	 * Core Multi-Currency states, each against the WooPayments flag value that used to decide the answer.
+	 *
+	 * @return array<string,array{string,string|null,bool}>
+	 */
+	public function provide_multi_currency_states(): array {
+		return array(
+			'core Multi-Currency off, flag never written' => array( 'no', null, false ),
+			'core Multi-Currency on, flag off'            => array( 'yes', '0', true ),
+		);
 	}
 
 	/**
@@ -774,9 +801,10 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $settings_extra   Gateway settings to add.
 	 * @param string              $protection_level Fraud protection level.
 	 * @param array<int,mixed>    $fraud_ruleset    Cached advanced fraud ruleset.
+	 * @param array<string,mixed> $options          Options to set after the store is seeded; null deletes one.
 	 * @return string Rendered HTML.
 	 */
-	private function render_report_for_connected_store( array $account_extra = array(), array $settings_extra = array(), string $protection_level = 'basic', array $fraud_ruleset = array() ): string {
+	private function render_report_for_connected_store( array $account_extra = array(), array $settings_extra = array(), string $protection_level = 'basic', array $fraud_ruleset = array(), array $options = array() ): string {
 		$this->fake_plugin( false );
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
@@ -809,6 +837,9 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_settings', array_merge( get_option( 'woocommerce_woocommerce_payments_settings' ), $settings_extra ) );
 		set_transient( 'wcpay_fraud_protection_settings', $fraud_ruleset, HOUR_IN_SECONDS );
 		update_option( 'current_protection_level', $protection_level );
+		foreach ( $options as $option => $value ) {
+			null === $value ? delete_option( $option ) : update_option( $option, $value );
+		}
 		add_filter( 'wcpay_dev_mode', '__return_false' );
 
 		ob_start();
@@ -999,7 +1030,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 				'express_checkout_checkout_methods' => array( 'payment_request', 'woopay' ),
 			)
 		);
-		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( self::EXPECTED_LAST_FETCH_OPTION, 1700000000 );
 	}
 

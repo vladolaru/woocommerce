@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -31,6 +32,7 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'wcpay_account_data' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
+		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
 		delete_option( self::EXPECTED_LAST_FETCH_OPTION );
 		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		$this->reset_legacy_proxy_mocks();
@@ -60,18 +62,37 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Status lines report whether the WooPayments rate provider is available.
+	 * @testdox Status lines report whether core Multi-Currency runs and the WooPayments rate provider's availability: $_dataName.
+	 *
+	 * @dataProvider provide_multi_currency_lines
+	 *
+	 * @param string $core_option The core Multi-Currency feature option.
+	 * @param string $flag        The WooPayments Multi-Currency flag an earlier plugin install left.
+	 * @param string $expected    Expected status line.
 	 */
-	public function test_status_lines_report_rate_provider_availability(): void {
+	public function test_status_lines_report_multi_currency_and_rate_provider( string $core_option, string $flag, string $expected ): void {
 		$this->fake_plugin( false );
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->seed_connected_store();
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, $core_option );
+		update_option( '_wcpay_feature_customer_multi_currency', $flag );
 		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
 
 		$lines = wc_get_container()->get( WooPaymentsCLICommand::class )->get_status_lines();
-		$text  = implode( "\n", $lines );
 
-		$this->assertStringContainsString( 'Multi-currency: enabled (rate provider: woopayments, unavailable)', $text );
+		$this->assertContains( $expected, $lines );
+	}
+
+	/**
+	 * Core Multi-Currency states against the WooPayments flag, and the line each prints.
+	 *
+	 * @return array<string,array{string,string,string}>
+	 */
+	public function provide_multi_currency_lines(): array {
+		return array(
+			'core Multi-Currency on, flag off' => array( 'yes', '0', 'Multi-currency: enabled (rate provider: woopayments, unavailable)' ),
+			'core Multi-Currency off, flag on' => array( 'no', '1', 'Multi-currency: disabled (rate provider: woopayments, unavailable)' ),
+		);
 	}
 
 	/**
@@ -101,7 +122,7 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 				'payment_request'                => 'yes',
 			)
 		);
-		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( self::EXPECTED_LAST_FETCH_OPTION, 1700000000 );
 	}
 

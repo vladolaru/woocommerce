@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
@@ -26,8 +27,6 @@ defined( 'ABSPATH' ) || exit;
  * @internal Transitional internal component for the native payments runtime.
  */
 class WooPaymentsStatusReport implements RegisterHooksInterface {
-
-	private const MULTI_CURRENCY_FLAG_OPTION = '_wcpay_feature_customer_multi_currency';
 
 	private const WOOPAY_EXPRESS_CHECKOUT_FLAG_OPTION = '_wcpay_feature_woopay_express_checkout';
 
@@ -238,7 +237,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		$enabled_payment_methods   = $this->get_enabled_payment_methods();
 		$payment_request_locations = $this->get_express_checkout_method_locations( 'payment_request' );
 		$woopay_locations          = $this->get_express_checkout_method_locations( 'woopay' );
-		$multi_currency_enabled    = '1' === (string) get_option( self::MULTI_CURRENCY_FLAG_OPTION, '1' );
+		$multi_currency_enabled    = $this->is_multi_currency_running();
 
 		return array(
 			'runtime_owner'           => $this->arbiter->get_runtime_owner(),
@@ -528,7 +527,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			'Multi-currency',
 			__( 'Multi-currency', 'woocommerce' ),
 			__( 'Whether the store has the Multi-currency feature enabled or not.', 'woocommerce' ),
-			$this->format_enabled( '1' === (string) get_option( self::MULTI_CURRENCY_FLAG_OPTION, '1' ) )
+			$this->format_enabled( $this->is_multi_currency_running() )
 		);
 		$rows[] = $this->status_row(
 			'Auth and Capture',
@@ -890,6 +889,16 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		} catch ( Throwable $exception ) {
 			return array( 'preflight_unavailable' );
 		}
+	}
+
+	/**
+	 * Tell whether core Multi-Currency runs on this store, the state client 11.1.0 reports for its own module
+	 * (includes/class-wc-payments-status.php:600).
+	 *
+	 * @return bool
+	 */
+	private function is_multi_currency_running(): bool {
+		return wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->should_core_register();
 	}
 
 	/**
