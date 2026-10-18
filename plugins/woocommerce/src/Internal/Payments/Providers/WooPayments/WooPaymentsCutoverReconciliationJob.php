@@ -414,21 +414,21 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$complete   = true;
 			$this->run_on_sites_with_write_locks(
 				$site_ids,
-				function ( int $site_id, bool $lock_held ) use ( &$complete, $generation ): bool {
+				function ( int $site_id, bool $lock_held ) use ( &$complete, $generation ): void {
 					if ( ! $lock_held ) {
 						$complete = false;
-						return true;
+						return;
 					}
 						$record = $this->state_store->get_record();
 					if ( is_array( $record ) && $record['generation'] > $generation ) {
-						return true;
+						return;
 					}
 					if ( is_array( $record ) && $record['generation'] === $generation ) {
 						if ( $this->is_awaiting_start( $record ) ) {
-							return true;
+							return;
 						}
 						$complete = false;
-						return true;
+						return;
 					}
 
 						$now      = time();
@@ -443,7 +443,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 						$stored = $this->state_store->create_record( $awaiting );
 					}
 						$complete = $stored && $complete;
-					return true;
 				}
 			);
 
@@ -672,7 +671,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$excluded_generations = array();
 			$this->run_on_sites(
 				$site_ids,
-				function () use ( &$maximum_generation, &$active_generations, &$terminal_generations, &$excluded_generations ): bool {
+				function () use ( &$maximum_generation, &$active_generations, &$terminal_generations, &$excluded_generations ): void {
 						$record             = $this->state_store->get_record();
 						$record_generation  = is_array( $record ) ? $record['generation'] : 0;
 						$maximum_generation = max( $maximum_generation, $record_generation );
@@ -686,7 +685,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 							}
 						}
 					}
-					return true;
 				}
 			);
 			$highest_active_generation  = array() === $active_generations ? 0 : max( $active_generations );
@@ -699,10 +697,10 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			if ( null === $propagate_exclusion ) {
 				$this->run_on_sites_with_write_locks(
 					$site_ids,
-					function ( int $site_id, bool $lock_held ) use ( $generation, $origin_plugin_file, $origin_plugin_scope, &$scheduled_somewhere, $source ): bool {
+					function ( int $site_id, bool $lock_held ) use ( $generation, $origin_plugin_file, $origin_plugin_scope, &$scheduled_somewhere, $source ): void {
 							// A peer whose lease is busy is skipped; the first attempt's fan-out repair adds it.
 						if ( ! $lock_held ) {
-							return true;
+							return;
 						}
 							$record = $this->state_store->get_record();
 						if ( is_array( $record ) && $generation === $record['generation'] && $this->is_network( $record ) ) {
@@ -718,7 +716,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 								// A running attempt of this generation is durable work already.
 								$scheduled_somewhere = true;
 							}
-							return true;
+							return;
 						}
 
 							$now                        = time();
@@ -735,7 +733,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 							$stored = $this->state_store->create_record( $pending );
 						}
 							$scheduled_somewhere = ( $stored && $this->ensure_record_scheduled( $pending, $now ) ) || $scheduled_somewhere;
-						return true;
 					}
 				);
 			}
@@ -766,8 +763,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Run a callback with each given site current, then restore the site the request started on.
 	 *
-	 * The loop stops when the callback returns false.
-	 *
 	 * @param int[]    $site_ids Site IDs.
 	 * @param callable $callback Called with the site ID while that site is current.
 	 */
@@ -778,14 +773,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				switch_to_blog( $site_id );
 			}
 			try {
-				$continue = $callback( $site_id );
+				$callback( $site_id );
 			} finally {
 				if ( get_current_blog_id() !== $current_blog_id ) {
 					restore_current_blog();
 				}
-			}
-			if ( false === $continue ) {
-				break;
 			}
 		}
 	}
@@ -794,8 +786,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * Run a callback with each given site current and its write lock taken, then restore the site the request started on.
 	 *
 	 * The lock is taken after the switch and released before the restore. The network main site takes no site lock: the
-	 * network lock is its lock, so it always counts as held. The callback decides what a busy lock means; the loop stops when
-	 * it returns false.
+	 * network lock is its lock, so it always counts as held. The callback decides what a busy lock means.
 	 *
 	 * @param int[]    $site_ids Site IDs.
 	 * @param callable $callback Called with the site ID and whether its write lock is held, while that site is current.
@@ -809,7 +800,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			}
 			$site_token = $network_main_site_id === $site_id ? null : $this->state_store->acquire_lease( time() );
 			try {
-				$continue = $callback( $site_id, $network_main_site_id === $site_id || null !== $site_token );
+				$callback( $site_id, $network_main_site_id === $site_id || null !== $site_token );
 			} finally {
 				if ( is_string( $site_token ) ) {
 					$this->state_store->release_lease( $site_token );
@@ -817,9 +808,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				if ( get_current_blog_id() !== $current_blog_id ) {
 					restore_current_blog();
 				}
-			}
-			if ( false === $continue ) {
-				break;
 			}
 		}
 	}
@@ -1105,7 +1093,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$sites_to_repair         = array();
 			$this->run_on_sites(
 				$this->get_current_network_site_ids(),
-				function ( int $site_id ) use ( $claimed, &$sites_to_repair, &$highest_generation, &$highest_phase, &$highest_origin_file, &$highest_origin_scope, &$highest_origin_conflict, &$excluded_code ): bool {
+				function ( int $site_id ) use ( $claimed, &$sites_to_repair, &$highest_generation, &$highest_phase, &$highest_origin_file, &$highest_origin_scope, &$highest_origin_conflict, &$excluded_code ): void {
 						$record = $this->state_store->get_record();
 					if ( ! $this->is_settled_network_peer( $record, $claimed['generation'] ) ) {
 						$sites_to_repair[] = $site_id;
@@ -1135,7 +1123,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					if ( is_array( $record ) && $record['generation'] === $claimed['generation'] && WooPaymentsCutoverStateStore::STATE_EXCLUDED === $record['state'] ) {
 						$excluded_code = $record[ self::BLOCKING_CODES_KEY ][0] ?? WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS;
 					}
-					return true;
 				}
 			);
 			if ( $highest_generation > $claimed['generation'] ) {
@@ -1173,16 +1160,16 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			// Only sites the read-only pass found unsettled are written, so a steady network takes no site leases.
 			$this->run_on_sites_with_write_locks(
 				$sites_to_repair,
-				function ( int $site_id, bool $lock_held ) use ( &$complete, $claimed ): bool {
+				function ( int $site_id, bool $lock_held ) use ( &$complete, $claimed ): void {
 					if ( ! $lock_held ) {
 						$complete = false;
-						return true;
+						return;
 					}
 
 						$record = $this->state_store->get_record();
 					if ( is_array( $record ) && $record['generation'] > $claimed['generation'] ) {
 						$complete = false;
-						return true;
+						return;
 					}
 					if ( is_array( $record ) && $record['generation'] === $claimed['generation'] && $this->is_network( $record ) ) {
 						if ( $this->is_awaiting_start( $record ) ) {
@@ -1190,7 +1177,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 						} elseif ( in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
 							$complete = $this->ensure_record_scheduled( $record, time() ) && $complete;
 						}
-						return true;
+						return;
 					}
 
 						$now                        = time();
@@ -1210,7 +1197,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 						$stored = $this->state_store->create_record( $pending );
 					}
 						$complete = $stored && $this->ensure_record_scheduled( $pending, $now ) && $complete;
-					return true;
 				}
 			);
 		} finally {
@@ -1562,13 +1548,13 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	private function schedule_network_ownership_verification( int $generation ): void {
 		$this->run_on_sites_with_write_locks(
 			$this->get_current_network_site_ids(),
-			function ( int $site_id, bool $lock_held ) use ( $generation ): bool {
+			function ( int $site_id, bool $lock_held ) use ( $generation ): void {
 				if ( ! $lock_held ) {
-					return true;
+					return;
 				}
 					$record = $this->state_store->get_record();
 				if ( ! is_array( $record ) || $generation !== $record['generation'] || WooPaymentsCutoverStateStore::STATE_DEFERRED !== $record['state'] || ! in_array( 'network_barrier', $record[ self::BLOCKING_CODES_KEY ], true ) ) {
-					return true;
+					return;
 				}
 					$now                                      = time();
 					$verification                             = $record;
@@ -1586,7 +1572,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					$this->scheduler->cancel( $generation, $record['attempt'] + 1 );
 					$this->ensure_record_scheduled( $verification, $now );
 				}
-				return true;
 			}
 		);
 	}
