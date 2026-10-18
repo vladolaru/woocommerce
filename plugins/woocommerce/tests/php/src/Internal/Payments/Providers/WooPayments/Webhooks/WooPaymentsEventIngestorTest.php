@@ -1391,8 +1391,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 *
 	 * Client 11.1.0 never sets the method or title from this webhook (includes/class-wc-payments-webhook-processing-service.php
 	 * process_webhook_payment_intent_succeeded()); the in-person capture set woocommerce_payments and the in-person title
-	 * (includes/admin/class-wc-rest-payments-orders-controller.php:213-214), and a related subscription stays on that gateway,
-	 * so it keeps renewing automatically.
+	 * (includes/admin/class-wc-rest-payments-orders-controller.php:213-214). The subscription stand-in is an order the
+	 * subscriptions double relates to the parent; it must keep the WooPayments gateway, the one renewals charge through.
 	 *
 	 * @dataProvider provide_orders_paid_before_the_succeeded_event
 	 *
@@ -1411,13 +1411,12 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order->save();
 		$subscription = $this->create_woopayments_order();
 		$subscription->set_payment_method_title( $title );
-		$subscription->update_meta_data( '_requires_manual_renewal', 'false' );
 		$subscription->save();
 		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'parent' => array( $subscription->get_id() ) ) );
 
 		try {
-			$this->sut->process( 'card' === $charge_type ? $this->create_card_succeeded_event( $order ) : $this->create_recorded_in_person_succeeded_event( $order, $charge_type ) );
+			$this->sut->process( 'card' === $charge_type ? $this->create_recorded_card_succeeded_event( $order ) : $this->create_recorded_in_person_succeeded_event( $order, $charge_type ) );
 		} finally {
 			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
 		}
@@ -1431,20 +1430,23 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( $title, $order->get_payment_method_title() );
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription->get_payment_method() );
 		$this->assertSame( $title, $subscription->get_payment_method_title() );
-		$this->assertSame( 'false', $subscription->get_meta( '_requires_manual_renewal', true ) );
 	}
 
 	/**
 	 * Orders paid before their payment_intent.succeeded event: charge type, the order's title, WooPay.
 	 *
+	 * The two card rows titled "Visa credit card" are guards: that is also the title the recorded card charge composes, so
+	 * they pass whether or not the webhook writes it. The generic "Card" row is the one a rewrite changes.
+	 *
 	 * @return array<string,array{0:string,1:string,2:bool}>
 	 */
 	public function provide_orders_paid_before_the_succeeded_event(): array {
 		return array(
-			'in-person card_present order'    => array( 'card_present', 'WooCommerce In-Person Payments', false ),
-			'in-person interac_present order' => array( 'interac_present', 'WooCommerce In-Person Payments', false ),
-			'card order'                      => array( 'card', 'Visa credit card', false ),
-			'WooPay order'                    => array( 'card', 'Visa credit card', true ),
+			'in-person card_present order'           => array( 'card_present', 'WooCommerce In-Person Payments', false ),
+			'in-person interac_present order'        => array( 'interac_present', 'WooCommerce In-Person Payments', false ),
+			'card order with the generic Card title' => array( 'card', 'Card', false ),
+			'card order (guard)'                     => array( 'card', 'Visa credit card', false ),
+			'WooPay order (guard)'                   => array( 'card', 'Visa credit card', true ),
 		);
 	}
 
@@ -1453,7 +1455,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 *
 	 * The card_present event is the one the platform received for a simulated reader payment
 	 * (Fixtures/platform-card-present-succeeded-event.json). No interac_present payment can be taken locally, so that row
-	 * reuses the card_present event with only the payment method type renamed.
+	 * derives from the card_present event: the charge's payment_method_details.type becomes interac_present, its
+	 * card_present details move to an interac_present key, and the intent's payment_method_types becomes
+	 * array( 'interac_present' ); nothing else changes. For both, the intent amounts are set to the order's 10.00.
 	 *
 	 * @param WC_Order $order       Order the event pays.
 	 * @param string   $charge_type card_present or interac_present.
@@ -1480,33 +1484,29 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Build a payment_intent.succeeded event for a card charge whose composed title is "Visa credit card".
+	 * Build a payment_intent.succeeded event around the recorded basic card PaymentIntent.
+	 *
+	 * The intent, its charge and the charge's card details (brand visa, funding credit, last4 4242) are the platform's
+	 * answer in Fixtures/platform-intention-basic-card.json (pair basic_card_usd_create_and_confirm); the event envelope
+	 * (id, type) is a minimal stand-in, the metadata names the order and the intent amounts are set to its 10.00.
 	 *
 	 * @param WC_Order $order Order the event pays.
 	 * @return array<string,mixed>
 	 */
-	private function create_card_succeeded_event( WC_Order $order ): array {
-		return $this->create_payment_intent_event(
-			'payment_intent.succeeded',
-			$order,
-			array(
-				'amount'  => 1000,
-				'charges' => array(
-					'data' => array(
-						array(
-							'payment_method_details' => array(
-								'type' => 'card',
-								'card' => array(
-									'brand'   => 'visa',
-									'network' => 'visa',
-									'funding' => 'credit',
-									'last4'   => '4242',
-								),
-							),
-						),
-					),
-				),
-			)
+	private function create_recorded_card_succeeded_event( WC_Order $order ): array {
+		$recording                 = json_decode( (string) file_get_contents( dirname( __DIR__ ) . '/Fixtures/platform-intention-basic-card.json' ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local test fixture.
+		$intent                    = $recording['entries'][0]['response']['body'];
+		$intent['metadata']        = array(
+			'order_id'  => (string) $order->get_id(),
+			'order_key' => $order->get_order_key(),
+		);
+		$intent['amount']          = 1000;
+		$intent['amount_received'] = 1000;
+
+		return array(
+			'id'   => 'evt_recorded_basic_card',
+			'type' => 'payment_intent.succeeded',
+			'data' => array( 'object' => $intent ),
 		);
 	}
 

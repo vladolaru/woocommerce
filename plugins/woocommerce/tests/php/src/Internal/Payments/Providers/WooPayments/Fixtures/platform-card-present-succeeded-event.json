@@ -2,7 +2,7 @@
 	"_meta": {
 		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (US, test mode): the payment_intent.succeeded event Stripe sent for an in-person payment taken on a simulated WisePOS E reader (simulated_wisepos_e) and captured through the store on 2026-10-17 at 23:49:09 UTC.",
 		"store": "WooCommerce :8889 (woocommerce-develop-2, exp/core-native-payments at 0c5268c6c16), order 5819 for a monthly subscription product, test mode.",
-		"captured_via": "The platform debug log record of the webhook request (logstash, 2026-10-17 23:49:14 UTC): the event as the platform received it from the Stripe listener. Only the two request parameters the log adds (rest_route, XDEBUG_SESSION_START) are removed; nothing else is edited."
+		"captured_via": "The platform debug log record of the webhook request (logstash, 2026-10-17 23:49:14 UTC): the event as the platform received it from the Stripe listener. The two request parameters the log adds (rest_route, XDEBUG_SESSION_START) are removed, and three values are replaced with obviously synthetic ones: the PaymentIntent client_secret, metadata.order_key and the charge receipt_url. Nothing else is edited."
 	},
 	"events": [
 		{
@@ -29,7 +29,7 @@
 					"canceled_at": null,
 					"cancellation_reason": null,
 					"capture_method": "manual",
-					"client_secret": "pi_3URhL6BzWlxcwgpP0uYEDJdg_secret_P7EWZ25CEoDs5jdQpoqNa7H54",
+					"client_secret": "pi_3URhL6BzWlxcwgpP0uYEDJdg_secret_REDACTED",
 					"confirmation_method": "automatic",
 					"created": 1792280916,
 					"currency": "usd",
@@ -47,7 +47,7 @@
 						"fraud_outcome": "allow",
 						"order_number": "5819",
 						"order_id": "5819",
-						"order_key": "wc_order_Of7lmh3WghoQs",
+						"order_key": "wc_order_REDACTED",
 						"client_version": "11.1.0",
 						"site_url": "http://store8889.localhost:8889",
 						"subscription_payment": "initial",
@@ -192,7 +192,7 @@
 								"radar_options": [],
 								"receipt_email": null,
 								"receipt_number": null,
-								"receipt_url": "https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVHJZMm5CeldseGN3Z3BQKPqS0NYGMgZdkBgQ_r46LBYg9s3N45KejIEudmeN8-z7HPZbhJzrLJUDM4sBTKuKxLvPwzPqshWvSlYQ",
+								"receipt_url": "https://pay.stripe.com/receipts/payment/REDACTED",
 								"refunded": false,
 								"refunds": {
 									"object": "list",

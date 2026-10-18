@@ -213,7 +213,7 @@ class WooPaymentsPaymentIntentEventHandler {
 	}
 
 	/**
-	 * Apply a succeeded payment intent that pays its order: payment method title, payment meta, status and notes.
+	 * Apply a succeeded payment intent that pays its order: payment meta, status and notes.
 	 *
 	 * Provider code that learns of a succeeded intent outside its webhook, such as a paid Stripe Billing invoice, uses it.
 	 *
