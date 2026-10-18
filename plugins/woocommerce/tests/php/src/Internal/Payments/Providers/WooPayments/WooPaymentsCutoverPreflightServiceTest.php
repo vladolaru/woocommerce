@@ -94,7 +94,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	 * @testdox A store with every check passing reports no failure, including no undispositioned provider events.
 	 */
 	public function test_ready_store_reports_no_failures(): void {
-		$this->assertSame( array(), $this->create_sut()->get_reconciliation_failures() );
+		$this->assertSame( array(), $this->create_sut()->get_failures() );
 	}
 
 	/**
@@ -104,7 +104,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 		$codes = array();
 		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
-		$codes = array_merge( $codes, $this->create_sut()->get_reconciliation_failures() );
+		$codes = array_merge( $codes, $this->create_sut()->get_failures() );
 		remove_all_filters( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER );
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->provider_ready        = false;
@@ -115,7 +115,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		$this->create_legacy_stripe_billing_subscription_marker();
 		as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_preflight_service_test', array(), 'test', true );
-		$codes = array_merge( $codes, $this->create_sut()->get_reconciliation_failures() );
+		$codes = array_merge( $codes, $this->create_sut()->get_failures() );
 
 		$unique_codes = array_values( array_unique( $codes ) );
 
@@ -148,12 +148,12 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 		$this->provider_ready = false;
 		$sut                  = $this->create_sut();
 
-		$this->assertContains( 'builtin_transport_unavailable', $sut->get_reconciliation_failures() );
+		$this->assertContains( 'builtin_transport_unavailable', $sut->get_failures() );
 		$this->provider_ready = true;
-		$this->assertContains( 'builtin_transport_unavailable', $sut->get_reconciliation_failures() );
+		$this->assertContains( 'builtin_transport_unavailable', $sut->get_failures() );
 
 		$sut->invalidate_current_blog_memoization();
-		$this->assertNotContains( 'builtin_transport_unavailable', $sut->get_reconciliation_failures() );
+		$this->assertNotContains( 'builtin_transport_unavailable', $sut->get_failures() );
 	}
 
 	/**
@@ -251,7 +251,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 			),
 			$sut->get_queued_plugin_actions()
 		);
-		$this->assertSame( array( 'operational_queue_hooks_unhandled' ), $sut->get_reconciliation_failures() );
+		$this->assertSame( array( 'operational_queue_hooks_unhandled' ), $sut->get_failures() );
 	}
 
 	/**

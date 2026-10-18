@@ -958,7 +958,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				return;
 			}
 			$this->log_late_first_attempt( $claimed );
-			$failures = $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() );
+			$failures = $this->normalize_codes( $this->preflight_service->get_failures() );
 			if ( in_array( 'bundled_stripe_billing_subscriptions_present', $failures, true ) ) {
 				if ( true === ( $claimed['network_cutover'] ?? false ) ) {
 					if ( ! $this->propagate_network_exclusion( $claimed['generation'], 'bundled_stripe_billing_subscriptions_present' ) ) {
@@ -983,7 +983,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$outcomes = array_merge( $outcomes, $this->disposition_operational_queue() );
 
 			$this->preflight_service->invalidate_current_blog_memoization();
-			$remaining_failures = $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() );
+			$remaining_failures = $this->normalize_codes( $this->preflight_service->get_failures() );
 			if ( in_array( 'bundled_stripe_billing_subscriptions_present', $remaining_failures, true ) ) {
 				if ( true === ( $claimed['network_cutover'] ?? false ) ) {
 					if ( ! $this->propagate_network_exclusion( $claimed['generation'], 'bundled_stripe_billing_subscriptions_present' ) ) {
@@ -1451,7 +1451,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			}
 			try {
 				$this->preflight_service->invalidate_current_blog_memoization();
-				if ( in_array( 'bundled_stripe_billing_subscriptions_present', $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() ), true ) ) {
+				if ( in_array( 'bundled_stripe_billing_subscriptions_present', $this->normalize_codes( $this->preflight_service->get_failures() ), true ) ) {
 					return true;
 				}
 			} catch ( \Throwable $error ) {
@@ -2415,7 +2415,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		}
 
 		try {
-			$failures = $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() );
+			$failures = $this->normalize_codes( $this->preflight_service->get_failures() );
 		} catch ( \Throwable $error ) {
 			return false;
 		}
@@ -2453,7 +2453,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		try {
 			$present = $network
 				? $this->network_has_stripe_billing_failure()
-				: in_array( 'bundled_stripe_billing_subscriptions_present', $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() ), true );
+				: in_array( 'bundled_stripe_billing_subscriptions_present', $this->normalize_codes( $this->preflight_service->get_failures() ), true );
 		} catch ( \Throwable $error ) {
 			$this->log_error( 'WooPayments cutover could not classify the admin notice.', array( 'error' => $error->getMessage() ) );
 			return null;
@@ -2517,7 +2517,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			}
 			try {
 				$this->preflight_service->invalidate_current_blog_memoization();
-				$failures = $this->normalize_codes( $this->preflight_service->get_reconciliation_failures() );
+				$failures = $this->normalize_codes( $this->preflight_service->get_failures() );
 				if ( in_array( 'bundled_stripe_billing_subscriptions_present', $failures, true ) ) {
 					return true;
 				}

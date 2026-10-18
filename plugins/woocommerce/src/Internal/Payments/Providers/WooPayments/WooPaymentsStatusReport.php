@@ -76,11 +76,11 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	private ?WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service = null;
 
 	/**
-	 * Cutover controller.
+	 * Cutover preflight service.
 	 *
-	 * @var WooPaymentsCutoverController|null
+	 * @var WooPaymentsCutoverPreflightService|null
 	 */
-	private ?WooPaymentsCutoverController $cutover_controller = null;
+	private ?WooPaymentsCutoverPreflightService $cutover_preflight_service = null;
 
 	/**
 	 * Rate provider registry factory.
@@ -194,7 +194,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 */
 	public function run_cutover_site_health_test(): array {
 		$runtime_owner = $this->arbiter->get_runtime_owner();
-		$failures      = $this->get_cutover_controller()->get_preflight_failures();
+		$failures      = $this->get_cutover_preflight_service()->get_failures();
 		$is_ready      = array() === $failures;
 
 		if ( $is_ready ) {
@@ -885,7 +885,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 */
 	private function get_preflight_failures(): array {
 		try {
-			return $this->sanitize_string_list( $this->get_cutover_controller()->get_preflight_failures() );
+			return $this->sanitize_string_list( $this->get_cutover_preflight_service()->get_failures() );
 		} catch ( Throwable $exception ) {
 			return array( 'preflight_unavailable' );
 		}
@@ -1274,16 +1274,16 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the cutover controller, resolving it on first use.
+	 * Get the cutover preflight service, resolving it on first use.
 	 *
-	 * @return WooPaymentsCutoverController
+	 * @return WooPaymentsCutoverPreflightService
 	 */
-	private function get_cutover_controller(): WooPaymentsCutoverController {
-		if ( null === $this->cutover_controller ) {
-			$this->cutover_controller = wc_get_container()->get( WooPaymentsCutoverController::class );
+	private function get_cutover_preflight_service(): WooPaymentsCutoverPreflightService {
+		if ( null === $this->cutover_preflight_service ) {
+			$this->cutover_preflight_service = wc_get_container()->get( WooPaymentsCutoverPreflightService::class );
 		}
 
-		return $this->cutover_controller;
+		return $this->cutover_preflight_service;
 	}
 
 	/**

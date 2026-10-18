@@ -54,7 +54,7 @@ const CUTOVER_STATUS_PHP = String.raw`
 require_once ABSPATH . 'wp-admin/includes/plugin.php';
 $plugin = 'woocommerce-payments/woocommerce-payments.php';
 $headers = get_plugin_data( WP_PLUGIN_DIR . '/' . $plugin, false, false );
-$controller = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController::class );
+$preflight = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService::class );
 $migrator_id = (int) getenv( 'E2E_MIGRATOR_ACTION_ID' );
 $action = $migrator_id > 0 ? ActionScheduler::store()->fetch_action( $migrator_id ) : null;
 return array(
@@ -62,7 +62,7 @@ return array(
 	'plugin_active' => is_plugin_active( $plugin ),
 	'network_active' => is_plugin_active_for_network( $plugin ),
 	'plugin_version' => $headers['Version'],
-	'preflight_failures' => $controller->get_preflight_failures(),
+	'preflight_failures' => $preflight->get_failures(),
 	'migrator_action' => $action ? array( 'status' => ActionScheduler::store()->get_status( $migrator_id ) ) : null,
 	'native_state' => get_option( 'woocommerce_woopayments_setup_tier', null ),
 );

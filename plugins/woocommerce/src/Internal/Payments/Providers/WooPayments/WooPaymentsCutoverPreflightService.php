@@ -145,11 +145,11 @@ class WooPaymentsCutoverPreflightService {
 	}
 
 	/**
-	 * Get every condition the reconciliation job must disposition.
+	 * Get the conditions that block the cutover on this site.
 	 *
 	 * @return string[] Failure codes.
 	 */
-	public function get_reconciliation_failures(): array {
+	public function get_failures(): array {
 		$blog_id = get_current_blog_id();
 		if ( ! array_key_exists( $blog_id, $this->reconciliation_memo ) ) {
 			$this->reconciliation_memo[ $blog_id ] = $this->evaluate_failures();

@@ -41,6 +41,13 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	private WooPaymentsCutoverController $sut;
 
 	/**
+	 * The preflight service the controller under test reads.
+	 *
+	 * @var WooPaymentsCutoverPreflightService
+	 */
+	private WooPaymentsCutoverPreflightService $preflight_service;
+
+	/**
 	 * Native WooPayments provider mock.
 	 *
 	 * @var WooPaymentsProvider&\PHPUnit\Framework\MockObject\MockObject
@@ -322,7 +329,8 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 				}
 			);
 
-		$this->sut = $this->create_cutover_controller();
+		$this->preflight_service = $this->create_preflight_service();
+		$this->sut               = $this->create_cutover_controller( null, null, $this->preflight_service );
 	}
 
 	/**
@@ -1319,7 +1327,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_false' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
-		$failures = $this->sut->get_preflight_failures();
+		$failures = $this->preflight_service->get_failures();
 
 		$this->assertSame( array( 'builtin_runtime_disabled' ), $failures, 'Disabled native runtime should be the only preflight result.' );
 		$this->assertSame( 0, $this->native_provider_readiness_calls, 'Native transport readiness should not be checked while native runtime is disabled.' );
@@ -1334,8 +1342,8 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->native_provider_ready = true;
 
-		$first_failures  = $this->sut->get_preflight_failures();
-		$second_failures = $this->sut->get_preflight_failures();
+		$first_failures  = $this->preflight_service->get_failures();
+		$second_failures = $this->preflight_service->get_failures();
 
 		$this->assertSame( $first_failures, $second_failures, 'Repeated preflight checks in one request should reuse the first result.' );
 		$this->assertSame( 1, $this->native_provider_readiness_calls, 'Native transport readiness should be checked once per request.' );
@@ -1352,7 +1360,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_ready_cutover();
 		$this->native_provider_ready = false;
 
-		$this->assertContains( 'builtin_transport_unavailable', $this->sut->get_preflight_failures() );
+		$this->assertContains( 'builtin_transport_unavailable', $this->preflight_service->get_failures() );
 	}
 
 	/**
@@ -1364,7 +1372,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_ready_cutover();
 		$this->platform_connection_failures = array( 'wpcom_connection_owner_user_token_unavailable' );
 
-		$this->assertContains( 'wpcom_connection_owner_user_token_unavailable', $this->sut->get_preflight_failures() );
+		$this->assertContains( 'wpcom_connection_owner_user_token_unavailable', $this->preflight_service->get_failures() );
 	}
 
 	/**
@@ -1376,7 +1384,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_ready_cutover();
 		$this->enable_multi_currency_with_rate_type( 'automatic' );
 
-		$this->assertContains( 'multi_currency_rates_unavailable', $this->sut->get_preflight_failures() );
+		$this->assertContains( 'multi_currency_rates_unavailable', $this->preflight_service->get_failures() );
 	}
 
 	/**
@@ -1388,7 +1396,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_ready_cutover();
 		$this->enable_multi_currency_with_rate_type( 'manual' );
 
-		$this->assertNotContains( 'multi_currency_rates_unavailable', $this->sut->get_preflight_failures() );
+		$this->assertNotContains( 'multi_currency_rates_unavailable', $this->preflight_service->get_failures() );
 	}
 
 	/**
@@ -1401,7 +1409,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_multi_currency_with_rate_type( 'automatic' );
 		$this->enable_available_native_rate_transport();
 
-		$this->assertNotContains( 'multi_currency_rates_unavailable', $this->sut->get_preflight_failures() );
+		$this->assertNotContains( 'multi_currency_rates_unavailable', $this->preflight_service->get_failures() );
 	}
 
 	/**
@@ -1415,7 +1423,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_ready_cutover();
 		update_option( 'woocommerce_woocommerce_payments_version', $version );
 
-		$this->assertContains( 'woopayments_plugin_version_unsupported', $this->sut->get_preflight_failures() );
+		$this->assertContains( 'woopayments_plugin_version_unsupported', $this->preflight_service->get_failures() );
 	}
 
 	/**
@@ -1446,7 +1454,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertIsInt( $action_id );
 		$this->assertGreaterThan( 0, $action_id );
-		$this->assertContains( 'operational_queue_hooks_unhandled', $this->sut->get_preflight_failures() );
+		$this->assertContains( 'operational_queue_hooks_unhandled', $this->preflight_service->get_failures() );
 	}
 
 	/**
@@ -1467,7 +1475,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertIsInt( $action_id );
 		$this->assertGreaterThan( 0, $action_id );
-		$this->assertNotContains( 'operational_queue_hooks_unhandled', $this->sut->get_preflight_failures() );
+		$this->assertNotContains( 'operational_queue_hooks_unhandled', $this->preflight_service->get_failures() );
 	}
 
 	/**
@@ -1506,7 +1514,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_ready_cutover();
 		$this->fee_remediation_schedulable = false;
 
-		$this->assertContains( 'financial_migrations_unavailable', $this->sut->get_preflight_failures() );
+		$this->assertContains( 'financial_migrations_unavailable', $this->preflight_service->get_failures() );
 	}
 
 	/**
@@ -1518,7 +1526,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->native_provider_ready = true;
 
-		$failures = $this->sut->get_preflight_failures();
+		$failures = $this->preflight_service->get_failures();
 
 		$this->assertNotContains( 'operational_queue_hooks_unhandled', $failures );
 	}
@@ -1532,7 +1540,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_ready_cutover();
 		$this->create_legacy_stripe_billing_subscription( 'pending' );
 
-		$this->assertContains( 'bundled_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
+		$this->assertContains( 'bundled_stripe_billing_subscriptions_present', $this->preflight_service->get_failures() );
 	}
 
 	/**
@@ -1544,7 +1552,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_ready_cutover();
 		$this->create_legacy_stripe_billing_subscription( 'cancelled' );
 
-		$this->assertContains( 'bundled_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
+		$this->assertContains( 'bundled_stripe_billing_subscriptions_present', $this->preflight_service->get_failures() );
 	}
 
 	/**
@@ -1557,7 +1565,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->create_legacy_stripe_billing_subscription( 'active', '_migrated_wcpay_subscription_id' );
 		$this->create_legacy_stripe_billing_subscription( 'active', '_wcpay_subscription_migrated_during' );
 
-		$this->assertNotContains( 'bundled_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
+		$this->assertNotContains( 'bundled_stripe_billing_subscriptions_present', $this->preflight_service->get_failures() );
 	}
 
 	/**
@@ -1570,7 +1578,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		update_option( '_wcpay_feature_subscriptions', '1' );
 
 		try {
-			$this->assertContains( 'bundled_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
+			$this->assertContains( 'bundled_stripe_billing_subscriptions_present', $this->preflight_service->get_failures() );
 		} finally {
 			delete_option( '_wcpay_feature_subscriptions' );
 		}
@@ -1588,7 +1596,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_migrated_wcpay_billing_invoice_id', 'in_1UM1VrBzWlxcwgpPgrIwNSlu' );
 		$order->save();
 
-		$this->assertNotContains( 'bundled_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
+		$this->assertNotContains( 'bundled_stripe_billing_subscriptions_present', $this->preflight_service->get_failures() );
 	}
 
 	/**
@@ -1600,7 +1608,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->enable_ready_cutover();
 		$this->create_legacy_stripe_billing_hpos_marker( '_wcpay_subscription_id' );
 
-		$this->assertContains( 'bundled_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
+		$this->assertContains( 'bundled_stripe_billing_subscriptions_present', $this->preflight_service->get_failures() );
 	}
 
 	/**
@@ -1611,24 +1619,20 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_current_user_caps( true );
 		$this->enable_ready_cutover();
 
-		$this->assertNotContains( 'bundled_stripe_billing_subscriptions_present', $this->sut->get_preflight_failures() );
+		$this->assertNotContains( 'bundled_stripe_billing_subscriptions_present', $this->preflight_service->get_failures() );
 	}
 
 	/**
-	 * Create a cutover controller wired to this test's dependencies.
+	 * Create a preflight service wired to this test's dependencies.
 	 *
-	 * @param WooPaymentsCutoverReconciliationJob|null $job                         Optional reconciliation job.
-	 * @param bool|null                                $native_eligible             Optional platform eligibility answer.
-	 * @return WooPaymentsCutoverController
+	 * @return WooPaymentsCutoverPreflightService
 	 */
-	private function create_cutover_controller( ?WooPaymentsCutoverReconciliationJob $job = null, ?bool $native_eligible = null ): WooPaymentsCutoverController {
-		$arbiter           = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
-		$legacy_proxy      = wc_get_container()->get( LegacyProxy::class );
+	private function create_preflight_service(): WooPaymentsCutoverPreflightService {
 		$preflight_service = new WooPaymentsCutoverPreflightService();
 		$this->init_preflight_service(
 			$preflight_service,
-			$arbiter,
-			$legacy_proxy,
+			wc_get_container()->get( WooPaymentsRuntimeArbiter::class ),
+			wc_get_container()->get( LegacyProxy::class ),
 			$this->provider,
 			new WooPaymentsLegacySubscriptionsGuard(),
 			$this->fee_remediation_service,
@@ -1636,6 +1640,23 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			$this->native_rate_account,
 			$this->native_rate_api_client
 		);
+
+		return $preflight_service;
+	}
+
+	/**
+	 * Create a cutover controller wired to this test's dependencies.
+	 *
+	 * @param WooPaymentsCutoverReconciliationJob|null $job               Optional reconciliation job.
+	 * @param bool|null                                $native_eligible   Optional platform eligibility answer.
+	 * @param WooPaymentsCutoverPreflightService|null  $preflight_service Optional preflight service; a new one by default.
+	 * @return WooPaymentsCutoverController
+	 */
+	private function create_cutover_controller( ?WooPaymentsCutoverReconciliationJob $job = null, ?bool $native_eligible = null, ?WooPaymentsCutoverPreflightService $preflight_service = null ): WooPaymentsCutoverController {
+		$arbiter           = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+		$legacy_proxy      = wc_get_container()->get( LegacyProxy::class );
+		$preflight_service = $preflight_service ?? $this->create_preflight_service();
+
 		$job             = $job ?? new class() extends WooPaymentsCutoverReconciliationJob {
 			/** Return no durable state after notice classification. */
 			public function classify_for_admin_notice(): ?array {

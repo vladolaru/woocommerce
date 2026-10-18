@@ -266,7 +266,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return array();
 			}
 
@@ -690,7 +690,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return $this->failures;
 			}
 
@@ -1492,7 +1492,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return array();
 			}
 
@@ -1718,7 +1718,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return array();
 			}
 
@@ -1816,7 +1816,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			 *
 			 * @return string[]
 			 */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				++$this->reads;
 				return 1 === $this->reads ? array() : array( 'bundled_stripe_billing_subscriptions_present' );
 			}
@@ -1914,7 +1914,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return array();
 			}
 
@@ -1968,7 +1968,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				if ( 'resolver' === $this->failure_step ) {
 					throw new \RuntimeException( 'Expected resolver failure.' );
 				}
@@ -2097,7 +2097,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public int $scans = 0;
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				++$this->scans;
 				return array();
 			}
@@ -2126,7 +2126,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public int $scans = 0;
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				++$this->scans;
 				return array( 'bundled_stripe_billing_subscriptions_present' );
 			}
@@ -2201,7 +2201,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return $this->failures;
 			}
 
@@ -2229,7 +2229,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return $this->failures;
 			}
 
@@ -2344,7 +2344,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** Resolve a marker after interleaving a merchant enqueue. */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				if ( $this->job instanceof WooPaymentsCutoverReconciliationJob ) {
 					$job       = $this->job;
 					$this->job = null;
@@ -2417,7 +2417,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public bool $network_active = false;
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return array();
 			}
 
@@ -3238,7 +3238,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return $this->failures_by_site[ get_current_blog_id() ] ?? array();
 			}
 
@@ -3345,7 +3345,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return array();
 			}
 
@@ -3462,7 +3462,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$second_site_id = $this->create_cutover_multisite_site( 'cutover-busy-peer.example.org' );
 		$preflight      = new class() extends WooPaymentsCutoverPreflightService {
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return array();
 			}
 
@@ -3547,7 +3547,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return $this->failures_by_site[ get_current_blog_id() ] ?? array();
 			}
 
@@ -3639,7 +3639,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				if ( get_current_blog_id() === $this->unreadable_site_id ) {
 					throw new \RuntimeException( 'Expected paused-site check failure.' );
 				}
@@ -3806,7 +3806,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				++$this->preflight_runs;
 				return array();
 			}
@@ -3875,7 +3875,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$second_site_id = $this->create_cutover_multisite_site( 'cutover-scheduled-peer.example.org' );
 		$preflight      = new class() extends WooPaymentsCutoverPreflightService {
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return array();
 			}
 
@@ -3973,7 +3973,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return array();
 			}
 
@@ -4088,7 +4088,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		$preflight     = new class() extends WooPaymentsCutoverPreflightService {
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return array();
 			}
 
@@ -4182,7 +4182,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return $this->failures_by_site[ get_current_blog_id() ] ?? array();
 			}
 
@@ -4267,7 +4267,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return $this->failures_by_site[ get_current_blog_id() ] ?? array();
 			}
 
@@ -4394,7 +4394,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return $this->failures_by_site[ get_current_blog_id() ] ?? array();
 			}
 
@@ -4474,7 +4474,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return array();
 			}
 
@@ -4579,7 +4579,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return $this->failures_by_site[ get_current_blog_id() ] ?? array();
 			}
 
@@ -4988,7 +4988,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public int $deactivation_calls = 0;
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return $this->version_unsupported ? array( 'woopayments_plugin_version_unsupported' ) : array();
 			}
 
@@ -6063,7 +6063,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	private function create_plugin_deactivating_preflight(): WooPaymentsCutoverPreflightService {
 		return new class() extends WooPaymentsCutoverPreflightService {
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return array();
 			}
 
@@ -6106,8 +6106,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			);
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
-				return array_values( array_diff( parent::get_reconciliation_failures(), self::ENVIRONMENT_FAILURES ) );
+			public function get_failures(): array {
+				return array_values( array_diff( parent::get_failures(), self::ENVIRONMENT_FAILURES ) );
 			}
 
 			/** @return array<int,array{action_id:int,hook:string,group:string}> */
@@ -6325,7 +6325,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return string[] */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				return $this->failures;
 			}
 
@@ -6400,7 +6400,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			 *
 			 * @return string[]
 			 */
-			public function get_reconciliation_failures(): array {
+			public function get_failures(): array {
 				if ( $this->should_throw ) {
 					throw new \RuntimeException( 'Expected resolver failure.' );
 				}

@@ -430,15 +430,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get cutover preflight failure codes.
-	 *
-	 * @return array<int,string> Failure codes.
-	 */
-	public function get_preflight_failures(): array {
-		return $this->preflight_service->get_reconciliation_failures();
-	}
-
-	/**
 	 * Auto-deactivate WooPayments when mandatory cutover is enabled and safe.
 	 */
 	private function maybe_auto_deactivate_plugin(): void {

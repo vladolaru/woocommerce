@@ -14,7 +14,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusReport;
@@ -85,7 +84,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$sut = new WooPaymentsStatusReport();
 		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsSetupTier::class ) );
 
-		foreach ( array( 'account_service', 'frontend_styles_service', 'fee_remediation_service', 'cutover_controller', 'provider_registry_factory', 'cutover_state_store' ) as $property ) {
+		foreach ( array( 'account_service', 'frontend_styles_service', 'fee_remediation_service', 'cutover_preflight_service', 'provider_registry_factory', 'cutover_state_store' ) as $property ) {
 			$reflection = new \ReflectionProperty( WooPaymentsStatusReport::class, $property );
 			$reflection->setAccessible( true );
 			$this->assertNull( $reflection->getValue( $sut ), $property . ' must be resolved when a diagnostic runs, not when the report is initialized.' );
@@ -1062,12 +1061,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 * Reset request-local cutover state between PHPUnit test methods.
 	 */
 	private function reset_cutover_preflight_memo(): void {
-		$controller = wc_get_container()->get( WooPaymentsCutoverController::class );
-		$property   = new \ReflectionProperty( $controller, 'preflight_service' );
-		$property->setAccessible( true );
-		$preflight_service = $property->getValue( $controller );
-		$this->assertInstanceOf( WooPaymentsCutoverPreflightService::class, $preflight_service );
-		$preflight_service->invalidate_current_blog_memoization();
+		wc_get_container()->get( WooPaymentsCutoverPreflightService::class )->invalidate_current_blog_memoization();
 	}
 
 	/**
