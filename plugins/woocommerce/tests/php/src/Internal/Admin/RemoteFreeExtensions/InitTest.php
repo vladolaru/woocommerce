@@ -422,7 +422,9 @@ class InitTest extends WC_Unit_Test_Case {
 		new RemoteFreeExtensions();
 		$no_data_sources = static fn() => array();
 		add_filter( DataSourcePoller::FILTER_NAME, $no_data_sources );
-		// Remote specs whose only plugin is hidden on this store, so the defaults are served and cached.
+		// Remote specs whose only plugin is hidden on this store, so the defaults are served and cached. The shape is a
+		// reduced bundle from the woocommerce.com feed (wp-json/wccom/obw-free-extensions/4.0/extensions.json, read by
+		// RemoteFreeExtensionsDataSourcePoller); the plugin and its hidden state are synthetic.
 		set_transient(
 			$this->get_specs_transient_name(),
 			array(

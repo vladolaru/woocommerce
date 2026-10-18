@@ -324,7 +324,9 @@ class PaymentGatewaySuggestionsTest extends WC_REST_Unit_Test_Case {
 			return $specs;
 		};
 		add_filter( 'woocommerce_admin_payment_gateway_suggestion_specs', $show_woopayments );
-		// Remote specs whose only suggestion is hidden, so the defaults are served and cached.
+		// Remote specs whose only suggestion is hidden, so the defaults are served and cached. The shape is a reduced
+		// spec from the woocommerce.com feed (wp-json/wccom/payment-gateway-suggestions/2.0/suggestions.json, read by
+		// PaymentGatewaySuggestionsDataSourcePoller); the gateway id and its hidden state are synthetic.
 		set_transient(
 			'woocommerce_admin_payment_gateway_suggestions_specs',
 			array(
