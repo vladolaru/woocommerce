@@ -17,7 +17,6 @@
 	"config": {
 		"WP_SITEURL": "http://transition.localhost:8589",
 		"WP_HOME": "http://transition.localhost:8589",
-		"E2E_WOOPAYMENTS_NATIVE": true,
 		"WP_DEBUG_DISPLAY": false,
 		"JETPACK_AUTOLOAD_DEV": true,
 		"WP_MEMORY_LIMIT": "512M",

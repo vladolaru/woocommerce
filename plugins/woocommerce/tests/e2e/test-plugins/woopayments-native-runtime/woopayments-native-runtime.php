@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: WooPayments native E2E runtime
- * Description: Fail-closed native WooPayments activation and authenticated diagnostics for E2E environments.
+ * Description: Authenticated diagnostics for the built-in WooPayments E2E environments.
  *
  * @package woopayments-native-runtime
  */
@@ -11,23 +11,9 @@ declare( strict_types = 1 );
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Installs the early native-runtime filter and read-only E2E diagnostics.
+ * Installs the read-only E2E diagnostics.
  */
 final class WooCommerce_WooPayments_Native_E2E_Runtime {
-
-	/**
-	 * Native runtime enablement filter.
-	 *
-	 * @var string
-	 */
-	private const NATIVE_ENABLED_FILTER = 'woocommerce_woopayments_builtin_enabled';
-
-	/**
-	 * Host-controlled native runtime kill-switch option.
-	 *
-	 * @var string
-	 */
-	private const KILL_SWITCH_OPTION = 'woocommerce_woopayments_builtin_kill_switch';
 
 	/**
 	 * Diagnostic route namespace.
@@ -74,10 +60,9 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 	 *
 	 * This file is mapped as an mu-plugin by the top-level `mappings` block in
 	 * `.wp-env.json`, which applies to every wp-env environment, so it also
-	 * loads inside the PHPUnit container. There it would force native payments
-	 * ownership on for every test as an invisible ambient precondition — the
-	 * opposite of the opt-in contract the unit tests are written against, where
-	 * a test needing the native runtime adds the enablement filter itself.
+	 * loads inside the PHPUnit container. There it would register its
+	 * diagnostics routes for every test; the tests that cover them register
+	 * them themselves.
 	 *
 	 * @return bool True when PHPUnit is driving this request.
 	 */
@@ -89,46 +74,10 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 	}
 
 	/**
-	 * Install the native-runtime filter and the read-only diagnostics route.
+	 * Install the read-only diagnostics route.
 	 */
 	public function register(): void {
-		add_filter( self::NATIVE_ENABLED_FILTER, array( $this, 'handle_native_enabled' ), 0 );
 		add_action( 'rest_api_init', array( $this, 'handle_rest_api_init' ) );
-	}
-
-	/**
-	 * Enable native ownership only for the exact E2E opt-in and an inactive kill switch.
-	 *
-	 * @internal
-	 *
-	 * @param bool $enabled Existing runtime enablement.
-	 * @return bool
-	 */
-	public function handle_native_enabled( bool $enabled ): bool {
-		if ( true !== self::get_e2e_activation_constant() ) {
-			return $enabled;
-		}
-
-		return ! wc_string_to_bool( get_option( self::KILL_SWITCH_OPTION, false ) );
-	}
-
-	/**
-	 * Read the exact E2E activation constant.
-	 *
-	 * Resolved through Jetpack's constants layer when it is loaded, so a test can
-	 * simulate the constant being absent. That matters because wp-env defines
-	 * this constant for the whole environment — including the PHPUnit container —
-	 * which would otherwise make the absent case impossible to exercise on a
-	 * configured machine while still passing on CI.
-	 *
-	 * @return mixed The constant value, or null when it is not set.
-	 */
-	private static function get_e2e_activation_constant() {
-		if ( class_exists( '\Automattic\Jetpack\Constants' ) ) {
-			return \Automattic\Jetpack\Constants::get_constant( 'E2E_WOOPAYMENTS_NATIVE' );
-		}
-
-		return defined( 'E2E_WOOPAYMENTS_NATIVE' ) ? constant( 'E2E_WOOPAYMENTS_NATIVE' ) : null;
 	}
 
 	/**
@@ -196,7 +145,6 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 				'wpcom_blog_id'           => $this->get_wpcom_blog_id(),
 				'runtime_owner'           => (string) ( $status_data['runtime_owner'] ?? 'none' ),
 				'builtin_enabled'         => (bool) ( $status_data['builtin_enabled'] ?? false ),
-				'kill_switch'             => wc_string_to_bool( get_option( self::KILL_SWITCH_OPTION, false ) ),
 				'account_id'              => (string) ( $status_data['account_id'] ?? '' ),
 				'account_connected'       => (bool) ( $status_data['account_connected'] ?? false ),
 				'gateway_enabled'         => (bool) ( $status_data['gateway_enabled'] ?? false ),

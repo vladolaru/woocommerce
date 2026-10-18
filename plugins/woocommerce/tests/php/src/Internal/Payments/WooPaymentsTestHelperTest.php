@@ -20,12 +20,11 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Clear what a case leaves for the rest of the process: the routes it registered on the global REST server, the
-	 * services resolved while the built-in WooPayments was forced on, and the opt-in constant overrides.
+	 * services resolved while the built-in WooPayments was on, and the opt-in constant overrides.
 	 */
 	public function tearDown(): void {
 		$GLOBALS['wp_rest_server'] = null;
 		wc_get_container()->reset_all_resolved();
-		Constants::set_constant( 'E2E_WOOPAYMENTS_NATIVE', null );
 		Constants::set_constant( 'E2E_WOOPAYMENTS_TRANSITION', null );
 		parent::tearDown();
 	}

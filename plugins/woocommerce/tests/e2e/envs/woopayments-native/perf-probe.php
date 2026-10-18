@@ -279,7 +279,6 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 		$this->trace_state = $this->get_trace_state();
 
 		add_filter( 'woocommerce_load_payment_providers', array( $this, 'control_bootstrap' ) );
-		add_filter( 'woocommerce_woopayments_builtin_enabled', array( $this, 'enable_native_runtime' ) );
 		add_filter( 'pre_http_request', array( $this, 'count_http_request' ), PHP_INT_MIN );
 		if ( '' !== $this->trace_state ) {
 			add_filter( 'query', array( $this, 'handle_query' ), 9999 );
@@ -365,17 +364,6 @@ final class WooCommerce_Native_Payments_Perf_Probe {
 		unset( $_enabled );
 		++$this->bootstrap_calls;
 		return 'baseline_noop' !== $this->get_control_value( 'state' );
-	}
-
-	/**
-	 * Enable the current native runtime regardless of the future state option.
-	 *
-	 * @param bool $_enabled Whether native payments are enabled.
-	 * @return bool True.
-	 */
-	public function enable_native_runtime( $_enabled ): bool {
-		unset( $_enabled );
-		return true;
 	}
 
 	/**

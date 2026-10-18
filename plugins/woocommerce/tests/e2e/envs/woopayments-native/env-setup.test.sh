@@ -158,7 +158,7 @@ fi
 if grep -Fq "$NATIVE_STORE" "$CLIENT_COMMAND_LOG"; then
 	fail 'Client readiness must not probe the native store.'
 fi
-if grep -Eq 'wc woopayments status|/wc-native-payments-e2e/v1/status|config (get|set|delete) E2E_WOOPAYMENTS_NATIVE' "$CLIENT_COMMAND_LOG"; then
+if grep -Eq 'wc woopayments status|/wc-native-payments-e2e/v1/status|option (add|update|delete) woocommerce_feature_woopayments_enabled' "$CLIENT_COMMAND_LOG"; then
 	fail 'Client readiness must not invoke native commands.'
 fi
 if grep -F "$CLIENT_STORE	" "$CLIENT_COMMAND_LOG" | grep -Eq 'WooPaymentsAccountSessionRestController|register_routes|account_routes_callback|has_action\( "rest_api_init"|has_filter\( "woocommerce_rest_api_get_rest_namespaces"'; then
@@ -254,8 +254,8 @@ fi
 if ! grep -F "$NATIVE_STORE	" "$NATIVE_COMMAND_LOG" | grep -Fq '$account_session_rest_controller = wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsAccountSessionRestController::class ); $account_routes_callback = array( $account_session_rest_controller, "handle_woocommerce_rest_api_get_rest_namespaces" ); $account_session_rest_controller->register(); if ( false === has_filter( "woocommerce_rest_api_get_rest_namespaces", $account_routes_callback ) ) { throw new RuntimeException( "WooPayments native account session routes were not registered." ); } $account_session_rest_controller->register_routes(); $request = new WP_REST_Request( "GET", "/wc/v3/payments/accounts" );'; then
 	fail 'Native readiness must prove and register the account session route before dispatch.'
 fi
-if grep -Eq 'config (get|set|delete) E2E_WOOPAYMENTS_NATIVE' "$NATIVE_COMMAND_LOG"; then
-	fail 'Native readiness must not mutate the native runtime constant.'
+if grep -Eq 'option (add|update|delete) woocommerce_feature_woopayments_enabled' "$NATIVE_COMMAND_LOG"; then
+	fail 'Native readiness must not change the WooPayments feature option.'
 fi
 jq -e '
 	.runtime_owner == "builtin" and
@@ -311,8 +311,8 @@ assert_stderr_contains 'theme' 'WooPayments native store has no renderable activ
 expect_readiness_failure 'native' 'disabled' \
 	'A disabled native runtime must fail readiness without mutation.' \
 	E2E_FAKE_NATIVE_DISABLED=1
-if grep -Eq 'config (set|delete) E2E_WOOPAYMENTS_NATIVE' "$TEST_ROOT/disabled-commands.log"; then
-	fail 'Readiness must not set E2E_WOOPAYMENTS_NATIVE.'
+if grep -Eq 'option (add|update|delete) woocommerce_feature_woopayments_enabled' "$TEST_ROOT/disabled-commands.log"; then
+	fail 'Readiness must not turn the WooPayments feature on.'
 fi
 assert_stderr_contains 'disabled' 'runtime_owner=builtin and builtin_enabled=true'
 

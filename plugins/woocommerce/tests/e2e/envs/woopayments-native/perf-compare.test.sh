@@ -309,7 +309,6 @@ function add_action( $hook ) {
 require $argv[1];
 $expected = array(
 	"filter:woocommerce_load_payment_providers",
-	"filter:woocommerce_woopayments_builtin_enabled",
 	"filter:pre_http_request",
 	"action:plugins_loaded",
 	"action:wp",

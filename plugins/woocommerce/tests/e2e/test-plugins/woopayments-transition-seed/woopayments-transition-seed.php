@@ -121,6 +121,8 @@ final class WooPayments_Transition_Seed_CLI {
 			'upe_enabled_payment_method_ids' => array( 'card' ),
 		);
 		update_option( 'woocommerce_woocommerce_payments_settings', $settings );
+		// The switch to the built-in WooPayments is offered only while its feature is on.
+		update_option( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$account = $donor['account_data'];
 		if ( ! is_array( $account ) || empty( $account ) || ( $account['account_id'] ?? null ) !== $donor['account_id'] || false !== ( $account['is_live'] ?? null ) ) {
 			WP_CLI::error( 'The donor account payload is missing or is not the expected non-live account.' );

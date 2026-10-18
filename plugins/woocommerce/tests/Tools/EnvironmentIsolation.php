@@ -10,6 +10,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Testing\Tools;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 
 /**
  * Restores a production-shaped baseline for the PHPUnit run.
@@ -52,36 +53,14 @@ final class EnvironmentIsolation {
 	);
 
 	/**
-	 * Constants that must appear absent to a test run. Cleared rather than
-	 * pinned because their meaning is "this environment is an E2E site", which
-	 * is never true of a PHPUnit run.
+	 * Options a development store may have changed, with the install value a test starts from. A test that needs another
+	 * value writes it itself.
 	 *
-	 * @var string[]
+	 * @var array<string,string>
 	 */
-	private const CLEARED_CONSTANTS = array(
-		// Activates the native WooPayments runtime for the served E2E store.
-		'E2E_WOOPAYMENTS_NATIVE',
-	);
-
-	/**
-	 * Hooks that environment-injected mu-plugins register, which would
-	 * otherwise silently decide behaviour for every test.
-	 *
-	 * @var string[]
-	 */
-	private const CLEARED_HOOKS = array(
-		// Decides whether core-native payments own the site. Tests that want
-		// native ownership add this filter themselves.
-		'woocommerce_woopayments_builtin_enabled',
-	);
-
-	/**
-	 * Options seeded by the test installation that must appear absent unless a test opts in.
-	 *
-	 * @var string[]
-	 */
-	private const CLEARED_OPTIONS = array(
-		'woocommerce_woopayments_builtin_enabled',
+	private const RESTORED_OPTIONS = array(
+		// The WooPayments feature turns the built-in WooPayments on; the program's stores keep it on.
+		WooPaymentsFeatureController::FEATURE_ENABLE_OPTION => 'no',
 	);
 
 	/**
@@ -112,16 +91,8 @@ final class EnvironmentIsolation {
 			Constants::set_constant( $name, $value );
 		}
 
-		foreach ( self::CLEARED_CONSTANTS as $name ) {
-			Constants::set_constant( $name, null );
-		}
-
-		foreach ( self::CLEARED_HOOKS as $hook ) {
-			remove_all_filters( $hook );
-		}
-
-		foreach ( self::CLEARED_OPTIONS as $option ) {
-			delete_option( $option );
+		foreach ( self::RESTORED_OPTIONS as $option => $value ) {
+			update_option( $option, $value );
 		}
 	}
 
@@ -178,14 +149,12 @@ final class EnvironmentIsolation {
 	 * Exposed so a guard test can assert the baseline actually held, rather
 	 * than trusting that it was applied.
 	 *
-	 * @return array{pinned_constants:array<string,mixed>,cleared_constants:string[],cleared_hooks:string[],cleared_options:string[]}
+	 * @return array{pinned_constants:array<string,mixed>,restored_options:array<string,string>}
 	 */
 	public static function get_expected_baseline(): array {
 		return array(
-			'pinned_constants'  => self::PINNED_CONSTANTS,
-			'cleared_constants' => self::CLEARED_CONSTANTS,
-			'cleared_hooks'     => self::CLEARED_HOOKS,
-			'cleared_options'   => self::CLEARED_OPTIONS,
+			'pinned_constants' => self::PINNED_CONSTANTS,
+			'restored_options' => self::RESTORED_OPTIONS,
 		);
 	}
 }

@@ -4,6 +4,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Testing\Tools\EnvironmentIsolation;
 use WC_Unit_Test_Case;
 
@@ -37,38 +39,11 @@ class EnvironmentIsolationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should observe E2E-only constants as absent.
+	 * @testdox Should start from the install value of options a development store may have changed.
 	 */
-	public function test_e2e_only_constants_are_absent(): void {
-		foreach ( EnvironmentIsolation::get_expected_baseline()['cleared_constants'] as $name ) {
-			$this->assertNull(
-				Constants::get_constant( $name ),
-				"The constant {$name} marks a served E2E site and must never be set during tests."
-			);
-		}
-	}
-
-	/**
-	 * @testdox Should start with no ambient listeners on environment-injected hooks.
-	 */
-	public function test_environment_injected_hooks_have_no_ambient_listeners(): void {
-		foreach ( EnvironmentIsolation::get_expected_baseline()['cleared_hooks'] as $hook ) {
-			$this->assertFalse(
-				has_filter( $hook ),
-				"The hook {$hook} must have no listeners a test did not add itself; an mu-plugin registered one."
-			);
-		}
-	}
-
-	/**
-	 * @testdox Should start with no options seeded by the test installation.
-	 */
-	public function test_test_installation_options_are_absent(): void {
-		foreach ( EnvironmentIsolation::get_expected_baseline()['cleared_options'] as $option ) {
-			$this->assertFalse(
-				get_option( $option, false ),
-				"The option {$option} must be absent unless a test opts in."
-			);
+	public function test_restored_options_hold_their_install_values(): void {
+		foreach ( EnvironmentIsolation::get_expected_baseline()['restored_options'] as $option => $expected ) {
+			$this->assertSame( $expected, get_option( $option ), "The option {$option} must start at its install value unless a test opts in." );
 		}
 	}
 
@@ -76,12 +51,8 @@ class EnvironmentIsolationTest extends WC_Unit_Test_Case {
 	 * @testdox Should leave native payments unowned unless a test asks for it.
 	 */
 	public function test_native_payments_is_unowned_by_default(): void {
-		// The end the isolation exists to protect: the concrete decision the
-		// leaked filter was silently making for every other test in this suite.
-		$this->assertFalse(
-			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Reading the runtime signal under test.
-			(bool) apply_filters( 'woocommerce_woopayments_builtin_enabled', false ),
-			'Native payments ownership must be opt-in per test, not an ambient property of the environment.'
-		);
+		// The end the isolation exists to protect: a store where the WooPayments feature is on must not make every test run under the built-in WooPayments.
+		$this->assertSame( 'no', get_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION ) );
+		$this->assertFalse( wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_enabled(), 'Native payments ownership must be opt-in per test, not an ambient property of the environment.' );
 	}
 }

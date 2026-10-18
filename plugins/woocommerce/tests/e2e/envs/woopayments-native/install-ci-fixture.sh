@@ -24,7 +24,7 @@ install_file "$source_dir/ci-provider-fixture-recorded.json" wp-content/mu-plugi
 install_file "$source_dir/stripe-messaging-adapter.js" wp-content/mu-plugins/stripe-messaging-adapter.js
 install_file "$source_dir/../../test-plugins/woopayments-native-runtime/woopayments-native-runtime.php" wp-content/mu-plugins/woopayments-native-runtime.php
 "${WP_ENV[@]}" wp eval "$INITIALIZE_FIXTURE_STATE_CODE"
-"${WP_ENV[@]}" wp config set E2E_WOOPAYMENTS_NATIVE true --raw
+"${WP_ENV[@]}" wp option update woocommerce_feature_woopayments_enabled yes
 "${WP_ENV[@]}" wp config set E2E_WOOPAYMENTS_NATIVE_FIXTURE true --raw
 "${WP_ENV[@]}" wp option delete e2e_woopayments_provider_fixture_request_log
 "${WP_ENV[@]}" wp option delete e2e_woopayments_provider_fixture_failure_log

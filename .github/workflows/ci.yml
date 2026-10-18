@@ -487,7 +487,6 @@ jobs:
       contents: read
     env:
       WCPAY_RUNTIME: 'native'
-      E2E_WOOPAYMENTS_NATIVE: 'true'
       E2E_WOOPAYMENTS_NATIVE_FIXTURE: 'true'
       E2E_WOOPAYMENTS_NATIVE_STORE_DIR: '${{ github.workspace }}/plugins/woocommerce'
       E2E_WOOPAYMENTS_NATIVE_STORE_URL: 'http://localhost:8086'
@@ -592,7 +591,6 @@ jobs:
         pin-set: [ 'oldest', 'latest' ]
     env:
       WCPAY_RUNTIME: 'native'
-      E2E_WOOPAYMENTS_NATIVE: 'true'
       E2E_WOOPAYMENTS_EXTENSION_COMPAT: 'true'
       E2E_WOOPAYMENTS_NATIVE_STORE_DIR: '${{ github.workspace }}/plugins/woocommerce'
       E2E_WOOPAYMENTS_WP_ENV_CONFIG: '.wp-env.e2e.json'

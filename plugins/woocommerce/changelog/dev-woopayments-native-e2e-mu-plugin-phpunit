@@ -1,4 +1,0 @@
-Significance: patch
-Type: dev
-
-Prevent the WooPayments native E2E runtime mu-plugin from forcing native payments ownership during PHPUnit runs.

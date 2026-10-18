@@ -25,7 +25,7 @@ readonly source_dir='wp-content/plugins/woocommerce/tests/e2e/test-plugins/woopa
 "${WP_ENV[@]}" mkdir -p wp-content/mu-plugins
 install_file "$source_dir/woopayments-native-runtime.php" wp-content/mu-plugins/woopayments-native-runtime.php
 "${WP_ENV[@]}" wp eval "$INITIALIZE_FIXTURE_STATE_CODE"
-"${WP_ENV[@]}" wp config set E2E_WOOPAYMENTS_NATIVE true --raw
+"${WP_ENV[@]}" wp option update woocommerce_feature_woopayments_enabled yes
 "${WP_ENV[@]}" wp config set E2E_WOOPAYMENTS_NATIVE_FIXTURE false --raw
 "${WP_ENV[@]}" wp plugin deactivate woocommerce
 "${WP_ENV[@]}" wp eval "$ABSENT_ACCOUNT_ASSERT_CODE"

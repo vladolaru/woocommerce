@@ -193,11 +193,12 @@ install_probe_and_reference() {
 prepare_state() {
 	local state="$1"
 	local native_state='disabled'
+	local feature='"yes"'
 	local account='{}'
 	local settings='{"enabled":"no","test_mode":"yes","platform_checkout":"no"}'
 	local control='{"state":"'"$state"'","reference_plugin_slug":"woocommerce-payments-reference/woocommerce-payments.php"}'
 	case "$state" in
-	baseline_noop|disabled) native_state='disabled' ;;
+	baseline_noop|disabled) native_state='disabled'; feature='"no"' ;;
 	available) native_state='available' ;;
 	connected) native_state='connected' ;;
 	active_native|active_plugin) native_state='active' ;;
@@ -209,7 +210,7 @@ prepare_state() {
 	fi
 	set_option_json 'e2e_woopayments_perf_probe_control' "$control" || return 1
 	set_option_json 'woocommerce_woopayments_setup_tier' '"'"$native_state"'"' || return 1
-	set_option_json 'woocommerce_woopayments_builtin_kill_switch' 'false' || return 1
+	set_option_json 'woocommerce_feature_woopayments_enabled' "$feature" || return 1
 	set_option_json '_wcpay_feature_customer_multi_currency' '"0"' || return 1
 	set_option_json 'woocommerce_feature_multi_currency_enabled' '"no"' || return 1
 	set_option_json 'wcpay_account_data' "$account" || return 1
