@@ -234,7 +234,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
 		$this->set_native_state( WooPaymentsSetupTier::AVAILABLE );
 		$this->assertTrue(
-			( new WooPaymentsCutoverStateStore() )->save_record(
+			( new WooPaymentsCutoverStateStore() )->create_record(
 				array(
 					'schema_version'         => 1,
 					'generation'             => 1,

@@ -75,7 +75,7 @@ class WooPaymentsCutoverStateStore {
 	}
 
 	/**
-	 * Persist an initial complete record as an autoloaded site option.
+	 * Create the site's record as an autoloaded option: insert it, or replace the absent marker; refuse any other record.
 	 *
 	 * @since 11.2.0
 	 *
@@ -83,7 +83,7 @@ class WooPaymentsCutoverStateStore {
 	 * @return bool True when the requested record is stored.
 	 * @throws InvalidArgumentException When the record does not match the current schema.
 	 */
-	public function save_record( array $record ): bool {
+	public function create_record( array $record ): bool {
 		if ( ! $this->is_valid_record( $record ) ) {
 			throw new InvalidArgumentException( 'Invalid WooPayments cutover state record.' );
 		}

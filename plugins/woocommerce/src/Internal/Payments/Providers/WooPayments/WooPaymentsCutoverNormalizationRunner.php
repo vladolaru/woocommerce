@@ -172,19 +172,19 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 	/**
 	 * Canonical-to-split gateway settings synchronizer.
 	 *
-	 * @var WooPaymentsGatewaySettingsSynchronizer|null
+	 * @var WooPaymentsGatewaySettingsSynchronizer
 	 */
-	private ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null;
+	private WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter                   $arbiter Runtime owner arbiter.
-	 * @param WooPaymentsGatewaySettingsSynchronizer|null $gateway_settings_synchronizer Optional gateway settings synchronizer.
+	 * @param WooPaymentsRuntimeArbiter              $arbiter                       Runtime owner arbiter.
+	 * @param WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer Gateway settings synchronizer.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, ?WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer = null ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsGatewaySettingsSynchronizer $gateway_settings_synchronizer ): void {
 		$this->arbiter                       = $arbiter;
 		$this->gateway_settings_synchronizer = $gateway_settings_synchronizer;
 	}
@@ -267,7 +267,7 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 			}
 		}
 
-		$projection = $this->get_gateway_settings_synchronizer()->persist( $settings );
+		$projection = $this->gateway_settings_synchronizer->persist( $settings );
 		if ( ! $projection['persisted'] ) {
 			$this->log_persistence_failure( $projection['failed_option_names'] );
 
@@ -414,19 +414,6 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 	 */
 	private function should_migrate_payment_request_split_settings( array $settings, string $previous_version ): bool {
 		return $this->is_upgrade_from_before( $previous_version, '10.4.0' ) && array_key_exists( 'payment_request', $settings );
-	}
-
-	/**
-	 * Get the canonical-to-split gateway settings synchronizer.
-	 *
-	 * @return WooPaymentsGatewaySettingsSynchronizer
-	 */
-	private function get_gateway_settings_synchronizer(): WooPaymentsGatewaySettingsSynchronizer {
-		if ( null === $this->gateway_settings_synchronizer ) {
-			$this->gateway_settings_synchronizer = wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class );
-		}
-
-		return $this->gateway_settings_synchronizer;
 	}
 
 	/**

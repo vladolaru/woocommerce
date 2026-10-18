@@ -216,20 +216,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 */
 	public function register(): void {
 		add_action( WooPaymentsCutoverActionScheduler::ACTION_HOOK, array( $this, 'handle_reconcile' ), 10, 2 );
-		add_action( 'action_scheduler_init', array( $this, 'handle_action_scheduler_init' ) );
+		add_action( 'action_scheduler_init', array( $this, 'repair_schedule' ) );
 
 		if ( did_action( 'action_scheduler_init' ) ) {
-			$this->handle_action_scheduler_init();
+			$this->repair_schedule();
 		}
-	}
-
-	/**
-	 * Repair durable scheduling after Action Scheduler is initialized.
-	 *
-	 * @internal
-	 */
-	public function handle_action_scheduler_init(): void {
-		$this->repair_schedule();
 	}
 
 	/**
@@ -326,7 +317,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				}
 
 				$record = $this->create_pending_record( $source, $now, $origin_plugin_file, $origin_plugin_scope );
-				if ( ! $this->state_store->save_record( $record ) ) {
+				if ( ! $this->state_store->create_record( $record ) ) {
 					return false;
 				}
 
@@ -449,7 +440,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 							$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
 						}
 					} else {
-						$stored = $this->state_store->save_record( $awaiting );
+						$stored = $this->state_store->create_record( $awaiting );
 					}
 						$complete = $stored && $complete;
 					return true;
@@ -524,7 +515,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					'context' => array( 'code' => WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS ),
 				);
 
-				$this->state_store->save_record( $excluded );
+				$this->state_store->create_record( $excluded );
 				return true;
 			}
 		);
@@ -741,7 +732,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 								$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
 							}
 						} else {
-							$stored = $this->state_store->save_record( $pending );
+							$stored = $this->state_store->create_record( $pending );
 						}
 							$scheduled_somewhere = ( $stored && $this->ensure_record_scheduled( $pending, $now ) ) || $scheduled_somewhere;
 						return true;
@@ -1216,7 +1207,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 							$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
 						}
 					} else {
-						$stored = $this->state_store->save_record( $pending );
+						$stored = $this->state_store->create_record( $pending );
 					}
 						$complete = $stored && $this->ensure_record_scheduled( $pending, $now ) && $complete;
 					return true;
@@ -1830,7 +1821,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 						$excluded['request_origin_token']       = null;
 						$excluded['network_cutover']            = true;
 						$excluded                               = $this->append_step( $excluded, self::STEP_EXCLUDED, $now, array( 'code' => $code ) );
-						$stored                                 = is_array( $record ) ? $this->state_store->compare_and_set_record( $record, $excluded ) : $this->state_store->save_record( $excluded );
+						$stored                                 = is_array( $record ) ? $this->state_store->compare_and_set_record( $record, $excluded ) : $this->state_store->create_record( $excluded );
 						if ( $stored ) {
 							$this->scheduler->cancel( is_array( $record ) ? $record['generation'] : $generation, is_array( $record ) ? $record['attempt'] + 1 : 1 );
 							$site_complete = true;
@@ -2186,9 +2177,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Repair missing actions and stale running records at bootstrap time.
+	 * Repair missing actions and stale running records once Action Scheduler is initialized.
+	 *
+	 * @internal
 	 */
-	private function repair_schedule(): void {
+	public function repair_schedule(): void {
 		if ( ! $this->arbiter->is_builtin_enabled() ) {
 			return;
 		}

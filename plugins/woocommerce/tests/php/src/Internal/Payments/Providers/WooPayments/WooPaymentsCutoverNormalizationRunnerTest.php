@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use WC_Unit_Test_Case;
 
 /**
@@ -910,7 +911,7 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
 
 		$this->runner = new WooPaymentsCutoverNormalizationRunner();
-		$this->runner->init( $arbiter );
+		$this->runner->init( $arbiter, wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
 
 		return $this->runner;
 	}

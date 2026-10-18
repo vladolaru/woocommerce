@@ -49,11 +49,11 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Persists only complete valid records in the site-local autoloaded option.
 	 */
-	public function test_save_record_persists_a_valid_autoloaded_record(): void {
+	public function test_create_record_persists_a_valid_autoloaded_record(): void {
 		$sut    = $this->require_sut();
 		$record = $this->valid_record();
 
-		$this->assertTrue( $sut->save_record( $record ), 'A valid cutover record should persist.' );
+		$this->assertTrue( $sut->create_record( $record ), 'A valid cutover record should persist.' );
 
 		$this->assertSame( $record, $sut->get_record(), 'The validated record should round-trip without changing its fields.' );
 		$this->assertArrayHasKey( WooPaymentsCutoverStateStore::OPTION_NAME, wp_load_alloptions( true ), 'The cutover state should be available through the per-site autoloaded option set.' );
@@ -74,7 +74,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $wpdb->num_queries - $queries, 'A never-cutover store must read the record from the autoloaded options.' );
 		$this->assertSame( 1, $sut->get_next_generation() );
 
-		$this->assertTrue( $sut->save_record( $record ), 'The first record should replace the absent marker.' );
+		$this->assertTrue( $sut->create_record( $record ), 'The first record should replace the absent marker.' );
 		$this->assertSame( $record, $sut->get_record() );
 		$this->assertArrayHasKey( WooPaymentsCutoverStateStore::OPTION_NAME, wp_load_alloptions( true ) );
 	}
@@ -99,7 +99,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 		add_filter( 'query', $race );
 
 		try {
-			$this->assertFalse( $sut->save_record( $loser ), 'The losing writer must see a conflict.' );
+			$this->assertFalse( $sut->create_record( $loser ), 'The losing writer must see a conflict.' );
 		} finally {
 			remove_filter( 'query', $race );
 		}
@@ -132,7 +132,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertFalse( $sut->save_record( $record ), 'Only the writer that created the row may claim the first save, like compare_and_set_record().' );
+		$this->assertFalse( $sut->create_record( $record ), 'Only the writer that created the row may claim the first save, like compare_and_set_record().' );
 		$this->assertSame( $record, $sut->get_record() );
 	}
 
@@ -148,7 +148,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 			switch_to_blog( $blog_id );
 			$this->assert_first_save_after_a_missed_read_keeps_the_winner();
 			delete_option( WooPaymentsCutoverStateStore::OPTION_NAME );
-			$this->assertTrue( $this->require_sut()->save_record( $this->valid_record() ), 'A sub-site without a row should still get its first record.' );
+			$this->assertTrue( $this->require_sut()->create_record( $this->valid_record() ), 'A sub-site without a row should still get its first record.' );
 			$this->assertArrayHasKey( WooPaymentsCutoverStateStore::OPTION_NAME, wp_load_alloptions( true ), 'The sub-site record should be autoloaded.' );
 			restore_current_blog();
 			$this->assertNull( $this->require_sut()->get_record(), 'The main site must not see the sub-site record.' );
@@ -182,7 +182,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertFalse( $sut->save_record( $loser ), 'A first save must report a conflict when a record exists.' );
+		$this->assertFalse( $sut->create_record( $loser ), 'A first save must report a conflict when a record exists.' );
 		$this->assertSame( maybe_serialize( $winner ), $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $name ) ), 'The stored row must stay the winner.' );
 		$this->assertSame( $winner, $sut->get_record(), 'The request must read the winner after the conflict.' );
 	}
@@ -249,14 +249,14 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Rejects records whose state is outside the persisted cutover vocabulary.
 	 */
-	public function test_save_record_rejects_an_invalid_state(): void {
+	public function test_create_record_rejects_an_invalid_state(): void {
 		$sut             = $this->require_sut();
 		$record          = $this->valid_record();
 		$record['state'] = 'unknown';
 
 		$this->expectException( InvalidArgumentException::class );
 
-		$sut->save_record( $record );
+		$sut->create_record( $record );
 	}
 
 	/**
@@ -269,7 +269,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string $state Persisted cutover state.
 	 */
-	public function test_save_record_accepts_each_durable_state( string $state ): void {
+	public function test_create_record_accepts_each_durable_state( string $state ): void {
 		$sut             = $this->require_sut();
 		$record          = $this->valid_record();
 		$record['state'] = $state;
@@ -278,7 +278,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 			$record['lease_expires_at'] = $record['updated_at'] + WooPaymentsCutoverStateStore::LEASE_TTL;
 		}
 
-		$this->assertTrue( $sut->save_record( $record ) );
+		$this->assertTrue( $sut->create_record( $record ) );
 		$this->assertSame( $state, $sut->get_record()['state'] ?? null );
 	}
 
@@ -371,7 +371,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	public function test_compare_and_set_rejects_a_stale_post_claim_write(): void {
 		$sut     = $this->require_sut();
 		$pending = $this->valid_record();
-		$this->assertTrue( $sut->save_record( $pending ) );
+		$this->assertTrue( $sut->create_record( $pending ) );
 
 		$claimed                     = $pending;
 		$claimed['revision']         = $pending['revision'] + 1;
@@ -405,7 +405,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 		$sut                            = $this->require_sut();
 		$stored                         = $this->valid_record();
 		$stored['request_origin_token'] = 'Opaque-Token';
-		$this->assertTrue( $sut->save_record( $stored ) );
+		$this->assertTrue( $sut->create_record( $stored ) );
 
 		$incorrect                         = $stored;
 		$incorrect['request_origin_token'] = 'opaque-token';
@@ -423,7 +423,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 		$sut         = $this->require_sut();
 		$current     = $this->valid_record();
 		$replacement = $current;
-		$this->assertTrue( $sut->save_record( $current ) );
+		$this->assertTrue( $sut->create_record( $current ) );
 
 		$this->assertFalse( $sut->compare_and_set_record( $current, $replacement ) );
 		$this->assertSame( $current, $sut->get_record() );

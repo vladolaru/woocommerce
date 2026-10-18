@@ -472,7 +472,7 @@ class WooPaymentsMultisiteCheckoutIsolationTest extends WC_Unit_Test_Case {
 		update_user_option( $user_id, WooPaymentsCustomerService::LIVE_CUSTOMER_ID_OPTION, 'cus_' . $slug, false );
 
 		$cutover_store = new WooPaymentsCutoverStateStore();
-		$cutover_store->save_record( $this->valid_cutover_record( $generation ) );
+		$cutover_store->create_record( $this->valid_cutover_record( $generation ) );
 
 		$token_id = $this->create_card_token( $user_id, 'pm_' . $slug );
 

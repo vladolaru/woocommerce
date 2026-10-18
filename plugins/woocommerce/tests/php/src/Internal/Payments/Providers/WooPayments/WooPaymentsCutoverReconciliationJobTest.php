@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -104,7 +105,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		foreach ( $this->jobs as $job ) {
 			remove_action( 'woocommerce_woopayments_cutover_reconcile', array( $job, 'handle_reconcile' ), 10 );
-			remove_action( 'action_scheduler_init', array( $job, 'handle_action_scheduler_init' ), 10 );
+			remove_action( 'action_scheduler_init', array( $job, 'repair_schedule' ), 10 );
 		}
 
 		if ( $this->state_store instanceof WooPaymentsCutoverStateStore ) {
@@ -780,7 +781,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$expired['revision']         = $running['revision'] + 1;
 			$expired['lease_expires_at'] = time() - 1;
 			$this->assertTrue( $this->require_state_store()->compare_and_set_record( $running, $expired ) );
-			$make_job( false )->handle_action_scheduler_init();
+			$make_job( false )->repair_schedule();
 			$record = $this->require_state_store()->get_record();
 			$this->assertIsArray( $record );
 			$this->assertSame( 'recovered_stale_running', $record['current_step'] );
@@ -1476,7 +1477,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woopayments_cutover_normalization_version' );
 		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
 		$normalization = new WooPaymentsCutoverNormalizationRunner();
-		$sut           = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true, $normalization );
+		$normalization->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
+		$sut = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true, $normalization );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $this->require_state_store()->get_record();
 		$this->assertIsArray( $pending );
@@ -1538,7 +1540,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woopayments_cutover_normalization_version' );
 		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
 		$normalization = new WooPaymentsCutoverNormalizationRunner();
-		$sut           = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true, $normalization );
+		$normalization->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
+		$sut = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true, $normalization );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $this->require_state_store()->get_record();
 		$this->assertIsArray( $pending );
@@ -1671,7 +1674,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woopayments_cutover_normalization_version' );
 		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
 		$normalization = new WooPaymentsCutoverNormalizationRunner();
-		$sut           = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true, $normalization );
+		$normalization->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
+		$sut = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true, $normalization );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $this->require_state_store()->get_record();
 		$this->assertIsArray( $pending );
@@ -5929,7 +5933,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->require_sut()->register();
 
 			$this->assertSame( 0, $this->count_cutover_actions(), 'Registration before Action Scheduler init should only attach recovery.' );
-			$this->assertSame( 10, has_action( 'action_scheduler_init', array( $this->require_sut(), 'handle_action_scheduler_init' ) ) );
+			$this->assertSame( 10, has_action( 'action_scheduler_init', array( $this->require_sut(), 'repair_schedule' ) ) );
 
 			do_action( 'action_scheduler_init' );
 
