@@ -195,7 +195,8 @@ class WooPaymentsWooPayAdaptedExtensions extends IntegrationRegistry {
 	 *
 	 * Extensions that attribute orders through cookies never see the shopper's browser
 	 * during a WooPay checkout, so the attribution rides the WooPay request instead:
-	 * Affiliate for WooCommerce receives the referrer as an `affiliate` query parameter.
+	 * Affiliate for WooCommerce receives the referrer as an `affiliate` query parameter, and applies its own eligibility
+	 * rules, its self-referral setting included, to the conversion.
 	 *
 	 * @param int $order_id The completed WooPay order ID.
 	 */
@@ -210,7 +211,7 @@ class WooPaymentsWooPayAdaptedExtensions extends IntegrationRegistry {
 
 		$api_class     = 'AFWC_API';
 		$affiliate_api = $api_class::get_instance();
-		$affiliate_api->track_conversion( $order_id, $affiliate_id, '', array( 'is_affiliate_eligible' => true ) );
+		$affiliate_api->track_conversion( $order_id, $affiliate_id, '' );
 	}
 
 	/**

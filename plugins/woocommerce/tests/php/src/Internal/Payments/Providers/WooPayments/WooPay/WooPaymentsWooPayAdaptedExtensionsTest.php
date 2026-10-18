@@ -21,11 +21,20 @@ class WooPaymentsWooPayAdaptedExtensionsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should track the affiliate conversion carried on a WooPay order request.
+	 * @testdox Should track the affiliate conversion carried on a WooPay order request without forcing its eligibility: $_dataName.
+	 *
+	 * Affiliate for WooCommerce applies its own rules, its self-referral setting included, unless the call forces
+	 * is_affiliate_eligible (AFWC 9.17.0 includes/class-afwc-api.php:609-616); client 11.1.0 forces it
+	 * (includes/woopay/class-woopay-adapted-extensions.php:206).
+	 *
+	 * @dataProvider provide_affiliate_parameters
+	 *
+	 * @param string $parameter    The request's affiliate parameter.
+	 * @param int    $affiliate_id The affiliate ID the conversion names.
 	 */
-	public function test_update_order_extension_data_tracks_affiliate_conversion(): void {
+	public function test_update_order_extension_data_tracks_affiliate_conversion( string $parameter, int $affiliate_id ): void {
 		$this->install_affiliate_for_woocommerce_double();
-		$_GET['affiliate'] = '42';
+		$_GET['affiliate'] = $parameter;
 
 		( new WooPaymentsWooPayAdaptedExtensions() )->update_order_extension_data( 1001 );
 
@@ -33,12 +42,24 @@ class WooPaymentsWooPayAdaptedExtensionsTest extends WC_Unit_Test_Case {
 			array(
 				array(
 					'order_id'     => 1001,
-					'affiliate_id' => 42,
+					'affiliate_id' => $affiliate_id,
 					'used_coupon'  => '',
-					'params'       => array( 'is_affiliate_eligible' => true ),
+					'params'       => array(),
 				),
 			),
 			FakeWooPayAffiliateApi::$conversions
+		);
+	}
+
+	/**
+	 * Affiliate parameters and the affiliate ID each must pass.
+	 *
+	 * @return array<string,array{string,int}>
+	 */
+	public function provide_affiliate_parameters(): array {
+		return array(
+			'does not force eligibility' => array( '42', 42 ),
+			'still passes the affiliate' => array( ' 7 ', 7 ),
 		);
 	}
 
