@@ -294,6 +294,10 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Record a successful external plugin activation as a rollback awaiting merchant confirmation.
 	 *
+	 * A completed switch, or an open site-level one that is not awaiting the merchant's start, is replaced by a new generation
+	 * awaiting it. An open one also loses its next attempt, so it never deactivates the extension or migrates data again,
+	 * and the tier follows the extension.
+	 *
 	 * @param bool $network_wide Whether the external activation was network-wide.
 	 * @return bool True when the rollback was already recorded or a new generation was opened.
 	 */
@@ -318,11 +322,21 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			if ( WooPaymentsCutoverState::PENDING === $record['state'] && 'awaiting_merchant_start' === $record['current_step'] ) {
 				return true;
 			}
-			if ( WooPaymentsCutoverState::DONE !== $record['state'] ) {
+			if ( WooPaymentsCutoverState::DONE === $record['state'] ) {
+				return $this->replace_terminal_with_awaiting_start( $record, 'rollback', $now );
+			}
+			// The hook fires only for an inactive extension, and a merchant's own deactivation makes the record manual, so an
+			// open merchant start sees this only after finalize deactivated the extension.
+			if ( ! in_array( $record['state'], array( WooPaymentsCutoverState::PENDING, WooPaymentsCutoverState::DEFERRED ), true ) || true === ( $record['network_cutover'] ?? false ) ) {
 				return false;
 			}
+			if ( ! $this->replace_terminal_with_awaiting_start( $record, 'rollback', $now ) ) {
+				return false;
+			}
+			$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
+			$this->account_service->sync_setup_tier_from_options( true );
 
-			return $this->replace_terminal_with_awaiting_start( $record, 'rollback', $now );
+			return true;
 		} finally {
 			$this->state_store->release_lease( $token );
 		}
@@ -2329,7 +2343,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Open a superseding generation without scheduling it before merchant confirmation.
 	 *
-	 * @param array<string,mixed> $record Current terminal record.
+	 * @param array<string,mixed> $record Current record it supersedes.
 	 * @param string              $source Supersession source.
 	 * @param int                 $now    Current UTC timestamp.
 	 * @return bool True when the awaiting generation was stored.
