@@ -202,7 +202,17 @@ test(
 			await expect( summary ).toContainText(
 				`Charge ID: ${ paid.chargeId }`
 			);
-			await expect( summary ).toContainText( CURRENCY );
+			// Each value sits in its own span, as in client 11.1.0 (client/payment-details/summary/index.tsx); the text
+			// checks above pass for a hidden span, so each one is also proved visible.
+			await expect(
+				summary.getByText( paid.intentId, { exact: true } )
+			).toBeVisible();
+			await expect(
+				summary.getByText( paid.chargeId, { exact: true } )
+			).toBeVisible();
+			await expect(
+				summary.getByText( CURRENCY, { exact: true } )
+			).toBeVisible();
 			// F-TX (N-085): native renders "Authorized"/title-cased provider
 			// status labels here where client 11.1.0 renders "Payment
 			// authorized"/"Paid"; asserting native's current label would pin

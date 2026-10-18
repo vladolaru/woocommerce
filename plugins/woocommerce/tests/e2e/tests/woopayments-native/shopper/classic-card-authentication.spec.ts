@@ -1122,12 +1122,16 @@ test.describe( 'WooPayments native Classic checkout card authentication', () => 
 				// provider (`WooPaymentsTokenServiceTest::test_detaches_the_provider_payment_method_when_a_reusable_token_is_deleted`, data set "card"),
 				// so this leaves no live credential without a separate
 				// My Account delete step.
-				await restApi.delete( `wc/v3/customers/${ created.id }`, {
-					force: true,
-				} );
-				await restApi.post( SETTINGS_ROUTE, {
-					is_woopay_enabled: wooPayWasEnabled,
-				} );
+				try {
+					await restApi.delete( `wc/v3/customers/${ created.id }`, {
+						force: true,
+					} );
+				} finally {
+					// Restored even when the delete fails: later cases assume the store's own WooPay setting.
+					await restApi.post( SETTINGS_ROUTE, {
+						is_woopay_enabled: wooPayWasEnabled,
+					} );
+				}
 			}
 		}
 	);

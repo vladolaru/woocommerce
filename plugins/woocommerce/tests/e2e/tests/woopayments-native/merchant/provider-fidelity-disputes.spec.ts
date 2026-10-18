@@ -403,6 +403,11 @@ async function followDisputeNotice(
 		).toContainText( `Charge ID: ${ paid.chargeId }`, {
 			timeout: DETAILS_BUDGET_MS,
 		} );
+		// The text check passes for a hidden span; the charge ID's own span must be visible too.
+		await expect(
+			summary.getByText( paid.chargeId, { exact: true } ),
+			`the disputed charge ${ paid.chargeId } must be visible on the dispute details surface`
+		).toBeVisible();
 		await expect(
 			summary.getByRole( 'link', {
 				name: String( paid.orderId ),
