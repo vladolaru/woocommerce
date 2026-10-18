@@ -167,7 +167,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 				'generation' => 1,
 				'attempt'    => 1,
 			),
-			WooPaymentsCutoverActionScheduler::GROUP_ID,
+			WooPaymentsCutoverActionScheduler::ACTION_GROUP,
 			true
 		);
 		$same_hook_other_group_id = as_schedule_single_action(
@@ -180,8 +180,8 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 			'other-group',
 			true
 		);
-		$obsolete_network_hook_id = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'woocommerce_woopayments_cutover_network_reconcile', array(), WooPaymentsCutoverActionScheduler::GROUP_ID, true );
-		$other_action_id          = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_preflight_service_test', array(), WooPaymentsCutoverActionScheduler::GROUP_ID, true );
+		$obsolete_network_hook_id = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'woocommerce_woopayments_cutover_network_reconcile', array(), WooPaymentsCutoverActionScheduler::ACTION_GROUP, true );
+		$other_action_id          = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_preflight_service_test', array(), WooPaymentsCutoverActionScheduler::ACTION_GROUP, true );
 
 		$this->assertIsInt( $cutover_action_id );
 		$this->assertIsInt( $same_hook_other_group_id );

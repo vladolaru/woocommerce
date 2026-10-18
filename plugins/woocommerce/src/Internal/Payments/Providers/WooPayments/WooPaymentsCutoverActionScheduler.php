@@ -21,7 +21,7 @@ class WooPaymentsCutoverActionScheduler {
 	public const ACTION_HOOK = 'woocommerce_woopayments_cutover_reconcile';
 
 	/** Reconciliation action group. */
-	public const GROUP_ID = 'woocommerce_woopayments_cutover';
+	public const ACTION_GROUP = 'woocommerce_woopayments_cutover';
 
 	/**
 	 * Build canonical action arguments.
@@ -63,7 +63,7 @@ class WooPaymentsCutoverActionScheduler {
 			$timestamp,
 			self::ACTION_HOOK,
 			self::get_action_args( $generation, $attempt ),
-			self::GROUP_ID,
+			self::ACTION_GROUP,
 			true
 		);
 
@@ -99,7 +99,7 @@ class WooPaymentsCutoverActionScheduler {
 		}
 
 		$args = self::get_action_args( $generation, $attempt );
-		if ( ! as_has_scheduled_action( self::ACTION_HOOK, $args, self::GROUP_ID ) ) {
+		if ( ! as_has_scheduled_action( self::ACTION_HOOK, $args, self::ACTION_GROUP ) ) {
 			return 0;
 		}
 
@@ -107,7 +107,7 @@ class WooPaymentsCutoverActionScheduler {
 			array(
 				'hook'     => self::ACTION_HOOK,
 				'args'     => $args,
-				'group'    => self::GROUP_ID,
+				'group'    => self::ACTION_GROUP,
 				'status'   => array( \ActionScheduler_Store::STATUS_PENDING, \ActionScheduler_Store::STATUS_RUNNING ),
 				'per_page' => 1,
 				'orderby'  => 'date',
@@ -129,7 +129,7 @@ class WooPaymentsCutoverActionScheduler {
 	 */
 	public function cancel( int $generation, int $attempt ): void {
 		if ( function_exists( 'as_unschedule_all_actions' ) ) {
-			as_unschedule_all_actions( self::ACTION_HOOK, self::get_action_args( $generation, $attempt ), self::GROUP_ID );
+			as_unschedule_all_actions( self::ACTION_HOOK, self::get_action_args( $generation, $attempt ), self::ACTION_GROUP );
 		}
 	}
 }

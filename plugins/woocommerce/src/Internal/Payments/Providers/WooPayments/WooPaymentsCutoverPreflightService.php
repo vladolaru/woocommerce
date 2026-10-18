@@ -434,7 +434,7 @@ class WooPaymentsCutoverPreflightService {
 	 * @return bool
 	 */
 	private function is_not_cutover_action( array $action ): bool {
-		if ( WooPaymentsCutoverActionScheduler::GROUP_ID !== $action['group'] ) {
+		if ( WooPaymentsCutoverActionScheduler::ACTION_GROUP !== $action['group'] ) {
 			return true;
 		}
 		return WooPaymentsCutoverActionScheduler::ACTION_HOOK !== $action['hook'];

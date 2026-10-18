@@ -35,12 +35,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/** Condition code of a switch whose account lost native eligibility after the merchant started it. */
 	private const INELIGIBLE_CODE = 'builtin_ineligible';
 
-	/** Reconciliation action hook. */
-	public const ACTION_HOOK = WooPaymentsCutoverActionScheduler::ACTION_HOOK;
-
-	/** Reconciliation action group. */
-	public const ACTION_GROUP = WooPaymentsCutoverActionScheduler::GROUP_ID;
-
 	/** Feature-seeding extension action fired before plugin deactivation. */
 	public const ACTION_SEED_FEATURES = 'woocommerce_woopayments_cutover_seed_features';
 
@@ -167,7 +161,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @since 11.2.0
 	 */
 	public function register(): void {
-		add_action( self::ACTION_HOOK, array( $this, 'handle_reconcile' ), 10, 2 );
+		add_action( WooPaymentsCutoverActionScheduler::ACTION_HOOK, array( $this, 'handle_reconcile' ), 10, 2 );
 		add_action( 'action_scheduler_init', array( $this, 'handle_action_scheduler_init' ) );
 
 		if ( did_action( 'action_scheduler_init' ) ) {
@@ -1883,7 +1877,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	private function disposition_operational_queue(): array {
 		$outcomes = array();
 		foreach ( $this->preflight_service->get_queued_operational_actions() as $action ) {
-			if ( self::ACTION_HOOK === $action['hook'] && self::ACTION_GROUP === $action['group'] ) {
+			if ( WooPaymentsCutoverActionScheduler::ACTION_HOOK === $action['hook'] && WooPaymentsCutoverActionScheduler::ACTION_GROUP === $action['group'] ) {
 				continue;
 			}
 			if ( in_array( $action['hook'], self::ADOPTED_OPERATIONAL_QUEUE_HOOKS, true ) ) {
