@@ -28,9 +28,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/** Notice telling a bundled-flavor store why it cannot switch yet. */
 	public const NOTICE_BUNDLED_EXCLUSION = 'bundled_exclusion';
 
-	/** Failure code of stores on the bundled WooPayments subscriptions; stored in records, so it never changes. */
-	private const BUNDLED_EXCLUSION_CODE = 'bundled_stripe_billing_subscriptions_present';
-
 	/** Condition code of a switch whose account lost native eligibility after the merchant started it. */
 	private const INELIGIBLE_CODE = 'builtin_ineligible';
 
@@ -451,11 +448,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		if ( is_array( $record ) ) {
 			if ( WooPaymentsCutoverStateStore::STATE_PENDING === $record['state'] && 'awaiting_merchant_start' === $record['current_step'] && $this->record_has_stripe_billing_failure( $record ) ) {
 				if ( true === ( $record['network_cutover'] ?? false ) ) {
-					if ( $this->schedule_network_exclusion_convergence( $record, 'bundled_stripe_billing_subscriptions_present' ) ) {
-						$this->propagate_network_exclusion( $record['generation'], 'bundled_stripe_billing_subscriptions_present' );
+					if ( $this->schedule_network_exclusion_convergence( $record, WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS ) ) {
+						$this->propagate_network_exclusion( $record['generation'], WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
 					}
 				} else {
-					$this->exclude_awaiting_record( $record, 'bundled_stripe_billing_subscriptions_present' );
+					$this->exclude_awaiting_record( $record, WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
 				}
 				return $this->state_store->get_record();
 			}
@@ -496,12 +493,12 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$excluded                    = $this->create_pending_record( 'local_exclusion', $now );
 			$excluded['state']           = WooPaymentsCutoverStateStore::STATE_EXCLUDED;
 			$excluded['current_step']    = 'excluded';
-			$excluded['deferred_codes']  = array( 'bundled_stripe_billing_subscriptions_present' );
+			$excluded['deferred_codes']  = array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
 			$excluded['next_attempt_at'] = null;
 			$excluded['step_log'][]      = array(
 				'step'    => 'excluded',
 				'at'      => $now,
-				'context' => array( 'code' => 'bundled_stripe_billing_subscriptions_present' ),
+				'context' => array( 'code' => WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS ),
 			);
 
 			$this->state_store->save_record( $excluded );
@@ -577,7 +574,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	public function is_bundled_exclusion_notice_due( ?array $record ): bool {
 		return is_array( $record )
 			&& WooPaymentsCutoverStateStore::STATE_EXCLUDED === ( $record['state'] ?? null )
-			&& in_array( self::BUNDLED_EXCLUSION_CODE, (array) ( $record['deferred_codes'] ?? array() ), true )
+			&& in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, (array) ( $record['deferred_codes'] ?? array() ), true )
 			&& is_array( $record['informational_outcomes'] ?? null )
 			&& ! $this->has_information_outcome( $record['informational_outcomes'], array( 'code' => self::NOTICE_BUNDLED_EXCLUSION . '_notice_dismissed' ) );
 	}
@@ -677,7 +674,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 						} else {
 							$terminal_generations[] = $record_generation;
 							if ( WooPaymentsCutoverStateStore::STATE_EXCLUDED === $record['state'] ) {
-								$excluded_generations[ $record_generation ] = $record['deferred_codes'][0] ?? 'bundled_stripe_billing_subscriptions_present';
+								$excluded_generations[ $record_generation ] = $record['deferred_codes'][0] ?? WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS;
 							}
 						}
 					}
@@ -952,24 +949,24 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			}
 			$this->log_late_first_attempt( $claimed );
 			$failures = $this->normalize_codes( $this->preflight_service->get_failures() );
-			if ( in_array( 'bundled_stripe_billing_subscriptions_present', $failures, true ) ) {
+			if ( in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $failures, true ) ) {
 				if ( true === ( $claimed['network_cutover'] ?? false ) ) {
-					if ( ! $this->propagate_network_exclusion( $claimed['generation'], 'bundled_stripe_billing_subscriptions_present' ) ) {
+					if ( ! $this->propagate_network_exclusion( $claimed['generation'], WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS ) ) {
 						$this->defer( $claimed, array( 'network_exclusion_propagation_pending' ) );
 					}
 				} else {
-					$this->exclude( $claimed, 'bundled_stripe_billing_subscriptions_present' );
+					$this->exclude( $claimed, WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
 				}
 				return;
 			}
 
 			$outcomes = array();
-			if ( in_array( 'wpcom_connection_owner_user_token_unavailable', $failures, true ) && $this->preflight_service->is_cutover_connection_owner_user_missing() ) {
+			if ( in_array( WooPaymentsPlatformConnectionService::FAILURE_CONNECTION_OWNER_USER_TOKEN_UNAVAILABLE, $failures, true ) && $this->preflight_service->is_cutover_connection_owner_user_missing() ) {
 				$outcomes[] = array( 'code' => 'reconnect_required' );
 			}
 
 			$plugin_update_succeeded = false;
-			if ( in_array( 'woopayments_plugin_version_unsupported', $failures, true ) ) {
+			if ( in_array( WooPaymentsCutoverPreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, $failures, true ) ) {
 				$plugin_update_succeeded = $this->update_woopayments_plugin();
 			}
 
@@ -977,18 +974,18 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
 			$this->preflight_service->invalidate_current_blog_memoization();
 			$remaining_failures = $this->normalize_codes( $this->preflight_service->get_failures() );
-			if ( in_array( 'bundled_stripe_billing_subscriptions_present', $remaining_failures, true ) ) {
+			if ( in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $remaining_failures, true ) ) {
 				if ( true === ( $claimed['network_cutover'] ?? false ) ) {
-					if ( ! $this->propagate_network_exclusion( $claimed['generation'], 'bundled_stripe_billing_subscriptions_present' ) ) {
+					if ( ! $this->propagate_network_exclusion( $claimed['generation'], WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS ) ) {
 						$this->defer( $claimed, array( 'network_exclusion_propagation_pending' ), $outcomes );
 					}
 				} else {
-					$this->exclude( $claimed, 'bundled_stripe_billing_subscriptions_present' );
+					$this->exclude( $claimed, WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
 				}
 				return;
 			}
 			// The plugin records its new version only on its next request, so check the installed files instead.
-			if ( $plugin_update_succeeded && in_array( 'woopayments_plugin_version_unsupported', $remaining_failures, true ) && ! $this->is_installed_woopayments_plugin_version_supported() ) {
+			if ( $plugin_update_succeeded && in_array( WooPaymentsCutoverPreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, $remaining_failures, true ) && ! $this->is_installed_woopayments_plugin_version_supported() ) {
 				$this->log_error( 'WooPayments cutover plugin update completed without installing a supported version.' );
 			}
 
@@ -1106,7 +1103,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 						}
 					}
 					if ( is_array( $record ) && $record['generation'] === $claimed['generation'] && WooPaymentsCutoverStateStore::STATE_EXCLUDED === $record['state'] ) {
-						$excluded_code = $record['deferred_codes'][0] ?? 'bundled_stripe_billing_subscriptions_present';
+						$excluded_code = $record['deferred_codes'][0] ?? WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS;
 					}
 				} finally {
 					if ( get_current_blog_id() !== $current_blog_id ) {
@@ -1399,7 +1396,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
 		// Propagation takes the network lease itself; when it cannot, the sites waiting at the barrier retry and check again.
 		if ( true === $paused_site_marker ) {
-			$this->propagate_network_exclusion( $generation, 'bundled_stripe_billing_subscriptions_present' );
+			$this->propagate_network_exclusion( $generation, WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
 		}
 	}
 
@@ -1444,7 +1441,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			}
 			try {
 				$this->preflight_service->invalidate_current_blog_memoization();
-				if ( in_array( 'bundled_stripe_billing_subscriptions_present', $this->normalize_codes( $this->preflight_service->get_failures() ), true ) ) {
+				if ( in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $this->normalize_codes( $this->preflight_service->get_failures() ), true ) ) {
 					return true;
 				}
 			} catch ( \Throwable $error ) {
@@ -1586,7 +1583,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$remediation_scheduled = false;
 		}
 		if ( ! $remediation_scheduled ) {
-			$this->defer( $claimed, array( 'financial_migrations_unavailable' ) );
+			$this->defer( $claimed, array( WooPaymentsCutoverPreflightService::FAILURE_FEE_REMEDIATION_UNAVAILABLE ) );
 			return;
 		}
 
@@ -2413,7 +2410,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return false;
 		}
 
-		return ! in_array( 'bundled_stripe_billing_subscriptions_present', $failures, true );
+		return ! in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $failures, true );
 	}
 
 	/**
@@ -2446,7 +2443,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		try {
 			$present = $network
 				? $this->network_has_stripe_billing_failure()
-				: in_array( 'bundled_stripe_billing_subscriptions_present', $this->normalize_codes( $this->preflight_service->get_failures() ), true );
+				: in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $this->normalize_codes( $this->preflight_service->get_failures() ), true );
 		} catch ( \Throwable $error ) {
 			$this->log_error( 'WooPayments cutover could not classify the admin notice.', array( 'error' => $error->getMessage() ) );
 			return null;
@@ -2511,7 +2508,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			try {
 				$this->preflight_service->invalidate_current_blog_memoization();
 				$failures = $this->normalize_codes( $this->preflight_service->get_failures() );
-				if ( in_array( 'bundled_stripe_billing_subscriptions_present', $failures, true ) ) {
+				if ( in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $failures, true ) ) {
 					return true;
 				}
 			} catch ( \Throwable $error ) {

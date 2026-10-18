@@ -25,6 +25,27 @@ class WooPaymentsCutoverPreflightService {
 
 	public const MINIMUM_CUTOVER_PLUGIN_VERSION = '10.5.0';
 
+	/** The built-in WooPayments is turned off, so no other check runs. */
+	public const FAILURE_BUILTIN_RUNTIME_DISABLED = 'builtin_runtime_disabled';
+
+	/** The recorded WooPayments extension version is below MINIMUM_CUTOVER_PLUGIN_VERSION. */
+	public const FAILURE_PLUGIN_VERSION_UNSUPPORTED = 'woopayments_plugin_version_unsupported';
+
+	/** The built-in WooPayments cannot process payments for this account yet. */
+	public const FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE = 'builtin_transport_unavailable';
+
+	/** A currency on automatic exchange rates has no rate provider. */
+	public const FAILURE_MULTI_CURRENCY_RATES_UNAVAILABLE = 'multi_currency_rates_unavailable';
+
+	/** A queued WooPayments action has no built-in handler. */
+	public const FAILURE_QUEUE_HOOKS_UNHANDLED = 'operational_queue_hooks_unhandled';
+
+	/** The canceled-authorization fee remediation cannot be scheduled; the stored code keeps its first name. */
+	public const FAILURE_FEE_REMEDIATION_UNAVAILABLE = 'financial_migrations_unavailable';
+
+	/** The store bills subscriptions through the WooPayments extension's bundled subscriptions; such a store is excluded. */
+	public const FAILURE_BUNDLED_SUBSCRIPTIONS = 'bundled_stripe_billing_subscriptions_present';
+
 	private const WOOPAYMENTS_VERSION_OPTION = 'woocommerce_woocommerce_payments_version';
 
 	private const IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK = 'woocommerce_woopayments_identifier_placeholders_unavailable';
@@ -177,28 +198,28 @@ class WooPaymentsCutoverPreflightService {
 	 */
 	private function evaluate_failures(): array {
 		if ( ! $this->arbiter->is_builtin_enabled() ) {
-			return array( 'builtin_runtime_disabled' );
+			return array( self::FAILURE_BUILTIN_RUNTIME_DISABLED );
 		}
 
 		$failures = array();
 		if ( ! $this->is_woopayments_plugin_version_supported() ) {
-			$failures[] = 'woopayments_plugin_version_unsupported';
+			$failures[] = self::FAILURE_PLUGIN_VERSION_UNSUPPORTED;
 		}
 		if ( ! $this->is_native_transport_ready() ) {
-			$failures[] = 'builtin_transport_unavailable';
+			$failures[] = self::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE;
 		}
 		$failures = array_merge( $failures, $this->get_platform_connection_service()->get_cutover_preflight_failures() );
 		if ( $this->has_unavailable_multi_currency_rate_provider() ) {
-			$failures[] = 'multi_currency_rates_unavailable';
+			$failures[] = self::FAILURE_MULTI_CURRENCY_RATES_UNAVAILABLE;
 		}
 		if ( array() !== $this->get_pending_operational_queue_hooks() ) {
-			$failures[] = 'operational_queue_hooks_unhandled';
+			$failures[] = self::FAILURE_QUEUE_HOOKS_UNHANDLED;
 		}
 		if ( ! $this->get_fee_remediation_service()->can_schedule_cutover_remediation() ) {
-			$failures[] = 'financial_migrations_unavailable';
+			$failures[] = self::FAILURE_FEE_REMEDIATION_UNAVAILABLE;
 		}
 		if ( $this->get_legacy_subscriptions_guard()->is_bundled_stripe_billing_store() ) {
-			$failures[] = 'bundled_stripe_billing_subscriptions_present';
+			$failures[] = self::FAILURE_BUNDLED_SUBSCRIPTIONS;
 		}
 
 		return self::normalize_string_list( $failures );

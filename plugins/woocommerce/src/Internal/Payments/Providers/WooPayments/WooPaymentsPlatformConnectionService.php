@@ -19,6 +19,18 @@ use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
  */
 class WooPaymentsPlatformConnectionService {
 
+	/** The site has no working WordPress.com connection. */
+	public const FAILURE_CONNECTION_UNAVAILABLE = 'wpcom_connection_unavailable';
+
+	/** The site has no WordPress.com blog ID. */
+	public const FAILURE_BLOG_ID_UNAVAILABLE = 'wpcom_blog_id_unavailable';
+
+	/** The connection has no owner. */
+	public const FAILURE_CONNECTION_OWNER_UNAVAILABLE = 'wpcom_connection_owner_unavailable';
+
+	/** The connection owner no longer exists or has no user token. */
+	public const FAILURE_CONNECTION_OWNER_USER_TOKEN_UNAVAILABLE = 'wpcom_connection_owner_user_token_unavailable';
+
 	/**
 	 * Get the connection failure codes that block the cutover.
 	 *
@@ -29,26 +41,26 @@ class WooPaymentsPlatformConnectionService {
 		$manager  = $this->get_connection_manager();
 
 		if ( null === $manager ) {
-			return array( 'wpcom_connection_unavailable' );
+			return array( self::FAILURE_CONNECTION_UNAVAILABLE );
 		}
 
 		try {
 			if ( ! $manager->is_connected() ) {
-				$failures[] = 'wpcom_connection_unavailable';
+				$failures[] = self::FAILURE_CONNECTION_UNAVAILABLE;
 			}
 		} catch ( \Throwable $e ) {
-			$failures[] = 'wpcom_connection_unavailable';
+			$failures[] = self::FAILURE_CONNECTION_UNAVAILABLE;
 		}
 
 		if ( null === $this->get_blog_id() ) {
-			$failures[] = 'wpcom_blog_id_unavailable';
+			$failures[] = self::FAILURE_BLOG_ID_UNAVAILABLE;
 		}
 
 		$connection_owner = $this->get_cutover_connection_owner_user_token_status();
 		if ( $connection_owner['owner_id'] <= 0 ) {
-			$failures[] = 'wpcom_connection_owner_unavailable';
+			$failures[] = self::FAILURE_CONNECTION_OWNER_UNAVAILABLE;
 		} elseif ( ! $connection_owner['owner_exists'] || ! $connection_owner['user_token_available'] ) {
-			$failures[] = 'wpcom_connection_owner_user_token_unavailable';
+			$failures[] = self::FAILURE_CONNECTION_OWNER_USER_TOKEN_UNAVAILABLE;
 		}
 
 		return array_values( array_unique( $failures ) );
