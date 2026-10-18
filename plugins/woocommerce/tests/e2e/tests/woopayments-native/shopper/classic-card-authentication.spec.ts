@@ -94,6 +94,7 @@ const CARD_TESTING_REJECTION_TEXT =
 
 const PRODUCTS_ROUTE = 'wc/v3/products';
 const ORDERS_ROUTE = 'wc/v3/orders';
+const SETTINGS_ROUTE = 'wc/v3/payments/settings';
 const SAVED_CARD_EVIDENCE_ROUTE =
 	'wc-native-payments-e2e/v1/saved-card-evidence';
 const CLASSIC_CHECKOUT_FORM = 'form.checkout.woocommerce-checkout';
@@ -735,7 +736,11 @@ test.describe( 'WooPayments native Classic checkout card authentication', () => 
 						await page
 							.getByRole( 'button', { name: /place order/i } )
 							.click();
-						const alerts = page.getByRole( 'alert' );
+						// Hosted WooPay's own email-field notice ("WooPay is unavailable ...", shown when its user lookup is
+						// throttled) is not a payment notice, so it is left out of the count.
+						const alerts = page
+							.getByRole( 'alert' )
+							.filter( { hasNotText: /^WooPay is unavailable/ } );
 						await expect(
 							alerts.filter( {
 								hasText: CARD_TESTING_REJECTION_TEXT,
@@ -967,11 +972,22 @@ test.describe( 'WooPayments native Classic checkout card authentication', () => 
 			tag: FAMILY_TAGS,
 		},
 		async ( { page, restApi } ) => {
+			// A logged-in shopper is offered card saving only with WooPay off, as in client 11.1.0
+			// (class-wc-payments-checkout.php:610-619); the case turns it off and restores it.
+			const wooPayWasEnabled =
+				(
+					( await restApi.get( SETTINGS_ROUTE ) ).data as {
+						is_woopay_enabled?: boolean;
+					}
+				 ).is_woopay_enabled === true;
 			const customer = getFakeUser( 'customer' );
 			const created = (
 				await restApi.post( 'wc/v3/customers', customer )
 			).data as { id: number };
 			try {
+				await restApi.post( SETTINGS_ROUTE, {
+					is_woopay_enabled: false,
+				} );
 				await page.goto( 'wp-login.php' );
 				await logIn(
 					page,
@@ -1014,7 +1030,8 @@ test.describe( 'WooPayments native Classic checkout card authentication', () => 
 						'classic'
 					);
 					const save = page.getByRole( 'checkbox', {
-						name: 'Save to account',
+						// Client 11.1.0's label (class-wc-payment-gateway-wcpay.php:1160).
+						name: 'Save payment information to my account for future purchases.',
 						exact: true,
 					} );
 					await save.check();
@@ -1107,6 +1124,9 @@ test.describe( 'WooPayments native Classic checkout card authentication', () => 
 				// My Account delete step.
 				await restApi.delete( `wc/v3/customers/${ created.id }`, {
 					force: true,
+				} );
+				await restApi.post( SETTINGS_ROUTE, {
+					is_woopay_enabled: wooPayWasEnabled,
 				} );
 			}
 		}

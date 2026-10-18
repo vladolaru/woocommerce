@@ -302,6 +302,12 @@ test.describe( 'WooPayments native Stripe Billing subscription fidelity', () => 
 			await page
 				.locator( `input[name="payment_method"][value="${ GATEWAY }"]` )
 				.check();
+			// The clock customer carries pm_card_visa, which the store lists as this shopper's saved card, as client 11.1.0
+			// lists a customer's attached cards; the form preselects it, and this case pays with a newly entered card.
+			await page
+				.locator( '#payment' )
+				.getByRole( 'radio', { name: 'Use a new payment method' } )
+				.check();
 			await fillCardDetails( page, TEST_CARDS.basic, 'classic' );
 			await page.getByRole( 'button', { name: /place order/i } ).click();
 			await page.waitForURL( /\/order-received\/[1-9]\d*/, {
@@ -427,10 +433,28 @@ test.describe( 'WooPayments native Stripe Billing subscription fidelity', () => 
 				subscriptionId!
 			);
 			expect( subscription.status ).toBe( 'active' );
-			expect(
-				Date.parse( `${ subscription.next_payment_date_gmt }Z` ) / 1000,
-				'the next payment date must be the Stripe subscription period end'
-			).toBe( periodEnd( after ) );
+			// The store moves the next payment date on invoice.upcoming, which Stripe sends apart from invoice.paid,
+			// as client 11.1.0 does; wait for it instead of reading once.
+			await expect
+				.poll(
+					async () =>
+						Date.parse(
+							`${
+								(
+									await readSubscription(
+										restApi,
+										subscriptionId!
+									)
+								).next_payment_date_gmt
+							}Z`
+						) / 1000,
+					{
+						message:
+							'the next payment date must be the Stripe subscription period end',
+						timeout: 120_000,
+					}
+				)
+				.toBe( periodEnd( after ) );
 		}
 	);
 } );

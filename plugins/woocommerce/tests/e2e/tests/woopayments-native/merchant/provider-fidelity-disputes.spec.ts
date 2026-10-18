@@ -353,14 +353,13 @@ async function expectDisputeDetailsSurface( details: Page ): Promise< void > {
 
 /**
  * Follow one disputed order's dispute-created notice to the dispute details
- * surface and prove it landed on that row's exact dispute and order. The
+ * surface and prove it landed on that row's exact disputed charge and order. The
  * notice opens in a new tab, so the popup is followed rather than the
  * current page.
  */
 async function followDisputeNotice(
 	page: Page,
-	paid: PaidOrder,
-	dispute: CreatedDispute
+	paid: PaidOrder
 ): Promise< void > {
 	await page.goto(
 		`wp-admin/admin.php?page=wc-orders&action=edit&id=${ paid.orderId }`
@@ -395,13 +394,18 @@ async function followDisputeNotice(
 		await expect(
 			details.getByRole( 'heading', { name: 'Dispute details' } )
 		).toBeVisible( { timeout: DETAILS_BUDGET_MS } );
+		// Client 11.1.0 shows no dispute ID on this page: the payment summary names the charge the dispute is on, and its
+		// order link reads the bare order number (client/components/order-link/index.tsx).
+		const summary = details.getByRole( 'region', { name: 'Summary' } );
 		await expect(
-			details.getByText( dispute.id, { exact: true } ),
-			`the dispute details surface must present dispute ${ dispute.id }`
-		).toBeVisible( { timeout: DETAILS_BUDGET_MS } );
+			summary,
+			`the dispute details surface must present the disputed charge ${ paid.chargeId }`
+		).toContainText( `Charge ID: ${ paid.chargeId }`, {
+			timeout: DETAILS_BUDGET_MS,
+		} );
 		await expect(
-			details.getByRole( 'link', {
-				name: `Order #${ paid.orderId }`,
+			summary.getByRole( 'link', {
+				name: String( paid.orderId ),
 				exact: true,
 			} ),
 			`the dispute details surface must present order ${ paid.orderId }`
@@ -452,11 +456,11 @@ test(
 			await readStoreConfigurationSnapshot( restApi );
 		const paid = await createDisputableCardOrder( page, restApi );
 		try {
-			const dispute = await waitForCreatedDispute( restApi, paid );
+			await waitForCreatedDispute( restApi, paid );
 
 			await page.goto( 'wp-login.php' );
 			await logIn( page, admin.username, admin.password );
-			await followDisputeNotice( page, paid, dispute );
+			await followDisputeNotice( page, paid );
 
 			// Looking at the dispute changed nothing: the order still
 			// carries exactly one creation effect.

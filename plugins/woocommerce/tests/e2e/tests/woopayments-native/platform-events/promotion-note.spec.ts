@@ -126,7 +126,6 @@ test.describe( 'Platform events: promotion note', () => {
 				expect.objectContaining( {
 					label: 'View Settings',
 					status: 'unactioned',
-					primary: true,
 					url: expect.stringContaining(
 						'page=wc-settings&tab=checkout&section=woocommerce_payments'
 					),

@@ -210,6 +210,7 @@ test.describe( 'In-person: simulated reader capture', () => {
 						'readers',
 						'delete',
 						reader,
+						'--confirm',
 					] ),
 			],
 			[

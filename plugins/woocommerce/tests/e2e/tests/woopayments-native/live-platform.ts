@@ -41,6 +41,7 @@ const ORDERS_ROUTE = 'wc/v3/orders';
 const PLATFORM_RESULT_MARKER = '__E2E_PLATFORM_RESULT__';
 const POLL_INTERVAL_MS = 3_000;
 const CHECKOUT_BUDGET_MS = 90_000;
+const STRIPE_CLI_TIMEOUT_MS = 60_000;
 /** The local platform's WooPay blog; no case may act on it. */
 const WOOPAY_BLOG_ID = 100000000;
 
@@ -223,7 +224,8 @@ export async function cleanUp(
 /**
  * One Stripe CLI call on the connected account (or on the platform account with `onPlatform`, for calls about the
  * connected account itself), parsed. Test mode only; `STRIPE_API_KEY` is removed so the CLI uses its logged-in
- * profile.
+ * profile. Stdin is closed, so a command that would ask for confirmation fails instead of waiting for an answer; a
+ * delete passes `--confirm`.
  */
 export async function stripeTest(
 	accountId: string,
@@ -239,12 +241,27 @@ export async function stripeTest(
 	}
 	const env = { ...process.env };
 	delete env.STRIPE_API_KEY;
-	const { stdout } = await execFileAsync(
+	const run = spawnSync(
 		'stripe',
 		onPlatform ? args : [ ...args, '--stripe-account', accountId ],
-		{ env, maxBuffer: 20 * 1024 * 1024 }
+		{
+			env,
+			encoding: 'utf8',
+			maxBuffer: 20 * 1024 * 1024,
+			stdio: [ 'ignore', 'pipe', 'pipe' ],
+			timeout: STRIPE_CLI_TIMEOUT_MS,
+		}
 	);
-	const data = JSON.parse( stdout ) as Json & {
+	if ( run.status !== 0 ) {
+		throw new Error(
+			`Stripe ${ args.slice( 0, 3 ).join( ' ' ) } exited with ${
+				run.status ?? run.signal
+			}: ${ ( run.stderr || run.stdout || '' ).slice( 0, 300 ) }`
+		);
+	}
+	// A confirmed command prints an account preamble before its JSON.
+	const json = run.stdout.slice( Math.max( 0, run.stdout.indexOf( '{' ) ) );
+	const data = JSON.parse( json ) as Json & {
 		error?: { message?: string };
 	};
 	if ( data.error ) {
@@ -588,7 +605,8 @@ export async function readAdminNote( name: string ): Promise< Json | null > {
 			'title' => $note->get_title(),
 			'content' => $note->get_content(),
 			'source' => $note->get_source(),
-			'actions' => array_map( static fn( $action ) => array( 'label' => $action->label, 'url' => $action->query, 'status' => $action->status, 'primary' => (bool) $action->primary ), $note->get_actions() ),
+			// Core stores no primary flag on note actions (deprecated since WooCommerce 3.4.0), whatever the sender asked.
+			'actions' => array_map( static fn( $action ) => array( 'label' => $action->label, 'url' => $action->query, 'status' => $action->status ), $note->get_actions() ),
 		);
 	` );
 }

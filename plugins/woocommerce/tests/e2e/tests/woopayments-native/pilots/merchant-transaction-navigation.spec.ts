@@ -187,21 +187,22 @@ test(
 					name: /^(Payment details|Transaction details)$/,
 				} )
 			).toBeVisible();
+			// The payment summary, laid out as client 11.1.0's: the order link reads the bare order number
+			// (client/components/order-link/index.tsx), and the IDs and currency share the summary's text.
+			const summary = page.getByRole( 'region', { name: 'Summary' } );
 			await expect(
-				page.getByRole( 'link', {
-					name: `Order #${ paid.orderId }`,
+				summary.getByRole( 'link', {
+					name: String( paid.orderId ),
 					exact: true,
 				} )
 			).toBeVisible();
-			await expect(
-				page.getByText( paid.intentId, { exact: true } )
-			).toBeVisible();
-			await expect(
-				page.getByText( paid.chargeId, { exact: true } )
-			).toBeVisible();
-			await expect(
-				page.getByText( CURRENCY, { exact: true } )
-			).toBeVisible();
+			await expect( summary ).toContainText(
+				`Payment ID: ${ paid.intentId }`
+			);
+			await expect( summary ).toContainText(
+				`Charge ID: ${ paid.chargeId }`
+			);
+			await expect( summary ).toContainText( CURRENCY );
 			// F-TX (N-085): native renders "Authorized"/title-cased provider
 			// status labels here where client 11.1.0 renders "Payment
 			// authorized"/"Paid"; asserting native's current label would pin

@@ -25,6 +25,7 @@ import {
 	pollFor,
 	readAdminNote,
 	runOnPlatform,
+	stripeTest,
 	type Json,
 } from '../live-platform';
 
@@ -98,6 +99,24 @@ test.describe( 'Platform events: dispute deadline note', () => {
 				`Charge ${ paid.chargeId } carries no dispute within ${ DISPUTE_BUDGET_MS } ms.`
 			);
 
+			// The job the platform schedules carries the dispute's balance transaction, and its note links to the payment
+			// details only when it has one.
+			const stripeDispute = await stripeTest( accountId, [
+				'disputes',
+				'retrieve',
+				disputeId,
+			] );
+			const transactionId = String(
+				stripeDispute.balance_transaction ??
+					(
+						stripeDispute.balance_transactions as
+							| Array< { id?: unknown } >
+							| undefined
+					 )?.[ 0 ]?.id ??
+					''
+			);
+			expect( transactionId ).toMatch( /^txn_/ );
+
 			// The reminder reads the dispute the platform recorded from charge.dispute.created; wait for that record.
 			const reminded = await pollFor< { note_name: string } >(
 				async () =>
@@ -113,13 +132,17 @@ test.describe( 'Platform events: dispute deadline note', () => {
 								'account_id' => (string) $e2e_account->stripe_account_id,
 								'dispute_id' => (string) $e2e_args['dispute'],
 								'payment_intent_id' => (string) $e2e_args['intent'],
-								'transaction_id' => '',
+								'transaction_id' => (string) $e2e_args['transaction'],
 								'test_mode' => true,
 							)
 						);
 						return array( 'note_name' => 'approaching-dispute-deadline-' . $dispute->dispute_id );
 						`,
-						{ dispute: disputeId, intent: paid.intentId }
+						{
+							dispute: disputeId,
+							intent: paid.intentId,
+							transaction: transactionId,
+						}
 					),
 				DISPUTE_BUDGET_MS,
 				`The local platform never recorded dispute ${ disputeId } (charge.dispute.created must reach it through transact listen).`
@@ -141,7 +164,10 @@ test.describe( 'Platform events: dispute deadline note', () => {
 			const actions = note.actions as Array< Record< string, unknown > >;
 			expect( actions ).toHaveLength( 1 );
 			expect( actions[ 0 ] ).toEqual(
-				expect.objectContaining( { status: 'actioned', primary: true } )
+				expect.objectContaining( {
+					label: 'View dispute',
+					status: 'actioned',
+				} )
 			);
 			const link = new URL( String( actions[ 0 ].url ) );
 			expect(
