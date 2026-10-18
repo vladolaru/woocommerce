@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
+use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencyShadowMode;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -149,6 +150,10 @@ final class MultiCurrencyBootstrap {
 		$arbiter = $container->get( MultiCurrencyRuntimeArbiter::class );
 		// Before the arbiter reads the feature option, so the first native-owned request after the plugin runs on the handed-over value.
 		MultiCurrencyFeatureController::track_payments_owner( $arbiter->is_payments_extension_owner(), $arbiter->is_payments_builtin_owner() );
+		// Also while core Multi-Currency is off, so an enable on the Features page reaches the extension's flag too.
+		if ( $arbiter->is_payments_builtin_owner() && false === has_action( FeaturesController::FEATURE_ENABLED_CHANGED_ACTION, array( MultiCurrencyFeatureController::class, 'mirror_extension_flag' ) ) ) {
+			add_action( FeaturesController::FEATURE_ENABLED_CHANGED_ACTION, array( MultiCurrencyFeatureController::class, 'mirror_extension_flag' ), 10, 2 );
+		}
 		$owner = $arbiter->get_runtime_owner();
 		if ( MultiCurrencyRuntimeArbiter::OWNER_NONE === $owner ) {
 			return;

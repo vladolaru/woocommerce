@@ -225,4 +225,36 @@ describe( 'WooPayments settings store', () => {
 			[ 'error', 'The request could not be completed.' ],
 		] );
 	} );
+
+	it( 'offers the Features page disable link when a Multi-Currency untick is refused', async () => {
+		const store = await setupStore();
+		await loadSettings( store, { is_multi_currency_enabled: true } );
+		store.dispatch().updateIsMultiCurrencyEnabled( false );
+		// The settings route's refused-untick body (`WooPaymentsMerchantRestController::update_settings()`).
+		const disableUrl =
+			'http://example.org/wp-admin/admin.php?page=wc-settings&tab=advanced&section=features&multi_currency=0&_feature_nonce=abc';
+		store.apiFetch.mockRejectedValueOnce( {
+			server_error:
+				'Disabling Multi-Currency stops currency switching but keeps your currency settings and order data.',
+			disable_url: disableUrl,
+		} );
+
+		await expect( store.dispatch().saveSettings() ).resolves.toBe( false );
+
+		const data = await import( '@wordpress/data' );
+		const notices = (
+			data.select( 'core/notices' ) as unknown as {
+				getNotices: () => Array< {
+					content: string;
+					actions: Array< { label: string; url: string } >;
+				} >;
+			}
+		 ).getNotices();
+		expect( notices[ 1 ].content ).toBe(
+			'Disabling Multi-Currency stops currency switching but keeps your currency settings and order data.'
+		);
+		expect( notices[ 1 ].actions ).toEqual( [
+			{ label: 'Disable Multi-Currency', url: disableUrl },
+		] );
+	} );
 } );

@@ -16,6 +16,7 @@ import { STORE_NAME } from './store-name';
 type SettingsValues = Record< string, unknown >;
 type SettingsSaveError = {
 	server_error?: string;
+	disable_url?: string;
 	data?: {
 		details?: unknown;
 	};
@@ -258,8 +259,22 @@ export function* saveSettings(): Generator<
 		);
 
 		if ( error?.server_error && ! hasFieldLevelErrorDetails( error ) ) {
+			// A refused Multi-Currency untick offers the Features page's own way to disable it.
 			yield dispatch( 'core/notices' ).createErrorNotice(
-				error.server_error
+				error.server_error,
+				error.disable_url
+					? {
+							actions: [
+								{
+									label: __(
+										'Disable Multi-Currency',
+										'woocommerce'
+									),
+									url: error.disable_url,
+								},
+							],
+					  }
+					: undefined
 			);
 		}
 	} finally {

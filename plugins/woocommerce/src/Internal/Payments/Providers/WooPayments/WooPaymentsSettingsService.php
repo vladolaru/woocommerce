@@ -7,6 +7,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Features\FeaturesController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -281,7 +284,7 @@ class WooPaymentsSettingsService {
 			'is_test_mode_enabled'                       => $this->account_service->is_test_mode_enabled(),
 			'is_test_mode_onboarding'                    => $this->account_service->is_test_mode_onboarding_enabled(),
 			'is_dev_mode_enabled'                        => $this->account_service->is_dev_mode_enabled(),
-			'is_multi_currency_enabled'                  => '1' === (string) get_option( self::MULTI_CURRENCY_FLAG_OPTION, '1' ),
+			'is_multi_currency_enabled'                  => wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->should_core_register(),
 			'is_wcpay_subscriptions_enabled'             => $this->stripe_billing_module->is_bundled_subscriptions_flag_on(),
 			'is_wcpay_subscriptions_eligible'            => $this->stripe_billing_module->is_bundled_subscriptions_eligible(),
 			'is_subscriptions_plugin_active'             => WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active(),
@@ -411,6 +414,11 @@ class WooPaymentsSettingsService {
 	 * @return array<string,mixed>|WP_Error
 	 */
 	public function update_settings( array $params ) {
+		$multi_currency_error = $this->get_multi_currency_disable_error( $params );
+		if ( null !== $multi_currency_error ) {
+			return $multi_currency_error;
+		}
+
 		$settings                = $this->account_service->get_gateway_settings();
 		$previous_settings       = $settings;
 		$was_woopay_enabled      = $this->is_yes( $settings['platform_checkout'] ?? 'no' );
@@ -507,6 +515,9 @@ class WooPaymentsSettingsService {
 		}
 
 		if ( array_key_exists( 'is_multi_currency_enabled', $params ) ) {
+			// The checkbox is core Multi-Currency's switch, as on the Features page; the extension's own flag follows it, so a
+			// return to the extension keeps the merchant's choice (the Features page change writes it too, but only on a change).
+			wc_get_container()->get( FeaturesController::class )->change_feature_enable( MultiCurrencyFeatureController::FEATURE_ID, (bool) $params['is_multi_currency_enabled'] );
 			update_option( self::MULTI_CURRENCY_FLAG_OPTION, $params['is_multi_currency_enabled'] ? '1' : '0' );
 		}
 
@@ -665,6 +676,33 @@ class WooPaymentsSettingsService {
 		return array(
 			'requested' => $requested_payment_method_ids,
 			'available' => $available_payment_method_ids,
+		);
+	}
+
+	/**
+	 * Refuse a Multi-Currency untick while the Features page protects the disable choice (additional enabled currencies or
+	 * foreign-currency orders), with that page's sentence and its confirmation URL, before anything is saved.
+	 *
+	 * @param array<string,mixed> $params Request parameters.
+	 * @return WP_Error|null
+	 */
+	private function get_multi_currency_disable_error( array $params ): ?WP_Error {
+		if ( ! array_key_exists( 'is_multi_currency_enabled', $params ) || $params['is_multi_currency_enabled'] ) {
+			return null;
+		}
+
+		$feature_controller = wc_get_container()->get( MultiCurrencyFeatureController::class );
+		if ( ! $feature_controller->is_disable_protected() ) {
+			return null;
+		}
+
+		return new WP_Error(
+			'woocommerce_multi_currency_disable_protected',
+			$feature_controller->get_disable_protected_message(),
+			array(
+				'status'      => 400,
+				'disable_url' => $feature_controller->get_disable_anyway_url(),
+			)
 		);
 	}
 

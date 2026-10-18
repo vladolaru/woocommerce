@@ -12,6 +12,7 @@ use ActionScheduler_Store;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Admin\Schedulers\OrdersScheduler;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
+use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyBootstrap;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyExplicitPriceController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
@@ -67,6 +68,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 	/** Clear the WP_CLI override the CLI case sets, and the services and screen a booted request leaves behind. */
 	public function tearDown(): void {
+		remove_action( FeaturesController::FEATURE_ENABLED_CHANGED_ACTION, array( MultiCurrencyFeatureController::class, 'mirror_extension_flag' ), 10 );
 		$this->delete_handover_options();
 		Constants::clear_single_constant( 'WP_CLI' );
 		set_current_screen( 'front' );
@@ -117,9 +119,49 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 
 		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_EXTENSION );
+		// The disable also turned the extension's flag off; the merchant turns Multi-Currency back on in the extension.
+		update_option( '_wcpay_feature_customer_multi_currency', '1' );
 		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
+	}
+
+	/**
+	 * @testdox Should keep the WooPayments extension's Multi-Currency flag in step with the Features page: $_dataName.
+	 *
+	 * The extension runs its Multi-Currency from that flag alone (client 11.1.0 includes/class-wc-payments-features.php:67-69),
+	 * so a return to the extension keeps the merchant's last choice.
+	 *
+	 * @dataProvider provide_feature_changes
+	 *
+	 * @param string $feature_id The feature the Features page changes.
+	 * @param string $before     The feature's option before the change.
+	 * @param string $flag       The extension's flag before the change.
+	 * @param bool   $enable     The new feature state.
+	 * @param string $expected   The extension's flag after the change.
+	 */
+	public function test_features_page_change_mirrors_the_extension_flag( string $feature_id, string $before, string $flag, bool $enable, string $expected ): void {
+		$features = wc_get_container()->get( FeaturesController::class );
+		$features->change_feature_enable( $feature_id, 'yes' === $before );
+		update_option( '_wcpay_feature_customer_multi_currency', $flag );
+		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
+
+		$features->change_feature_enable( $feature_id, $enable );
+
+		$this->assertSame( $expected, get_option( '_wcpay_feature_customer_multi_currency' ) );
+	}
+
+	/**
+	 * Features page changes: Multi-Currency disabled and enabled, and another feature.
+	 *
+	 * @return array<string,array{string,string,string,bool,string}>
+	 */
+	public function provide_feature_changes(): array {
+		return array(
+			'disabled on the Features page' => array( MultiCurrencyFeatureController::FEATURE_ID, 'yes', '1', false, '0' ),
+			'enabled on the Features page'  => array( MultiCurrencyFeatureController::FEATURE_ID, 'no', '0', true, '1' ),
+			'another feature changed'       => array( 'cost_of_goods_sold', 'yes', '1', false, '1' ),
+		);
 	}
 
 	/** @testdox Should mark a store native on its first native-owned request without a marker, leaving the option unset without plugin data. */

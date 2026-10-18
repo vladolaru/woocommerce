@@ -41,6 +41,11 @@ class MultiCurrencyFeatureController {
 	public const LAST_PAYMENTS_OWNER_BUILTIN = 'builtin';
 
 	/**
+	 * The WooPayments extension's own Multi-Currency flag, the only switch the extension reads.
+	 */
+	private const EXTENSION_MULTI_CURRENCY_FLAG_OPTION = '_wcpay_feature_customer_multi_currency';
+
+	/**
 	 * Persisted Multi-Currency usage detector.
 	 *
 	 * @var MultiCurrencyUsageDetector
@@ -187,7 +192,7 @@ class MultiCurrencyFeatureController {
 			|| filter_var( get_option( 'wcpay_multi_currency_setup_completed', false ), FILTER_VALIDATE_BOOLEAN );
 
 		// The plugin's own feature flag, on unless the merchant turned it off (client 11.1.0 `includes/class-wc-payments-features.php:67-69`).
-		return $has_prior_use && '1' === (string) get_option( '_wcpay_feature_customer_multi_currency', '1' );
+		return $has_prior_use && '1' === (string) get_option( self::EXTENSION_MULTI_CURRENCY_FLAG_OPTION, '1' );
 	}
 
 	/**
@@ -241,18 +246,21 @@ class MultiCurrencyFeatureController {
 					return $description;
 				}
 
-				return __( 'Disabling Multi-Currency stops currency switching but keeps your currency settings and order data.', 'woocommerce' ) . ' ' . $this->get_disable_anyway_link();
+				return $this->get_disable_protected_message() . ' ' . $this->get_disable_anyway_link();
 			},
 			'desc_at_end' => true,
 		);
 	}
 
 	/**
-	 * Tell whether the Features setting must protect the disable choice.
+	 * Tell whether the disable choice is protected: the Features setting offers only the confirmation link, and the WooPayments
+	 * settings refuse an untick.
+	 *
+	 * @since 11.2.0
 	 *
 	 * @return bool True when the feature is enabled and persisted data exists or is uncertain.
 	 */
-	private function is_disable_protected(): bool {
+	public function is_disable_protected(): bool {
 		if ( 'yes' !== get_option( self::FEATURE_ENABLE_OPTION, 'no' ) ) {
 			return false;
 		}
@@ -269,22 +277,59 @@ class MultiCurrencyFeatureController {
 	}
 
 	/**
-	 * Get the core-managed confirmation link for disabling Multi-Currency.
+	 * Get the sentence shown where the disable choice is protected.
 	 *
-	 * @return string Disable confirmation link markup.
+	 * @since 11.2.0
+	 *
+	 * @return string
 	 */
-	private function get_disable_anyway_link(): string {
-		$url = add_query_arg(
+	public function get_disable_protected_message(): string {
+		return __( 'Disabling Multi-Currency stops currency switching but keeps your currency settings and order data.', 'woocommerce' );
+	}
+
+	/**
+	 * Get the URL of the core-managed confirmation for disabling Multi-Currency.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return string
+	 */
+	public function get_disable_anyway_url(): string {
+		return add_query_arg(
 			array(
 				self::FEATURE_ID => 0,
 				'_feature_nonce' => wp_create_nonce( 'change_feature_enable' ),
 			),
 			admin_url( 'admin.php?page=wc-settings&tab=advanced&section=features' )
 		);
+	}
 
+	/**
+	 * Write the WooPayments extension's Multi-Currency flag when the Multi-Currency feature changes, so a later return to
+	 * the extension runs its Multi-Currency on the merchant's last choice (the extension reads only that flag).
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param mixed $feature_id Feature that changed.
+	 * @param mixed $enabled    Whether it is now enabled.
+	 */
+	public static function mirror_extension_flag( $feature_id, $enabled ): void {
+		if ( self::FEATURE_ID !== $feature_id ) {
+			return;
+		}
+
+		update_option( self::EXTENSION_MULTI_CURRENCY_FLAG_OPTION, $enabled ? '1' : '0' );
+	}
+
+	/**
+	 * Get the core-managed confirmation link for disabling Multi-Currency.
+	 *
+	 * @return string Disable confirmation link markup.
+	 */
+	private function get_disable_anyway_link(): string {
 		return sprintf(
 			'<a href="%1$s">%2$s</a>',
-			esc_url( $url ),
+			esc_url( $this->get_disable_anyway_url() ),
 			esc_html__( 'Disable Multi-Currency', 'woocommerce' )
 		);
 	}

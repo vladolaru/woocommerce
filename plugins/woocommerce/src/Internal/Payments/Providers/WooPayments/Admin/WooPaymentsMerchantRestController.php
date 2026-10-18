@@ -901,6 +901,18 @@ class WooPaymentsMerchantRestController extends RestApiControllerBase {
 			if ( 'woocommerce_woopayments_account_update_rejected' === $result->get_error_code() ) {
 				return new WP_REST_Response( array( 'server_error' => $result->get_error_message() ), 400 );
 			}
+			// A refused Multi-Currency untick also carries the Features page's confirmation URL, offered as the notice's action.
+			if ( 'woocommerce_multi_currency_disable_protected' === $result->get_error_code() ) {
+				$data = $result->get_error_data();
+
+				return new WP_REST_Response(
+					array(
+						'server_error' => $result->get_error_message(),
+						'disable_url'  => is_array( $data ) ? (string) ( $data['disable_url'] ?? '' ) : '',
+					),
+					400
+				);
+			}
 
 			return $result;
 		}

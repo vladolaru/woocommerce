@@ -26,8 +26,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistrarInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
@@ -143,6 +145,10 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'wcpay_test_mode_onboarding' );
 		remove_all_filters( 'wcpay_upe_available_payment_methods' );
 		remove_all_actions( 'wc_payment_gateways_initialized' );
+		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
+		delete_option( 'wcpay_multi_currency_enabled_currencies' );
+		remove_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		if ( function_exists( 'WC' ) && WC()->payment_gateways() ) {
 			WC()->payment_gateways()->payment_gateways = array();
 			WC()->payment_gateways()->init();
@@ -205,7 +211,8 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			)
 		);
 		update_option( '_wcpay_feature_stripe_billing', '1' );
-		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$this->own_payments();
 		update_option( '_wcpay_feature_subscriptions', '1' );
 		update_option( 'woopay_invalid_extension_found', true );
 		update_option(
@@ -393,35 +400,43 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should read Multi-Currency as enabled unless the feature option disables it ($scenario).
-	 * @dataProvider provide_multi_currency_flags
+	 * @testdox Should read Multi-Currency as enabled only while core Multi-Currency runs: $_dataName.
 	 *
-	 * @param string      $scenario Case.
-	 * @param string|null $flag     Stored `_wcpay_feature_customer_multi_currency`, or null when absent.
-	 * @param bool        $expected Expected `is_multi_currency_enabled`.
+	 * The checkbox is the switch of the Features page's Multi-currency setting; the WooPayments extension's flag decides only
+	 * the extension's own module (client 11.1.0 includes/admin/class-wc-rest-payments-settings-controller.php:555).
+	 *
+	 * @dataProvider provide_multi_currency_states
+	 *
+	 * @param string|null $core_option        The core Multi-Currency feature option, or null when absent.
+	 * @param string|null $flag               The WooPayments extension's Multi-Currency flag, or null when absent.
+	 * @param bool        $disable_on_features Whether the Features page then turns Multi-Currency off.
+	 * @param bool        $expected           Expected `is_multi_currency_enabled`.
 	 */
-	public function test_get_settings_reads_the_multi_currency_flag( string $scenario, ?string $flag, bool $expected ): void {
-		unset( $scenario );
-		if ( null === $flag ) {
-			delete_option( '_wcpay_feature_customer_multi_currency' );
-		} else {
-			update_option( '_wcpay_feature_customer_multi_currency', $flag );
+	public function test_get_settings_reads_whether_core_multi_currency_runs( ?string $core_option, ?string $flag, bool $disable_on_features, bool $expected ): void {
+		$this->own_payments();
+		foreach ( array(
+			MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION => $core_option,
+			'_wcpay_feature_customer_multi_currency' => $flag,
+		) as $option => $value ) {
+			null === $value ? delete_option( $option ) : update_option( $option, $value );
+		}
+		if ( $disable_on_features ) {
+			wc_get_container()->get( FeaturesController::class )->change_feature_enable( MultiCurrencyFeatureController::FEATURE_ID, false );
 		}
 
-		$settings = $this->sut->get_settings();
-
-		$this->assertSame( $expected, $settings['is_multi_currency_enabled'] );
+		$this->assertSame( $expected, $this->sut->get_settings()['is_multi_currency_enabled'] );
 	}
 
 	/**
-	 * Provide stored Multi-Currency flags: case, stored value, expected setting.
+	 * Core Multi-Currency states against the WooPayments extension's flag.
 	 *
-	 * @return array<string,array{0:string,1:string|null,2:bool}>
+	 * @return array<string,array{0:string|null,1:string|null,2:bool,3:bool}>
 	 */
-	public function provide_multi_currency_flags(): array {
+	public function provide_multi_currency_states(): array {
 		return array(
-			'option absent'    => array( 'option absent', null, true ),
-			'explicit disable' => array( 'explicit disable', '0', false ),
+			'core on, extension flag off'     => array( 'yes', '0', false, true ),
+			'core option absent, flag absent' => array( null, null, false, false ),
+			'turned off on the Features page' => array( 'yes', '1', true, false ),
 		);
 	}
 
@@ -436,15 +451,73 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should persist and read back an explicit Multi-Currency disable.
+	 * @testdox Should switch core Multi-Currency from the checkbox and keep the extension's flag in step: $_dataName.
+	 *
+	 * @dataProvider provide_multi_currency_switches
+	 *
+	 * @param string $core_option The core Multi-Currency feature option before the save.
+	 * @param string $flag        The WooPayments extension's flag before the save.
+	 * @param bool   $enable      The posted checkbox value.
 	 */
-	public function test_update_settings_persists_and_reads_multi_currency_disable(): void {
-		delete_option( '_wcpay_feature_customer_multi_currency' );
+	public function test_update_settings_switches_core_multi_currency( string $core_option, string $flag, bool $enable ): void {
+		$this->own_payments();
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, $core_option );
+		update_option( '_wcpay_feature_customer_multi_currency', $flag );
 
-		$settings = $this->sut->update_settings( array( 'is_multi_currency_enabled' => false ) );
+		$settings = $this->sut->update_settings( array( 'is_multi_currency_enabled' => $enable ) );
 
-		$this->assertSame( '0', get_option( '_wcpay_feature_customer_multi_currency' ) );
-		$this->assertFalse( $settings['is_multi_currency_enabled'] );
+		$this->assertSame( $enable ? 'yes' : 'no', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
+		$this->assertSame( $enable, wc_get_container()->get( FeaturesController::class )->feature_is_enabled( MultiCurrencyFeatureController::FEATURE_ID ) );
+		$this->assertSame( $enable ? '1' : '0', get_option( '_wcpay_feature_customer_multi_currency' ) );
+		$this->assertSame( $enable, $settings['is_multi_currency_enabled'] );
+	}
+
+	/**
+	 * Checkbox saves: a tick, and an untick the Features page would allow (no other currency, no foreign-currency order).
+	 *
+	 * @return array<string,array{0:string,1:string,2:bool}>
+	 */
+	public function provide_multi_currency_switches(): array {
+		return array(
+			'tick'           => array( 'no', '0', true ),
+			'allowed untick' => array( 'yes', '1', false ),
+		);
+	}
+
+	/**
+	 * @testdox Should refuse a Multi-Currency untick the Features page protects, with its sentence and link, and save nothing.
+	 */
+	public function test_settings_route_refuses_a_protected_multi_currency_untick(): void {
+		$this->set_card_and_ideal_account_data();
+		$this->make_builtin_active();
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		update_option( '_wcpay_feature_customer_multi_currency', '1' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( get_woocommerce_currency(), 'EUR' === get_woocommerce_currency() ? 'GBP' : 'EUR' ) );
+		$stored = get_option( 'woocommerce_woocommerce_payments_settings' );
+
+		try {
+			$response = $this->post_settings(
+				array(
+					'is_multi_currency_enabled'          => false,
+					'is_manual_capture_enabled'          => true,
+					'current_protection_level'           => 'standard',
+					'advanced_fraud_protection_settings' => array(),
+				)
+			);
+
+			$this->assertSame( 400, $response->get_status() );
+			$data = $response->get_data();
+			$this->assertSame( 'Disabling Multi-Currency stops currency switching but keeps your currency settings and order data.', $data['server_error'] );
+			$this->assertStringContainsString( 'section=features', $data['disable_url'] );
+			$this->assertStringContainsString( MultiCurrencyFeatureController::FEATURE_ID . '=0', $data['disable_url'] );
+			$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
+			$this->assertSame( '1', get_option( '_wcpay_feature_customer_multi_currency' ) );
+			$this->assertSame( $stored, get_option( 'woocommerce_woocommerce_payments_settings' ), 'No other setting of the save is written.' );
+			$this->assertNull( $this->api_client->last_fraud_ruleset, 'The fraud level is not sent to the platform.' );
+			$this->assertNull( $this->api_client->last_account_settings );
+		} finally {
+			$this->clear_builtin_active();
+		}
 	}
 
 	/**
@@ -3687,6 +3760,14 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		);
 		$this->set_card_and_ideal_account_data();
 		$this->make_builtin_active();
+	}
+
+	/**
+	 * Make the built-in WooPayments own payments, which core Multi-Currency needs to run.
+	 */
+	private function own_payments(): void {
+		add_filter( WooPaymentsRuntimeArbiter::BUILTIN_ENABLED_FILTER, '__return_true' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 	}
 
 	/**
