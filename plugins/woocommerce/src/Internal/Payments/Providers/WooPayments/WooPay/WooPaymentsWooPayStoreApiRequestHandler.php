@@ -268,8 +268,8 @@ class WooPaymentsWooPayStoreApiRequestHandler {
 		}
 
 		// Guest users' user_id on the cart token payload looks like "t_hash" while the order
-		// customer id is 0; logged-in users carry the real user id in both places.
-		$user_is_logged_in = $payload['user_id'] === $order->get_customer_id();
+		// customer id is 0; logged-in users carry the real user id in both places, a string in the token.
+		$user_is_logged_in = (string) $payload['user_id'] === (string) $order->get_customer_id();
 
 		if ( ! $user_is_logged_in && $woopay_verified_email_address === $order->get_billing_email() ) {
 			$order->add_meta_data( self::MERCHANT_CUSTOMER_ID_META, (string) $order->get_customer_id(), true );

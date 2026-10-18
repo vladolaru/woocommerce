@@ -251,14 +251,22 @@ class WooPaymentsWooPayStoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should detach the customer id from a verified-email guest order and schedule its restoration.
+	 * @testdox A verified-email WooPay order is detached only for a guest's cart token: $_dataName.
+	 *
+	 * The cart token names a guest as "t_<hash>" and a logged-in shopper by their user ID, which the token carries as a
+	 * string (CartTokenUtils::get_cart_token( string )). Client 11.1.0 compares the two strictly
+	 * (includes/woopay/class-woopay-session.php:210), so it detaches the logged-in shopper's order as well.
+	 *
+	 * @dataProvider provide_cart_token_shoppers
+	 *
+	 * @param bool $logged_in Whether the cart token names the order's customer rather than a guest.
 	 */
-	public function test_payment_status_change_detaches_customer_id_for_verified_email_guest_order(): void {
+	public function test_payment_status_change_detaches_customer_id_only_for_a_guest_token( bool $logged_in ): void {
 		$this->simulate_woopay_store_api_request();
 
 		$user_id = $this->factory->user->create( array( 'user_email' => 'verified-shopper@example.com' ) );
 		update_option( 'woopay_enabled_adapted_extensions', array( 'woocommerce-gift-cards' ) );
-		$_SERVER['HTTP_CART_TOKEN']                      = \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( 't_guesthash' );
+		$_SERVER['HTTP_CART_TOKEN']                      = \Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils::get_cart_token( $logged_in ? (string) $user_id : 't_guesthash' );
 		$_SERVER['HTTP_X_WOOPAY_VERIFIED_EMAIL_ADDRESS'] = 'verified-shopper@example.com';
 
 		$order = wc_create_order();
@@ -269,9 +277,27 @@ class WooPaymentsWooPayStoreApiRequestHandlerTest extends WC_Unit_Test_Case {
 		$this->create_handler()->woopay_order_payment_status_changed( $order->get_id() );
 
 		$order = wc_get_order( $order->get_id() );
-		$this->assertSame( 0, $order->get_customer_id() );
-		$this->assertSame( (string) $user_id, $order->get_meta( 'woopay_merchant_customer_id' ) );
-		$this->assertNotFalse( wp_next_scheduled( 'woopay_restore_order_customer_id', array( $order->get_id() ) ) );
+		if ( $logged_in ) {
+			$this->assertSame( $user_id, $order->get_customer_id() );
+			$this->assertFalse( $order->meta_exists( 'woopay_merchant_customer_id' ) );
+			$this->assertFalse( wp_next_scheduled( 'woopay_restore_order_customer_id', array( $order->get_id() ) ) );
+		} else {
+			$this->assertSame( 0, $order->get_customer_id() );
+			$this->assertSame( (string) $user_id, $order->get_meta( 'woopay_merchant_customer_id' ) );
+			$this->assertNotFalse( wp_next_scheduled( 'woopay_restore_order_customer_id', array( $order->get_id() ) ) );
+		}
+	}
+
+	/**
+	 * Cart token shoppers: a guest and the logged-in customer.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public function provide_cart_token_shoppers(): array {
+		return array(
+			'guest t_ token detaches the order' => array( false ),
+			'logged-in shopper keeps the order' => array( true ),
+		);
 	}
 
 	/**
