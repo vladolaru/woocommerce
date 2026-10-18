@@ -22,7 +22,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIn
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffects;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -67,13 +66,6 @@ class WooPaymentsPaymentIntentEventHandler {
 	 * @var WooPaymentsAccountService
 	 */
 	private WooPaymentsAccountService $account_service;
-
-	/**
-	 * WooPayments order effect applier.
-	 *
-	 * @var WooPaymentsOrderEffectApplier
-	 */
-	private WooPaymentsOrderEffectApplier $order_effect_applier;
 
 	/**
 	 * WooPayments order note service.
@@ -133,7 +125,6 @@ class WooPaymentsPaymentIntentEventHandler {
 	 * @param WooPaymentsApiClient                $api_client                  WooPayments API client.
 	 * @param WooPaymentsOrderDataService         $order_data_service          WooPayments order data service.
 	 * @param WooPaymentsAccountService           $account_service             WooPayments account service.
-	 * @param WooPaymentsOrderEffectApplier       $order_effect_applier        WooPayments order effect applier.
 	 * @param WooPaymentsOrderNoteService         $order_note_service          WooPayments order note service.
 	 * @param WooPaymentsAdminMenuBadgeService    $admin_menu_badge_service    WooPayments admin menu badge service.
 	 * @param WooPaymentsEventOrderResolver       $event_order_resolver        Webhook event order resolver.
@@ -142,12 +133,11 @@ class WooPaymentsPaymentIntentEventHandler {
 	 * @param OrderPaymentLock                    $order_payment_lock          Order payment lock.
 	 * @param WooPaymentsPersistenceVocabulary    $persistence_vocabulary      WooPayments persistence vocabulary.
 	 */
-	final public function init( OrderPaymentLifecycleService $lifecycle_service, WooPaymentsApiClient $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsAccountService $account_service, WooPaymentsOrderEffectApplier $order_effect_applier, WooPaymentsOrderNoteService $order_note_service, WooPaymentsAdminMenuBadgeService $admin_menu_badge_service, WooPaymentsEventOrderResolver $event_order_resolver, WooPaymentsOtherChargeRecorder $other_charge_recorder, WooPaymentsFeeDetailsNoteController $fee_details_note_controller, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary ): void {
+	final public function init( OrderPaymentLifecycleService $lifecycle_service, WooPaymentsApiClient $api_client, WooPaymentsOrderDataService $order_data_service, WooPaymentsAccountService $account_service, WooPaymentsOrderNoteService $order_note_service, WooPaymentsAdminMenuBadgeService $admin_menu_badge_service, WooPaymentsEventOrderResolver $event_order_resolver, WooPaymentsOtherChargeRecorder $other_charge_recorder, WooPaymentsFeeDetailsNoteController $fee_details_note_controller, OrderPaymentLock $order_payment_lock, WooPaymentsPersistenceVocabulary $persistence_vocabulary ): void {
 		$this->lifecycle_service           = $lifecycle_service;
 		$this->api_client                  = $api_client;
 		$this->order_data_service          = $order_data_service;
 		$this->account_service             = $account_service;
-		$this->order_effect_applier        = $order_effect_applier;
 		$this->order_note_service          = $order_note_service;
 		$this->admin_menu_badge_service    = $admin_menu_badge_service;
 		$this->event_order_resolver        = $event_order_resolver;
@@ -386,11 +376,9 @@ class WooPaymentsPaymentIntentEventHandler {
 	 * @param array<string,mixed> $payment_intent Provider payment intent object.
 	 */
 	private function apply_succeeded_payment_intent_under_lock( WC_Order $order, array $payment_intent ): void {
+		// The order keeps the payment method and title its checkout, redirect return or in-person capture wrote: client 11.1.0's
+		// webhook never sets them (includes/class-wc-payments-webhook-processing-service.php process_webhook_payment_intent_succeeded()).
 		$this->write_succeeded_payment_intent_meta( $order, $payment_intent );
-		// Client 11.1.0's webhook never retitles an order, so an order of another gateway keeps its payment method title.
-		if ( WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( (string) $order->get_payment_method() ) ) {
-			$this->order_effect_applier->apply_payment_method_display_title( $order, $payment_intent, $this->account_service->get_account_country() );
-		}
 		$lifecycle_event = $this->build_succeeded_lifecycle_event( $payment_intent, $order );
 		$this->repair_recurring_order_token( $order, $payment_intent );
 		$this->fee_details_note_controller->apply_and_schedule_fee_details( $order, $lifecycle_event );

@@ -679,27 +679,6 @@ class WooPaymentsOrderEffectApplier {
 	}
 
 	/**
-	 * Apply only payment-method gateway and title effects to an order.
-	 *
-	 * @param WC_Order            $order           Order being updated.
-	 * @param array<string,mixed> $result          Provider PaymentIntent response.
-	 * @param string              $account_country Connected account country override.
-	 */
-	public function apply_payment_method_display_title( WC_Order $order, array $result, string $account_country = '' ): void {
-		$effects = $this->compose_payment_method_display_details( $order, $result );
-		if ( empty( $effects ) ) {
-			return;
-		}
-
-		if ( '' !== $effects['payment_method_id'] ) {
-			$order->set_payment_method( $effects['payment_method_id'] );
-		}
-		$order->set_payment_method_title( $this->resolve_payment_method_title( $order, $effects, $account_country ) );
-		$order->save();
-		$this->sync_payment_method_to_subscriptions( $order );
-	}
-
-	/**
 	 * Resolve a localized title only when applying the real display effect.
 	 *
 	 * @param WC_Order                                                                                                                                                     $order           Order being updated.

@@ -21,7 +21,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsDisputeEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsNotificationEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRemoteNoteService;
@@ -90,7 +89,6 @@ trait WooPaymentsEventHandlerTestTrait {
 			$api_client,
 			$container->get( WooPaymentsOrderDataService::class ),
 			$container->get( WooPaymentsAccountService::class ),
-			$container->get( WooPaymentsOrderEffectApplier::class ),
 			$container->get( WooPaymentsOrderNoteService::class ),
 			$container->get( WooPaymentsAdminMenuBadgeService::class ),
 			$container->get( WooPaymentsEventOrderResolver::class ),

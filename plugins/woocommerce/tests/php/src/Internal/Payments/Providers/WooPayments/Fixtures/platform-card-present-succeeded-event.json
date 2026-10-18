@@ -1,0 +1,232 @@
+{
+	"_meta": {
+		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (US, test mode): the payment_intent.succeeded event Stripe sent for an in-person payment taken on a simulated WisePOS E reader (simulated_wisepos_e) and captured through the store on 2026-10-17 at 23:49:09 UTC.",
+		"store": "WooCommerce :8889 (woocommerce-develop-2, exp/core-native-payments at 0c5268c6c16), order 5819 for a monthly subscription product, test mode.",
+		"captured_via": "The platform debug log record of the webhook request (logstash, 2026-10-17 23:49:14 UTC): the event as the platform received it from the Stripe listener. Only the two request parameters the log adds (rest_route, XDEBUG_SESSION_START) are removed; nothing else is edited."
+	},
+	"events": [
+		{
+			"id": "evt_3URhL6BzWlxcwgpP0FhyDcG2",
+			"object": "event",
+			"account": "acct_1TrY2nBzWlxcwgpP",
+			"api_version": "2020-08-27",
+			"context": "acct_1TrY2nBzWlxcwgpP",
+			"created": 1792280953,
+			"data": {
+				"object": {
+					"id": "pi_3URhL6BzWlxcwgpP0uYEDJdg",
+					"object": "payment_intent",
+					"allowed_payment_method_types": null,
+					"amount": 1992,
+					"amount_capturable": 0,
+					"amount_details": {
+						"tip": []
+					},
+					"amount_received": 1992,
+					"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+					"application_fee_amount": 64,
+					"automatic_payment_methods": null,
+					"canceled_at": null,
+					"cancellation_reason": null,
+					"capture_method": "manual",
+					"client_secret": "pi_3URhL6BzWlxcwgpP0uYEDJdg_secret_P7EWZ25CEoDs5jdQpoqNa7H54",
+					"confirmation_method": "automatic",
+					"created": 1792280916,
+					"currency": "usd",
+					"customer": "cus_VScaUzy9kKnv2M",
+					"customer_account": null,
+					"description": "Online Payment for Order #5819 for store8889.localhost:8889 blog_id 4",
+					"excluded_payment_method_types": null,
+					"last_payment_error": null,
+					"latest_charge": "ch_3URhL6BzWlxcwgpP0FxkPyaj",
+					"livemode": false,
+					"managed_payments": {
+						"enabled": false
+					},
+					"metadata": {
+						"fraud_outcome": "allow",
+						"order_number": "5819",
+						"order_id": "5819",
+						"order_key": "wc_order_Of7lmh3WghoQs",
+						"client_version": "11.1.0",
+						"site_url": "http://store8889.localhost:8889",
+						"subscription_payment": "initial",
+						"payment_context": "regular_subscription",
+						"customer_email": "c0p-ipp@example.com",
+						"customer_name": "In Person",
+						"payment_type": "recurring"
+					},
+					"next_action": null,
+					"on_behalf_of": null,
+					"payment_method": "pm_1URhLJBzWlxcwgpPYUN0WV61",
+					"payment_method_configuration_details": null,
+					"payment_method_options": {
+						"card_present": {
+							"request_extended_authorization": false,
+							"request_incremental_authorization_support": false
+						}
+					},
+					"payment_method_types": [
+						"card_present"
+					],
+					"payment_record": null,
+					"processing": null,
+					"receipt_email": null,
+					"review": null,
+					"setup_future_usage": null,
+					"shared_payment_granted_token": null,
+					"shipping": null,
+					"source": null,
+					"statement_descriptor": null,
+					"statement_descriptor_suffix": null,
+					"status": "succeeded",
+					"transfer_data": null,
+					"transfer_group": null,
+					"charges": {
+						"object": "list",
+						"data": [
+							{
+								"id": "ch_3URhL6BzWlxcwgpP0FxkPyaj",
+								"object": "charge",
+								"amount": 1992,
+								"amount_captured": 1992,
+								"amount_refunded": 0,
+								"application": "ca_HrWs5SEMnkgOWmbL7lL6OmWI048fypU2",
+								"application_fee": "fee_1URhLhBzWlxcwgpPBdqTGa05",
+								"application_fee_amount": 64,
+								"authorization_code": "775431",
+								"balance_transaction": "txn_3URhL6BzWlxcwgpP09T4Mhya",
+								"billing_details": {
+									"address": {
+										"city": null,
+										"country": null,
+										"line1": null,
+										"line2": null,
+										"postal_code": null,
+										"state": null
+									},
+									"email": null,
+									"name": null,
+									"phone": null,
+									"tax_id": null
+								},
+								"calculated_statement_descriptor": "WOOCOMMERCE",
+								"captured": true,
+								"created": 1792280929,
+								"currency": "usd",
+								"customer": "cus_VScaUzy9kKnv2M",
+								"description": "Online Payment for Order #5819 for store8889.localhost:8889 blog_id 4",
+								"destination": null,
+								"dispute": null,
+								"disputed": false,
+								"failure_balance_transaction": null,
+								"failure_code": null,
+								"failure_message": null,
+								"fraud_details": [],
+								"invoice": null,
+								"livemode": false,
+								"metadata": {
+									"fraud_outcome": "allow",
+									"order_number": "5819",
+									"order_id": "5819"
+								},
+								"on_behalf_of": null,
+								"order": null,
+								"outcome": {
+									"advice_code": null,
+									"network_advice_code": null,
+									"network_decline_code": null,
+									"network_status": "approved_by_network",
+									"reason": null,
+									"risk_level": "not_assessed",
+									"seller_message": "Payment complete.",
+									"type": "authorized"
+								},
+								"paid": true,
+								"payment_intent": "pi_3URhL6BzWlxcwgpP0uYEDJdg",
+								"payment_method": "pm_1URhLJBzWlxcwgpPYUN0WV61",
+								"payment_method_details": {
+									"card_present": {
+										"amount_authorized": 1992,
+										"brand": "visa",
+										"brand_product": "A",
+										"capture_before": 1792712929,
+										"cardholder_name": null,
+										"country": "US",
+										"description": "Visa Classic",
+										"emv_auth_data": "8A023030",
+										"exp_month": 12,
+										"exp_year": 2027,
+										"fingerprint": "GPNBuIQZKl9E7Sku",
+										"funding": "credit",
+										"generated_card": null,
+										"iin": "424242",
+										"incremental_authorization_supported": false,
+										"issuer": "Stripe Payments UK Limited",
+										"last4": "4242",
+										"location": "tml_Gr2QlAAxKHEwQW",
+										"network": "visa",
+										"network_transaction_id": "119727611598658",
+										"offline": {
+											"stored_at": null,
+											"type": null
+										},
+										"overcapture_supported": false,
+										"preferred_locales": [],
+										"read_method": "contact_emv",
+										"reader": "tmr_GtDMyA3ADx0xpc",
+										"receipt": {
+											"account_type": "credit",
+											"application_cryptogram": null,
+											"application_preferred_name": null,
+											"authorization_code": "775431",
+											"authorization_response_code": "3030",
+											"cardholder_verification_method": null,
+											"dedicated_file_name": null,
+											"terminal_verification_results": null,
+											"transaction_status_information": null
+										}
+									},
+									"type": "card_present"
+								},
+								"radar_options": [],
+								"receipt_email": null,
+								"receipt_number": null,
+								"receipt_url": "https://pay.stripe.com/receipts/payment/CAcaFwoVYWNjdF8xVHJZMm5CeldseGN3Z3BQKPqS0NYGMgZdkBgQ_r46LBYg9s3N45KejIEudmeN8-z7HPZbhJzrLJUDM4sBTKuKxLvPwzPqshWvSlYQ",
+								"refunded": false,
+								"refunds": {
+									"object": "list",
+									"data": [],
+									"has_more": false,
+									"total_count": 0,
+									"url": "/v1/charges/ch_3URhL6BzWlxcwgpP0FxkPyaj/refunds"
+								},
+								"review": null,
+								"shipping": null,
+								"source": null,
+								"source_transfer": null,
+								"statement_descriptor": null,
+								"statement_descriptor_suffix": null,
+								"status": "succeeded",
+								"transfer_data": null,
+								"transfer_group": null
+							}
+						],
+						"has_more": false,
+						"total_count": 1,
+						"url": "/v1/charges?payment_intent=pi_3URhL6BzWlxcwgpP0uYEDJdg"
+					},
+					"invoice": null,
+					"level3": null
+				}
+			},
+			"livemode": false,
+			"pending_webhooks": 2,
+			"request": {
+				"id": "req_HWocW1WjUIYD22",
+				"idempotency_key": "5ca3a1fea00e19aabae6df8a4de7c50ac7a21b8401113e9d03d35252f3996b16"
+			},
+			"type": "payment_intent.succeeded"
+		}
+	]
+}

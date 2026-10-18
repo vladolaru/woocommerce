@@ -27,6 +27,7 @@ use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockWithClaimHook
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsEventHandlerTestTrait;
 use Automattic\WooCommerce\Tests\Internal\Payments\UncachedOrderWriter;
 use Exception;
@@ -1294,9 +1295,12 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox payment_intent.succeeded uses charge-derived country titles before completing the order.
+	 * @testdox payment_intent.succeeded keeps a split-method order's checkout title, whatever title the charge would compose.
+	 *
+	 * Client 11.1.0 writes the payment method title at checkout and on the redirect return, never from this webhook
+	 * (includes/class-wc-payments-webhook-processing-service.php process_webhook_payment_intent_succeeded()).
 	 */
-	public function test_payment_intent_succeeded_uses_charge_country_title_before_completion_note(): void {
+	public function test_payment_intent_succeeded_keeps_the_split_method_checkout_title(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$this->set_woopayments_account_country( 'US' );
 		$order = $this->create_woopayments_order();
@@ -1365,8 +1369,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
-		$this->assertSame( 'Cash App Afterpay', $order->get_payment_method_title() );
-		$this->assertOrderHasNote( $order, 'Payment via Cash App Afterpay (pi_123).' );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'afterpay_clearpay', $order->get_payment_method() );
+		$this->assertSame( 'Afterpay', $order->get_payment_method_title() );
+		$this->assertOrderHasNote( $order, 'Payment via Afterpay (pi_123).' );
 		$this->assertSame(
 			wp_json_encode(
 				array(
@@ -1378,6 +1383,130 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 				)
 			),
 			$order->get_meta( '_wcpay_payment_method_details', true )
+		);
+	}
+
+	/**
+	 * @testdox payment_intent.succeeded leaves the payment method and title of a $_dataName as they are, on the order and its subscription.
+	 *
+	 * Client 11.1.0 never sets the method or title from this webhook (includes/class-wc-payments-webhook-processing-service.php
+	 * process_webhook_payment_intent_succeeded()); the in-person capture set woocommerce_payments and the in-person title
+	 * (includes/admin/class-wc-rest-payments-orders-controller.php:213-214), and a related subscription stays on that gateway,
+	 * so it keeps renewing automatically.
+	 *
+	 * @dataProvider provide_orders_paid_before_the_succeeded_event
+	 *
+	 * @param string $charge_type Charge the event carries: card_present, interac_present or card.
+	 * @param string $title       Title the order was given before the event.
+	 * @param bool   $is_woopay   Whether the order was paid with WooPay.
+	 */
+	public function test_payment_intent_succeeded_keeps_the_payment_method_and_title( string $charge_type, string $title, bool $is_woopay ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$this->set_woopayments_account_country( 'US' );
+		$order = $this->create_woopayments_order();
+		$order->set_payment_method_title( $title );
+		if ( $is_woopay ) {
+			$order->add_meta_data( 'is_woopay', '1', true );
+		}
+		$order->save();
+		$subscription = $this->create_woopayments_order();
+		$subscription->set_payment_method_title( $title );
+		$subscription->update_meta_data( '_requires_manual_renewal', 'false' );
+		$subscription->save();
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'parent' => array( $subscription->get_id() ) ) );
+
+		try {
+			$this->sut->process( 'card' === $charge_type ? $this->create_card_succeeded_event( $order ) : $this->create_recorded_in_person_succeeded_event( $order, $charge_type ) );
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
+		}
+
+		$order        = wc_get_order( $order->get_id() );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertTrue( $order->is_paid(), 'The event completes the payment.' );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $order->get_payment_method() );
+		$this->assertSame( $title, $order->get_payment_method_title() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription->get_payment_method() );
+		$this->assertSame( $title, $subscription->get_payment_method_title() );
+		$this->assertSame( 'false', $subscription->get_meta( '_requires_manual_renewal', true ) );
+	}
+
+	/**
+	 * Orders paid before their payment_intent.succeeded event: charge type, the order's title, WooPay.
+	 *
+	 * @return array<string,array{0:string,1:string,2:bool}>
+	 */
+	public function provide_orders_paid_before_the_succeeded_event(): array {
+		return array(
+			'in-person card_present order'    => array( 'card_present', 'WooCommerce In-Person Payments', false ),
+			'in-person interac_present order' => array( 'interac_present', 'WooCommerce In-Person Payments', false ),
+			'card order'                      => array( 'card', 'Visa credit card', false ),
+			'WooPay order'                    => array( 'card', 'Visa credit card', true ),
+		);
+	}
+
+	/**
+	 * Build the recorded in-person payment_intent.succeeded event for an order.
+	 *
+	 * The card_present event is the one the platform received for a simulated reader payment
+	 * (Fixtures/platform-card-present-succeeded-event.json). No interac_present payment can be taken locally, so that row
+	 * reuses the card_present event with only the payment method type renamed.
+	 *
+	 * @param WC_Order $order       Order the event pays.
+	 * @param string   $charge_type card_present or interac_present.
+	 * @return array<string,mixed>
+	 */
+	private function create_recorded_in_person_succeeded_event( WC_Order $order, string $charge_type ): array {
+		$recording = json_decode( (string) file_get_contents( dirname( __DIR__ ) . '/Fixtures/platform-card-present-succeeded-event.json' ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local test fixture.
+		$event     = $recording['events'][0];
+		$event['data']['object']['metadata']['order_id']  = (string) $order->get_id();
+		$event['data']['object']['metadata']['order_key'] = $order->get_order_key();
+		$event['data']['object']['amount']                = 1000;
+		$event['data']['object']['amount_received']       = 1000;
+		if ( 'interac_present' === $charge_type ) {
+			$details                    = $event['data']['object']['charges']['data'][0]['payment_method_details'];
+			$details['interac_present'] = $details['card_present'];
+			$details['type']            = 'interac_present';
+			unset( $details['card_present'] );
+
+			$event['data']['object']['charges']['data'][0]['payment_method_details'] = $details;
+			$event['data']['object']['payment_method_types']                         = array( 'interac_present' );
+		}
+
+		return $event;
+	}
+
+	/**
+	 * Build a payment_intent.succeeded event for a card charge whose composed title is "Visa credit card".
+	 *
+	 * @param WC_Order $order Order the event pays.
+	 * @return array<string,mixed>
+	 */
+	private function create_card_succeeded_event( WC_Order $order ): array {
+		return $this->create_payment_intent_event(
+			'payment_intent.succeeded',
+			$order,
+			array(
+				'amount'  => 1000,
+				'charges' => array(
+					'data' => array(
+						array(
+							'payment_method_details' => array(
+								'type' => 'card',
+								'card' => array(
+									'brand'   => 'visa',
+									'network' => 'visa',
+									'funding' => 'credit',
+									'last4'   => '4242',
+								),
+							),
+						),
+					),
+				),
+			)
 		);
 	}
 
