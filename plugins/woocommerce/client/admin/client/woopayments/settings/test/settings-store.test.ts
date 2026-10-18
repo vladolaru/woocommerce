@@ -226,6 +226,49 @@ describe( 'WooPayments settings store', () => {
 		] );
 	} );
 
+	it( 'sends the Multi-Currency checkbox only when it was changed on this page', async () => {
+		const store = await setupStore();
+		// Loaded with Multi-Currency on; the merchant then turned it off on the Features page in another tab.
+		await loadSettings( store, {
+			is_multi_currency_enabled: true,
+			is_debug_log_enabled: false,
+		} );
+		store.dispatch().updateIsDebugLogEnabled( true );
+		store.apiFetch.mockResolvedValueOnce( {
+			is_multi_currency_enabled: false,
+			is_debug_log_enabled: true,
+		} );
+
+		await store.dispatch().saveSettings();
+
+		expect( store.apiFetch ).toHaveBeenCalledWith( {
+			path: SETTINGS_PATH,
+			method: 'post',
+			data: { is_debug_log_enabled: true },
+		} );
+		// The page then shows the stored state, off.
+		expect( store.select().getSettings() ).toEqual(
+			expect.objectContaining( { is_multi_currency_enabled: false } )
+		);
+
+		store.dispatch().updateIsMultiCurrencyEnabled( true );
+		store.apiFetch.mockResolvedValueOnce( {
+			is_multi_currency_enabled: true,
+			is_debug_log_enabled: true,
+		} );
+
+		await store.dispatch().saveSettings();
+
+		expect( store.apiFetch ).toHaveBeenLastCalledWith( {
+			path: SETTINGS_PATH,
+			method: 'post',
+			data: {
+				is_multi_currency_enabled: true,
+				is_debug_log_enabled: true,
+			},
+		} );
+	} );
+
 	it( 'offers the Features page disable link when a Multi-Currency untick is refused', async () => {
 		const store = await setupStore();
 		await loadSettings( store, { is_multi_currency_enabled: true } );

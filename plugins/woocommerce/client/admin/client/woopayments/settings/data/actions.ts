@@ -224,13 +224,26 @@ export function* saveSettings(): Generator<
 
 	try {
 		const settings = select( STORE_NAME ).getSettings();
+		const savedSettings = select( STORE_NAME ).getSavedSettings();
+		// The checkbox is also the Features page's Multi-Currency switch, so a save sends it only when it was changed here:
+		// a page loaded before a Features page change must not switch Multi-Currency back. Client 11.1.0 sends every
+		// setting (client/data/settings/actions.js:186-194), its checkbox being the only switch.
+		const {
+			is_multi_currency_enabled: isMultiCurrencyEnabled,
+			...otherSettings
+		} = settings;
+		const data =
+			'is_multi_currency_enabled' in settings &&
+			isMultiCurrencyEnabled !== savedSettings.is_multi_currency_enabled
+				? settings
+				: otherSettings;
 
 		yield updateIsSavingSettings( true, null );
 
 		const response = yield apiFetch( {
 			path: `${ NAMESPACE }/settings`,
 			method: 'post',
-			data: settings,
+			data,
 		} );
 		const responseData = response.data ?? response;
 
