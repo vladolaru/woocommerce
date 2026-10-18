@@ -319,6 +319,23 @@ describe( 'fraud protection advanced ruleset utilities', () => {
 				'50000|USD',
 				'5000000|USD',
 			],
+			// 19.99 * 100 and 0.29 * 100 fall just below the whole cent in floating point.
+			[
+				'two-decimal store, cents that floats miss',
+				'USD',
+				'0.29',
+				'19.99',
+				'29|USD',
+				'1999|USD',
+			],
+			[
+				'zero-decimal store, fractional yen',
+				'JPY',
+				'499.6',
+				'50000.4',
+				'500|JPY',
+				'50000|JPY',
+			],
 		] )(
 			'writes the limits for a %s',
 			( _label, storeCurrency, min, max, expectedMin, expectedMax ) => {

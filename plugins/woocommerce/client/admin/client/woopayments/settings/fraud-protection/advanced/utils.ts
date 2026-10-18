@@ -71,8 +71,9 @@ const buildFormattedRulePrice = (
 		? 1
 		: 100;
 
+	// Rounded: 19.99 * 100 is 1998.9999999999998 in floating point, which client 11.1.0 truncates to 1998 (:73).
 	return [
-		Math.trunc( priceFloat * minorUnitFactor ),
+		Math.round( priceFloat * minorUnitFactor ),
 		currency.toUpperCase(),
 	].join( '|' );
 };
