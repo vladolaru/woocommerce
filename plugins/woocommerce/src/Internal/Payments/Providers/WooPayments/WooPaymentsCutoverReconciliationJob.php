@@ -58,9 +58,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/** Step of a network generation waiting to carry an exclusion to every site. */
 	private const STEP_NETWORK_EXCLUSION_PROPAGATION = 'network_exclusion_propagation';
 
-	/** Step entry that records informational outcomes. */
-	private const STEP_RECORDED_OUTCOMES = 'recorded_outcomes';
-
 	/** Source of the merchant's start. */
 	private const SOURCE_MERCHANT = 'merchant';
 
@@ -93,9 +90,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
 	/** Condition code of a data migration that failed; the stored code keeps its first name. */
 	private const CODE_DATA_MIGRATION_FAILED = 'normalization_failed';
-
-	/** Feature-seeding extension action fired before plugin deactivation. */
-	public const ACTION_SEED_FEATURES = 'woocommerce_woopayments_cutover_seed_features';
 
 	/** Time a claimed attempt may run before repair_schedule() recovers it as stale; fixed at claim, there is no heartbeat. */
 	public const RUNNING_TIMEOUT = 15 * MINUTE_IN_SECONDS;
@@ -348,9 +342,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Record a successful external plugin activation as a rollback awaiting merchant confirmation.
 	 *
-	 * A completed switch, or an open site-level one that is not awaiting the merchant's start, is replaced by a new generation
-	 * awaiting it. An open one also loses its next attempt, so it never deactivates the extension or migrates data again,
-	 * and the tier follows the extension.
+	 * A completed switch is replaced by a new generation awaiting the merchant's start. An open site-level one that is not
+	 * awaiting it, a claim running in another request included, is rolled back (roll_back_open_generation()); a running
+	 * worker's finalize fence then refuses to deactivate the extension.
 	 *
 	 * @param bool $network_wide Whether the external activation was network-wide.
 	 * @return bool True when the rollback was already recorded or a new generation was opened.
@@ -381,16 +375,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			}
 			// The hook fires only for an inactive extension, and a merchant's own deactivation makes the record manual, so an
 			// open merchant start sees this only after finalize deactivated the extension.
-			if ( ! in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) || true === ( $record['network_cutover'] ?? false ) ) {
+			if ( ! in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED, WooPaymentsCutoverStateStore::STATE_RUNNING ), true ) || true === ( $record['network_cutover'] ?? false ) ) {
 				return false;
 			}
-			if ( ! $this->replace_terminal_with_awaiting_start( $record, self::SOURCE_ROLLBACK, $now ) ) {
-				return false;
-			}
-			$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
-			$this->account_service->sync_setup_tier_from_options( true );
 
-			return true;
+			return $this->roll_back_open_generation( $record, $now );
 		} finally {
 			$this->state_store->release_lease( $token );
 		}
@@ -1329,6 +1318,15 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		if ( null === $claimed ) {
 			return;
 		}
+		$claimed = $this->fence_finalizing_claim( $claimed );
+		if ( null === $claimed ) {
+			return;
+		}
+		// A merchant who deactivated the extension by hand and turned it back on chose the extension; the rollback, not the switch.
+		if ( $this->is_manual_deactivation_claim( $claimed ) && $this->arbiter->is_extension_owner() ) {
+			$this->roll_back_claim( $claimed );
+			return;
+		}
 
 		$deactivated = true;
 		if ( ! $this->is_manual_deactivation_claim( $claimed ) ) {
@@ -1352,11 +1350,80 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Run finalization prerequisites while retaining the current running revision.
+	 * Fence a claim before its finalize step deactivates the extension or moves the tier.
+	 *
+	 * The compare-and-set fails when the record changed since this worker claimed it (an extension activation rolled it
+	 * back, or repair_schedule() recovered the claim), so a stale worker finalizes nothing.
+	 *
+	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
+	 * @return array<string,mixed>|null The fenced claim, or null when the claim is no longer this worker's.
+	 */
+	private function fence_finalizing_claim( array $claimed ): ?array {
+		$now   = time();
+		$token = $this->state_store->acquire_lease( $now );
+		if ( null === $token ) {
+			return null;
+		}
+
+		try {
+			if ( $claimed[ self::CLAIM_EXPIRES_AT_KEY ] <= $now ) {
+				return null;
+			}
+			$fenced               = $claimed;
+			$fenced['revision']   = $claimed['revision'] + 1;
+			$fenced['updated_at'] = $now;
+
+			return $this->state_store->compare_and_set_record( $claimed, $fenced ) ? $fenced : null;
+		} finally {
+			$this->state_store->release_lease( $token );
+		}
+	}
+
+	/**
+	 * Roll back this worker's claim as the merchant's choice of the WooPayments extension.
+	 *
+	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
+	 */
+	private function roll_back_claim( array $claimed ): void {
+		$now   = time();
+		$token = $this->state_store->acquire_lease( $now );
+		if ( null === $token ) {
+			return;
+		}
+
+		try {
+			$this->roll_back_open_generation( $claimed, $now );
+		} finally {
+			$this->state_store->release_lease( $token );
+		}
+	}
+
+	/**
+	 * Replace an open generation with a rollback generation awaiting the merchant's start; call with the write lock held.
+	 *
+	 * The open generation loses its next attempt, so it never deactivates the extension or migrates data again, and the
+	 * tier is re-synced for the extension.
+	 *
+	 * @param array<string,mixed> $record Current open record.
+	 * @param int                 $now    Current UTC timestamp.
+	 * @return bool True when the rollback generation was stored.
+	 */
+	private function roll_back_open_generation( array $record, int $now ): bool {
+		if ( ! $this->replace_terminal_with_awaiting_start( $record, self::SOURCE_ROLLBACK, $now ) ) {
+			return false;
+		}
+		$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
+		$this->account_service->sync_setup_tier_from_options( true );
+
+		return true;
+	}
+
+	/**
+	 * Run the data migration for a claim about to finalize.
 	 *
 	 * @param array<string,mixed> $claimed  Exact running state owned by this worker.
 	 * @param array<int,mixed>    $outcomes Informational outcomes accumulated during reconciliation.
-	 * @return array<string,mixed>|null Updated running claim, or null after a deferred result.
+	 * @return array<string,mixed>|null The claim, or null after a deferred result.
 	 */
 	private function prepare_finalization_claim( array $claimed, array $outcomes ): ?array {
 		try {
@@ -1369,40 +1436,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		if ( in_array( 'settings_persistence_failed', $result['changes'], true ) ) {
 			$this->defer( $claimed, array( self::CODE_DATA_MIGRATION_FAILED ), $outcomes );
 			return null;
-		}
-
-		$seed_started   = array( 'code' => 'feature_seeding_started' );
-		$seed_completed = array( 'code' => 'feature_seeding_completed' );
-		if ( ! $this->has_information_outcome( $claimed['informational_outcomes'], $seed_completed ) ) {
-			if ( ! $this->has_information_outcome( $claimed['informational_outcomes'], $seed_started ) ) {
-				$seeded_claim = $this->persist_information_outcomes( $claimed, array( $seed_started ) );
-				if ( null === $seeded_claim ) {
-					return null;
-				}
-				$claimed = $seeded_claim;
-			}
-			try {
-				/**
-				 * Fires before WooPayments plugin deactivation so feature owners can seed native settings.
-				 *
-				 * Listeners must be idempotent for each generation and site. A crash before completion is persisted causes the action to run again.
-				 *
-				 * @since 11.2.0
-				 *
-				 * @param int $generation Cutover generation being finalized.
-				 * @param int $site_id    Site whose native feature settings should be seeded.
-				 */
-				do_action( self::ACTION_SEED_FEATURES, (int) $claimed['generation'], get_current_blog_id() );
-			} catch ( \Throwable $error ) {
-				$this->log_error( 'WooPayments cutover feature seeding failed.', array( 'error' => $error->getMessage() ) );
-				$this->defer( $claimed, array( 'feature_seeding_failed' ), $outcomes );
-				return null;
-			}
-			$seeded_claim = $this->persist_information_outcomes( $claimed, array( $seed_completed ) );
-			if ( null === $seeded_claim ) {
-				return null;
-			}
-			$claimed = $seeded_claim;
 		}
 
 		return $claimed;
@@ -1892,38 +1925,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
 			$this->ensure_record_scheduled( $deferred, $now );
 			return true;
-		} finally {
-			$this->state_store->release_lease( $token );
-		}
-	}
-
-	/**
-	 * Persist informational outcomes while retaining the running lease fence.
-	 *
-	 * @param array<string,mixed> $claimed  Exact running state owned by this worker.
-	 * @param array<int,mixed>    $outcomes Outcomes to persist.
-	 * @return array<string,mixed>|null Updated claim, or null when it was fenced.
-	 */
-	private function persist_information_outcomes( array $claimed, array $outcomes ): ?array {
-		$now   = time();
-		$token = $this->state_store->acquire_lease( $now );
-		if ( null === $token ) {
-			return null;
-		}
-
-		try {
-			$record = $this->state_store->get_record();
-			if ( ! is_array( $record ) || $record !== $claimed || WooPaymentsCutoverStateStore::STATE_RUNNING !== $record['state'] || $record[ self::CLAIM_EXPIRES_AT_KEY ] <= $now ) {
-				return null;
-			}
-
-			$updated                           = $record;
-			$updated['revision']               = $record['revision'] + 1;
-			$updated['updated_at']             = $now;
-			$updated['informational_outcomes'] = $this->merge_information_outcomes( $record['informational_outcomes'], $outcomes );
-			$updated                           = $this->append_step( $updated, self::STEP_RECORDED_OUTCOMES, $now, array( 'outcomes' => $outcomes ) );
-
-			return $this->state_store->compare_and_set_record( $record, $updated ) ? $updated : null;
 		} finally {
 			$this->state_store->release_lease( $token );
 		}

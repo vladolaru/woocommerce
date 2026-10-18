@@ -327,32 +327,22 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 		$sut           = new WooPaymentsCutoverReconciliationJob();
 		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight, $normalization, $this->create_native_eligibility_service( true ) );
-		$this->jobs[]  = $sut;
-		$seeded        = 0;
-		$seed_features = static function () use ( &$seeded ): void {
-			++$seeded;
-		};
-		add_action( 'woocommerce_woopayments_cutover_seed_features', $seed_features );
+		$this->jobs[] = $sut;
 		// Plugin Multi-Currency use (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`) next to a stored core choice: the
 		// handover runs on the first native-owned request, so the reconciliation itself must leave the choice alone.
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
-		try {
-			$this->assertTrue( $sut->enqueue( 'merchant' ) );
-			$pending = $this->require_state_store()->get_record();
-			$this->assertIsArray( $pending );
-			$this->require_scheduler()->cancel( $pending['generation'], 1 );
-			$before = time();
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$before = time();
 
-			$sut->handle_reconcile( $pending['generation'], 1 );
-		} finally {
-			remove_action( 'woocommerce_woopayments_cutover_seed_features', $seed_features );
-		}
+		$sut->handle_reconcile( $pending['generation'], 1 );
 
 		$verification = $this->require_state_store()->get_record();
 		$this->assertIsArray( $verification );
 		$this->assertSame( 1, $normalization->get_run_count() );
-		$this->assertSame( 1, $seeded );
 		$this->assertSame( 'no', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ), 'The reconciliation does not write the Multi-Currency option.' );
 		$this->assertSame( 1, $preflight->get_deactivation_calls() );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $verification['state'] );
@@ -795,7 +785,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->assertIsArray( $record );
 			$this->assertSame( 'recovered_stale_running', $record['current_step'] );
 		} elseif ( 'a claim running in another request' === $shape ) {
-			// Running claims stay a limit until the finalize fence lands: a worker that claimed first keeps its claim.
+			// The activation rolls a running claim back too; the worker's finalize fence then refuses to deactivate.
 			$this->require_scheduler()->cancel( $record['generation'], 1 );
 			$record = $this->create_running_record( $record );
 		} elseif ( "awaiting the merchant's start" === $shape ) {
@@ -856,9 +846,175 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			'an ownership check deferred on financial_migrations_unavailable' => array( 'an ownership check deferred on financial_migrations_unavailable', true ),
 			'a stale running claim recovered after finalize' => array( 'a stale running claim recovered after finalize', true ),
 			'a merchant start reinstalled before finalize' => array( 'a merchant start reinstalled before finalize', true ),
-			'a claim running in another request'           => array( 'a claim running in another request', false ),
+			'a claim running in another request'           => array( 'a claim running in another request', true ),
 			"awaiting the merchant's start"                => array( "awaiting the merchant's start", false ),
 			"the job's own plugin lifecycle change"        => array( "the job's own plugin lifecycle change", false ),
+		);
+	}
+
+	/**
+	 * @testdox A claim finalizing after the WooPayments extension came back ($shape) rolls back instead of switching: no deactivation, no tier move, no loop.
+	 *
+	 * @dataProvider finalize_after_reactivation_provider
+	 *
+	 * @param string $shape How the extension came back while the claim migrated data.
+	 */
+	public function test_finalize_rolls_back_a_claim_whose_extension_came_back( string $shape ): void {
+		$this->arrange_plugin_era_store();
+		$deactivations   = 0;
+		$extension_owner = true;
+		$during_run      = null;
+		$preflight       = new class( $deactivations ) extends WooPaymentsCutoverPreflightService {
+			/** @var int */
+			private int $deactivations;
+
+			/**
+			 * @param int $deactivations Count of extension deactivations.
+			 */
+			public function __construct( int &$deactivations ) {
+				$this->deactivations =& $deactivations;
+			}
+
+			/** @return string[] */
+			public function get_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Count the extension deactivations. */
+			public function deactivate_woopayments_plugin(): bool {
+				++$this->deactivations;
+				return true;
+			}
+
+			/** Control the fee remediation scheduling. */
+			public function ensure_fee_remediation_scheduled(): bool {
+				return true;
+			}
+
+			/** The extension in its canonical folder. */
+			public function get_active_woopayments_plugin_file(): string {
+				return WooPaymentsRuntimeArbiter::PLUGIN_FILE;
+			}
+
+			/** Site-local scenario. */
+			public function is_woopayments_network_active(): bool {
+				return false;
+			}
+		};
+		$migration       = new class( $during_run ) extends WooPaymentsCutoverNormalizationRunner {
+			/** @var callable|null */
+			private $during_run;
+
+			/**
+			 * @param callable|null $during_run What happens in another request while the data migrates.
+			 */
+			public function __construct( &$during_run ) {
+				$this->during_run =& $during_run;
+			}
+
+			/** @return array{ran:bool,changes:string[]} */
+			public function run(): array {
+				if ( is_callable( $this->during_run ) ) {
+					( $this->during_run )();
+					$this->during_run = null;
+				}
+				return array(
+					'ran'     => true,
+					'changes' => array(),
+				);
+			}
+		};
+		$account_service = wc_get_container()->get( WooPaymentsAccountService::class );
+		$make_job        = function () use ( &$extension_owner, $preflight, $migration, $account_service ): WooPaymentsCutoverReconciliationJob {
+			$arbiter = new class( $extension_owner ) extends WooPaymentsRuntimeArbiter {
+				/** @var bool */
+				private bool $extension_owner;
+
+				/**
+				 * @param bool $extension_owner Whether the WooPayments extension owns payments, as the request sees it.
+				 */
+				public function __construct( bool &$extension_owner ) {
+					$this->extension_owner =& $extension_owner;
+				}
+
+				/** The built-in WooPayments is enabled. */
+				public function is_builtin_enabled(): bool {
+					return true;
+				}
+
+				/** Return the controlled ownership. */
+				public function is_extension_owner(): bool {
+					return $this->extension_owner;
+				}
+			};
+			$job     = new WooPaymentsCutoverReconciliationJob();
+			$job->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight, $migration, $account_service );
+			$this->jobs[] = $job;
+
+			return $job;
+		};
+
+		if ( 'an activation recorded while the claim migrated data' === $shape ) {
+			$this->assertTrue( $make_job()->enqueue( 'merchant' ) );
+			// Another request activates the extension while this worker's claim runs; its activation handler rolls the claim back.
+			$during_run = function () use ( $make_job ): void {
+				$make_job()->record_plugin_activation( false );
+			};
+		} else {
+			$extension_owner = false;
+			$this->assertTrue( $make_job()->enqueue_manual_deactivation( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false ) );
+			// The merchant turns the extension back on, and the activation handler records nothing (it lost the write lock).
+			$during_run = function () use ( &$extension_owner ): void {
+				$extension_owner = true;
+			};
+		}
+		$record = $this->require_state_store()->get_record();
+		$this->assertIsArray( $record );
+		$this->require_scheduler()->cancel( $record['generation'], 1 );
+		// A tier the built-in WooPayments would write, so the rollback's re-sync for the extension shows.
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
+		$this->start_fresh_request();
+
+		$make_job()->handle_reconcile( $record['generation'], 1 );
+
+		$after = $this->require_state_store()->get_record();
+		$this->assertIsArray( $after );
+		$this->assertSame( 0, $deactivations, 'Finalize must not deactivate the extension the merchant chose.' );
+		$this->assertSame( $record['generation'] + 1, $after['generation'], 'The claim is rolled back.' );
+		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $after['state'] );
+		$this->assertSame( 'awaiting_merchant_start', $after['current_step'] );
+		$this->assertSame( array( 'source' => 'rollback' ), $after['step_log'][0]['context'] ?? null );
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The tier follows the extension, not the built-in WooPayments.' );
+		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $record['generation'], 2 ), 'No ownership check is scheduled.' );
+		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $after['generation'], 1 ), 'The rollback waits for a fresh merchant start.' );
+
+		// No loop: the claim's next attempts, delivered anyway, change nothing.
+		for ( $attempt = 2; $attempt <= 3; ++$attempt ) {
+			$this->start_fresh_request();
+			$make_job()->handle_reconcile( $record['generation'], $attempt );
+		}
+		$this->assertSame( $after, $this->require_state_store()->get_record() );
+		$this->assertSame( 0, $deactivations );
+	}
+
+	/**
+	 * Ways the WooPayments extension comes back while a claim migrates data.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function finalize_after_reactivation_provider(): array {
+		return array(
+			'an activation recorded while the claim migrated data' => array( 'an activation recorded while the claim migrated data' ),
+			'a manual record whose extension is active again at finalize' => array( 'a manual record whose extension is active again at finalize' ),
 		);
 	}
 
@@ -1343,69 +1499,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'done', $done['current_step'] );
 		$this->assertNull( $done['next_attempt_at'] );
 		$this->assertNull( $done['request_origin_token'] );
-	}
-
-	/**
-	 * @testdox A throwing feature-seeding callback defers the current revision and retries the idempotent action before completion.
-	 */
-	public function test_throwing_feature_seeding_callback_defers_the_current_claim(): void {
-		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
-			/** @return array{ran:bool,changes:string[]} */
-			public function run(): array {
-				return array(
-					'ran'     => true,
-					'changes' => array( 'no_changes' ),
-				);
-			}
-		};
-		$sut           = new WooPaymentsCutoverReconciliationJob();
-		$arbiter       = new class() extends WooPaymentsRuntimeArbiter {
-			/** Return an enabled native runtime. */
-			public function is_builtin_enabled(): bool {
-				return true;
-			}
-		};
-		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $this->create_preflight_with_failures( array() ), $normalization, $this->create_native_eligibility_service( true ) );
-		$this->jobs[]  = $sut;
-		$throwing_seed = static function (): void {
-			throw new \RuntimeException( 'Expected feature seeding failure.' );
-		};
-		add_action( WooPaymentsCutoverReconciliationJob::ACTION_SEED_FEATURES, $throwing_seed );
-		try {
-			$this->assertTrue( $sut->enqueue( 'merchant' ) );
-			$pending = $this->require_state_store()->get_record();
-			$this->assertIsArray( $pending );
-			$this->require_scheduler()->cancel( $pending['generation'], 1 );
-
-			$sut->handle_reconcile( $pending['generation'], 1 );
-		} finally {
-			remove_action( WooPaymentsCutoverReconciliationJob::ACTION_SEED_FEATURES, $throwing_seed );
-		}
-
-		$deferred = $this->require_state_store()->get_record();
-		$this->assertIsArray( $deferred );
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
-		$this->assertSame( array( 'feature_seeding_failed' ), $deferred['deferred_codes'] );
-		$this->assertNotSame( 'done', $deferred['current_step'] );
-		$this->assertContains( array( 'code' => 'feature_seeding_started' ), $deferred['informational_outcomes'] );
-		$this->assertNotContains( array( 'code' => 'feature_seeding_completed' ), $deferred['informational_outcomes'] );
-
-		$retry_calls = 0;
-		$retry_seed  = static function () use ( &$retry_calls ): void {
-			++$retry_calls;
-		};
-		add_action( WooPaymentsCutoverReconciliationJob::ACTION_SEED_FEATURES, $retry_seed );
-		try {
-			$this->require_scheduler()->cancel( $deferred['generation'], 2 );
-			$sut->handle_reconcile( $deferred['generation'], 2 );
-		} finally {
-			remove_action( WooPaymentsCutoverReconciliationJob::ACTION_SEED_FEATURES, $retry_seed );
-		}
-
-		$retried = $this->require_state_store()->get_record();
-		$this->assertIsArray( $retried );
-		$this->assertSame( 1, $retry_calls );
-		$this->assertContains( array( 'code' => 'feature_seeding_completed' ), $retried['informational_outcomes'] );
 	}
 
 	/**
@@ -2022,21 +2115,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 		};
 		$sut           = $this->create_job( true, $preflight, null, true, $normalization );
-		$throwing_seed = static function (): void {
-			throw new \RuntimeException( 'Expected feature seeding failure.' );
-		};
-		if ( 'feature_seeding' === $failure_step ) {
-			add_action( WooPaymentsCutoverReconciliationJob::ACTION_SEED_FEATURES, $throwing_seed );
-		}
-		try {
-			$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', false ) );
-			$pending = $this->require_state_store()->get_record();
-			$this->assertIsArray( $pending );
-			$this->require_scheduler()->cancel( $pending['generation'], 1 );
-			$sut->handle_reconcile( $pending['generation'], 1 );
-		} finally {
-			remove_action( WooPaymentsCutoverReconciliationJob::ACTION_SEED_FEATURES, $throwing_seed );
-		}
+		$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', false ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$sut->handle_reconcile( $pending['generation'], 1 );
 
 		$deferred = $this->require_state_store()->get_record();
 		$this->assertIsArray( $deferred );
@@ -2049,9 +2132,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	/** @return array<string,array{string,string}> */
 	public function manual_exception_provider(): array {
 		return array(
-			'resolver'        => array( 'resolver', 'reconciliation_resolver_failed' ),
-			'normalization'   => array( 'normalization', 'normalization_failed' ),
-			'feature seeding' => array( 'feature_seeding', 'feature_seeding_failed' ),
+			'resolver'      => array( 'resolver', 'reconciliation_resolver_failed' ),
+			'normalization' => array( 'normalization', 'normalization_failed' ),
 		);
 	}
 
@@ -3736,10 +3818,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A network claim whose fan-out cannot reach a busy peer defers with network_fanout_pending before seeding features.
+	 * @testdox A network claim whose fan-out cannot reach a busy peer defers with network_fanout_pending.
 	 * @group multisite
 	 */
-	public function test_network_claim_with_an_incomplete_fanout_defers_before_seeding_features(): void {
+	public function test_network_claim_with_an_incomplete_fanout_defers(): void {
 		if ( ! is_multisite() ) {
 			$this->markTestSkipped( 'Test only runs on Multisite.' );
 		}
@@ -3747,12 +3829,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$main_site_id   = get_current_blog_id();
 		$second_site_id = $this->create_cutover_multisite_site( 'cutover-busy-peer-fanout.example.org' );
 		$sut            = $this->create_job( true, $this->create_network_preflight_with_failures( array() ), null, true, $this->create_noop_normalization() );
-		$seeded         = 0;
-		$seed_features  = static function () use ( &$seeded ): void {
-			++$seeded;
-		};
 		$busy           = null;
-		add_action( WooPaymentsCutoverReconciliationJob::ACTION_SEED_FEATURES, $seed_features );
 
 		try {
 			switch_to_blog( $second_site_id );
@@ -3770,9 +3847,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->assertIsArray( $deferred );
 			$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
 			$this->assertSame( array( 'network_fanout_pending' ), $deferred['deferred_codes'] );
-			$this->assertSame( 0, $seeded, 'Features are not seeded before every peer has its record.' );
 		} finally {
-			remove_action( WooPaymentsCutoverReconciliationJob::ACTION_SEED_FEATURES, $seed_features );
 			if ( get_current_blog_id() !== $main_site_id ) {
 				restore_current_blog();
 			}
