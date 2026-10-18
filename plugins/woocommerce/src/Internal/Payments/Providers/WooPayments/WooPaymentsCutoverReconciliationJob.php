@@ -942,9 +942,10 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 */
 	private function reconcile_claim( array $claimed ): void {
 		try {
-			// A merchant who deactivated the extension by hand and turned it back on chose the extension: the rollback, not the
-			// switch. The request reads ownership once, so this sees an activation made before the request started.
-			if ( ! $this->is_network( $claimed ) && $this->is_manual_deactivation( $claimed ) && $this->arbiter->is_extension_owner() ) {
+			// A merchant who turned the extension back on chose it: the rollback, not the switch. That holds for a hand
+			// deactivation, and for a retry whose earlier finalize deactivated the extension (that finalize left its request
+			// token on the record). The request reads ownership once, so this sees an activation made before the request started.
+			if ( ! $this->is_network( $claimed ) && ( $this->is_manual_deactivation( $claimed ) || null !== $claimed['request_origin_token'] ) && $this->arbiter->is_extension_owner() ) {
 				$this->roll_back_claim( $claimed );
 				return;
 			}
@@ -1263,13 +1264,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		if ( null === $claimed ) {
 			return;
 		}
-		// A retry after an earlier finalize scheduled the ownership check (its request token is still on the record): that
-		// finalize deactivated the extension, so an active one now can only be the merchant's reactivation.
-		if ( null !== $claimed['request_origin_token'] && $this->arbiter->is_extension_owner() ) {
-			$this->roll_back_claim( $claimed );
-			return;
-		}
-
 		$deactivated = true;
 		if ( ! $this->is_manual_deactivation( $claimed ) ) {
 			try {
@@ -1286,6 +1280,10 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$this->defer( $claimed, array( 'plugin_deactivation_failed' ), $outcomes );
 			return;
 		}
+		// The built-in WooPayments owns payments from here, so the tier follows now, even when the ownership check below
+		// cannot be stored. A rollback made since is unharmed: the effective tier stays capped at available while the
+		// extension owns payments (WooPaymentsSetupTier::get_effective_tier()).
+		$this->account_service->sync_setup_tier_from_options( false );
 
 		$this->schedule_ownership_verification( $claimed, $outcomes );
 	}
@@ -1670,7 +1668,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		return is_string( $record['origin_plugin_file'] ?? null ) && '' !== $record['origin_plugin_file'] && in_array( $record['origin_plugin_scope'] ?? null, array( 'site', 'network' ), true );
 	}
 	/**
-	 * Persist a future ownership-verification attempt after plugin deactivation, then move the tier to the built-in.
+	 * Persist a future ownership-verification attempt after plugin deactivation.
 	 *
 	 * @param array<string,mixed> $claimed  Exact running state owned by this worker.
 	 * @param array<int,mixed>    $outcomes Informational outcomes accumulated during reconciliation.
@@ -1702,8 +1700,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				if ( ! $this->state_store->compare_and_set_record( $record, $verification ) ) {
 					return false;
 				}
-				// The tier moves to the built-in only for the record this worker stored, never over a rollback made since.
-				$this->account_service->sync_setup_tier_from_options( false );
 
 				return $this->ensure_record_scheduled( $verification, $now );
 			},

@@ -405,6 +405,145 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A finalize whose ownership check cannot be stored, because another request holds the write lock, still moves the tier to the built-in WooPayments.
+	 */
+	public function test_finalize_moves_the_tier_when_the_ownership_check_loses_the_write_lock(): void {
+		$this->arrange_plugin_era_store();
+		$busy      = null;
+		$preflight = new class( $busy, $this->require_state_store() ) extends WooPaymentsCutoverPreflightService {
+			/** @var string|null */
+			private $busy;
+
+			/** @var WooPaymentsCutoverStateStore */
+			private WooPaymentsCutoverStateStore $store;
+
+			/**
+			 * @param string|null                  $busy  The write lock another request takes.
+			 * @param WooPaymentsCutoverStateStore $store The cutover state store.
+			 */
+			public function __construct( &$busy, WooPaymentsCutoverStateStore $store ) {
+				$this->busy  =& $busy;
+				$this->store = $store;
+			}
+
+			/** @return string[] */
+			public function get_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Deactivate the extension, then let another request take the write lock. */
+			public function deactivate_woopayments_plugin(): bool {
+				update_option( 'active_plugins', array() );
+				$this->busy = $this->store->acquire_lease( time() );
+				return true;
+			}
+
+			/** Report a site-local activation. */
+			public function is_woopayments_network_active(): bool {
+				return false;
+			}
+		};
+		$job       = $this->create_state_writing_job( true, $preflight );
+		$this->assertTrue( $job->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+
+		try {
+			$job->handle_reconcile( $pending['generation'], 1 );
+		} finally {
+			if ( is_string( $busy ) ) {
+				$this->require_state_store()->release_lease( $busy );
+			}
+		}
+
+		$this->assertIsString( $busy, 'Another request held the write lock after the deactivation.' );
+		$record = $this->require_state_store()->get_record();
+		$this->assertIsArray( $record );
+		$this->assertSame( WooPaymentsCutoverStateStore::STATE_RUNNING, $record['state'], 'The ownership check was not stored.' );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The tier follows the built-in WooPayments that now owns payments.' );
+	}
+
+	/**
+	 * @testdox An activation recorded while finalize deactivates the extension keeps its rollback: no ownership check is scheduled, and the tier finalize writes is capped at available.
+	 */
+	public function test_activation_during_the_finalize_deactivation_keeps_the_rollback(): void {
+		$this->arrange_plugin_era_store();
+		$after_deactivation = null;
+		$preflight          = new class( $after_deactivation ) extends WooPaymentsCutoverPreflightService {
+			/** @var callable|null */
+			private $after_deactivation;
+
+			/**
+			 * @param callable|null $after_deactivation What another request does right after the deactivation.
+			 */
+			public function __construct( &$after_deactivation ) {
+				$this->after_deactivation =& $after_deactivation;
+			}
+
+			/** @return string[] */
+			public function get_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Deactivate the extension; the merchant turns it back on at once from another request, so its active-plugins entry stays. */
+			public function deactivate_woopayments_plugin(): bool {
+				if ( is_callable( $this->after_deactivation ) ) {
+					$after_deactivation = $this->after_deactivation;
+					$after_deactivation();
+				}
+				return true;
+			}
+
+			/** Report a site-local activation. */
+			public function is_woopayments_network_active(): bool {
+				return false;
+			}
+		};
+		$job                = $this->create_state_writing_job( true, $preflight );
+		$this->assertTrue( $job->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$after_deactivation = function () use ( $preflight ): void {
+			$this->create_state_writing_job( true, $preflight )->record_plugin_activation( false );
+		};
+
+		$job->handle_reconcile( $pending['generation'], 1 );
+
+		$after = $this->require_state_store()->get_record();
+		$this->assertIsArray( $after );
+		$this->assertSame( $pending['generation'] + 1, $after['generation'], 'The activation rolled the switch back, and the rollback survives finalize.' );
+		$this->assertSame( 'awaiting_merchant_start', $after['current_step'] );
+		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $pending['generation'], $pending['attempt'] + 2 ), 'No ownership check is scheduled.' );
+		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $after['generation'], 1 ), 'The rollback waits for a fresh merchant start.' );
+		// Finalize writes the built-in tier after the rollback re-synced it. That loads nothing: the effective tier is capped
+		// at available while the extension owns payments.
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, wc_get_container()->get( WooPaymentsSetupTier::class )->get_effective_tier() );
+	}
+
+	/**
 	 * @testdox A switch whose account loses native eligibility after the click defers with the plugin still active, and finishes once eligibility returns.
 	 */
 	public function test_withdrawn_eligibility_defers_the_switch_without_deactivating_the_plugin(): void {
@@ -887,27 +1026,34 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$deactivations     = 0;
 		$schedulable       = true;
 		$migration_runs    = 0;
+		$preflight_reads   = 0;
 		$extension_owner   = true;
 		$during_run        = null;
 		$during_owner_read = null;
-		$preflight         = new class( $deactivations, $schedulable ) extends WooPaymentsCutoverPreflightService {
+		$preflight         = new class( $deactivations, $schedulable, $preflight_reads ) extends WooPaymentsCutoverPreflightService {
 			/** @var int */
 			private int $deactivations;
 
 			/** @var bool */
 			private bool $schedulable;
 
+			/** @var int */
+			private int $reads;
+
 			/**
 			 * @param int  $deactivations Count of extension deactivations.
 			 * @param bool $schedulable   Whether the fee remediation can be scheduled.
+			 * @param int  $reads         Count of preflight reads.
 			 */
-			public function __construct( int &$deactivations, bool &$schedulable ) {
+			public function __construct( int &$deactivations, bool &$schedulable, int &$reads ) {
 				$this->deactivations =& $deactivations;
 				$this->schedulable   =& $schedulable;
+				$this->reads         =& $reads;
 			}
 
 			/** @return string[] */
 			public function get_failures(): array {
+				++$this->reads;
 				return array();
 			}
 
@@ -1061,7 +1207,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		}
 		// A tier the built-in WooPayments would write, so the rollback's re-sync for the extension shows.
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
-		$migration_runs_before = $migration_runs;
+		$migration_runs_before  = $migration_runs;
+		$preflight_reads_before = $preflight_reads;
 
 		$after = $run_attempt( $record );
 
@@ -1073,8 +1220,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The tier follows the extension, not the built-in WooPayments.' );
 		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $record['generation'], $record['attempt'] + 2 ), 'No further attempt of the switch is scheduled.' );
 		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $after['generation'], 1 ), 'The rollback waits for a fresh merchant start.' );
-		if ( 'a manual record whose extension is active when its attempt starts' === $shape ) {
-			$this->assertSame( $migration_runs_before, $migration_runs, 'The rollback comes before the preflight, the plugin update and the data migration.' );
+		if ( in_array( $shape, array( 'a manual record whose extension is active when its attempt starts', 'a retry finalize whose activation lost the write lock' ), true ) ) {
+			$this->assertSame( $preflight_reads_before, $preflight_reads, 'The rollback comes before the preflight and the plugin update.' );
+			$this->assertSame( $migration_runs_before, $migration_runs, 'The rollback comes before the data migration.' );
 		}
 
 		// No loop: the switch's next attempts, delivered anyway, change nothing.
