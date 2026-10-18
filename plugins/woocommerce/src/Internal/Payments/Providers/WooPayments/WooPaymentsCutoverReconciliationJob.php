@@ -445,19 +445,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 						continue;
 					}
 
-					$now                         = time();
-					$awaiting                    = $this->create_pending_record( self::SOURCE_ROLLBACK, $now );
-					$awaiting['generation']      = $generation;
-					$awaiting['network_cutover'] = true;
-					$awaiting['current_step']    = self::STEP_AWAITING_MERCHANT_START;
-					$awaiting['next_attempt_at'] = null;
-					$awaiting['step_log']        = array(
-						array(
-							'step'    => self::STEP_AWAITING_MERCHANT_START,
-							'at'      => $now,
-							'context' => array( 'source' => self::SOURCE_ROLLBACK ),
-						),
-					);
+					$now      = time();
+					$awaiting = $this->to_awaiting_merchant_start( self::SOURCE_ROLLBACK, $now, $generation, true );
 					if ( is_array( $record ) ) {
 						$awaiting['revision'] = $record['revision'] + 1;
 						$stored               = $this->state_store->compare_and_set_record( $record, $awaiting );
@@ -1269,21 +1258,14 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				if ( ! is_array( $record ) || $record !== $claimed ) {
 					return;
 				}
-				$pending                    = $this->create_pending_record( self::SOURCE_NETWORK_GENERATION_SUPERSEDED, $now, $origin_plugin_file, $origin_plugin_scope );
-				$pending['generation']      = $generation;
-				$pending['revision']        = $record['revision'] + 1;
-				$pending['network_cutover'] = true;
 				if ( 'awaiting_merchant_start' === $phase ) {
-					$pending['current_step']    = self::STEP_AWAITING_MERCHANT_START;
-					$pending['next_attempt_at'] = null;
-					$pending['step_log']        = array(
-						array(
-							'step'    => self::STEP_AWAITING_MERCHANT_START,
-							'at'      => $now,
-							'context' => array( 'source' => self::SOURCE_NETWORK_GENERATION_SUPERSEDED ),
-						),
-					);
+					$pending = $this->to_awaiting_merchant_start( self::SOURCE_NETWORK_GENERATION_SUPERSEDED, $now, $generation, true, $origin_plugin_file, $origin_plugin_scope );
+				} else {
+					$pending                    = $this->create_pending_record( self::SOURCE_NETWORK_GENERATION_SUPERSEDED, $now, $origin_plugin_file, $origin_plugin_scope );
+					$pending['generation']      = $generation;
+					$pending['network_cutover'] = true;
 				}
+				$pending['revision'] = $record['revision'] + 1;
 				if ( $this->state_store->compare_and_set_record( $record, $pending ) ) {
 					if ( 'awaiting_merchant_start' !== $phase ) {
 						$this->ensure_record_scheduled( $pending, $now );
@@ -2420,18 +2402,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool True when the awaiting generation was stored.
 	 */
 	private function replace_terminal_with_awaiting_start( array $record, string $source, int $now ): bool {
-		$replacement                    = $this->create_pending_record( $source, $now );
-		$replacement['generation']      = $record['generation'] + 1;
-		$replacement['revision']        = $record['revision'] + 1;
-		$replacement['current_step']    = self::STEP_AWAITING_MERCHANT_START;
-		$replacement['network_cutover'] = $this->is_network( $record );
-		$replacement['step_log']        = array(
-			array(
-				'step'    => self::STEP_AWAITING_MERCHANT_START,
-				'at'      => $now,
-				'context' => array( 'source' => $source ),
-			),
-		);
+		$replacement             = $this->to_awaiting_merchant_start( $source, $now, $record['generation'] + 1, $this->is_network( $record ) );
+		$replacement['revision'] = $record['revision'] + 1;
 
 		return $this->state_store->compare_and_set_record( $record, $replacement );
 	}
@@ -2638,6 +2610,35 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			'request_origin_token'     => null,
 			'network_cutover'          => false,
 		);
+	}
+
+	/**
+	 * Build a generation record that waits for the merchant's start, with no attempt scheduled.
+	 *
+	 * The callers set its revision against the record it replaces, if any.
+	 *
+	 * @param string      $source              Source recorded in its first step.
+	 * @param int         $now                 Current UTC timestamp.
+	 * @param int         $generation          Generation it opens.
+	 * @param bool        $network             Whether it belongs to a network-wide cutover.
+	 * @param string|null $origin_plugin_file  Exact deactivated plugin path, for a manual deactivation.
+	 * @param string|null $origin_plugin_scope Site or network scope, for a manual deactivation.
+	 * @return array<string,mixed>
+	 */
+	private function to_awaiting_merchant_start( string $source, int $now, int $generation, bool $network, ?string $origin_plugin_file = null, ?string $origin_plugin_scope = null ): array {
+		$awaiting                    = $this->create_pending_record( $source, $now, $origin_plugin_file, $origin_plugin_scope );
+		$awaiting['generation']      = $generation;
+		$awaiting['network_cutover'] = $network;
+		$awaiting['current_step']    = self::STEP_AWAITING_MERCHANT_START;
+		$awaiting['step_log']        = array(
+			array(
+				'step'    => self::STEP_AWAITING_MERCHANT_START,
+				'at'      => $now,
+				'context' => array( 'source' => $source ),
+			),
+		);
+
+		return $awaiting;
 	}
 
 	/**
