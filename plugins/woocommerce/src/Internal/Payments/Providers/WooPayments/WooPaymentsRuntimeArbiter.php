@@ -220,6 +220,21 @@ class WooPaymentsRuntimeArbiter {
 	}
 
 	/**
+	 * Tell whether a plugin file is the WooPayments extension's: its main file name, in any plugin folder.
+	 *
+	 * WooPayments is the only wordpress.org plugin with this main file name. The check reads only the string, so callers
+	 * on every request pay for no option read or plugin scan.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @param string $plugin_file Plugin file relative to the plugins directory.
+	 * @return bool
+	 */
+	public static function is_woopayments_plugin_file( string $plugin_file ): bool {
+		return self::PLUGIN_MAIN_FILE_NAME === wp_basename( $plugin_file );
+	}
+
+	/**
 	 * Tell whether the WooPayments extension is active for the current site.
 	 *
 	 * The active-plugins lists (per-site and network) are the primary signal: they are reliable early
@@ -259,14 +274,12 @@ class WooPaymentsRuntimeArbiter {
 	/**
 	 * Tell whether an active-plugins list holds the WooPayments main file, in any folder.
 	 *
-	 * WooPayments is the only wordpress.org plugin with this main file name.
-	 *
 	 * @param array<int|string,mixed> $plugins Plugin files relative to the plugins directory.
 	 * @return bool
 	 */
 	private function has_plugin_entry( array $plugins ): bool {
 		foreach ( $plugins as $plugin ) {
-			if ( is_string( $plugin ) && self::PLUGIN_MAIN_FILE_NAME === wp_basename( $plugin ) ) {
+			if ( is_string( $plugin ) && self::is_woopayments_plugin_file( $plugin ) ) {
 				return true;
 			}
 		}

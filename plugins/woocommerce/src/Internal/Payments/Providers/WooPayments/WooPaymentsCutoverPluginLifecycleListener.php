@@ -34,15 +34,15 @@ class WooPaymentsCutoverPluginLifecycleListener implements RegisterHooksInterfac
 	/**
 	 * Refuse a WooPayments activation the cutover does not allow, from any plugin folder.
 	 *
-	 * The arbiter detects WooPayments by its main file name in any folder, so the guard matches the same way rather
-	 * than on the canonical folder's own activation hook.
+	 * The guard matches the arbiter's identity rule, the main file name in any folder, rather than the canonical
+	 * folder's own activation hook.
 	 *
 	 * @internal
 	 *
 	 * @param mixed $plugin Activated plugin path from the public WordPress hook.
 	 */
 	public function guard_woopayments_activation( $plugin = '' ): void {
-		if ( ! is_string( $plugin ) || wp_basename( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) !== wp_basename( $plugin ) ) {
+		if ( ! is_string( $plugin ) || ! WooPaymentsRuntimeArbiter::is_woopayments_plugin_file( $plugin ) ) {
 			return;
 		}
 
