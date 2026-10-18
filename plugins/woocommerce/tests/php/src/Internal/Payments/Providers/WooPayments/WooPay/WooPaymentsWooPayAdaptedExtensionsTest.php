@@ -25,7 +25,7 @@ class WooPaymentsWooPayAdaptedExtensionsTest extends WC_Unit_Test_Case {
 	 *
 	 * Affiliate for WooCommerce applies its own rules, its self-referral setting included, unless the call forces
 	 * is_affiliate_eligible (AFWC 9.17.0 includes/class-afwc-api.php:609-616); client 11.1.0 forces it
-	 * (includes/woopay/class-woopay-adapted-extensions.php:206).
+	 * (includes/woopay/class-woopay-adapted-extensions.php:205).
 	 *
 	 * @dataProvider provide_affiliate_parameters
 	 *
@@ -43,7 +43,7 @@ class WooPaymentsWooPayAdaptedExtensionsTest extends WC_Unit_Test_Case {
 				array(
 					'order_id'     => 1001,
 					'affiliate_id' => $affiliate_id,
-					'used_coupon'  => '',
+					'type'         => '',
 					'params'       => array(),
 				),
 			),

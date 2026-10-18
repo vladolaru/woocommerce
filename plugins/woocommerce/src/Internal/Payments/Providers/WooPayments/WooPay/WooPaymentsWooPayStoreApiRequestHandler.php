@@ -226,9 +226,9 @@ class WooPaymentsWooPayStoreApiRequestHandler {
 	/**
 	 * Detach the customer id from a WooPay verified-email guest order until restoration runs.
 	 *
-	 * A verified-email resolution grants order placement without store authentication; stowing
-	 * the customer id keeps the thank-you page from exposing the matched account, and the
-	 * scheduled restore re-links the order ten minutes later.
+	 * A guest whose verified email resolves to a store account places the order as that account; stowing
+	 * the customer id lets the guest open the thank-you page without the login form, and the scheduled
+	 * restore re-links the order ten minutes later.
 	 *
 	 * @param int|mixed $order_id Order ID from woocommerce_order_payment_status_changed.
 	 *
@@ -267,8 +267,8 @@ class WooPaymentsWooPayStoreApiRequestHandler {
 			return;
 		}
 
-		// Guest users' user_id on the cart token payload looks like "t_hash" while the order
-		// customer id is 0; logged-in users carry the real user id in both places, a string in the token.
+		// A guest's cart token names "t_<hash>" while the verified email gave the order the matched account; a logged-in
+		// shopper's token names that same user id, as a string, and the order keeps its customer.
 		$user_is_logged_in = (string) $payload['user_id'] === (string) $order->get_customer_id();
 
 		if ( ! $user_is_logged_in && $woopay_verified_email_address === $order->get_billing_email() ) {

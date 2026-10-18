@@ -29,14 +29,14 @@ class FakeWooPayAffiliateApi {
 	 *
 	 * @param int                 $order_id     Order ID.
 	 * @param int                 $affiliate_id Affiliate ID.
-	 * @param string              $used_coupon  Coupon code.
+	 * @param string              $type         Conversion type, as AFWC names it (order, pageview).
 	 * @param array<string,mixed> $params       Extra parameters.
 	 */
-	public function track_conversion( $order_id, $affiliate_id, $used_coupon = '', $params = array() ): void {
+	public function track_conversion( $order_id, $affiliate_id, $type = '', $params = array() ): void {
 		self::$conversions[] = array(
 			'order_id'     => $order_id,
 			'affiliate_id' => $affiliate_id,
-			'used_coupon'  => $used_coupon,
+			'type'         => $type,
 			'params'       => $params,
 		);
 	}
