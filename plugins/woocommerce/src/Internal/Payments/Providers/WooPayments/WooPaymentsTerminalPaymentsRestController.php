@@ -467,7 +467,8 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 			}
 			// The intent is stored before the capture, so a capture of another intent for this order is refused once this one
 			// was tried, whatever happens to it; a retry of this intent still passes and completes the order. Client 11.1.0
-			// stores it there for the same check (includes/admin/class-wc-rest-payments-orders-controller.php:187-194, :211).
+			// stores it there for the same check (includes/admin/class-wc-rest-payments-orders-controller.php:187-194, :215;
+			// the write is includes/class-wc-payments-order-service.php:1409).
 			$order->update_meta_data( '_intent_id', $intent_id );
 			$order->save();
 

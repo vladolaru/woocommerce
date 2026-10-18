@@ -404,7 +404,12 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	 * @param bool   $sent    Whether the request carries Level 3 data.
 	 */
 	public function test_payment_detail_create_intent_route_sends_level3_data_for_us_accounts( string $country, bool $sent ): void {
-		$order                      = $this->create_order_for_generated_charge();
+		$order = $this->create_order_for_generated_charge();
+		$order->add_product( \WC_Helper_Product::create_simple_product(), 2 );
+		$order->save();
+		// The platform's create route answers with Stripe's PaymentIntent (wpcom `wcpay/class-intentions-controller.php:389-487`, :481,
+		// proxied through `wcpay/class-base-controller.php:476-491`); the route reads only id, amount and charges, so the
+		// other PaymentIntent fields are left out.
 		$this->api_client->response = array(
 			'id'      => 'pi_created',
 			'amount'  => 1234,
@@ -437,7 +442,10 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$request_data = $this->api_client->last_call['request_data'];
 		$this->assertSame( $sent, array_key_exists( 'level3', $request_data ) );
 		if ( $sent ) {
-			$this->assertSame( (string) $order->get_id(), $request_data['level3']['merchant_reference'] );
+			$level3 = $level3_service->get_data_from_order( wc_get_order( $order->get_id() ) );
+			$this->assertNotEmpty( $level3['line_items'] ?? array(), 'The order has line items to send.' );
+			// The line items are objects, so they compare by value.
+			$this->assertEquals( $level3, $request_data['level3'], 'The request carries the whole Level 3 data, line items included.' );
 		}
 	}
 
@@ -452,6 +460,8 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 		$order       = $this->create_order_for_generated_charge();
 		$http_client = new FakeWooPaymentsHttpClient();
 
+		// The same create answer, Stripe's PaymentIntent through the platform proxy (wpcom `wcpay/class-intentions-controller.php:389-487`),
+		// as the HTTP response the transport returns; fields the route does not read are left out.
 		$http_client->response = array(
 			'response' => array( 'code' => 200 ),
 			'headers'  => array( 'content-type' => 'application/json' ),

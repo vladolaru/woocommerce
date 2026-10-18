@@ -3233,7 +3233,7 @@ class WooPaymentsOnboardingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Deleting the account through onboarding ($method) resets the store's account state when the platform deletes it.
 	 *
 	 * Client 11.1.0 runs cleanup_on_account_reset() after both deletions (includes/class-wc-payments-onboarding-service.php:837,
-	 * :896, :932-965): gateway off, out of test mode, cards only, the incentive pair and onboarding transients gone, the
+	 * :905, :932-965): gateway off, out of test mode, cards only, the incentive pair and onboarding transients gone, the
 	 * database cache emptied. Its account.deleted webhook, sent during the delete, also clears the NOX profile and lock and the
 	 * cached saved payment methods (includes/class-wc-payments-webhook-processing-service.php:209-221); the store's webhook route
 	 * is gone once the account cache is empty, so the delete clears them itself.

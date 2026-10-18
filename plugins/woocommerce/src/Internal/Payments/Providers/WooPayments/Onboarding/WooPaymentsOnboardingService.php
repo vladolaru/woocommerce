@@ -767,7 +767,7 @@ class WooPaymentsOnboardingService {
 
 		$success = 'success' === ( $response['result'] ?? '' );
 		if ( $success ) {
-			// Client 11.1.0 resets the store after both deletions (includes/class-wc-payments-onboarding-service.php:837, :896).
+			// Client 11.1.0 resets the store after both deletions (includes/class-wc-payments-onboarding-service.php:837, :905).
 			$this->get_account_service()->cleanup_after_account_reset();
 			// Its account.deleted webhook, sent during the delete, also clears these (includes/class-wc-payments-webhook-processing-service.php:209-221).
 			// It cannot land here: with the account cache emptied above, the store no longer registers its webhook route.
