@@ -4,7 +4,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
 use WC_Unit_Test_Case;
@@ -706,7 +705,6 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 		);
 		$floors     = array(
 			WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION,
-			WooPaymentsCutoverController::MINIMUM_CUTOVER_PLUGIN_VERSION,
 		);
 
 		foreach ( $allowlists as $allowlist_name => $allowlist ) {

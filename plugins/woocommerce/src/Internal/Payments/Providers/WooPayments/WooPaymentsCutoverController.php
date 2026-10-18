@@ -56,13 +56,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	public const DEFAULT_MANDATORY_CUTOVER_ENABLED = false;
 
 	/**
-	 * Minimum last-active WooPayments plugin version eligible for native cutover.
-	 *
-	 * @var string
-	 */
-	public const MINIMUM_CUTOVER_PLUGIN_VERSION = '10.5.0';
-
-	/**
 	 * Nonce action for the one-click disable action.
 	 *
 	 * @var string
