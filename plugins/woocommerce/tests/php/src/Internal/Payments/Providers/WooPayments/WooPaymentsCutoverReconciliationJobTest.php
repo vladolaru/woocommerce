@@ -795,6 +795,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$record = $this->require_state_store()->get_record();
 			$this->assertIsArray( $record );
 			$this->assertSame( 'recovered_stale_running', $record['current_step'] );
+		} elseif ( 'a claim running in another request' === $shape ) {
+			// Running claims stay a limit until the finalize fence lands: a worker that claimed first keeps its claim.
+			$this->require_scheduler()->cancel( $record['generation'], 1 );
+			$record = $this->create_running_record( $record );
 		} elseif ( "awaiting the merchant's start" === $shape ) {
 			$this->require_scheduler()->cancel( $record['generation'], 1 );
 			$awaiting                 = $record;
@@ -853,6 +857,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			'an ownership check deferred on financial_migrations_unavailable' => array( 'an ownership check deferred on financial_migrations_unavailable', true ),
 			'a stale running claim recovered after finalize' => array( 'a stale running claim recovered after finalize', true ),
 			'a merchant start reinstalled before finalize' => array( 'a merchant start reinstalled before finalize', true ),
+			'a claim running in another request'           => array( 'a claim running in another request', false ),
 			"awaiting the merchant's start"                => array( "awaiting the merchant's start", false ),
 			"the job's own plugin lifecycle change"        => array( "the job's own plugin lifecycle change", false ),
 		);
