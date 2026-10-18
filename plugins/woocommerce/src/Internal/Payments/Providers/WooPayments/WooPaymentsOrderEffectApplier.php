@@ -649,6 +649,14 @@ class WooPaymentsOrderEffectApplier {
 		foreach ( $effects['meta'] as $key => $value ) {
 			$order->update_meta_data( $key, $value );
 		}
+		// A charge type with no registered payment method, such as an in-person card_present charge, names no gateway, so
+		// the order keeps its method and title, as client 11.1.0 set_payment_method_title_for_order() returns early for it
+		// (includes/class-wc-payment-gateway-wcpay.php:2694-2697).
+		if ( null === $this->payment_method_registry->get( $effects['payment_method_type'] ) ) {
+			$order->save();
+
+			return;
+		}
 		if ( '' !== $effects['payment_method_id'] ) {
 			$order->set_payment_method( $effects['payment_method_id'] );
 		}

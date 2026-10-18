@@ -2013,7 +2013,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected_status_code, $response['status_code'] );
 		$this->assertSame( 1, $observer_count );
 		$this->assertSame( $expected_observed_title, $observed_title );
-		if ( 200 === $expected_status_code ) {
+		if ( 200 === $expected_status_code && null === $expected_final_title ) {
 			$this->assertNotSame( 'WooPayments', $order->get_payment_method_title() );
 		}
 		if ( null !== $expected_final_title ) {
@@ -2086,6 +2086,9 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				),
 				'WooPayments',
 				200,
+				// No payment method is registered for card_present, so the order keeps its title, as client 11.1.0
+				// set_payment_method_title_for_order() returns early (includes/class-wc-payment-gateway-wcpay.php:2694-2697).
+				'WooPayments',
 			),
 			'capitalized card type'                   => array(
 				array(

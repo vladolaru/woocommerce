@@ -583,6 +583,41 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A charge type with no registered payment method leaves the order's method and title, and its subscription's, as they are.
+	 *
+	 * Client 11.1.0 set_payment_method_title_for_order() returns before writing either for a type it has no payment method for
+	 * (includes/class-wc-payment-gateway-wcpay.php:2694-2697). The result is the PaymentIntent of the recorded in-person
+	 * payment (Fixtures/platform-card-present-succeeded-event.json).
+	 */
+	public function test_unregistered_charge_type_leaves_the_payment_method_and_title(): void {
+		$order        = $this->create_woopayments_order();
+		$subscription = $this->create_woopayments_order();
+		foreach ( array( $order, $subscription ) as $paid_order ) {
+			$paid_order->set_payment_method_title( 'WooCommerce In-Person Payments' );
+			$paid_order->save();
+		}
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
+		$GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] = array( $order->get_id() => array( 'parent' => array( $subscription->get_id() ) ) );
+		$recording = json_decode( (string) file_get_contents( __DIR__ . '/Fixtures/platform-card-present-succeeded-event.json' ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local test fixture.
+
+		try {
+			$this->create_applier( $this->create_token_service() )->apply_payment_method_display_details( $order, $recording['events'][0]['data']['object'] );
+		} finally {
+			unset( $GLOBALS[ WooCommerceSubscriptionsDoubles::ORDER_SUBSCRIPTIONS ] );
+		}
+
+		$order        = wc_get_order( $order->get_id() );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		$this->assertInstanceOf( WC_Order::class, $subscription );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $order->get_payment_method() );
+		$this->assertSame( 'WooCommerce In-Person Payments', $order->get_payment_method_title() );
+		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $subscription->get_payment_method() );
+		$this->assertSame( 'WooCommerce In-Person Payments', $subscription->get_payment_method_title() );
+		$this->assertStringContainsString( '"card_present"', (string) $order->get_meta( '_wcpay_payment_method_details', true ), 'The charge details are still recorded.' );
+	}
+
+	/**
 	 * @testdox Requested token effects create and attach one token across repeated application.
 	 */
 	public function test_requested_token_effects_are_idempotent(): void {
