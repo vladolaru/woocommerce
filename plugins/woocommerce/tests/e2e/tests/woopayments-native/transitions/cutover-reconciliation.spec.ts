@@ -38,6 +38,7 @@ interface CutoverRecord {
 	revision: number;
 	current_step: string;
 	deferred_codes?: string[];
+	origin_plugin_file?: string | null;
 }
 
 interface CutoverStatus {
@@ -961,6 +962,198 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 					{ timeout: 3 * 60_000, intervals: [ 1000, 3000, 5000 ] }
 				)
 				.toBe( 'done' );
+		}
+	);
+} );
+
+const PENDING_RECONCILE_ACTIONS_PHP = String.raw`
+return (int) count( as_get_scheduled_actions( array( 'hook' => 'woocommerce_woopayments_cutover_reconcile', 'status' => ActionScheduler_Store::STATUS_PENDING, 'per_page' => -1 ), 'ids' ) );
+`;
+
+/**
+ * Drives the queue a few times and asserts the rolled-back generation stays as
+ * it is: no attempt claims it, nothing deactivates the extension again and the
+ * data migration does not run (any attempt would bump the record's revision).
+ */
+async function expectRollbackStaysPut(
+	restApi: ApiClient,
+	baseURL: string,
+	rollback: CutoverRecord
+): Promise< void > {
+	for ( let tick = 0; tick < 3; tick++ ) {
+		await rescheduleReconciliationActionsToNow();
+		await triggerActionSchedulerQueue( baseURL );
+	}
+	const settled = await readCutoverStatus( 0 );
+	expect(
+		settled.plugin_active,
+		'nothing deactivates the extension again'
+	).toBe( true );
+	expect( settled.record?.generation ).toBe( rollback.generation );
+	expect(
+		settled.record?.revision,
+		'no attempt claims the rolled-back generation'
+	).toBe( rollback.revision );
+	expect( settled.record?.current_step ).toBe( 'awaiting_merchant_start' );
+	expect( await readRuntimeOwner( restApi ) ).toBe( 'extension' );
+}
+
+/**
+ * Asserts an extension activation closed the open generation as the
+ * merchant's rollback: a new generation waits for the merchant's start, the
+ * open one's next attempt is gone, the extension owns payments again and the
+ * setup tier follows it.
+ */
+async function expectRolledBack(
+	restApi: ApiClient,
+	open: CutoverRecord
+): Promise< CutoverRecord > {
+	await expect
+		.poll( () => readRuntimeOwner( restApi ), { timeout: 60_000 } )
+		.toBe( 'extension' );
+	const status = await readCutoverStatus( 0 );
+	expect( status.plugin_active ).toBe( true );
+	expect( status.record?.generation ).toBe( open.generation + 1 );
+	expect( status.record?.state ).toBe( 'pending' );
+	expect( status.record?.current_step ).toBe( 'awaiting_merchant_start' );
+	expect( status.native_state, 'the tier follows the extension' ).toBe(
+		'available'
+	);
+	expect(
+		await wpEvalJson< number >( PENDING_RECONCILE_ACTIONS_PHP ),
+		'the open generation keeps no scheduled attempt'
+	).toBe( 0 );
+
+	return status.record!;
+}
+
+test.describe( 'WooPayments transition: extension activation during an open cutover', () => {
+	test.describe.configure( { timeout: 10 * 60_000 } );
+
+	test.beforeEach( async () => {
+		process.env.E2E_WP_ENV_CONFIG ??=
+			'tests/e2e/test-plugins/woopayments-transition-seed/wp-env.json';
+		await wpCLI( [ 'wp', 'woopayments-e2e-transition', 'reset' ] );
+		// The 11.1.0 card-only profile, as the rollback round trip uses.
+		const identity = JSON.parse(
+			(
+				await wpCLI( [
+					'wp',
+					'woopayments-e2e-transition',
+					'seed',
+					'historical-tokens',
+					'--version=11.1.0',
+				] )
+			).stdout
+				.trim()
+				.split( '\n' )
+				.pop()!
+		);
+		expect( identity.plugin_version ).toBe( '11.1.0' );
+		expect( identity.plugin_active ).toBe( true );
+		expect( identity.native_state ).toBe( 'available' );
+	} );
+
+	test.afterAll( async () => {
+		await wpCLI( [ 'wp', 'woopayments-e2e-transition', 'reset' ] );
+	} );
+
+	/**
+	 * Inbox N-470: the merchant reactivating the extension after the job
+	 * deactivated it, before the switch completed, is the rollback. Before
+	 * the fix the open generation's next attempt deactivated it again.
+	 */
+	test(
+		'reactivating the extension after the cutover job deactivated it rolls the switch back',
+		{
+			tag: [ tags.WOOPAYMENTS_NATIVE, tags.WOOPAYMENTS_TRANSITION ],
+		},
+		async ( { page, restApi, baseURL } ) => {
+			expect( await readRuntimeOwner( restApi ) ).toBe( 'extension' );
+			await page.goto( 'wp-login.php' );
+			await logIn( page, admin.username, admin.password, false );
+			await page.goto( 'wp-admin/' );
+			const link = page.getByRole( 'link', {
+				name: 'Start the switch',
+				exact: true,
+			} );
+			const href = await link.getAttribute( 'href', { timeout: 30_000 } );
+			validateCutoverActionURL( href ?? '', baseURL! );
+			await link.click( { timeout: 30_000 } );
+
+			// Drive the queue only until the job has finalized: the extension
+			// is off and the ownership check waits for its own attempt.
+			let status = await readCutoverStatus( 0 );
+			await expect
+				.poll(
+					async () => {
+						status = await readCutoverStatus( 0 );
+						if (
+							status.record?.current_step ===
+								'verify_builtin_ownership' &&
+							! status.plugin_active
+						) {
+							return true;
+						}
+						await rescheduleReconciliationActionsToNow();
+						await triggerActionSchedulerQueue( baseURL! );
+						return false;
+					},
+					{ timeout: 3 * 60_000, intervals: [ 1000, 3000, 5000 ] }
+				)
+				.toBe( true );
+			const open = status.record!;
+			expect( open.state ).toBe( 'pending' );
+
+			await wpCLI( [
+				'wp',
+				'plugin',
+				'activate',
+				'woocommerce-payments',
+			] );
+
+			const rollback = await expectRolledBack( restApi, open );
+			await expectRollbackStaysPut( restApi, baseURL!, rollback );
+		}
+	);
+
+	/**
+	 * Inbox N-470, the manual shape: the merchant deactivated the extension by
+	 * hand, which opens a manual cutover, then turned it back on before the job
+	 * ran. Before the fix the manual generation went on to finalize and looped
+	 * on the deferring ownership check.
+	 */
+	test(
+		'reactivating the extension during a manual-deactivation cutover rolls the switch back',
+		{
+			tag: [ tags.WOOPAYMENTS_NATIVE, tags.WOOPAYMENTS_TRANSITION ],
+		},
+		async ( { restApi, baseURL } ) => {
+			expect( await readRuntimeOwner( restApi ) ).toBe( 'extension' );
+			await wpCLI( [
+				'wp',
+				'plugin',
+				'deactivate',
+				'woocommerce-payments',
+			] );
+			const open = ( await readCutoverStatus( 0 ) ).record;
+			expect(
+				open?.origin_plugin_file,
+				'a hand deactivation opens a manual cutover'
+			).toBe( 'woocommerce-payments/woocommerce-payments.php' );
+			expect( open?.state ).toBe( 'pending' );
+			expect( open?.current_step ).toBe( 'queued' );
+
+			await wpCLI( [
+				'wp',
+				'plugin',
+				'activate',
+				'woocommerce-payments',
+			] );
+
+			const rollback = await expectRolledBack( restApi, open! );
+			expect( rollback.origin_plugin_file ?? null ).toBeNull();
+			await expectRollbackStaysPut( restApi, baseURL!, rollback );
 		}
 	);
 } );
