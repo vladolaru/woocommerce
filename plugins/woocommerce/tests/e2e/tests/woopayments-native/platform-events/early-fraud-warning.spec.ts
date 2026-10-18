@@ -91,10 +91,12 @@ test.describe( 'Platform events: early fraud warning', () => {
 				restApi,
 				EARLY_FRAUD_WARNING_CARD,
 				PRICE,
-				( id ) => ( productId = id )
+				( id ) => ( productId = id ),
+				async ( id ) => {
+					orderId = id;
+				}
 			);
 			const paidOrderId = paid.orderId;
-			orderId = paidOrderId;
 
 			const created = await waitForStripeEvent(
 				accountId,

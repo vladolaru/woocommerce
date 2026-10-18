@@ -1,11 +1,11 @@
 /**
  * Platform events: the fee breakdown envelope on payment_intent.succeeded.
  *
- * The platform attaches `fee_breakdown_v1` to the payment_intent.succeeded it forwards. The checkout's own response
- * carries no envelope, so the order has no `_wcpay_net` until the delivery writes it. The case reads the net as soon
- * as the order exists, then after the real delivery is processed, and expects the platform's envelope net (read from
- * the charge the platform serves) only after it. Which branch wrote it (envelope or application fee, equal on a
- * same-currency card payment) is the PHPUnit rows' to prove, with the recorded body.
+ * The platform attaches `fee_breakdown_v1` to the payment_intent.succeeded it forwards. The case waits until the store
+ * has processed that real delivery, then checks the order carries the platform's envelope net, read from the charge
+ * the platform serves. Which path wrote the net, and when, is the PHPUnit rows' to prove with the recorded body: the
+ * delivery can land before the browser reads the order, and on a same-currency card payment the envelope and the
+ * application-fee fallback give the same net.
  */
 
 /**
@@ -55,12 +55,11 @@ test.describe( 'Platform events: fee breakdown envelope', () => {
 	} );
 
 	test(
-		"the forwarded payment_intent.succeeded writes the platform envelope's net on an order that had none",
+		"the forwarded payment_intent.succeeded is processed and the order carries the platform envelope's net",
 		{ tag: FAMILY_TAGS },
 		async ( { page, restApi } ) => {
 			const accountId = await connectedAccountId( restApi );
 			const since = Math.floor( Date.now() / 1000 ) - 5;
-			let netBeforeDelivery = '';
 			const paid = await payWithBlocksCheckout(
 				page,
 				restApi,
@@ -68,14 +67,9 @@ test.describe( 'Platform events: fee breakdown envelope', () => {
 				PRICE,
 				( id ) => ( productId = id ),
 				async ( id ) => {
-					netBeforeDelivery = metaValue(
-						( await restApi.get( `wc/v3/orders/${ id }` ) )
-							.data as Json,
-						'_wcpay_net'
-					);
+					orderId = id;
 				}
 			);
-			orderId = paid.orderId;
 
 			const event = await waitForStripeEvent(
 				accountId,
@@ -97,17 +91,13 @@ test.describe( 'Platform events: fee breakdown envelope', () => {
 			).toBeDefined();
 			expect( String( net?.currency ).toUpperCase() ).toBe( 'USD' );
 
-			const envelopeNet = Number( net?.amount ) / 100;
-			expect(
-				netBeforeDelivery,
-				`before the delivery the order must carry no net yet (it read ${ netBeforeDelivery }): if the checkout or an early delivery already wrote ${ envelopeNet }, this case cannot show the delivery's write and must be retitled to "processed" only`
-			).not.toBe( String( envelopeNet ) );
-			const order = ( await restApi.get( `wc/v3/orders/${ orderId }` ) )
-				.data as Json;
+			const order = (
+				await restApi.get( `wc/v3/orders/${ paid.orderId }` )
+			).data as Json;
 			expect(
 				Number( metaValue( order, '_wcpay_net' ) ),
-				"after the delivery the order's net is the envelope's net total, in dollars"
-			).toBe( envelopeNet );
+				"the order's net is the envelope's net total, in dollars"
+			).toBe( Number( net?.amount ) / 100 );
 		}
 	);
 } );

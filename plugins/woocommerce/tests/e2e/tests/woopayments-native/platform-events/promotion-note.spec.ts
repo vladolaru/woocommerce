@@ -4,8 +4,9 @@
  * `Promotion_Service::send_promotion_note()` sends `{type: "wcpay.notification", data: <note>, livemode: false}` with
  * no `id`, asynchronously. The note is the one the platform builds for the US action incentive's start, for a fee
  * structure held in memory only: no enrolment and no fee change. The store keeps it as one admin note with the
- * settings action, as client 11.1.0 does. Where the local platform has no such fee structure the case skips as a
- * known limit.
+ * settings action, as client 11.1.0 does. The case skips as a known limit where the local platform has no such fee
+ * structure, or where the store already holds that note (its name is fixed, and the store keeps one per name); it
+ * only ever deletes the note this run created.
  */
 
 /**
@@ -15,6 +16,7 @@ import { expect, tags, test } from '../../../fixtures/fixtures';
 import {
 	cleanUp,
 	connectedAccountId,
+	countAdminNotes,
 	deleteAdminNotes,
 	hasLivePlatformTools,
 	LIVE_PLATFORM_SKIP_REASON,
@@ -37,6 +39,7 @@ test.describe( 'Platform events: promotion note', () => {
 	test.describe.configure( { timeout: 600_000 } );
 
 	let storeNoteName: string | undefined;
+	let sentByRun = false;
 
 	test.beforeAll( async ( { restApi } ) => {
 		test.skip( ! hasLivePlatformTools(), LIVE_PLATFORM_SKIP_REASON );
@@ -52,17 +55,24 @@ test.describe( 'Platform events: promotion note', () => {
 			! fee.available,
 			`Known limit: the local platform has no available fee structure ${ fee.name }, so it builds no promotion note to send.`
 		);
-		storeNoteName = `${ NOTE_NAME_PREFIX }${ fee.name }-welcome`;
+		const name = `${ NOTE_NAME_PREFIX }${ fee.name }-welcome`;
+		test.skip(
+			( await countAdminNotes( name ) ) > 0,
+			`Known limit: the store already holds the admin note ${ name }; the store keeps one note per name, so this run could not create its own, and it never deletes a note it did not create.`
+		);
+		storeNoteName = name;
 	} );
 
 	test.afterEach( async () => {
-		const name = storeNoteName;
+		// The note was absent before the send, so any note with this name now is this run's.
+		const name = sentByRun ? storeNoteName : undefined;
 		await cleanUp( [
 			[
-				'delete the admin note',
+				'delete the admin note this run created',
 				async () => name && deleteAdminNotes( name ),
 			],
 		] );
+		sentByRun = false;
 	} );
 
 	test(
@@ -71,9 +81,9 @@ test.describe( 'Platform events: promotion note', () => {
 		async ( { restApi } ) => {
 			const accountId = await connectedAccountId( restApi );
 			const name = storeNoteName as string;
-			// A copy an earlier run left would make the store skip this one as a duplicate.
-			await deleteAdminNotes( name );
 
+			// Set before the send: the note was absent, so whatever appears under this name from here on is this run's.
+			sentByRun = true;
 			const sent = await runOnPlatform< { title: string } >(
 				accountId,
 				`
@@ -106,6 +116,10 @@ test.describe( 'Platform events: promotion note', () => {
 				`No admin note ${ name } appeared within ${ DELIVERY_BUDGET_MS } ms: the platform's wcpay.notification did not arrive (the async jobs must be running) or the store refused it (read the store's WooPayments log).`
 			);
 
+			expect(
+				await countAdminNotes( name ),
+				'the store keeps exactly one note for the delivery'
+			).toBe( 1 );
 			expect( note.title ).toBe( sent.title );
 			expect( note.source ).toBe( 'woocommerce-payments' );
 			expect( note.actions ).toEqual( [

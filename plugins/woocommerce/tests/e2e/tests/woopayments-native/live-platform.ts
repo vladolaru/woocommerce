@@ -566,6 +566,15 @@ export async function deleteProduct(
 	}
 }
 
+/** How many admin notes the store holds with this name. */
+export async function countAdminNotes( name: string ): Promise< number > {
+	return wpEvalJson< number >( `
+		return count( \\Automattic\\WooCommerce\\Admin\\Notes\\Notes::load_data_store()->get_notes_with_name( ${ JSON.stringify(
+			name
+		) } ) );
+	` );
+}
+
 /** One admin note by name, as the store stored it, or null. */
 export async function readAdminNote( name: string ): Promise< Json | null > {
 	return wpEvalJson< Json | null >( `

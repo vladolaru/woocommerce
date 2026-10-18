@@ -15,6 +15,7 @@ import { getCharge, TEST_CARDS } from '../../../utils/woopayments';
 import {
 	cleanUp,
 	connectedAccountId,
+	countAdminNotes,
 	deleteAdminNotes,
 	deleteOrder,
 	deleteProduct,
@@ -82,9 +83,11 @@ test.describe( 'Platform events: dispute deadline note', () => {
 				restApi,
 				TEST_CARDS.dispute,
 				PRICE,
-				( id ) => ( productId = id )
+				( id ) => ( productId = id ),
+				async ( id ) => {
+					orderId = id;
+				}
 			);
-			orderId = paid.orderId;
 
 			const disputeId = await pollFor< string >(
 				async () =>
@@ -130,6 +133,10 @@ test.describe( 'Platform events: dispute deadline note', () => {
 				`No admin note ${ name } appeared within ${ DELIVERY_BUDGET_MS } ms: the platform's wcpay.notification did not arrive (the async jobs must be running) or the store refused it (read the store's WooPayments log).`
 			);
 
+			expect(
+				await countAdminNotes( name ),
+				'the store keeps exactly one note for the delivery'
+			).toBe( 1 );
 			expect( note.source ).toBe( 'woocommerce-payments' );
 			const actions = note.actions as Array< Record< string, unknown > >;
 			expect( actions ).toHaveLength( 1 );
