@@ -7,8 +7,8 @@ declare( strict_types=1 );
 
 namespace Automattic\WooCommerce\Internal\Admin\RemoteFreeExtensions;
 
-use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -33,7 +33,7 @@ class DefaultFreeExtensions {
 	 * @return array Default specs.
 	 */
 	public static function get_all() {
-		$woopayments_plugin = Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' ) ? array( self::get_plugin( 'woocommerce-payments' ) ) : array();
+		$woopayments_plugin = wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_enabled() ? array() : array( self::get_plugin( 'woocommerce-payments' ) );
 		$bundles            = array(
 			array(
 				'key'     => 'obw/basics',

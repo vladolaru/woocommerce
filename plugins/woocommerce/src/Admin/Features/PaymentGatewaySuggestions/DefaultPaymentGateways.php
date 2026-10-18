@@ -7,8 +7,8 @@ namespace Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions;
 
 defined( 'ABSPATH' ) || exit;
 
-use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use WC_Gateway_BACS;
 use WC_Gateway_COD;
 
@@ -950,7 +950,8 @@ class DefaultPaymentGateways {
 			$payment_gateways[ $index ]['recommendation_priority'] = self::get_recommendation_priority( $payment_gateway['id'], $country );
 		}
 
-		if ( Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' ) ) {
+		// While the WooPayments feature is off, the WooPayments suggestions install the extension.
+		if ( ! wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_enabled() ) {
 			foreach ( $payment_gateways as &$payment_gateway ) {
 				if ( 0 === strpos( $payment_gateway['id'], 'woocommerce_payments' ) ) {
 					$payment_gateway['plugins'] = array( 'woocommerce-payments' );

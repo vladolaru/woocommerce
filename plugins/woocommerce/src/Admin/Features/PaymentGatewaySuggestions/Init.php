@@ -7,8 +7,8 @@ namespace Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions;
 
 defined( 'ABSPATH' ) || exit;
 
-use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Admin\RemoteSpecs\RemoteSpecsEngine;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 
 /**
  * Remote Payment Methods engine.
@@ -90,14 +90,14 @@ class Init extends RemoteSpecsEngine {
 	/**
 	 * Remove the woocommerce-payments plugin from the plugins a WooPayments suggestion installs.
 	 *
-	 * WooPayments is built into WooCommerce, so its suggestion installs nothing. Remote suggestions still name the
-	 * plugin; with WC_ALLOW_MERGED_FEATURE_PLUGINS they are left as they are.
+	 * While the WooPayments feature is on, the built-in WooPayments is offered, so its suggestion installs nothing. Remote
+	 * suggestions still name the plugin; while the feature is off they are left as they are.
 	 *
 	 * @param array $suggestions Payment gateway suggestions.
 	 * @return array Normalized suggestions.
 	 */
 	private static function remove_woopayments_from_suggestions( array $suggestions ): array {
-		if ( Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' ) ) {
+		if ( ! wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_enabled() ) {
 			return $suggestions;
 		}
 

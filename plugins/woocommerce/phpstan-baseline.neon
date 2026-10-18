@@ -46012,6 +46012,24 @@ parameters:
 			path: src/Admin/Features/OnboardingTasks/Tasks/Tax.php
 
 		-
+			message: '#^Cannot access property \$id on object\|null\.$#'
+			identifier: property.nonObject
+			count: 1
+			path: src/Admin/Features/OnboardingTasks/Tasks/WooCommercePayments.php
+
+		-
+			message: '#^Cannot call method has_incentive\(\) on Automattic\\WooCommerce\\Internal\\Admin\\WcPayWelcomePage\|null\.$#'
+			identifier: method.nonObject
+			count: 1
+			path: src/Admin/Features/OnboardingTasks/Tasks/WooCommercePayments.php
+
+		-
+			message: '#^Property Automattic\\WooCommerce\\Admin\\Features\\OnboardingTasks\\Tasks\\WooCommercePayments\:\:\$is_complete_result \(null\) does not accept bool\.$#'
+			identifier: assign.propertyType
+			count: 1
+			path: src/Admin/Features/OnboardingTasks/Tasks/WooCommercePayments.php
+
+		-
 			message: '#^Method Automattic\\WooCommerce\\Admin\\Features\\PaymentGatewaySuggestions\\DefaultPaymentGateways\:\:get_default_recommendation_priority\(\) should return int but returns null\.$#'
 			identifier: return.type
 			count: 1

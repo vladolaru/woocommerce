@@ -3,9 +3,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Admin\RemoteFreeExtensions;
 
-use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Admin\RemoteFreeExtensions\DefaultFreeExtensions;
 use Automattic\WooCommerce\Internal\Admin\RemoteFreeExtensions\EvaluateExtension;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use WC_Unit_Test_Case;
 
 /**
@@ -163,23 +163,21 @@ class DefaultFreeExtensionsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Default extension bundles should not offer WooPayments as a plugin install when core owns it.
+	 * @testdox Default extension bundles should offer the WooPayments extension while the WooPayments feature is off.
 	 */
-	public function test_default_extension_bundles_do_not_offer_woopayments_as_a_plugin_install(): void {
-		$this->assertNotContains( 'woocommerce-payments', $this->get_default_extension_plugin_slugs() );
+	public function test_default_extension_bundles_offer_woopayments_while_the_feature_is_off(): void {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+
+		$this->assertContains( 'woocommerce-payments', $this->get_default_extension_plugin_slugs() );
 	}
 
 	/**
-	 * @testdox Default extension bundles should retain WooPayments plugin metadata for merged feature development.
+	 * @testdox Default extension bundles should not offer the WooPayments extension while the WooPayments feature is on.
 	 */
-	public function test_default_extension_bundles_preserve_woopayments_plugin_metadata_for_merged_feature_development(): void {
-		Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
+	public function test_default_extension_bundles_do_not_offer_woopayments_while_the_feature_is_on(): void {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 
-		try {
-			$this->assertContains( 'woocommerce-payments', $this->get_default_extension_plugin_slugs() );
-		} finally {
-			Constants::clear_single_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' );
-		}
+		$this->assertNotContains( 'woocommerce-payments', $this->get_default_extension_plugin_slugs() );
 	}
 
 	/**

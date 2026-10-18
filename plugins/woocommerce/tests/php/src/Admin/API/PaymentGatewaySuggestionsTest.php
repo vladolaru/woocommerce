@@ -2,7 +2,6 @@
 
 namespace Automattic\WooCommerce\Tests\Admin\API;
 
-use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\DefaultPaymentGateways;
 use Automattic\WooCommerce\Admin\RemoteSpecs\RuleProcessors\RuleEvaluator;
 use Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions\EvaluateSuggestion;
@@ -103,9 +102,10 @@ class PaymentGatewaySuggestionsTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not advertise WooPayments suggestions as WooPayments plugin installs.
+	 * @testdox Should not advertise WooPayments suggestions as WooPayments plugin installs while the WooPayments feature is on.
 	 */
-	public function test_woopayments_suggestions_do_not_include_plugin_install_metadata() {
+	public function test_woopayments_suggestions_do_not_include_plugin_install_metadata_while_the_feature_is_on() {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$woopayments_suggestions = array_filter(
 			DefaultPaymentGateways::get_all(),
 			function ( $suggestion ) {
@@ -121,25 +121,21 @@ class PaymentGatewaySuggestionsTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve WooPayments plugin install metadata for merged feature development.
+	 * @testdox Should advertise WooPayments suggestions as WooPayments plugin installs while the WooPayments feature is off.
 	 */
-	public function test_woopayments_suggestions_include_plugin_install_metadata_for_merged_feature_development() {
-		Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
+	public function test_woopayments_suggestions_include_plugin_install_metadata_while_the_feature_is_off() {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 
-		try {
-			$woopayments_suggestions = array_filter(
-				DefaultPaymentGateways::get_all(),
-				function ( $suggestion ) {
-					return isset( $suggestion['id'] ) && str_starts_with( $suggestion['id'], 'woocommerce_payments' );
-				}
-			);
-
-			$this->assertNotEmpty( $woopayments_suggestions );
-			foreach ( $woopayments_suggestions as $suggestion ) {
-				$this->assertContains( 'woocommerce-payments', $suggestion['plugins'] ?? array() );
+		$woopayments_suggestions = array_filter(
+			DefaultPaymentGateways::get_all(),
+			function ( $suggestion ) {
+				return isset( $suggestion['id'] ) && str_starts_with( $suggestion['id'], 'woocommerce_payments' );
 			}
-		} finally {
-			Constants::clear_single_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' );
+		);
+
+		$this->assertNotEmpty( $woopayments_suggestions );
+		foreach ( $woopayments_suggestions as $suggestion ) {
+			$this->assertSame( array( 'woocommerce-payments' ), $suggestion['plugins'] ?? array() );
 		}
 	}
 
@@ -185,9 +181,10 @@ class PaymentGatewaySuggestionsTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should strip WooPayments plugin install metadata from remote suggestions.
+	 * @testdox Should strip WooPayments plugin install metadata from remote suggestions while the WooPayments feature is on.
 	 */
-	public function test_remote_woopayments_suggestions_do_not_include_plugin_install_metadata() {
+	public function test_remote_woopayments_suggestions_do_not_include_plugin_install_metadata_while_the_feature_is_on() {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		Init::delete_specs_transient();
 		EvaluateSuggestion::reset_memo();
 
@@ -250,12 +247,12 @@ class PaymentGatewaySuggestionsTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should retain remote WooPayments plugin install metadata for merged feature development.
+	 * @testdox Should retain remote WooPayments plugin install metadata while the WooPayments feature is off.
 	 */
-	public function test_remote_woopayments_suggestions_include_plugin_install_metadata_for_merged_feature_development() {
+	public function test_remote_woopayments_suggestions_include_plugin_install_metadata_while_the_feature_is_off() {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		Init::delete_specs_transient();
 		EvaluateSuggestion::reset_memo();
-		Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
 
 		$response_mock_ref = function ( $preempt, $parsed_args, $url ) {
 			if ( str_contains( $url, 'https://woocommerce.com/wp-json/wccom/payment-gateway-suggestions/2.0/suggestions.json' ) ) {
@@ -289,7 +286,6 @@ class PaymentGatewaySuggestionsTest extends WC_REST_Unit_Test_Case {
 			remove_filter( 'pre_http_request', $response_mock_ref, 10 );
 			Init::delete_specs_transient();
 			EvaluateSuggestion::reset_memo();
-			Constants::clear_single_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' );
 		}
 	}
 }

@@ -7,9 +7,9 @@ namespace Automattic\WooCommerce\Internal\Admin\RemoteFreeExtensions;
 
 defined( 'ABSPATH' ) || exit;
 
-use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Admin\RemoteFreeExtensions\DefaultFreeExtensions;
 use Automattic\WooCommerce\Admin\RemoteSpecs\RemoteSpecsEngine;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 
 /**
  * Remote Payment Methods engine.
@@ -67,15 +67,16 @@ class Init extends RemoteSpecsEngine {
 	}
 
 	/**
-	 * Leave the WooPayments plugin out of the bundles: WooPayments is built into WooCommerce, and the remote specs still list it.
+	 * Leave the WooPayments plugin out of the bundles while the WooPayments feature is on: the built-in WooPayments is
+	 * offered instead, and the remote specs still list the extension.
 	 *
-	 * The default bundles already leave it out unless merged feature plugins are allowed (DefaultFreeExtensions::get_all()).
+	 * The default bundles follow the same rule (DefaultFreeExtensions::get_all()).
 	 *
 	 * @param array $bundles Evaluated bundles.
 	 * @return array
 	 */
 	private static function remove_woopayments_from_bundles( array $bundles ): array {
-		if ( Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' ) ) {
+		if ( ! wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_enabled() ) {
 			return $bundles;
 		}
 

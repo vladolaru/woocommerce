@@ -4,9 +4,9 @@ declare( strict_types=1 );
 namespace Automattic\WooCommerce\Tests\Internal\Admin\Settings;
 
 use Automattic\Jetpack\Connection\Manager;
-use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use WC_Unit_Test_Case;
 use WP_Locale;
 
@@ -1808,9 +1808,10 @@ class UtilsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native WooPayments authorization should identify WooCommerce core.
+	 * @testdox WooPayments authorization should identify WooCommerce core while the WooPayments feature is on.
 	 */
-	public function test_wpcom_connection_authorization_uses_the_core_identity_for_native_woopayments(): void {
+	public function test_wpcom_connection_authorization_uses_the_core_identity_while_the_feature_is_on(): void {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->replace_jetpack_connection_manager();
 
 		try {
@@ -1821,17 +1822,16 @@ class UtilsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Merged feature development should preserve the WooPayments plugin authorization identity.
+	 * @testdox WooPayments authorization should identify the WooPayments extension while the WooPayments feature is off.
 	 */
-	public function test_wpcom_connection_authorization_preserves_the_plugin_identity_for_merged_feature_development(): void {
-		Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
+	public function test_wpcom_connection_authorization_uses_the_plugin_identity_while_the_feature_is_off(): void {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		$this->replace_jetpack_connection_manager();
 
 		try {
 			$this->assertSame( 'woocommerce-payments', $this->get_authorization_plugin_name() );
 		} finally {
 			$this->restore_jetpack_connection_manager();
-			Constants::clear_single_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' );
 		}
 	}
 

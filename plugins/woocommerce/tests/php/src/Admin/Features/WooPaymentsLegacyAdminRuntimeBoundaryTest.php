@@ -17,13 +17,13 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Removed classes restored as inert deprecated stubs for third-party references until
-	 * WooCommerce 12.0.0 (N-196). They must exist, and nothing in core may use them.
+	 * WooCommerce 12.0.0 (N-196). They must exist, and nothing in core may use them. The deprecated
+	 * WooCommercePayments task keeps trunk's body instead.
 	 *
 	 * @var string[]
 	 */
 	private const DEPRECATED_STUB_FILES = array(
 		'src/Internal/Admin/WcPayWelcomePage.php',
-		'src/Admin/Features/OnboardingTasks/Tasks/WooCommercePayments.php',
 		'src/Internal/Admin/WCPayPromotion/Init.php',
 	);
 
@@ -104,7 +104,12 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 		);
 
 		foreach ( $source_files as $source_file ) {
-				$source = $this->read_source_file( $source_file );
+			// The deprecated WooCommercePayments task keeps trunk's body, which links to the welcome page stub.
+			if ( str_ends_with( $source_file, '/src/Admin/Features/OnboardingTasks/Tasks/WooCommercePayments.php' ) ) {
+				continue;
+			}
+
+			$source = $this->read_source_file( $source_file );
 
 			foreach ( $forbidden_strings as $forbidden_string ) {
 				$this->assertStringNotContainsString( $forbidden_string, $source, "{$source_file} should not retain deprecated WooPayments welcome-page symbol {$forbidden_string}." );
@@ -142,12 +147,6 @@ class WooPaymentsLegacyAdminRuntimeBoundaryTest extends WC_Unit_Test_Case {
 				$this->assertStringNotContainsString( $forbidden_string, $source, "{$source_file} should not retain deprecated WooPayments onboarding symbol {$forbidden_string}." );
 			}
 		}
-
-		$this->assertStringNotContainsString(
-			"'WooCommercePayments'",
-			$this->read_source_file( WC()->plugin_path() . '/src/Admin/Features/OnboardingTasks/TaskLists.php' ),
-			'TaskLists should not register the deprecated WooCommercePayments task stub.'
-		);
 
 		$forbidden_client_strings = array(
 			'woocommerce-admin-task-wcpay-page',

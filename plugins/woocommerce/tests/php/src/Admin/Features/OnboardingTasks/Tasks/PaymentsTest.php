@@ -3,10 +3,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Admin\Features\OnboardingTasks\Tasks;
 
+use Automattic\WooCommerce\Admin\Features\OnboardingTasks\TaskLists;
 use Automattic\WooCommerce\Admin\Features\OnboardingTasks\Tasks\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments as SettingsPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Payment_Gateway;
 use WC_Unit_Test_Case;
@@ -14,8 +16,7 @@ use WC_Unit_Test_Case;
 /**
  * Payments onboarding task test.
  *
- * Covers the backward-compatibility filters re-fired for the standalone WooPayments
- * onboarding task and how the task treats the WooPayments plugin and the built-in gateway.
+ * Covers how the task treats the WooPayments plugin and the built-in gateway.
  */
 class PaymentsTest extends WC_Unit_Test_Case {
 
@@ -50,90 +51,57 @@ class PaymentsTest extends WC_Unit_Test_Case {
 		remove_all_filters( 'woocommerce_admin_woopayments_onboarding_task_additional_data' );
 		WC()->payment_gateways()->payment_gateways = $this->gateways_before_test;
 		wc_get_container()->reset_all_replacements();
+		TaskLists::clear_lists();
+		TaskLists::init_default_lists();
 		parent::tearDown();
 	}
 
 	/**
-	 * @testdox Should re-fire the deprecated WooPayments badge filter so existing callbacks still run.
+	 * @testdox Should fire neither retired WooPayments task filter with the WooPayments feature $feature.
+	 *
+	 * @testWith ["off"]
+	 *           ["on"]
+	 *
+	 * @param string $feature The WooPayments feature state.
 	 */
-	public function test_get_badge_fires_deprecated_woopayments_filter(): void {
-		$this->setExpectedDeprecated( 'woocommerce_admin_woopayments_onboarding_task_badge' );
+	public function test_fires_no_retired_woopayments_task_filter( string $feature ): void {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'on' === $feature ? 'yes' : 'no' );
+		$fired = array();
+		foreach ( array( 'woocommerce_admin_woopayments_onboarding_task_badge', 'woocommerce_admin_woopayments_onboarding_task_additional_data' ) as $hook ) {
+			add_filter(
+				$hook,
+				function ( $value ) use ( $hook, &$fired ) {
+					$fired[] = $hook;
+					return $value;
+				}
+			);
+		}
 
-		add_filter(
-			'woocommerce_admin_woopayments_onboarding_task_badge',
-			function () {
-				return 'NEW';
-			}
-		);
+		$this->sut->get_badge();
+		$this->sut->get_additional_data();
 
-		$this->assertSame(
-			'NEW',
-			$this->sut->get_badge(),
-			'The badge filter contribution should be returned by get_badge().'
-		);
+		$this->assertSame( array(), $fired, 'Only the deprecated WooPayments task fires these filters.' );
 	}
 
 	/**
-	 * @testdox Should return an empty badge and emit no deprecation notice when nothing hooks the badge filter.
+	 * @testdox Should list the Payments task and no WooPayments task with the WooPayments feature $feature.
+	 *
+	 * @testWith ["off"]
+	 *           ["on"]
+	 *
+	 * @param string $feature The WooPayments feature state.
 	 */
-	public function test_get_badge_returns_empty_string_without_filter(): void {
-		$this->assertSame(
-			'',
-			$this->sut->get_badge(),
-			'The badge should default to an empty string when no callback is attached.'
-		);
+	public function test_task_lists_offer_payments_and_no_woopayments_task( string $feature ): void {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'on' === $feature ? 'yes' : 'no' );
+		TaskLists::clear_lists();
+		TaskLists::init_default_lists();
+
+		$this->assertNotNull( TaskLists::get_task( 'payments', 'setup' ), 'The setup list offers the Payments task.' );
+		$this->assertNull( TaskLists::get_task( 'woocommerce-payments' ), 'No list offers the deprecated WooPayments task.' );
 	}
 
 	/**
-	 * @testdox Should fold the deprecated additional-data filter into the built-in array while keeping its keys.
-	 */
-	public function test_get_additional_data_folds_in_deprecated_filter(): void {
-		$this->setExpectedDeprecated( 'woocommerce_admin_woopayments_onboarding_task_additional_data' );
-
-		add_filter(
-			'woocommerce_admin_woopayments_onboarding_task_additional_data',
-			function () {
-				return array( 'extIncentiveId' => 'abc' );
-			}
-		);
-
-		$result = $this->sut->get_additional_data();
-
-		$this->assertIsArray( $result, 'Additional data should be an array.' );
-		$this->assertArrayHasKey( 'extIncentiveId', $result, 'The deprecated filter contribution should be present.' );
-		$this->assertSame( 'abc', $result['extIncentiveId'], 'The deprecated filter value should be preserved.' );
-		$this->assertArrayHasKey( 'wooPaymentsIsActive', $result, 'Native keys must still be present.' );
-	}
-
-	/**
-	 * @testdox Should not let the deprecated additional-data filter override the built-in keys.
-	 */
-	public function test_get_additional_data_builtin_keys_win_on_collision(): void {
-		$this->setExpectedDeprecated( 'woocommerce_admin_woopayments_onboarding_task_additional_data' );
-
-		add_filter(
-			'woocommerce_admin_woopayments_onboarding_task_additional_data',
-			function () {
-				return array( 'wooPaymentsIsActive' => 'HIJACKED' );
-			}
-		);
-
-		$result = $this->sut->get_additional_data();
-
-		$this->assertArrayHasKey( 'wooPaymentsIsActive', $result, 'Native key must be present.' );
-		$this->assertNotSame(
-			'HIJACKED',
-			$result['wooPaymentsIsActive'],
-			'The deprecated filter must not be able to override native flags.'
-		);
-		$this->assertIsBool(
-			$result['wooPaymentsIsActive'],
-			'The native wooPaymentsIsActive value should remain a boolean.'
-		);
-	}
-
-	/**
-	 * @testdox Should return the built-in additional data unchanged when nothing hooks the filter.
+	 * @testdox Should return the task's additional data.
 	 */
 	public function test_get_additional_data_returns_its_array_without_filter(): void {
 		$result = $this->sut->get_additional_data();

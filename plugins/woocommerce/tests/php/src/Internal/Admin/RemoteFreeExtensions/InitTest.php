@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Admin\RemoteSpecs\DataSourcePoller;
 use Automattic\WooCommerce\Internal\Admin\RemoteFreeExtensions\Init as RemoteFreeExtensions;
 use Automattic\WooCommerce\Internal\Admin\RemoteFreeExtensions\DefaultFreeExtensions;
 use Automattic\WooCommerce\Internal\Admin\RemoteFreeExtensions\RemoteFreeExtensionsDataSourcePoller;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use WC_Unit_Test_Case;
 
 /**
@@ -320,13 +321,12 @@ class InitTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The woocommerce.com specs still list the WooPayments plugin in the core profiler bundle; WooPayments is native,
-	 * so the profiler must not install it (the default bundles already leave it out unless merged feature plugins
-	 * are allowed, DefaultFreeExtensions::get_all()).
+	 * The woocommerce.com specs list the WooPayments plugin in the core profiler bundle. While the WooPayments feature is
+	 * on, the built-in WooPayments is offered, so the profiler must not install the extension.
 	 *
-	 * @testdox Should leave the WooPayments plugin out of remote extension bundles unless merged feature plugins are allowed.
+	 * @testdox Should leave the WooPayments plugin out of remote extension bundles only while the WooPayments feature is on.
 	 */
-	public function test_remote_bundles_do_not_offer_the_woopayments_plugin(): void {
+	public function test_remote_bundles_offer_the_woopayments_plugin_only_while_the_feature_is_off(): void {
 		update_option( 'woocommerce_default_country', 'US' );
 		$visible_in_us = (object) array(
 			'type'      => 'base_location_country',
@@ -357,16 +357,13 @@ class InitTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$native_keys = wp_list_pluck( RemoteFreeExtensions::get_extensions( array( 'obw/core-profiler' ) )[0]['plugins'], 'key' );
-		\Automattic\Jetpack\Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
-		try {
-			$merged_keys = wp_list_pluck( RemoteFreeExtensions::get_extensions( array( 'obw/core-profiler' ) )[0]['plugins'], 'key' );
-		} finally {
-			\Automattic\Jetpack\Constants::clear_single_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' );
-		}
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$feature_on_keys = wp_list_pluck( RemoteFreeExtensions::get_extensions( array( 'obw/core-profiler' ) )[0]['plugins'], 'key' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+		$feature_off_keys = wp_list_pluck( RemoteFreeExtensions::get_extensions( array( 'obw/core-profiler' ) )[0]['plugins'], 'key' );
 
-		$this->assertSame( array( 'mock-extension-2' ), $native_keys );
-		$this->assertContains( 'woocommerce-payments', $merged_keys );
+		$this->assertSame( array( 'mock-extension-2' ), $feature_on_keys );
+		$this->assertSame( array( 'woocommerce-payments', 'mock-extension-2' ), $feature_off_keys );
 	}
 
 	/**
