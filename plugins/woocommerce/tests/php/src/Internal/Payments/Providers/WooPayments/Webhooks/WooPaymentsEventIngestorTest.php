@@ -2699,21 +2699,32 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox charge.dispute.updated adds the reference dispute update note without changing order status.
 	 *
+	 * The funds withdrawn row is the event the platform forwarded (Fixtures/platform-charge-dispute-events.json), on the
+	 * order paid by its charge. The platform does not forward charge.dispute.updated, and no funds_reinstated was delivered
+	 * locally, so those rows keep the fields the handler reads.
+	 *
 	 * @dataProvider dispute_update_event_provider
 	 *
 	 * @param string $event_type Event type.
 	 * @param string $message    Expected message.
+	 * @param string $pair       Recorded event, or '' for a built one.
 	 */
-	public function test_dispute_updates_add_notes_without_changing_status( string $event_type, string $message ): void {
-		$order = $this->create_paid_woopayments_order( 'ch_123', 'pi_123' );
+	public function test_dispute_updates_add_notes_without_changing_status( string $event_type, string $message, string $pair = '' ): void {
+		if ( '' !== $pair ) {
+			// The recorded events are test-mode deliveries (livemode false), so the store runs in test mode, as the recording account did.
+			update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		}
+		$event   = '' !== $pair ? RecordedPlatformEvents::body( 'platform-charge-dispute-events.json', $pair ) : $this->create_dispute_event( $event_type, 'needs_response' );
+		$dispute = $event['data']['object'];
+		$order   = $this->create_paid_woopayments_order( $dispute['charge'], $dispute['payment_intent'] ?? 'pi_123' );
 
-		$this->sut->process( $this->create_dispute_event( $event_type, 'needs_response' ) );
+		$this->sut->process( $event );
 
 		$order = wc_get_order( $order->get_id() );
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'processing', $order->get_status() );
-		$this->assertOrderHasNote( $order, $message . '. See <a href="' . $this->get_expected_dispute_update_url( 'ch_123' ) . '">dispute overview</a> for more details. (Dispute ID: du_123)' );
+		$this->assertOrderHasNote( $order, $message . '. See <a href="' . $this->get_expected_dispute_update_url( $dispute['charge'] ) . '">dispute overview</a> for more details. (Dispute ID: ' . $dispute['id'] . ')' );
 	}
 
 	/**
@@ -2745,12 +2756,23 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Distinct disputes on one charge each record their own funds-withdrawn note.
+	 *
+	 * Both events are funds_withdrawn deliveries the platform forwarded (Fixtures/platform-charge-dispute-events.json); the
+	 * second dispute is moved onto the first one's charge, the case this test is about.
 	 */
 	public function test_dispute_updates_record_a_note_per_dispute(): void {
-		$order = $this->create_paid_woopayments_order( 'ch_123', 'pi_123' );
+		// The recorded events are test-mode deliveries (livemode false), so the store runs in test mode, as the recording account did.
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$first_event  = RecordedPlatformEvents::body( 'platform-charge-dispute-events.json', 'dispute_funds_withdrawn' );
+		$second_event = RecordedPlatformEvents::body( 'platform-charge-dispute-events.json', 'second_dispute_funds_withdrawn' );
+		$first        = $first_event['data']['object'];
 
-		$first_event        = $this->create_dispute_event( 'charge.dispute.funds_withdrawn', 'needs_response', array( 'id' => 'dp_first' ) );
-		$second_event       = $this->create_dispute_event( 'charge.dispute.funds_withdrawn', 'needs_response', array( 'id' => 'dp_second' ) );
+		$second_event['data']['object']['charge']         = $first['charge'];
+		$second_event['data']['object']['payment_intent'] = $first['payment_intent'];
+
+		$second = $second_event['data']['object'];
+		$order  = $this->create_paid_woopayments_order( $first['charge'], $first['payment_intent'] );
+
 		$replay_event       = $first_event;
 		$first_event['id']  = 'evt_row_38_update_first';
 		$second_event['id'] = 'evt_row_38_update_second';
@@ -2764,8 +2786,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 'processing', $order->get_status() );
 		$this->assertCount( 2, $this->get_order_notes_containing( $order, 'Payment dispute and fees have been deducted from your next payout' ) );
-		$this->assertOrderHasNoteContaining( $order, array( 'Payment dispute and fees have been deducted from your next payout', '(Dispute ID: dp_first)' ) );
-		$this->assertOrderHasNoteContaining( $order, array( 'Payment dispute and fees have been deducted from your next payout', '(Dispute ID: dp_second)' ) );
+		$this->assertOrderHasNoteContaining( $order, array( 'Payment dispute and fees have been deducted from your next payout', '(Dispute ID: ' . $first['id'] . ')' ) );
+		$this->assertOrderHasNoteContaining( $order, array( 'Payment dispute and fees have been deducted from your next payout', '(Dispute ID: ' . $second['id'] . ')' ) );
 	}
 
 	/**
@@ -2812,12 +2834,12 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	/**
 	 * Provide dispute update events.
 	 *
-	 * @return array<string,array{0:string,1:string}>
+	 * @return array<string,array{0:string,1:string,2?:string}>
 	 */
 	public function dispute_update_event_provider(): array {
 		return array(
 			'updated'          => array( 'charge.dispute.updated', 'Payment dispute has been updated' ),
-			'funds withdrawn'  => array( 'charge.dispute.funds_withdrawn', 'Payment dispute and fees have been deducted from your next payout' ),
+			'funds withdrawn'  => array( 'charge.dispute.funds_withdrawn', 'Payment dispute and fees have been deducted from your next payout', 'dispute_funds_withdrawn' ),
 			'funds reinstated' => array( 'charge.dispute.funds_reinstated', 'Payment dispute funds have been reinstated' ),
 		);
 	}
@@ -3305,9 +3327,12 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox charge.refunded creates a full local refund with WooPayments metadata.
 	 */
 	public function test_charge_refunded_creates_full_local_refund_with_wcpay_metadata(): void {
-		$order = $this->create_refundable_woopayments_order( '10.00' );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order  = $this->create_refundable_woopayments_order( '10.00' );
+		$event  = $this->create_charge_refunded_event( $order, 1000, 1000, 'succeeded' );
+		$refund = $event['data']['object']['refunds']['data'][0];
 
-		$this->sut->process( $this->create_charge_refunded_event( $order, 1000, 1000, 'succeeded' ) );
+		$this->sut->process( $event );
 
 		$order = wc_get_order( $order->get_id() );
 
@@ -3319,18 +3344,21 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $refunds[0]->get_items(), 'Full external refunds should preserve refunded line items.' );
 		$this->assertSame( 'requested_by_customer', $refunds[0]->get_reason() );
 		$this->assertSame( 'successful', $order->get_meta( '_wcpay_refund_status', true ) );
-		$this->assertSame( 're_123', $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
-		$this->assertSame( 'txn_123', $refunds[0]->get_meta( '_wcpay_refund_transaction_id', true ) );
-		$this->assertOrderHasNoteContaining( $order, array( 'A refund of', 'was successfully processed using WooPayments', 'requested_by_customer', 're_123' ) );
+		$this->assertSame( $refund['id'], $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( $refund['balance_transaction'], $refunds[0]->get_meta( '_wcpay_refund_transaction_id', true ) );
+		$this->assertOrderHasNoteContaining( $order, array( 'A refund of', 'was successfully processed using WooPayments', 'requested_by_customer', $refund['id'] ) );
 	}
 
 	/**
 	 * @testdox charge.refunded creates a pending partial local refund.
 	 */
 	public function test_charge_refunded_creates_pending_partial_refund(): void {
-		$order = $this->create_refundable_woopayments_order( '10.00' );
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$order     = $this->create_refundable_woopayments_order( '10.00' );
+		$event     = $this->create_charge_refunded_event( $order, 1000, 400, 'pending' );
+		$refund_id = $event['data']['object']['refunds']['data'][0]['id'];
 
-		$this->sut->process( $this->create_charge_refunded_event( $order, 1000, 400, 'pending' ) );
+		$this->sut->process( $event );
 
 		$order = wc_get_order( $order->get_id() );
 
@@ -3341,8 +3369,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertSame( '-4.00', $refunds[0]->get_total() );
 		$this->assertCount( 0, $refunds[0]->get_items(), 'Partial external refunds should not synthesize line-item refunds.' );
 		$this->assertSame( 'pending', $order->get_meta( '_wcpay_refund_status', true ) );
-		$this->assertSame( 're_123', $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
-		$this->assertOrderHasNoteContaining( $order, array( 'A refund of', 'is pending', 'WooPayments', 're_123' ) );
+		$this->assertSame( $refund_id, $refunds[0]->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertOrderHasNoteContaining( $order, array( 'A refund of', 'is pending', 'WooPayments', $refund_id ) );
 	}
 
 	/**
@@ -3471,6 +3499,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox charge.refunded accepts split-UPE WooPayments gateway IDs.
 	 */
 	public function test_charge_refunded_accepts_split_upe_gateway_ids(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$order = $this->create_refundable_woopayments_order( '10.00' );
 		$order->set_payment_method( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit' );
 		$order->save();
@@ -3486,11 +3515,15 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox charge.refunded ignores canceled authorizations.
+	 *
+	 * Stripe reports a released authorization as a refunded, uncaptured charge; the event is the one the platform forwarded
+	 * for an in-person authorization canceled before capture.
 	 */
 	public function test_charge_refunded_ignores_uncaptured_charges(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$order = $this->create_refundable_woopayments_order( '10.00' );
 
-		$this->sut->process( $this->create_charge_refunded_event( $order, 1000, 400, 'succeeded', array( 'captured' => false ) ) );
+		$this->sut->process( $this->create_charge_refunded_event( $order, 1000, 1000, 'succeeded', 'in_person_authorization_refunded' ) );
 
 		$order = wc_get_order( $order->get_id() );
 
@@ -3503,6 +3536,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox charge.refunded uses the shared order payment lock.
 	 */
 	public function test_charge_refunded_fails_closed_when_order_payment_is_locked(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$order      = $this->create_refundable_woopayments_order( '10.00' );
 		$vocabulary = new WooPaymentsPersistenceVocabulary();
 		$this->hold_order_payment_lock( $order, $vocabulary, 'existing_operation' );
@@ -5346,52 +5380,34 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a charge.refunded event.
+	 * A charge.refunded event the platform forwarded (Fixtures/platform-charge-dispute-events.json), for an order.
 	 *
-	 * The Charge fields and `refunds.data[0]` client 11.1.0 reads (class-wc-payments-webhook-processing-service.php:1079-1143).
+	 * The recorded charge, its intent and its order metadata are pointed at the order; the charge amount and the latest
+	 * refund's amount and status are the test's.
 	 *
-	 * @param WC_Order            $order         Order object.
-	 * @param int                 $charge_amount Charge amount in provider minor units.
-	 * @param int                 $refund_amount Refund amount in provider minor units.
-	 * @param string              $refund_status Provider refund status.
-	 * @param array<string,mixed> $overrides     Charge object overrides.
+	 * @param WC_Order $order         Order object.
+	 * @param int      $charge_amount Charge amount in provider minor units.
+	 * @param int      $refund_amount Refund amount in provider minor units.
+	 * @param string   $refund_status Provider refund status.
+	 * @param string   $pair          Recorded entry.
 	 * @return array<string,mixed>
 	 */
-	private function create_charge_refunded_event( WC_Order $order, int $charge_amount, int $refund_amount, string $refund_status, array $overrides = array() ): array {
-		$object = array_replace_recursive(
-			array(
-				'id'       => (string) $order->get_meta( '_charge_id', true ),
-				'status'   => 'succeeded',
-				'amount'   => $charge_amount,
-				'currency' => 'usd',
-				'captured' => true,
-				'metadata' => array(
-					'order_id'  => (string) $order->get_id(),
-					'order_key' => $order->get_order_key(),
-				),
-				'refunds'  => array(
-					'data' => array(
-						array(
-							'id'                  => 're_123',
-							'status'              => $refund_status,
-							'amount'              => $refund_amount,
-							'currency'            => 'usd',
-							'reason'              => 'requested_by_customer',
-							'balance_transaction' => 'txn_123',
-						),
-					),
-				),
-			),
-			$overrides
-		);
+	private function create_charge_refunded_event( WC_Order $order, int $charge_amount, int $refund_amount, string $refund_status, string $pair = 'card_charge_refunded_in_full' ): array {
+		$event     = RecordedPlatformEvents::body( 'platform-charge-dispute-events.json', $pair );
+		$charge    = &$event['data']['object'];
+		$charge_id = (string) $order->get_meta( '_charge_id', true );
 
-		return array(
-			'id'   => 'evt_refunded',
-			'type' => 'charge.refunded',
-			'data' => array(
-				'object' => $object,
-			),
-		);
+		$charge['id']                           = $charge_id;
+		$charge['payment_intent']               = (string) $order->get_meta( '_intent_id', true );
+		$charge['metadata']['order_id']         = (string) $order->get_id();
+		$charge['metadata']['order_key']        = $order->get_order_key();
+		$charge['amount']                       = $charge_amount;
+		$charge['refunds']['data'][0]['charge'] = $charge_id;
+		$charge['refunds']['data'][0]['amount'] = $refund_amount;
+		$charge['refunds']['data'][0]['status'] = $refund_status;
+		unset( $charge );
+
+		return $event;
 	}
 
 	/**
