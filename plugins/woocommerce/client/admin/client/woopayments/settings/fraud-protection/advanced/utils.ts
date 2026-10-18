@@ -2,6 +2,10 @@
  * Internal dependencies
  */
 import {
+	getWooPaymentsAmountFromMinorUnits,
+	isWooPaymentsZeroDecimalProviderCurrency,
+} from '../../../currency';
+import {
 	avsSupportedCountries,
 	CheckOperators,
 	Checks,
@@ -51,6 +55,8 @@ export const isSellingToAvsSupportedLocations = ( {
 	}
 };
 
+// The platform compares the rule with the order total in the currency's own minor units (whole yen for JPY), where
+// client 11.1.0 multiplies and divides by 100 for every currency (advanced-settings/utils.ts:73, :84).
 const buildFormattedRulePrice = (
 	price: string | number | null,
 	currency: string
@@ -61,19 +67,25 @@ const buildFormattedRulePrice = (
 		return '';
 	}
 
-	return [ Math.trunc( priceFloat * 100 ), currency.toUpperCase() ].join(
-		'|'
-	);
+	const minorUnitFactor = isWooPaymentsZeroDecimalProviderCurrency( currency )
+		? 1
+		: 100;
+
+	return [
+		Math.trunc( priceFloat * minorUnitFactor ),
+		currency.toUpperCase(),
+	].join( '|' );
 };
 
+// Read in the rule's own currency, which can differ from the store's (a preset kept in USD).
 const readFormattedRulePrice = ( value: unknown ) => {
 	if ( ! value ) {
 		return '';
 	}
 
-	const [ amount ] = `${ value }`.split( '|' );
+	const [ amount, currency = '' ] = `${ value }`.split( '|' );
 
-	return Number( amount ) / 100;
+	return getWooPaymentsAmountFromMinorUnits( Number( amount ), currency );
 };
 
 const getRuleBase = (

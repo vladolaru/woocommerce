@@ -88,6 +88,25 @@ const ADVANCED_RULE_CARD_VIEW_EVENTS = [
 	],
 ] as const;
 
+// The admin preload's zero-decimal list (WooPaymentsCurrencyUtils::get_zero_decimal_currencies(), Stripe's codes).
+const zeroDecimalCurrencies = [
+	'bif',
+	'clp',
+	'djf',
+	'gnf',
+	'jpy',
+	'kmf',
+	'krw',
+	'mga',
+	'pyg',
+	'rwf',
+	'vnd',
+	'vuv',
+	'xaf',
+	'xof',
+	'xpf',
+];
+
 const getAdvancedCardEventNames = () =>
 	mockRecordEvent.mock.calls
 		.map( ( [ eventName ] ) => eventName )
@@ -235,6 +254,141 @@ describe( 'fraud protection advanced ruleset utilities', () => {
 				} ),
 			} ),
 		] );
+	} );
+
+	describe( "purchase price amounts in the currency's own minor units", () => {
+		const settingsWindow = window as typeof window & {
+			wcSettings?: Record< string, unknown >;
+		};
+		let previousWcSettings: Record< string, unknown > | undefined;
+
+		beforeEach( () => {
+			previousWcSettings = settingsWindow.wcSettings;
+			settingsWindow.wcSettings = {
+				...previousWcSettings,
+				admin: { woopaymentsSettings: { zeroDecimalCurrencies } },
+			};
+		} );
+
+		afterEach( () => {
+			settingsWindow.wcSettings = previousWcSettings;
+		} );
+
+		const priceRule = ( min: string | null, max: string | null ) => ( {
+			key: Rules.RULE_PURCHASE_PRICE_THRESHOLD,
+			outcome: Outcomes.BLOCK,
+			check: {
+				operator: CheckOperators.LIST_OPERATOR_OR,
+				checks: [
+					...( min
+						? [
+								{
+									key: Checks.CHECK_ORDER_TOTAL,
+									operator: CheckOperators.OPERATOR_LT,
+									value: min,
+								},
+						  ]
+						: [] ),
+					...( max
+						? [
+								{
+									key: Checks.CHECK_ORDER_TOTAL,
+									operator: CheckOperators.OPERATOR_GT,
+									value: max,
+								},
+						  ]
+						: [] ),
+				],
+			},
+		} );
+
+		it.each( [
+			[
+				'zero-decimal store (JPY)',
+				'JPY',
+				'500',
+				'50000',
+				'500|JPY',
+				'50000|JPY',
+			],
+			[
+				'two-decimal store (USD)',
+				'USD',
+				'500',
+				'50000',
+				'50000|USD',
+				'5000000|USD',
+			],
+		] )(
+			'writes the limits for a %s',
+			( _label, storeCurrency, min, max, expectedMin, expectedMax ) => {
+				const [ rule ] = writeRuleset(
+					{
+						[ Rules.RULE_PURCHASE_PRICE_THRESHOLD ]: {
+							enabled: true,
+							block: true,
+							min_amount: min,
+							max_amount: max,
+						},
+					},
+					{
+						storeCurrency,
+						isReviewFeatureActive: false,
+						allowedCountriesType: 'all',
+						settingCountries: [],
+					}
+				);
+
+				expect( rule.check ).toEqual(
+					priceRule( expectedMin, expectedMax ).check
+				);
+			}
+		);
+
+		it.each( [
+			[ 'zero-decimal rule (JPY)', '500|JPY', '50000|JPY', 500, 50000 ],
+			[
+				'two-decimal rule (USD)',
+				'50000|USD',
+				'5000000|USD',
+				500,
+				50000,
+			],
+			// No migration: a JPY rule saved before the fix shows the amount the platform enforces.
+			[
+				'JPY rule saved as cents before the fix',
+				null,
+				'5000000|JPY',
+				'',
+				5000000,
+			],
+			// A preset kept in USD on another store currency reads in its own currency.
+			[
+				'USD preset on a zero-decimal store',
+				null,
+				'100000|usd',
+				'',
+				1000,
+			],
+		] )(
+			'reads the limits back for a %s',
+			( _label, min, max, expectedMin, expectedMax ) => {
+				const uiSettings = readRuleset( [ priceRule( min, max ) ], {
+					isReviewFeatureActive: false,
+					isAvsFailureDeclineEnabled: false,
+				} );
+
+				expect(
+					uiSettings[ Rules.RULE_PURCHASE_PRICE_THRESHOLD ]
+				).toEqual(
+					expect.objectContaining( {
+						enabled: true,
+						min_amount: expectedMin,
+						max_amount: expectedMax,
+					} )
+				);
+			}
+		);
 	} );
 
 	it( 'evaluates AVS supported selling locations', () => {
@@ -768,6 +922,75 @@ describe( 'FraudProtectionAdvancedSettingsPage', () => {
 			] )
 		);
 		expect( mockSaveSettings ).toHaveBeenCalled();
+	} );
+
+	it( 'shows a saved JPY maximum in yen and saves a new minimum in yen', async () => {
+		const priceRule = {
+			key: Rules.RULE_PURCHASE_PRICE_THRESHOLD,
+			outcome: Outcomes.BLOCK,
+			check: {
+				key: Checks.CHECK_ORDER_TOTAL,
+				operator: CheckOperators.OPERATOR_GT,
+				value: '50000|JPY',
+			},
+		};
+		const settingsWindow = window as typeof window & {
+			wcSettings?: Record< string, unknown >;
+		};
+		const previousWcSettings = settingsWindow.wcSettings;
+		settingsWindow.wcSettings = {
+			...previousWcSettings,
+			admin: { woopaymentsSettings: { zeroDecimalCurrencies } },
+		};
+		try {
+			mockUseAdvancedFraudProtectionSettings.mockReturnValue( [
+				[ priceRule ],
+				setAdvancedFraudProtectionSettings,
+			] );
+			mockUseGetSettings.mockReturnValue( {
+				store_currency: 'JPY',
+				fraud_protection: {},
+				fraud_protection_allowed_countries: { type: 'all' },
+				is_fraud_protection_review_feature_active: false,
+			} );
+			render( <FraudProtectionAdvancedSettingsPage /> );
+
+			expect(
+				screen.getByLabelText( 'Maximum purchase price' )
+			).toHaveValue( 50000 );
+			await userEvent.type(
+				screen.getByLabelText( 'Minimum purchase price' ),
+				'500'
+			);
+
+			mockSaveSettings.mockResolvedValueOnce( true );
+			await userEvent.click(
+				screen.getByRole( 'button', { name: 'Save changes' } )
+			);
+
+			expect( setAdvancedFraudProtectionSettings ).toHaveBeenCalledWith( [
+				expect.objectContaining( {
+					key: Rules.RULE_PURCHASE_PRICE_THRESHOLD,
+					check: {
+						operator: CheckOperators.LIST_OPERATOR_OR,
+						checks: [
+							{
+								key: Checks.CHECK_ORDER_TOTAL,
+								operator: CheckOperators.OPERATOR_LT,
+								value: '500|JPY',
+							},
+							{
+								key: Checks.CHECK_ORDER_TOTAL,
+								operator: CheckOperators.OPERATOR_GT,
+								value: '50000|JPY',
+							},
+						],
+					},
+				} ),
+			] );
+		} finally {
+			settingsWindow.wcSettings = previousWcSettings;
+		}
 	} );
 
 	it( 'saves a valid order-items maximum threshold', async () => {
