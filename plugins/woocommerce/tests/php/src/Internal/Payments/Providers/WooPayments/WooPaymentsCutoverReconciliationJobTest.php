@@ -247,6 +247,27 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A merchant start while another request holds the write lock is refused and writes nothing.
+	 */
+	public function test_enqueue_does_nothing_while_the_write_lock_is_busy(): void {
+		$sut  = $this->require_sut();
+		$busy = $this->require_state_store()->acquire_lease( time() );
+		$this->assertIsString( $busy );
+
+		try {
+			$this->assertFalse( $sut->enqueue( 'merchant' ) );
+			$this->assertNull( $this->require_state_store()->get_record() );
+			$this->assertSame( 0, $this->count_cutover_actions() );
+			$this->assertSame( 0, $this->require_scheduler()->dispatch_count );
+		} finally {
+			$this->require_state_store()->release_lease( $busy );
+		}
+
+		$this->assertTrue( $sut->enqueue( 'merchant' ), 'Once the lock is free, the same start is accepted.' );
+		$this->assertSame( 1, $this->count_cutover_actions() );
+	}
+
+	/**
 	 * @testdox An all-clear attempt normalizes, seeds features, deactivates WooPayments, and schedules fresh-request ownership verification.
 	 */
 	public function test_all_clear_attempt_starts_two_request_finalization(): void {
