@@ -25,6 +25,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockWithClaimHook;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
@@ -4064,7 +4065,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	public function test_process_deduplicates_events_with_the_same_id(): void {
 		$handler = $this->create_recording_notification_handler();
 		$sut     = $this->create_ingestor_with_notification_handler( $handler );
-		$event   = $this->create_notification_event( 'evt_dedup', 'dedup-note-' . wp_generate_uuid4() );
+		$event   = $this->create_notification_event( 'evt_dedup' );
 
 		$sut->process( $event );
 		$sut->process( $event );
@@ -4078,8 +4079,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	public function test_process_does_not_deduplicate_events_without_an_id(): void {
 		$handler = $this->create_recording_notification_handler();
 		$sut     = $this->create_ingestor_with_notification_handler( $handler );
-		$event   = $this->create_notification_event( '', 'no-id-note-' . wp_generate_uuid4() );
-		unset( $event['id'] );
+		$event   = $this->create_notification_event( '' );
 
 		$sut->process( $event );
 		$sut->process( $event );
@@ -4093,7 +4093,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	public function test_process_does_not_mark_throwing_events_as_processed(): void {
 		$handler = $this->create_recording_notification_handler( true );
 		$sut     = $this->create_ingestor_with_notification_handler( $handler );
-		$event   = $this->create_notification_event( 'evt_retry', 'retry-note-' . wp_generate_uuid4() );
+		$event   = $this->create_notification_event( 'evt_retry' );
 
 		$first_threw = false;
 		try {
@@ -4763,23 +4763,20 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a wcpay.notification-shaped event.
+	 * The platform's promotion start note (Fixtures/platform-notification-events.json), with an event ID when one is given.
 	 *
-	 * @param string $event_id Event ID.
-	 * @param string $note_slug Remote note slug.
+	 * The platform sends wcpay.notification without an ID; these rows give it one only to exercise the ingestor's ID rules.
+	 *
+	 * @param string $event_id Event ID, or '' for none.
 	 * @return array<string,mixed>
 	 */
-	private function create_notification_event( string $event_id, string $note_slug ): array {
-		return array(
-			'id'       => $event_id,
-			'type'     => 'wcpay.notification',
-			'livemode' => false,
-			'data'     => array(
-				'name'    => $note_slug,
-				'title'   => 'Remote note',
-				'content' => 'Remote note content.',
-			),
-		);
+	private function create_notification_event( string $event_id ): array {
+		$event = RecordedPlatformEvents::body( 'platform-notification-events.json', 'promotion_start_note' );
+		if ( '' !== $event_id ) {
+			$event['id'] = $event_id;
+		}
+
+		return $event;
 	}
 
 	/**
