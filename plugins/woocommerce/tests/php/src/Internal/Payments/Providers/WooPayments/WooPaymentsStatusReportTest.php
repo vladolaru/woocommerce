@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -240,7 +239,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 					'schema_version'         => 1,
 					'generation'             => 1,
 					'revision'               => 1,
-					'state'                  => WooPaymentsCutoverState::DEFERRED,
+					'state'                  => WooPaymentsCutoverStateStore::STATE_DEFERRED,
 					'started_at'             => 1_700_000_000,
 					'updated_at'             => 1_700_000_100,
 					'attempt'                => 1,

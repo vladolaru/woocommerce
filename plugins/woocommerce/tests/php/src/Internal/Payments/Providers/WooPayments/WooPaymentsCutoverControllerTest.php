@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
 use Automattic\WooCommerce\Internal\DataStores\Orders\DataSynchronizer;
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -621,7 +621,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			/** @return array<string,mixed>|null */
 			public function classify_for_admin_notice(): ?array {
 				return array(
-					'state'                  => WooPaymentsCutoverState::DEFERRED,
+					'state'                  => WooPaymentsCutoverStateStore::STATE_DEFERRED,
 					'deferred_codes'         => array( 'woopayments_plugin_version_unsupported' ),
 					'informational_outcomes' => array(),
 				);
@@ -698,7 +698,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			/** @return array<string,mixed>|null */
 			public function classify_for_admin_notice(): ?array {
 				return array(
-					'state'        => WooPaymentsCutoverState::PENDING,
+					'state'        => WooPaymentsCutoverStateStore::STATE_PENDING,
 					'current_step' => 'awaiting_merchant_start',
 				);
 			}
@@ -722,7 +722,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			/** @return array<string,mixed>|null */
 			public function classify_for_admin_notice(): ?array {
 				return array(
-					'state'        => WooPaymentsCutoverState::DEFERRED,
+					'state'        => WooPaymentsCutoverStateStore::STATE_DEFERRED,
 					'current_step' => 'deferred',
 				);
 			}
@@ -769,7 +769,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			/** @return array<string,mixed>|null */
 			public function classify_for_admin_notice(): ?array {
 				return array(
-					'state'                  => WooPaymentsCutoverState::DEFERRED,
+					'state'                  => WooPaymentsCutoverStateStore::STATE_DEFERRED,
 					'current_step'           => 'deferred',
 					'origin_plugin_file'     => 'renamed-wcpay/woocommerce-payments.php',
 					'origin_plugin_scope'    => 'site',
@@ -1731,7 +1731,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 
 			/** @var array<string,mixed> Completed record. */
 			private array $record = array(
-				'state'                  => WooPaymentsCutoverState::DONE,
+				'state'                  => WooPaymentsCutoverStateStore::STATE_DONE,
 				'informational_outcomes' => array(),
 			);
 
@@ -1775,7 +1775,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			 */
 			public function __construct( string $code ) {
 				$this->record = array(
-					'state'                  => WooPaymentsCutoverState::EXCLUDED,
+					'state'                  => WooPaymentsCutoverStateStore::STATE_EXCLUDED,
 					'current_step'           => 'excluded',
 					'deferred_codes'         => array( $code ),
 					'informational_outcomes' => array(),

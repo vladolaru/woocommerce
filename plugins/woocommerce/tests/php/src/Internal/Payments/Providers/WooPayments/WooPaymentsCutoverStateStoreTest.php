@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
 use InvalidArgumentException;
 use WC_Unit_Test_Case;
@@ -274,7 +273,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 		$sut             = $this->require_sut();
 		$record          = $this->valid_record();
 		$record['state'] = $state;
-		if ( WooPaymentsCutoverState::RUNNING === $state ) {
+		if ( WooPaymentsCutoverStateStore::STATE_RUNNING === $state ) {
 			$record['lease_token']      = 'running-worker-token';
 			$record['lease_expires_at'] = $record['updated_at'] + WooPaymentsCutoverStateStore::LEASE_TTL;
 		}
@@ -292,7 +291,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 			WooPaymentsCutoverStateStore::OPTION_NAME,
 			array(
 				'schema_version' => WooPaymentsCutoverStateStore::SCHEMA_VERSION,
-				'state'          => WooPaymentsCutoverState::PENDING,
+				'state'          => WooPaymentsCutoverStateStore::STATE_PENDING,
 			),
 			'',
 			true
@@ -376,7 +375,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 
 		$claimed                     = $pending;
 		$claimed['revision']         = $pending['revision'] + 1;
-		$claimed['state']            = WooPaymentsCutoverState::RUNNING;
+		$claimed['state']            = WooPaymentsCutoverStateStore::STATE_RUNNING;
 		$claimed['attempt']          = $pending['attempt'] + 1;
 		$claimed['lease_token']      = 'worker-claim-token';
 		$claimed['lease_expires_at'] = $pending['updated_at'] + WooPaymentsCutoverStateStore::LEASE_TTL;
@@ -384,7 +383,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 
 		$excluded                     = $claimed;
 		$excluded['revision']         = $claimed['revision'] + 1;
-		$excluded['state']            = WooPaymentsCutoverState::EXCLUDED;
+		$excluded['state']            = WooPaymentsCutoverStateStore::STATE_EXCLUDED;
 		$excluded['attempt']          = $claimed['attempt'] + 1;
 		$excluded['lease_token']      = null;
 		$excluded['lease_expires_at'] = null;
@@ -392,7 +391,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 
 		$stale_completion                     = $claimed;
 		$stale_completion['revision']         = $claimed['revision'] + 1;
-		$stale_completion['state']            = WooPaymentsCutoverState::DONE;
+		$stale_completion['state']            = WooPaymentsCutoverStateStore::STATE_DONE;
 		$stale_completion['lease_token']      = null;
 		$stale_completion['lease_expires_at'] = null;
 		$this->assertFalse( $sut->compare_and_set_record( $claimed, $stale_completion ), 'The stale worker must not overwrite the fenced terminal state.' );
@@ -452,7 +451,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 			'schema_version'         => 1,
 			'generation'             => 2,
 			'revision'               => 1,
-			'state'                  => WooPaymentsCutoverState::DEFERRED,
+			'state'                  => WooPaymentsCutoverStateStore::STATE_DEFERRED,
 			'started_at'             => 1_700_000_000,
 			'updated_at'             => 1_700_000_100,
 			'attempt'                => 3,

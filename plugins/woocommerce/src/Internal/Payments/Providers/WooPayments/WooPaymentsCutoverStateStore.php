@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
 use InvalidArgumentException;
 
 defined( 'ABSPATH' ) || exit;
@@ -38,13 +37,28 @@ class WooPaymentsCutoverStateStore {
 	/** Maximum number of diagnostic steps retained in one record. */
 	public const MAX_STEP_LOG_ENTRIES = 50;
 
+	/** The job is waiting for its next action, or for the merchant to start it (current_step awaiting_merchant_start). */
+	public const STATE_PENDING = 'pending';
+
+	/** The job claimed an attempt and is running it; the record's lease_expires_at is when repair_schedule() may recover it. */
+	public const STATE_RUNNING = 'running';
+
+	/** The job is waiting for a scheduled retry. */
+	public const STATE_DEFERRED = 'deferred';
+
+	/** The store completed its cutover. */
+	public const STATE_DONE = 'done';
+
+	/** The store is excluded from the cutover. */
+	public const STATE_EXCLUDED = 'excluded';
+
 	/** Valid persisted state values. */
 	private const VALID_STATES = array(
-		WooPaymentsCutoverState::PENDING,
-		WooPaymentsCutoverState::RUNNING,
-		WooPaymentsCutoverState::DEFERRED,
-		WooPaymentsCutoverState::DONE,
-		WooPaymentsCutoverState::EXCLUDED,
+		self::STATE_PENDING,
+		self::STATE_RUNNING,
+		self::STATE_DEFERRED,
+		self::STATE_DONE,
+		self::STATE_EXCLUDED,
 	);
 
 	/**
@@ -255,13 +269,13 @@ class WooPaymentsCutoverStateStore {
 			return false;
 		}
 
-		if ( WooPaymentsCutoverState::DEFERRED === $record['state'] && ! is_int( $record['next_attempt_at'] ) ) {
+		if ( self::STATE_DEFERRED === $record['state'] && ! is_int( $record['next_attempt_at'] ) ) {
 			return false;
 		}
 
 		if (
-			( WooPaymentsCutoverState::RUNNING === $record['state'] && ( ! is_string( $record['lease_token'] ) || ! is_int( $record['lease_expires_at'] ) ) )
-			|| ( WooPaymentsCutoverState::RUNNING !== $record['state'] && ( null !== $record['lease_token'] || null !== $record['lease_expires_at'] ) )
+			( self::STATE_RUNNING === $record['state'] && ( ! is_string( $record['lease_token'] ) || ! is_int( $record['lease_expires_at'] ) ) )
+			|| ( self::STATE_RUNNING !== $record['state'] && ( null !== $record['lease_token'] || null !== $record['lease_expires_at'] ) )
 		) {
 			return false;
 		}

@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Enums\WooPaymentsCutoverState;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -540,20 +539,20 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private function output_reconciliation_notice(): void {
 		$record = $this->reconciliation_job->classify_for_admin_notice();
 		if ( is_array( $record ) ) {
-			if ( WooPaymentsCutoverState::PENDING === $record['state'] && 'awaiting_merchant_start' === ( $record['current_step'] ?? null ) ) {
+			if ( WooPaymentsCutoverStateStore::STATE_PENDING === $record['state'] && 'awaiting_merchant_start' === ( $record['current_step'] ?? null ) ) {
 				if ( $this->is_start_eligible() && $this->reconciliation_job->should_offer_start() ) {
 					$this->output_soft_cutover_notice();
 				}
 				return;
 			}
-			if ( in_array( $record['state'], array( WooPaymentsCutoverState::PENDING, WooPaymentsCutoverState::RUNNING, WooPaymentsCutoverState::DEFERRED ), true ) ) {
+			if ( in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_RUNNING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
 				$is_manual_deactivation = is_string( $record['origin_plugin_file'] ?? null ) && '' !== $record['origin_plugin_file'] && in_array( $record['origin_plugin_scope'] ?? null, array( 'site', 'network' ), true );
 				if ( ! $is_manual_deactivation ) {
 					?>
 						<div class="notice notice-info"><p><?php esc_html_e( 'Switch in progress', 'woocommerce' ); ?></p></div>
 						<?php
 						// The job cannot update the plugin itself where the site blocks file changes, so retries alone never finish.
-						if ( WooPaymentsCutoverState::DEFERRED === $record['state'] && in_array( 'woopayments_plugin_version_unsupported', (array) ( $record['deferred_codes'] ?? array() ), true ) && ! wp_is_file_mod_allowed( 'automatic_updater' ) ) {
+						if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && in_array( 'woopayments_plugin_version_unsupported', (array) ( $record['deferred_codes'] ?? array() ), true ) && ! wp_is_file_mod_allowed( 'automatic_updater' ) ) {
 							?>
 						<div class="notice notice-warning"><p><?php esc_html_e( 'The switch needs a newer version of the WooPayments extension, but this site does not allow automatic plugin updates. Update WooPayments to continue the switch.', 'woocommerce' ); ?></p></div>
 							<?php
@@ -566,13 +565,13 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 				}
 					return;
 			}
-			if ( WooPaymentsCutoverState::EXCLUDED === $record['state'] ) {
+			if ( WooPaymentsCutoverStateStore::STATE_EXCLUDED === $record['state'] ) {
 				if ( $this->is_start_eligible() && $this->reconciliation_job->is_bundled_exclusion_notice_due( $record ) ) {
 					$this->output_bundled_exclusion_notice();
 				}
 				return;
 			}
-			if ( WooPaymentsCutoverState::DONE === $record['state'] && ! $this->arbiter->is_extension_owner() ) {
+			if ( WooPaymentsCutoverStateStore::STATE_DONE === $record['state'] && ! $this->arbiter->is_extension_owner() ) {
 				// Shown to store managers until they dismiss them; rendering claims nothing, since some screens hide notices.
 				if ( $this->legacy_proxy->call_function( 'current_user_can', 'manage_woocommerce' ) ) {
 					if ( $this->reconciliation_job->is_completion_notice_due( $record, WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS ) ) {
