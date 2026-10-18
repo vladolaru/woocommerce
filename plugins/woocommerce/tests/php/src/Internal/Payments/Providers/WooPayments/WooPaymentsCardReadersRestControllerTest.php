@@ -307,15 +307,17 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 	/**
 	 * @testdox Generated receipts print each line's paid unit price and the product's SKU, else its ID: $_dataName.
 	 *
-	 * The product's current prices (15 on sale, 20 regular) differ from the order line (3 for 30). Client 11.1.0 prints the
+	 * The product's current prices (15 on sale, 20 regular) differ from the order line's (3 for 30, or 3 for 10). Client 11.1.0 prints the
 	 * product's current prices, struck through, and the ID under "SKU" (includes/in-person-payments/templates/html-in-person-payment-receipt.php:149).
 	 *
 	 * @dataProvider provide_receipt_products
 	 *
-	 * @param string $sku      The product's SKU.
-	 * @param bool   $uses_sku Whether the SKU, rather than the ID, is printed.
+	 * @param string      $sku           The product's SKU.
+	 * @param float       $line_subtotal The order line's subtotal for 3 units.
+	 * @param string      $unit_price    The unit price line expected in the receipt's text.
+	 * @param string|null $printed_sku   The SKU expected in the receipt's HTML, or null when the ID is printed instead.
 	 */
-	public function test_generate_print_receipt_prints_the_line_unit_price_and_sku( string $sku, bool $uses_sku ): void {
+	public function test_generate_print_receipt_prints_the_line_unit_price_and_sku( string $sku, float $line_subtotal, string $unit_price, ?string $printed_sku ): void {
 		$product = WC_Helper_Product::create_simple_product();
 		$product->set_regular_price( '20' );
 		$product->set_sale_price( '15' );
@@ -325,11 +327,11 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 		$item  = new \WC_Order_Item_Product();
 		$item->set_product( $product );
 		$item->set_quantity( 3 );
-		$item->set_subtotal( 30 );
-		$item->set_total( 30 );
+		$item->set_subtotal( $line_subtotal );
+		$item->set_total( $line_subtotal );
 		$order->add_item( $item );
 		$order->set_currency( 'USD' );
-		$order->set_total( 30 );
+		$order->set_total( $line_subtotal );
 		$order->save();
 		$this->account_data     = $this->get_receipt_account();
 		$this->gateway_settings = $this->get_saved_business_details();
@@ -339,20 +341,24 @@ class WooPaymentsCardReadersRestControllerTest extends WC_REST_Unit_Test_Case {
 		$request->set_param( 'payment_intent_id', 'pi_receipt' );
 		$html = $this->sut->generate_print_receipt( $request )->get_data()['html_content'];
 
-		$this->assertStringContainsString( '3 @ $10.00', html_entity_decode( wp_strip_all_tags( $html ) ) );
+		$this->assertStringContainsString( $unit_price, html_entity_decode( wp_strip_all_tags( $html ) ) );
 		$this->assertStringNotContainsString( '<s>', $html, 'A line priced as paid has nothing to strike through.' );
-		$this->assertStringContainsString( 'SKU: ' . ( $uses_sku ? $sku : (string) $product->get_id() ), $html );
+		$this->assertStringContainsString( 'SKU: ' . ( $printed_sku ?? (string) $product->get_id() ), $html );
 	}
 
 	/**
-	 * Receipt products: one with a SKU, and one without, whose ID is printed instead.
+	 * Receipt products: with a SKU, without one (the ID is printed instead), the valid SKU "0", a unit price rounded to
+	 * the store's price decimals, and a SKU printed escaped.
 	 *
-	 * @return array<string,array{string,bool}>
+	 * @return array<string,array{string,float,string,string|null}>
 	 */
 	public function provide_receipt_products(): array {
 		return array(
-			'product with a SKU'    => array( 'IPP-WIDGET', true ),
-			'product without a SKU' => array( '', false ),
+			'product with a SKU'            => array( 'IPP-WIDGET', 30.0, '3 @ $10.00', 'IPP-WIDGET' ),
+			'product without a SKU'         => array( '', 30.0, '3 @ $10.00', null ),
+			'SKU "0"'                       => array( '0', 30.0, '3 @ $10.00', '0' ),
+			'fractional unit price'         => array( 'IPP-WIDGET', 10.0, '3 @ $3.33', 'IPP-WIDGET' ),
+			'SKU with characters to escape' => array( 'R&D "XL"', 30.0, '3 @ $10.00', 'R&amp;D &quot;XL&quot;' ),
 		);
 	}
 
