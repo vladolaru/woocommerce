@@ -34,7 +34,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 */
 	private const NATIVE_RUNTIME_FIELDS = array(
 		'runtime_owner'                => 'Runtime owner',
-		'builtin_enabled'              => 'Built-in WooPayments feature',
+		'builtin_enabled'              => 'WooPayments feature',
 		'setup_tier'                   => 'Stored setup tier',
 		'effective_setup_tier'         => 'Effective setup tier',
 		'preflight_failures'           => 'Cutover preflight failures',
@@ -269,7 +269,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 				'value' => (string) $data['runtime_owner'],
 			),
 			'builtin_enabled'              => array(
-				'label' => __( 'Built-in WooPayments feature', 'woocommerce' ),
+				'label' => __( 'WooPayments feature', 'woocommerce' ),
 				'value' => $this->format_enabled( (bool) $data['builtin_enabled'] ),
 			),
 			'setup_tier'                   => array(

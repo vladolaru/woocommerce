@@ -483,8 +483,42 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'Built-in WooPayments', $info['woocommerce_native_payments']['label'] );
 		$this->assertSame( 'builtin', $info['woocommerce_native_payments']['fields']['runtime_owner']['value'] );
 		$this->assertSame( 'acct_native_test', $info['woocommerce_native_payments']['fields']['account_id']['value'] );
-		$this->assertSame( 'Built-in WooPayments feature', $info['woocommerce_native_payments']['fields']['builtin_enabled']['label'] );
+		$this->assertSame( 'WooPayments feature', $info['woocommerce_native_payments']['fields']['builtin_enabled']['label'] );
 		$this->assertSame( 'Enabled', $info['woocommerce_native_payments']['fields']['builtin_enabled']['value'] );
+	}
+
+	/**
+	 * @testdox The built-in WooPayments table and Site Health list their rows in order and name the WooPayments feature as its Features page entry does.
+	 *
+	 * The Features page names the feature "WooPayments" (WooPaymentsFeatureController::add_feature_definition()).
+	 */
+	public function test_runtime_rows_name_the_woopayments_feature(): void {
+		$html = $this->render_report_for_connected_store();
+
+		$this->assertSame(
+			array( 'Runtime owner', 'WooPayments feature', 'Stored setup tier', 'Effective setup tier', 'Cutover preflight failures', 'WooPayments rate provider', 'Last fetch of failed webhook events' ),
+			array_keys( $this->get_status_tables( $html )['Built-in WooPayments'] )
+		);
+		$this->assertSame(
+			array(
+				'Runtime owner',
+				'WooPayments feature',
+				'Stored setup tier',
+				'Effective setup tier',
+				'Cutover preflight failures',
+				'Account ID',
+				'Account connected',
+				'Gateway enabled',
+				'Test mode',
+				'Enabled payment methods',
+				'WooPay express checkout',
+				'Apple Pay / Google Pay express checkout',
+				'Multi-currency',
+				'WooPayments rate provider',
+				'Last fetch of failed webhook events',
+			),
+			array_column( $this->get_sut()->add_site_health_debug_info( array() )['woocommerce_native_payments']['fields'], 'label' )
+		);
 	}
 
 	/**
