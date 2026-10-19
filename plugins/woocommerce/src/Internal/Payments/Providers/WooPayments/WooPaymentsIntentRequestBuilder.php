@@ -337,7 +337,7 @@ class WooPaymentsIntentRequestBuilder {
 	 * @return array<string,mixed>
 	 */
 	public static function metadata_from_order( WC_Order $order, string $payment_type = 'single', string $subscription_payment = 'no' ): array {
-		WooPaymentsCompatClassAliases::register( WooPaymentsPaymentType::class );
+		WooPaymentsCompatClassAliases::register_compat_class_alias( WooPaymentsPaymentType::class );
 
 		$payment_type         = 'recurring' === $payment_type ? WooPaymentsPaymentType::recurring() : WooPaymentsPaymentType::single();
 		$subscription_payment = in_array( $subscription_payment, array( 'initial', 'renewal' ), true ) ? $subscription_payment : 'no';

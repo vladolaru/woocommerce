@@ -37,7 +37,7 @@ final class WooPaymentsCompatClassAliases {
 	 *
 	 * @param class-string $class_name Class whose extension name is declared.
 	 */
-	public static function register( string $class_name ): void {
+	public static function register_compat_class_alias( string $class_name ): void {
 		$alias = self::ALIASES[ $class_name ] ?? null;
 
 		if ( null !== $alias && ! class_exists( $alias, true ) ) {

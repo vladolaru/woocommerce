@@ -25,7 +25,7 @@ class WooPaymentsCompatClassAliasesTest extends WC_Unit_Test_Case {
 		// The retry email extends a WooCommerce email class, which loads with the mailer.
 		WC()->mailer();
 
-		WooPaymentsCompatClassAliases::register( $registered );
+		WooPaymentsCompatClassAliases::register_compat_class_alias( $registered );
 
 		$this->assertTrue( class_exists( $alias, false ), $alias . ' should be declared without autoloading the extension.' );
 		$this->assertTrue( is_a( $original, $alias, true ), $original . ' should satisfy ' . $alias . '.' );
@@ -48,7 +48,7 @@ class WooPaymentsCompatClassAliasesTest extends WC_Unit_Test_Case {
 		spl_autoload_register( $loader );
 
 		try {
-			WooPaymentsCompatClassAliases::register( WooPaymentsPaymentType::class );
+			WooPaymentsCompatClassAliases::register_compat_class_alias( WooPaymentsPaymentType::class );
 		} finally {
 			spl_autoload_unregister( $loader );
 		}
@@ -76,7 +76,7 @@ class WooPaymentsCompatClassAliasesTest extends WC_Unit_Test_Case {
 		spl_autoload_register( $loader );
 
 		try {
-			WooPaymentsCompatClassAliases::register( WooPaymentsFailedAuthenticationRetryEmail::class );
+			WooPaymentsCompatClassAliases::register_compat_class_alias( WooPaymentsFailedAuthenticationRetryEmail::class );
 		} finally {
 			spl_autoload_unregister( $loader );
 		}

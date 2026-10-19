@@ -17,7 +17,7 @@ class WooPaymentsPaymentTypeTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		WooPaymentsCompatClassAliases::register( WooPaymentsPaymentType::class );
+		WooPaymentsCompatClassAliases::register_compat_class_alias( WooPaymentsPaymentType::class );
 	}
 
 	/**
