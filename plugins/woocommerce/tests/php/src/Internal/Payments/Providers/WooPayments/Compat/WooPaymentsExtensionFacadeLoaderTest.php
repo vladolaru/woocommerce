@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\C
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyFacadeLoader;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsExtensionFacadeLoader;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
@@ -15,7 +15,7 @@ use WC_Unit_Test_Case;
 /**
  * Tests the WooPayments legacy facade compatibility boundary.
  */
-class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
+class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox The APFS compatibility gate recognizes the native runtime.
@@ -408,12 +408,12 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 	 * @param bool $native_owns Whether the native runtime owns payments.
 	 */
 	private function register_legacy_facades( bool $native_owns = true ): void {
-		$this->assertTrue( class_exists( LegacyFacadeLoader::class ), 'The native runtime should provide a dedicated legacy facade loader.' );
+		$this->assertTrue( class_exists( WooPaymentsExtensionFacadeLoader::class ), 'The native runtime should provide a dedicated legacy facade loader.' );
 
 		// A process whose bootstrap found native payments enabled already registered the production loader for an ordinary
 		// request; the request under test replaces it, as it would be the only loader in that request.
 		foreach ( spl_autoload_functions() as $autoloader ) {
-			if ( is_array( $autoloader ) && $autoloader[0] instanceof LegacyFacadeLoader ) {
+			if ( is_array( $autoloader ) && $autoloader[0] instanceof WooPaymentsExtensionFacadeLoader ) {
 				spl_autoload_unregister( $autoloader );
 			}
 		}
@@ -421,7 +421,7 @@ class LegacyFacadeLoaderTest extends WC_Unit_Test_Case {
 		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
 		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_owns );
 
-		$loader = new LegacyFacadeLoader();
+		$loader = new WooPaymentsExtensionFacadeLoader();
 		$loader->init( $arbiter );
 		$loader->register();
 	}

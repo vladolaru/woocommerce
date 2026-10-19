@@ -1,6 +1,6 @@
 <?php
 /**
- * LegacyFacadeLoader class file.
+ * WooPaymentsExtensionFacadeLoader class file.
  */
 
 declare( strict_types = 1 );
@@ -13,12 +13,15 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCl
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Loads the legacy WooPayments facades while the native runtime owns payments.
+ * Declares the WooPayments extension's `WC_Payments` and `WC_Payments_Features` classes and `WCPAY_VERSION_NUMBER` on first
+ * use while the built-in WooPayments owns payments, except in a request that is activating the extension.
+ *
+ * Removed in WooCommerce 12.0.0.
  *
  * @since 11.2.0
- * @internal Transitional compatibility boundary scheduled for removal in WooCommerce 12.0.0.
+ * @internal
  */
-class LegacyFacadeLoader implements RegisterHooksInterface {
+class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 
 	/**
 	 * Facade class names and the files that declare them.
@@ -61,12 +64,12 @@ class LegacyFacadeLoader implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Make the legacy facades available when the native runtime owns payments.
+	 * Make the facades available when the built-in WooPayments owns payments.
 	 *
 	 * The two classes are declared on first use through an autoloader, so a request that activates WooPayments without
-	 * anything asking for them first leaves the names to the plugin's own declarations. Requests recognized as a
+	 * anything asking for them first leaves the names to the extension's own declarations. Requests recognized as a
 	 * WooPayments activation get no facades at all, since a consumer probing the class earlier in the same request would
-	 * otherwise declare it before the plugin does.
+	 * otherwise declare it before the extension does.
 	 *
 	 * @since 11.2.0
 	 */
@@ -79,7 +82,7 @@ class LegacyFacadeLoader implements RegisterHooksInterface {
 			return;
 		}
 
-		// The plugin defines its own version constant in WC_Payments::init(), never while its activation file loads.
+		// The extension defines its own version constant in WC_Payments::init(), never while its activation file loads.
 		if ( ! defined( 'WCPAY_VERSION_NUMBER' ) ) {
 			define( 'WCPAY_VERSION_NUMBER', WooPaymentsClientVersion::VERSION );
 		}
@@ -88,7 +91,7 @@ class LegacyFacadeLoader implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Declare a legacy facade class the first time it is used.
+	 * Declare a facade class the first time it is used.
 	 *
 	 * @internal
 	 *
@@ -107,7 +110,7 @@ class LegacyFacadeLoader implements RegisterHooksInterface {
 	 * WordPress provides no pre-sandbox activation hook: `activate_plugin()` includes the target before
 	 * firing `activate_plugin`. The request must therefore be recognized before the facades are declared.
 	 *
-	 * @return bool True when the facade declarations must stay available to the plugin.
+	 * @return bool True when the facade declarations must stay available to the extension.
 	 */
 	private function is_woopayments_activation_request(): bool {
 		if ( defined( 'WP_SANDBOX_SCRAPING' ) && WP_SANDBOX_SCRAPING ) {
@@ -178,7 +181,7 @@ class LegacyFacadeLoader implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether request parameters target the standalone WooPayments plugin.
+	 * Tell whether request parameters target the WooPayments extension.
 	 *
 	 * @param array<string,mixed> $request Unslashed request parameters.
 	 * @return bool True when WooPayments is one of the requested plugins.

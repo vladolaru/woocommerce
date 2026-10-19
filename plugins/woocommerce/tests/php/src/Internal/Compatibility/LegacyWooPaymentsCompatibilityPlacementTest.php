@@ -92,7 +92,7 @@ PHP;
 		$source = (string) file_get_contents( $woocommerce_file );
 
 		$loaders = array(
-			'WooPayments facade loader'   => 'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\Compat\\LegacyFacadeLoader',
+			'WooPayments facade loader'   => 'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\Compat\\WooPaymentsExtensionFacadeLoader',
 			'MultiCurrency facade loader' => 'Automattic\\WooCommerce\\Internal\\MultiCurrency\\Compat\\LegacyMultiCurrencyFacadeLoader',
 		);
 
@@ -107,13 +107,13 @@ PHP;
 	 * @testdox Composition-root registration counting resolves aliases and ignores formatting trivia.
 	 */
 	public function test_composition_root_registration_counting_resolves_aliases_and_trivia(): void {
-		$payments_loader       = 'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\Compat\\LegacyFacadeLoader';
+		$payments_loader       = 'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\Compat\\WooPaymentsExtensionFacadeLoader';
 		$multi_currency_loader = 'Automattic\\WooCommerce\\Internal\\MultiCurrency\\Compat\\LegacyMultiCurrencyFacadeLoader';
 		$source                = <<<'PHP'
 <?php
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\{LegacyAdminLinkHandler, LegacyFacadeLoader as PaymentsCompatibilityLoader};
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\{LegacyAdminLinkHandler, WooPaymentsExtensionFacadeLoader as PaymentsCompatibilityLoader};
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter, Automattic\WooCommerce\Internal\MultiCurrency\Compat\LegacyMultiCurrencyFacadeLoader as MultiCurrencyCompatibilityLoader;
-$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyFacadeLoader::class )->register();
+$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsExtensionFacadeLoader::class )->register();
 $container
 	->get( PaymentsCompatibilityLoader /* trivia */ :: class )
 	->register();
