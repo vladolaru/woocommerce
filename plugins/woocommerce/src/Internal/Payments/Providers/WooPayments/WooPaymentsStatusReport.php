@@ -127,13 +127,15 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * Tell whether this store has native payments state for support to read. Every read is autoloaded.
 	 *
 	 * The stored tier is checked, not the effective one, because a connected store whose WooPayments feature is off reads as
-	 * disabled. A store the WooPayments extension owns reports only while the feature is on, since only then can it switch.
+	 * disabled. A store the WooPayments extension owns reports only while the feature is on, since only then can it switch. A store
+	 * waiting for its switch reports too, so support sees why nothing runs WooPayments there.
 	 *
 	 * @return bool
 	 */
 	private function has_support_diagnostics(): bool {
 		return in_array( $this->setup_tier->get_stored_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true )
 			|| ( $this->arbiter->is_extension_owner() && $this->arbiter->is_builtin_enabled() )
+			|| $this->arbiter->is_awaiting_switch()
 			|| null !== $this->get_cutover_state_store()->get_record();
 	}
 
@@ -226,6 +228,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 
 		return array(
 			'runtime_owner'           => $this->arbiter->get_runtime_owner(),
+			'awaiting_switch'         => $this->arbiter->is_awaiting_switch(),
 			'builtin_enabled'         => $this->arbiter->is_builtin_enabled(),
 			'setup_tier'              => $this->setup_tier->get_stored_tier(),
 			'effective_setup_tier'    => $this->setup_tier->get_effective_tier(),
@@ -266,7 +269,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		return array(
 			'runtime_owner'                => array(
 				'label' => __( 'Runtime owner', 'woocommerce' ),
-				'value' => (string) $data['runtime_owner'],
+				'value' => $data['awaiting_switch'] ? __( 'none (awaiting the switch)', 'woocommerce' ) : (string) $data['runtime_owner'],
 			),
 			'builtin_enabled'              => array(
 				'label' => __( 'WooPayments feature', 'woocommerce' ),

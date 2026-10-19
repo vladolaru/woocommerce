@@ -10,6 +10,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCLICommand;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
 use WC_Unit_Test_Case;
 
 /**
@@ -34,6 +35,7 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
 		delete_option( self::EXPECTED_LAST_FETCH_OPTION );
+		delete_option( 'woocommerce_woocommerce_payments_version' );
 		$this->reset_legacy_proxy_mocks();
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
@@ -72,6 +74,22 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 			array( 'Runtime owner', 'WooPayments feature', 'Cutover preflight failures', 'Account', 'Gateway enabled', 'Test mode', 'Enabled payment methods', 'WooPay', 'Multi-currency', 'Last fetch of failed webhook events' ),
 			array_map( static fn( string $line ): string => (string) strstr( $line, ':', true ), $lines )
 		);
+	}
+
+	/**
+	 * @testdox On a store waiting for its WooPayments switch the owner line says it awaits the switch.
+	 */
+	public function test_owner_line_says_a_waiting_store_awaits_the_switch(): void {
+		$this->fake_plugin( false );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		// The extension's version option is the evidence that it ran (WooPaymentsRuntimeArbiter::has_run_woopayments_extension()).
+		update_option( 'woocommerce_woocommerce_payments_version', '10.5.0' );
+		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+
+		$lines = wc_get_container()->get( WooPaymentsCLICommand::class )->get_status_lines();
+
+		$this->assertSame( 'Runtime owner: none (awaiting the switch)', $lines[0] );
 	}
 
 	/**

@@ -61,6 +61,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
 		delete_option( self::EXPECTED_LAST_FETCH_OPTION );
+		delete_option( 'woocommerce_woocommerce_payments_version' );
 		wc_get_container()->reset_replacement( WooPaymentsApiClient::class );
 		wc_get_container()->reset_replacement( WooPaymentsHttpClient::class );
 		delete_transient( 'wcpay_fraud_protection_settings' );
@@ -217,6 +218,28 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$sut->register();
 
 		$this->assertSame( 1, has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
+	}
+
+	/**
+	 * @testdox A store waiting for its WooPayments switch registers the supportability hooks, and its owner row says it awaits the switch while the status data keeps none.
+	 */
+	public function test_store_waiting_for_its_switch_reports_that_it_awaits_the_switch(): void {
+		$this->fake_plugin( false );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes', true );
+		// The extension's version option is the evidence that it ran (WooPaymentsRuntimeArbiter::has_run_woopayments_extension()).
+		update_option( 'woocommerce_woocommerce_payments_version', '10.5.0', true );
+		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
+		$this->set_native_state( WooPaymentsSetupTier::DISABLED );
+		$sut = $this->get_sut();
+		$this->remove_status_hooks( $sut );
+
+		$sut->register();
+
+		$this->assertSame( 1, has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
+		$this->assertSame( 10, has_filter( 'debug_information', array( $sut, 'add_site_health_debug_info' ) ) );
+		$this->assertSame( 10, has_filter( 'site_status_tests', array( $sut, 'add_site_status_tests' ) ) );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $sut->get_status_data()['runtime_owner'] );
+		$this->assertSame( 'none (awaiting the switch)', $sut->get_status_fields()['runtime_owner']['value'] );
 	}
 
 	/**

@@ -75,7 +75,7 @@ class WooPaymentsCLICommand {
 		$rate_available     = ! empty( $multi_currency['rate_provider_available'] ) ? 'available' : 'unavailable';
 
 		return array(
-			'Runtime owner: ' . (string) $data['runtime_owner'],
+			'Runtime owner: ' . (string) $data['runtime_owner'] . ( (bool) $data['awaiting_switch'] ? ' (awaiting the switch)' : '' ),
 			sprintf(
 				'WooPayments feature: %s',
 				(bool) $data['builtin_enabled'] ? 'yes' : 'no'
