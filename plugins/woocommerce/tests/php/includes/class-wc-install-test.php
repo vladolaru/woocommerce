@@ -417,6 +417,9 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 	public function provide_fresh_install_account_caches(): array {
 		return array(
 			'no account cache'       => array( null ),
+			// A minimal leftover cache in WooPayments 11.1.0's shape: includes/class-database-cache.php:379 writes the
+			// `data` envelope, and includes/class-wc-payments-account.php:171 and :759 read `account_id` and `is_live`.
+			// The real cache also carries fetch metadata, which no reader here needs.
 			'leftover account cache' => array(
 				array(
 					'data' => array(
