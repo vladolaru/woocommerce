@@ -284,6 +284,45 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox On a store the WooPayments extension owns, with the feature on and a stored disabled tier, the status data, the status table and Site Health report the stored tier and the effective tier apart.
+	 */
+	public function test_status_data_reports_the_stored_and_the_effective_tier_apart(): void {
+		$this->fake_plugin( true );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes', true );
+		$this->set_native_state( WooPaymentsSetupTier::DISABLED );
+
+		$data = $this->get_sut()->get_status_data();
+
+		$this->assertSame( 'disabled', $data['setup_tier'] );
+		$this->assertSame( 'available', $data['effective_setup_tier'] );
+
+		ob_start();
+		$this->get_sut()->render_status_report_section();
+		$html  = (string) ob_get_clean();
+		$table = $this->get_status_tables( $html )['Built-in WooPayments'];
+		$this->assertSame( 'disabled', $table['Stored setup tier'] ?? null );
+		$this->assertSame( 'available', $table['Effective setup tier'] ?? null );
+		$this->assertStringContainsString( '>Stored setup tier:</td>', $html );
+		$this->assertStringContainsString( '>Effective setup tier:</td>', $html );
+
+		$fields = $this->get_sut()->add_site_health_debug_info( array() )['woocommerce_native_payments']['fields'];
+		$this->assertSame(
+			array(
+				'label' => 'Stored setup tier',
+				'value' => 'disabled',
+			),
+			$fields['setup_tier']
+		);
+		$this->assertSame(
+			array(
+				'label' => 'Effective setup tier',
+				'value' => 'available',
+			),
+			$fields['effective_setup_tier']
+		);
+	}
+
+	/**
 	 * @testdox Status data and the Multi-currency row report whether core Multi-Currency runs: $_dataName.
 	 *
 	 * Client 11.1.0 reports its own module's state (includes/class-wc-payments-status.php:600); the WooPayments flag an

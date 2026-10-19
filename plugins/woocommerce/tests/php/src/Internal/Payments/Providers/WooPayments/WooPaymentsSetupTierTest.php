@@ -335,6 +335,7 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		$this->state->invalidate();
 
+		// The minimal account data, the account id (client 11.1.0 includes/class-wc-payments-account.php:164-171).
 		$this->account_service->cache_account_data( array( 'account_id' => 'acct_456' ) );
 		$this->assertSame( WooPaymentsSetupTier::CONNECTED, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The account writer.' );
 
@@ -355,6 +356,7 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	 */
 	public function test_sync_setup_tier_ignores_the_account_payload_eligibility_field( bool $extension_owns, string $expected ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+		// The minimal account data, the account id (client 11.1.0 includes/class-wc-payments-account.php:164-171), and the eligibility field.
 		$data                    = array( 'account_id' => 'acct_plugin' );
 		$data['native_payments'] = array( 'eligible' => false );
 		if ( $extension_owns ) {

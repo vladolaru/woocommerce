@@ -12,7 +12,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
  *
  * The effective tier is `disabled` while the WooPayments feature is off or nothing owns payments, `available` while the
  * WooPayments extension owns payments, and the stored tier while the built-in WooPayments owns payments. The stored tier
- * is `disabled` until the built-in WooPayments is first set up (the install value), then `available`, `connected` or `active`.
+ * is `disabled` until the built-in WooPayments is first set up (the install value), then `available`, `connected` or
+ * `active`. While the extension owns payments the stored tier is not read: it may hold `available`, or the tier of an
+ * earlier switch.
  *
  * @since 11.2.0
  * @internal
