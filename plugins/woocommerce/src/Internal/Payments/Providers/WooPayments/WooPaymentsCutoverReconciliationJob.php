@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 defined( 'ABSPATH' ) || exit;
@@ -619,7 +620,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * Fan one generation out to every site in the current network.
 	 *
 	 * A start, merchant or mandatory, is refused and writes nothing unless the WooPayments feature is on at every runnable
-	 * site, so no generation holds a site the built-in WooPayments cannot run on.
+	 * site, so no generation holds a site the built-in WooPayments cannot run on. An archived, spam or deleted site does not
+	 * hold the start: its feature is turned on with the start, so once restored it finishes its own switch.
 	 *
 	 * @param string $source Trigger source.
 	 * @return bool True when at least one site owns scheduled durable work; the first attempt's fan-out repair adds any site skipped here.
@@ -642,11 +644,16 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$terminal_generations = array();
 			$excluded_generations = array();
 			$feature_off_sites    = array();
+			$paused_feature_off   = array();
 			$this->run_on_sites(
 				$site_ids,
-				function ( int $site_id ) use ( &$maximum_generation, &$active_generations, &$terminal_generations, &$excluded_generations, &$feature_off_sites ): void {
-					if ( $this->is_site_runnable( $site_id ) && ! $this->arbiter->is_builtin_enabled() ) {
-						$feature_off_sites[] = $site_id;
+				function ( int $site_id ) use ( &$maximum_generation, &$active_generations, &$terminal_generations, &$excluded_generations, &$feature_off_sites, &$paused_feature_off ): void {
+					if ( ! $this->arbiter->is_builtin_enabled() ) {
+						if ( $this->is_site_runnable( $site_id ) ) {
+							$feature_off_sites[] = $site_id;
+						} else {
+							$paused_feature_off[] = $site_id;
+						}
 					}
 						$record             = $this->state_store->get_record();
 						$record_generation  = is_array( $record ) ? $record['generation'] : 0;
@@ -667,6 +674,14 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				$this->log_error( 'WooPayments cutover: the network switch was not started because the WooPayments feature is off at some sites.', array( 'site_ids' => $feature_off_sites ) );
 				return false;
 			}
+			// The network deactivation takes the extension from a paused site too; with the feature on, the site restored later
+			// reads as waiting for its switch instead of having no payments at all.
+			$this->run_on_sites(
+				$paused_feature_off,
+				function (): void {
+					wc_get_container()->get( FeaturesController::class )->change_feature_enable( WooPaymentsFeatureController::FEATURE_ID, true );
+				}
+			);
 			$highest_active_generation = array() === $active_generations ? 0 : max( $active_generations );
 			$generation                = $highest_active_generation >= $maximum_generation ? max( 1, $highest_active_generation ) : $maximum_generation + 1;
 			if ( isset( $excluded_generations[ $generation ] ) ) {
