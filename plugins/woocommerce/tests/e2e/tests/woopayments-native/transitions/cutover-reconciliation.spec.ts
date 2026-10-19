@@ -20,7 +20,7 @@ import {
  * one-click "Start the switch" on a real plugin-era store, run against a
  * seeded profile of the WooPayments transition-seed plugin instead of the
  * retired provisioner. The seed borrows this checkout's own connected
- * account (`:8889`, N-123), so the payment below settles against a real
+ * account (`:8889`), so the payment below settles against a real
  * provider account in test mode.
  */
 
@@ -99,8 +99,7 @@ function validateCutoverActionURL( href: string, baseURL: string ): void {
 		! url.hash &&
 		[ ...url.searchParams.keys() ].toSorted().join( ',' ) ===
 			'_wc_woopayments_cutover_nonce,wc_woopayments_cutover_action' &&
-		url.searchParams.get( 'wc_woopayments_cutover_action' ) ===
-			'disable_woopayments' &&
+		url.searchParams.get( 'wc_woopayments_cutover_action' ) === 'start' &&
 		/^[a-zA-Z0-9]{10}$/.test(
 			url.searchParams.get( '_wc_woopayments_cutover_nonce' ) ?? ''
 		);
@@ -824,7 +823,7 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 	} );
 
 	/**
-	 * Inbox N-073: plugin re-activation is the rollback lever (Decision 9),
+	 * Plugin re-activation is the rollback lever,
 	 * so an unchanged cutover followed by re-activation, and then by a second
 	 * deactivation, must leave every plugin-era setting, token and order
 	 * record as the plugin wrote it. Provider-free: no payment, capture or
@@ -1091,7 +1090,7 @@ test.describe( 'WooPayments transition: extension activation during an open cuto
 	} );
 
 	/**
-	 * Inbox N-470: the merchant reactivating the extension after the job
+	 * The merchant reactivating the extension after the job
 	 * deactivated it, before the switch completed, is the rollback. Before
 	 * the fix the open generation's next attempt deactivated it again.
 	 */
@@ -1150,7 +1149,7 @@ test.describe( 'WooPayments transition: extension activation during an open cuto
 	);
 
 	/**
-	 * Inbox N-487: the switch reads only what the extension stored, so a store
+	 * The switch reads only what the extension stored, so a store
 	 * whose merchant deactivated and deleted the extension still switches. The
 	 * 11.1.0 extension registers no uninstall hook, so its options stay.
 	 */

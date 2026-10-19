@@ -1213,7 +1213,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			return '';
 		};
 		add_filter( 'wp_redirect', $capture_redirect );
-		$_GET[ WooPaymentsCutoverController::QUERY_ACTION ] = WooPaymentsCutoverController::ACTION_DISABLE;
+		$_GET[ WooPaymentsCutoverController::QUERY_ACTION ] = WooPaymentsCutoverController::ACTION_START;
 		$_GET[ WooPaymentsCutoverController::NONCE_NAME ]   = wp_create_nonce( WooPaymentsCutoverController::NONCE_ACTION );
 
 		try {
@@ -1255,7 +1255,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			}
 		};
 		$controller = $this->create_cutover_controller( $job );
-		$_GET[ WooPaymentsCutoverController::QUERY_ACTION ] = WooPaymentsCutoverController::ACTION_DISABLE;
+		$_GET[ WooPaymentsCutoverController::QUERY_ACTION ] = WooPaymentsCutoverController::ACTION_START;
 		$_GET[ WooPaymentsCutoverController::NONCE_NAME ]   = wp_create_nonce( WooPaymentsCutoverController::NONCE_ACTION );
 		$logger = $this->createMock( \WC_Logger_Interface::class );
 		$logger->expects( $feature_on ? $this->once() : $this->never() )
@@ -1312,7 +1312,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			}
 		};
 		$controller = $this->create_cutover_controller( $job );
-		$_GET[ WooPaymentsCutoverController::QUERY_ACTION ] = WooPaymentsCutoverController::ACTION_DISABLE;
+		$_GET[ WooPaymentsCutoverController::QUERY_ACTION ] = WooPaymentsCutoverController::ACTION_START;
 		$_GET[ WooPaymentsCutoverController::NONCE_NAME ]   = 'invalid';
 
 		$this->expectException( WooPaymentsCutoverBlockedException::class );

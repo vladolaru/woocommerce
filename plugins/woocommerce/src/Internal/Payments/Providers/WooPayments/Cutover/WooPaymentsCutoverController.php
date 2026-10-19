@@ -24,11 +24,11 @@ defined( 'ABSPATH' ) || exit;
 class WooPaymentsCutoverController implements RegisterHooksInterface {
 
 	/**
-	 * Query action value used to disable the standalone WooPayments plugin.
+	 * Query action value that starts the switch.
 	 *
 	 * @var string
 	 */
-	public const ACTION_DISABLE = 'disable_woopayments';
+	public const ACTION_START = 'start';
 
 	/**
 	 * Filter that controls mandatory WooPayments auto-deactivation.
@@ -47,14 +47,14 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	public const DEFAULT_MANDATORY_CUTOVER_ENABLED = false;
 
 	/**
-	 * Nonce action for the one-click disable action.
+	 * Nonce action for the one-click start action.
 	 *
 	 * @var string
 	 */
-	public const NONCE_ACTION = 'woocommerce_disable_woopayments';
+	public const NONCE_ACTION = 'woocommerce_woopayments_cutover_start';
 
 	/**
-	 * Nonce query parameter for the one-click disable action.
+	 * Nonce query parameter for the one-click start action.
 	 *
 	 * @var string
 	 */
@@ -176,7 +176,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			$this->dismiss_notice();
 			return;
 		}
-		if ( self::ACTION_DISABLE !== $action ) {
+		if ( self::ACTION_START !== $action ) {
 			return;
 		}
 
@@ -452,14 +452,14 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get a nonce-protected URL for the soft cutover action.
+	 * Get the nonce-protected URL of the link that starts the switch.
 	 *
 	 * @return string
 	 */
-	private function get_disable_url(): string {
+	private function get_start_url(): string {
 		$url = add_query_arg(
 			array(
-				self::QUERY_ACTION => self::ACTION_DISABLE,
+				self::QUERY_ACTION => self::ACTION_START,
 			),
 			admin_url( 'admin.php' )
 		);
@@ -479,7 +479,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 				<?php esc_html_e( 'WooPayments is now part of WooCommerce. Start the switch: we will migrate what is needed and disable the WooPayments extension.', 'woocommerce' ); ?>
 			</p>
 			<p>
-				<a class="button button-primary" href="<?php echo esc_url( $this->get_disable_url() ); ?>">
+				<a class="button button-primary" href="<?php echo esc_url( $this->get_start_url() ); ?>">
 					<?php esc_html_e( 'Start the switch', 'woocommerce' ); ?>
 				</a>
 				<?php if ( $can_snooze ) : ?>
