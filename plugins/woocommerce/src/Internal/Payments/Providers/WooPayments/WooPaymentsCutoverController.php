@@ -89,6 +89,20 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	public const DISMISS_NONCE_ACTION = 'woocommerce_woopayments_cutover_dismiss_notice';
 
 	/**
+	 * Notice key of the switch notice, which "Not now" hides outside Payments settings.
+	 *
+	 * @var string
+	 */
+	public const NOTICE_START_SWITCH = 'start_switch';
+
+	/**
+	 * Time "Not now" hides the switch notice outside Payments settings.
+	 *
+	 * @var int
+	 */
+	private const START_NOTICE_SNOOZE = 30 * DAY_IN_SECONDS;
+
+	/**
 	 * Runtime owner arbiter.
 	 *
 	 * @var WooPaymentsRuntimeArbiter
@@ -177,7 +191,8 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Persist a store manager's dismissal of a cutover notice (completion or bundled exclusion), then return to the same page.
+	 * Persist a store manager's dismissal of a cutover notice, then return to the same page: the completion or bundled
+	 * exclusion notice on the durable record, or "Not now" on the switch notice for 30 days.
 	 */
 	private function dismiss_completion_notice(): void {
 		$nonce = isset( $_GET[ self::NONCE_NAME ] ) ? sanitize_text_field( wp_unslash( $_GET[ self::NONCE_NAME ] ) ) : '';
@@ -189,7 +204,11 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		}
 
 		$notice = isset( $_GET[ self::QUERY_NOTICE ] ) ? sanitize_key( wp_unslash( $_GET[ self::QUERY_NOTICE ] ) ) : '';
-		$this->reconciliation_job->dismiss_completion_notice( $notice );
+		if ( self::NOTICE_START_SWITCH === $notice ) {
+			update_option( WooPaymentsCutoverReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION, (int) $this->legacy_proxy->call_function( 'time' ) + self::START_NOTICE_SNOOZE );
+		} else {
+			$this->reconciliation_job->dismiss_completion_notice( $notice );
+		}
 
 		$return_url = remove_query_arg( array( self::QUERY_ACTION, self::QUERY_NOTICE, self::NONCE_NAME ), $this->get_request_uri() );
 		wp_safe_redirect( '' !== $return_url ? $return_url : admin_url() );
@@ -206,12 +225,12 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Build the nonce-protected dismiss link for a cutover notice.
+	 * Build the nonce-protected dismiss URL for a cutover notice, returning to the current page.
 	 *
-	 * @param string $notice One of the WooPaymentsCutoverReconciliationJob::NOTICE_* constants.
+	 * @param string $notice One of the WooPaymentsCutoverReconciliationJob::NOTICE_* constants, or NOTICE_START_SWITCH.
 	 * @return string
 	 */
-	private function get_dismiss_notice_link( string $notice ): string {
+	private function get_dismiss_notice_url( string $notice ): string {
 		$url = add_query_arg(
 			array(
 				self::QUERY_ACTION => self::ACTION_DISMISS_NOTICE,
@@ -220,9 +239,19 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			'' !== $this->get_request_uri() ? $this->get_request_uri() : admin_url()
 		);
 
+		return wp_nonce_url( $url, self::DISMISS_NONCE_ACTION, self::NONCE_NAME );
+	}
+
+	/**
+	 * Build the nonce-protected dismiss link for a cutover notice.
+	 *
+	 * @param string $notice One of the WooPaymentsCutoverReconciliationJob::NOTICE_* constants.
+	 * @return string
+	 */
+	private function get_dismiss_notice_link( string $notice ): string {
 		return sprintf(
 			'<a class="woocommerce-message-close notice-dismiss" href="%s" style="position:relative;float:right;padding:9px 0 9px 9px;text-decoration:none;"><span class="screen-reader-text">%s</span></a>',
-			esc_url( wp_nonce_url( $url, self::DISMISS_NONCE_ACTION, self::NONCE_NAME ) ),
+			esc_url( $this->get_dismiss_notice_url( $notice ) ),
 			esc_html__( 'Dismiss this notice.', 'woocommerce' )
 		);
 	}
@@ -439,9 +468,11 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Output the soft cutover notice.
+	 * Output the soft cutover notice, with "Not now" outside Payments settings.
+	 *
+	 * @param bool $can_snooze Whether the notice offers "Not now".
 	 */
-	private function output_soft_cutover_notice(): void {
+	private function output_soft_cutover_notice( bool $can_snooze ): void {
 		?>
 		<div class="notice notice-info">
 			<p>
@@ -451,9 +482,37 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 				<a class="button button-primary" href="<?php echo esc_url( $this->get_disable_url() ); ?>">
 					<?php esc_html_e( 'Start the switch', 'woocommerce' ); ?>
 				</a>
+				<?php if ( $can_snooze ) : ?>
+					<a href="<?php echo esc_url( $this->get_dismiss_notice_url( self::NOTICE_START_SWITCH ) ); ?>">
+						<?php esc_html_e( 'Not now', 'woocommerce' ); ?>
+					</a>
+				<?php endif; ?>
 			</p>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Tell whether the request is the Payments settings tab or one of its pages, where the switch notice stays.
+	 *
+	 * @return bool
+	 */
+	private function is_payments_settings_request(): bool {
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only request routing.
+		$page = isset( $_GET['page'] ) && is_scalar( $_GET['page'] ) ? sanitize_text_field( wp_unslash( (string) $_GET['page'] ) ) : '';
+		$tab  = isset( $_GET['tab'] ) && is_scalar( $_GET['tab'] ) ? sanitize_text_field( wp_unslash( (string) $_GET['tab'] ) ) : '';
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+		return 'wc-settings' === $page && 'checkout' === $tab;
+	}
+
+	/**
+	 * Tell whether "Not now" still hides the switch notice.
+	 *
+	 * @return bool
+	 */
+	private function is_start_notice_snoozed(): bool {
+		return (int) get_option( WooPaymentsCutoverReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION, 0 ) > (int) $this->legacy_proxy->call_function( 'time' );
 	}
 
 	/**
@@ -466,8 +525,10 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			return;
 		}
 		if ( $this->can_start_cutover() ) {
-			if ( $this->reconciliation_job->should_offer_start() ) {
-				$this->output_soft_cutover_notice();
+			// Payments settings keeps the switch notice, with no "Not now"; every other admin page honours the snooze.
+			$on_payments_settings = $this->is_payments_settings_request();
+			if ( ( $on_payments_settings || ! $this->is_start_notice_snoozed() ) && $this->reconciliation_job->should_offer_start() ) {
+				$this->output_soft_cutover_notice( ! $on_payments_settings );
 			}
 			return;
 		}

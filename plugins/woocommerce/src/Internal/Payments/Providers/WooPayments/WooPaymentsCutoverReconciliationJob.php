@@ -28,6 +28,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/** Notice telling a bundled-flavor store why it cannot switch yet. */
 	public const NOTICE_BUNDLED_EXCLUSION = 'bundled_exclusion';
 
+	/** Option holding the time until which the switch notice outside Payments settings stays hidden ("Not now"). */
+	public const START_NOTICE_SNOOZED_UNTIL_OPTION = 'woocommerce_woopayments_cutover_notice_snoozed_until';
+
 	/** Step of a generation queued for its next attempt. */
 	private const STEP_QUEUED = 'queued';
 
@@ -888,7 +891,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				$done[ self::CLAIM_EXPIRES_AT_KEY ] = null;
 				$done['request_origin_token']       = null;
 				$done                               = $this->append_step( $done, self::STEP_DONE, $now );
-				$this->state_store->compare_and_set_record( $record, $done );
+				if ( $this->state_store->compare_and_set_record( $record, $done ) ) {
+					delete_option( self::START_NOTICE_SNOOZED_UNTIL_OPTION );
+				}
 			}
 		);
 	}
@@ -1339,8 +1344,15 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	private function replace_terminal_with_awaiting_start( array $record, string $source, int $now ): bool {
 		$replacement             = $this->to_awaiting_merchant_start( $source, $now, $record['generation'] + 1 );
 		$replacement['revision'] = $record['revision'] + 1;
+		if ( ! $this->state_store->compare_and_set_record( $record, $replacement ) ) {
+			return false;
+		}
+		// A rollback offers the switch again at once, on every admin page.
+		if ( self::SOURCE_ROLLBACK === $source ) {
+			delete_option( self::START_NOTICE_SNOOZED_UNTIL_OPTION );
+		}
 
-		return $this->state_store->compare_and_set_record( $record, $replacement );
+		return true;
 	}
 
 	/**

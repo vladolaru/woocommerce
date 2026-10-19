@@ -341,7 +341,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		while ( function_exists( 'ms_is_switched' ) && ms_is_switched() ) {
 			restore_current_blog();
 		}
-		unset( $_GET[ WooPaymentsCutoverController::QUERY_ACTION ], $_GET[ WooPaymentsCutoverController::NONCE_NAME ], $_GET[ WooPaymentsCutoverController::QUERY_NOTICE ] );
+		unset( $_GET[ WooPaymentsCutoverController::QUERY_ACTION ], $_GET[ WooPaymentsCutoverController::NONCE_NAME ], $_GET[ WooPaymentsCutoverController::QUERY_NOTICE ], $_GET['page'], $_GET['tab'] );
 		delete_transient( 'woocommerce_woopayments_native_cutover_status' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'woocommerce_woocommerce_payments_version' );
@@ -515,6 +515,56 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'WooPayments is now part of WooCommerce. Start the switch: we will migrate what is needed and disable the WooPayments extension.', $notice );
 		$this->assertStringContainsString( 'Start the switch', $notice );
 		$this->assertStringNotContainsString( 'not ready', $notice );
+	}
+
+	/**
+	 * @testdox "Not now" hides the switch notice for 30 days on every admin page but Payments settings, where it stays without the link ($store).
+	 * @testWith ["extension active"]
+	 *           ["waiting for the switch"]
+	 *
+	 * @param string $store Which store offers the switch.
+	 */
+	public function test_not_now_snoozes_the_switch_notice_outside_payments_settings( string $store ): void {
+		$this->arrange_switch_offer( $store );
+		$now = 1800000000;
+		$this->register_legacy_proxy_function_mocks( array( 'time' => static fn() => $now ) );
+		$controller = $this->create_cutover_controller();
+		$this->register_exit_mock( static fn() => null );
+		add_filter( 'wp_redirect', '__return_empty_string' );
+
+		try {
+			$notices = $this->render_admin_notices( $controller );
+			$this->assertStringContainsString( 'Start the switch', $notices );
+			$this->assertStringContainsString( 'Not now', $notices );
+			$this->follow_dismiss_link( $controller, $notices, WooPaymentsCutoverController::NOTICE_START_SWITCH );
+		} finally {
+			remove_filter( 'wp_redirect', '__return_empty_string' );
+		}
+
+		$this->assertSame( $now + 30 * DAY_IN_SECONDS, (int) get_option( WooPaymentsCutoverReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION ) );
+		unset( $_GET[ WooPaymentsCutoverController::QUERY_ACTION ], $_GET[ WooPaymentsCutoverController::NONCE_NAME ], $_GET[ WooPaymentsCutoverController::QUERY_NOTICE ] );
+		$this->assertStringNotContainsString( 'Start the switch', $this->render_admin_notices( $controller ), 'Snoozed on other admin pages.' );
+
+		$_GET['page'] = 'wc-settings';
+		$_GET['tab']  = 'checkout';
+		$settings     = $this->render_admin_notices( $controller );
+		$this->assertStringContainsString( 'Start the switch', $settings, 'Payments settings keeps the switch notice.' );
+		$this->assertStringNotContainsString( 'Not now', $settings );
+	}
+
+	/**
+	 * @testdox The switch notice is back on every admin page once the 30 days have passed.
+	 */
+	public function test_snoozed_switch_notice_returns_after_30_days(): void {
+		$this->arrange_switch_offer( 'extension active' );
+		$now = 1800000000;
+		update_option( WooPaymentsCutoverReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION, $now + 30 * DAY_IN_SECONDS );
+		$this->register_legacy_proxy_function_mocks( array( 'time' => static fn() => $now + 31 * DAY_IN_SECONDS ) );
+
+		$notices = $this->render_admin_notices( $this->create_cutover_controller() );
+
+		$this->assertStringContainsString( 'Start the switch', $notices );
+		$this->assertStringContainsString( 'Not now', $notices );
 	}
 
 	/**
@@ -1779,6 +1829,19 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 				return true;
 			}
 		};
+	}
+
+	/**
+	 * Arrange a store a manager is offered the switch on: the extension active with the feature on, or a store waiting for
+	 * its switch (the extension ran, then was deactivated, the feature on).
+	 *
+	 * @param string $store "extension active" or "waiting for the switch".
+	 */
+	private function arrange_switch_offer( string $store ): void {
+		$this->fake_plugin_active( 'extension active' === $store );
+		$this->fake_current_user_caps( true );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 	}
 
 	/**

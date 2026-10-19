@@ -3465,6 +3465,62 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A completed switch clears "Not now" on the switch notice.
+	 */
+	public function test_completed_switch_clears_the_start_notice_snooze(): void {
+		$scheduling_calls = 0;
+		$schedulable      = true;
+		$throws           = false;
+		$preflight        = $this->create_preflight_with_fee_remediation( $scheduling_calls, $schedulable, $throws );
+		$sut              = $this->create_job( true, $preflight, null, false, $this->create_noop_normalization() );
+		update_option( WooPaymentsCutoverReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION, time() + DAY_IN_SECONDS );
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$sut->handle_reconcile( $pending['generation'], 1 );
+		$verification = $this->require_state_store()->get_record();
+		$this->assertIsArray( $verification );
+		$this->require_scheduler()->cancel( $verification['generation'], 2 );
+		$this->assertNotFalse( get_option( WooPaymentsCutoverReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION ), 'Kept until the switch completes.' );
+
+		$this->start_fresh_request();
+		$this->create_job( true, $preflight, null, false, $this->create_noop_normalization() )->handle_reconcile( $verification['generation'], 2 );
+
+		$done = $this->require_state_store()->get_record();
+		$this->assertIsArray( $done );
+		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DONE, $done['state'] );
+		$this->assertFalse( get_option( WooPaymentsCutoverReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION ) );
+	}
+
+	/**
+	 * @testdox A rollback (the extension activated again after a completed switch) clears "Not now" on the switch notice.
+	 */
+	public function test_rollback_clears_the_start_notice_snooze(): void {
+		$sut   = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true );
+		$store = $this->require_state_store();
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$pending = $store->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$done                    = $pending;
+		$done['revision']        = $pending['revision'] + 1;
+		$done['state']           = WooPaymentsCutoverStateStore::STATE_DONE;
+		$done['action_id']       = 0;
+		$done['current_step']    = 'done';
+		$done['next_attempt_at'] = null;
+		$this->assertTrue( $store->compare_and_set_record( $pending, $done ) );
+		update_option( WooPaymentsCutoverReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION, time() + DAY_IN_SECONDS );
+
+		$this->assertTrue( $sut->record_plugin_activation() );
+
+		$record = $store->get_record();
+		$this->assertIsArray( $record );
+		$this->assertTrue( $sut->is_awaiting_start( $record ) );
+		$this->assertFalse( get_option( WooPaymentsCutoverReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION ) );
+	}
+
+	/**
 	 * @testdox An unknown prefixed action remains queued and defers reconciliation.
 	 */
 	public function test_unknown_prefixed_operational_action_defers_without_cancellation(): void {
