@@ -8,26 +8,44 @@ import { logIn } from '../../../utils/login';
 
 /**
  * The per-site activation family on the multisite e2e store (`:8601`): four
- * sites with the WooPayments extension active for the whole network. No site
- * can switch to WooPayments in WooCommerce while the extension is active for
- * every site; a super admin turns the network activation into one activation
- * per site from the network admin, and each site then switches on its own.
- * Provider-free: the store runs the secretless CI provider fixture and no
- * platform connection, so no switch reaches its ownership check here (the
- * single-site transition project carries the click-to-done proof).
+ * subdomain sites with the WooPayments extension active for the whole network.
+ * No site can switch to WooPayments in WooCommerce while the extension is
+ * active for every site; a super admin turns the network activation into one
+ * activation per site from the network admin, and each site then switches on
+ * its own.
  *
- * The family runs in order. It restores the options it sets, the plugin
- * lists, the site statuses and the cutover actions, plus `recently_activated`
- * and the Storefront widgets the first admin visit clears; WordPress's own
- * cron entries and Jetpack's plugin bookkeeping from the activations stay.
+ * Opt-in and local only: it runs with `E2E_WOOPAYMENTS_MULTISITE=true` against
+ * the :8601 store, whose sites are each connected to the local platform, so it
+ * needs the local platform running. It leaves the repository with the other
+ * live-platform specs when they move to a harness profile (Task 6.1).
+ *
+ * Each site has its own address and its own login cookie. The family runs in
+ * order. It restores the options it sets, the plugin lists, the site statuses
+ * and the cutover actions, plus `recently_activated` and the Storefront widgets
+ * the first admin visit clears; WordPress's own cron entries and Jetpack's
+ * plugin bookkeeping from the activations stay.
  */
 
-const STORE = ( process.env.BASE_URL ?? 'http://localhost:8601' ).replace(
+const STORE = ( process.env.BASE_URL ?? 'http://ms.localhost:8601' ).replace(
 	/\/+$/,
 	''
 );
-const SITES = [ '/', '/shop1/', '/shop2/', '/shop3/' ] as const;
-type SitePath = ( typeof SITES )[ number ];
+
+/**
+ * The address of a site of the network: the main site's host, with the
+ * site's subdomain in front of it.
+ */
+function siteUrl( subdomain: string ): string {
+	const { protocol, host } = new URL( STORE );
+	return `${ protocol }//${ subdomain }${ host }/`;
+}
+
+const MAIN = siteUrl( '' );
+const SHOP1 = siteUrl( 'shop1.' );
+const SHOP2 = siteUrl( 'shop2.' );
+const SHOP3 = siteUrl( 'shop3.' );
+const SITES = [ MAIN, SHOP1, SHOP2, SHOP3 ];
+type SiteUrl = string;
 const RESULT_MARKER = '__E2E_PER_SITE_RESULT__';
 const RESTORED_OPTIONS = [
 	'active_plugins',
@@ -68,10 +86,17 @@ interface Snapshot {
 }
 
 /**
+ * The site address as WP-CLI takes it: no trailing slash.
+ */
+function cliUrl( site: SiteUrl ): string {
+	return site.replace( /\/+$/, '' );
+}
+
+/**
  * Evaluate PHP on one site of the network and return its JSON result.
  */
 async function siteEval< Result >(
-	site: SitePath,
+	site: SiteUrl,
 	phpBody: string
 ): Promise< Result > {
 	const source = `return ( static function () {\n${ phpBody }\n} )();`;
@@ -79,7 +104,7 @@ async function siteEval< Result >(
 	const php = `$e2e_source = base64_decode( '${ encoded }', true ); echo "\\n${ RESULT_MARKER }" . wp_json_encode( eval( $e2e_source ) ) . "\\n";`;
 	const { stdout } = await wpCLI( [
 		'wp',
-		`--url=${ STORE }${ site }`,
+		`--url=${ cliUrl( site ) }`,
 		'--user=1',
 		'eval',
 		php,
@@ -113,11 +138,11 @@ return array(
 );
 `;
 
-function readSite( site: SitePath ): Promise< SiteState > {
+function readSite( site: SiteUrl ): Promise< SiteState > {
 	return siteEval< SiteState >( site, SITE_STATE_PHP );
 }
 
-function setFeature( site: SitePath, value: 'yes' | 'no' ): Promise< unknown > {
+function setFeature( site: SiteUrl, value: 'yes' | 'no' ): Promise< unknown > {
 	return siteEval(
 		site,
 		`update_option( 'woocommerce_feature_woopayments_enabled', '${ value }' ); return true;`
@@ -125,31 +150,46 @@ function setFeature( site: SitePath, value: 'yes' | 'no' ): Promise< unknown > {
 }
 
 async function setArchived(
-	site: SitePath,
+	site: SiteUrl,
 	archived: '0' | '1'
 ): Promise< void > {
 	const { blog_id: blogId } = await readSite( site );
 	await siteEval(
-		'/',
+		MAIN,
 		`update_blog_status( ${ blogId }, 'archived', '${ archived }' ); return true;`
 	);
 }
 
 function runPlugin(
-	site: SitePath,
+	site: SiteUrl,
 	action: 'activate' | 'deactivate'
 ): Promise< unknown > {
 	return wpCLI( [
 		'wp',
-		`--url=${ STORE }${ site }`,
+		`--url=${ cliUrl( site ) }`,
 		'plugin',
 		action,
 		'woocommerce-payments',
 	] );
 }
 
-async function goToSiteAdmin( page: Page, site: SitePath ): Promise< void > {
-	await page.goto( `${ STORE }${ site }wp-admin/` );
+/**
+ * Sign the administrator in to one site: each site of a subdomain network has
+ * its own login cookie. Does nothing when the site already has a session.
+ */
+async function signIn( page: Page, site: SiteUrl ): Promise< void > {
+	await page.goto( `${ site }wp-login.php` );
+	if ( new URL( page.url() ).pathname.endsWith( '/wp-login.php' ) ) {
+		await logIn( page, admin.username, admin.password, false );
+		await page.waitForURL(
+			( url ) => ! url.pathname.endsWith( '/wp-login.php' )
+		);
+	}
+}
+
+async function goToSiteAdmin( page: Page, site: SiteUrl ): Promise< void > {
+	await signIn( page, site );
+	await page.goto( `${ site }wp-admin/` );
 }
 
 test.skip(
@@ -181,7 +221,7 @@ return array( 'blog_id' => get_current_blog_id(), 'archived' => (string) get_sit
 		}
 		snapshot = {
 			sitewide: await siteEval(
-				'/',
+				MAIN,
 				`return get_site_option( 'active_sitewide_plugins', array() );`
 			),
 			sites,
@@ -234,7 +274,7 @@ return true;
 			'utf8'
 		).toString( 'base64' );
 		await siteEval(
-			'/',
+			MAIN,
 			`update_site_option( 'active_sitewide_plugins', json_decode( base64_decode( '${ sitewide }' ), true ) ); return true;`
 		);
 	} );
@@ -242,10 +282,10 @@ return true;
 	test( '@woopayments-multisite a super admin turns the network activation into per-site activations, an archived site included', async ( {
 		page,
 	}, testInfo ) => {
-		for ( const site of [ '/shop1/', '/shop2/', '/shop3/' ] as const ) {
+		for ( const site of [ SHOP1, SHOP2, SHOP3 ] ) {
 			await setFeature( site, 'yes' );
 		}
-		await setArchived( '/shop3/', '1' );
+		await setArchived( SHOP3, '1' );
 
 		// The conversion activates each site before it removes the network
 		// activation; WordPress activates a network-active plugin on one site
@@ -257,7 +297,7 @@ return true;
 			site_active: boolean;
 			sitewide_active: boolean;
 		} >(
-			'/shop1/',
+			SHOP1,
 			String.raw`
 require_once ABSPATH . 'wp-admin/includes/plugin.php';
 $plugin = 'woocommerce-payments/woocommerce-payments.php';
@@ -275,10 +315,7 @@ return array(
 			sitewide_active: true,
 		} );
 
-		await page.goto( `${ STORE }/wp-login.php` );
-		await logIn( page, admin.username, admin.password, false );
-
-		await goToSiteAdmin( page, '/shop1/' );
+		await goToSiteAdmin( page, SHOP1 );
 		const refusal = page.locator( '.notice' ).filter( {
 			hasText:
 				'switch yet because the WooPayments extension is active for every site of the network.',
@@ -293,7 +330,8 @@ return array(
 			path: testInfo.outputPath( 'site-refusal-notice.png' ),
 		} );
 
-		await page.goto( `${ STORE }/wp-admin/network/plugins.php` );
+		await signIn( page, MAIN );
+		await page.goto( `${ MAIN }wp-admin/network/plugins.php` );
 		const offer = page.locator( '.notice' ).filter( {
 			hasText:
 				'No site can switch while the WooPayments extension is active for the whole network.',
@@ -343,8 +381,8 @@ return array(
 			).toBeNull();
 		}
 
-		await setArchived( '/shop3/', '0' );
-		const restored = await readSite( '/shop3/' );
+		await setArchived( SHOP3, '0' );
+		const restored = await readSite( SHOP3 );
 		expect( restored.archived ).toBe( '0' );
 		expect(
 			restored.site_active,
@@ -355,9 +393,7 @@ return array(
 	test( '@woopayments-multisite after the per-site activation a site offers its own switch', async ( {
 		page,
 	} ) => {
-		await page.goto( `${ STORE }/wp-login.php` );
-		await logIn( page, admin.username, admin.password, false );
-		await goToSiteAdmin( page, '/shop1/' );
+		await goToSiteAdmin( page, SHOP1 );
 
 		await expect(
 			page.getByRole( 'link', { name: 'Start the switch', exact: true } )
@@ -370,9 +406,9 @@ return array(
 	test( '@woopayments-multisite a site whose WooPayments extension is deactivated by hand waits for its switch', async ( {
 		page,
 	} ) => {
-		await runPlugin( '/shop2/', 'deactivate' );
+		await runPlugin( SHOP2, 'deactivate' );
 
-		const state = await readSite( '/shop2/' );
+		const state = await readSite( SHOP2 );
 		expect( state.site_active ).toBe( false );
 		expect(
 			state.owner,
@@ -384,9 +420,7 @@ return array(
 			'a deactivation by hand records nothing'
 		).toBeNull();
 
-		await page.goto( `${ STORE }/wp-login.php` );
-		await logIn( page, admin.username, admin.password, false );
-		await goToSiteAdmin( page, '/shop2/' );
+		await goToSiteAdmin( page, SHOP2 );
 		await expect(
 			page.getByRole( 'link', { name: 'Start the switch', exact: true } )
 		).toBeVisible();
@@ -395,15 +429,17 @@ return array(
 	test( '@woopayments-multisite a site that reactivates its WooPayments extension after starting its switch rolls the switch back', async ( {
 		page,
 	} ) => {
-		await page.goto( `${ STORE }/wp-login.php` );
-		await logIn( page, admin.username, admin.password, false );
-		await goToSiteAdmin( page, '/shop3/' );
+		await goToSiteAdmin( page, SHOP3 );
 		await page
 			.getByRole( 'link', { name: 'Start the switch', exact: true } )
 			.click( { timeout: 30_000 } );
-		await expect( page ).toHaveURL( /\/shop3\/wp-admin\/plugins\.php/ );
+		await expect( page ).toHaveURL(
+			( url ) =>
+				url.origin === new URL( SHOP3 ).origin &&
+				url.pathname === '/wp-admin/plugins.php'
+		);
 
-		const started = await readSite( '/shop3/' );
+		const started = await readSite( SHOP3 );
 		expect(
 			started.record,
 			'the start opened a generation'
@@ -413,13 +449,13 @@ return array(
 		);
 		expect(
 			started.site_active,
-			'the switch cannot finish without a platform connection'
+			'the extension is still active when the start returns'
 		).toBe( true );
 
-		await runPlugin( '/shop3/', 'deactivate' );
-		await runPlugin( '/shop3/', 'activate' );
+		await runPlugin( SHOP3, 'deactivate' );
+		await runPlugin( SHOP3, 'activate' );
 
-		const rolledBack = await readSite( '/shop3/' );
+		const rolledBack = await readSite( SHOP3 );
 		expect( rolledBack.owner ).toBe( 'extension' );
 		expect( rolledBack.record?.generation ).toBe(
 			( started.record?.generation ?? 0 ) + 1
@@ -431,7 +467,7 @@ return array(
 			'rollback'
 		);
 
-		await goToSiteAdmin( page, '/shop3/' );
+		await goToSiteAdmin( page, SHOP3 );
 		await expect(
 			page.getByRole( 'link', { name: 'Start the switch', exact: true } )
 		).toBeVisible();
