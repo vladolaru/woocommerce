@@ -551,7 +551,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		try {
 			for ( $page = 0; $page < 2; $page++ ) {
 				$notices = $this->render_admin_notices( $controller );
-				$this->assertStringContainsString( 'WooPayments is now fully native in WooCommerce.', $notices );
+				$this->assertStringContainsString( 'WooPayments is now built into WooCommerce. Everything works as before.', $notices );
 			}
 			$this->assertSame( array(), $job->dismissed, 'Rendering must not use up a notice, since the screen may not show it.' );
 
@@ -569,7 +569,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array( WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS ), $job->dismissed );
 		$this->assertSame( array( '/wp-admin/admin.php?page=wc-settings' ), $redirects, 'The dismissal returns to the same page without the action.' );
-		$this->assertStringNotContainsString( 'fully native', $notices );
+		$this->assertStringNotContainsString( 'WooPayments is now built into WooCommerce.', $notices );
 	}
 
 	/**

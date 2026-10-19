@@ -611,7 +611,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		?>
 		<div class="notice notice-success" style="position:relative;">
 			<?php echo $this->get_dismiss_notice_link( WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?>
-			<p><?php esc_html_e( 'WooPayments is now fully native in WooCommerce. Everything works as before.', 'woocommerce' ); ?></p>
+			<p><?php esc_html_e( 'WooPayments is now built into WooCommerce. Everything works as before.', 'woocommerce' ); ?></p>
 		</div>
 		<?php
 	}
