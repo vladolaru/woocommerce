@@ -430,9 +430,9 @@ final class WooCommerce {
 		// The network admin notice that turns a network-wide activation of the WooPayments extension into per-site activations;
 		// its cached feature scan is cleared on any site's feature change.
 		if ( is_multisite() ) {
-			Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPerSiteActivationController::register_feature_scan_reset();
+			Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsPerSiteActivationController::register_feature_scan_reset();
 			if ( is_network_admin() ) {
-				$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPerSiteActivationController::class )->register();
+				$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsPerSiteActivationController::class )->register();
 			}
 		}
 
