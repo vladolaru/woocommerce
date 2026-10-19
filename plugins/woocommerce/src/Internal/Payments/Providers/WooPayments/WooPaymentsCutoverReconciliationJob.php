@@ -644,6 +644,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Fan one generation out to every site in the current network.
 	 *
+	 * A start, merchant or mandatory, is refused and writes nothing unless the WooPayments feature is on at every runnable
+	 * site, so no generation holds a site the built-in WooPayments cannot run on.
+	 *
 	 * @param string      $source              Trigger source.
 	 * @param string|null $origin_plugin_file  Exact deactivated plugin path.
 	 * @param string|null $origin_plugin_scope Site or network scope.
@@ -666,9 +669,13 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$active_generations   = array();
 			$terminal_generations = array();
 			$excluded_generations = array();
+			$feature_off_sites    = array();
 			$this->run_on_sites(
 				$site_ids,
-				function () use ( &$maximum_generation, &$active_generations, &$terminal_generations, &$excluded_generations ): void {
+				function ( int $site_id ) use ( &$maximum_generation, &$active_generations, &$terminal_generations, &$excluded_generations, &$feature_off_sites ): void {
+					if ( $this->is_site_runnable( $site_id ) && ! $this->arbiter->is_builtin_enabled() ) {
+						$feature_off_sites[] = $site_id;
+					}
 						$record             = $this->state_store->get_record();
 						$record_generation  = is_array( $record ) ? $record['generation'] : 0;
 						$maximum_generation = max( $maximum_generation, $record_generation );
@@ -684,6 +691,10 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					}
 				}
 			);
+			if ( array() !== $feature_off_sites && null === $origin_plugin_file ) {
+				$this->log_error( 'WooPayments cutover: the network switch was not started because the WooPayments feature is off at some sites.', array( 'site_ids' => $feature_off_sites ) );
+				return false;
+			}
 			$highest_active_generation  = array() === $active_generations ? 0 : max( $active_generations );
 			$manual_supersedes_terminal = null !== $origin_plugin_file && null !== $origin_plugin_scope && in_array( $maximum_generation, $terminal_generations, true );
 			$generation                 = ! $manual_supersedes_terminal && $highest_active_generation >= $maximum_generation ? max( 1, $highest_active_generation ) : $maximum_generation + 1;

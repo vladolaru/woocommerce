@@ -6509,6 +6509,74 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A network start while the WooPayments feature is off at one runnable site writes no record on any site, and the start notice says why.
+	 * @group multisite
+	 */
+	public function test_network_start_needs_the_feature_on_at_every_site(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-feature-off.example.org' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		switch_to_blog( $second_site_id );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+		restore_current_blog();
+		$arbiter   = new class() extends WooPaymentsRuntimeArbiter {
+			/** The network-active extension owns payments on every site. */
+			public function is_extension_owner(): bool {
+				return true;
+			}
+		};
+		$preflight = $this->create_network_preflight_with_failures( array() );
+		$job       = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @var array<int,array<string,mixed>> */
+			public array $errors = array();
+
+			/**
+			 * Capture errors.
+			 *
+			 * @param string              $message Error message.
+			 * @param array<string,mixed> $context Error context.
+			 */
+			protected function write_log_error( string $message, array $context ): void {
+				$this->errors[] = array_merge( array( 'message' => $message ), $context );
+			}
+		};
+		$job->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight, $this->create_noop_normalization(), $this->create_inert_account_service() );
+		$this->jobs[] = $job;
+
+		try {
+			$this->assertFalse( $job->enqueue( 'merchant' ) );
+			$this->assertNull( $this->require_state_store()->get_record(), 'No record on the site where the feature is on.' );
+			switch_to_blog( $second_site_id );
+			$this->assertNull( $this->require_state_store()->get_record(), 'No record on the site where the feature is off.' );
+			restore_current_blog();
+			$this->assertSame( 0, $this->count_cutover_actions() );
+			$this->assertCount( 1, $job->errors );
+			$this->assertSame( array( $second_site_id ), $job->errors[0]['site_ids'] );
+
+			$this->register_legacy_proxy_function_mocks(
+				array(
+					'current_user_can' => static fn(): bool => true,
+				)
+			);
+			$controller = new WooPaymentsCutoverController();
+			$controller->init( $arbiter, wc_get_container()->get( LegacyProxy::class ), $preflight, $job );
+			ob_start();
+			$controller->output_admin_notices();
+			$notice = (string) ob_get_clean();
+
+			$this->assertStringContainsString( 'Start the switch', $notice );
+			$this->assertStringContainsString( 'the switch starts only when the WooPayments feature is on at every site', $notice );
+		} finally {
+			$this->reset_legacy_proxy_mocks();
+			while ( ms_is_switched() ) {
+				restore_current_blog();
+			}
+		}
+	}
+
+	/**
 	 * Create a job with a deterministic native-runtime answer.
 	 *
 	 * @param bool                                       $native_enabled     Whether native payments are enabled.

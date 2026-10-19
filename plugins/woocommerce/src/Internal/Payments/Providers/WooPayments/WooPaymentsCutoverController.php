@@ -254,7 +254,8 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			return true;
 		}
 
-		// A store manager who may start the switch asked for it and nothing was queued, for example while another request held the lease.
+		// A store manager who may start the switch asked for it and nothing was queued, for example while another request held
+		// the lease, or on a network where the WooPayments feature is off at some site.
 		$this->legacy_proxy->call_function( 'wc_get_logger' )->error( 'WooPayments cutover: the merchant asked to start the switch, but no reconciliation was queued.', array( 'source' => 'woocommerce-woopayments-cutover' ) );
 		$this->refuse_action();
 	}
@@ -421,6 +422,11 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			<p>
 				<?php esc_html_e( 'WooPayments is now part of WooCommerce. Start the switch: we will migrate what is needed and disable the WooPayments extension.', 'woocommerce' ); ?>
 			</p>
+			<?php if ( $this->is_woopayments_network_active() ) : ?>
+				<p>
+					<?php esc_html_e( 'The WooPayments extension is active across this network, so the switch starts only when the WooPayments feature is on at every site (WooCommerce > Settings > Advanced > Features).', 'woocommerce' ); ?>
+				</p>
+			<?php endif; ?>
 			<p>
 				<a class="button button-primary" href="<?php echo esc_url( $this->get_disable_url() ); ?>">
 					<?php esc_html_e( 'Start the switch', 'woocommerce' ); ?>
