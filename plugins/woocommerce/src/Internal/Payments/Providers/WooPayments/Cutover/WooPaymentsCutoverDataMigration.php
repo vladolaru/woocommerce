@@ -18,8 +18,9 @@ defined( 'ABSPATH' ) || exit;
  * Migrates the WooPayments extension's stored settings and options once per migration version: reshapes the shared gateway
  * settings, deletes retired options and transients, and clears retired cron events.
  *
- * Each setting, option and transient it removes carries the extension version that stopped reading it, so re-activating the
- * extension at the floor version still finds what it reads.
+ * Each retired setting, option and transient it removes carries the extension version that stopped reading it, so
+ * re-activating the extension at the floor version still finds what it reads. Appearance caches are deleted too; the extension
+ * rebuilds them.
  *
  * @since 11.2.0
  * @internal

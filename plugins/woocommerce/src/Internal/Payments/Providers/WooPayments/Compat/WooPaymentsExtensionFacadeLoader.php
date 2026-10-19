@@ -13,8 +13,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCl
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Declares the WooPayments extension's `WC_Payments` and `WC_Payments_Features` classes and `WCPAY_VERSION_NUMBER` on first
- * use while the built-in WooPayments owns payments, except in a request that is activating the extension.
+ * While the built-in WooPayments owns payments, defines `WCPAY_VERSION_NUMBER` and declares the WooPayments extension's
+ * `WC_Payments` and `WC_Payments_Features` classes on first use, except in a request that is activating the extension.
  *
  * Removed in WooCommerce 12.0.0.
  *

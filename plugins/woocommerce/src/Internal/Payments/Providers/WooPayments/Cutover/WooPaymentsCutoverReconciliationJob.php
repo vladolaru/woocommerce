@@ -444,8 +444,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Tell whether a completed record still shows a completion notice, which stays until a manager dismisses it.
 	 *
-	 * Only the success notice is ever due here, so dismissing any other notice name through dismiss_notice() records nothing.
-	 *
 	 * @param array<string,mixed>|null $record Cutover record.
 	 * @param string                   $notice One of the NOTICE_* constants.
 	 * @return bool
