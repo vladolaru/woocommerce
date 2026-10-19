@@ -3805,17 +3805,6 @@ function wc_update_11202_reset_refund_returning_customer_markers() {
 }
 
 /**
- * Enable the built-in WooPayments for stores upgrading to this release.
- *
- * @since 11.2.0
- *
- * @return void
- */
-function wc_update_11203_enable_builtin_woopayments(): void {
-	add_option( 'woocommerce_woopayments_builtin_enabled', 'yes', '', true );
-}
-
-/**
  * Seed the independent core multi-currency feature from prior WooPayments use.
  *
  * @since 11.2.0

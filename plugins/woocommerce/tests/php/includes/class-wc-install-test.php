@@ -5,6 +5,7 @@ use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Caches\ProductCountCache;
 use Automattic\WooCommerce\Enums\ProductStatus;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\RestApi\UnitTests\LoggerSpyTrait;
 
 /**
@@ -373,107 +374,73 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Fresh installs should enable native payments through create_options.
+	 * @testdox A fresh install holds the WooPayments feature off, autoloaded, and writes no other built-in WooPayments switch ($_dataName).
+	 * @dataProvider provide_fresh_install_account_caches
+	 *
+	 * @param array|null $account_cache A WooPayments account cache left from an earlier install, or null for none.
 	 */
-	public function test_create_options_enables_native_payments_for_fresh_installs(): void {
+	public function test_create_options_writes_the_woopayments_feature_off_on_fresh_installs( ?array $account_cache ): void {
 		$version        = false;
 		$supply_version = function () use ( &$version ) {
 			return $version;
 		};
-		delete_option( 'woocommerce_woopayments_builtin_enabled' );
-		add_filter( 'option_woocommerce_version', $supply_version );
-
-		try {
-			$this->invoke_create_options();
-
-			$this->assertSame( 'yes', get_option( 'woocommerce_woopayments_builtin_enabled' ) );
-			$this->assertArrayHasKey( 'woocommerce_woopayments_builtin_enabled', wp_load_alloptions() );
-		} finally {
-			remove_filter( 'option_woocommerce_version', $supply_version );
-			delete_option( 'woocommerce_woopayments_builtin_enabled' );
+		$options        = array( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'woocommerce_woopayments_builtin_enabled', 'woocommerce_woopayments_builtin_kill_switch' );
+		foreach ( $options as $option ) {
+			delete_option( $option );
 		}
-	}
-
-	/**
-	 * @testdox Fresh installs explicitly excluded by the cached platform payload should not enable native payments.
-	 */
-	public function test_create_options_does_not_enable_native_payments_for_platform_ineligible_fresh_installs(): void {
-		$version        = false;
-		$supply_version = function () use ( &$version ) {
-			return $version;
-		};
-		delete_option( 'woocommerce_woopayments_builtin_enabled' );
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data' => array(
-					'native_payments' => array(
-						'eligible' => false,
-						'cohort'   => 'holdback',
-						'reason'   => 'manual_hold',
-					),
-				),
-			)
-		);
+		if ( null !== $account_cache ) {
+			update_option( 'wcpay_account_data', $account_cache );
+		}
 		add_filter( 'option_woocommerce_version', $supply_version );
 
 		try {
 			$this->invoke_create_options();
 
+			$this->assertSame( 'no', get_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION ) );
+			$this->assertArrayHasKey( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, wp_load_alloptions( true ) );
 			$this->assertFalse( get_option( 'woocommerce_woopayments_builtin_enabled', false ) );
+			$this->assertFalse( get_option( 'woocommerce_woopayments_builtin_kill_switch', false ) );
 		} finally {
 			remove_filter( 'option_woocommerce_version', $supply_version );
 			delete_option( 'wcpay_account_data' );
-			delete_option( 'woocommerce_woopayments_builtin_enabled' );
+			foreach ( $options as $option ) {
+				delete_option( $option );
+			}
 		}
 	}
 
 	/**
-	 * @testdox Established installs should not receive the native payments default from create_options.
+	 * Account caches a fresh install can find: none, or one an earlier WooPayments install left behind.
+	 *
+	 * @return array<string,array{0:array|null}>
 	 */
-	public function test_create_options_does_not_enable_native_payments_for_established_installs(): void {
-		$version        = '10.8.0';
-		$shop_id        = 10;
-		$supply_version = function () use ( &$version ) {
-			return $version;
-		};
-		$supply_shop_id = function () use ( &$shop_id ) {
-			return $shop_id;
-		};
-		delete_option( 'woocommerce_woopayments_builtin_enabled' );
-		add_filter( 'option_woocommerce_version', $supply_version );
-		add_filter( 'woocommerce_get_shop_page_id', $supply_shop_id );
-
-		try {
-			$this->invoke_create_options();
-
-			$this->assertFalse( get_option( 'woocommerce_woopayments_builtin_enabled', false ) );
-		} finally {
-			remove_filter( 'option_woocommerce_version', $supply_version );
-			remove_filter( 'woocommerce_get_shop_page_id', $supply_shop_id );
-			delete_option( 'woocommerce_woopayments_builtin_enabled' );
-		}
+	public function provide_fresh_install_account_caches(): array {
+		return array(
+			'no account cache'       => array( null ),
+			'leftover account cache' => array(
+				array(
+					'data' => array(
+						'account_id' => 'acct_leftover',
+						'is_live'    => false,
+					),
+				),
+			),
+		);
 	}
 
 	/**
-	 * @testdox create_options seeds the native payments state and kill switch as autoloaded, so no request queries a missing option.
+	 * @testdox create_options seeds the built-in WooPayments setup tier as autoloaded, so no request queries a missing option.
 	 */
 	public function test_create_options_seeds_autoloaded_native_payments_runtime_options(): void {
 		delete_option( 'woocommerce_woopayments_setup_tier' );
-		delete_option( 'woocommerce_woopayments_builtin_kill_switch' );
 
 		try {
 			$this->invoke_create_options();
 
-			$alloptions = wp_load_alloptions( true );
-			$this->assertArrayHasKey( 'woocommerce_woopayments_setup_tier', $alloptions );
+			$this->assertArrayHasKey( 'woocommerce_woopayments_setup_tier', wp_load_alloptions( true ) );
 			$this->assertSame( 'disabled', get_option( 'woocommerce_woopayments_setup_tier' ) );
-			$this->assertArrayHasKey( 'woocommerce_woopayments_builtin_kill_switch', $alloptions );
-			$this->assertFalse( (bool) get_option( 'woocommerce_woopayments_builtin_kill_switch' ), 'The seeded kill switch must stay off.' );
-			$this->assertTrue( update_option( 'woocommerce_woopayments_builtin_kill_switch', false ), 'Tooling that writes false must still see a successful update.' );
 		} finally {
 			delete_option( 'woocommerce_woopayments_setup_tier' );
-			delete_option( 'woocommerce_woopayments_builtin_kill_switch' );
 		}
 	}
 
@@ -498,22 +465,19 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox create_options keeps an existing native payments state, kill switch and cutover record.
+	 * @testdox create_options keeps an existing built-in WooPayments setup tier and cutover record.
 	 */
 	public function test_create_options_keeps_existing_native_payments_runtime_options(): void {
 		update_option( 'woocommerce_woopayments_setup_tier', 'active', true );
-		update_option( 'woocommerce_woopayments_builtin_kill_switch', '1', true );
 		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, array( 'state' => 'done' ), true );
 
 		try {
 			$this->invoke_create_options();
 
 			$this->assertSame( 'active', get_option( 'woocommerce_woopayments_setup_tier' ) );
-			$this->assertSame( '1', get_option( 'woocommerce_woopayments_builtin_kill_switch' ) );
 			$this->assertSame( array( 'state' => 'done' ), get_option( WooPaymentsCutoverStateStore::OPTION_NAME ) );
 		} finally {
 			delete_option( 'woocommerce_woopayments_setup_tier' );
-			delete_option( 'woocommerce_woopayments_builtin_kill_switch' );
 			delete_option( WooPaymentsCutoverStateStore::OPTION_NAME );
 		}
 	}
@@ -527,9 +491,8 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 	public function test_create_options_keeps_native_payments_values_written_after_a_missed_read(): void {
 		global $wpdb;
 		$written = array(
-			'woocommerce_woopayments_setup_tier'          => 'active',
-			'woocommerce_woopayments_builtin_kill_switch' => '1',
-			WooPaymentsCutoverStateStore::OPTION_NAME     => maybe_serialize(
+			'woocommerce_woopayments_setup_tier'      => 'active',
+			WooPaymentsCutoverStateStore::OPTION_NAME => maybe_serialize(
 				array(
 					'state'      => 'pending',
 					'generation' => 1,
@@ -541,14 +504,13 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 			foreach ( $written as $name => $value ) {
 				delete_option( $name );
 				$this->assertFalse( get_option( $name ), "{$name} should start missing, which primes the notoptions cache." );
-				// Another request writes the value; this request's caches still say it is missing. The kill switch
-				// row is not autoloaded, so only a cleared notoptions entry lets this request read it.
+				// Another request writes the value; this request's caches still say it is missing.
 				$wpdb->insert(
 					$wpdb->options,
 					array(
 						'option_name'  => $name,
 						'option_value' => $value,
-						'autoload'     => 'woocommerce_woopayments_builtin_kill_switch' === $name ? 'off' : 'on',
+						'autoload'     => 'on',
 					)
 				);
 			}

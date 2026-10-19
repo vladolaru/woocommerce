@@ -362,9 +362,6 @@ class WC_Install {
 		'11.2.0-2' => array(
 			'wc_update_11202_reset_refund_returning_customer_markers',
 		),
-		'11.2.0-3' => array(
-			'wc_update_11203_enable_builtin_woopayments',
-		),
 		'11.2.0-4' => array(
 			'wc_update_11204_seed_multi_currency_feature',
 		),
@@ -1288,22 +1285,12 @@ class WC_Install {
 		add_option( 'woocommerce_checkout_highlight_required_fields', 'yes', '', 'yes' );
 		add_option( 'woocommerce_demo_store', 'no', '', 'no' );
 
-		// The built-in WooPayments reads these on every request; autoloaded defaults keep dormant stores from querying missing options.
+		// The built-in WooPayments reads its setup tier and cutover record on every request; autoloaded defaults keep dormant stores from querying missing options.
 		self::seed_autoloaded_option( 'woocommerce_woopayments_setup_tier', 'disabled' );
-		self::seed_autoloaded_option( 'woocommerce_woopayments_builtin_kill_switch', '0' );
 		// WooPaymentsCutoverStateStore::ABSENT_RECORD: admin and cron requests read the cutover record.
 		self::seed_autoloaded_option( 'woocommerce_woopayments_cutover_state', 'none' );
 
 		if ( self::is_new_install() ) {
-			$account_cache       = get_option( 'wcpay_account_data', array() );
-			$account_data        = is_array( $account_cache ) && is_array( $account_cache['data'] ?? null ) ? $account_cache['data'] : array();
-			$builtin_eligibility = $account_data['native_payments'] ?? null;
-			$builtin_eligible    = ! is_array( $builtin_eligibility ) || false !== ( $builtin_eligibility['eligible'] ?? null );
-
-			if ( $builtin_eligible ) {
-				add_option( 'woocommerce_woopayments_builtin_enabled', 'yes', '', true );
-			}
-
 			// Define initial tax classes.
 			WC_Tax::create_tax_class( __( 'Reduced rate', 'woocommerce' ) );
 			WC_Tax::create_tax_class( __( 'Zero rate', 'woocommerce' ) );
