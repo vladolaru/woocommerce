@@ -399,10 +399,10 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	 * @testdox has_run_woopayments_extension() counts only the extension's version option ($_dataName).
 	 * @dataProvider provide_extension_evidence
 	 *
-	 * @param bool $version_recorded Whether the extension's version option is stored.
-	 * @param bool $expected         Whether the store reads as having run the extension.
+	 * @param string|null $version_recorded The extension's stored version option, or null when absent.
+	 * @param bool        $expected         Whether the store reads as having run the extension.
 	 */
-	public function test_has_run_woopayments_extension_counts_only_the_version_option( bool $version_recorded, bool $expected ): void {
+	public function test_has_run_woopayments_extension_counts_only_the_version_option( ?string $version_recorded, bool $expected ): void {
 		$order = wc_create_order();
 		$order->set_payment_method( 'woocommerce_payments' );
 		$order->save();
@@ -415,8 +415,8 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$token->set_expiry_month( '12' );
 		$token->set_expiry_year( '2030' );
 		$token->save();
-		if ( $version_recorded ) {
-			update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
+		if ( null !== $version_recorded ) {
+			update_option( 'woocommerce_woocommerce_payments_version', $version_recorded );
 		} else {
 			delete_option( 'woocommerce_woocommerce_payments_version' );
 		}
@@ -427,12 +427,16 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	/**
 	 * Stores with a built-in WooPayments order and token, with and without the extension's version option.
 	 *
-	 * @return array<string,array{0:bool,1:bool}>
+	 * Any recorded version counts, including one below the switch's minimum: the guard asks whether the extension ran, not
+	 * whether the store can switch.
+	 *
+	 * @return array<string,array{0:string|null,1:bool}>
 	 */
 	public function provide_extension_evidence(): array {
 		return array(
-			'version option recorded'         => array( true, true ),
-			'only built-in orders and tokens' => array( false, false ),
+			'version option recorded'                   => array( '11.1.0', true ),
+			'version below the switch minimum recorded' => array( '10.4.9', true ),
+			'only built-in orders and tokens'           => array( null, false ),
 		);
 	}
 }
