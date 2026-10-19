@@ -125,10 +125,14 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * @return array<string,array<string,array<int,class-string>>> Root classes in registration order.
 	 */
 	public static function get_classes_by_setup_tier(): array {
+		// The cutover from the WooPayments extension adds these roots; every row that needs one reads it from here.
+		$cutover_admin         = array( WooPaymentsCutoverController::class, WooPaymentsCutoverReconciliationJob::class );
+		$cutover_cron          = array( WooPaymentsCutoverReconciliationJob::class );
+		$cutover_every_request = array( WooPaymentsCutoverPluginLifecycleListener::class );
+
 		$connected_rest_controllers = WooPaymentsAdminRestRouteRegistrar::get_connected_controller_roots();
 		$connected_admin            = array(
-			WooPaymentsCutoverController::class,
-			WooPaymentsCutoverReconciliationJob::class,
+			...$cutover_admin,
 			WooPaymentsAdminNavigationController::class,
 			WooPaymentsAdminSharedSettings::class,
 			WooPaymentsAdminRestRouteRegistrar::class,
@@ -195,7 +199,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			)
 		);
 		$connected_cron             = array(
-			WooPaymentsCutoverReconciliationJob::class,
+			...$cutover_cron,
 			WooPaymentsAccountService::class,
 			WooPaymentsWebhookReliabilityService::class,
 			WooPaymentsStoreSetupReportController::class,
@@ -224,8 +228,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 
 		$matrix = array(
 			WooPaymentsSetupTier::AVAILABLE => array(
-				'admin' => array( WooPaymentsCutoverController::class, WooPaymentsCutoverReconciliationJob::class ),
-				'cron'  => array( WooPaymentsCutoverReconciliationJob::class ),
+				'admin' => $cutover_admin,
+				'cron'  => $cutover_cron,
 			),
 			WooPaymentsSetupTier::CONNECTED => array(
 				// The VAT details link lands on a front-end URL (client 11.1.0 `includes/class-wc-payments-vat-redirect-service.php:25`).
@@ -321,7 +325,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		// (`woocommerce-payments.php:67-68`); the listener resolves the cutover controller only when a plugin changes.
 		foreach ( array( WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
-				$matrix[ $state ][ $request ][] = WooPaymentsCutoverPluginLifecycleListener::class;
+				$matrix[ $state ][ $request ] = array_merge( $matrix[ $state ][ $request ] ?? array(), $cutover_every_request );
 			}
 		}
 
