@@ -151,11 +151,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	private WooPaymentsCutoverPreflightService $preflight_service;
 
 	/**
-	 * Cutover normalization runner.
+	 * Cutover data migration.
 	 *
-	 * @var WooPaymentsCutoverNormalizationRunner
+	 * @var WooPaymentsCutoverDataMigration
 	 */
-	private WooPaymentsCutoverNormalizationRunner $normalization_runner;
+	private WooPaymentsCutoverDataMigration $data_migration;
 
 	/**
 	 * WooPayments account state.
@@ -183,20 +183,20 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter             $arbiter          Runtime owner arbiter.
-	 * @param WooPaymentsCutoverStateStore          $state_store      Persisted state store.
-	 * @param WooPaymentsCutoverActionScheduler     $scheduler        Action Scheduler adapter.
-	 * @param WooPaymentsCutoverPreflightService    $preflight_service   Headless cutover facts.
-	 * @param WooPaymentsCutoverNormalizationRunner $normalization_runner Cutover normalization runner.
-	 * @param WooPaymentsAccountService             $account_service     WooPayments account state.
+	 * @param WooPaymentsRuntimeArbiter          $arbiter          Runtime owner arbiter.
+	 * @param WooPaymentsCutoverStateStore       $state_store      Persisted state store.
+	 * @param WooPaymentsCutoverActionScheduler  $scheduler        Action Scheduler adapter.
+	 * @param WooPaymentsCutoverPreflightService $preflight_service   Headless cutover facts.
+	 * @param WooPaymentsCutoverDataMigration    $data_migration Cutover data migration.
+	 * @param WooPaymentsAccountService          $account_service     WooPayments account state.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsCutoverStateStore $state_store, WooPaymentsCutoverActionScheduler $scheduler, WooPaymentsCutoverPreflightService $preflight_service, WooPaymentsCutoverNormalizationRunner $normalization_runner, WooPaymentsAccountService $account_service ): void {
-		$this->arbiter              = $arbiter;
-		$this->state_store          = $state_store;
-		$this->scheduler            = $scheduler;
-		$this->preflight_service    = $preflight_service;
-		$this->normalization_runner = $normalization_runner;
-		$this->account_service      = $account_service;
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsCutoverStateStore $state_store, WooPaymentsCutoverActionScheduler $scheduler, WooPaymentsCutoverPreflightService $preflight_service, WooPaymentsCutoverDataMigration $data_migration, WooPaymentsAccountService $account_service ): void {
+		$this->arbiter           = $arbiter;
+		$this->state_store       = $state_store;
+		$this->scheduler         = $scheduler;
+		$this->preflight_service = $preflight_service;
+		$this->data_migration    = $data_migration;
+		$this->account_service   = $account_service;
 		if ( null === self::$request_token ) {
 			self::$request_token = wp_generate_uuid4();
 		}
@@ -846,7 +846,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 */
 	private function prepare_finalization_claim( array $claimed, array $outcomes ): ?array {
 		try {
-			$result = $this->normalization_runner->run();
+			$result = $this->data_migration->run();
 		} catch ( \Throwable $error ) {
 			$this->log_error( 'WooPayments cutover normalization failed.', array( 'error' => $error->getMessage() ) );
 			$this->defer( $claimed, array( self::CODE_DATA_MIGRATION_FAILED ), $outcomes );

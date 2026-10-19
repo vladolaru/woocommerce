@@ -19,7 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverNormalizationRunner;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverDataMigration;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
@@ -352,7 +352,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				return ! $this->is_woopayments_network_active();
 			}
 		};
-		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
+		$normalization = new class() extends WooPaymentsCutoverDataMigration {
 			/** @var int */
 			private int $run_count = 0;
 
@@ -563,7 +563,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 		};
 		// The data migration runs right before the fence; another request takes the write lock in between.
-		$normalization = new class( $busy, $this->require_state_store() ) extends WooPaymentsCutoverNormalizationRunner {
+		$normalization = new class( $busy, $this->require_state_store() ) extends WooPaymentsCutoverDataMigration {
 			/** @var string|null */
 			private $busy;
 
@@ -829,7 +829,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				return ! $this->is_woopayments_network_active();
 			}
 		};
-		$migration          = new class( $migration_runs ) extends WooPaymentsCutoverNormalizationRunner {
+		$migration          = new class( $migration_runs ) extends WooPaymentsCutoverDataMigration {
 			/** @var int */
 			private int $runs;
 
@@ -1037,7 +1037,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				return ! $this->is_woopayments_network_active();
 			}
 		};
-		$migration         = new class( $migration_runs, $during_run ) extends WooPaymentsCutoverNormalizationRunner {
+		$migration         = new class( $migration_runs, $during_run ) extends WooPaymentsCutoverDataMigration {
 			/** @var int */
 			private int $runs;
 
@@ -1198,7 +1198,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$deactivations = 0;
 		$preflight     = $this->create_deactivation_counting_preflight( $deactivations );
 		$during_run    = null;
-		$migration     = new class( $during_run ) extends WooPaymentsCutoverNormalizationRunner {
+		$migration     = new class( $during_run ) extends WooPaymentsCutoverDataMigration {
 			/** @var callable|null */
 			private $during_run;
 
@@ -1399,7 +1399,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	public function test_switch_first_attempted_after_the_retry_window_still_finishes(): void {
 		$this->arrange_plugin_era_store();
 		$preflight     = $this->create_plugin_deactivating_preflight();
-		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
+		$normalization = new class() extends WooPaymentsCutoverDataMigration {
 			/** @return array{ran:bool,changes:string[]} */
 			public function run(): array {
 				return array(
@@ -1575,7 +1575,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		delete_option( 'woocommerce_woopayments_cutover_normalization_version' );
 		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
-		$normalization = new WooPaymentsCutoverNormalizationRunner();
+		$normalization = new WooPaymentsCutoverDataMigration();
 		$normalization->init( wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
 		$sut = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true, $normalization );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
@@ -1638,7 +1638,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		delete_option( 'woocommerce_woopayments_cutover_normalization_version' );
 		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
-		$normalization = new WooPaymentsCutoverNormalizationRunner();
+		$normalization = new WooPaymentsCutoverDataMigration();
 		$normalization->init( wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
 		$sut = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true, $normalization );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
@@ -1772,7 +1772,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		delete_option( 'woocommerce_woopayments_cutover_normalization_version' );
 		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
-		$normalization = new WooPaymentsCutoverNormalizationRunner();
+		$normalization = new WooPaymentsCutoverDataMigration();
 		$normalization->init( wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
 		$sut = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true, $normalization );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
@@ -1894,7 +1894,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$verification['next_attempt_at']      = time() + MINUTE_IN_SECONDS;
 		$verification['request_origin_token'] = 'previous-request-token';
 		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $queued, $verification ) );
-		$arbiter              = new class() extends WooPaymentsRuntimeArbiter {
+		$arbiter        = new class() extends WooPaymentsRuntimeArbiter {
 			/** Return an enabled native runtime. */
 			public function is_builtin_enabled(): bool {
 				return true;
@@ -1905,8 +1905,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				throw new \RuntimeException( 'Expected ownership probe failure.' );
 			}
 		};
-		$sut                  = new WooPaymentsCutoverReconciliationJob();
-		$normalization_runner = new class() extends WooPaymentsCutoverNormalizationRunner {
+		$sut            = new WooPaymentsCutoverReconciliationJob();
+		$data_migration = new class() extends WooPaymentsCutoverDataMigration {
 			/** Return a controlled persistence failure. */
 			public function run(): array {
 				return array(
@@ -1915,7 +1915,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight, $normalization_runner, $this->create_inert_account_service() );
+		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight, $data_migration, $this->create_inert_account_service() );
 		$this->jobs[] = $sut;
 
 		$sut->handle_reconcile( $verification['generation'], 2 );
@@ -2278,10 +2278,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a normalization runner that changes nothing.
 	 *
-	 * @return WooPaymentsCutoverNormalizationRunner
+	 * @return WooPaymentsCutoverDataMigration
 	 */
-	private function create_noop_normalization(): WooPaymentsCutoverNormalizationRunner {
-		return new class() extends WooPaymentsCutoverNormalizationRunner {
+	private function create_noop_normalization(): WooPaymentsCutoverDataMigration {
+		return new class() extends WooPaymentsCutoverDataMigration {
 			/** @return array{ran:bool,changes:string[]} */
 			public function run(): array {
 				return array(
@@ -3289,7 +3289,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 		};
 		$migrations    = 0;
-		$migration     = new class( $migrations ) extends WooPaymentsCutoverNormalizationRunner {
+		$migration     = new class( $migrations ) extends WooPaymentsCutoverDataMigration {
 			/** @var int */
 			private int $runs;
 
@@ -3725,7 +3725,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				return $this->errors;
 			}
 		};
-		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
+		$normalization = new class() extends WooPaymentsCutoverDataMigration {
 			/** @return array{ran:bool,changes:string[]} */
 			public function run(): array {
 				return array(
@@ -4771,7 +4771,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsCutoverReconciliationJob
 	 */
 	private function create_state_writing_job( bool $plugin_active, WooPaymentsCutoverPreflightService $preflight ): WooPaymentsCutoverReconciliationJob {
-		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
+		$normalization = new class() extends WooPaymentsCutoverDataMigration {
 			/** @return array{ran:bool,changes:string[]} */
 			public function run(): array {
 				return array(
@@ -4821,15 +4821,15 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a job with a deterministic native-runtime answer.
 	 *
-	 * @param bool                                       $feature_on        Whether the WooPayments feature is on.
-	 * @param WooPaymentsCutoverPreflightService|null    $preflight_service Controlled preflight facts, when needed.
-	 * @param WooPaymentsCutoverReconciliationJob|null   $job               Job instance, when a test needs a narrow override.
-	 * @param bool                                       $plugin_active     Whether the plugin owns the runtime.
-	 * @param WooPaymentsCutoverNormalizationRunner|null $normalization_runner Controlled normalization runner.
-	 * @param WooPaymentsAccountService|null             $account_service  Account service, when a test needs the real state writer.
+	 * @param bool                                     $feature_on        Whether the WooPayments feature is on.
+	 * @param WooPaymentsCutoverPreflightService|null  $preflight_service Controlled preflight facts, when needed.
+	 * @param WooPaymentsCutoverReconciliationJob|null $job               Job instance, when a test needs a narrow override.
+	 * @param bool                                     $plugin_active     Whether the plugin owns the runtime.
+	 * @param WooPaymentsCutoverDataMigration|null     $data_migration Controlled normalization runner.
+	 * @param WooPaymentsAccountService|null           $account_service  Account service, when a test needs the real state writer.
 	 * @return WooPaymentsCutoverReconciliationJob
 	 */
-	private function create_job( bool $feature_on, ?WooPaymentsCutoverPreflightService $preflight_service = null, ?WooPaymentsCutoverReconciliationJob $job = null, bool $plugin_active = true, ?WooPaymentsCutoverNormalizationRunner $normalization_runner = null, ?WooPaymentsAccountService $account_service = null ): WooPaymentsCutoverReconciliationJob {
+	private function create_job( bool $feature_on, ?WooPaymentsCutoverPreflightService $preflight_service = null, ?WooPaymentsCutoverReconciliationJob $job = null, bool $plugin_active = true, ?WooPaymentsCutoverDataMigration $data_migration = null, ?WooPaymentsAccountService $account_service = null ): WooPaymentsCutoverReconciliationJob {
 		$arbiter = new class( $feature_on, $plugin_active ) extends WooPaymentsRuntimeArbiter {
 			/** @var bool */
 			private bool $feature_on;
@@ -4871,7 +4871,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$job               = $job ?? new WooPaymentsCutoverReconciliationJob();
 		$preflight_service = $preflight_service ?? $this->preflight_service;
 		$this->assertInstanceOf( WooPaymentsCutoverPreflightService::class, $preflight_service );
-		$normalization_runner = $normalization_runner ?? new class() extends WooPaymentsCutoverNormalizationRunner {
+		$data_migration = $data_migration ?? new class() extends WooPaymentsCutoverDataMigration {
 			/** Return a controlled persistence failure for tests that do not exercise finalization. */
 			public function run(): array {
 				return array(
@@ -4880,7 +4880,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$job->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight_service, $normalization_runner, $account_service ?? $this->create_inert_account_service() );
+		$job->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight_service, $data_migration, $account_service ?? $this->create_inert_account_service() );
 		$this->jobs[] = $job;
 
 		return $job;

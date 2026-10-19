@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsCutoverNormalizationRunner class file.
+ * WooPaymentsCutoverDataMigration class file.
  */
 
 declare( strict_types = 1 );
@@ -15,53 +15,28 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * One-shot native WooPayments option normalization for plugin-to-core cutover.
+ * Migrates the WooPayments extension's stored settings and options once per migration version: reshapes the shared gateway
+ * settings, deletes retired options and transients, and clears retired cron events.
  *
- * Extension migration audit:
- * - class-add-amazon-pay-to-express-checkout-locations.php: PORT. Adds `amazon_pay`
- *   to existing location-centric express-checkout settings for pre-10.5 installs.
- * - class-additional-payment-methods-admin-notes-removal.php: OBSOLETE. Extension
- *   admin-note cleanup is not a native cutover settings dependency.
- * - class-allowed-payment-request-button-sizes-update.php: PORT. Normalizes old
- *   `default` button size to `small` for pre-6.9 installs.
- * - class-allowed-payment-request-button-types-update.php: PORT. Maps deprecated
- *   `branded`/`custom` button types to current values.
- * - class-delete-active-woopay-webhook.php: OBSOLETE. Native preserves the
- *   `order.status_changed` topic so existing WooPay webhook rows remain valid.
- * - class-delete-appearance-transients.php: PORT. Deletes stale UPE appearance
- *   transients that are safe local cache state.
- * - class-erase-bnpl-announcement-meta.php: PORT. Deletes stale April 2024 BNPL
- *   announcement transient and user meta.
- * - class-erase-deprecated-flags-and-options.php: PORT. Deletes stale feature flags.
- * - class-gateway-settings-sync.php: PORT. Canonical settings are projected to
- *   every existing or enabled split gateway through the shared synchronizer.
- * - class-link-woopay-mutual-exclusion-handler.php: PORT. Removes Link when WooPay
- *   is enabled, including native express-checkout location arrays.
- * - class-manual-capture-payment-method-settings-update.php: PORT WITH NATIVE
- *   ADJUSTMENT. Uses native's current manual-capture-safe method list.
- * - class-migrate-express-checkout-locations.php: PORT. Converts old method-centric
- *   express-checkout location arrays to current location-centric arrays.
- * - class-migrate-payment-request-to-express-checkout-enabled.php: PORT. Writes
- *   split Apple Pay / Google Pay settings and removes the obsolete card switch.
- * - class-multi-currency-cache-autodetect-existing-install.php: PORT. Marks existing
- *   installs as already auto-detected so cutover does not change rendering mode.
- * - class-payment-method-deprecation-settings-update.php: PORT. Discontinued
- *   giropay/sofort IDs are removed and any existing split gateways are disabled.
- * - class-update-service-data-from-server.php: OBSOLETE. Live account refreshes
- *   belong to native account services, not first-request option normalization.
- * - class-wc-payments-remediate-canceled-auth-fees.php: OBSOLETE. Already ported as
- *   WooPaymentsCanceledAuthorizationFeeRemediationService.
+ * Each setting, option and transient it removes carries the extension version that stopped reading it, so re-activating the
+ * extension at the floor version still finds what it reads.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
-class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
+class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 
 	private const VERSION_OPTION = 'woocommerce_woocommerce_payments_version';
 
-	private const NORMALIZED_OPTION = 'woocommerce_woopayments_cutover_normalization_version';
+	/**
+	 * Option holding the completed migration version. Its stored name keeps "normalization", so migrated stores do not migrate again.
+	 */
+	private const MIGRATION_VERSION_OPTION = 'woocommerce_woopayments_cutover_normalization_version';
 
-	private const NORMALIZATION_VERSION = '4';
+	/**
+	 * Migration version stored in MIGRATION_VERSION_OPTION.
+	 */
+	private const MIGRATION_VERSION = '4';
 
 	private const LOCATIONS = array( 'product', 'cart', 'checkout' );
 
@@ -205,11 +180,11 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 	 * @return array{ran:bool,changes:string[]}
 	 */
 	public function run(): array {
-		$completed_normalization_version = (string) get_option( self::NORMALIZED_OPTION, '' );
-		if ( self::NORMALIZATION_VERSION === $completed_normalization_version ) {
+		$completed_normalization_version = (string) get_option( self::MIGRATION_VERSION_OPTION, '' );
+		if ( self::MIGRATION_VERSION === $completed_normalization_version ) {
 			$alloptions = wp_load_alloptions();
-			if ( ! array_key_exists( self::NORMALIZED_OPTION, $alloptions ) ) {
-				wp_set_option_autoload( self::NORMALIZED_OPTION, true );
+			if ( ! array_key_exists( self::MIGRATION_VERSION_OPTION, $alloptions ) ) {
+				wp_set_option_autoload( self::MIGRATION_VERSION_OPTION, true );
 			}
 
 			return array(
@@ -259,20 +234,20 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 			}
 		}
 
-		$projection = $this->gateway_settings_synchronizer->persist( $settings );
-		if ( ! $projection['persisted'] ) {
-			$this->log_persistence_failure( $projection['failed_option_names'] );
+		$persisted = $this->gateway_settings_synchronizer->persist( $settings );
+		if ( ! $persisted['persisted'] ) {
+			$this->log_persistence_failure( $persisted['failed_option_names'] );
 
 			return array(
 				'ran'     => false,
 				'changes' => array( 'settings_persistence_failed' ),
 			);
 		}
-		$settings = $projection['settings'];
-		if ( ! empty( $projection['removed_discontinued_method_ids'] ) ) {
+		$settings = $persisted['settings'];
+		if ( ! empty( $persisted['removed_discontinued_method_ids'] ) ) {
 			$changes[] = 'discontinued_payment_methods';
 		}
-		if ( ! empty( $projection['updated_split_options'] ) ) {
+		if ( ! empty( $persisted['updated_split_options'] ) ) {
 			$changes[] = 'split_gateway_settings';
 		}
 
@@ -294,15 +269,15 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 			}
 		}
 
-		if ( $this->clear_legacy_woopay_compatibility_cron() ) {
-			$changes[] = 'legacy_woopay_compatibility_cron';
+		if ( $this->clear_retired_woopay_compatibility_cron() ) {
+			$changes[] = 'retired_woopay_compatibility_cron';
 		}
 
 		if ( $this->clear_retired_jetpack_sync_cron() ) {
 			$changes[] = 'retired_jetpack_sync_cron';
 		}
 
-		update_option( self::NORMALIZED_OPTION, self::NORMALIZATION_VERSION, true );
+		update_option( self::MIGRATION_VERSION_OPTION, self::MIGRATION_VERSION, true );
 
 		if ( empty( $changes ) ) {
 			$changes[] = 'no_changes';
@@ -324,7 +299,7 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 	 *
 	 * @return bool Whether an event was cleared.
 	 */
-	private function clear_legacy_woopay_compatibility_cron(): bool {
+	private function clear_retired_woopay_compatibility_cron(): bool {
 		if ( false === wp_next_scheduled( 'validate_woopay_compatibility' ) ) {
 			return false;
 		}

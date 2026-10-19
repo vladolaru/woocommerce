@@ -18,7 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsConnectionFeatures;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminRestRouteRegistrar;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverNormalizationRunner;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverDataMigration;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPluginLifecycleListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -166,11 +166,11 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 	public function test_active_provider_matrix_bounds_cutover_normalization_to_maintenance_roots(): void {
 		$active_roots = WooPaymentsProvider::get_classes_by_setup_tier()[ WooPaymentsSetupTier::ACTIVE ];
 
-		$this->assertNotContains( WooPaymentsCutoverNormalizationRunner::class, $active_roots['front'], 'A shopper request must not run cutover normalization.' );
-		$this->assertNotContains( WooPaymentsCutoverNormalizationRunner::class, $active_roots['ajax'], 'An AJAX shopper request must not run cutover normalization.' );
-		$this->assertNotContains( WooPaymentsCutoverNormalizationRunner::class, $active_roots['rest'], 'A REST shopper request must not run cutover normalization.' );
-		$this->assertSame( WooPaymentsCutoverNormalizationRunner::class, $active_roots['admin'][0], 'Admin cutover normalization must run before bounded native consumers.' );
-		$this->assertSame( WooPaymentsCutoverNormalizationRunner::class, $active_roots['cron'][0], 'Cron cutover normalization must run before bounded native consumers.' );
+		$this->assertNotContains( WooPaymentsCutoverDataMigration::class, $active_roots['front'], 'A shopper request must not run cutover normalization.' );
+		$this->assertNotContains( WooPaymentsCutoverDataMigration::class, $active_roots['ajax'], 'An AJAX shopper request must not run cutover normalization.' );
+		$this->assertNotContains( WooPaymentsCutoverDataMigration::class, $active_roots['rest'], 'A REST shopper request must not run cutover normalization.' );
+		$this->assertSame( WooPaymentsCutoverDataMigration::class, $active_roots['admin'][0], 'Admin cutover normalization must run before bounded native consumers.' );
+		$this->assertSame( WooPaymentsCutoverDataMigration::class, $active_roots['cron'][0], 'Cron cutover normalization must run before bounded native consumers.' );
 	}
 
 	/** @testdox Cutover reconciliation is registered only on admin and cron roots in every available setup tier. */

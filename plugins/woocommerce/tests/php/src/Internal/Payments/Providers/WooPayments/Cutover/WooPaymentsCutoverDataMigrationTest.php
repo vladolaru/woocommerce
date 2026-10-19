@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Cutover;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverNormalizationRunner;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverDataMigration;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use WC_Unit_Test_Case;
@@ -11,13 +11,13 @@ use WC_Unit_Test_Case;
 /**
  * Tests for the native WooPayments cutover normalization runner.
  */
-class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
+class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 
 	private const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
 
 	private const VERSION_OPTION = 'woocommerce_woocommerce_payments_version';
 
-	private const NORMALIZED_OPTION = 'woocommerce_woopayments_cutover_normalization_version';
+	private const MIGRATION_VERSION_OPTION = 'woocommerce_woopayments_cutover_normalization_version';
 
 	/**
 	 * Shared settings keys native does not know, one per value shape; normalization must keep them as they are.
@@ -62,7 +62,7 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 	/**
 	 * System under test.
 	 *
-	 * @var WooPaymentsCutoverNormalizationRunner|null
+	 * @var WooPaymentsCutoverDataMigration|null
 	 */
 	private $runner = null;
 
@@ -77,13 +77,13 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		if ( $this->runner instanceof WooPaymentsCutoverNormalizationRunner ) {
+		if ( $this->runner instanceof WooPaymentsCutoverDataMigration ) {
 			remove_action( 'init', array( $this->runner, 'maybe_run' ), 1 );
 		}
 
 		delete_option( self::SETTINGS_OPTION );
 		delete_option( self::VERSION_OPTION );
-		delete_option( self::NORMALIZED_OPTION );
+		delete_option( self::MIGRATION_VERSION_OPTION );
 		delete_option( 'woocommerce_woocommerce_payments_apple_pay_settings' );
 		delete_option( 'woocommerce_woocommerce_payments_google_pay_settings' );
 		delete_option( 'woocommerce_woocommerce_payments_ideal_settings' );
@@ -146,7 +146,7 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 		$expected_split_settings = array( 'enabled' => 'yes' );
 		$this->assertSame( $expected_split_settings, get_option( 'woocommerce_woocommerce_payments_apple_pay_settings' ) );
 		$this->assertSame( $expected_split_settings, get_option( 'woocommerce_woocommerce_payments_google_pay_settings' ) );
-		$this->assertSame( '4', get_option( self::NORMALIZED_OPTION ) );
+		$this->assertSame( '4', get_option( self::MIGRATION_VERSION_OPTION ) );
 
 		$second_summary = $this->create_runner()->run();
 
@@ -162,30 +162,30 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 		$alloptions = wp_load_alloptions( true );
 
 		$this->assertTrue( $summary['ran'] );
-		$this->assertSame( '4', $alloptions[ self::NORMALIZED_OPTION ] ?? null, 'Completed cutover normalization must not leave its marker as a request-level option read.' );
+		$this->assertSame( '4', $alloptions[ self::MIGRATION_VERSION_OPTION ] ?? null, 'Completed cutover normalization must not leave its marker as a request-level option read.' );
 	}
 
 	/**
 	 * @testdox Repairs a historical non-autoloaded marker without rerunning cutover normalization.
 	 */
 	public function test_run_repairs_historical_non_autoloaded_marker_without_rerunning_normalization(): void {
-		add_option( self::NORMALIZED_OPTION, '4', '', false );
+		add_option( self::MIGRATION_VERSION_OPTION, '4', '', false );
 
-		$this->assertArrayNotHasKey( self::NORMALIZED_OPTION, wp_load_alloptions( true ), 'The historical marker fixture must begin outside alloptions.' );
+		$this->assertArrayNotHasKey( self::MIGRATION_VERSION_OPTION, wp_load_alloptions( true ), 'The historical marker fixture must begin outside alloptions.' );
 
 		$summary    = $this->create_runner()->run();
 		$alloptions = wp_load_alloptions( true );
 
 		$this->assertFalse( $summary['ran'] );
 		$this->assertSame( array( 'already_normalized' ), $summary['changes'] );
-		$this->assertSame( '4', $alloptions[ self::NORMALIZED_OPTION ] ?? null, 'An existing cutover marker must be repaired into alloptions.' );
+		$this->assertSame( '4', $alloptions[ self::MIGRATION_VERSION_OPTION ] ?? null, 'An existing cutover marker must be repaired into alloptions.' );
 	}
 
 	/**
 	 * @testdox Reruns only discontinued method cleanup for the previous completed marker.
 	 */
 	public function test_run_reruns_discontinued_method_cleanup_from_previous_completed_marker(): void {
-		update_option( self::NORMALIZED_OPTION, '3' );
+		update_option( self::MIGRATION_VERSION_OPTION, '3' );
 		update_option( self::VERSION_OPTION, '10.4.0' );
 		update_option(
 			self::SETTINGS_OPTION,
@@ -224,7 +224,7 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 			),
 			get_option( 'woocommerce_woocommerce_payments_sofort_settings' )
 		);
-		$this->assertSame( '4', wp_load_alloptions( true )[ self::NORMALIZED_OPTION ] ?? null );
+		$this->assertSame( '4', wp_load_alloptions( true )[ self::MIGRATION_VERSION_OPTION ] ?? null );
 
 		$second_summary = $this->create_runner()->run();
 
@@ -237,7 +237,7 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_run_retries_discontinued_method_cleanup_after_split_gateway_write_failure(): void {
 		$option_name = 'woocommerce_woocommerce_payments_sofort_settings';
-		update_option( self::NORMALIZED_OPTION, '3' );
+		update_option( self::MIGRATION_VERSION_OPTION, '3' );
 		update_option(
 			self::SETTINGS_OPTION,
 			array(
@@ -263,7 +263,7 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( $failed_summary['ran'] );
 		$this->assertSame( array( 'settings_persistence_failed' ), $failed_summary['changes'] );
-		$this->assertSame( '3', get_option( self::NORMALIZED_OPTION ) );
+		$this->assertSame( '3', get_option( self::MIGRATION_VERSION_OPTION ) );
 		$this->assertSame( array( 'card' ), get_option( self::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
 		$this->assertSame( array( 'card' ), get_option( self::SETTINGS_OPTION )['upe_available_payment_methods'] );
 		$this->assertSame( 'yes', get_option( $option_name )['enabled'] );
@@ -272,7 +272,7 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $retry_summary['ran'] );
 		$this->assertSame( array( 'split_gateway_settings' ), $retry_summary['changes'] );
-		$this->assertSame( '4', get_option( self::NORMALIZED_OPTION ) );
+		$this->assertSame( '4', get_option( self::MIGRATION_VERSION_OPTION ) );
 		$this->assertSame( 'no', get_option( $option_name )['enabled'] );
 
 		$third_summary = $this->create_runner()->run();
@@ -346,7 +346,7 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( $summary['ran'] );
 		$this->assertSame( array( 'settings_persistence_failed' ), $summary['changes'] );
-		$this->assertFalse( get_option( self::NORMALIZED_OPTION, false ) );
+		$this->assertFalse( get_option( self::MIGRATION_VERSION_OPTION, false ) );
 		$this->assertSame( array( 'theme' => 'stale' ), get_transient( 'wcpay_upe_appearance' ) );
 	}
 
@@ -476,7 +476,7 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 	public function extension_cron_residue_provider(): array {
 		return array(
 			// Client 11.1.0 includes/woopay/class-woopay-scheduler.php:63-68 schedules it daily; :51, :57-59 clear it.
-			'WooPay compatibility check'   => array( array( 'validate_woopay_compatibility' ), 'daily', 'legacy_woopay_compatibility_cron', false ),
+			'WooPay compatibility check'   => array( array( 'validate_woopay_compatibility' ), 'daily', 'retired_woopay_compatibility_cron', false ),
 			// Client 11.1.0 bundles jetpack-sync 4.24.1: vendor/automattic/jetpack-sync/src/class-actions.php:81 names the
 			// schedule, :672 registers it (300 seconds), :1033-1050 and :1067-1085 schedule both hooks on it.
 			'Jetpack Sync with no handler' => array( array( 'jetpack_sync_cron', 'jetpack_sync_full_cron' ), 'jetpack_sync_interval', 'retired_jetpack_sync_cron', false ),
@@ -693,9 +693,9 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_retired_allowlists_stay_at_or_below_the_cutover_plugin_floor(): void {
 		$allowlists = array(
-			'RETIRED_SETTINGS_KEYS' => WooPaymentsCutoverNormalizationRunner::RETIRED_SETTINGS_KEYS,
-			'RETIRED_OPTIONS'       => WooPaymentsCutoverNormalizationRunner::RETIRED_OPTIONS,
-			'RETIRED_TRANSIENTS'    => WooPaymentsCutoverNormalizationRunner::RETIRED_TRANSIENTS,
+			'RETIRED_SETTINGS_KEYS' => WooPaymentsCutoverDataMigration::RETIRED_SETTINGS_KEYS,
+			'RETIRED_OPTIONS'       => WooPaymentsCutoverDataMigration::RETIRED_OPTIONS,
+			'RETIRED_TRANSIENTS'    => WooPaymentsCutoverDataMigration::RETIRED_TRANSIENTS,
 		);
 		$floors     = array(
 			WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION,
@@ -732,7 +732,7 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 		foreach ( self::SPLIT_SETTINGS as $option_name => $split_settings ) {
 			update_option( $option_name, $split_settings );
 		}
-		$retired_keys = array_keys( WooPaymentsCutoverNormalizationRunner::RETIRED_SETTINGS_KEYS );
+		$retired_keys = array_keys( WooPaymentsCutoverDataMigration::RETIRED_SETTINGS_KEYS );
 
 		$summary = $this->create_runner()->run();
 		$stored  = get_option( self::SETTINGS_OPTION );
@@ -816,18 +816,18 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_run_deletes_only_allowlisted_options_and_transients(): void {
 		$this->seed_legacy_options();
-		foreach ( array_keys( WooPaymentsCutoverNormalizationRunner::RETIRED_OPTIONS ) as $option_name ) {
+		foreach ( array_keys( WooPaymentsCutoverDataMigration::RETIRED_OPTIONS ) as $option_name ) {
 			update_option( $option_name, '1' );
 		}
 		foreach ( self::PLUGIN_READ_OPTIONS as $option_name => $value ) {
 			update_option( $option_name, $value );
 		}
-		$transients = array_merge( WooPaymentsCutoverNormalizationRunner::APPEARANCE_TRANSIENTS, array_keys( WooPaymentsCutoverNormalizationRunner::RETIRED_TRANSIENTS ) );
+		$transients = array_merge( WooPaymentsCutoverDataMigration::APPEARANCE_TRANSIENTS, array_keys( WooPaymentsCutoverDataMigration::RETIRED_TRANSIENTS ) );
 		foreach ( $transients as $transient ) {
 			set_transient( $transient, 'stale', HOUR_IN_SECONDS );
 		}
 		set_transient( 'wcpay_fraud_protection_settings', array( 'kept' => true ), HOUR_IN_SECONDS );
-		$deletable = array_keys( WooPaymentsCutoverNormalizationRunner::RETIRED_OPTIONS );
+		$deletable = array_keys( WooPaymentsCutoverDataMigration::RETIRED_OPTIONS );
 		foreach ( $transients as $transient ) {
 			$deletable[] = '_transient_' . $transient;
 			$deletable[] = '_transient_timeout_' . $transient;
@@ -856,7 +856,7 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 			'payment_request' => 'yes',
 		);
 		$method->setAccessible( true );
-		$this->setExpectedIncorrectUsage( WooPaymentsCutoverNormalizationRunner::class . '::remove_retired_settings' );
+		$this->setExpectedIncorrectUsage( WooPaymentsCutoverDataMigration::class . '::remove_retired_settings' );
 
 		$method->invokeArgs( $runner, array( &$settings, 'saved_cards', 'payment_request' ) );
 
@@ -891,12 +891,12 @@ class WooPaymentsCutoverNormalizationRunnerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the runner under test.
 	 *
-	 * @return WooPaymentsCutoverNormalizationRunner
+	 * @return WooPaymentsCutoverDataMigration
 	 */
-	private function create_runner(): WooPaymentsCutoverNormalizationRunner {
-		$this->assertTrue( class_exists( WooPaymentsCutoverNormalizationRunner::class ), 'WooPaymentsCutoverNormalizationRunner should exist.' );
+	private function create_runner(): WooPaymentsCutoverDataMigration {
+		$this->assertTrue( class_exists( WooPaymentsCutoverDataMigration::class ), 'WooPaymentsCutoverDataMigration should exist.' );
 
-		$this->runner = new WooPaymentsCutoverNormalizationRunner();
+		$this->runner = new WooPaymentsCutoverDataMigration();
 		$this->runner->init( wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
 
 		return $this->runner;

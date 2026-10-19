@@ -22,7 +22,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSe
 use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPluginLifecycleListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverReconciliationJob;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverNormalizationRunner;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverDataMigration;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\NativePaymentsShadowMode;
 use ReflectionMethod;
@@ -187,7 +187,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 				WooPaymentsSetupTier::ACTIVE,
 				'front',
 				array(
-					self::WCPAY . 'Cutover\\WooPaymentsCutoverNormalizationRunner',
+					self::WCPAY . 'Cutover\\WooPaymentsCutoverDataMigration',
 					WooPaymentsCutoverReconciliationJob::class,
 					self::WCPAY . 'WooPaymentsCanceledAuthorizationFeeRemediationService',
 					self::WCPAY . 'WooPaymentsLoanApprovedNote',
