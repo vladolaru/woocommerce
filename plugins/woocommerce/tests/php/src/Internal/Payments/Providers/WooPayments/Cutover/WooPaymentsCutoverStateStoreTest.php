@@ -275,7 +275,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 		$record['state'] = $state;
 		if ( WooPaymentsCutoverStateStore::STATE_RUNNING === $state ) {
 			$record['lease_token']      = 'running-worker-token';
-			$record['lease_expires_at'] = $record['updated_at'] + WooPaymentsCutoverStateStore::LEASE_TTL;
+			$record['lease_expires_at'] = $record['updated_at'] + WooPaymentsCutoverStateStore::WRITE_LOCK_TTL;
 		}
 
 		$this->assertTrue( $sut->create_record( $record ) );
@@ -306,13 +306,13 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	public function test_lease_excludes_concurrent_workers_and_recovers_after_expiry(): void {
 		$sut         = $this->require_sut();
 		$now         = 1_700_000_000;
-		$first_token = $sut->acquire_lease( $now );
+		$first_token = $sut->acquire_write_lock( $now );
 
 		$this->assertIsString( $first_token, 'The first worker should acquire the site-local lease.' );
 		$this->assertNotSame( '', $first_token, 'The lease token should identify its owner.' );
-		$this->assertNull( $sut->acquire_lease( $now + 1 ), 'A live lease should exclude a concurrent worker.' );
+		$this->assertNull( $sut->acquire_write_lock( $now + 1 ), 'A live lease should exclude a concurrent worker.' );
 
-		$recovered_token = $sut->acquire_lease( $now + WooPaymentsCutoverStateStore::LEASE_TTL + 1 );
+		$recovered_token = $sut->acquire_write_lock( $now + WooPaymentsCutoverStateStore::WRITE_LOCK_TTL + 1 );
 
 		$this->assertIsString( $recovered_token, 'A worker should recover an expired lease.' );
 		$this->assertNotSame( $first_token, $recovered_token, 'Recovery should create a new lease owner token.' );
@@ -328,7 +328,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 		$name  = WooPaymentsCutoverStateStore::LEASE_OPTION_NAME;
 		$other = array(
 			'token'      => 'other-worker',
-			'expires_at' => $now + WooPaymentsCutoverStateStore::LEASE_TTL,
+			'expires_at' => $now + WooPaymentsCutoverStateStore::WRITE_LOCK_TTL,
 		);
 
 		$this->assertFalse( get_option( $name ) );
@@ -342,9 +342,9 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertNull( $sut->acquire_lease( $now + 1 ), 'A live lease taken behind the missed read must exclude this worker.' );
+		$this->assertNull( $sut->acquire_write_lock( $now + 1 ), 'A live lease taken behind the missed read must exclude this worker.' );
 		$this->assertSame( maybe_serialize( $other ), $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $name ) ), 'The other worker must keep its lease.' );
-		$this->assertIsString( $sut->acquire_lease( $now + WooPaymentsCutoverStateStore::LEASE_TTL + 1 ), 'Once that lease expires, this worker can recover it.' );
+		$this->assertIsString( $sut->acquire_write_lock( $now + WooPaymentsCutoverStateStore::WRITE_LOCK_TTL + 1 ), 'Once that lease expires, this worker can recover it.' );
 	}
 
 	/**
@@ -353,16 +353,16 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	public function test_release_lease_ignores_a_stale_owner_token(): void {
 		$sut         = $this->require_sut();
 		$now         = 1_700_000_000;
-		$first_token = $sut->acquire_lease( $now );
+		$first_token = $sut->acquire_write_lock( $now );
 		$this->assertIsString( $first_token );
-		$second_token = $sut->acquire_lease( $now + WooPaymentsCutoverStateStore::LEASE_TTL + 1 );
+		$second_token = $sut->acquire_write_lock( $now + WooPaymentsCutoverStateStore::WRITE_LOCK_TTL + 1 );
 		$this->assertIsString( $second_token );
 
-		$sut->release_lease( $first_token );
+		$sut->release_write_lock( $first_token );
 
-		$this->assertNull( $sut->acquire_lease( $now + WooPaymentsCutoverStateStore::LEASE_TTL + 2 ), 'A stale release must leave the current lease intact.' );
-		$sut->release_lease( $second_token );
-		$this->assertIsString( $sut->acquire_lease( $now + WooPaymentsCutoverStateStore::LEASE_TTL + 2 ), 'The current owner should be able to release its lease.' );
+		$this->assertNull( $sut->acquire_write_lock( $now + WooPaymentsCutoverStateStore::WRITE_LOCK_TTL + 2 ), 'A stale release must leave the current lease intact.' );
+		$sut->release_write_lock( $second_token );
+		$this->assertIsString( $sut->acquire_write_lock( $now + WooPaymentsCutoverStateStore::WRITE_LOCK_TTL + 2 ), 'The current owner should be able to release its lease.' );
 	}
 
 	/**
@@ -378,7 +378,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 		$claimed['state']            = WooPaymentsCutoverStateStore::STATE_RUNNING;
 		$claimed['attempt']          = $pending['attempt'] + 1;
 		$claimed['lease_token']      = 'worker-claim-token';
-		$claimed['lease_expires_at'] = $pending['updated_at'] + WooPaymentsCutoverStateStore::LEASE_TTL;
+		$claimed['lease_expires_at'] = $pending['updated_at'] + WooPaymentsCutoverStateStore::WRITE_LOCK_TTL;
 		$this->assertTrue( $sut->compare_and_set_record( $pending, $claimed ), 'The worker should atomically claim the expected pending revision.' );
 
 		$excluded                     = $claimed;

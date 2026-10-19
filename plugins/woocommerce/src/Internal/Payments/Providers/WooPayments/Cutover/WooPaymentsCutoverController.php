@@ -284,7 +284,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		}
 
 		// A store manager who may start the switch asked for it and nothing was queued, for example while another request held
-		// the lease.
+		// the write lock.
 		$this->legacy_proxy->call_function( 'wc_get_logger' )->error( 'WooPayments cutover: the merchant asked to start the switch, but no reconciliation was queued.', array( 'source' => 'woocommerce-woopayments-cutover' ) );
 		$this->refuse_action();
 	}

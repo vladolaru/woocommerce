@@ -275,7 +275,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	public function test_enqueue_does_nothing_while_the_write_lock_is_busy(): void {
 		$sut  = $this->require_sut();
-		$busy = $this->require_state_store()->acquire_lease( time() );
+		$busy = $this->require_state_store()->acquire_write_lock( time() );
 		$this->assertIsString( $busy );
 
 		try {
@@ -284,7 +284,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->assertSame( 0, $this->count_cutover_actions() );
 			$this->assertSame( 0, $this->require_scheduler()->dispatch_count );
 		} finally {
-			$this->require_state_store()->release_lease( $busy );
+			$this->require_state_store()->release_write_lock( $busy );
 		}
 
 		$this->assertTrue( $sut->enqueue( 'merchant' ), 'Once the lock is free, the same start is accepted.' );
@@ -472,7 +472,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** Deactivate the extension, then let another request take the write lock. */
 			public function deactivate_woopayments_plugin(): bool {
 				update_option( 'active_plugins', array() );
-				$this->busy = $this->store->acquire_lease( time() );
+				$this->busy = $this->store->acquire_write_lock( time() );
 				return true;
 			}
 
@@ -496,7 +496,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$job->handle_reconcile( $pending['generation'], 1 );
 		} finally {
 			if ( is_string( $busy ) ) {
-				$this->require_state_store()->release_lease( $busy );
+				$this->require_state_store()->release_write_lock( $busy );
 			}
 		}
 
@@ -581,7 +581,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 			/** @return array{ran:bool,changes:string[]} */
 			public function run(): array {
-				$this->busy = $this->store->acquire_lease( time() );
+				$this->busy = $this->store->acquire_write_lock( time() );
 				return array(
 					'ran'     => true,
 					'changes' => array( 'no_changes' ),
@@ -598,7 +598,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$job->handle_reconcile( $pending['generation'], 1 );
 		} finally {
 			if ( is_string( $busy ) ) {
-				$this->require_state_store()->release_lease( $busy );
+				$this->require_state_store()->release_write_lock( $busy );
 			}
 		}
 

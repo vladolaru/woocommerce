@@ -495,7 +495,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool True only for the request that recorded it.
 	 */
 	private function consume_notice( callable $is_due, string $code ): bool {
-		// Checked before the lease too: admin pages call this, and the lease writes options.
+		// Checked before the write lock too: admin pages call this, and taking the write lock writes options.
 		if ( ! $is_due( $this->state_store->get_record() ) ) {
 			return false;
 		}
@@ -1207,7 +1207,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return mixed The result of $work, or $when_busy.
 	 */
 	private function with_write_lock( int $now, callable $work, $when_busy = null ) {
-		$token = $this->state_store->acquire_lease( $now );
+		$token = $this->state_store->acquire_write_lock( $now );
 		if ( null === $token ) {
 			return $when_busy;
 		}
@@ -1215,7 +1215,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		try {
 			return $work( $token );
 		} finally {
-			$this->state_store->release_lease( $token );
+			$this->state_store->release_write_lock( $token );
 		}
 	}
 
@@ -1304,7 +1304,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return;
 		}
 
-		// This runs on every request, so a waiting attempt that is still scheduled is read, never leased.
+		// This runs on every request, so a waiting attempt that is still scheduled is read without taking the write lock.
 		if ( WooPaymentsCutoverStateStore::STATE_RUNNING !== $record['state'] && $this->is_recorded_attempt_scheduled( $record ) ) {
 			return;
 		}

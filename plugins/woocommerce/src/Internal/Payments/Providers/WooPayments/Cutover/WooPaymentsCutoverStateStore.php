@@ -12,7 +12,7 @@ use InvalidArgumentException;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Persists validated site-local WooPayments cutover state and its worker lease.
+ * Persists validated site-local WooPayments cutover state and its write lock.
  *
  * @since 11.2.0
  * @internal Transitional internal component for the native payments runtime.
@@ -25,14 +25,14 @@ class WooPaymentsCutoverStateStore {
 	/** Autoloaded value seeded at install for a store with no record, so reading it runs no query. */
 	public const ABSENT_RECORD = 'none';
 
-	/** Worker lease option name. */
+	/** Write lock option name. The stored name keeps "lease". */
 	public const LEASE_OPTION_NAME = 'woocommerce_woopayments_cutover_state_lease';
 
 	/** Current persisted record schema. */
 	public const SCHEMA_VERSION = 1;
 
-	/** Maximum age of the record-write lease before another request may take it over. */
-	public const LEASE_TTL = 5 * MINUTE_IN_SECONDS;
+	/** Maximum age of the write lock before another request may take it over. */
+	public const WRITE_LOCK_TTL = 5 * MINUTE_IN_SECONDS;
 
 	/** Maximum number of diagnostic steps retained in one record. */
 	public const MAX_STEP_LOG_ENTRIES = 50;
@@ -122,7 +122,7 @@ class WooPaymentsCutoverStateStore {
 	 * Atomically replace one exact persisted revision.
 	 *
 	 * The serialized option value is the compare key, so generation, attempt,
-	 * revision, lease owner, and state are fenced together.
+	 * revision, claim owner, and state are fenced together.
 	 *
 	 * @since 11.2.0
 	 *
@@ -174,21 +174,21 @@ class WooPaymentsCutoverStateStore {
 	}
 
 	/**
-	 * Acquire the site-local worker lease.
+	 * Acquire the site-local write lock.
 	 *
 	 * @since 11.2.0
 	 *
 	 * @param int $now Current UTC timestamp.
-	 * @return string|null Lease token, or null while another worker owns it.
+	 * @return string|null Write lock token, or null while another worker owns it.
 	 */
-	public function acquire_lease( int $now ): ?string {
+	public function acquire_write_lock( int $now ): ?string {
 		$token = wp_generate_uuid4();
-		$lease = array(
+		$lock  = array(
 			'token'      => $token,
-			'expires_at' => $now + self::LEASE_TTL,
+			'expires_at' => $now + self::WRITE_LOCK_TTL,
 		);
 
-		if ( $this->add_lease( $lease ) ) {
+		if ( $this->add_write_lock( $lock ) ) {
 			return $token;
 		}
 
@@ -197,7 +197,7 @@ class WooPaymentsCutoverStateStore {
 			return null;
 		}
 
-		if ( ! $this->replace_lease_if_unchanged( $current, $lease ) ) {
+		if ( ! $this->replace_write_lock_if_unchanged( $current, $lock ) ) {
 			return null;
 		}
 
@@ -205,19 +205,19 @@ class WooPaymentsCutoverStateStore {
 	}
 
 	/**
-	 * Release the lease only when the caller still owns it.
+	 * Release the write lock only when the caller still owns it.
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param string $token Lease owner token.
+	 * @param string $token Write lock owner token.
 	 */
-	public function release_lease( string $token ): void {
+	public function release_write_lock( string $token ): void {
 		$current = get_option( self::LEASE_OPTION_NAME, null );
 		if ( ! is_array( $current ) || ( $current['token'] ?? null ) !== $token ) {
 			return;
 		}
 
-		$this->delete_lease_if_unchanged( $current );
+		$this->delete_write_lock_if_unchanged( $current );
 	}
 
 	/**
@@ -301,19 +301,19 @@ class WooPaymentsCutoverStateStore {
 	}
 
 	/**
-	 * Delete a lease only if its serialized value has not changed since it was read.
+	 * Delete the write lock only if its serialized value has not changed since it was read.
 	 *
-	 * @param array<string,mixed> $lease Lease value read by the caller.
-	 * @return bool True when that exact lease was deleted.
+	 * @param array<string,mixed> $lock Write lock value read by the caller.
+	 * @return bool True when that exact write lock was deleted.
 	 */
-	private function delete_lease_if_unchanged( array $lease ): bool {
+	private function delete_write_lock_if_unchanged( array $lock ): bool {
 		global $wpdb;
 
 		$deleted = $wpdb->query(
 			$wpdb->prepare(
 				"DELETE FROM {$wpdb->options} WHERE option_name = %s AND BINARY option_value = %s",
 				self::LEASE_OPTION_NAME,
-				maybe_serialize( $lease )
+				maybe_serialize( $lock )
 			)
 		);
 		wp_cache_delete( self::LEASE_OPTION_NAME, 'options' );
@@ -322,13 +322,13 @@ class WooPaymentsCutoverStateStore {
 	}
 
 	/**
-	 * Replace an expired lease only if its serialized value is still current.
+	 * Replace an expired write lock only if its serialized value is still current.
 	 *
-	 * @param array<string,mixed>                $expected    Lease value read by the caller.
-	 * @param array{token:string,expires_at:int} $replacement New lease value.
-	 * @return bool True when that exact lease was replaced.
+	 * @param array<string,mixed>                $expected    Write lock value read by the caller.
+	 * @param array{token:string,expires_at:int} $replacement New write lock value.
+	 * @return bool True when that exact write lock was replaced.
 	 */
-	private function replace_lease_if_unchanged( array $expected, array $replacement ): bool {
+	private function replace_write_lock_if_unchanged( array $expected, array $replacement ): bool {
 		global $wpdb;
 
 		$updated = $wpdb->query(
@@ -345,22 +345,22 @@ class WooPaymentsCutoverStateStore {
 	}
 
 	/**
-	 * Add a non-autoloaded lease when no worker currently owns it.
+	 * Add a non-autoloaded write lock when no worker currently owns it.
 	 *
-	 * @param array{token:string,expires_at:int} $lease Lease value to add.
+	 * @param array{token:string,expires_at:int} $lock Write lock value to add.
 	 * @return bool
 	 */
-	private function add_lease( array $lease ): bool {
+	private function add_write_lock( array $lock ): bool {
 		global $wpdb;
 
-		// Not add_option(): it trusts this request's notoptions cache and upserts, so it could take over a lease taken since.
-		$value    = maybe_serialize( $lease );
+		// Not add_option(): it trusts this request's notoptions cache and upserts, so it could take over a write lock taken since.
+		$value    = maybe_serialize( $lock );
 		$inserted = $wpdb->query(
 			$wpdb->prepare(
 				"INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, %s)",
 				self::LEASE_OPTION_NAME,
 				$value,
-				wp_determine_option_autoload_value( self::LEASE_OPTION_NAME, $lease, $value, false )
+				wp_determine_option_autoload_value( self::LEASE_OPTION_NAME, $lock, $value, false )
 			)
 		);
 		wp_cache_delete( self::LEASE_OPTION_NAME, 'options' );
