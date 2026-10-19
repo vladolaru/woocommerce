@@ -549,8 +549,8 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			}
 			if ( in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_RUNNING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
 				echo '<div class="notice notice-info"><p>' . esc_html__( 'Switch in progress', 'woocommerce' ) . '</p></div>';
-				// A switch whose extension became active for every site after its start waits for the per-site activation.
-				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && in_array( WooPaymentsCutoverReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE, (array) ( $record['deferred_codes'] ?? array() ), true ) ) {
+				// A switch whose extension became active for every site after its start waits for the per-site activation, and stops saying so once it no longer is.
+				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && $this->is_woopayments_network_active() && in_array( WooPaymentsCutoverReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE, (array) ( $record['deferred_codes'] ?? array() ), true ) ) {
 					$this->output_sitewide_refusal_notice();
 				}
 				// The job cannot update the plugin itself where the site blocks file changes, so retries alone never finish.

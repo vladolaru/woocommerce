@@ -427,10 +427,16 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A switch that waits because the WooPayments extension became active for every site says why under Switch in progress.
+	 * @testdox A switch deferred for the extension being active for every site says why under Switch in progress while it is, and stops once it is not: $scope.
+	 * @testWith ["active for every site", true]
+	 *           ["active per site after the conversion", false]
+	 *
+	 * @param string $scope           Where WooPayments is active.
+	 * @param bool   $sitewide_active Whether the extension is active for every site now, which is when the sentence shows.
 	 */
-	public function test_switch_waiting_on_the_extension_for_every_site_says_why(): void {
-		$this->fake_plugin_active( false, true );
+	public function test_switch_waiting_on_the_extension_for_every_site_says_why_only_while_it_is( string $scope, bool $sitewide_active ): void {
+		unset( $scope );
+		$this->fake_plugin_active( ! $sitewide_active, $sitewide_active );
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$job = new class() extends WooPaymentsCutoverReconciliationJob {
@@ -452,7 +458,12 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job ) );
 
 		$this->assertStringContainsString( 'Switch in progress', $notice );
-		$this->assertStringContainsString( 'This store can&#039;t switch yet because the WooPayments extension is active for every site of the network. A super admin first needs to activate WooPayments on each site instead.', $notice );
+		$sentence = 'This store can&#039;t switch yet because the WooPayments extension is active for every site of the network. A super admin first needs to activate WooPayments on each site instead.';
+		if ( $sitewide_active ) {
+			$this->assertStringContainsString( $sentence, $notice );
+		} else {
+			$this->assertStringNotContainsString( $sentence, $notice );
+		}
 	}
 
 	/**
