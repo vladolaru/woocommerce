@@ -117,13 +117,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private WooPaymentsCutoverReconciliationJob $reconciliation_job;
 
 	/**
-	 * WooPayments account state.
-	 *
-	 * @var WooPaymentsAccountService
-	 */
-	private WooPaymentsAccountService $account_service;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -132,20 +125,17 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @param LegacyProxy                         $legacy_proxy     Legacy proxy.
 	 * @param WooPaymentsCutoverPreflightService  $preflight_service Headless cutover facts.
 	 * @param WooPaymentsCutoverReconciliationJob $reconciliation_job Durable reconciliation workflow.
-	 * @param WooPaymentsAccountService           $account_service   WooPayments account state.
 	 */
 	final public function init(
 		WooPaymentsRuntimeArbiter $arbiter,
 		LegacyProxy $legacy_proxy,
 		WooPaymentsCutoverPreflightService $preflight_service,
-		WooPaymentsCutoverReconciliationJob $reconciliation_job,
-		WooPaymentsAccountService $account_service
+		WooPaymentsCutoverReconciliationJob $reconciliation_job
 	): void {
 		$this->arbiter            = $arbiter;
 		$this->legacy_proxy       = $legacy_proxy;
 		$this->preflight_service  = $preflight_service;
 		$this->reconciliation_job = $reconciliation_job;
-		$this->account_service    = $account_service;
 	}
 
 	/**
@@ -252,19 +242,19 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Queue merchant-requested WooPayments reconciliation when the request is eligible.
+	 * Queue merchant-requested WooPayments reconciliation when the WooPayments feature is on and the request may start the switch.
 	 *
 	 * @return bool True when reconciliation was queued.
 	 */
 	public function disable_woopayments_plugin(): bool {
-		if ( ! $this->arbiter->is_builtin_enabled() || ! $this->account_service->is_builtin_eligible() || ! $this->arbiter->is_extension_owner() || ! $this->current_user_can_cutover() ) {
+		if ( ! $this->arbiter->is_builtin_enabled() || ! $this->can_start_cutover() ) {
 			return false;
 		}
 		if ( $this->reconciliation_job->enqueue( 'merchant' ) ) {
 			return true;
 		}
 
-		// An eligible store manager asked for the switch and nothing was queued, for example while another request held the lease.
+		// A store manager who may start the switch asked for it and nothing was queued, for example while another request held the lease.
 		$this->legacy_proxy->call_function( 'wc_get_logger' )->error( 'WooPayments cutover: the merchant asked to start the switch, but no reconciliation was queued.', array( 'source' => 'woocommerce-woopayments-cutover' ) );
 		$this->refuse_action();
 	}
@@ -382,12 +372,13 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the current user can perform cutover actions.
+	 * Tell whether this request may start the switch: the WooPayments extension owns payments and the current user may
+	 * manage WooCommerce and the extension's plugin scope.
 	 *
 	 * @return bool
 	 */
-	private function current_user_can_cutover(): bool {
-		if ( ! $this->legacy_proxy->call_function( 'current_user_can', 'manage_woocommerce' ) ) {
+	private function can_start_cutover(): bool {
+		if ( ! $this->arbiter->is_extension_owner() || ! $this->legacy_proxy->call_function( 'current_user_can', 'manage_woocommerce' ) ) {
 			return false;
 		}
 
@@ -446,7 +437,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		$record = $this->reconciliation_job->classify_for_admin_notice();
 		if ( is_array( $record ) ) {
 			if ( $this->reconciliation_job->is_awaiting_start( $record ) ) {
-				if ( $this->is_start_eligible() && $this->reconciliation_job->should_offer_start() ) {
+				if ( $this->can_start_cutover() && $this->reconciliation_job->should_offer_start() ) {
 					$this->output_soft_cutover_notice();
 				}
 				return;
@@ -472,7 +463,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 					return;
 			}
 			if ( WooPaymentsCutoverStateStore::STATE_EXCLUDED === $record['state'] ) {
-				if ( $this->is_start_eligible() && $this->reconciliation_job->is_bundled_exclusion_notice_due( $record ) ) {
+				if ( $this->can_start_cutover() && $this->reconciliation_job->is_bundled_exclusion_notice_due( $record ) ) {
 					$this->output_bundled_exclusion_notice();
 				}
 				return;
@@ -488,18 +479,9 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			}
 		}
 
-		if ( $this->is_start_eligible() && $this->reconciliation_job->should_offer_start() ) {
+		if ( $this->can_start_cutover() && $this->reconciliation_job->should_offer_start() ) {
 			$this->output_soft_cutover_notice();
 		}
-	}
-
-	/**
-	 * Tell whether the current admin request may offer the merchant start action.
-	 *
-	 * @return bool
-	 */
-	private function is_start_eligible(): bool {
-		return $this->account_service->is_builtin_eligible() && $this->arbiter->is_extension_owner() && $this->current_user_can_cutover();
 	}
 
 	/**

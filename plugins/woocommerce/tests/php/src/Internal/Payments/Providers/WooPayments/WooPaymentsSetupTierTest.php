@@ -289,39 +289,51 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A turned-off WooPayments feature and authoritative ineligibility inputs disable native payments.
+	 * @testdox A turned-off WooPayments feature writes the disabled tier.
 	 */
-	public function test_account_writer_applies_disable_precedence(): void {
+	public function test_account_writer_writes_disabled_while_the_feature_is_off(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
-		$this->account_service->cache_account_data(
-			array(
-				'account_id'      => 'acct_123',
-				'native_payments' => array( 'eligible' => false ),
-			)
-		);
-		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_effective_tier() );
-
 		$this->state->write_tier( WooPaymentsSetupTier::ACTIVE );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+
 		$this->account_service->cache_account_data( array( 'account_id' => 'acct_456' ) );
+
 		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_effective_tier() );
 	}
 
 	/**
-	 * @testdox A plugin account cache write moves the state both ways with the account's native eligibility.
+	 * Platforms before the WooPayments feature sent a built-in eligibility field on the account; WooCommerce no longer reads it.
+	 *
+	 * @testdox The tier sync ignores the account's built-in eligibility field while $_dataName.
+	 * @dataProvider provide_tier_sync_owners
+	 *
+	 * @param bool   $extension_owns Whether the WooPayments extension owns payments.
+	 * @param string $expected       The tier the account write leaves.
 	 */
-	public function test_plugin_account_cache_write_follows_native_eligibility(): void {
-		$this->make_plugin_own_the_runtime();
-		$this->state->write_tier( WooPaymentsSetupTier::DISABLED );
+	public function test_sync_setup_tier_ignores_the_account_payload_eligibility_field( bool $extension_owns, string $expected ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+		$cache                            = $this->plugin_account_cache();
+		$cache['data']['native_payments'] = array( 'eligible' => false );
+		if ( $extension_owns ) {
+			$this->make_plugin_own_the_runtime();
+			$this->account_service->sync_setup_tier_from_extension_account_cache( $cache );
+		} else {
+			$this->account_service->cache_account_data( $cache['data'] );
+		}
 
-		$this->account_service->sync_setup_tier_from_extension_account_cache( $this->plugin_account_cache( array( 'eligible' => true ) ) );
-		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->state->get_effective_tier(), 'An account the platform made eligible after the upgrade repair must reach the start notice.' );
+		$this->assertSame( $expected, $this->state->get_effective_tier() );
+	}
 
-		$this->account_service->sync_setup_tier_from_extension_account_cache( $this->plugin_account_cache( array( 'eligible' => false ) ) );
-		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_effective_tier(), 'Withdrawn eligibility must write disabled again.' );
-
-		$this->account_service->sync_setup_tier_from_extension_account_cache( $this->plugin_account_cache( null ) );
-		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->state->get_effective_tier(), 'An account without the eligibility block counts as eligible, as in the upgrade repair.' );
+	/**
+	 * Who owns payments when the account is written, and the tier that follows.
+	 *
+	 * @return array<string,array{0:bool,1:string}>
+	 */
+	public function provide_tier_sync_owners(): array {
+		return array(
+			'the built-in WooPayments owns payments'  => array( false, WooPaymentsSetupTier::ACTIVE ),
+			'the WooPayments extension owns payments' => array( true, WooPaymentsSetupTier::AVAILABLE ),
+		);
 	}
 
 	/**
@@ -331,7 +343,7 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 		$this->make_plugin_own_the_runtime();
 		$this->state->write_tier( WooPaymentsSetupTier::DISABLED );
 
-		$errored            = $this->plugin_account_cache( array( 'eligible' => true ) );
+		$errored            = $this->plugin_account_cache();
 		$errored['errored'] = true;
 		$this->account_service->sync_setup_tier_from_extension_account_cache( $errored );
 		$this->account_service->sync_setup_tier_from_extension_account_cache(
@@ -352,7 +364,7 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	public function test_plugin_account_cache_write_needs_the_plugin_runtime(): void {
 		$this->state->write_tier( WooPaymentsSetupTier::DISABLED );
 
-		$this->account_service->sync_setup_tier_from_extension_account_cache( $this->plugin_account_cache( array( 'eligible' => true ) ) );
+		$this->account_service->sync_setup_tier_from_extension_account_cache( $this->plugin_account_cache() );
 
 		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_effective_tier() );
 	}
@@ -376,17 +388,11 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	/**
 	 * Build account cache contents in the shape the plugin's Database_Cache writes.
 	 *
-	 * @param array<string,mixed>|null $native_payments Native payments block, or null to leave it out.
 	 * @return array<string,mixed>
 	 */
-	private function plugin_account_cache( ?array $native_payments ): array {
-		$data = array( 'account_id' => 'acct_plugin' );
-		if ( null !== $native_payments ) {
-			$data['native_payments'] = $native_payments;
-		}
-
+	private function plugin_account_cache(): array {
 		return array(
-			'data'               => $data,
+			'data'               => array( 'account_id' => 'acct_plugin' ),
 			'fetched'            => time(),
 			'errored'            => false,
 			'consecutive_errors' => 0,

@@ -28,9 +28,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/** Notice telling a bundled-flavor store why it cannot switch yet. */
 	public const NOTICE_BUNDLED_EXCLUSION = 'bundled_exclusion';
 
-	/** Condition code of a switch whose account lost native eligibility after the merchant started it. */
-	private const INELIGIBLE_CODE = 'builtin_ineligible';
-
 	/** Step of a generation queued for its next attempt. */
 	private const STEP_QUEUED = 'queued';
 
@@ -269,7 +266,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool True when durable work already exists or was scheduled.
 	 */
 	private function enqueue_with_context( string $source, ?string $origin_plugin_file, ?string $origin_plugin_scope ): bool {
-		if ( ! $this->arbiter->is_builtin_enabled() || ! $this->account_service->is_builtin_eligible() ) {
+		if ( ! $this->arbiter->is_builtin_enabled() ) {
 			return false;
 		}
 		if ( is_multisite() && ( 'network' === $origin_plugin_scope || $this->preflight_service->is_woopayments_network_active() ) ) {
@@ -522,7 +519,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether an eligible active-plugin store may start a cutover generation.
+	 * Tell whether the stored record lets an extension-owned store start a cutover generation.
 	 *
 	 * @return bool
 	 */
@@ -945,7 +942,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			// A merchant who turned the extension back on chose it: the rollback, not the switch. That holds for a hand
 			// deactivation, and for a retry whose earlier finalize deactivated the extension (that finalize left its request
 			// token on the record). The request reads ownership once, so this sees an activation made before the request started.
-			if ( ! $this->is_network( $claimed ) && ( $this->is_manual_deactivation( $claimed ) || null !== $claimed['request_origin_token'] ) && $this->arbiter->is_extension_owner() ) {
+			if ( ! $this->is_network( $claimed ) && ( $this->is_manual_deactivation( $claimed ) || null !== ( $claimed['request_origin_token'] ?? null ) ) && $this->arbiter->is_extension_owner() ) {
 				$this->roll_back_claim( $claimed );
 				return;
 			}
@@ -965,10 +962,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					$this->defer( $claimed, array( 'network_fanout_pending' ) );
 					return;
 				}
-			}
-			if ( ! $this->account_service->is_builtin_eligible() ) {
-				$this->hold_ineligible_claim( $claimed );
-				return;
 			}
 			$this->log_late_first_attempt( $claimed );
 			$failures = $this->normalize_codes( $this->preflight_service->get_failures() );
@@ -1026,42 +1019,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$this->log_error( 'WooPayments cutover reconciliation resolver failed.', array( 'error' => $error->getMessage() ) );
 			$this->defer( $claimed, array( 'reconciliation_resolver_failed' ) );
 		}
-	}
-
-	/**
-	 * Keep the plugin running a switch whose account lost native eligibility after the merchant started it.
-	 *
-	 * The attempt retries with the usual backoff. Past the fast retry window, while the extension still owns payments, the
-	 * generation closes without finalizing and the tier goes back to disabled, so the start notice offers the switch again
-	 * if eligibility returns. Once the built-in owns payments it keeps retrying, so the switch finishes when eligibility returns.
-	 *
-	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
-	 */
-	private function hold_ineligible_claim( array $claimed ): void {
-		if ( time() - $claimed['started_at'] < self::FAST_RETRY_WINDOW || ! $this->arbiter->is_extension_owner() ) {
-			$this->defer( $claimed, array( self::INELIGIBLE_CODE ), array( array( 'code' => 'eligibility_withdrawn' ) ) );
-			return;
-		}
-
-		$this->close_held_claim( $claimed );
-	}
-
-	/**
-	 * Close a held switch without finalizing: the plugin keeps the runtime and the tier is re-synced from the account.
-	 *
-	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
-	 */
-	private function close_held_claim( array $claimed ): void {
-		if ( $this->is_network( $claimed ) ) {
-			if ( ! $this->propagate_network_exclusion( $claimed['generation'], self::INELIGIBLE_CODE ) ) {
-				$this->defer( $claimed, array( 'network_exclusion_propagation_pending' ) );
-				return;
-			}
-		} else {
-			$this->exclude( $claimed, self::INELIGIBLE_CODE );
-		}
-		$this->account_service->sync_setup_tier_from_options( true );
-		$this->log_error( 'WooPayments cutover closed without switching: it was held past the retry window while the account was not eligible for native payments.', array( 'generation' => $claimed['generation'] ) );
 	}
 
 	/**
@@ -2379,7 +2336,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		$queued                 = $record;
 		$queued['revision']     = $record['revision'] + 1;
 		$queued['current_step'] = self::STEP_QUEUED;
-		// The retry cadence and the held-switch window count from the merchant's start, not from when the offer was created.
+		// The retry cadence counts from the merchant's start, not from when the offer was created.
 		$queued['started_at'] = $now;
 		$queued['updated_at'] = $now;
 		$queued               = $this->append_step( $queued, self::STEP_QUEUED, $now, array( 'source' => $source ) );

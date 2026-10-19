@@ -127,62 +127,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Eligibility should follow eligible, ineligible, and older-platform account payloads.
-	 * @dataProvider builtin_eligibility_payload_provider
-	 *
-	 * @param array<string,mixed> $builtin_eligibility Built-in eligibility payload, or an empty array when the field is absent.
-	 * @param bool                $include_field       Whether to include the native payments field.
-	 * @param bool                $expected_eligible   Expected native eligibility.
-	 */
-	public function test_exposes_builtin_eligibility( array $builtin_eligibility, bool $include_field, bool $expected_eligible ): void {
-		$account_data = array( 'is_live' => true );
-		if ( $include_field ) {
-			$account_data['native_payments'] = $builtin_eligibility;
-		}
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data'    => $account_data,
-				'fetched' => time(),
-				'errored' => false,
-			)
-		);
-
-		$sut = $this->create_service();
-
-		$this->assertSame( $expected_eligible, $sut->is_builtin_eligible() );
-	}
-
-	/**
-	 * Built-in eligibility account payload fixtures.
-	 *
-	 * @return array<string,array{array<string,mixed>,bool,bool}>
-	 */
-	public static function builtin_eligibility_payload_provider(): array {
-		return array(
-			'eligible cohort'            => array(
-				array(
-					'eligible' => true,
-					'cohort'   => 'canary',
-					'reason'   => '',
-				),
-				true,
-				true,
-			),
-			'ineligible with reason'     => array(
-				array(
-					'eligible' => false,
-					'cohort'   => 'holdback',
-					'reason'   => 'manual_hold',
-				),
-				true,
-				false,
-			),
-			'older platform omits field' => array( array(), false, true ),
-		);
-	}
-
-	/**
 	 * @testdox Account readiness reads each multisite blog's stored cache after switching.
 	 * @group multisite
 	 */
@@ -1838,11 +1782,10 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should return no account without fetching or touching the cache when the platform is not connected.
 	 * @dataProvider provide_disconnected_account_caches
 	 *
-	 * @param array<string,mixed>|null $cached_data       Cached account data.
-	 * @param bool                     $errored           Whether the cached entry is errored.
-	 * @param bool                     $expected_eligible Expected native eligibility.
+	 * @param array<string,mixed>|null $cached_data Cached account data.
+	 * @param bool                     $errored     Whether the cached entry is errored.
 	 */
-	public function test_get_cached_account_data_returns_no_account_without_a_platform_connection( ?array $cached_data, bool $errored, bool $expected_eligible ): void {
+	public function test_get_cached_account_data_returns_no_account_without_a_platform_connection( ?array $cached_data, bool $errored ): void {
 		set_current_screen( 'dashboard' );
 		update_option(
 			'wcpay_account_data',
@@ -1862,29 +1805,26 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $api_client->calls );
 		$this->assertSame( $cache_before, get_option( 'wcpay_account_data' ), 'No errored entry may replace the cache.' );
 		$this->assertFalse( $sut->has_account_or_is_connection_indeterminate(), 'Without a connection the state is known: not connected, like the client is_stripe_connected( true ).' );
-		$this->assertSame( $expected_eligible, $sut->is_builtin_eligible(), 'Native eligibility keeps the cached platform decision while disconnected.' );
 	}
 
 	/**
 	 * Account caches a disconnected store can hold.
 	 *
-	 * @return array<string,array{0:array<string,mixed>|null,1:bool,2:bool}>
+	 * @return array<string,array{0:array<string,mixed>|null,1:bool}>
 	 */
 	public function provide_disconnected_account_caches(): array {
 		return array(
-			'account the platform keeps off the built-in WooPayments' => array(
+			'a cached live account'           => array(
 				array(
 					'account_id'           => 'acct_stale',
 					'live_publishable_key' => 'pk_live_stale',
 					'is_live'              => true,
 					'payments_enabled'     => true,
 					'details_submitted'    => true,
-					'native_payments'      => array( 'eligible' => false ),
 				),
 				false,
-				false,
 			),
-			'errored entry from the old read' => array( null, true, true ),
+			'errored entry from the old read' => array( null, true ),
 		);
 	}
 

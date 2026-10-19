@@ -25,12 +25,6 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
  */
 class WooPaymentsAccountService implements RegisterHooksInterface {
 
-	/**
-	 * The platform's account field, in the platform's own name, that says whether the store may run the WooPayments
-	 * built into WooCommerce: `{eligible, cohort, reason}`.
-	 */
-	public const BUILTIN_ELIGIBILITY_FIELD = 'native_payments';
-
 	private const REPORTS_AREA_FLAG_OPTION = '_wcpay_feature_reports_area';
 
 	private const ONBOARDING_TEST_MODE_OPTION = 'wcpay_onboarding_test_mode';
@@ -514,7 +508,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param bool $extension_owns_payments True while the WooPayments extension takes payments: an eligible account then reads
+	 * @param bool $extension_owns_payments True while the WooPayments extension takes payments: the store then reads
 	 *                                      `available`. False derives `connected` or `active` from the account and the
 	 *                                      gateway's enabled setting.
 	 */
@@ -536,7 +530,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/**
 	 * Rewrite the setup tier when the WooPayments extension writes its account cache.
 	 *
-	 * An account that becomes eligible later then reads `available`; an errored or data-less write keeps the stored tier.
+	 * An errored or data-less write keeps the stored tier.
 	 *
 	 * @since 11.2.0
 	 *
@@ -570,7 +564,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( ! $this->runtime_arbiter->is_builtin_enabled() || ( is_array( $account_data ) && ! $this->is_builtin_eligible_account_data( $account_data ) ) ) {
+		if ( ! $this->runtime_arbiter->is_builtin_enabled() ) {
 			$this->setup_tier->write_tier( WooPaymentsSetupTier::DISABLED );
 			return;
 		}
@@ -644,42 +638,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		return isset( $account_data['account_id'] ) && is_scalar( $account_data['account_id'] )
 			? (string) $account_data['account_id']
 			: '';
-	}
-
-	/**
-	 * Tell whether the platform lets this store run the WooPayments built into WooCommerce.
-	 *
-	 * Older platform payloads without the eligibility field remain eligible.
-	 *
-	 * @since 11.2.0
-	 * @return bool
-	 */
-	public function is_builtin_eligible(): bool {
-		return $this->is_builtin_eligible_account_data( $this->get_builtin_eligibility_account_data() );
-	}
-
-	/**
-	 * Get the account data that built-in eligibility reads.
-	 *
-	 * Without a platform connection this keeps the cached platform decision, because the account read then returns no
-	 * account, which would read as eligible.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function get_builtin_eligibility_account_data(): array {
-		return $this->is_platform_connected() ? $this->get_cached_account_data() : $this->get_stored_account_data();
-	}
-
-	/**
-	 * Parse built-in eligibility from account data.
-	 *
-	 * @param array<string,mixed> $account_data Account payload.
-	 * @return bool
-	 */
-	private function is_builtin_eligible_account_data( array $account_data ): bool {
-		$eligibility = $account_data[ self::BUILTIN_ELIGIBILITY_FIELD ] ?? null;
-
-		return ! is_array( $eligibility ) || false !== ( $eligibility['eligible'] ?? null );
 	}
 
 	/**

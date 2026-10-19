@@ -25,7 +25,7 @@ class WooPaymentsCutoverPreflightService {
 
 	public const MINIMUM_CUTOVER_PLUGIN_VERSION = '10.5.0';
 
-	/** The built-in WooPayments is turned off, so no other check runs. */
+	/** The WooPayments feature is off on this site, so no other check runs. */
 	public const FAILURE_BUILTIN_RUNTIME_DISABLED = 'builtin_runtime_disabled';
 
 	/** The recorded WooPayments extension version is below MINIMUM_CUTOVER_PLUGIN_VERSION. */

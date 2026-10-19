@@ -753,27 +753,21 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Migration writes the disabled tier for a plugin-active store that native payments cannot serve: $_dataName.
+	 * @testdox Migration writes the disabled tier for a plugin-active store while the WooPayments feature is off.
 	 *
-	 * Source: data/task-1.4-dormancy-design.md:84-96 (disabled when native is off or the account is not eligible, ahead of the plugin check).
-	 *
-	 * @dataProvider provider_wc_update_11205_disabled_stores
-	 *
-	 * @param bool $eligible   Whether the account allows native payments.
-	 * @param bool $feature_on Whether the WooPayments feature is on.
+	 * Source: data/task-1.4-dormancy-design.md:84-96 (disabled when native is off, ahead of the plugin check).
 	 */
-	public function test_wc_update_11205_repair_writes_disabled_for_stores_native_cannot_serve( bool $eligible, bool $feature_on ): void {
+	public function test_wc_update_11205_repair_writes_disabled_while_the_feature_is_off(): void {
 		include_once WC_ABSPATH . 'includes/wc-update-functions.php';
 
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $feature_on ? 'yes' : 'no' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 		update_option(
 			'wcpay_account_data',
 			array(
 				'data'    => array(
-					'account_id'      => 'acct_upgraded_store',
-					'is_live'         => true,
-					'native_payments' => array( 'eligible' => $eligible ),
+					'account_id' => 'acct_upgraded_store',
+					'is_live'    => true,
 				),
 				'fetched' => time(),
 				'errored' => false,
@@ -787,17 +781,5 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 		wc_update_11205_seed_woopayments_setup_tier();
 
 		$this->assertSame( WooPaymentsSetupTier::DISABLED, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
-	}
-
-	/**
-	 * Plugin-active stores the repair must leave on the disabled tier.
-	 *
-	 * @return array<string,array{bool,bool}>
-	 */
-	public function provider_wc_update_11205_disabled_stores(): array {
-		return array(
-			'account not eligible for native payments' => array( false, true ),
-			'WooPayments feature off'                  => array( true, false ),
-		);
 	}
 }

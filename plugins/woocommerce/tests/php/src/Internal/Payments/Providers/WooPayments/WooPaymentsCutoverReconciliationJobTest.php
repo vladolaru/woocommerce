@@ -234,16 +234,19 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Platform-ineligible accounts refuse cutover without persisting or scheduling work.
+	 * @testdox A merchant start is accepted whatever the cached account says about built-in eligibility.
 	 */
-	public function test_enqueue_does_nothing_when_platform_account_is_ineligible(): void {
+	public function test_enqueue_accepts_a_claim_whatever_the_account_payload_says(): void {
 		$this->require_sut();
-		$sut = $this->create_job( true, null, null, true, null, false );
+		$this->arrange_plugin_era_store();
+		$this->cache_an_account_the_platform_marked_ineligible();
+		$sut = $this->create_job( true, null, null, true, null, wc_get_container()->get( WooPaymentsAccountService::class ) );
 
-		$this->assertFalse( $sut->enqueue( 'merchant' ) );
-		$this->assertNull( $this->require_state_store()->get_record() );
-		$this->assertSame( 0, $this->count_cutover_actions() );
-		$this->assertSame( 0, $this->require_scheduler()->dispatch_count, 'Ineligible merchant work must not request an async dispatch.' );
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$record = $this->require_state_store()->get_record();
+		$this->assertIsArray( $record );
+		$this->assertSame( 'queued', $record['current_step'] );
+		$this->assertSame( 1, $this->count_cutover_actions() );
 	}
 
 	/**
@@ -348,7 +351,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 		};
 		$sut           = new WooPaymentsCutoverReconciliationJob();
-		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight, $normalization, $this->create_native_eligibility_service( true ) );
+		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight, $normalization, $this->create_inert_account_service() );
 		$this->jobs[] = $sut;
 		// Plugin Multi-Currency use (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`) next to a stored core choice: the
 		// handover runs on the first native-owned request, so the reconciliation itself must leave the choice alone.
@@ -544,79 +547,56 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A switch whose account loses native eligibility after the click defers with the plugin still active, and finishes once eligibility returns.
-	 */
-	public function test_withdrawn_eligibility_defers_the_switch_without_deactivating_the_plugin(): void {
-		$this->arrange_plugin_era_store();
-		$preflight = $this->create_plugin_deactivating_preflight();
-		$origin    = $this->create_state_writing_job( true, $preflight );
-		$this->assertTrue( $origin->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
-		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
-		$this->set_native_eligibility( false );
-
-		$origin->handle_reconcile( $pending['generation'], 1 );
-
-		$deferred = $this->require_state_store()->get_record();
-		$this->assertIsArray( $deferred );
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
-		$this->assertSame( array( 'builtin_ineligible' ), $deferred['deferred_codes'] );
-		$this->assertContains( array( 'code' => 'eligibility_withdrawn' ), $deferred['informational_outcomes'] );
-		$this->assertSame( $deferred['action_id'], $this->require_scheduler()->get_scheduled_action_id( $deferred['generation'], 2 ) );
-		$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ), 'The plugin must keep the runtime while the store is ineligible.' );
-
-		$this->set_native_eligibility( true );
-		$this->require_scheduler()->cancel( $deferred['generation'], 2 );
-		$origin->handle_reconcile( $deferred['generation'], 2 );
-
-		$verification = $this->require_state_store()->get_record();
-		$this->assertIsArray( $verification );
-		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'], 'Returned eligibility finishes the switch the merchant already started.' );
-		$this->assertSame( array(), get_option( 'active_plugins' ) );
-	}
-
-	/**
-	 * @testdox A switch still ineligible after the fast retry window closes without finalizing, writes disabled and leaves the plugin active.
-	 */
-	public function test_withdrawn_eligibility_closes_the_switch_after_the_retry_window(): void {
-		$this->arrange_plugin_era_store();
-		$preflight = $this->create_plugin_deactivating_preflight();
-		$origin    = $this->create_state_writing_job( true, $preflight );
-		$this->assertTrue( $origin->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
-		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
-		$aged               = $pending;
-		$aged['revision']   = $pending['revision'] + 1;
-		$aged['started_at'] = time() - DAY_IN_SECONDS - 1;
-		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $pending, $aged ) );
-		$this->set_native_eligibility( false );
-
-		$origin->handle_reconcile( $aged['generation'], 1 );
-
-		$closed = $this->require_state_store()->get_record();
-		$this->assertIsArray( $closed );
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_EXCLUDED, $closed['state'] );
-		$this->assertSame( array( 'builtin_ineligible' ), $closed['deferred_codes'] );
-		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $closed['generation'], 2 ) );
-		$this->assertSame( WooPaymentsSetupTier::DISABLED, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
-		$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ), 'Closing the switch must never leave the store without a payments runtime.' );
-	}
-
-	/**
-	 * @testdox A switch held for eligibility ($markers, past the window: $past_window) settles on its next attempt from the account's eligibility now ($eligible_now): $expected.
+	 * Builds before the WooPayments feature held a switch whose account the platform marked ineligible: its record kept the
+	 * builtin_ineligible deferral code, the eligibility_withdrawn outcome, or both. Such a record runs its next attempt like
+	 * any other.
 	 *
-	 * @dataProvider held_switch_provider
+	 * @testdox A switch an earlier build held for eligibility ($_dataName), past the retry window, proceeds to the preflight and finishes.
+	 * @dataProvider provide_held_switch_markers
 	 *
-	 * @param string $markers      Which eligibility markers the held claim keeps.
-	 * @param bool   $past_window  Whether the merchant's click is older than the fast retry window.
-	 * @param bool   $eligible_now Whether the account is eligible on the next attempt.
-	 * @param string $expected     The next attempt's disposition: proceeds, closes or defers.
+	 * @param bool $deferral_code Whether the record keeps the builtin_ineligible deferral code.
+	 * @param bool $outcome       Whether the record keeps the eligibility_withdrawn outcome.
 	 */
-	public function test_held_switch_settles_from_current_eligibility( string $markers, bool $past_window, bool $eligible_now, string $expected ): void {
+	public function test_reconcile_never_holds_a_claim_for_eligibility( bool $deferral_code, bool $outcome ): void {
 		$this->arrange_plugin_era_store();
-		$job    = new class() extends WooPaymentsCutoverReconciliationJob {
+		$failures  = array( 'builtin_transport_unavailable' );
+		$preflight = new class( $failures ) extends WooPaymentsCutoverPreflightService {
+			/** @var string[] */
+			private array $failures;
+
+			/**
+			 * @param string[] $failures Controlled failures, changed by the test between attempts.
+			 */
+			public function __construct( array &$failures ) {
+				$this->failures =& $failures;
+			}
+
+			/** @return string[] */
+			public function get_failures(): array {
+				return $this->failures;
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Deactivate the plugin in the active-plugins option. */
+			public function deactivate_woopayments_plugin(): bool {
+				update_option( 'active_plugins', array() );
+				return true;
+			}
+
+			/** Report a site-local activation. */
+			public function is_woopayments_network_active(): bool {
+				return false;
+			}
+		};
+		$job       = new class() extends WooPaymentsCutoverReconciliationJob {
 			/** @var array<int,array<string,mixed>> */
 			public array $errors = array();
 
@@ -630,177 +610,48 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				$this->errors[] = array_merge( array( 'message' => $message ), $context );
 			}
 		};
-		$origin = $this->create_job( true, $this->create_plugin_deactivating_preflight(), $job, true, $this->create_noop_normalization(), true, wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$origin    = $this->create_job( true, $preflight, $job, true, $this->create_noop_normalization(), wc_get_container()->get( WooPaymentsAccountService::class ) );
 		$this->assertTrue( $origin->enqueue( 'merchant' ) );
 		$pending = $this->require_state_store()->get_record();
 		$this->assertIsArray( $pending );
 		$this->require_scheduler()->cancel( $pending['generation'], 1 );
-		$this->set_native_eligibility( false );
 		$origin->handle_reconcile( $pending['generation'], 1 );
 		$deferred = $this->require_state_store()->get_record();
 		$this->assertIsArray( $deferred );
-		$this->assertSame( array( 'builtin_ineligible' ), $deferred['deferred_codes'] );
-		$held             = $deferred;
-		$held['revision'] = $deferred['revision'] + 1;
-		if ( $past_window ) {
-			$held['started_at'] = time() - DAY_IN_SECONDS - 1;
-		}
-		if ( 'the ineligibility deferral only' === $markers ) {
-			$held['informational_outcomes'] = array_values(
-				array_filter(
-					$held['informational_outcomes'],
-					static fn( $outcome ): bool => array( 'code' => 'eligibility_withdrawn' ) !== $outcome
-				)
-			);
-		} elseif ( 'the eligibility_withdrawn outcome only' === $markers ) {
-			$held['deferred_codes'] = array();
+		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
+		$held                   = $deferred;
+		$held['revision']       = $deferred['revision'] + 1;
+		$held['started_at']     = time() - DAY_IN_SECONDS - 1;
+		$held['deferred_codes'] = $deferral_code ? array( 'builtin_ineligible' ) : array();
+		if ( $outcome ) {
+			$held['informational_outcomes'][] = array( 'code' => 'eligibility_withdrawn' );
 		}
 		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $deferred, $held ) );
 		$this->require_scheduler()->cancel( $held['generation'], 2 );
-		$this->set_native_eligibility( $eligible_now );
+		$this->cache_an_account_the_platform_marked_ineligible();
+		$failures    = array();
 		$job->errors = array();
 
 		$origin->handle_reconcile( $held['generation'], 2 );
 
 		$after = $this->require_state_store()->get_record();
 		$this->assertIsArray( $after );
-		if ( 'proceeds' === $expected ) {
-			$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $after['state'] );
-			$this->assertSame( 'verify_builtin_ownership', $after['current_step'], 'An account eligible again finishes the switch the merchant started; the held history does not close it.' );
-			$this->assertSame( array(), get_option( 'active_plugins' ) );
-			$this->assertSame( array(), $job->errors );
-		} elseif ( 'closes' === $expected ) {
-			$this->assertSame( WooPaymentsCutoverStateStore::STATE_EXCLUDED, $after['state'] );
-			$this->assertSame( array( 'builtin_ineligible' ), $after['deferred_codes'] );
-			$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $after['generation'], 3 ) );
-			$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ), 'Closing the switch must never leave the store without a payments runtime.' );
-			$this->assertSame( WooPaymentsSetupTier::DISABLED, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The tier is re-synced from the ineligible account.' );
-			$this->assertCount( 1, $job->errors );
-			$this->assertStringContainsString( 'held past the retry window', $job->errors[0]['message'] );
-			$this->assertSame( $held['generation'], $job->errors[0]['generation'] );
-		} else {
-			$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $after['state'] );
-			$this->assertSame( array( 'builtin_ineligible' ), $after['deferred_codes'] );
-			$this->assertContains( array( 'code' => 'eligibility_withdrawn' ), $after['informational_outcomes'] );
-			$this->assertSame( $after['action_id'], $this->require_scheduler()->get_scheduled_action_id( $after['generation'], 3 ) );
-			$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ) );
-			$this->assertSame( array(), $job->errors );
-		}
-	}
-
-	/**
-	 * Held switches: which markers they keep, whether the window has passed, and the account's eligibility on the next attempt.
-	 *
-	 * @return array<string,array{0:string,1:bool,2:bool,3:string}>
-	 */
-	public function held_switch_provider(): array {
-		return array(
-			'past the window, both markers, eligible again' => array( 'both markers', true, true, 'proceeds' ),
-			'past the window, the ineligibility deferral only, eligible again' => array( 'the ineligibility deferral only', true, true, 'proceeds' ),
-			'past the window, the eligibility_withdrawn outcome only, eligible again' => array( 'the eligibility_withdrawn outcome only', true, true, 'proceeds' ),
-			'past the window, still ineligible'   => array( 'both markers', true, false, 'closes' ),
-			'inside the window, still ineligible' => array( 'both markers', false, false, 'defers' ),
-		);
-	}
-
-	/**
-	 * @testdox A claim past the retry window on an ineligible account ($entry) closes only while the extension owns payments, and otherwise defers until eligibility returns and the switch finishes.
-	 *
-	 * @dataProvider held_claim_owner_provider
-	 *
-	 * @param string $entry How the claim reaches the eligibility read.
-	 */
-	public function test_held_claim_closes_only_while_the_extension_owns_payments( string $entry ): void {
-		$scheduling_calls = 0;
-		$schedulable      = true;
-		$throws           = false;
-		$preflight        = $this->create_preflight_with_fee_remediation( $scheduling_calls, $schedulable, $throws );
-		$attempt          = function ( int $generation, int $next_attempt, bool $eligible, bool $extension_owner ) use ( $preflight ): WooPaymentsCutoverReconciliationJob {
-			$this->require_scheduler()->cancel( $generation, $next_attempt );
-			$this->start_fresh_request();
-			$job = new class() extends WooPaymentsCutoverReconciliationJob {
-				/** @var array<int,array<string,mixed>> */
-				public array $errors = array();
-
-				/**
-				 * Capture errors.
-				 *
-				 * @param string              $message Error message.
-				 * @param array<string,mixed> $context Error context.
-				 */
-				protected function write_log_error( string $message, array $context ): void {
-					$this->errors[] = array_merge( array( 'message' => $message ), $context );
-				}
-			};
-			$this->create_job( true, $preflight, $job, $extension_owner, $this->create_noop_normalization(), $eligible )->handle_reconcile( $generation, $next_attempt );
-
-			return $job;
-		};
-
-		if ( 'a manual-deactivation record' === $entry ) {
-			$this->assertTrue( $this->create_job( true, $preflight, null, false, $this->create_noop_normalization() )->enqueue_manual_deactivation( 'woocommerce-payments/woocommerce-payments.php', false ) );
-		} else {
-			$this->assertTrue( $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() )->enqueue( 'merchant' ) );
-		}
-		$record = $this->require_state_store()->get_record();
-		$this->assertIsArray( $record );
-		$this->require_scheduler()->cancel( $record['generation'], 1 );
-		if ( 'an attempt after finalizing, whose ownership check deferred' === $entry ) {
-			$attempt( $record['generation'], 1, true, true );
-			$verification = $this->require_state_store()->get_record();
-			$this->assertIsArray( $verification );
-			$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
-			$schedulable = false;
-			$attempt( $verification['generation'], 2, true, false );
-			$record = $this->require_state_store()->get_record();
-			$this->assertIsArray( $record );
-			$this->assertSame( array( 'financial_migrations_unavailable' ), $record['deferred_codes'] );
-			$this->assertSame( 'deferred', $record['current_step'], 'The next attempt runs the reconciliation, not the ownership check.' );
-			$schedulable = true;
-		}
-		$aged               = $record;
-		$aged['revision']   = $record['revision'] + 1;
-		$aged['started_at'] = time() - DAY_IN_SECONDS - 1;
-		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $record, $aged ) );
-		$extension_owner = 'the extension still owns payments' === $entry;
-
-		$job = $attempt( $aged['generation'], $aged['attempt'] + 1, false, $extension_owner );
-
-		$after = $this->require_state_store()->get_record();
-		$this->assertIsArray( $after );
-		$this->assertSame( array( 'builtin_ineligible' ), $after['deferred_codes'] );
-		if ( $extension_owner ) {
-			$this->assertSame( WooPaymentsCutoverStateStore::STATE_EXCLUDED, $after['state'] );
-			$this->assertCount( 1, $job->errors );
-			$this->assertStringContainsString( 'closed without switching', $job->errors[0]['message'] );
-			return;
-		}
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $after['state'], 'A switch the built-in already runs must not be closed half-finished.' );
-		$this->assertSame( $after['action_id'], $this->require_scheduler()->get_scheduled_action_id( $after['generation'], $after['attempt'] + 1 ) );
+		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $after['state'] );
+		$this->assertSame( 'verify_builtin_ownership', $after['current_step'], 'The held history and the account payload do not close the switch the merchant started.' );
+		$this->assertSame( array(), get_option( 'active_plugins' ) );
 		$this->assertSame( array(), $job->errors );
-
-		// Eligibility returns: the retries finish the switch and schedule the fee remediation.
-		$scheduling_calls = 0;
-		$record           = $after;
-		for ( $step = 0; $step < 4 && WooPaymentsCutoverStateStore::STATE_DONE !== $record['state']; ++$step ) {
-			$attempt( $record['generation'], $record['attempt'] + 1, true, false );
-			$record = $this->require_state_store()->get_record();
-			$this->assertIsArray( $record );
-		}
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DONE, $record['state'] );
-		$this->assertSame( 1, $scheduling_calls );
 	}
 
 	/**
-	 * Ways a claim reaches the eligibility read past the retry window.
+	 * The markers an earlier build left on a switch it held for eligibility.
 	 *
-	 * @return array<string,array{0:string}>
+	 * @return array<string,array{0:bool,1:bool}>
 	 */
-	public function held_claim_owner_provider(): array {
+	public function provide_held_switch_markers(): array {
 		return array(
-			'a manual-deactivation record'      => array( 'a manual-deactivation record' ),
-			'an attempt after finalizing, whose ownership check deferred' => array( 'an attempt after finalizing, whose ownership check deferred' ),
-			'the extension still owns payments' => array( 'the extension still owns payments' ),
+			'both markers'           => array( true, true ),
+			'the deferral code only' => array( true, false ),
+			'the outcome only'       => array( false, true ),
 		);
 	}
 
@@ -896,7 +747,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 		$account_service    = wc_get_container()->get( WooPaymentsAccountService::class );
 		$make_job           = function ( bool $extension_owner ) use ( $preflight, $migration, $account_service ): WooPaymentsCutoverReconciliationJob {
-			return $this->create_job( true, $preflight, new WooPaymentsCutoverReconciliationJob(), $extension_owner, $migration, true, $account_service );
+			return $this->create_job( true, $preflight, new WooPaymentsCutoverReconciliationJob(), $extension_owner, $migration, $account_service );
 		};
 		$run_attempt        = function ( array $record, bool $extension_owner ) use ( $make_job ): array {
 			$this->require_scheduler()->cancel( $record['generation'], $record['attempt'] + 1 );
@@ -968,7 +819,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$deactivations_before  = $deactivations;
 		$migration_runs_before = $migration_runs;
 		$controller            = new WooPaymentsCutoverController();
-		$controller->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), $preflight, $job_for_activation, $account_service );
+		$controller->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), $preflight, $job_for_activation );
 
 		$controller->handle_plugin_activated( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false );
 
@@ -1282,7 +1133,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$sut           = $this->create_job( true, $preflight, null, true, $migration, true, wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$sut           = $this->create_job( true, $preflight, null, true, $migration, wc_get_container()->get( WooPaymentsAccountService::class ) );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $this->require_state_store()->get_record();
 		$this->assertIsArray( $pending );
@@ -1431,7 +1282,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				$this->logged_warnings[] = array_merge( array( 'message' => $message ), $context );
 			}
 		};
-		$origin = $this->create_job( true, $this->create_plugin_deactivating_preflight(), $job, true, $this->create_noop_normalization(), true, wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$origin = $this->create_job( true, $this->create_plugin_deactivating_preflight(), $job, true, $this->create_noop_normalization(), wc_get_container()->get( WooPaymentsAccountService::class ) );
 		$this->assertTrue( $origin->enqueue( 'merchant' ) );
 		$pending = $this->require_state_store()->get_record();
 		$this->assertIsArray( $pending );
@@ -1472,7 +1323,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				$this->logged_warnings[] = array_merge( array( 'message' => $message ), $context );
 			}
 		};
-		$origin        = $this->create_job( true, $preflight, $job, true, $normalization, true, wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$origin        = $this->create_job( true, $preflight, $job, true, $normalization, wc_get_container()->get( WooPaymentsAccountService::class ) );
 		$this->assertTrue( $origin->enqueue( 'merchant' ) );
 		$pending = $this->require_state_store()->get_record();
 		$this->assertIsArray( $pending );
@@ -1521,17 +1372,15 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Set the cached account's native eligibility, as a platform account refresh would.
+	 * Cache an account carrying the built-in eligibility field platforms sent before the WooPayments feature, as ineligible.
 	 *
-	 * A minimal payload: the platform's account endpoint sends `native_payments` as `eligible`, `cohort` and
-	 * `reason` (WPCOM `wp-content/rest-api-plugins/endpoints/wcpay/class-accounts-controller.php:1100-1104`
-	 * and `:1206` at `748c7406e24`, not yet on WPCOM trunk); the job reads only `eligible`.
-	 *
-	 * @param bool $eligible Whether the platform keeps the account eligible.
+	 * The platform's account endpoint sent `native_payments` as `eligible`, `cohort` and `reason` (WPCOM
+	 * `wp-content/rest-api-plugins/endpoints/wcpay/class-accounts-controller.php:1100-1104` and `:1206` at `748c7406e24`,
+	 * never on WPCOM trunk). WooCommerce no longer reads it.
 	 */
-	private function set_native_eligibility( bool $eligible ): void {
+	private function cache_an_account_the_platform_marked_ineligible(): void {
 		$cache                            = get_option( 'wcpay_account_data' );
-		$cache['data']['native_payments'] = array( 'eligible' => $eligible );
+		$cache['data']['native_payments'] = array( 'eligible' => false );
 		$cache['fetched']                 = time();
 		// Clearing the in-memory cache deletes the option, so it goes first.
 		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
@@ -1937,7 +1786,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight, $normalization_runner, $this->create_native_eligibility_service( true ) );
+		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight, $normalization_runner, $this->create_inert_account_service() );
 		$this->jobs[] = $sut;
 
 		$sut->handle_reconcile( $verification['generation'], 2 );
@@ -2251,11 +2100,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				$this->sync_calls =& $sync_calls;
 			}
 
-			/** The account is native-eligible. */
-			public function is_builtin_eligible(): bool {
-				return true;
-			}
-
 			/**
 			 * Count native state synchronizations.
 			 *
@@ -2266,7 +2110,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				++$this->sync_calls;
 			}
 		};
-		$sut                = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization(), true, $account_service );
+		$sut                = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization(), $account_service );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $this->require_state_store()->get_record();
 		$this->assertIsArray( $pending );
@@ -4598,7 +4442,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$sut           = $this->create_job( true, $preflight, null, true, $normalization, true, wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$sut           = $this->create_job( true, $preflight, null, true, $normalization, wc_get_container()->get( WooPaymentsAccountService::class ) );
 
 		try {
 			$this->assertTrue( $sut->enqueue( 'merchant' ) );
@@ -6627,7 +6471,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		return $this->create_job( true, $preflight, null, $plugin_active, $normalization, true, wc_get_container()->get( WooPaymentsAccountService::class ) );
+		return $this->create_job( true, $preflight, null, $plugin_active, $normalization, wc_get_container()->get( WooPaymentsAccountService::class ) );
 	}
 
 	/**
@@ -6672,11 +6516,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsCutoverReconciliationJob|null   $job               Job instance, when a test needs a narrow override.
 	 * @param bool                                       $plugin_active     Whether the plugin owns the runtime.
 	 * @param WooPaymentsCutoverNormalizationRunner|null $normalization_runner Controlled normalization runner.
-	 * @param bool                                       $native_eligible  Whether the platform account is native-eligible.
 	 * @param WooPaymentsAccountService|null             $account_service  Account service, when a test needs the real state writer.
 	 * @return WooPaymentsCutoverReconciliationJob
 	 */
-	private function create_job( bool $native_enabled, ?WooPaymentsCutoverPreflightService $preflight_service = null, ?WooPaymentsCutoverReconciliationJob $job = null, bool $plugin_active = true, ?WooPaymentsCutoverNormalizationRunner $normalization_runner = null, bool $native_eligible = true, ?WooPaymentsAccountService $account_service = null ): WooPaymentsCutoverReconciliationJob {
+	private function create_job( bool $native_enabled, ?WooPaymentsCutoverPreflightService $preflight_service = null, ?WooPaymentsCutoverReconciliationJob $job = null, bool $plugin_active = true, ?WooPaymentsCutoverNormalizationRunner $normalization_runner = null, ?WooPaymentsAccountService $account_service = null ): WooPaymentsCutoverReconciliationJob {
 		$arbiter = new class( $native_enabled, $plugin_active ) extends WooPaymentsRuntimeArbiter {
 			/** @var bool */
 			private bool $native_enabled;
@@ -6718,34 +6561,19 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$job->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight_service, $normalization_runner, $account_service ?? $this->create_native_eligibility_service( $native_eligible ) );
+		$job->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight_service, $normalization_runner, $account_service ?? $this->create_inert_account_service() );
 		$this->jobs[] = $job;
 
 		return $job;
 	}
 
 	/**
-	 * Create an account-service double with deterministic platform eligibility.
+	 * Create an account service that writes nothing: it is never initialized, so the job's tier syncs return early.
 	 *
-	 * @param bool $native_eligible Controlled eligibility answer.
 	 * @return WooPaymentsAccountService
 	 */
-	private function create_native_eligibility_service( bool $native_eligible ): WooPaymentsAccountService {
-		return new class( $native_eligible ) extends WooPaymentsAccountService {
-			/** @var bool */
-			private bool $native_eligible;
-
-			/**
-			 * @param bool $native_eligible Controlled eligibility answer.
-			 */
-			public function __construct( bool $native_eligible ) {
-				$this->native_eligible = $native_eligible;
-			}
-
-			/** Return the controlled eligibility answer. */
-			public function is_builtin_eligible(): bool {
-				return $this->native_eligible;
-			}
+	private function create_inert_account_service(): WooPaymentsAccountService {
+		return new class() extends WooPaymentsAccountService {
 		};
 	}
 
