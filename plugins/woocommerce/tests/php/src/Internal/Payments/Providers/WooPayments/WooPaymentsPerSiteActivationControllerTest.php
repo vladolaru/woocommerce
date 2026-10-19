@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPluginLifecycleListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob;
@@ -270,12 +271,48 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A switched site gets one rollback generation when the conversion activates the extension there, through WordPress's own activation hooks and the plugin lifecycle listener as well as the conversion's own record.
+	 * @testdox A site already active on its own whose switch started rolls the switch back too, without a second activation.
 	 * @group multisite
 	 */
-	public function test_conversion_rolls_back_a_completed_switch_on_its_site(): void {
+	public function test_conversion_rolls_back_a_started_switch_on_a_site_already_active(): void {
 		$this->skip_unless_multisite();
-		wc_get_container()->get( WooPaymentsCutoverPluginLifecycleListener::class )->register();
+		$main    = get_current_blog_id();
+		$started = $this->create_site( 'started', true, true );
+		$this->arrange_site( $main, false, true );
+		$this->activate_for_every_site();
+		// WordPress keeps the site's own activation when the extension is network-activated later: WordPress 7.1.3
+		// wp-admin/includes/plugin.php:712-720 writes only the network list.
+		switch_to_blog( $started );
+		try {
+			update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		} finally {
+			restore_current_blog();
+		}
+		$this->create_record( $started, WooPaymentsCutoverStateStore::STATE_DEFERRED, 'deferred', array( WooPaymentsCutoverReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE ) );
+
+		$result = $this->create_sut()->convert();
+
+		$this->assertContains( $started, $result['skipped'] );
+		$this->assertArrayNotHasKey( $started, $this->activations, 'No second activation.' );
+		$record = $this->read_record( $started );
+		$this->assertSame( 4, $record['generation'], 'A rollback generation replaces the started one.' );
+		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $record['state'] );
+		$this->assertSame( 'awaiting_merchant_start', $record['current_step'] );
+	}
+
+	/**
+	 * @testdox A switched site gets one rollback generation when the conversion activates the extension there, through the conversion's own record, with the plugin lifecycle listener also loaded: $listener.
+	 * @group multisite
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $listener Whether the plugin lifecycle listener is loaded in the request.
+	 */
+	public function test_conversion_rolls_back_a_completed_switch_on_its_site( bool $listener ): void {
+		$this->skip_unless_multisite();
+		if ( $listener ) {
+			wc_get_container()->get( WooPaymentsCutoverPluginLifecycleListener::class )->register();
+		}
 		$main     = get_current_blog_id();
 		$switched = $this->create_site( 'switched', true, true );
 		$this->arrange_site( $main, false, true );
@@ -295,7 +332,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertContains( array( $switched, WooPaymentsRuntimeArbiter::PLUGIN_FILE, false ), $activated_hooks, 'The site activation fires activated_plugin for that site.' );
 		$record = $this->read_record( $switched );
-		$this->assertSame( 4, $record['generation'], 'The listener and the conversion record one rollback generation.' );
+		$this->assertSame( 4, $record['generation'], 'One rollback generation, with or without the listener.' );
 		$this->assertSame( 'awaiting_merchant_start', $record['current_step'] );
 	}
 
@@ -341,7 +378,6 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_notice_needs_the_extension_for_every_site_and_the_feature_somewhere(): void {
 		$this->skip_unless_multisite();
-		WooPaymentsPerSiteActivationController::register_feature_scan_reset();
 		$main  = get_current_blog_id();
 		$other = $this->create_site( 'other', false, true );
 		$this->arrange_site( $main, false, true );
@@ -361,12 +397,21 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox On a multisite, WooCommerce registers the feature-scan reset on every request, not only in the network admin.
+	 * @group multisite
+	 */
+	public function test_feature_scan_reset_is_registered_on_a_multisite(): void {
+		$this->skip_unless_multisite();
+
+		$this->assertNotFalse( has_action( FeaturesController::FEATURE_ENABLED_CHANGED_ACTION, array( WooPaymentsPerSiteActivationController::class, 'handle_feature_enabled_changed' ) ) );
+	}
+
+	/**
 	 * @testdox With the feature off everywhere, network admin pages scan the sites once; turning the feature on at a site clears the answer.
 	 * @group multisite
 	 */
 	public function test_feature_scan_is_kept_until_the_feature_changes(): void {
 		$this->skip_unless_multisite();
-		WooPaymentsPerSiteActivationController::register_feature_scan_reset();
 		$main  = get_current_blog_id();
 		$other = $this->create_site( 'other', false, true );
 		$this->arrange_site( $main, false, true );

@@ -322,6 +322,9 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 		$context = array( 'site_id' => get_current_blog_id() );
 		if ( $this->preflight_service->is_woopayments_site_active() ) {
 			$this->log( 'info', 'WooPayments per-site activation: the WooPayments extension is already active on this site.', $context );
+			// WordPress keeps a site's own activation when the extension is network-activated later, so a switch started there
+			// before still needs its rollback.
+			$this->record_rollback( $context );
 			return 'skipped';
 		}
 		if ( ! $this->legacy_proxy->call_function( 'is_plugin_active', plugin_basename( WC_PLUGIN_FILE ) ) ) {
@@ -339,15 +342,26 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 			return 'failed';
 		}
 		$this->log( 'info', 'WooPayments per-site activation activated the WooPayments extension on this site.', $context );
-		// The site's own rollback of a started or completed switch, recorded here: the plugin lifecycle listener that would
-		// record it loads in this request only when the main site's setup tier asks for it.
+		$this->record_rollback( $context );
+
+		return 'activated';
+	}
+
+	/**
+	 * Record the current site's rollback of a started or completed switch, as an activation of the extension does.
+	 *
+	 * Recorded here because the plugin lifecycle listener that would record it loads in this request only when the main
+	 * site's setup tier asks for it. Idempotent for a record already awaiting the merchant's start; best effort: a busy
+	 * write lock records nothing, and an error is logged.
+	 *
+	 * @param array<string,mixed> $context Log context.
+	 */
+	private function record_rollback( array $context ): void {
 		try {
 			$this->reconciliation_job->record_plugin_activation();
 		} catch ( \Throwable $error ) {
 			$this->log( 'error', 'WooPayments per-site activation could not record the rollback of this site\'s switch.', array_merge( $context, array( 'error' => $error->getMessage() ) ) );
 		}
-
-		return 'activated';
 	}
 
 	/**
