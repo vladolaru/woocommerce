@@ -220,6 +220,9 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	/**
 	 * Build the automatic-rate-provider unavailable notice when it is currently actionable.
 	 *
+	 * The notice cannot be dismissed: it stays while an automatic-rate currency has no available provider. Once that clears,
+	 * the stored dismissal option is deleted.
+	 *
 	 * @param bool $can_manage_woocommerce Whether the user can manage WooCommerce.
 	 * @return array{key:string,class:string,message:string,dismissible:bool}|null
 	 */
@@ -233,19 +236,15 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 			return null;
 		}
 
-		if ( 'yes' === (string) get_option( self::RATE_PROVIDER_UNAVAILABLE_DISMISSED_OPTION, 'no' ) ) {
-			return null;
-		}
-
 		return array(
 			'key'         => self::RATE_PROVIDER_UNAVAILABLE_NOTICE_KEY,
 			'class'       => 'notice notice-warning',
 			'message'     => sprintf(
 				/* translators: %s: Last automatic exchange rate update date and time. */
-				__( 'Automatic exchange rates are currently unavailable; rates were last updated %s. Manual rates keep working.', 'woocommerce' ),
+				__( 'Automatic exchange rates are currently unavailable; rates were last updated %s. Manual rates keep working. Set a manual rate for each affected currency in Multi-currency settings, or connect a rate provider.', 'woocommerce' ),
 				$this->get_rate_provider_last_updated_label()
 			),
-			'dismissible' => true,
+			'dismissible' => false,
 		);
 	}
 

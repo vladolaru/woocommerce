@@ -129,11 +129,18 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should render the rate-provider unavailable notice for automatic currencies without a provider.
+	 * @testdox While an automatic-rate currency has no provider, the rates-unavailable notice shows with both ways out and no dismiss control, a stored dismissal or not: $dismissed.
+	 * @testWith ["none"]
+	 *           ["yes"]
+	 *
+	 * @param string $dismissed The stored dismissal option, or none.
 	 */
-	public function test_renders_rate_provider_unavailable_notice_for_automatic_currencies_without_provider(): void {
+	public function test_renders_rate_provider_unavailable_notice_for_automatic_currencies_without_provider( string $dismissed ): void {
 		$this->set_current_user_can_manage_woocommerce();
 		$this->enable_multi_currency_with_rate_type( 'automatic' );
+		if ( 'none' !== $dismissed ) {
+			update_option( self::RATE_NOTICE_DISMISSED_OPTION, $dismissed );
+		}
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		ob_start();
@@ -142,38 +149,30 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertIsString( $markup );
 		$this->assertStringContainsString( 'class="notice notice-warning"', $markup );
-		$this->assertStringContainsString( 'Automatic exchange rates are currently unavailable;', $markup );
-		$this->assertStringContainsString( 'Manual rates keep working.', $markup );
-		$this->assertStringContainsString( self::CANONICAL_NOTICE_QUERY . '=' . self::RATE_NOTICE_KEY, $markup );
-		$this->assertStringContainsString( self::CANONICAL_NONCE_QUERY, $markup );
-		$this->assertStringNotContainsString( self::LEGACY_NOTICE_QUERY, $markup );
-		$this->assertStringNotContainsString( self::LEGACY_NONCE_QUERY, $markup );
+		$this->assertStringContainsString( 'Automatic exchange rates are currently unavailable; rates were last updated ', $markup );
+		$this->assertStringContainsString( '. Manual rates keep working. Set a manual rate for each affected currency in Multi-currency settings, or connect a rate provider.', $markup );
+		$this->assertStringNotContainsString( 'notice-dismiss', $markup, 'The notice has no dismiss control.' );
+		$this->assertStringNotContainsString( self::RATE_NOTICE_KEY, $markup, 'No dismissal link for the notice.' );
 	}
 
 	/**
-	 * @testdox Should not render the rate-provider unavailable notice for manual currencies.
+	 * @testdox With no automatic-rate currency left without a provider ($label), the rates-unavailable notice is gone and the stored dismissal is cleared.
+	 * @testWith ["manual rate", "manual", false]
+	 *           ["provider available", "automatic", true]
+	 *
+	 * @param string $label     Readable case name.
+	 * @param string $rate_type The currency's rate type.
+	 * @param bool   $provider  Whether an automatic-rate provider is available.
 	 */
-	public function test_does_not_render_rate_provider_unavailable_notice_for_manual_currencies(): void {
+	public function test_does_not_render_rate_provider_unavailable_notice_once_rates_have_a_source( string $label, string $rate_type, bool $provider ): void {
+		unset( $label );
 		$this->set_current_user_can_manage_woocommerce();
-		$this->enable_multi_currency_with_rate_type( 'manual' );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-
-		ob_start();
-		$sut->handle_admin_notices();
-		$markup = ob_get_clean();
-
-		$this->assertIsString( $markup );
-		$this->assertStringNotContainsString( 'Automatic exchange rates are currently unavailable;', $markup );
-	}
-
-	/**
-	 * @testdox Should not render the rate-provider unavailable notice when a provider is available.
-	 */
-	public function test_does_not_render_rate_provider_unavailable_notice_when_provider_is_available(): void {
-		$this->set_current_user_can_manage_woocommerce();
-		$this->enable_multi_currency_with_rate_type( 'automatic' );
+		$this->enable_multi_currency_with_rate_type( $rate_type );
+		update_option( self::RATE_NOTICE_DISMISSED_OPTION, 'yes' );
 		$provider_registry_factory = new CurrencyRateProviderRegistryFactory();
-		$this->register_available_rate_provider( $provider_registry_factory );
+		if ( $provider ) {
+			$this->register_available_rate_provider( $provider_registry_factory );
+		}
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $provider_registry_factory );
 
 		ob_start();
@@ -182,12 +181,13 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertIsString( $markup );
 		$this->assertStringNotContainsString( 'Automatic exchange rates are currently unavailable;', $markup );
+		$this->assertFalse( get_option( self::RATE_NOTICE_DISMISSED_OPTION ), 'The stored dismissal is cleared.' );
 	}
 
 	/**
-	 * @testdox Should hide the rate-provider unavailable notice for a valid dismissal request.
+	 * @testdox A dismissal request for the rates-unavailable notice stores nothing.
 	 */
-	public function test_hides_rate_provider_unavailable_notice_for_valid_dismissal_request(): void {
+	public function test_dismissal_request_for_rate_provider_unavailable_notice_stores_nothing(): void {
 		$this->set_current_user_can_manage_woocommerce();
 		$_GET[ self::CANONICAL_NOTICE_QUERY ] = self::RATE_NOTICE_KEY;
 		$_GET[ self::CANONICAL_NONCE_QUERY ]  = wp_create_nonce( self::NONCE_ACTION );
@@ -195,7 +195,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 
 		$sut->handle_wp_loaded();
 
-		$this->assertSame( 'yes', get_option( self::RATE_NOTICE_DISMISSED_OPTION ) );
+		$this->assertFalse( get_option( self::RATE_NOTICE_DISMISSED_OPTION ) );
 	}
 
 	/**
@@ -257,16 +257,15 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	public function test_hides_notice_selected_by_canonical_query_values_when_legacy_values_conflict(): void {
 		$this->set_current_user_can_manage_woocommerce();
 		update_option( self::NOTICE_OPTION, array( 'Canadian dollar' ) );
-		$_GET[ self::CANONICAL_NOTICE_QUERY ] = self::RATE_NOTICE_KEY;
+		$_GET[ self::CANONICAL_NOTICE_QUERY ] = 'currency_changed';
 		$_GET[ self::CANONICAL_NONCE_QUERY ]  = wp_create_nonce( self::NONCE_ACTION );
-		$_GET[ self::LEGACY_NOTICE_QUERY ]    = 'currency_changed';
+		$_GET[ self::LEGACY_NOTICE_QUERY ]    = 'unknown_notice';
 		$_GET[ self::LEGACY_NONCE_QUERY ]     = 'legacy-nonce';
 		$sut                                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$sut->handle_wp_loaded();
 
-		$this->assertSame( 'yes', get_option( self::RATE_NOTICE_DISMISSED_OPTION ) );
-		$this->assertSame( array( 'Canadian dollar' ), get_option( self::NOTICE_OPTION ) );
+		$this->assertSame( 'no', get_option( self::NOTICE_OPTION ), 'The canonical currency-changed key is the one acted on.' );
 	}
 
 	/**
