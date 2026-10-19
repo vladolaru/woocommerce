@@ -88,7 +88,10 @@ final class WooPaymentsSetupTier {
 		}
 
 		if ( WooPaymentsRuntimeArbiter::OWNER_BUILTIN === $this->runtime_arbiter->get_runtime_owner() ) {
-			return $this->get_stored_tier();
+			$stored = $this->get_stored_tier();
+			// A store that switched from the extension can still hold the disabled tier of its install; reading it as available
+			// keeps the switch's job loaded, and the job writes the tier. A store never set up stays dormant on disabled.
+			return self::DISABLED === $stored && $this->runtime_arbiter->has_run_woopayments_extension() ? self::AVAILABLE : $stored;
 		}
 
 		// With the feature on, nothing else owns payments only on a store waiting for its switch, which is offered it.

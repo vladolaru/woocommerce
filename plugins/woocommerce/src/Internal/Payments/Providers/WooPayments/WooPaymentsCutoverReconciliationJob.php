@@ -943,8 +943,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			}
 			$this->log_late_first_attempt( $claimed );
 			// Past finalize the extension is already off and the built-in WooPayments owns payments, so an exclusion would
-			// protect nothing and leave the store with no owner: the bundled failure defers the claim instead.
-			$past_finalize = null !== ( $claimed['request_origin_token'] ?? null );
+			// protect nothing and leave the store with no owner: the bundled failure defers the claim instead. A token next to an
+			// active extension (a network barrier that stopped before or at the deactivation) is not past finalize.
+			$past_finalize = null !== ( $claimed['request_origin_token'] ?? null ) && ! $this->arbiter->is_extension_owner();
 			$failures      = $this->normalize_codes( $this->preflight_service->get_failures() );
 			if ( ! $past_finalize && in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $failures, true ) ) {
 				if ( $this->is_network( $claimed ) ) {
@@ -1179,6 +1180,14 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$this->internal_plugin_lifecycle_change = false;
 		}
 		if ( ! $deactivated ) {
+			// A hook that threw after WordPress wrote the active plugins still left the extension inactive.
+			try {
+				$deactivated = ! $this->preflight_service->is_woopayments_site_active() && ! $this->preflight_service->is_woopayments_network_active();
+			} catch ( \Throwable $error ) {
+				$deactivated = false;
+			}
+		}
+		if ( ! $deactivated ) {
 			// The token stays, so the next attempt finds the extension active and rolls the switch back to it.
 			$this->defer( $claimed, array( 'plugin_deactivation_failed' ), $outcomes );
 			return;
@@ -1321,8 +1330,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				return;
 			}
 
-			// A paused site never runs its own claim, so its Stripe Billing marker is checked here, before the plugin leaves every site.
-			$paused_site_marker = $this->paused_site_has_stripe_billing_marker();
+			// A paused site never runs its own claim, so its Stripe Billing marker is checked here, before the plugin leaves every
+			// site. Once the extension is off network-wide the switch has handed over, and an exclusion would only remove owners.
+			$paused_site_marker = $this->preflight_service->is_woopayments_network_active() ? $this->paused_site_has_stripe_billing_marker() : false;
 			if ( false === $paused_site_marker ) {
 				$this->deactivate_network_plugin_for_generation( $generation );
 			}
@@ -1376,12 +1386,16 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		$this->run_on_sites_with_write_locks(
 			$this->get_current_network_site_ids(),
 			function ( int $site_id, bool $lock_held ) use ( $generation, &$stored ): void {
-				unset( $site_id );
 				if ( ! $stored ) {
 					return;
 				}
 				$record = $this->state_store->get_record();
 				if ( ! is_array( $record ) || $generation !== $record['generation'] || WooPaymentsCutoverStateStore::STATE_DEFERRED !== $record['state'] || ! in_array( 'network_barrier', $record[ self::BLOCKING_CODES_KEY ], true ) ) {
+					// A site the barrier does not wait for (archived, spam or deleted), or one already handed over, needs nothing.
+					// Any other runnable site moved on since the readiness check, so it is not prepared and the extension stays.
+					if ( $this->is_site_runnable( $site_id ) && ! $this->has_network_handoff( $record, $generation ) ) {
+						$stored = false;
+					}
 					return;
 				}
 				if ( ! $lock_held ) {
@@ -1400,6 +1414,19 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		);
 
 		return $stored;
+	}
+
+	/**
+	 * Tell whether a site's record already holds this generation's handoff: finalize's token, the ownership check, or done.
+	 *
+	 * @param mixed $record     The site's cutover record.
+	 * @param int   $generation Network generation.
+	 * @return bool
+	 */
+	private function has_network_handoff( $record, int $generation ): bool {
+		return is_array( $record )
+			&& $generation === $record['generation']
+			&& ( null !== ( $record['request_origin_token'] ?? null ) || in_array( $record['current_step'], array( self::STEP_VERIFY_BUILTIN_OWNERSHIP, self::STEP_DONE ), true ) );
 	}
 
 	/**

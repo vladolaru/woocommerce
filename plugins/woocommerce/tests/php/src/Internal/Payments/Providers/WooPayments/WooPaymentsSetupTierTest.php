@@ -10,6 +10,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -461,6 +462,44 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 			'feature off, extension deactivated'       => array( true, null, false, false, 'no', $none, WooPaymentsSetupTier::DISABLED ),
 			'feature off after the switch'             => array( true, $done, false, false, 'no', $none, WooPaymentsSetupTier::DISABLED ),
 		);
+	}
+
+	/**
+	 * N-512 hardening: an extension store keeps the disabled tier of its install; once it switched, reading that as
+	 * disabled would register nothing, not even the job that writes the tier. A store never set up stays dormant.
+	 *
+	 * @testdox A built-in owner reads a stored disabled tier as available after a switch from the extension, and as disabled on a store that never ran it ($_dataName).
+	 * @testWith ["a store that switched from the extension", true, "available"]
+	 *           ["a store that never ran the extension", false, "disabled"]
+	 *
+	 * @param string $label         Case label.
+	 * @param bool   $extension_ran Whether the extension's version option is stored.
+	 * @param string $tier          Expected effective tier.
+	 */
+	public function test_builtin_owner_reads_a_stored_disabled_tier_by_history( string $label, bool $extension_ran, string $tier ): void {
+		unset( $label );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::DISABLED );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		if ( $extension_ran ) {
+			update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
+			update_option(
+				WooPaymentsCutoverStateStore::OPTION_NAME,
+				array(
+					'state'                => WooPaymentsCutoverStateStore::STATE_DONE,
+					'request_origin_token' => null,
+				)
+			);
+		} else {
+			delete_option( 'woocommerce_woocommerce_payments_version' );
+			update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD );
+		}
+		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+		$arbiter->invalidate();
+		$this->state->invalidate();
+
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $arbiter->get_runtime_owner() );
+		$this->assertSame( $tier, $this->state->get_effective_tier() );
+		$this->assertSame( $extension_ran, in_array( WooPaymentsCutoverReconciliationJob::class, $this->state->get_classes_for_request( 'cron' ), true ), 'The job loads where it can finish the tier.' );
 	}
 
 	/**

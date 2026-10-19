@@ -413,7 +413,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A finalize whose ownership check cannot be stored, because another request holds the write lock, leaves the built-in WooPayments taking payments: its token and tier were stored before the deactivation.
+	 * @testdox A finalize whose ownership check cannot be stored, because another request holds the write lock, leaves the built-in WooPayments taking payments: its token was stored before the deactivation, and the tier right after it.
 	 */
 	public function test_finalize_moves_the_tier_when_the_ownership_check_loses_the_write_lock(): void {
 		$this->arrange_plugin_era_store();
@@ -591,6 +591,71 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$arbiter->invalidate();
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, $arbiter->get_runtime_owner() );
 		$arbiter->invalidate();
+	}
+
+	/**
+	 * Opus re-gate R2 on fg4d-3: WordPress fires the deactivation hooks before it writes the active plugins, so only a throw
+	 * after that write (an update_option_active_plugins listener) reaches finalize with the extension already inactive.
+	 *
+	 * @testdox A deactivation whose hook throws after WordPress wrote the active plugins counts as done: the tier follows and the built-in WooPayments takes payments, even from a stored disabled tier.
+	 */
+	public function test_deactivation_that_throws_after_the_write_still_finalizes(): void {
+		$this->arrange_plugin_era_store();
+		// The tier an extension store keeps from its install: nothing would register the job again.
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::DISABLED );
+		$throwing_listener = static function (): void {
+			throw new \RuntimeException( 'A listener threw after the active plugins were written.' );
+		};
+		$preflight         = new class() extends WooPaymentsCutoverPreflightService {
+			/** @return string[] */
+			public function get_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Write the active plugins as WordPress does last in deactivate_plugins(); a listener on that write throws. */
+			public function deactivate_woopayments_plugin(): bool {
+				update_option( 'active_plugins', array() );
+				return true;
+			}
+
+			/** Report a site-local activation. */
+			public function is_woopayments_network_active(): bool {
+				return false;
+			}
+
+			/** Active while the extension is in the site's active plugins. */
+			public function is_woopayments_site_active(): bool {
+				return in_array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, (array) get_option( 'active_plugins', array() ), true );
+			}
+		};
+		$job               = $this->create_state_writing_job( true, $preflight );
+		$this->assertTrue( $job->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		add_action( 'update_option_active_plugins', $throwing_listener );
+
+		try {
+			$job->handle_reconcile( $pending['generation'], 1 );
+		} finally {
+			remove_action( 'update_option_active_plugins', $throwing_listener );
+		}
+
+		$this->assertSame( array(), get_option( 'active_plugins' ), 'WordPress wrote the active plugins before the listener threw.' );
+		$record = $this->require_state_store()->get_record();
+		$this->assertIsArray( $record );
+		$this->assertSame( 'verify_builtin_ownership', $record['current_step'], 'The ownership check is scheduled, not a rollback.' );
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
+		$this->assert_next_front_request_registers_native_gateway();
 	}
 
 	/**
@@ -4645,6 +4710,749 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->cleanup_state();
 			restore_current_blog();
 			wpmu_delete_blog( $second_site_id, true );
+			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		}
+	}
+
+	/**
+	 * Opus re-gate R3 on fg4d-3: the barrier stores every waiting site's token before the network deactivation, and a site
+	 * whose lock is busy at that step stops the deactivation.
+	 *
+	 * @testdox A network site whose write lock is busy when the barrier stores the tokens stops the network deactivation, and gets no token.
+	 * @group multisite
+	 */
+	public function test_network_site_busy_at_the_token_step_stops_the_deactivation(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-token-busy.example.org' );
+		foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
+			switch_to_blog( $site_id );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+			// The account cache envelope (data, fetched, errored, consecutive_errors): client 11.1.0 includes/class-database-cache.php:377-382; the account_id and is_live fields: includes/class-wc-payments-account.php:164-171, :757-759.
+			update_option(
+				'wcpay_account_data',
+				array(
+					'data'               => array(
+						'account_id' => 'acct_network_token_busy_' . $site_id,
+						'is_live'    => true,
+					),
+					'fetched'            => time(),
+					'errored'            => false,
+					'consecutive_errors' => 0,
+				),
+				false
+			);
+			update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+			update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
+			restore_current_blog();
+		}
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+		$deactivations = 0;
+		$failures      = array();
+		$busy          = null;
+		$preflight     = new class( $deactivations, $failures ) extends WooPaymentsCutoverPreflightService {
+			/** @var int */
+			private int $deactivations;
+
+			/** @var string[] */
+			private array $failures;
+
+			/**
+			 * @param int      $deactivations Count of deactivation calls.
+			 * @param string[] $failures      Controlled preflight failures.
+			 */
+			public function __construct( int &$deactivations, array &$failures ) {
+				$this->deactivations =& $deactivations;
+				$this->failures      =& $failures;
+			}
+
+			/** @return string[] */
+			public function get_failures(): array {
+				return $this->failures;
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** The extension stays network-active. */
+			public function is_woopayments_network_active(): bool {
+				return true;
+			}
+
+			/** Count the deactivation calls; reports success. */
+			public function deactivate_woopayments_plugin(): bool {
+				++$this->deactivations;
+				return true;
+			}
+
+			/** Not active on the site alone. */
+			public function is_woopayments_site_active(): bool {
+				return false;
+			}
+		};
+		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** @return array{ran:bool,changes:string[]} */
+			public function run(): array {
+				return array(
+					'ran'     => true,
+					'changes' => array(),
+				);
+			}
+		};
+		$sut           = $this->create_job( true, $preflight, null, true, $normalization, wc_get_container()->get( WooPaymentsAccountService::class ) );
+
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$main_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_pending );
+			// The second site reaches the barrier first; another request then holds its write lock.
+			switch_to_blog( $second_site_id );
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+			$busy = $this->require_state_store()->acquire_lease( time() );
+			restore_current_blog();
+			$this->assertIsString( $busy );
+
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+
+			$this->assertSame( 0, $deactivations, 'A site without its token stops the network deactivation.' );
+			switch_to_blog( $second_site_id );
+			$waiting = $this->require_state_store()->get_record();
+			$this->assertIsArray( $waiting );
+			$this->assertNull( $waiting['request_origin_token'], 'The busy site got no token.' );
+			$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $waiting['state'] );
+			restore_current_blog();
+		} finally {
+			while ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			if ( is_string( $busy ) ) {
+				$this->require_state_store()->release_lease( $busy );
+			}
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		}
+	}
+
+	/**
+	 * Opus re-gate R1 on fg4d-3: a token stored next to an extension that is still network-active (here the network
+	 * deactivation failed) is not past finalize, so a Stripe Billing marker that appears later still excludes the switch.
+	 *
+	 * @testdox A network generation whose tokens were stored but whose network deactivation failed excludes on a later bundled Stripe Billing failure.
+	 * @group multisite
+	 */
+	public function test_network_tokens_with_the_extension_still_active_still_exclude(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-token-active.example.org' );
+		foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
+			switch_to_blog( $site_id );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+			// The account cache envelope (data, fetched, errored, consecutive_errors): client 11.1.0 includes/class-database-cache.php:377-382; the account_id and is_live fields: includes/class-wc-payments-account.php:164-171, :757-759.
+			update_option(
+				'wcpay_account_data',
+				array(
+					'data'               => array(
+						'account_id' => 'acct_network_token_active_' . $site_id,
+						'is_live'    => true,
+					),
+					'fetched'            => time(),
+					'errored'            => false,
+					'consecutive_errors' => 0,
+				),
+				false
+			);
+			update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+			update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
+			restore_current_blog();
+		}
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+		$deactivations = 0;
+		$failures      = array();
+		$busy          = null;
+		$preflight     = new class( $deactivations, $failures ) extends WooPaymentsCutoverPreflightService {
+			/** @var int */
+			private int $deactivations;
+
+			/** @var string[] */
+			private array $failures;
+
+			/**
+			 * @param int      $deactivations Count of deactivation calls.
+			 * @param string[] $failures      Controlled preflight failures.
+			 */
+			public function __construct( int &$deactivations, array &$failures ) {
+				$this->deactivations =& $deactivations;
+				$this->failures      =& $failures;
+			}
+
+			/** @return string[] */
+			public function get_failures(): array {
+				return $this->failures;
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** The extension stays network-active. */
+			public function is_woopayments_network_active(): bool {
+				return true;
+			}
+
+			/** Count the deactivation calls; the network deactivation fails. */
+			public function deactivate_woopayments_plugin(): bool {
+				++$this->deactivations;
+				return false;
+			}
+
+			/** Not active on the site alone. */
+			public function is_woopayments_site_active(): bool {
+				return false;
+			}
+		};
+		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** @return array{ran:bool,changes:string[]} */
+			public function run(): array {
+				return array(
+					'ran'     => true,
+					'changes' => array(),
+				);
+			}
+		};
+		$sut           = $this->create_job( true, $preflight, null, true, $normalization, wc_get_container()->get( WooPaymentsAccountService::class ) );
+
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$main_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_pending );
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+			switch_to_blog( $second_site_id );
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+			restore_current_blog();
+			$this->assertSame( 1, $deactivations, 'The barrier tried the network deactivation once.' );
+			$barrier = $this->require_state_store()->get_record();
+			$this->assertIsArray( $barrier );
+			$this->assertIsString( $barrier['request_origin_token'], 'The barrier stored the token before the deactivation.' );
+
+			// WooCommerce Subscriptions is deactivated on the main site before its next barrier attempt.
+			$failures = array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
+			$this->require_scheduler()->cancel( $barrier['generation'], $barrier['attempt'] + 1 );
+			$sut->handle_reconcile( $barrier['generation'], $barrier['attempt'] + 1 );
+
+			foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
+				switch_to_blog( $site_id );
+				$excluded = $this->require_state_store()->get_record();
+				$this->assertIsArray( $excluded );
+				$this->assertSame( WooPaymentsCutoverStateStore::STATE_EXCLUDED, $excluded['state'], "Site {$site_id} is excluded while the extension keeps payments." );
+				$this->assertNull( $excluded['request_origin_token'] );
+				restore_current_blog();
+			}
+		} finally {
+			while ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			if ( is_string( $busy ) ) {
+				$this->require_state_store()->release_lease( $busy );
+			}
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		}
+	}
+
+	/**
+	 * Codex 402 F1: the readiness check and the token pass are separate reads, so a site's own retry can claim its record
+	 * in between; that site is not prepared, and the network deactivation must not go ahead.
+	 *
+	 * @testdox A network site whose own retry claimed its record between the readiness check and the token pass stops the network deactivation.
+	 * @group multisite
+	 */
+	public function test_network_peer_that_moved_on_after_the_readiness_check_stops_the_deactivation(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-peer-moved.example.org' );
+		foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
+			switch_to_blog( $site_id );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+			// The account cache envelope (data, fetched, errored, consecutive_errors): client 11.1.0 includes/class-database-cache.php:377-382; the account_id and is_live fields: includes/class-wc-payments-account.php:164-171, :757-759.
+			update_option(
+				'wcpay_account_data',
+				array(
+					'data'               => array(
+						'account_id' => 'acct_network_peer_moved_' . $site_id,
+						'is_live'    => true,
+					),
+					'fetched'            => time(),
+					'errored'            => false,
+					'consecutive_errors' => 0,
+				),
+				false
+			);
+			update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+			update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
+			restore_current_blog();
+		}
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+		$deactivations    = 0;
+		$on_network_check = null;
+		$busy             = null;
+		$preflight        = new class( $deactivations, $on_network_check ) extends WooPaymentsCutoverPreflightService {
+			/** @var int */
+			private int $deactivations;
+
+			/** @var callable|null */
+			private $on_network_check;
+
+			/**
+			 * @param int           $deactivations    Count of deactivation calls.
+			 * @param callable|null $on_network_check Called on every network activity read.
+			 */
+			public function __construct( int &$deactivations, &$on_network_check ) {
+				$this->deactivations    =& $deactivations;
+				$this->on_network_check =& $on_network_check;
+			}
+
+			/** @return string[] */
+			public function get_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Network-active until the barrier deactivates it. */
+			public function is_woopayments_network_active(): bool {
+				if ( is_callable( $this->on_network_check ) ) {
+					( $this->on_network_check )();
+				}
+				return 0 === $this->deactivations;
+			}
+
+			/** Count the deactivation calls. */
+			public function deactivate_woopayments_plugin(): bool {
+				++$this->deactivations;
+				return true;
+			}
+
+			/** Not active on the site alone. */
+			public function is_woopayments_site_active(): bool {
+				return false;
+			}
+		};
+		$normalization    = new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** @return array{ran:bool,changes:string[]} */
+			public function run(): array {
+				return array(
+					'ran'     => true,
+					'changes' => array(),
+				);
+			}
+		};
+		$sut              = $this->create_job( true, $preflight, null, true, $normalization, wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$visits           = 0;
+		$readiness_begun  = false;
+		$move_on          = function ( $new_blog_id ) use ( $second_site_id, &$visits, &$readiness_begun ): void {
+			if ( ! $readiness_begun || $second_site_id !== (int) $new_blog_id ) {
+				return;
+			}
+			++$visits;
+			// The first visit is the readiness check; by the second, the token pass, the site's own retry claimed its record.
+			if ( 2 === $visits ) {
+				$record = $this->require_state_store()->get_record();
+				$this->assertIsArray( $record );
+				$this->create_running_record( $record );
+			}
+		};
+
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$main_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_pending );
+			switch_to_blog( $second_site_id );
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+			restore_current_blog();
+			// The readiness check opens with the network activity read.
+			$on_network_check = static function () use ( &$readiness_begun ): void {
+				$readiness_begun = true;
+			};
+			add_action( 'switch_blog', $move_on );
+
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+			remove_action( 'switch_blog', $move_on );
+
+			$this->assertSame( 2, $visits, 'The second site was visited by the readiness check and the token pass.' );
+			$this->assertSame( 0, $deactivations, 'A site that moved on since the readiness check stops the network deactivation.' );
+			switch_to_blog( $second_site_id );
+			$moved = $this->require_state_store()->get_record();
+			$this->assertIsArray( $moved );
+			$this->assertSame( WooPaymentsCutoverStateStore::STATE_RUNNING, $moved['state'] );
+			$this->assertNull( $moved['request_origin_token'] );
+			restore_current_blog();
+		} finally {
+			remove_action( 'switch_blog', $move_on );
+			while ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			if ( is_string( $busy ) ) {
+				$this->require_state_store()->release_lease( $busy );
+			}
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		}
+	}
+
+	/**
+	 * Codex 402 F1: a refused preparation write on any waiting site stops the network deactivation.
+	 *
+	 * @testdox A network site whose token write is refused stops the network deactivation, and keeps no token.
+	 * @group multisite
+	 */
+	public function test_network_site_whose_token_write_is_refused_stops_the_deactivation(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+		global $wpdb;
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-token-refused.example.org' );
+		foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
+			switch_to_blog( $site_id );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+			// The account cache envelope (data, fetched, errored, consecutive_errors): client 11.1.0 includes/class-database-cache.php:377-382; the account_id and is_live fields: includes/class-wc-payments-account.php:164-171, :757-759.
+			update_option(
+				'wcpay_account_data',
+				array(
+					'data'               => array(
+						'account_id' => 'acct_network_token_refused_' . $site_id,
+						'is_live'    => true,
+					),
+					'fetched'            => time(),
+					'errored'            => false,
+					'consecutive_errors' => 0,
+				),
+				false
+			);
+			update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+			update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
+			restore_current_blog();
+		}
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+		$deactivations = 0;
+		$failures      = array();
+		$busy          = null;
+		$preflight     = new class( $deactivations, $failures ) extends WooPaymentsCutoverPreflightService {
+			/** @var int */
+			private int $deactivations;
+
+			/** @var string[] */
+			private array $failures;
+
+			/**
+			 * @param int      $deactivations Count of deactivation calls.
+			 * @param string[] $failures      Controlled preflight failures.
+			 */
+			public function __construct( int &$deactivations, array &$failures ) {
+				$this->deactivations =& $deactivations;
+				$this->failures      =& $failures;
+			}
+
+			/** @return string[] */
+			public function get_failures(): array {
+				return $this->failures;
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** The extension stays network-active. */
+			public function is_woopayments_network_active(): bool {
+				return true;
+			}
+
+			/** Count the deactivation calls; reports success. */
+			public function deactivate_woopayments_plugin(): bool {
+				++$this->deactivations;
+				return true;
+			}
+
+			/** Not active on the site alone. */
+			public function is_woopayments_site_active(): bool {
+				return false;
+			}
+		};
+		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** @return array{ran:bool,changes:string[]} */
+			public function run(): array {
+				return array(
+					'ran'     => true,
+					'changes' => array(),
+				);
+			}
+		};
+		$sut           = $this->create_job( true, $preflight, null, true, $normalization, wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$second_table  = $wpdb->get_blog_prefix( $second_site_id ) . 'options';
+		$refuse        = static function ( $query ) use ( $second_table ) {
+			// The token pass's compare-and-set on the second site's waiting record matches no row.
+			if ( is_string( $query ) && 0 === strpos( $query, "UPDATE {$second_table} " ) && false !== strpos( $query, 'woocommerce_woopayments_cutover_state' ) && false !== strpos( $query, 'network_barrier' ) ) {
+				return $query . ' AND 1 = 0';
+			}
+			return $query;
+		};
+
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$main_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_pending );
+			switch_to_blog( $second_site_id );
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+			restore_current_blog();
+			add_filter( 'query', $refuse );
+
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+			remove_filter( 'query', $refuse );
+
+			$this->assertSame( 0, $deactivations, 'A refused preparation write stops the network deactivation.' );
+			switch_to_blog( $second_site_id );
+			$refused = $this->require_state_store()->get_record();
+			$this->assertIsArray( $refused );
+			$this->assertNull( $refused['request_origin_token'] );
+			restore_current_blog();
+		} finally {
+			remove_filter( 'query', $refuse );
+			while ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			if ( is_string( $busy ) ) {
+				$this->require_state_store()->release_lease( $busy );
+			}
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		}
+	}
+
+	/**
+	 * Codex 402 F2: after the network deactivation, the barrier's paused-site check no longer excludes the network, so a
+	 * site that already finished keeps its done record.
+	 *
+	 * @testdox After the network deactivation, a paused site's Stripe Billing marker no longer excludes the network: a site that already switched stays done.
+	 * @group multisite
+	 */
+	public function test_paused_site_marker_after_the_network_deactivation_keeps_done_sites(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-done-peer.example.org' );
+		foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
+			switch_to_blog( $site_id );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+			// The account cache envelope (data, fetched, errored, consecutive_errors): client 11.1.0 includes/class-database-cache.php:377-382; the account_id and is_live fields: includes/class-wc-payments-account.php:164-171, :757-759.
+			update_option(
+				'wcpay_account_data',
+				array(
+					'data'               => array(
+						'account_id' => 'acct_network_done_peer_' . $site_id,
+						'is_live'    => true,
+					),
+					'fetched'            => time(),
+					'errored'            => false,
+					'consecutive_errors' => 0,
+				),
+				false
+			);
+			update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+			update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
+			restore_current_blog();
+		}
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+		$archived_site_id = $this->create_cutover_multisite_site( 'cutover-done-peer-archived.example.org' );
+		update_blog_status( $archived_site_id, 'archived', '1' );
+		switch_to_blog( $second_site_id );
+		// The second site ran the extension (client 11.1.0 includes/class-wc-payments.php:1580 records its version).
+		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
+		restore_current_blog();
+		$deactivations    = 0;
+		$failures_by_site = array();
+		$preflight        = new class( $deactivations, $failures_by_site ) extends WooPaymentsCutoverPreflightService {
+			/** @var int */
+			private int $deactivations;
+
+			/** @var array<int,string[]> */
+			private array $failures_by_site;
+
+			/**
+			 * @param int                 $deactivations    Count of deactivation calls.
+			 * @param array<int,string[]> $failures_by_site Controlled failures by site.
+			 */
+			public function __construct( int &$deactivations, array &$failures_by_site ) {
+				$this->deactivations    =& $deactivations;
+				$this->failures_by_site =& $failures_by_site;
+			}
+
+			/** @return string[] */
+			public function get_failures(): array {
+				return $this->failures_by_site[ get_current_blog_id() ] ?? array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Network-active until the barrier deactivates it. */
+			public function is_woopayments_network_active(): bool {
+				return 0 === $this->deactivations;
+			}
+
+			/** Count the network deactivation. */
+			public function deactivate_woopayments_plugin(): bool {
+				++$this->deactivations;
+				return true;
+			}
+
+			/** Not active on the site alone. */
+			public function is_woopayments_site_active(): bool {
+				return false;
+			}
+
+			/** The fee remediation is scheduled. */
+			public function ensure_fee_remediation_scheduled(): bool {
+				return true;
+			}
+		};
+		$normalization    = new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** @return array{ran:bool,changes:string[]} */
+			public function run(): array {
+				return array(
+					'ran'     => true,
+					'changes' => array(),
+				);
+			}
+		};
+		$sut              = $this->create_job( true, $preflight, null, true, $normalization, wc_get_container()->get( WooPaymentsAccountService::class ) );
+
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$main_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_pending );
+			$generation = $main_pending['generation'];
+			$this->require_scheduler()->cancel( $generation, 1 );
+			$sut->handle_reconcile( $generation, 1 );
+			switch_to_blog( $second_site_id );
+			$this->require_scheduler()->cancel( $generation, 1 );
+			$sut->handle_reconcile( $generation, 1 );
+			restore_current_blog();
+			$this->assertSame( 1, $deactivations, 'The barrier deactivated the network-active extension.' );
+
+			// The second site's ownership check finishes in a fresh request where the built-in WooPayments owns payments.
+			$this->start_fresh_request();
+			$builtin = $this->create_job( true, $preflight, null, false, $normalization, wc_get_container()->get( WooPaymentsAccountService::class ) );
+			switch_to_blog( $second_site_id );
+			$verification = $this->require_state_store()->get_record();
+			$this->assertIsArray( $verification );
+			$this->require_scheduler()->cancel( $generation, $verification['attempt'] + 1 );
+			$builtin->handle_reconcile( $generation, $verification['attempt'] + 1 );
+			$done = $this->require_state_store()->get_record();
+			$this->assertIsArray( $done );
+			$this->assertSame( WooPaymentsCutoverStateStore::STATE_DONE, $done['state'] );
+			restore_current_blog();
+
+			// The main site's ownership check defers (here: its request still reads the extension), so it goes round the barrier again.
+			$main_verification = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_verification );
+			$this->require_scheduler()->cancel( $generation, $main_verification['attempt'] + 1 );
+			$sut->handle_reconcile( $generation, $main_verification['attempt'] + 1 );
+			$deferred = $this->require_state_store()->get_record();
+			$this->assertIsArray( $deferred );
+			$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
+
+			// Meanwhile the archived site holds bundled Stripe Billing subscriptions.
+			$failures_by_site[ $archived_site_id ] = array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
+			$this->start_fresh_request();
+			$this->require_scheduler()->cancel( $generation, $deferred['attempt'] + 1 );
+			$builtin->handle_reconcile( $generation, $deferred['attempt'] + 1 );
+
+			switch_to_blog( $second_site_id );
+			$kept = $this->require_state_store()->get_record();
+			$this->assertIsArray( $kept );
+			$this->assertSame( WooPaymentsCutoverStateStore::STATE_DONE, $kept['state'], 'The switched site keeps its done record.' );
+			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->get_runtime_owner() );
+			restore_current_blog();
+			$main_after = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_after );
+			$this->assertNotSame( WooPaymentsCutoverStateStore::STATE_EXCLUDED, $main_after['state'], 'The main site is not excluded either.' );
+		} finally {
+			while ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			foreach ( array( $second_site_id, $archived_site_id ) as $site_id ) {
+				switch_to_blog( $site_id );
+				$this->cleanup_state();
+				restore_current_blog();
+				wpmu_delete_blog( $site_id, true );
+			}
 			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		}
 	}

@@ -493,7 +493,8 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 					return;
 			}
 			if ( WooPaymentsCutoverStateStore::STATE_EXCLUDED === $record['state'] ) {
-				if ( $this->can_start_cutover() && $this->reconciliation_job->is_bundled_exclusion_notice_due( $record ) ) {
+				// Information for store managers; the start action keeps its own checks.
+				if ( $this->legacy_proxy->call_function( 'current_user_can', 'manage_woocommerce' ) && $this->reconciliation_job->is_bundled_exclusion_notice_due( $record ) ) {
 					$this->output_bundled_exclusion_notice();
 				}
 				return;

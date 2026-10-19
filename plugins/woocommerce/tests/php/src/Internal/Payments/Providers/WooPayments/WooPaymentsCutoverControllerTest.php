@@ -531,7 +531,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The bundled-store notice shows only where the start notice would: not for another exclusion, and not for a user who cannot start the switch.
+	 * @testdox The bundled-store notice shows only for this exclusion, and only to a user who may manage WooCommerce.
 	 */
 	public function test_bundled_store_notice_follows_who_may_start_the_switch(): void {
 		$this->fake_plugin_active();
@@ -872,6 +872,24 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'To switch, first activate the WooPayments extension in Plugins and update it to the latest version.', $notices );
 		$this->assertStringNotContainsString( 'Start the switch', $notices );
 		$this->assertFalse( $controller->disable_woopayments_plugin() );
+	}
+
+	/**
+	 * Codex 402 F3: the old-version rule guards the start action only; the bundled-exclusion notice is information.
+	 *
+	 * @testdox A store waiting for its switch with an old extension that is excluded for bundled Stripe Billing subscriptions is still told why, with no start button.
+	 */
+	public function test_old_extension_store_excluded_for_bundled_subscriptions_is_told_why(): void {
+		update_option( 'woocommerce_woocommerce_payments_version', '10.4.9' );
+		$this->fake_plugin_active( false );
+		$this->fake_current_user_caps( true );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+
+		$notices = $this->render_admin_notices( $this->create_cutover_controller( $this->create_excluded_notice_job( 'bundled_stripe_billing_subscriptions_present' ) ) );
+
+		$this->assertStringContainsString( 'this store can&#039;t switch yet. Its subscriptions are billed through Stripe Billing', $notices );
+		$this->assertStringNotContainsString( 'Start the switch', $notices );
 	}
 
 	/**
