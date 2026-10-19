@@ -111,11 +111,11 @@ class WooPaymentsCutoverPreflightService {
 	private ?WooPaymentsProvider $provider = null;
 
 	/**
-	 * Legacy subscription data guard.
+	 * Bundled subscriptions guard.
 	 *
 	 * @var WooPaymentsBundledSubscriptionsGuard|null
 	 */
-	private ?WooPaymentsBundledSubscriptionsGuard $legacy_subscriptions_guard = null;
+	private ?WooPaymentsBundledSubscriptionsGuard $bundled_subscriptions_guard = null;
 
 	/**
 	 * Fee remediation owner.
@@ -132,18 +132,18 @@ class WooPaymentsCutoverPreflightService {
 	private ?WooPaymentsPlatformConnectionService $platform_connection_service = null;
 
 	/**
-	 * Native rate account boundary.
+	 * Rate account boundary.
 	 *
 	 * @var WooPaymentsNativeAccountAdapter|null
 	 */
-	private ?WooPaymentsNativeAccountAdapter $native_rate_account = null;
+	private ?WooPaymentsNativeAccountAdapter $rate_account = null;
 
 	/**
-	 * Native rate API client boundary.
+	 * Rate API client boundary.
 	 *
 	 * @var WooPaymentsNativeApiClientAdapter|null
 	 */
-	private ?WooPaymentsNativeApiClientAdapter $native_rate_api_client = null;
+	private ?WooPaymentsNativeApiClientAdapter $rate_api_client = null;
 
 	/**
 	 * Request-local reconciliation failures keyed by blog ID.
@@ -215,7 +215,7 @@ class WooPaymentsCutoverPreflightService {
 		if ( ! $this->is_woopayments_plugin_version_supported() ) {
 			$failures[] = self::FAILURE_PLUGIN_VERSION_UNSUPPORTED;
 		}
-		if ( ! $this->is_native_transport_ready() ) {
+		if ( ! $this->is_builtin_transport_ready() ) {
 			$failures[] = self::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE;
 		}
 		$failures = array_merge( $failures, $this->get_platform_connection_service()->get_cutover_preflight_failures() );
@@ -228,7 +228,7 @@ class WooPaymentsCutoverPreflightService {
 		if ( ! $this->get_fee_remediation_service()->can_schedule_cutover_remediation() ) {
 			$failures[] = self::FAILURE_FEE_REMEDIATION_UNAVAILABLE;
 		}
-		if ( $this->get_legacy_subscriptions_guard()->is_bundled_stripe_billing_store() ) {
+		if ( $this->get_bundled_subscriptions_guard()->is_bundled_subscriptions_store() ) {
 			$failures[] = self::FAILURE_BUNDLED_SUBSCRIPTIONS;
 		}
 
@@ -394,11 +394,11 @@ class WooPaymentsCutoverPreflightService {
 	}
 
 	/**
-	 * Determine whether native transport is ready.
+	 * Determine whether the built-in transport is ready.
 	 *
 	 * @return bool
 	 */
-	private function is_native_transport_ready(): bool {
+	private function is_builtin_transport_ready(): bool {
 		try {
 			return $this->get_provider()->can_process_payments();
 		} catch ( \Throwable $e ) {
@@ -416,7 +416,7 @@ class WooPaymentsCutoverPreflightService {
 			return false;
 		}
 		try {
-			return ! ( $this->get_native_rate_api_client()->is_server_connected() && $this->get_native_rate_account()->is_provider_connected() && ! $this->get_native_rate_account()->is_account_rejected() );
+			return ! ( $this->get_rate_api_client()->is_server_connected() && $this->get_rate_account()->is_provider_connected() && ! $this->get_rate_account()->is_account_rejected() );
 		} catch ( \Throwable $e ) {
 			return true;
 		}
@@ -542,16 +542,16 @@ class WooPaymentsCutoverPreflightService {
 	}
 
 	/**
-	 * Get the legacy subscription data guard, resolving it on first use.
+	 * Get the bundled subscriptions guard, resolving it on first use.
 	 *
 	 * @return WooPaymentsBundledSubscriptionsGuard
 	 */
-	private function get_legacy_subscriptions_guard(): WooPaymentsBundledSubscriptionsGuard {
-		if ( null === $this->legacy_subscriptions_guard ) {
-			$this->legacy_subscriptions_guard = wc_get_container()->get( WooPaymentsBundledSubscriptionsGuard::class );
+	private function get_bundled_subscriptions_guard(): WooPaymentsBundledSubscriptionsGuard {
+		if ( null === $this->bundled_subscriptions_guard ) {
+			$this->bundled_subscriptions_guard = wc_get_container()->get( WooPaymentsBundledSubscriptionsGuard::class );
 		}
 
-		return $this->legacy_subscriptions_guard;
+		return $this->bundled_subscriptions_guard;
 	}
 
 	/**
@@ -581,28 +581,28 @@ class WooPaymentsCutoverPreflightService {
 	}
 
 	/**
-	 * Get the native rate account boundary, resolving it on first use.
+	 * Get the rate account boundary, resolving it on first use.
 	 *
 	 * @return WooPaymentsNativeAccountAdapter
 	 */
-	private function get_native_rate_account(): WooPaymentsNativeAccountAdapter {
-		if ( null === $this->native_rate_account ) {
-			$this->native_rate_account = wc_get_container()->get( WooPaymentsNativeAccountAdapter::class );
+	private function get_rate_account(): WooPaymentsNativeAccountAdapter {
+		if ( null === $this->rate_account ) {
+			$this->rate_account = wc_get_container()->get( WooPaymentsNativeAccountAdapter::class );
 		}
 
-		return $this->native_rate_account;
+		return $this->rate_account;
 	}
 
 	/**
-	 * Get the native rate API client boundary, resolving it on first use.
+	 * Get the rate API client boundary, resolving it on first use.
 	 *
 	 * @return WooPaymentsNativeApiClientAdapter
 	 */
-	private function get_native_rate_api_client(): WooPaymentsNativeApiClientAdapter {
-		if ( null === $this->native_rate_api_client ) {
-			$this->native_rate_api_client = wc_get_container()->get( WooPaymentsNativeApiClientAdapter::class );
+	private function get_rate_api_client(): WooPaymentsNativeApiClientAdapter {
+		if ( null === $this->rate_api_client ) {
+			$this->rate_api_client = wc_get_container()->get( WooPaymentsNativeApiClientAdapter::class );
 		}
 
-		return $this->native_rate_api_client;
+		return $this->rate_api_client;
 	}
 }

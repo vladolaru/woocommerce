@@ -83,7 +83,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 		$sut = new WooPaymentsCutoverPreflightService();
 		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ) );
 
-		foreach ( array( 'provider', 'legacy_subscriptions_guard', 'fee_remediation_service', 'platform_connection_service', 'native_rate_account', 'native_rate_api_client' ) as $property ) {
+		foreach ( array( 'provider', 'bundled_subscriptions_guard', 'fee_remediation_service', 'platform_connection_service', 'rate_account', 'rate_api_client' ) as $property ) {
 			$reflection = new \ReflectionProperty( WooPaymentsCutoverPreflightService::class, $property );
 			$reflection->setAccessible( true );
 			$this->assertNull( $reflection->getValue( $sut ), $property . ' must be resolved when a preflight runs, not when the service is initialized.' );
@@ -415,22 +415,22 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsRuntimeArbiter                             $arbiter                     The runtime arbiter.
 	 * @param LegacyProxy                                           $legacy_proxy                The legacy proxy.
 	 * @param WooPaymentsProvider                                   $provider                    The native provider.
-	 * @param WooPaymentsBundledSubscriptionsGuard                  $legacy_subscriptions_guard  The legacy subscription data guard.
+	 * @param WooPaymentsBundledSubscriptionsGuard                  $bundled_subscriptions_guard  The bundled subscriptions guard.
 	 * @param WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service     The fee remediation owner.
 	 * @param WooPaymentsPlatformConnectionService                  $platform_connection_service The platform connection readiness service.
-	 * @param WooPaymentsNativeAccountAdapter                       $native_rate_account         The native rate account boundary.
-	 * @param WooPaymentsNativeApiClientAdapter                     $native_rate_api_client      The native rate API client boundary.
+	 * @param WooPaymentsNativeAccountAdapter                       $rate_account         The rate account boundary.
+	 * @param WooPaymentsNativeApiClientAdapter                     $rate_api_client      The rate API client boundary.
 	 */
-	private function init_preflight_service( WooPaymentsCutoverPreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, WooPaymentsProvider $provider, WooPaymentsBundledSubscriptionsGuard $legacy_subscriptions_guard, WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service, WooPaymentsPlatformConnectionService $platform_connection_service, WooPaymentsNativeAccountAdapter $native_rate_account, WooPaymentsNativeApiClientAdapter $native_rate_api_client ): void {
+	private function init_preflight_service( WooPaymentsCutoverPreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, WooPaymentsProvider $provider, WooPaymentsBundledSubscriptionsGuard $bundled_subscriptions_guard, WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service, WooPaymentsPlatformConnectionService $platform_connection_service, WooPaymentsNativeAccountAdapter $rate_account, WooPaymentsNativeApiClientAdapter $rate_api_client ): void {
 		$service->init( $arbiter, $legacy_proxy );
 
 		$collaborators = array(
 			'provider'                    => $provider,
-			'legacy_subscriptions_guard'  => $legacy_subscriptions_guard,
+			'bundled_subscriptions_guard' => $bundled_subscriptions_guard,
 			'fee_remediation_service'     => $fee_remediation_service,
 			'platform_connection_service' => $platform_connection_service,
-			'native_rate_account'         => $native_rate_account,
-			'native_rate_api_client'      => $native_rate_api_client,
+			'rate_account'                => $rate_account,
+			'rate_api_client'             => $rate_api_client,
 		);
 		foreach ( $collaborators as $property => $collaborator ) {
 			$reflection = new \ReflectionProperty( WooPaymentsCutoverPreflightService::class, $property );

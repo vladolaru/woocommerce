@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPa
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPayments legacy subscriptions guard.
+ * Tests for the WooPayments bundled subscriptions guard.
  */
 class WooPaymentsBundledSubscriptionsGuardTest extends WC_Unit_Test_Case {
 
@@ -30,7 +30,7 @@ class WooPaymentsBundledSubscriptionsGuardTest extends WC_Unit_Test_Case {
 		$wpdb->expects( $this->never() )->method( 'prepare' );
 		$wpdb->expects( $this->never() )->method( 'get_var' );
 
-		$this->assertTrue( $this->create_guard( $wpdb )->is_bundled_stripe_billing_store() );
+		$this->assertTrue( $this->create_guard( $wpdb )->is_bundled_subscriptions_store() );
 	}
 
 	/**
@@ -53,7 +53,7 @@ class WooPaymentsBundledSubscriptionsGuardTest extends WC_Unit_Test_Case {
 			->method( 'get_var' )
 			->willReturn( 'wp_wc_orders', 'wp_wc_orders_meta', '1' );
 
-		$this->assertTrue( $this->create_guard( $wpdb )->is_bundled_stripe_billing_store() );
+		$this->assertTrue( $this->create_guard( $wpdb )->is_bundled_subscriptions_store() );
 	}
 
 	/**
@@ -91,7 +91,7 @@ class WooPaymentsBundledSubscriptionsGuardTest extends WC_Unit_Test_Case {
 				}
 			);
 
-		$this->assertFalse( $this->create_guard( $wpdb )->is_bundled_stripe_billing_store() );
+		$this->assertFalse( $this->create_guard( $wpdb )->is_bundled_subscriptions_store() );
 	}
 
 	/**
@@ -122,7 +122,7 @@ class WooPaymentsBundledSubscriptionsGuardTest extends WC_Unit_Test_Case {
 				}
 			);
 
-		$this->assertTrue( $this->create_guard( $wpdb )->is_bundled_stripe_billing_store() );
+		$this->assertTrue( $this->create_guard( $wpdb )->is_bundled_subscriptions_store() );
 	}
 
 	/**
@@ -158,11 +158,11 @@ class WooPaymentsBundledSubscriptionsGuardTest extends WC_Unit_Test_Case {
 				}
 			);
 
-		$this->assertTrue( $this->create_guard( $wpdb )->is_bundled_stripe_billing_store() );
+		$this->assertTrue( $this->create_guard( $wpdb )->is_bundled_subscriptions_store() );
 	}
 
 	/**
-	 * @testdox With WooCommerce Subscriptions active the store is never bundled, whatever its Stripe Billing data or bundled flag (spec section 7).
+	 * @testdox With WooCommerce Subscriptions active the store is never bundled, whatever its Stripe Billing data or bundled flag.
 	 */
 	public function test_a_store_with_woocommerce_subscriptions_active_is_not_bundled(): void {
 		$this->register_legacy_proxy_function_mocks(
@@ -180,7 +180,7 @@ class WooPaymentsBundledSubscriptionsGuardTest extends WC_Unit_Test_Case {
 		update_post_meta( $subscription_id, '_wcpay_subscription_id', 'sub_1UM1VrBzWlxcwgpP6A3GwGLe' );
 		update_option( '_wcpay_feature_subscriptions', '1' );
 
-		$this->assertFalse( ( new WooPaymentsBundledSubscriptionsGuard() )->is_bundled_stripe_billing_store() );
+		$this->assertFalse( ( new WooPaymentsBundledSubscriptionsGuard() )->is_bundled_subscriptions_store() );
 	}
 
 	/**
@@ -196,11 +196,11 @@ class WooPaymentsBundledSubscriptionsGuardTest extends WC_Unit_Test_Case {
 		);
 		update_post_meta( $subscription_id, '_wcpay_subscription_id', 'sub_1UM1VrBzWlxcwgpP6A3GwGLe' );
 
-		$this->assertTrue( ( new WooPaymentsBundledSubscriptionsGuard() )->is_bundled_stripe_billing_store() );
+		$this->assertTrue( ( new WooPaymentsBundledSubscriptionsGuard() )->is_bundled_subscriptions_store() );
 	}
 
 	/**
-	 * Create a legacy subscriptions guard with a controlled database abstraction.
+	 * Create a bundled subscriptions guard with a controlled database abstraction.
 	 *
 	 * @param \wpdb $database WordPress database access abstraction.
 	 * @return WooPaymentsBundledSubscriptionsGuard

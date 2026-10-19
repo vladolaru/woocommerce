@@ -60,7 +60,7 @@ class WooPaymentsBundledSubscriptionsGuardMultisiteTest extends WC_Unit_Test_Cas
 			);
 			update_post_meta( $subscription_id, '_wcpay_subscription_id', 'sub_1UM1VrBzWlxcwgpP6A3GwGLe' );
 
-			$is_bundled = ( new WooPaymentsBundledSubscriptionsGuard() )->is_bundled_stripe_billing_store();
+			$is_bundled = ( new WooPaymentsBundledSubscriptionsGuard() )->is_bundled_subscriptions_store();
 		} finally {
 			restore_current_blog();
 		}
