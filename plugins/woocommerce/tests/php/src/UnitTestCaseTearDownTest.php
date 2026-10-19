@@ -52,6 +52,8 @@ class UnitTestCaseTearDownTest extends \WC_Unit_Test_Case {
 			)
 		);
 
+		// The test starts from the feature off, so the first read is none in the feature-on CI leg too.
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		$runtime_arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $runtime_arbiter->get_runtime_owner(), 'The initial runtime owner should be none.' );
 
