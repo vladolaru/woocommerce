@@ -22,7 +22,8 @@ defined( 'ABSPATH' ) || exit;
  * so no site can start it while the extension is network-active. The network admin notice offers the conversion while the
  * extension is network-active and the WooPayments feature is on at one site or more. The conversion moves no data and
  * leaves the feature as it is. The conversion starts no switch. Its activations run as changes the switch's job initiated, so
- * the plugin lifecycle hooks record nothing, and the conversion records each site's rollback itself (record_rollback()).
+ * the cutover's plugin lifecycle listener records nothing, and the conversion records each site's rollback itself
+ * (record_rollback()).
  *
  * @since 11.2.0
  * @internal Transitional internal component for the native payments runtime.
@@ -330,8 +331,8 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 		$context = array( 'site_id' => get_current_blog_id() );
 		if ( $this->preflight_service->is_woopayments_site_active() ) {
 			$this->log( 'info', 'WooPayments per-site activation: the WooPayments extension is already active on this site.', $context );
-			// WordPress keeps a site's own activation when the extension is network-activated later, so a completed switch there
-			// still needs its rollback.
+			// WordPress keeps a site's own activation when the extension is network-activated later, so a switch there that
+			// reached finalize still needs its rollback.
 			$this->record_rollback( $context );
 			return 'skipped';
 		}
@@ -344,7 +345,7 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 			return 'kept';
 		}
 
-		// The activation hooks run, and the lifecycle listener records nothing: record_rollback() decides the site's rollback.
+		// WordPress's activation hooks still fire; the cutover's plugin lifecycle listener records nothing, so record_rollback() decides.
 		$activated = $this->reconciliation_job->run_while_changing_plugins(
 			fn() => $this->legacy_proxy->call_function( 'activate_plugin', $plugin_file )
 		);
@@ -361,10 +362,10 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	/**
 	 * Record the current site's rollback of a completed switch, or of one past finalize, as an activation of the extension does.
 	 *
-	 * A switch that started and has not reached finalize continues: the extension never left the site and nothing was
-	 * migrated, so rolling it back would make the merchant start it again. This is the conversion's only rollback path; its
-	 * activations run with the lifecycle listener recording nothing. Idempotent for a record already awaiting the merchant's start; best
-	 * effort: a busy write lock records nothing, and an error is logged.
+	 * A started switch with no persisted finalize token continues: the conversion keeps the merchant's existing start. This is
+	 * the conversion's only rollback path, because the cutover's plugin lifecycle listener records nothing during its
+	 * activations. Idempotent for a record already awaiting the merchant's start; best effort: a busy write lock records
+	 * nothing, and an error is logged.
 	 *
 	 * @param array<string,mixed> $context Log context.
 	 */

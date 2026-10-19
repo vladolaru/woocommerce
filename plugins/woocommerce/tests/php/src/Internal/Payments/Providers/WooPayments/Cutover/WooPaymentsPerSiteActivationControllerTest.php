@@ -339,7 +339,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	 * @group multisite
 	 * @dataProvider provider_switch_that_rolls_back
 	 *
-	 * @param string $kind           done, or finalized (deferred with the request token).
+	 * @param string $kind           done, or past finalize with the request token: deferred, pending ownership verification, or running ownership verification.
 	 * @param bool   $listener       Whether the plugin lifecycle listener is loaded in the request.
 	 * @param bool   $already_active Whether the site already has the extension in its own active list.
 	 */
@@ -355,10 +355,15 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		if ( $already_active ) {
 			$this->activate_on_its_own( $switched );
 		}
+		$token = array( 'request_origin_token' => 'finalize-token' );
 		if ( 'done' === $kind ) {
 			$this->create_record( $switched, WooPaymentsCutoverStateStore::STATE_DONE, 'done', array() );
+		} elseif ( 'pending verification' === $kind ) {
+			$this->create_record( $switched, WooPaymentsCutoverStateStore::STATE_PENDING, 'verify_builtin_ownership', array(), $token );
+		} elseif ( 'running verification' === $kind ) {
+			$this->create_record( $switched, WooPaymentsCutoverStateStore::STATE_RUNNING, 'verify_builtin_ownership', array(), array_merge( $token, $this->get_record_overrides( WooPaymentsCutoverStateStore::STATE_RUNNING ) ) );
 		} else {
-			$this->create_record( $switched, WooPaymentsCutoverStateStore::STATE_DEFERRED, 'deferred', array( 'builtin_ownership_unverified' ), array( 'request_origin_token' => 'finalize-token' ) );
+			$this->create_record( $switched, WooPaymentsCutoverStateStore::STATE_DEFERRED, 'deferred', array( 'builtin_ownership_unverified' ), $token );
 		}
 		$activated_hooks = array();
 		add_action(
@@ -388,7 +393,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function provider_switch_that_rolls_back(): array {
 		$rows = array();
-		foreach ( array( 'done', 'finalized' ) as $kind ) {
+		foreach ( array( 'done', 'finalized', 'pending verification', 'running verification' ) as $kind ) {
 			foreach ( array( true, false ) as $listener ) {
 				foreach ( array( false, true ) as $already_active ) {
 					$rows[ sprintf( '%s, listener %s, %s', $kind, $listener ? 'loaded' : 'not loaded', $already_active ? 'already active' : 'activated' ) ] = array( $kind, $listener, $already_active );

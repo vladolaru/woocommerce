@@ -135,6 +135,43 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A plugin change the job runs is marked while its callback runs, and the previous mark comes back when the callback throws (previous mark: $previous).
+	 * @testWith [false]
+	 *           [true]
+	 *
+	 * @param bool $previous Whether the job was already inside a plugin change of its own.
+	 */
+	public function test_plugin_change_mark_is_restored_when_the_callback_throws( bool $previous ): void {
+		$job           = $this->require_sut();
+		$marked_inside = null;
+		$restored      = null;
+		$thrown        = null;
+		$throwing      = function () use ( $job, &$marked_inside ): void {
+			$marked_inside = $job->is_internal_plugin_lifecycle_change();
+			throw new \RuntimeException( 'activation failed' );
+		};
+		$attempt       = function () use ( $job, $throwing, &$restored, &$thrown ): void {
+			try {
+				$job->run_while_changing_plugins( $throwing );
+			} catch ( \RuntimeException $error ) {
+				$thrown = $error;
+			}
+			$restored = $job->is_internal_plugin_lifecycle_change();
+		};
+
+		if ( $previous ) {
+			$job->run_while_changing_plugins( $attempt );
+		} else {
+			$attempt();
+		}
+
+		$this->assertInstanceOf( \RuntimeException::class, $thrown, 'The exception reaches the caller.' );
+		$this->assertTrue( $marked_inside, 'The change is marked while the callback runs.' );
+		$this->assertSame( $previous, $restored, 'The mark is back to its previous value after the callback threw.' );
+		$this->assertFalse( $job->is_internal_plugin_lifecycle_change(), 'No mark is left once every callback has returned.' );
+	}
+
+	/**
 	 * @testdox Enqueue creates one complete autoloaded state record and one exact action.
 	 */
 	public function test_enqueue_persists_initial_state_and_exact_action(): void {

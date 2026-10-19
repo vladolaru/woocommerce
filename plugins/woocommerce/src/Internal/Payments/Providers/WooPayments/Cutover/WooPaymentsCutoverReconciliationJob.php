@@ -936,8 +936,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * Tell whether this site's switch has started and not reached finalize: its record is pending past the merchant's start,
 	 * running or deferred, and carries no request token.
 	 *
-	 * Finalize stores the token before it deactivates the extension, so such a switch has not touched the extension or
-	 * migrated anything. Read-only.
+	 * This generation has no persisted finalize token; the conversion keeps the merchant's existing start. A start that
+	 * meets the network activation defers before it migrates (plugin_active_sitewide). Read-only.
 	 *
 	 * @return bool
 	 */
