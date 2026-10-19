@@ -63,6 +63,8 @@ class WooPaymentsFeatureControllerTest extends WC_Unit_Test_Case {
 	 * @param bool   $refused     Whether the off choice is refused.
 	 */
 	public function test_off_choice_is_refused_only_while_the_builtin_takes_payments( string $owner, string $stored_tier, bool $refused ): void {
+		// A store that ran the extension, so the message names the one-step way back.
+		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
 		update_option( WooPaymentsSetupTier::OPTION_NAME, $stored_tier );
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		$setting = $this->create_sut( $owner )->get_feature_setting();
@@ -80,6 +82,29 @@ class WooPaymentsFeatureControllerTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( 'woopayments=0', $description );
 		$this->assertStringContainsString( '_feature_nonce=', $description );
 		$this->assertStringContainsString( 'section=features', $description );
+	}
+
+	/**
+	 * On a store that never ran the extension, its activation is refused while the built-in WooPayments owns payments, so the
+	 * message names both steps (N-501); a store that ran it reactivates it in one step (N-482).
+	 *
+	 * @testdox The protected message names the way to the WooPayments extension that works on this store ($_dataName).
+	 * @testWith ["a store that never ran the extension", false, "To use the WooPayments extension instead, disable WooPayments here first, then activate the extension from Plugins."]
+	 *           ["a store that ran the extension", true, "To go back to the WooPayments extension, activate it from Plugins."]
+	 *
+	 * @param string $label         Case label.
+	 * @param bool   $extension_ran Whether the extension's version option is stored.
+	 * @param string $sentence      Expected third sentence.
+	 */
+	public function test_protected_message_names_the_way_to_the_extension( string $label, bool $extension_ran, string $sentence ): void {
+		unset( $label );
+		if ( $extension_ran ) {
+			update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
+		} else {
+			delete_option( 'woocommerce_woocommerce_payments_version' );
+		}
+
+		$this->assertSame( 'WooPayments is taking payments on this store. Turning this off stops checkout. ' . $sentence, $this->create_sut( WooPaymentsRuntimeArbiter::OWNER_BUILTIN )->get_disable_protected_message() );
 	}
 
 	/**

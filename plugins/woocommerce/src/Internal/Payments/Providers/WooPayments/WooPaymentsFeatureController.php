@@ -153,6 +153,11 @@ class WooPaymentsFeatureController {
 	 * @return string
 	 */
 	public function get_disable_protected_message(): string {
+		// The extension's activation is refused on a store that never ran it while the built-in WooPayments owns payments.
+		if ( ! $this->arbiter->has_run_woopayments_extension() ) {
+			return __( 'WooPayments is taking payments on this store. Turning this off stops checkout. To use the WooPayments extension instead, disable WooPayments here first, then activate the extension from Plugins.', 'woocommerce' );
+		}
+
 		return __( 'WooPayments is taking payments on this store. Turning this off stops checkout. To go back to the WooPayments extension, activate it from Plugins.', 'woocommerce' );
 	}
 
