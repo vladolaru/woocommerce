@@ -21,8 +21,8 @@ defined( 'ABSPATH' ) || exit;
  * Each site switches to WooPayments in WooCommerce on its own, and a switch deactivates the extension on its own site only,
  * so no site can start it while the extension is network-active. The network admin notice offers the conversion while the
  * extension is network-active and the WooPayments feature is on at one site or more. The conversion moves no data and
- * leaves the feature as it is. The conversion starts no switch; normal activation hooks may reopen existing records as
- * rollbacks, and the conversion records each site's rollback itself (activate_on_current_site()).
+ * leaves the feature as it is. The conversion starts no switch. Its activations run as changes the switch's job initiated, so
+ * the plugin lifecycle hooks record nothing, and the conversion records each site's rollback itself (record_rollback()).
  *
  * @since 11.2.0
  * @internal Transitional internal component for the native payments runtime.
@@ -330,8 +330,8 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 		$context = array( 'site_id' => get_current_blog_id() );
 		if ( $this->preflight_service->is_woopayments_site_active() ) {
 			$this->log( 'info', 'WooPayments per-site activation: the WooPayments extension is already active on this site.', $context );
-			// WordPress keeps a site's own activation when the extension is network-activated later, so a switch started there
-			// before still needs its rollback.
+			// WordPress keeps a site's own activation when the extension is network-activated later, so a completed switch there
+			// still needs its rollback.
 			$this->record_rollback( $context );
 			return 'skipped';
 		}
@@ -344,7 +344,10 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 			return 'kept';
 		}
 
-		$activated = $this->legacy_proxy->call_function( 'activate_plugin', $plugin_file );
+		// The activation hooks run, and the lifecycle listener records nothing: record_rollback() decides the site's rollback.
+		$activated = $this->reconciliation_job->run_while_changing_plugins(
+			fn() => $this->legacy_proxy->call_function( 'activate_plugin', $plugin_file )
+		);
 		if ( is_wp_error( $activated ) ) {
 			$this->log( 'error', 'WooPayments per-site activation could not activate the WooPayments extension on this site.', array_merge( $context, array( 'error' => $activated->get_error_message() ) ) );
 			return 'failed';
@@ -356,16 +359,21 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Record the current site's rollback of a started or completed switch, as an activation of the extension does.
+	 * Record the current site's rollback of a completed switch, or of one past finalize, as an activation of the extension does.
 	 *
-	 * Recorded here because the plugin lifecycle listener that would record it loads in this request only when the main
-	 * site's setup tier asks for it. Idempotent for a record already awaiting the merchant's start; best effort: a busy
-	 * write lock records nothing, and an error is logged.
+	 * A switch that started and has not reached finalize continues: the extension never left the site and nothing was
+	 * migrated, so rolling it back would make the merchant start it again. This is the conversion's only rollback path; its
+	 * activations run with the lifecycle listener recording nothing. Idempotent for a record already awaiting the merchant's start; best
+	 * effort: a busy write lock records nothing, and an error is logged.
 	 *
 	 * @param array<string,mixed> $context Log context.
 	 */
 	private function record_rollback( array $context ): void {
 		try {
+			if ( $this->reconciliation_job->has_started_switch_before_finalize() ) {
+				$this->log( 'info', 'WooPayments per-site activation: this site\'s switch has started and continues.', $context );
+				return;
+			}
 			$this->reconciliation_job->record_plugin_activation();
 		} catch ( \Throwable $error ) {
 			$this->log( 'error', 'WooPayments per-site activation could not record the rollback of this site\'s switch.', array_merge( $context, array( 'error' => $error->getMessage() ) ) );

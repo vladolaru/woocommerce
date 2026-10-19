@@ -243,6 +243,25 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Run a callback that activates or deactivates plugins, marked as a change this job initiated.
+	 *
+	 * The plugin lifecycle observers ignore the changes made inside the callback, as they do the job's own deactivation of
+	 * the extension. The previous mark is restored when the callback returns or throws.
+	 *
+	 * @param callable $callback Callback that changes plugins.
+	 * @return mixed What the callback returns.
+	 */
+	public function run_while_changing_plugins( callable $callback ) {
+		$previous                               = $this->internal_plugin_lifecycle_change;
+		$this->internal_plugin_lifecycle_change = true;
+		try {
+			return $callback();
+		} finally {
+			$this->internal_plugin_lifecycle_change = $previous;
+		}
+	}
+
+	/**
 	 * Start one reconciliation generation on this site.
 	 *
 	 * Nothing starts while the WooPayments extension is active sitewide: a switch deactivates the extension on its own site
@@ -911,6 +930,24 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 */
 	public function is_awaiting_start( array $record ): bool {
 		return WooPaymentsCutoverStateStore::STATE_PENDING === $record['state'] && self::STEP_AWAITING_MERCHANT_START === ( $record['current_step'] ?? null );
+	}
+
+	/**
+	 * Tell whether this site's switch has started and not reached finalize: its record is pending past the merchant's start,
+	 * running or deferred, and carries no request token.
+	 *
+	 * Finalize stores the token before it deactivates the extension, so such a switch has not touched the extension or
+	 * migrated anything. Read-only.
+	 *
+	 * @return bool
+	 */
+	public function has_started_switch_before_finalize(): bool {
+		$record = $this->state_store->get_record();
+
+		return is_array( $record )
+			&& in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED, WooPaymentsCutoverStateStore::STATE_RUNNING ), true )
+			&& ! $this->is_awaiting_start( $record )
+			&& null === ( $record['request_origin_token'] ?? null );
 	}
 
 	/**

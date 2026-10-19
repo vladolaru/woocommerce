@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Cutover;
 
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverActionScheduler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPluginLifecycleListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverReconciliationJob;
@@ -285,64 +286,64 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A site whose switch started and waits on the extension active for every site rolls the switch back when the conversion activates it there.
+	 * @testdox A switch that started and has not reached finalize continues when the conversion activates the extension on its site, or finds it active there: state $state, listener loaded: $listener, already active: $already_active.
 	 * @group multisite
+	 * @dataProvider provider_started_switch_without_token
+	 *
+	 * @param string $state          Record state.
+	 * @param bool   $listener       Whether the plugin lifecycle listener is loaded in the request.
+	 * @param bool   $already_active Whether the site already has the extension in its own active list.
 	 */
-	public function test_conversion_rolls_back_a_started_switch_on_its_site(): void {
+	public function test_conversion_keeps_a_started_switch_without_a_token( string $state, bool $listener, bool $already_active ): void {
 		$this->skip_unless_multisite();
-		$main    = get_current_blog_id();
-		$started = $this->create_site( 'started', true, true );
-		$this->arrange_site( $main, false, true );
-		$this->activate_for_every_site();
-		$this->create_record( $started, WooPaymentsCutoverStateStore::STATE_DEFERRED, 'deferred', array( WooPaymentsCutoverReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE ) );
-
-		$this->create_sut()->convert();
-
-		$record = $this->read_record( $started );
-		$this->assertSame( 4, $record['generation'], 'A rollback generation replaces the started one.' );
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $record['state'] );
-		$this->assertSame( 'awaiting_merchant_start', $record['current_step'] );
-	}
-
-	/**
-	 * @testdox A site already active on its own whose switch started rolls the switch back too, without a second activation.
-	 * @group multisite
-	 */
-	public function test_conversion_rolls_back_a_started_switch_on_a_site_already_active(): void {
-		$this->skip_unless_multisite();
-		$main    = get_current_blog_id();
-		$started = $this->create_site( 'started', true, true );
-		$this->arrange_site( $main, false, true );
-		$this->activate_for_every_site();
-		// WordPress keeps the site's own activation when the extension is network-activated later: WordPress 7.1.3
-		// wp-admin/includes/plugin.php:712-720 writes only the network list.
-		switch_to_blog( $started );
-		try {
-			update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
-		} finally {
-			restore_current_blog();
+		if ( $listener ) {
+			wc_get_container()->get( WooPaymentsCutoverPluginLifecycleListener::class )->register();
 		}
-		$this->create_record( $started, WooPaymentsCutoverStateStore::STATE_DEFERRED, 'deferred', array( WooPaymentsCutoverReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE ) );
+		$main    = get_current_blog_id();
+		$started = $this->create_site( 'started', true, true );
+		$this->arrange_site( $main, false, true );
+		$this->activate_for_every_site();
+		if ( $already_active ) {
+			$this->activate_on_its_own( $started );
+		}
+		$this->create_record( $started, $state, $this->get_record_step( $state ), array(), $this->get_record_overrides( $state ) );
+		$action_id = $this->schedule_next_attempt( $started );
+		$before    = $this->read_record( $started );
 
 		$result = $this->create_sut()->convert();
 
-		$this->assertContains( $started, $result['skipped'] );
-		$this->assertArrayNotHasKey( $started, $this->activations, 'No second activation.' );
-		$record = $this->read_record( $started );
-		$this->assertSame( 4, $record['generation'], 'A rollback generation replaces the started one.' );
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $record['state'] );
-		$this->assertSame( 'awaiting_merchant_start', $record['current_step'] );
+		$this->assertContains( $started, $result[ $already_active ? 'skipped' : 'activated' ] );
+		$this->assertSame( $already_active ? array() : array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), $this->activations[ $started ] ?? array() );
+		$this->assertSame( $before, $this->read_record( $started ), 'The generation, state and every field of the started switch are unchanged.' );
+		$this->assertSame( $action_id, $this->read_scheduled_action_id( $started ), 'The pending attempt stays scheduled.' );
 	}
 
 	/**
-	 * @testdox A switched site gets one rollback generation when the conversion activates the extension there, through the conversion's own record, with the plugin lifecycle listener also loaded: $listener.
-	 * @group multisite
-	 * @testWith [true]
-	 *           [false]
-	 *
-	 * @param bool $listener Whether the plugin lifecycle listener is loaded in the request.
+	 * @return array<string,array{0:string,1:bool,2:bool}> State, listener loaded, already active.
 	 */
-	public function test_conversion_rolls_back_a_completed_switch_on_its_site( bool $listener ): void {
+	public function provider_started_switch_without_token(): array {
+		$rows = array();
+		foreach ( array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_RUNNING, WooPaymentsCutoverStateStore::STATE_DEFERRED ) as $state ) {
+			foreach ( array( true, false ) as $listener ) {
+				foreach ( array( false, true ) as $already_active ) {
+					$rows[ sprintf( '%s, listener %s, %s', $state, $listener ? 'loaded' : 'not loaded', $already_active ? 'already active' : 'activated' ) ] = array( $state, $listener, $already_active );
+				}
+			}
+		}
+
+		return $rows;
+	}
+
+	/**
+	 * @testdox A switch that is done, or past finalize with its request token, goes back to awaiting the merchant's start when the conversion activates the extension on its site or finds it active there, with one new generation: $kind, listener loaded: $listener, already active: $already_active.
+	 * @group multisite
+	 * @dataProvider provider_switch_that_rolls_back
+	 *
+	 * @param string $kind           done, or finalized (deferred with the request token).
+	 * @param bool   $listener       Whether the plugin lifecycle listener is loaded in the request.
+	 * @param bool   $already_active Whether the site already has the extension in its own active list.
+	 */
+	public function test_conversion_rolls_back_a_switch_that_is_done_or_past_finalize( string $kind, bool $listener, bool $already_active ): void {
 		$this->skip_unless_multisite();
 		if ( $listener ) {
 			wc_get_container()->get( WooPaymentsCutoverPluginLifecycleListener::class )->register();
@@ -351,7 +352,14 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		$switched = $this->create_site( 'switched', true, true );
 		$this->arrange_site( $main, false, true );
 		$this->activate_for_every_site();
-		$this->create_record( $switched, WooPaymentsCutoverStateStore::STATE_DONE, 'done', array() );
+		if ( $already_active ) {
+			$this->activate_on_its_own( $switched );
+		}
+		if ( 'done' === $kind ) {
+			$this->create_record( $switched, WooPaymentsCutoverStateStore::STATE_DONE, 'done', array() );
+		} else {
+			$this->create_record( $switched, WooPaymentsCutoverStateStore::STATE_DEFERRED, 'deferred', array( 'builtin_ownership_unverified' ), array( 'request_origin_token' => 'finalize-token' ) );
+		}
 		$activated_hooks = array();
 		add_action(
 			'activated_plugin',
@@ -364,10 +372,31 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 
 		$this->create_sut()->convert();
 
-		$this->assertContains( array( $switched, WooPaymentsRuntimeArbiter::PLUGIN_FILE, false ), $activated_hooks, 'The site activation fires activated_plugin for that site.' );
+		if ( $already_active ) {
+			$this->assertArrayNotHasKey( $switched, $this->activations, 'No second activation.' );
+		} else {
+			$this->assertContains( array( $switched, WooPaymentsRuntimeArbiter::PLUGIN_FILE, false ), $activated_hooks, 'The site activation fires activated_plugin for that site.' );
+		}
 		$record = $this->read_record( $switched );
 		$this->assertSame( 4, $record['generation'], 'One rollback generation, with or without the listener.' );
+		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $record['state'] );
 		$this->assertSame( 'awaiting_merchant_start', $record['current_step'] );
+	}
+
+	/**
+	 * @return array<string,array{0:string,1:bool,2:bool}> Kind, listener loaded, already active.
+	 */
+	public function provider_switch_that_rolls_back(): array {
+		$rows = array();
+		foreach ( array( 'done', 'finalized' ) as $kind ) {
+			foreach ( array( true, false ) as $listener ) {
+				foreach ( array( false, true ) as $already_active ) {
+					$rows[ sprintf( '%s, listener %s, %s', $kind, $listener ? 'loaded' : 'not loaded', $already_active ? 'already active' : 'activated' ) ] = array( $kind, $listener, $already_active );
+				}
+			}
+		}
+
+		return $rows;
 	}
 
 	/**
@@ -566,37 +595,119 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Store a cutover record of generation 3 on a site.
 	 *
-	 * @param int      $site_id Site ID.
-	 * @param string   $state   Record state.
-	 * @param string   $step    Current step.
-	 * @param string[] $codes   Deferred codes.
+	 * @param int                 $site_id   Site ID.
+	 * @param string              $state     Record state.
+	 * @param string              $step      Current step.
+	 * @param string[]            $codes     Deferred codes.
+	 * @param array<string,mixed> $overrides Record fields to replace.
 	 */
-	private function create_record( int $site_id, string $state, string $step, array $codes ): void {
+	private function create_record( int $site_id, string $state, string $step, array $codes, array $overrides = array() ): void {
 		$now = time();
 		switch_to_blog( $site_id );
 		try {
 			$this->assertTrue(
 				wc_get_container()->get( WooPaymentsCutoverStateStore::class )->create_record(
-					array(
-						'schema_version'         => WooPaymentsCutoverStateStore::SCHEMA_VERSION,
-						'generation'             => 3,
-						'revision'               => 1,
-						'state'                  => $state,
-						'started_at'             => $now,
-						'updated_at'             => $now,
-						'attempt'                => 1,
-						'action_id'              => 0,
-						'current_step'           => $step,
-						'step_log'               => array(),
-						'deferred_codes'         => $codes,
-						'informational_outcomes' => array(),
-						'next_attempt_at'        => WooPaymentsCutoverStateStore::STATE_DEFERRED === $state ? $now + HOUR_IN_SECONDS : null,
-						'lease_token'            => null,
-						'lease_expires_at'       => null,
-						'request_origin_token'   => null,
+					array_merge(
+						array(
+							'schema_version'         => WooPaymentsCutoverStateStore::SCHEMA_VERSION,
+							'generation'             => 3,
+							'revision'               => 1,
+							'state'                  => $state,
+							'started_at'             => $now,
+							'updated_at'             => $now,
+							'attempt'                => 1,
+							'action_id'              => 0,
+							'current_step'           => $step,
+							'step_log'               => array(),
+							'deferred_codes'         => $codes,
+							'informational_outcomes' => array(),
+							'next_attempt_at'        => WooPaymentsCutoverStateStore::STATE_DEFERRED === $state ? $now + HOUR_IN_SECONDS : null,
+							'lease_token'            => null,
+							'lease_expires_at'       => null,
+							'request_origin_token'   => null,
+						),
+						$overrides
 					)
 				)
 			);
+		} finally {
+			restore_current_blog();
+		}
+	}
+
+	/**
+	 * Get the current step a started state records.
+	 *
+	 * @param string $state Record state.
+	 * @return string
+	 */
+	private function get_record_step( string $state ): string {
+		return array(
+			WooPaymentsCutoverStateStore::STATE_PENDING  => 'queued',
+			WooPaymentsCutoverStateStore::STATE_RUNNING  => 'running',
+			WooPaymentsCutoverStateStore::STATE_DEFERRED => 'deferred',
+		)[ $state ];
+	}
+
+	/**
+	 * Get the record fields a started state needs beyond the defaults: a running claim holds a lease.
+	 *
+	 * @param string $state Record state.
+	 * @return array<string,mixed>
+	 */
+	private function get_record_overrides( string $state ): array {
+		return WooPaymentsCutoverStateStore::STATE_RUNNING === $state
+			? array(
+				'lease_token'      => 'claim',
+				'lease_expires_at' => time() + HOUR_IN_SECONDS,
+			)
+			: array();
+	}
+
+	/**
+	 * Schedule the next attempt of the generation-3 record on a site and return its action ID.
+	 *
+	 * @param int $site_id Site ID.
+	 * @return int
+	 */
+	private function schedule_next_attempt( int $site_id ): int {
+		switch_to_blog( $site_id );
+		try {
+			$action_id = wc_get_container()->get( WooPaymentsCutoverActionScheduler::class )->schedule( time() + HOUR_IN_SECONDS, 3, 2 );
+		} finally {
+			restore_current_blog();
+		}
+		$this->assertGreaterThan( 0, $action_id );
+
+		return $action_id;
+	}
+
+	/**
+	 * Get the ID of the scheduled next attempt of the generation-3 record on a site, or zero when none is scheduled.
+	 *
+	 * @param int $site_id Site ID.
+	 * @return int
+	 */
+	private function read_scheduled_action_id( int $site_id ): int {
+		switch_to_blog( $site_id );
+		try {
+			return wc_get_container()->get( WooPaymentsCutoverActionScheduler::class )->get_scheduled_action_id( 3, 2 );
+		} finally {
+			restore_current_blog();
+		}
+	}
+
+	/**
+	 * Put the extension in a site's own active list, as WordPress leaves it when the extension is network-activated later.
+	 *
+	 * WordPress 7.1.3 wp-admin/includes/plugin.php:712-720 writes only the network list.
+	 *
+	 * @param int $site_id Site ID.
+	 */
+	private function activate_on_its_own( int $site_id ): void {
+		switch_to_blog( $site_id );
+		try {
+			update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 		} finally {
 			restore_current_blog();
 		}
