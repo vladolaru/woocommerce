@@ -247,6 +247,34 @@ return true;
 		}
 		await setArchived( '/shop3/', '1' );
 
+		// The conversion activates each site before it removes the network
+		// activation; WordPress activates a network-active plugin on one site
+		// from that site's own list. Checked here on the store, with the core
+		// function the conversion calls: shop1 then has both activations, and
+		// the conversion skips it as already active.
+		const both = await siteEval< {
+			error: string | null;
+			site_active: boolean;
+			sitewide_active: boolean;
+		} >(
+			'/shop1/',
+			String.raw`
+require_once ABSPATH . 'wp-admin/includes/plugin.php';
+$plugin = 'woocommerce-payments/woocommerce-payments.php';
+$result = activate_plugin( $plugin );
+return array(
+	'error'           => is_wp_error( $result ) ? $result->get_error_code() : null,
+	'site_active'     => in_array( $plugin, (array) get_option( 'active_plugins', array() ), true ),
+	'sitewide_active' => is_plugin_active_for_network( $plugin ),
+);
+`
+		);
+		expect( both ).toEqual( {
+			error: null,
+			site_active: true,
+			sitewide_active: true,
+		} );
+
 		await page.goto( `${ STORE }/wp-login.php` );
 		await logIn( page, admin.username, admin.password, false );
 

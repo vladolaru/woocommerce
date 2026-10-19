@@ -462,7 +462,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 */
 	private function output_start_notice(): void {
 		if ( $this->is_woopayments_network_active() ) {
-			echo '<div class="notice notice-info"><p>' . esc_html__( 'WooPayments is now part of WooCommerce. This store can\'t switch yet because the WooPayments extension is active for every site of the network. A super admin first needs to activate WooPayments on each site instead.', 'woocommerce' ) . '</p></div>';
+			$this->output_sitewide_refusal_notice();
 			return;
 		}
 		if ( $this->can_start_cutover() ) {
@@ -488,6 +488,10 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			}
 			if ( in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_RUNNING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
 				echo '<div class="notice notice-info"><p>' . esc_html__( 'Switch in progress', 'woocommerce' ) . '</p></div>';
+				// A switch whose extension became active for every site after its start waits for the per-site activation.
+				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && in_array( WooPaymentsCutoverReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE, (array) ( $record['deferred_codes'] ?? array() ), true ) ) {
+					$this->output_sitewide_refusal_notice();
+				}
 				// The job cannot update the plugin itself where the site blocks file changes, so retries alone never finish.
 				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && in_array( WooPaymentsCutoverPreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, (array) ( $record['deferred_codes'] ?? array() ), true ) && ! wp_is_file_mod_allowed( 'automatic_updater' ) ) {
 					echo '<div class="notice notice-warning"><p>' . esc_html__( 'The switch needs a newer version of the WooPayments extension, but this site does not allow automatic plugin updates. Update WooPayments to continue the switch.', 'woocommerce' ) . '</p></div>';
@@ -518,6 +522,13 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		}
 
 		$this->output_start_notice();
+	}
+
+	/**
+	 * Output the notice telling a store that it cannot switch while the WooPayments extension is active for every site.
+	 */
+	private function output_sitewide_refusal_notice(): void {
+		echo '<div class="notice notice-info"><p>' . esc_html__( 'WooPayments is now part of WooCommerce. This store can\'t switch yet because the WooPayments extension is active for every site of the network. A super admin first needs to activate WooPayments on each site instead.', 'woocommerce' ) . '</p></div>';
 	}
 
 	/**

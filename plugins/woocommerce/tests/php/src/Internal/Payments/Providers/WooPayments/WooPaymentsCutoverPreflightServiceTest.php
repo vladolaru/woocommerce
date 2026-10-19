@@ -290,6 +290,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 			array(
 				'get_option'         => fn( $name, $default_value = false ) => 'active_plugins' === $name ? array() : get_option( $name, $default_value ),
 				'get_site_option'    => fn( $name, $default_value = false ) => 'active_sitewide_plugins' === $name ? array( WooPaymentsRuntimeArbiter::PLUGIN_FILE => 1 ) : get_site_option( $name, $default_value ),
+				// WordPress 7.1.3 wp-admin/includes/plugin.php:764 deactivate_plugins( $plugins, $silent = false, $network_wide = null ).
 				'deactivate_plugins' => function ( $plugin, $silent = false, $for_every_site = null ) use ( &$calls ): void {
 					$calls[] = array( $plugin, $silent, $for_every_site );
 				},

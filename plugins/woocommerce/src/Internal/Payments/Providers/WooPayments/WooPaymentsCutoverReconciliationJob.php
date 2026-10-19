@@ -74,7 +74,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	private const CODE_DATA_MIGRATION_FAILED = 'normalization_failed';
 
 	/** Condition code of a finalize that waits because the WooPayments extension is active for every site. */
-	private const CODE_PLUGIN_ACTIVE_SITEWIDE = 'plugin_active_sitewide';
+	public const CODE_PLUGIN_ACTIVE_SITEWIDE = 'plugin_active_sitewide';
 
 	/** Time a claimed attempt may run before repair_schedule() recovers it as stale; fixed at claim, there is no heartbeat. */
 	public const RUNNING_TIMEOUT = 15 * MINUTE_IN_SECONDS;

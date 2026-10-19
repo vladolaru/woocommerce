@@ -7,7 +7,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPluginLifecycleListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPerSiteActivationController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -32,6 +35,20 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	private array $activations = array();
 
 	/**
+	 * The arguments of every activate_plugin() call.
+	 *
+	 * @var array<int,array<int,mixed>>
+	 */
+	private array $activation_args = array();
+
+	/**
+	 * Whether the network deactivation throws, so a handler that wrongly reached the conversion stops before its redirect.
+	 *
+	 * @var bool
+	 */
+	private bool $stop_at_network_deactivation = false;
+
+	/**
 	 * Calls to deactivate_plugins(): plugin file, silent, for every site.
 	 *
 	 * @var array<int,array{0:string,1:bool,2:mixed}>
@@ -39,11 +56,25 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	private array $deactivations = array();
 
 	/**
+	 * The plugin calls in order: "activate:<site ID>:<still active for every site>" and "deactivate".
+	 *
+	 * @var string[]
+	 */
+	private array $calls = array();
+
+	/**
 	 * Sites where activate_plugin() fails.
 	 *
 	 * @var int[]
 	 */
 	private array $failing_sites = array();
+
+	/**
+	 * Sites where WooCommerce is not active.
+	 *
+	 * @var int[]
+	 */
+	private array $sites_without_woocommerce = array();
 
 	/**
 	 * Sites created by the test.
@@ -61,14 +92,15 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		}
 		if ( is_multisite() ) {
 			delete_site_option( 'active_sitewide_plugins' );
+			delete_site_transient( WooPaymentsPerSiteActivationController::FEATURE_SCAN_TRANSIENT );
 		}
-		unset( $_GET[ WooPaymentsPerSiteActivationController::QUERY_DONE ], $_GET[ WooPaymentsPerSiteActivationController::QUERY_FAILED ], $_GET[ WooPaymentsPerSiteActivationController::QUERY_KEPT ] );
+		unset( $_GET[ WooPaymentsPerSiteActivationController::QUERY_ACTION ], $_GET[ WooPaymentsPerSiteActivationController::NONCE_NAME ], $_GET[ WooPaymentsPerSiteActivationController::QUERY_DONE ], $_GET[ WooPaymentsPerSiteActivationController::QUERY_FAILED ], $_GET[ WooPaymentsPerSiteActivationController::QUERY_KEPT ], $_GET[ WooPaymentsPerSiteActivationController::QUERY_WITHOUT_WOOCOMMERCE ] );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		parent::tearDown();
 	}
 
 	/**
-	 * @testdox The conversion deactivates the extension for every site once, then activates it on each site that is not deleted, an archived one included.
+	 * @testdox The conversion activates the extension on each site that is not deleted, an archived one included, every site of the network read, then deactivates it for every site once.
 	 * @group multisite
 	 */
 	public function test_conversion_activates_each_site_that_is_not_deleted(): void {
@@ -81,6 +113,16 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		update_blog_status( $deleted, 'deleted', '1' );
 		$this->arrange_site( $main, true, true );
 		$this->activate_for_every_site();
+		$site_limits = array();
+		add_filter(
+			'sites_pre_query',
+			function ( $site_data, $query ) use ( &$site_limits ) {
+				$site_limits[] = $query->query_vars['number'];
+				return $site_data;
+			},
+			10,
+			2
+		);
 
 		$result = $this->create_sut()->convert();
 
@@ -91,10 +133,53 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 			$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), $this->activations[ $site_id ] ?? array(), "Site $site_id gets the extension." );
 		}
 		$this->assertArrayNotHasKey( $deleted, $this->activations, 'A deleted site is left alone.' );
+		$this->assertSame( array_fill( 0, 3, array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ), $this->activation_args, 'activate_plugin() gets only the file: no redirect, site scope, not silent, so its hooks run.' );
+		$this->assertNotEmpty( $site_limits );
+		$this->assertSame( array( 0 ), array_values( array_unique( $site_limits ) ), 'Every site of the network is read, beyond the default page of sites.' );
 	}
 
 	/**
-	 * @testdox A run after a partial failure lists the failed site with the button, and the next run activates only that site.
+	 * @testdox Each site is activated while the extension still runs for every site, and the network deactivation comes last.
+	 * @group multisite
+	 */
+	public function test_each_site_is_activated_before_the_network_deactivation(): void {
+		$this->skip_unless_multisite();
+		$main  = get_current_blog_id();
+		$other = $this->create_site( 'other', true, true );
+		$this->arrange_site( $main, true, true );
+		$this->activate_for_every_site();
+
+		$this->create_sut()->convert();
+
+		$this->assertSame( array( "activate:$main:yes", "activate:$other:yes", 'deactivate' ), $this->calls );
+	}
+
+	/**
+	 * @testdox A site whose activation fails keeps the extension: the network activation stays, and the result lists the site with the button.
+	 * @group multisite
+	 */
+	public function test_a_failed_site_keeps_the_network_activation(): void {
+		$this->skip_unless_multisite();
+		$main  = get_current_blog_id();
+		$other = $this->create_site( 'other', true, true );
+		$this->arrange_site( $main, true, true );
+		$this->activate_for_every_site();
+		$this->failing_sites = array( $other );
+
+		$result = $this->create_sut()->convert();
+
+		$this->assertSame( array( $other ), $result['failed'] );
+		$this->assertSame( array(), $this->deactivations, 'No network deactivation while a site failed.' );
+		$this->assertArrayHasKey( WooPaymentsRuntimeArbiter::PLUGIN_FILE, (array) get_site_option( 'active_sitewide_plugins', array() ) );
+		$_GET[ WooPaymentsPerSiteActivationController::QUERY_DONE ]   = '1';
+		$_GET[ WooPaymentsPerSiteActivationController::QUERY_FAILED ] = (string) $other;
+		$notice = $this->render_notice( $this->create_sut() );
+		$this->assertStringContainsString( 'WooPayments could not be activated on these sites: ' . $this->get_site_label( $other ) . '. Activate WooPayments per site again to finish.', $notice );
+		$this->assertStringContainsString( 'Activate WooPayments per site</a>', $notice );
+	}
+
+	/**
+	 * @testdox A run after a partial failure activates only the failed site, then removes the network activation.
 	 * @group multisite
 	 */
 	public function test_a_run_after_a_partial_failure_finishes_the_conversion(): void {
@@ -104,25 +189,16 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		$this->arrange_site( $main, true, true );
 		$this->activate_for_every_site();
 		$this->failing_sites = array( $other );
-
-		$first = $this->create_sut()->convert();
-		$this->assertSame( array( $other ), $first['failed'] );
-		$_GET[ WooPaymentsPerSiteActivationController::QUERY_DONE ]   = '1';
-		$_GET[ WooPaymentsPerSiteActivationController::QUERY_FAILED ] = (string) $other;
-		$_GET[ WooPaymentsPerSiteActivationController::QUERY_KEPT ]   = '';
-		$notice = $this->render_notice( $this->create_sut() );
-		$this->assertStringContainsString( 'WooPayments could not be activated on these sites: ' . $this->get_site_label( $other ) . '. Activate WooPayments per site again to finish.', $notice );
-		$this->assertStringContainsString( 'Activate WooPayments per site</a>', $notice );
+		$this->create_sut()->convert();
 
 		$this->failing_sites = array();
 		$this->activations   = array();
-		$this->deactivations = array();
 		$second              = $this->create_sut()->convert();
 
-		$this->assertSame( array(), $this->deactivations, 'Nothing is active for every site any more.' );
 		$this->assertSame( array( $other => array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ), $this->activations, 'Only the failed site is activated.' );
 		$this->assertSame( array( $main ), $second['skipped'] );
 		$this->assertSame( array(), $second['failed'] );
+		$this->assertSame( array( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false, true ) ), $this->deactivations, 'The network activation goes once every site has its own.' );
 	}
 
 	/**
@@ -141,12 +217,122 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( $fresh ), $result['kept'] );
 		$this->assertSame( array(), $result['failed'] );
 		$this->assertArrayNotHasKey( $fresh, $this->activations );
-		$_GET[ WooPaymentsPerSiteActivationController::QUERY_DONE ]   = '1';
-		$_GET[ WooPaymentsPerSiteActivationController::QUERY_FAILED ] = '';
-		$_GET[ WooPaymentsPerSiteActivationController::QUERY_KEPT ]   = (string) $fresh;
+		$_GET[ WooPaymentsPerSiteActivationController::QUERY_DONE ] = '1';
+		$_GET[ WooPaymentsPerSiteActivationController::QUERY_KEPT ] = (string) $fresh;
 		$notice = $this->render_notice( $this->create_sut() );
 		$this->assertStringContainsString( 'Kept WooPayments in WooCommerce: ' . $this->get_site_label( $fresh ) . '.', $notice );
 		$this->assertStringNotContainsString( 'could not be activated', $notice );
+	}
+
+	/**
+	 * @testdox A site where WooCommerce is not active is skipped and listed apart, not counted as failed, so the network activation still goes.
+	 * @group multisite
+	 */
+	public function test_site_without_woocommerce_is_skipped_and_listed_apart(): void {
+		$this->skip_unless_multisite();
+		$main = get_current_blog_id();
+		$blog = $this->create_site( 'blog', false, true );
+		$this->arrange_site( $main, true, true );
+		$this->activate_for_every_site();
+		$this->sites_without_woocommerce = array( $blog );
+
+		$result = $this->create_sut()->convert();
+
+		$this->assertSame( array( $blog ), $result['without_woocommerce'] );
+		$this->assertSame( array(), $result['failed'] );
+		$this->assertArrayNotHasKey( $blog, $this->activations );
+		$this->assertCount( 1, $this->deactivations );
+		$_GET[ WooPaymentsPerSiteActivationController::QUERY_DONE ]                = '1';
+		$_GET[ WooPaymentsPerSiteActivationController::QUERY_WITHOUT_WOOCOMMERCE ] = (string) $blog;
+		$notice = $this->render_notice( $this->create_sut() );
+		$this->assertStringContainsString( 'Skipped, WooCommerce is not active: ' . $this->get_site_label( $blog ) . '.', $notice );
+		$this->assertStringNotContainsString( 'could not be activated', $notice );
+	}
+
+	/**
+	 * @testdox A site whose switch started and waits on the extension active for every site rolls the switch back when the conversion activates it there.
+	 * @group multisite
+	 */
+	public function test_conversion_rolls_back_a_started_switch_on_its_site(): void {
+		$this->skip_unless_multisite();
+		$main    = get_current_blog_id();
+		$started = $this->create_site( 'started', true, true );
+		$this->arrange_site( $main, false, true );
+		$this->activate_for_every_site();
+		$this->create_record( $started, WooPaymentsCutoverStateStore::STATE_DEFERRED, 'deferred', array( WooPaymentsCutoverReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE ) );
+
+		$this->create_sut()->convert();
+
+		$record = $this->read_record( $started );
+		$this->assertSame( 4, $record['generation'], 'A rollback generation replaces the started one.' );
+		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $record['state'] );
+		$this->assertSame( 'awaiting_merchant_start', $record['current_step'] );
+	}
+
+	/**
+	 * @testdox A switched site gets one rollback generation when the conversion activates the extension there, through WordPress's own activation hooks and the plugin lifecycle listener as well as the conversion's own record.
+	 * @group multisite
+	 */
+	public function test_conversion_rolls_back_a_completed_switch_on_its_site(): void {
+		$this->skip_unless_multisite();
+		wc_get_container()->get( WooPaymentsCutoverPluginLifecycleListener::class )->register();
+		$main     = get_current_blog_id();
+		$switched = $this->create_site( 'switched', true, true );
+		$this->arrange_site( $main, false, true );
+		$this->activate_for_every_site();
+		$this->create_record( $switched, WooPaymentsCutoverStateStore::STATE_DONE, 'done', array() );
+		$activated_hooks = array();
+		add_action(
+			'activated_plugin',
+			function ( $plugin, $network_wide ) use ( &$activated_hooks ): void {
+				$activated_hooks[] = array( get_current_blog_id(), $plugin, $network_wide );
+			},
+			10,
+			2
+		);
+
+		$this->create_sut()->convert();
+
+		$this->assertContains( array( $switched, WooPaymentsRuntimeArbiter::PLUGIN_FILE, false ), $activated_hooks, 'The site activation fires activated_plugin for that site.' );
+		$record = $this->read_record( $switched );
+		$this->assertSame( 4, $record['generation'], 'The listener and the conversion record one rollback generation.' );
+		$this->assertSame( 'awaiting_merchant_start', $record['current_step'] );
+	}
+
+	/**
+	 * @testdox The conversion button with a missing or wrong nonce stops before any plugin change.
+	 * @group multisite
+	 * @testWith [""]
+	 *           ["not-a-nonce"]
+	 *
+	 * @param string $nonce The nonce the request carries, or none.
+	 */
+	public function test_handler_without_a_valid_nonce_changes_no_plugin( string $nonce ): void {
+		$this->skip_unless_multisite();
+		$this->arrange_site( get_current_blog_id(), true, true );
+		$this->activate_for_every_site();
+		$_GET[ WooPaymentsPerSiteActivationController::QUERY_ACTION ] = WooPaymentsPerSiteActivationController::ACTION_CONVERT;
+		if ( '' !== $nonce ) {
+			$_GET[ WooPaymentsPerSiteActivationController::NONCE_NAME ] = $nonce;
+		}
+
+		$this->assert_handler_stops_without_changes( $this->create_sut() );
+	}
+
+	/**
+	 * @testdox The conversion button with a valid nonce but no manage_network_plugins capability stops before any plugin change.
+	 * @group multisite
+	 */
+	public function test_handler_without_the_network_plugins_capability_changes_no_plugin(): void {
+		$this->skip_unless_multisite();
+		$this->arrange_site( get_current_blog_id(), true, true );
+		$this->activate_for_every_site();
+		wp_set_current_user( 1 );
+		$_GET[ WooPaymentsPerSiteActivationController::QUERY_ACTION ] = WooPaymentsPerSiteActivationController::ACTION_CONVERT;
+		$_GET[ WooPaymentsPerSiteActivationController::NONCE_NAME ]   = wp_create_nonce( WooPaymentsPerSiteActivationController::NONCE_ACTION );
+		$this->mock_plugin_functions( false );
+
+		$this->assert_handler_stops_without_changes( $this->create_sut() );
 	}
 
 	/**
@@ -155,6 +341,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_notice_needs_the_extension_for_every_site_and_the_feature_somewhere(): void {
 		$this->skip_unless_multisite();
+		WooPaymentsPerSiteActivationController::register_feature_scan_reset();
 		$main  = get_current_blog_id();
 		$other = $this->create_site( 'other', false, true );
 		$this->arrange_site( $main, false, true );
@@ -164,13 +351,44 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 
 		$this->arrange_site( $other, true, true );
 		$offered = $this->render_notice( $this->create_sut() );
-		$this->assertStringContainsString( 'Activate WooPayments per site so each site&#039;s administrators can start their switch. Best run off-peak', $offered );
+		$this->assertStringContainsString( 'No site can switch while the WooPayments extension is active for the whole network. Activate WooPayments per site so each site&#039;s administrators can start their switch.', $offered );
 		$this->assertStringContainsString( 'Activate WooPayments per site</a>', $offered );
 
 		$this->assertSame( '', $this->render_notice( $this->create_sut(), false ), 'Nothing shows to a user who cannot manage network plugins.' );
 
 		delete_site_option( 'active_sitewide_plugins' );
 		$this->assertSame( '', $this->render_notice( $this->create_sut() ), 'Nothing shows once the extension is no longer active for every site.' );
+	}
+
+	/**
+	 * @testdox With the feature off everywhere, network admin pages scan the sites once; turning the feature on at a site clears the answer.
+	 * @group multisite
+	 */
+	public function test_feature_scan_is_kept_until_the_feature_changes(): void {
+		$this->skip_unless_multisite();
+		WooPaymentsPerSiteActivationController::register_feature_scan_reset();
+		$main  = get_current_blog_id();
+		$other = $this->create_site( 'other', false, true );
+		$this->arrange_site( $main, false, true );
+		$this->activate_for_every_site();
+		delete_site_transient( WooPaymentsPerSiteActivationController::FEATURE_SCAN_TRANSIENT );
+		$switches = 0;
+		add_action(
+			'switch_blog',
+			function () use ( &$switches ): void {
+				++$switches;
+			}
+		);
+
+		$this->assertSame( '', $this->render_notice( $this->create_sut() ) );
+		$first_scan = $switches;
+		$this->assertSame( '', $this->render_notice( $this->create_sut() ) );
+
+		$this->assertGreaterThan( 0, $first_scan, 'The first page scans the sites.' );
+		$this->assertSame( $first_scan, $switches, 'A later page reads the cached answer.' );
+
+		$this->arrange_site( $other, true, true );
+		$this->assertStringContainsString( 'Activate WooPayments per site</a>', $this->render_notice( $this->create_sut() ), 'The feature change clears the answer.' );
 	}
 
 	/**
@@ -188,10 +406,27 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 			}
 		};
 		$sut       = new WooPaymentsPerSiteActivationController();
-		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), $preflight, wc_get_container()->get( LegacyProxy::class ) );
+		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), $preflight, wc_get_container()->get( WooPaymentsCutoverReconciliationJob::class ), wc_get_container()->get( LegacyProxy::class ) );
 		$this->mock_plugin_functions();
 
 		$this->assertSame( '', $this->render_notice( $sut ) );
+	}
+
+	/**
+	 * Run the handler, expect it to stop through wp_die(), and assert it activated and deactivated nothing.
+	 *
+	 * @param WooPaymentsPerSiteActivationController $sut The controller.
+	 */
+	private function assert_handler_stops_without_changes( WooPaymentsPerSiteActivationController $sut ): void {
+		$this->stop_at_network_deactivation = true;
+		try {
+			$sut->handle_admin_init();
+			$this->fail( 'The handler must stop before the conversion.' );
+		} catch ( \WPDieException $stopped ) {
+			unset( $stopped );
+		}
+
+		$this->assertSame( array(), $this->calls, 'No plugin is activated or deactivated.' );
 	}
 
 	/**
@@ -204,7 +439,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a site with the WooPayments feature and the extension's run evidence set.
+	 * Create a site with the WooPayments feature and the extension's run evidence set, and Action Scheduler tables.
 	 *
 	 * @param string $slug          Site path slug.
 	 * @param bool   $feature_on    Whether the WooPayments feature is on.
@@ -214,6 +449,13 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	private function create_site( string $slug, bool $feature_on, bool $ran_extension ): int {
 		$site_id          = self::factory()->blog->create( array( 'path' => '/' . $slug . '/' ) );
 		$this->site_ids[] = $site_id;
+		switch_to_blog( $site_id );
+		try {
+			( new \ActionScheduler_StoreSchema() )->register_tables( true );
+			( new \ActionScheduler_LoggerSchema() )->register_tables( true );
+		} finally {
+			restore_current_blog();
+		}
 		$this->arrange_site( $site_id, $feature_on, $ran_extension );
 
 		return $site_id;
@@ -230,6 +472,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		switch_to_blog( $site_id );
 		try {
 			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $feature_on ? 'yes' : 'no' );
+			// The extension writes its version option when it runs: client 11.1.0 includes/class-wc-payments.php:1580.
 			if ( $ran_extension ) {
 				update_option( self::EXTENSION_VERSION_OPTION, '11.1.0' );
 			} else {
@@ -242,6 +485,64 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Store a cutover record of generation 3 on a site.
+	 *
+	 * @param int      $site_id Site ID.
+	 * @param string   $state   Record state.
+	 * @param string   $step    Current step.
+	 * @param string[] $codes   Deferred codes.
+	 */
+	private function create_record( int $site_id, string $state, string $step, array $codes ): void {
+		$now = time();
+		switch_to_blog( $site_id );
+		try {
+			$this->assertTrue(
+				wc_get_container()->get( WooPaymentsCutoverStateStore::class )->create_record(
+					array(
+						'schema_version'         => WooPaymentsCutoverStateStore::SCHEMA_VERSION,
+						'generation'             => 3,
+						'revision'               => 1,
+						'state'                  => $state,
+						'started_at'             => $now,
+						'updated_at'             => $now,
+						'attempt'                => 1,
+						'action_id'              => 0,
+						'current_step'           => $step,
+						'step_log'               => array(),
+						'deferred_codes'         => $codes,
+						'informational_outcomes' => array(),
+						'next_attempt_at'        => WooPaymentsCutoverStateStore::STATE_DEFERRED === $state ? $now + HOUR_IN_SECONDS : null,
+						'lease_token'            => null,
+						'lease_expires_at'       => null,
+						'request_origin_token'   => null,
+					)
+				)
+			);
+		} finally {
+			restore_current_blog();
+		}
+	}
+
+	/**
+	 * Read a site's cutover record.
+	 *
+	 * @param int $site_id Site ID.
+	 * @return array<string,mixed>
+	 */
+	private function read_record( int $site_id ): array {
+		switch_to_blog( $site_id );
+		try {
+			wp_cache_delete( WooPaymentsCutoverStateStore::OPTION_NAME, 'options' );
+			$record = wc_get_container()->get( WooPaymentsCutoverStateStore::class )->get_record();
+		} finally {
+			restore_current_blog();
+		}
+		$this->assertIsArray( $record );
+
+		return $record;
+	}
+
+	/**
 	 * Make the extension active for every site and stand in for WordPress's plugin activation functions.
 	 */
 	private function activate_for_every_site(): void {
@@ -250,23 +551,44 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Stand in for activate_plugin(), deactivate_plugins() and the capability check.
+	 * Stand in for activate_plugin(), deactivate_plugins(), WooCommerce's activity and the capability check.
 	 *
 	 * @param bool $super_admin Whether the user may manage network plugins.
 	 */
 	private function mock_plugin_functions( bool $super_admin = true ): void {
 		$this->register_legacy_proxy_function_mocks(
 			array(
-				'activate_plugin'    => function ( $plugin ) {
-					$site_id = get_current_blog_id();
+				// WordPress 7.1.3 wp-admin/includes/plugin.php:647 activate_plugin( $plugin, $redirect = '', $network_wide = false,
+				// $silent = false ): a site activation reads the site's own list (:655) and activates a plugin missing from it
+				// (:668-669), firing activate_plugin (:694) unless silent, writing active_plugins (:720), firing activated_plugin
+				// (:736) unless silent, and returning null (:747) or a WP_Error.
+				'activate_plugin'    => function ( ...$args ) {
+					$plugin                  = $args[0];
+					$silent                  = (bool) ( $args[3] ?? false );
+					$this->activation_args[] = $args;
+					$site_id                 = get_current_blog_id();
+					$sitewide                = array_key_exists( $plugin, (array) get_site_option( 'active_sitewide_plugins', array() ) ) ? 'yes' : 'no';
+					$this->calls[]           = "activate:$site_id:$sitewide";
 					if ( in_array( $site_id, $this->failing_sites, true ) ) {
 						return new \WP_Error( 'activation_failed', 'Activation failed.' );
 					}
+					if ( ! $silent ) {
+						do_action( 'activate_plugin', $plugin, false ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WordPress's own hook, fired as the core function does.
+					}
 					$this->activations[ $site_id ][] = $plugin;
 					update_option( 'active_plugins', array_merge( (array) get_option( 'active_plugins', array() ), array( $plugin ) ) );
+					if ( ! $silent ) {
+						do_action( 'activated_plugin', $plugin, false ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WordPress's own hook, fired as the core function does.
+					}
 					return null;
 				},
+				// WordPress 7.1.3 wp-admin/includes/plugin.php:764 deactivate_plugins( $plugins, $silent = false, $network_wide = null ):
+				// a network-wide deactivation writes active_sitewide_plugins (:854).
 				'deactivate_plugins' => function ( $plugin, $silent = false, $for_every_site = null ): void {
+					if ( $this->stop_at_network_deactivation ) {
+						throw new \LogicException( 'The conversion ran.' );
+					}
+					$this->calls[]         = 'deactivate';
 					$this->deactivations[] = array( $plugin, $silent, $for_every_site );
 					if ( true === $for_every_site ) {
 						$active = (array) get_site_option( 'active_sitewide_plugins', array() );
@@ -274,19 +596,22 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 						update_site_option( 'active_sitewide_plugins', $active );
 					}
 				},
+				'is_plugin_active'   => fn( $plugin ) => plugin_basename( WC_PLUGIN_FILE ) === $plugin
+					? ! in_array( get_current_blog_id(), $this->sites_without_woocommerce, true )
+					: is_plugin_active( $plugin ),
 				'current_user_can'   => fn( $capability ) => 'manage_network_plugins' === $capability ? $super_admin : current_user_can( $capability ),
 			)
 		);
 	}
 
 	/**
-	 * Create the system under test with the container's arbiter, preflight and legacy proxy.
+	 * Create the system under test with the container's arbiter, preflight, job and legacy proxy.
 	 *
 	 * @return WooPaymentsPerSiteActivationController
 	 */
 	private function create_sut(): WooPaymentsPerSiteActivationController {
 		$sut = new WooPaymentsPerSiteActivationController();
-		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsCutoverPreflightService::class ), wc_get_container()->get( LegacyProxy::class ) );
+		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsCutoverPreflightService::class ), wc_get_container()->get( WooPaymentsCutoverReconciliationJob::class ), wc_get_container()->get( LegacyProxy::class ) );
 
 		return $sut;
 	}

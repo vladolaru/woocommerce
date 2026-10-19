@@ -3345,7 +3345,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A switch whose extension became active for every site after the start defers at finalize and deactivates nothing, so no other site loses WooPayments.
+	 * @testdox A switch whose extension became active for every site after the start defers at finalize before its data migration and deactivates nothing, so no other site loses WooPayments.
 	 */
 	public function test_finalize_defers_while_the_extension_is_active_for_every_site(): void {
 		$this->arrange_plugin_era_store();
@@ -3397,7 +3397,28 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				return true;
 			}
 		};
-		$sut           = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
+		$migrations    = 0;
+		$migration     = new class( $migrations ) extends WooPaymentsCutoverNormalizationRunner {
+			/** @var int */
+			private int $runs;
+
+			/**
+			 * @param int $runs Count of data migrations.
+			 */
+			public function __construct( int &$runs ) {
+				$this->runs =& $runs;
+			}
+
+			/** @return array{ran:bool,changes:string[]} */
+			public function run(): array {
+				++$this->runs;
+				return array(
+					'ran'     => true,
+					'changes' => array(),
+				);
+			}
+		};
+		$sut           = $this->create_job( true, $preflight, null, true, $migration );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $this->require_state_store()->get_record();
 		$this->assertIsArray( $pending );
@@ -3408,6 +3429,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$sut->handle_reconcile( $pending['generation'], 1 );
 
 		$this->assertSame( 0, $deactivations, 'Finalize deactivates nothing.' );
+		$this->assertSame( 0, $migrations, 'The data migration waits too.' );
 		$deferred = $this->require_state_store()->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
