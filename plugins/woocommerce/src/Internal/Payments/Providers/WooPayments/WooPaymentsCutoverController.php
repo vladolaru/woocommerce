@@ -369,12 +369,34 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether this request may start the switch: the WooPayments extension owns payments, or the store waits for its
-	 * switch after the extension was deactivated, and the current user may manage WooCommerce and the extension's plugin scope.
+	 * Tell whether this request may start the switch: it may manage it, and a store waiting for its switch last ran an
+	 * extension version the switch supports.
 	 *
 	 * @return bool
 	 */
 	private function can_start_cutover(): bool {
+		return $this->can_manage_switch() && ! $this->needs_extension_update_first();
+	}
+
+	/**
+	 * Tell whether a store waiting for its switch last ran a WooPayments extension too old to switch from.
+	 *
+	 * Only an active extension can be updated (the job updates it while it owns payments), and its version is recorded only
+	 * when it runs, so such a store never gets through the switch's version check until the merchant updates it.
+	 *
+	 * @return bool
+	 */
+	private function needs_extension_update_first(): bool {
+		return ! $this->arbiter->is_extension_owner() && $this->arbiter->is_awaiting_switch() && ! $this->preflight_service->is_woopayments_plugin_version_supported();
+	}
+
+	/**
+	 * Tell whether this request may manage the switch: the WooPayments extension owns payments, or the store waits for its
+	 * switch after the extension was deactivated, and the current user may manage WooCommerce and the extension's plugin scope.
+	 *
+	 * @return bool
+	 */
+	private function can_manage_switch(): bool {
 		if ( ! ( $this->arbiter->is_extension_owner() || $this->arbiter->is_awaiting_switch() ) || ! $this->legacy_proxy->call_function( 'current_user_can', 'manage_woocommerce' ) ) {
 			return false;
 		}
@@ -433,15 +455,28 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Offer the switch, or, on a store waiting for it with an extension too old to switch from, say how to get there.
+	 */
+	private function output_start_notice(): void {
+		if ( $this->can_start_cutover() ) {
+			if ( $this->reconciliation_job->should_offer_start() ) {
+				$this->output_soft_cutover_notice();
+			}
+			return;
+		}
+		if ( $this->can_manage_switch() && $this->needs_extension_update_first() ) {
+			echo '<div class="notice notice-warning"><p>' . esc_html__( 'WooPayments is now part of WooCommerce. To switch, first activate the WooPayments extension in Plugins and update it to the latest version.', 'woocommerce' ) . '</p></div>';
+		}
+	}
+
+	/**
 	 * Render the notice derived from durable reconciliation state.
 	 */
 	private function output_reconciliation_notice(): void {
 		$record = $this->reconciliation_job->classify_for_admin_notice();
 		if ( is_array( $record ) ) {
 			if ( $this->reconciliation_job->is_awaiting_start( $record ) ) {
-				if ( $this->can_start_cutover() && $this->reconciliation_job->should_offer_start() ) {
-					$this->output_soft_cutover_notice();
-				}
+				$this->output_start_notice();
 				return;
 			}
 			if ( in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_RUNNING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
@@ -474,9 +509,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			}
 		}
 
-		if ( $this->can_start_cutover() && $this->reconciliation_job->should_offer_start() ) {
-			$this->output_soft_cutover_notice();
-		}
+		$this->output_start_notice();
 	}
 
 	/**

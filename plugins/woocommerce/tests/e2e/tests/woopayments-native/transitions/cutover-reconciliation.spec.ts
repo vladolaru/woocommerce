@@ -295,7 +295,10 @@ test.describe( 'WooPayments transition: cutover reconciliation', () => {
 			);
 			expect( completed.plugin_active ).toBe( false );
 			expect( completed.network_active ).toBe( false );
-			expect( completed.migrator_action?.status ).toBe( 'canceled' );
+			expect(
+				completed.migrator_action?.status,
+				'the switch adopts the migration off Stripe Billing, so its retry stays queued for the built-in migrator'
+			).toBe( 'pending' );
 			await expect
 				.poll( () => readRuntimeOwner( restApi ), { timeout: 60_000 } )
 				.toBe( 'builtin' );
@@ -951,6 +954,10 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 				( await readCutoverStatus( 0 ) ).record?.current_step,
 				'a hand deactivation queues nothing'
 			).toBe( 'awaiting_merchant_start' );
+			expect(
+				await readGatewayIds( restApi ),
+				'no WooPayments gateway while the store waits for its switch'
+			).not.toContain( 'woocommerce_payments' );
 			await page.goto( 'wp-admin/' );
 			const again = page.getByRole( 'link', {
 				name: 'Start the switch',
@@ -978,6 +985,10 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 			await expect
 				.poll( () => readRuntimeOwner( restApi ), { timeout: 60_000 } )
 				.toBe( 'builtin' );
+			await expectNativeGatewayActive(
+				restApi,
+				await readCutoverStatus( 0 )
+			);
 			await expectOnlyAddedPaths(
 				before,
 				await readRollbackSnapshot( orderId ),
@@ -1135,6 +1146,63 @@ test.describe( 'WooPayments transition: extension activation during an open cuto
 
 			const rollback = await expectRolledBack( restApi, open );
 			await expectRollbackStaysPut( restApi, baseURL!, rollback );
+		}
+	);
+
+	/**
+	 * Inbox N-487: the switch reads only what the extension stored, so a store
+	 * whose merchant deactivated and deleted the extension still switches. The
+	 * 11.1.0 extension registers no uninstall hook, so its options stay.
+	 */
+	test(
+		'the switch completes after the extension was deactivated and deleted from disk',
+		{
+			tag: [ tags.WOOPAYMENTS_NATIVE, tags.WOOPAYMENTS_TRANSITION ],
+		},
+		async ( { page, restApi, baseURL } ) => {
+			expect( await readRuntimeOwner( restApi ) ).toBe( 'extension' );
+			await wpCLI( [
+				'wp',
+				'plugin',
+				'deactivate',
+				'woocommerce-payments',
+			] );
+			await wpCLI( [ 'wp', 'plugin', 'delete', 'woocommerce-payments' ] );
+			await expect
+				.poll( () => readRuntimeOwner( restApi ), { timeout: 60_000 } )
+				.toBe( 'none' );
+			expect(
+				await readGatewayIds( restApi ),
+				'no WooPayments gateway while the store waits for its switch'
+			).not.toContain( 'woocommerce_payments' );
+
+			await page.goto( 'wp-login.php' );
+			await logIn( page, admin.username, admin.password, false );
+			await page.goto( 'wp-admin/' );
+			const link = page.getByRole( 'link', {
+				name: 'Start the switch',
+				exact: true,
+			} );
+			const href = await link.getAttribute( 'href', { timeout: 30_000 } );
+			validateCutoverActionURL( href ?? '', baseURL! );
+			await link.click( { timeout: 30_000 } );
+			let status = await readCutoverStatus( 0 );
+			await expect
+				.poll(
+					async () => {
+						await rescheduleReconciliationActionsToNow();
+						await triggerActionSchedulerQueue( baseURL! );
+						status = await readCutoverStatus( 0 );
+						return status.record?.state ?? null;
+					},
+					{ timeout: 3 * 60_000, intervals: [ 1000, 3000, 5000 ] }
+				)
+				.toBe( 'done' );
+			expect( status.plugin_active ).toBe( false );
+			await expect
+				.poll( () => readRuntimeOwner( restApi ), { timeout: 60_000 } )
+				.toBe( 'builtin' );
+			await expectNativeGatewayActive( restApi, status );
 		}
 	);
 } );

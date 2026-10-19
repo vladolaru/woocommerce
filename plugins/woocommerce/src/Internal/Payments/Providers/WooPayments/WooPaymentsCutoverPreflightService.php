@@ -374,11 +374,13 @@ class WooPaymentsCutoverPreflightService {
 	}
 
 	/**
-	 * Determine whether the installed WooPayments version supports cutover.
+	 * Tell whether the WooPayments extension version this store last ran supports the switch.
+	 *
+	 * @since 11.2.0
 	 *
 	 * @return bool
 	 */
-	private function is_woopayments_plugin_version_supported(): bool {
+	public function is_woopayments_plugin_version_supported(): bool {
 		$version = get_option( self::WOOPAYMENTS_VERSION_OPTION, '' );
 		return is_string( $version ) && 1 === preg_match( '/^\\d+(?:\\.\\d+){1,3}(?:[-+][0-9A-Za-z.-]+)?$/D', trim( $version ) ) && version_compare( trim( $version ), self::MINIMUM_CUTOVER_PLUGIN_VERSION, '>=' );
 	}

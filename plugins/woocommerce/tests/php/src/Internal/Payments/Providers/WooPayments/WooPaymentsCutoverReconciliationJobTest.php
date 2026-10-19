@@ -413,7 +413,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A finalize whose ownership check cannot be stored, because another request holds the write lock, still moves the tier to the built-in WooPayments.
+	 * @testdox A finalize whose ownership check cannot be stored, because another request holds the write lock, leaves the built-in WooPayments taking payments: its token and tier were stored before the deactivation.
 	 */
 	public function test_finalize_moves_the_tier_when_the_ownership_check_loses_the_write_lock(): void {
 		$this->arrange_plugin_era_store();
@@ -483,7 +483,114 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$record = $this->require_state_store()->get_record();
 		$this->assertIsArray( $record );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_RUNNING, $record['state'], 'The ownership check was not stored.' );
+		$this->assertIsString( $record['request_origin_token'], 'The token was stored before the deactivation.' );
 		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The tier follows the built-in WooPayments that now owns payments.' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->get_runtime_owner(), 'The next request is owned by the built-in WooPayments.' );
+		$this->assert_next_front_request_registers_native_gateway();
+	}
+
+	/**
+	 * Inbox N-510: the token is written with the fence, so a busy write lock stops finalize before the deactivation.
+	 *
+	 * @testdox A finalize whose token write is refused, because another request holds the write lock, deactivates nothing and leaves the WooPayments extension owning payments.
+	 */
+	public function test_finalize_whose_token_write_is_refused_leaves_the_extension_owning_payments(): void {
+		$this->arrange_plugin_era_store();
+		$busy          = null;
+		$deactivations = 0;
+		$preflight     = new class( $deactivations ) extends WooPaymentsCutoverPreflightService {
+			/** @var int */
+			private int $deactivations;
+
+			/**
+			 * @param int $deactivations Count of deactivation calls.
+			 */
+			public function __construct( int &$deactivations ) {
+				$this->deactivations =& $deactivations;
+			}
+
+			/** @return string[] */
+			public function get_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Count the deactivation calls. */
+			public function deactivate_woopayments_plugin(): bool {
+				++$this->deactivations;
+				update_option( 'active_plugins', array() );
+				return true;
+			}
+
+			/** Report a site-local activation. */
+			public function is_woopayments_network_active(): bool {
+				return false;
+			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return 0 === $this->deactivations;
+			}
+		};
+		// The data migration runs right before the fence; another request takes the write lock in between.
+		$normalization = new class( $busy, $this->require_state_store() ) extends WooPaymentsCutoverNormalizationRunner {
+			/** @var string|null */
+			private $busy;
+
+			/** @var WooPaymentsCutoverStateStore */
+			private WooPaymentsCutoverStateStore $store;
+
+			/**
+			 * @param string|null                  $busy  The write lock another request takes.
+			 * @param WooPaymentsCutoverStateStore $store The cutover state store.
+			 */
+			public function __construct( &$busy, WooPaymentsCutoverStateStore $store ) {
+				$this->busy  =& $busy;
+				$this->store = $store;
+			}
+
+			/** @return array{ran:bool,changes:string[]} */
+			public function run(): array {
+				$this->busy = $this->store->acquire_lease( time() );
+				return array(
+					'ran'     => true,
+					'changes' => array( 'no_changes' ),
+				);
+			}
+		};
+		$job           = $this->create_job( true, $preflight, null, true, $normalization, wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$this->assertTrue( $job->enqueue( 'merchant' ) );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+
+		try {
+			$job->handle_reconcile( $pending['generation'], 1 );
+		} finally {
+			if ( is_string( $busy ) ) {
+				$this->require_state_store()->release_lease( $busy );
+			}
+		}
+
+		$this->assertIsString( $busy, 'Another request held the write lock at the fence.' );
+		$this->assertSame( 0, $deactivations, 'Nothing is deactivated without the stored token.' );
+		$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ) );
+		$record = $this->require_state_store()->get_record();
+		$this->assertIsArray( $record );
+		$this->assertNull( $record['request_origin_token'] );
+		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+		$arbiter->invalidate();
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, $arbiter->get_runtime_owner() );
+		$arbiter->invalidate();
 	}
 
 	/**
@@ -1771,6 +1878,46 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertNull( $done['request_origin_token'] );
 		$owner->invalidate();
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $owner->get_runtime_owner(), 'The done record keeps the owner once the done write clears the token.' );
+	}
+
+	/**
+	 * Opus gate F1 on FG4d: past finalize the extension is off, so an exclusion would leave the store, or every site of a
+	 * network, with no WooPayments owner.
+	 *
+	 * @testdox A deferred claim past finalize whose re-run preflight finds bundled Stripe Billing subscriptions defers, keeps finalize's token, and the built-in WooPayments keeps payments.
+	 */
+	public function test_bundled_failure_past_finalize_defers_and_keeps_the_builtin_owner(): void {
+		// A store that ran the extension, which finalize deactivated.
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
+		$owner = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+		$sut   = $this->create_job( true, $this->create_preflight_with_failures( array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS ) ), null, false, $this->create_noop_normalization() );
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
+		$queued = $this->require_state_store()->get_record();
+		$this->assertIsArray( $queued );
+		$this->require_scheduler()->cancel( $queued['generation'], 1 );
+		// The ownership check deferred after finalize (fee remediation unavailable), so the next attempt re-runs the reconcile.
+		$deferred                         = $queued;
+		$deferred['revision']             = $queued['revision'] + 1;
+		$deferred['state']                = WooPaymentsCutoverStateStore::STATE_DEFERRED;
+		$deferred['attempt']              = 1;
+		$deferred['action_id']            = 0;
+		$deferred['current_step']         = 'deferred';
+		$deferred['deferred_codes']       = array( 'builtin_ownership_unverified' );
+		$deferred['next_attempt_at']      = time() - 1;
+		$deferred['request_origin_token'] = 'previous-finalize-token';
+		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $queued, $deferred ) );
+
+		$sut->handle_reconcile( $deferred['generation'], 2 );
+
+		$after = $this->require_state_store()->get_record();
+		$this->assertIsArray( $after );
+		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $after['state'], 'Past finalize, the bundled failure defers instead of excluding.' );
+		$this->assertContains( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $after['deferred_codes'] );
+		$this->assertSame( 'previous-finalize-token', $after['request_origin_token'] );
+		$owner->invalidate();
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $owner->get_runtime_owner() );
+		$owner->invalidate();
 	}
 
 	/**
@@ -4358,6 +4505,147 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->cleanup_state();
 			restore_current_blog();
 			wpmu_delete_blog( $second_site_id, true );
+		}
+	}
+
+	/**
+	 * Codex 399 F1 on a network: the barrier stores every waiting site's token and tier before the network deactivation, so a
+	 * site whose ownership check the barrier then skips on a busy lock is still owned by the built-in WooPayments.
+	 *
+	 * @testdox A network site whose ownership check is skipped on a busy write lock after the network deactivation keeps the built-in WooPayments taking payments.
+	 * @group multisite
+	 */
+	public function test_network_site_skipped_after_the_deactivation_keeps_the_builtin_owner(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-barrier-busy.example.org' );
+		foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
+			switch_to_blog( $site_id );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+			// The extension ran on every site (client 11.1.0 includes/class-wc-payments.php:1580 records its version).
+			update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
+			// The account cache envelope (data, fetched, errored, consecutive_errors): client 11.1.0 includes/class-database-cache.php:377-382; the account_id and is_live fields: includes/class-wc-payments-account.php:164-171, :757-759.
+			update_option(
+				'wcpay_account_data',
+				array(
+					'data'               => array(
+						'account_id' => 'acct_network_busy_' . $site_id,
+						'is_live'    => true,
+					),
+					'fetched'            => time(),
+					'errored'            => false,
+					'consecutive_errors' => 0,
+				),
+				false
+			);
+			update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+			update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
+			restore_current_blog();
+		}
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+		$busy          = null;
+		$preflight     = new class( $busy, $this->require_state_store(), $second_site_id ) extends WooPaymentsCutoverPreflightService {
+			/** @var string|null */
+			private $busy;
+
+			/** @var WooPaymentsCutoverStateStore */
+			private WooPaymentsCutoverStateStore $store;
+
+			/** @var int */
+			private int $second_site_id;
+
+			/**
+			 * @param string|null                  $busy           The write lock another request takes on the second site.
+			 * @param WooPaymentsCutoverStateStore $store          The cutover state store.
+			 * @param int                          $second_site_id The second site.
+			 */
+			public function __construct( &$busy, WooPaymentsCutoverStateStore $store, int $second_site_id ) {
+				$this->busy           =& $busy;
+				$this->store          = $store;
+				$this->second_site_id = $second_site_id;
+			}
+
+			/** @return string[] */
+			public function get_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Network-active until the barrier deactivates it. */
+			public function is_woopayments_network_active(): bool {
+				return null === $this->busy;
+			}
+
+			/** Deactivate network-wide, then let another request take the second site's write lock. */
+			public function deactivate_woopayments_plugin(): bool {
+				switch_to_blog( $this->second_site_id );
+				$this->busy = $this->store->acquire_lease( time() );
+				restore_current_blog();
+				return true;
+			}
+
+			/** Not active on the site alone. */
+			public function is_woopayments_site_active(): bool {
+				return false;
+			}
+		};
+		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
+			/** @return array{ran:bool,changes:string[]} */
+			public function run(): array {
+				return array(
+					'ran'     => true,
+					'changes' => array(),
+				);
+			}
+		};
+		$sut           = $this->create_job( true, $preflight, null, true, $normalization, wc_get_container()->get( WooPaymentsAccountService::class ) );
+
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$main_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_pending );
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+
+			switch_to_blog( $second_site_id );
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+			restore_current_blog();
+
+			$this->assertIsString( $busy, 'Another request held the second site\'s write lock after the network deactivation.' );
+			switch_to_blog( $second_site_id );
+			$skipped = $this->require_state_store()->get_record();
+			$this->assertIsArray( $skipped );
+			$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $skipped['state'], 'The busy site\'s ownership check was skipped.' );
+			$this->assertIsString( $skipped['request_origin_token'], 'The barrier stored the token before the deactivation.' );
+			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->get_runtime_owner() );
+			$this->assert_next_front_request_registers_native_gateway();
+			restore_current_blog();
+		} finally {
+			while ( get_current_blog_id() !== $main_site_id ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			if ( is_string( $busy ) ) {
+				$this->require_state_store()->release_lease( $busy );
+			}
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		}
 	}
 

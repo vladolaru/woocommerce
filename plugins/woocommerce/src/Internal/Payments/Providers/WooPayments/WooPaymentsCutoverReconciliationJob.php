@@ -942,8 +942,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				}
 			}
 			$this->log_late_first_attempt( $claimed );
-			$failures = $this->normalize_codes( $this->preflight_service->get_failures() );
-			if ( in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $failures, true ) ) {
+			// Past finalize the extension is already off and the built-in WooPayments owns payments, so an exclusion would
+			// protect nothing and leave the store with no owner: the bundled failure defers the claim instead.
+			$past_finalize = null !== ( $claimed['request_origin_token'] ?? null );
+			$failures      = $this->normalize_codes( $this->preflight_service->get_failures() );
+			if ( ! $past_finalize && in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $failures, true ) ) {
 				if ( $this->is_network( $claimed ) ) {
 					if ( ! $this->propagate_network_exclusion( $claimed['generation'], WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS ) ) {
 						$this->defer( $claimed, array( 'network_exclusion_propagation_pending' ) );
@@ -968,7 +971,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
 			$this->preflight_service->invalidate_current_blog_memoization();
 			$remaining_failures = $this->normalize_codes( $this->preflight_service->get_failures() );
-			if ( in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $remaining_failures, true ) ) {
+			if ( ! $past_finalize && in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $remaining_failures, true ) ) {
 				if ( $this->is_network( $claimed ) ) {
 					if ( ! $this->propagate_network_exclusion( $claimed['generation'], WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS ) ) {
 						$this->defer( $claimed, array( 'network_exclusion_propagation_pending' ), $outcomes );
@@ -1156,7 +1159,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		if ( null === $claimed ) {
 			return;
 		}
-		$claimed = $this->fence_finalizing_claim( $claimed );
+		// The fence stores this request's token, which makes the built-in WooPayments the owner once the extension is inactive
+		// (WooPaymentsRuntimeArbiter), so a lost write deactivates nothing and the extension keeps payments.
+		$claimed = $this->fence_finalizing_claim( $claimed, self::$request_token );
 		if ( null === $claimed ) {
 			return;
 		}
@@ -1174,12 +1179,12 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$this->internal_plugin_lifecycle_change = false;
 		}
 		if ( ! $deactivated ) {
+			// The token stays, so the next attempt finds the extension active and rolls the switch back to it.
 			$this->defer( $claimed, array( 'plugin_deactivation_failed' ), $outcomes );
 			return;
 		}
-		// The built-in WooPayments owns payments from here, so the tier follows now, even when the ownership check below
-		// cannot be stored. A rollback made since is unharmed: the effective tier reads available while the extension owns
-		// payments (WooPaymentsSetupTier::get_effective_tier()).
+		// The tier follows now; this write takes no lock. A rollback made since is unharmed: the effective tier reads
+		// available while the extension owns payments (WooPaymentsSetupTier::get_effective_tier()).
 		$this->account_service->sync_setup_tier_from_options( false );
 
 		$this->schedule_ownership_verification( $claimed, $outcomes );
@@ -1189,22 +1194,27 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * Fence a claim before finalize deactivates the extension, or before the ownership check moves the tier.
 	 *
 	 * The compare-and-set fails when the record changed since this worker claimed it (an extension activation rolled it
-	 * back, or repair_schedule() recovered the claim), so a stale worker finalizes nothing.
+	 * back, or repair_schedule() recovered the claim), or when another request holds the write lock, so a stale or blocked
+	 * worker finalizes nothing.
 	 *
-	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
+	 * @param array<string,mixed> $claimed        Exact running state owned by this worker.
+	 * @param string|null         $finalize_token Finalize's request token, stored with the fence before the deactivation.
 	 * @return array<string,mixed>|null The fenced claim, or null when the claim is no longer this worker's.
 	 */
-	private function fence_finalizing_claim( array $claimed ): ?array {
+	private function fence_finalizing_claim( array $claimed, ?string $finalize_token = null ): ?array {
 		$now = time();
 		return $this->with_write_lock(
 			$now,
-			function () use ( $claimed, $now ): ?array {
+			function () use ( $claimed, $now, $finalize_token ): ?array {
 				if ( $claimed[ self::CLAIM_EXPIRES_AT_KEY ] <= $now ) {
 					return null;
 				}
 				$fenced               = $claimed;
 				$fenced['revision']   = $claimed['revision'] + 1;
 				$fenced['updated_at'] = $now;
+				if ( null !== $finalize_token ) {
+					$fenced['request_origin_token'] = $finalize_token;
+				}
 
 				return $this->state_store->compare_and_set_record( $claimed, $fenced ) ? $fenced : null;
 			},
@@ -1332,6 +1342,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @param int $generation Completed network barrier generation.
 	 */
 	private function deactivate_network_plugin_for_generation( int $generation ): void {
+		if ( ! $this->store_network_finalize_tokens( $generation ) ) {
+			return;
+		}
 		$deactivated = ! $this->preflight_service->is_woopayments_network_active();
 		if ( ! $deactivated ) {
 			try {
@@ -1349,6 +1362,44 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		}
 
 		$this->schedule_network_ownership_verification( $generation );
+	}
+
+	/**
+	 * Store this request's token and the built-in tier on every site waiting at the network barrier, before the network
+	 * deactivation, so each site's built-in WooPayments owns payments once the extension leaves.
+	 *
+	 * @param int $generation Completed network barrier generation.
+	 * @return bool True when every waiting site stored them; false deactivates nothing, and the barrier retries.
+	 */
+	private function store_network_finalize_tokens( int $generation ): bool {
+		$stored = true;
+		$this->run_on_sites_with_write_locks(
+			$this->get_current_network_site_ids(),
+			function ( int $site_id, bool $lock_held ) use ( $generation, &$stored ): void {
+				unset( $site_id );
+				if ( ! $stored ) {
+					return;
+				}
+				$record = $this->state_store->get_record();
+				if ( ! is_array( $record ) || $generation !== $record['generation'] || WooPaymentsCutoverStateStore::STATE_DEFERRED !== $record['state'] || ! in_array( 'network_barrier', $record[ self::BLOCKING_CODES_KEY ], true ) ) {
+					return;
+				}
+				if ( ! $lock_held ) {
+					$stored = false;
+					return;
+				}
+				$marked                         = $record;
+				$marked['revision']             = $record['revision'] + 1;
+				$marked['updated_at']           = time();
+				$marked['request_origin_token'] = self::$request_token;
+				$stored                         = $this->state_store->compare_and_set_record( $record, $marked );
+				if ( $stored ) {
+					$this->account_service->sync_setup_tier_from_options( false );
+				}
+			}
+		);
+
+		return $stored;
 	}
 
 	/**

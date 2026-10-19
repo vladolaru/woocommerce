@@ -853,6 +853,28 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Opus gate F2 on FG4d (N-509): the switch's version check reads the recorded version, which only a running extension
+	 * updates, so a click on such a store would defer forever.
+	 *
+	 * @testdox A store waiting for its switch that last ran an extension below the switch's minimum is told to activate and update it, and is offered no click.
+	 */
+	public function test_store_waiting_with_an_old_extension_is_told_to_update_it_first(): void {
+		update_option( 'woocommerce_woocommerce_payments_version', '10.4.9' );
+		$this->fake_plugin_active( false );
+		$this->fake_current_user_caps( true );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		$controller = $this->create_cutover_controller();
+
+		$notices = $this->render_admin_notices( $controller );
+
+		$this->assertTrue( wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_awaiting_switch() );
+		$this->assertStringContainsString( 'To switch, first activate the WooPayments extension in Plugins and update it to the latest version.', $notices );
+		$this->assertStringNotContainsString( 'Start the switch', $notices );
+		$this->assertFalse( $controller->disable_woopayments_plugin() );
+	}
+
+	/**
 	 * @testdox Native WooPayments should block a first-time standalone plugin activation.
 	 */
 	public function test_native_activation_guard_blocks_a_store_that_never_ran_the_extension(): void {
