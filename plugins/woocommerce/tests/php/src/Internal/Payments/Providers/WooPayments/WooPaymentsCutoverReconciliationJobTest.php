@@ -382,7 +382,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Finalization moves a plugin-era store to the active tier so the next shopper request registers the native gateway.
 	 *
-	 * Source: data/task-1.4-dormancy-design.md:84-96 (cutover completion is an authoritative state writer; account present plus enabled 'yes' derives active).
+	 * With an account cached and the gateway enabled, the tier the switch writes is `active`.
 	 */
 	public function test_finalization_activates_native_payments_for_the_next_request(): void {
 		$this->arrange_plugin_era_store();
@@ -1372,11 +1372,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Cache an account carrying the built-in eligibility field platforms sent before the WooPayments feature, as ineligible.
+	 * Cache an account carrying the built-in eligibility field, marked ineligible.
 	 *
-	 * The platform's account endpoint sent `native_payments` as `eligible`, `cohort` and `reason` (WPCOM
-	 * `wp-content/rest-api-plugins/endpoints/wcpay/class-accounts-controller.php:1100-1104` and `:1206` at `748c7406e24`,
-	 * never on WPCOM trunk). WooCommerce no longer reads it.
+	 * The built-in eligibility field `native_payments` (`eligible`, `cohort`, `reason`) exists only on an unmerged WPCOM branch,
+	 * `748c7406e24`, never on trunk: `wp-content/rest-api-plugins/endpoints/wcpay/class-accounts-controller.php:1100-1104`
+	 * builds it, `:1120-1121` sets the result and `:1206` adds it to the account response. WooCommerce no longer reads it.
 	 */
 	private function cache_an_account_the_platform_marked_ineligible(): void {
 		$cache                            = get_option( 'wcpay_account_data' );
@@ -1389,8 +1389,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Ownership verification rewrites the tier when the finalization write did not land.
-	 *
-	 * Source: data/task-1.4-dormancy-design.md:84-96 (a failed derived-state write is retried by a later writer; cutover completion is a writer).
 	 */
 	public function test_ownership_verification_repairs_the_tier_before_completion(): void {
 		$this->arrange_plugin_era_store();
@@ -3643,6 +3641,103 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A site that turned the WooPayments feature off after reaching the network barrier holds the barrier, so the extension stays active.
+	 * @group multisite
+	 */
+	public function test_network_barrier_waits_for_a_site_whose_feature_turned_off(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-feature-turned-off.example.org' );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		switch_to_blog( $second_site_id );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		restore_current_blog();
+		$deactivation_calls = 0;
+		$preflight          = new class( $deactivation_calls ) extends WooPaymentsCutoverPreflightService {
+			/** @var int */
+			private int $deactivation_calls;
+
+			/**
+			 * @param int $deactivation_calls Deactivation calls.
+			 */
+			public function __construct( int &$deactivation_calls ) {
+				$this->deactivation_calls =& $deactivation_calls;
+			}
+
+			/** @return string[] */
+			public function get_failures(): array {
+				return array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Return network activation. */
+			public function is_woopayments_network_active(): bool {
+				return true;
+			}
+
+			/** Record one network deactivation. */
+			public function deactivate_woopayments_plugin(): bool {
+				++$this->deactivation_calls;
+				return true;
+			}
+		};
+		// The real per-site feature read, with the network-active extension owning payments on every site.
+		$arbiter = new class() extends WooPaymentsRuntimeArbiter {
+			/** The network-active extension owns payments on every site. */
+			public function is_extension_owner(): bool {
+				return true;
+			}
+		};
+		$sut     = new WooPaymentsCutoverReconciliationJob();
+		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight, $this->create_noop_normalization(), $this->create_inert_account_service() );
+		$this->jobs[] = $sut;
+
+		try {
+			$this->assertTrue( $sut->enqueue( 'merchant' ) );
+			$main_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_pending );
+			switch_to_blog( $second_site_id );
+			$second_pending = $this->require_state_store()->get_record();
+			$this->assertIsArray( $second_pending );
+			$this->require_scheduler()->cancel( $second_pending['generation'], 1 );
+			$sut->handle_reconcile( $second_pending['generation'], 1 );
+			$second_ready = $this->require_state_store()->get_record();
+			$this->assertIsArray( $second_ready );
+			$this->assertSame( array( 'network_barrier' ), $second_ready['deferred_codes'], 'The second site reached the barrier first.' );
+			// A super admin turns the feature off on the second site; nothing protects the untick while the extension owns payments.
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+			restore_current_blog();
+
+			$this->require_scheduler()->cancel( $main_pending['generation'], 1 );
+			$sut->handle_reconcile( $main_pending['generation'], 1 );
+
+			$main_after = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_after );
+			$this->assertSame( array( 'network_barrier' ), $main_after['deferred_codes'], 'The main site waits at the barrier.' );
+			$this->assertSame( 0, $deactivation_calls, 'The extension stays active across the network.' );
+		} finally {
+			while ( ms_is_switched() ) {
+				restore_current_blog();
+			}
+			switch_to_blog( $second_site_id );
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $second_site_id, true );
+			$this->assertSame( $main_site_id, get_current_blog_id() );
+		}
+	}
+
+	/**
 	 * @testdox The network barrier completes over the live sites while a $status site keeps its record, and the site finishes on its own once restored.
 	 * @group multisite
 	 * @testWith ["archived"]
@@ -4372,8 +4467,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A completed network barrier moves every site to the active tier before ownership verification runs.
 	 *
-	 * Source: data/task-1.4-dormancy-design.md:84-96 (cutover completion is an authoritative state writer); the
-	 * single-site finalize path writes it right after deactivation, and the network barrier is where the plugin goes away.
+	 * The single-site finalize path writes the tier right after deactivation; on a network the barrier is where the plugin
+	 * goes away.
 	 *
 	 * @group multisite
 	 */

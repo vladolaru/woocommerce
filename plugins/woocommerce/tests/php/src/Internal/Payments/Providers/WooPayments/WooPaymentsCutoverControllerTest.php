@@ -247,6 +247,8 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
+		// The owner is resolved once per request; a test that fakes the extension must not see one cached before it.
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		update_option( 'woocommerce_woocommerce_payments_version', '10.5.0' );
 
 		$this->provider = $this->getMockBuilder( WooPaymentsProvider::class )
@@ -402,7 +404,9 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Platforms before the WooPayments feature sent a built-in eligibility field on the account; WooCommerce no longer reads it.
+	 * The built-in eligibility field `native_payments` (`eligible`, `cohort`, `reason`) exists only on an unmerged WPCOM branch,
+	 * `748c7406e24`, never on trunk: `wp-content/rest-api-plugins/endpoints/wcpay/class-accounts-controller.php:1100-1104`
+	 * builds it, `:1120-1121` sets the result and `:1206` adds it to the account response. WooCommerce no longer reads it.
 	 *
 	 * @testdox The start notice shows and the Start the switch click queues the switch whatever the cached account says about built-in eligibility.
 	 */
@@ -410,10 +414,9 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		$this->enable_ready_cutover();
-		// The owner is resolved once per request; the faked extension must be what this test's request sees.
-		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		// Clearing the in-memory cache deletes the option, so it goes first.
 		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
+		// The account cache envelope: client 11.1.0 includes/class-database-cache.php:377-382.
 		update_option(
 			'wcpay_account_data',
 			array(

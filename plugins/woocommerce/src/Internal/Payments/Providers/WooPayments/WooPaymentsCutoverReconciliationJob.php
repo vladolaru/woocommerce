@@ -1463,6 +1463,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Tell whether every site reached the barrier for one generation.
 	 *
+	 * A runnable site whose WooPayments feature is off holds the barrier, so the network deactivation never leaves a site
+	 * without a payments runtime.
+	 *
 	 * @param int $generation Generation being checked.
 	 * @return bool
 	 */
@@ -1478,6 +1481,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				switch_to_blog( $site_id );
 			}
 			try {
+				if ( ! $this->arbiter->is_builtin_enabled() ) {
+					return false;
+				}
 				$record        = $this->state_store->get_record();
 				$is_ready      = is_array( $record ) && WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && in_array( 'network_barrier', $record[ self::BLOCKING_CODES_KEY ], true );
 				$is_finalizing = is_array( $record ) && ( in_array( $record['current_step'], array( self::STEP_VERIFY_BUILTIN_OWNERSHIP, self::STEP_DONE ), true ) );

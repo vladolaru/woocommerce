@@ -698,8 +698,6 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Migration moves a plugin-active upgraded store off the never-written disabled tier so the switch controller loads on admin requests.
-	 *
-	 * Source: data/task-1.4-dormancy-design.md:84-96 (install/update repair is an authoritative writer; an active standalone plugin derives available).
 	 */
 	public function test_wc_update_11205_seed_woopayments_setup_tier(): void {
 		include_once WC_ABSPATH . 'includes/wc-update-functions.php';
@@ -754,8 +752,6 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Migration writes the disabled tier for a plugin-active store while the WooPayments feature is off.
-	 *
-	 * Source: data/task-1.4-dormancy-design.md:84-96 (disabled when native is off, ahead of the plugin check).
 	 */
 	public function test_wc_update_11205_repair_writes_disabled_while_the_feature_is_off(): void {
 		include_once WC_ABSPATH . 'includes/wc-update-functions.php';

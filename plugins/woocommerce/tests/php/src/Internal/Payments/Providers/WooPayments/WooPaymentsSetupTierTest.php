@@ -302,7 +302,9 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Platforms before the WooPayments feature sent a built-in eligibility field on the account; WooCommerce no longer reads it.
+	 * The built-in eligibility field `native_payments` (`eligible`, `cohort`, `reason`) exists only on an unmerged WPCOM branch,
+	 * `748c7406e24`, never on trunk: `wp-content/rest-api-plugins/endpoints/wcpay/class-accounts-controller.php:1100-1104`
+	 * builds it, `:1120-1121` sets the result and `:1206` adds it to the account response. WooCommerce no longer reads it.
 	 *
 	 * @testdox The tier sync ignores the account's built-in eligibility field while $_dataName.
 	 * @dataProvider provide_tier_sync_owners
@@ -386,7 +388,8 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Build account cache contents in the shape the plugin's Database_Cache writes.
+	 * Build account cache contents in the shape the plugin's Database_Cache writes (client 11.1.0
+	 * includes/class-database-cache.php:377-382).
 	 *
 	 * @return array<string,mixed>
 	 */
