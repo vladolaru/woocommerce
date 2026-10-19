@@ -5,9 +5,9 @@
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Subscriptions;
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Cutover;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsLegacySubscriptionsGuard;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsLegacySubscriptionsGuard;
 use WC_Unit_Test_Case;
 
 /**

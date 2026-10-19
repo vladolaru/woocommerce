@@ -5,10 +5,11 @@
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions;
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover;
 
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 
 /**
  * Detects stores on the bundled WooPayments subscriptions flavor, which stay on the plugin at cutover.
