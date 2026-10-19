@@ -42,9 +42,9 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		'last_webhook_fetch'           => 'Last fetch of failed webhook events',
 	);
 
-	private const SITE_HEALTH_TEST_ID = 'woocommerce_woopayments_native_cutover';
+	private const SITE_HEALTH_TEST_ID = 'woocommerce_woopayments_cutover';
 
-	private const SITE_HEALTH_TEST_ACTION = 'woocommerce-woopayments-native-cutover';
+	private const SITE_HEALTH_TEST_ACTION = 'woocommerce-woopayments-cutover';
 
 	/**
 	 * Runtime owner arbiter.
@@ -600,7 +600,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			return $info;
 		}
 
-		$info['woocommerce_native_payments'] = array(
+		$info['woocommerce_woopayments'] = array(
 			'label'  => __( 'Built-in WooPayments', 'woocommerce' ),
 			'fields' => $this->get_status_fields(),
 		);

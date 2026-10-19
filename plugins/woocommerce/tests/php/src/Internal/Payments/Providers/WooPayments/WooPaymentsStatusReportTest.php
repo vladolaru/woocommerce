@@ -109,7 +109,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected ? 10 : false, has_filter( 'woocommerce_debug_tools', array( $sut, 'add_debug_tools' ) ) );
 		$this->assertSame( $expected ? 10 : false, has_filter( 'debug_information', array( $sut, 'add_site_health_debug_info' ) ) );
 		$this->assertSame( $expected ? 10 : false, has_filter( 'site_status_tests', array( $sut, 'add_site_status_tests' ) ) );
-		$this->assertSame( $expected ? 10 : false, has_action( 'wp_ajax_health-check-woocommerce-woopayments-native-cutover', array( $sut, 'run_cutover_site_health_ajax_test' ) ) );
+		$this->assertSame( $expected ? 10 : false, has_action( 'wp_ajax_health-check-woocommerce-woopayments-cutover', array( $sut, 'run_cutover_site_health_ajax_test' ) ) );
 	}
 
 	/**
@@ -148,7 +148,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_filter( 'woocommerce_debug_tools', array( $sut, 'add_debug_tools' ) ) );
 		$this->assertFalse( has_filter( 'debug_information', array( $sut, 'add_site_health_debug_info' ) ) );
 		$this->assertFalse( has_filter( 'site_status_tests', array( $sut, 'add_site_status_tests' ) ) );
-		$this->assertFalse( has_action( 'wp_ajax_health-check-woocommerce-woopayments-native-cutover', array( $sut, 'run_cutover_site_health_ajax_test' ) ) );
+		$this->assertFalse( has_action( 'wp_ajax_health-check-woocommerce-woopayments-cutover', array( $sut, 'run_cutover_site_health_ajax_test' ) ) );
 	}
 
 	/**
@@ -262,14 +262,14 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertArrayHasKey( 'existing_test', $tests['async'] );
-		$this->assertArrayHasKey( 'woocommerce_woopayments_native_cutover', $tests['async'] );
-		$this->assertSame( 'woocommerce-woopayments-native-cutover', $tests['async']['woocommerce_woopayments_native_cutover']['test'] );
-		$this->assertIsCallable( $tests['async']['woocommerce_woopayments_native_cutover']['async_direct_test'] );
+		$this->assertArrayHasKey( 'woocommerce_woopayments_cutover', $tests['async'] );
+		$this->assertSame( 'woocommerce-woopayments-cutover', $tests['async']['woocommerce_woopayments_cutover']['test'] );
+		$this->assertIsCallable( $tests['async']['woocommerce_woopayments_cutover']['async_direct_test'] );
 
-		$result = $tests['async']['woocommerce_woopayments_native_cutover']['async_direct_test']();
+		$result = $tests['async']['woocommerce_woopayments_cutover']['async_direct_test']();
 
 		$this->assertSame( 'recommended', $result['status'] );
-		$this->assertSame( 'woocommerce_woopayments_native_cutover', $result['test'] );
+		$this->assertSame( 'woocommerce_woopayments_cutover', $result['test'] );
 		$this->assertStringContainsString( 'WooPayments runs as the WooPayments extension.', $result['description'] );
 		$this->assertStringContainsString( 'Failed switch checks: builtin_runtime_disabled', $result['description'] );
 	}
@@ -326,7 +326,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( '>Stored setup tier:</td>', $html );
 		$this->assertStringContainsString( '>Effective setup tier:</td>', $html );
 
-		$fields = $this->get_sut()->add_site_health_debug_info( array() )['woocommerce_native_payments']['fields'];
+		$fields = $this->get_sut()->add_site_health_debug_info( array() )['woocommerce_woopayments']['fields'];
 		$this->assertSame(
 			array(
 				'label' => 'Stored setup tier',
@@ -502,12 +502,12 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 
 		$info = $this->get_sut()->add_site_health_debug_info( array() );
 
-		$this->assertArrayHasKey( 'woocommerce_native_payments', $info );
-		$this->assertSame( 'Built-in WooPayments', $info['woocommerce_native_payments']['label'] );
-		$this->assertSame( 'builtin', $info['woocommerce_native_payments']['fields']['runtime_owner']['value'] );
-		$this->assertSame( 'acct_native_test', $info['woocommerce_native_payments']['fields']['account_id']['value'] );
-		$this->assertSame( 'WooPayments feature', $info['woocommerce_native_payments']['fields']['builtin_enabled']['label'] );
-		$this->assertSame( 'Enabled', $info['woocommerce_native_payments']['fields']['builtin_enabled']['value'] );
+		$this->assertArrayHasKey( 'woocommerce_woopayments', $info );
+		$this->assertSame( 'Built-in WooPayments', $info['woocommerce_woopayments']['label'] );
+		$this->assertSame( 'builtin', $info['woocommerce_woopayments']['fields']['runtime_owner']['value'] );
+		$this->assertSame( 'acct_native_test', $info['woocommerce_woopayments']['fields']['account_id']['value'] );
+		$this->assertSame( 'WooPayments feature', $info['woocommerce_woopayments']['fields']['builtin_enabled']['label'] );
+		$this->assertSame( 'Enabled', $info['woocommerce_woopayments']['fields']['builtin_enabled']['value'] );
 	}
 
 	/**
@@ -540,7 +540,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 				'WooPayments rate provider',
 				'Last fetch of failed webhook events',
 			),
-			array_column( $this->get_sut()->add_site_health_debug_info( array() )['woocommerce_native_payments']['fields'], 'label' )
+			array_column( $this->get_sut()->add_site_health_debug_info( array() )['woocommerce_woopayments']['fields'], 'label' )
 		);
 	}
 
@@ -1013,7 +1013,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		remove_filter( 'woocommerce_debug_tools', array( $sut, 'add_debug_tools' ) );
 		remove_filter( 'debug_information', array( $sut, 'add_site_health_debug_info' ) );
 		remove_filter( 'site_status_tests', array( $sut, 'add_site_status_tests' ) );
-		remove_action( 'wp_ajax_health-check-woocommerce-woopayments-native-cutover', array( $sut, 'run_cutover_site_health_ajax_test' ) );
+		remove_action( 'wp_ajax_health-check-woocommerce-woopayments-cutover', array( $sut, 'run_cutover_site_health_ajax_test' ) );
 	}
 
 	/**

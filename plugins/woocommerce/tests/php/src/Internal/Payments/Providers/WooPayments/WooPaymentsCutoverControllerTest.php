@@ -341,7 +341,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			restore_current_blog();
 		}
 		unset( $_GET[ WooPaymentsCutoverController::QUERY_ACTION ], $_GET[ WooPaymentsCutoverController::NONCE_NAME ], $_GET[ WooPaymentsCutoverController::QUERY_NOTICE ], $_GET['page'], $_GET['tab'] );
-		delete_transient( 'woocommerce_woopayments_native_cutover_status' );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'woocommerce_woocommerce_payments_version' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
