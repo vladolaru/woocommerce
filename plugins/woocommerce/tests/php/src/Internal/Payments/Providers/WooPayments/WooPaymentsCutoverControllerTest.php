@@ -166,11 +166,11 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	private bool $plugin_active = false;
 
 	/**
-	 * Whether the WooPayments plugin should appear network active.
+	 * Whether the WooPayments plugin should appear active for every site.
 	 *
 	 * @var bool
 	 */
-	private bool $plugin_network_active = false;
+	private bool $plugin_sitewide_active = false;
 
 	/**
 	 * Whether the WooPayments plugin bootstrap class is loaded in this PHP request.
@@ -435,6 +435,31 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertStringContainsString( 'Start the switch', $this->render_admin_notices( $controller ) );
 		$this->assertTrue( $controller->disable_woopayments_plugin() );
+	}
+
+	/**
+	 * @testdox While the WooPayments extension is active for every site, the store is told a super admin first activates WooPayments per site, with no start button.
+	 */
+	public function test_extension_active_for_every_site_refuses_the_start_with_a_notice(): void {
+		$this->fake_plugin_active( false, true );
+		$this->fake_current_user_caps( true );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$job = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @return array<string,mixed>|null */
+			public function classify_for_admin_notice(): ?array {
+				return null;
+			}
+
+			/** Offer the first generation. */
+			public function should_offer_start(): bool {
+				return true;
+			}
+		};
+
+		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job ) );
+
+		$this->assertStringContainsString( 'WooPayments is now part of WooCommerce. This store can&#039;t switch yet because the WooPayments extension is active for every site of the network. A super admin first needs to activate WooPayments on each site instead.', $notice );
+		$this->assertStringNotContainsString( 'Start the switch', $notice );
 	}
 
 	/**
@@ -767,7 +792,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The controller sends the merchant start and the extension activation into the one reconciliation job with exact scope, and a hand deactivation of the extension starts nothing.
+	 * @testdox The controller sends the merchant start and a site's extension activation into the one reconciliation job; an activation for every site records nothing, and a hand deactivation of the extension starts nothing.
 	 */
 	public function test_controller_routes_the_start_and_the_activation_into_the_job(): void {
 		$renamed_plugin_file = 'renamed-woocommerce-payments/woocommerce-payments.php';
@@ -778,8 +803,8 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			/** @var string[] */
 			public array $sources = array();
 
-			/** @var bool[] */
-			public array $activation_scopes = array();
+			/** @var int */
+			public int $activations = 0;
 
 			/**
 			 * @param string $source Trigger source.
@@ -789,13 +814,9 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 				return true;
 			}
 
-			/**
-			 * Record the external activation scope.
-			 *
-			 * @param bool $network_wide Network scope.
-			 */
-			public function record_plugin_activation( bool $network_wide = false ): bool {
-				$this->activation_scopes[] = $network_wide;
+			/** Count the recorded activations. */
+			public function record_plugin_activation(): bool {
+				++$this->activations;
 				return true;
 			}
 
@@ -818,9 +839,10 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $controller->disable_woopayments_plugin() );
 		$controller->handle_plugin_deactivated( $renamed_plugin_file, false );
 		$controller->handle_plugin_activated( $renamed_plugin_file, true );
+		$controller->handle_plugin_activated( $renamed_plugin_file, false );
 
 		$this->assertSame( array( 'merchant' ), $job->sources, 'The hand deactivation enqueues nothing.' );
-		$this->assertSame( array( true ), $job->activation_scopes );
+		$this->assertSame( 1, $job->activations, 'Only the site activation is recorded.' );
 		$this->assertSame( array(), $this->deactivate_plugin_calls );
 	}
 
@@ -1003,15 +1025,15 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Starting the switch needs manage_woocommerce plus the plugin capability for the plugin's scope: $scope with the given capabilities queues $expected.
+	 * @testdox Starting the switch needs manage_woocommerce and activate_plugins, and never starts while the extension is active for every site: $scope with the given capabilities queues $expected.
 	 * @dataProvider provider_start_capabilities
 	 *
-	 * @param string   $scope        Where WooPayments is active: site or network.
+	 * @param string   $scope        Where WooPayments is active: site, or sitewide (for every site).
 	 * @param string[] $capabilities Capabilities the user has.
 	 * @param string[] $expected     Sources the job is asked to queue.
 	 */
-	public function test_starting_the_switch_requires_the_capabilities_for_the_plugin_scope( string $scope, array $capabilities, array $expected ): void {
-		$this->fake_plugin_active( 'site' === $scope, 'network' === $scope );
+	public function test_starting_the_switch_requires_the_capabilities_and_a_site_activation( string $scope, array $capabilities, array $expected ): void {
+		$this->fake_plugin_active( 'site' === $scope, 'sitewide' === $scope );
 		$this->fake_current_user_capabilities( $capabilities );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
@@ -1043,8 +1065,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			'site, store manager without activate_plugins' => array( 'site', array( 'manage_woocommerce' ), array() ),
 			'site, activate_plugins without store manager' => array( 'site', array( 'activate_plugins' ), array() ),
 			'site, both capabilities'                      => array( 'site', array( 'manage_woocommerce', 'activate_plugins' ), array( 'merchant' ) ),
-			'network, without manage_network_plugins'      => array( 'network', array( 'manage_woocommerce', 'activate_plugins' ), array() ),
-			'network, with manage_network_plugins'         => array( 'network', array( 'manage_woocommerce', 'manage_network_plugins' ), array( 'merchant' ) ),
+			'sitewide, both capabilities'                  => array( 'sitewide', array( 'manage_woocommerce', 'activate_plugins' ), array() ),
 		);
 	}
 
@@ -1099,7 +1120,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			}
 		};
 		$preflight    = new class() extends WooPaymentsCutoverPreflightService {
-			/** Return site activation scope. */
+			/** The extension is active on this site only. */
 			public function is_woopayments_network_active(): bool {
 				return false;
 			}
@@ -1819,14 +1840,14 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * Control the WooPayments plugin active signals.
 	 *
 	 * @param bool        $site_active    Whether the plugin is active for this site.
-	 * @param bool        $network_active Whether the plugin is active network-wide.
-	 * @param string|null $plugin_file    Plugin file path for nonstandard installs.
+	 * @param bool        $sitewide_active Whether the plugin is active for every site.
+	 * @param string|null $plugin_file     Plugin file path for nonstandard installs.
 	 */
-	private function fake_plugin_active( bool $site_active = true, bool $network_active = false, ?string $plugin_file = null ): void {
-		$this->plugin_active         = $site_active;
-		$this->plugin_network_active = $network_active;
-		$this->plugin_class_loaded   = $site_active || $network_active;
-		$entry                       = $plugin_file ?? WooPaymentsRuntimeArbiter::PLUGIN_FILE;
+	private function fake_plugin_active( bool $site_active = true, bool $sitewide_active = false, ?string $plugin_file = null ): void {
+		$this->plugin_active          = $site_active;
+		$this->plugin_sitewide_active = $sitewide_active;
+		$this->plugin_class_loaded    = $site_active || $sitewide_active;
+		$entry                        = $plugin_file ?? WooPaymentsRuntimeArbiter::PLUGIN_FILE;
 
 		$this->register_legacy_proxy_function_mocks(
 			array(
@@ -1838,12 +1859,12 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 				},
 				'get_site_option'    => function ( $name, $default_value = false ) use ( $entry ) {
 					if ( 'active_sitewide_plugins' === $name ) {
-						return $this->plugin_network_active ? array( $entry => 1234567890 ) : array();
+						return $this->plugin_sitewide_active ? array( $entry => 1234567890 ) : array();
 					}
 					return get_site_option( $name, $default_value );
 				},
 				'is_multisite'       => function () {
-					return $this->plugin_network_active || is_multisite();
+					return $this->plugin_sitewide_active || is_multisite();
 				},
 				'get_plugins'        => function () use ( $entry ) {
 					return array(
@@ -1864,21 +1885,21 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 					}
 					return defined( $constant_name );
 				},
-				'deactivate_plugins' => function ( $plugin, $silent = false, $network_wide = null ) use ( $entry ) {
-					$network_wide                    = (bool) $network_wide;
-					$this->deactivate_plugin_calls[] = array( (string) $plugin, (bool) $silent, $network_wide );
+				'deactivate_plugins' => function ( $plugin, $silent = false, $for_every_site = null ) use ( $entry ) {
+					$for_every_site                  = (bool) $for_every_site;
+					$this->deactivate_plugin_calls[] = array( (string) $plugin, (bool) $silent, $for_every_site );
 
 					if ( $entry !== (string) $plugin ) {
 						return;
 					}
 
-					if ( $network_wide ) {
-						$this->plugin_network_active = false;
+					if ( $for_every_site ) {
+						$this->plugin_sitewide_active = false;
 					} else {
 						$this->plugin_active = false;
 					}
 				},
-				'current_user_can'   => fn( $capability ) => in_array( $capability, array( 'manage_woocommerce', 'activate_plugins', 'manage_network_plugins' ), true )
+				'current_user_can'   => fn( $capability ) => in_array( $capability, array( 'manage_woocommerce', 'activate_plugins' ), true )
 					? in_array( $capability, $this->granted_cutover_capabilities, true )
 					: current_user_can( $capability ),
 			)
@@ -2048,13 +2069,13 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * @param bool $can_cutover Whether the user can perform cutover actions.
 	 */
 	private function fake_current_user_caps( bool $can_cutover ): void {
-		$this->granted_cutover_capabilities = $can_cutover ? array( 'manage_woocommerce', 'activate_plugins', 'manage_network_plugins' ) : array();
+		$this->granted_cutover_capabilities = $can_cutover ? array( 'manage_woocommerce', 'activate_plugins' ) : array();
 	}
 
 	/**
 	 * Grant exactly these cutover-relevant capabilities to the current user.
 	 *
-	 * @param string[] $capabilities Granted among manage_woocommerce, activate_plugins and manage_network_plugins.
+	 * @param string[] $capabilities Granted among manage_woocommerce and activate_plugins.
 	 */
 	private function fake_current_user_capabilities( array $capabilities ): void {
 		$this->granted_cutover_capabilities = $capabilities;

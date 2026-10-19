@@ -233,7 +233,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function output_admin_notices(): void {
-		// Only store managers can act on the switch, and classifying it can be costly on a network.
+		// Only store managers can act on the switch, and classifying it can be costly.
 		if ( ! $this->legacy_proxy->call_function( 'current_user_can', 'manage_woocommerce' ) ) {
 			return;
 		}
@@ -255,7 +255,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		}
 
 		// A store manager who may start the switch asked for it and nothing was queued, for example while another request held
-		// the lease, or on a network where the WooPayments feature is off at some site.
+		// the lease.
 		$this->legacy_proxy->call_function( 'wc_get_logger' )->error( 'WooPayments cutover: the merchant asked to start the switch, but no reconciliation was queued.', array( 'source' => 'woocommerce-woopayments-cutover' ) );
 		$this->refuse_action();
 	}
@@ -280,6 +280,9 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	/**
 	 * Open a new generation when a completed WooPayments cutover is rolled back by plugin activation.
 	 *
+	 * An activation for every site of a multisite records nothing: each site is a store of its own, and a switched site
+	 * beside the reactivated extension is reopened the next time an admin page reads its record.
+	 *
 	 * @internal
 	 *
 	 * @param mixed $plugin       Activated plugin path from the public WordPress hook.
@@ -290,18 +293,21 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			return;
 		}
 		$this->maybe_forget_admin_classification( $plugin );
+		if ( $network_wide ) {
+			return;
+		}
 		$active_plugin_file = $this->preflight_service->get_active_woopayments_plugin_file();
 		if ( WooPaymentsRuntimeArbiter::PLUGIN_FILE !== $plugin && $active_plugin_file !== $plugin ) {
 			return;
 		}
 
-		$this->reconciliation_job->record_plugin_activation( $network_wide );
+		$this->reconciliation_job->record_plugin_activation();
 	}
 
 	/**
 	 * Forget the cached admin classification when WooCommerce Subscriptions changes, since it decides the bundled-flavor exclusion.
 	 *
-	 * Current site only: after a network-wide change, other sites catch up when their cached classification expires.
+	 * Current site only: other sites catch up when their cached classification expires.
 	 *
 	 * @param string $plugin Activated or deactivated plugin path.
 	 */
@@ -369,13 +375,14 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether this request may start the switch: it may manage it, and a store waiting for its switch last ran an
-	 * extension version the switch supports.
+	 * Tell whether this request may start the switch: it may manage it, the WooPayments extension is not active for every
+	 * site (a switch deactivates it on its own site only), and a store waiting for its switch last ran an extension version
+	 * the switch supports.
 	 *
 	 * @return bool
 	 */
 	private function can_start_cutover(): bool {
-		return $this->can_manage_switch() && ! $this->needs_extension_update_first();
+		return $this->can_manage_switch() && ! $this->is_woopayments_network_active() && ! $this->needs_extension_update_first();
 	}
 
 	/**
@@ -392,7 +399,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 
 	/**
 	 * Tell whether this request may manage the switch: the WooPayments extension owns payments, or the store waits for its
-	 * switch after the extension was deactivated, and the current user may manage WooCommerce and the extension's plugin scope.
+	 * switch after the extension was deactivated, and the current user may manage WooCommerce and activate plugins.
 	 *
 	 * @return bool
 	 */
@@ -401,18 +408,18 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			return false;
 		}
 
-		$plugin_capability = $this->is_woopayments_network_active() ? 'manage_network_plugins' : 'activate_plugins';
-
-		return (bool) $this->legacy_proxy->call_function( 'current_user_can', $plugin_capability );
+		return (bool) $this->legacy_proxy->call_function( 'current_user_can', 'activate_plugins' );
 	}
 
 	/**
-	 * Tell whether WooPayments is active network-wide.
+	 * Tell whether the WooPayments extension is active for every site of a multisite.
+	 *
+	 * A single site has no such list, so it is not read there.
 	 *
 	 * @return bool
 	 */
 	private function is_woopayments_network_active(): bool {
-		return $this->preflight_service->is_woopayments_network_active();
+		return $this->legacy_proxy->call_function( 'is_multisite' ) && $this->preflight_service->is_woopayments_network_active();
 	}
 
 	/**
@@ -440,11 +447,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			<p>
 				<?php esc_html_e( 'WooPayments is now part of WooCommerce. Start the switch: we will migrate what is needed and disable the WooPayments extension.', 'woocommerce' ); ?>
 			</p>
-			<?php if ( $this->is_woopayments_network_active() ) : ?>
-				<p>
-					<?php esc_html_e( 'The WooPayments extension is active across this network, so the switch starts only when the WooPayments feature is on at every site (WooCommerce > Settings > Advanced > Features).', 'woocommerce' ); ?>
-				</p>
-			<?php endif; ?>
 			<p>
 				<a class="button button-primary" href="<?php echo esc_url( $this->get_disable_url() ); ?>">
 					<?php esc_html_e( 'Start the switch', 'woocommerce' ); ?>
@@ -455,9 +457,14 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Offer the switch, or, on a store waiting for it with an extension too old to switch from, say how to get there.
+	 * Offer the switch, or say what stands in the way: the WooPayments extension is active for every site, or a store
+	 * waiting for its switch last ran an extension too old to switch from.
 	 */
 	private function output_start_notice(): void {
+		if ( $this->is_woopayments_network_active() ) {
+			echo '<div class="notice notice-info"><p>' . esc_html__( 'WooPayments is now part of WooCommerce. This store can\'t switch yet because the WooPayments extension is active for every site of the network. A super admin first needs to activate WooPayments on each site instead.', 'woocommerce' ) . '</p></div>';
+			return;
+		}
 		if ( $this->can_start_cutover() ) {
 			if ( $this->reconciliation_job->should_offer_start() ) {
 				$this->output_soft_cutover_notice();

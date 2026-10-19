@@ -72,7 +72,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	public function tearDown(): void {
 		as_unschedule_all_actions( WooPaymentsCutoverActionScheduler::ACTION_HOOK );
 		as_unschedule_all_actions( 'wcpay_preflight_service_test' );
-		as_unschedule_all_actions( 'woocommerce_woopayments_cutover_network_reconcile' );
+		as_unschedule_all_actions( 'woocommerce_woopayments_cutover_foreign_hook' );
 		parent::tearDown();
 	}
 
@@ -178,17 +178,17 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 			'other-group',
 			true
 		);
-		$obsolete_network_hook_id = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'woocommerce_woopayments_cutover_network_reconcile', array(), WooPaymentsCutoverActionScheduler::ACTION_GROUP, true );
+		$foreign_hook_id          = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'woocommerce_woopayments_cutover_foreign_hook', array(), WooPaymentsCutoverActionScheduler::ACTION_GROUP, true );
 		$other_action_id          = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_preflight_service_test', array(), WooPaymentsCutoverActionScheduler::ACTION_GROUP, true );
 
 		$this->assertIsInt( $cutover_action_id );
 		$this->assertIsInt( $same_hook_other_group_id );
-		$this->assertIsInt( $obsolete_network_hook_id );
+		$this->assertIsInt( $foreign_hook_id );
 		$this->assertIsInt( $other_action_id );
 		$actions = $this->create_sut()->get_queued_operational_actions();
 
-		$this->assertSame( array( WooPaymentsCutoverActionScheduler::ACTION_HOOK, 'woocommerce_woopayments_cutover_network_reconcile', 'wcpay_preflight_service_test' ), array_column( $actions, 'hook' ) );
-		$this->assertSame( array( $same_hook_other_group_id, $obsolete_network_hook_id, $other_action_id ), array_column( $actions, 'action_id' ) );
+		$this->assertSame( array( WooPaymentsCutoverActionScheduler::ACTION_HOOK, 'woocommerce_woopayments_cutover_foreign_hook', 'wcpay_preflight_service_test' ), array_column( $actions, 'hook' ) );
+		$this->assertSame( array( $same_hook_other_group_id, $foreign_hook_id, $other_action_id ), array_column( $actions, 'action_id' ) );
 	}
 
 	/**
@@ -265,7 +265,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Deactivation succeeds without touching plugins when no WooPayments plugin is active on the site or the network.
+	 * @testdox Deactivation succeeds without touching plugins when no WooPayments plugin is active.
 	 */
 	public function test_deactivation_succeeds_when_woopayments_is_already_inactive(): void {
 		update_option( 'active_plugins', array( 'woocommerce/woocommerce.php' ) );
@@ -279,6 +279,25 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $this->create_sut()->deactivate_woopayments_plugin() );
 		$this->assertSame( 0, $deactivations );
+	}
+
+	/**
+	 * @testdox Deactivation never reaches beyond the site: an extension active for every site stays active, and it reports false.
+	 */
+	public function test_deactivation_never_reaches_beyond_the_site(): void {
+		$calls = array();
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'get_option'         => fn( $name, $default_value = false ) => 'active_plugins' === $name ? array() : get_option( $name, $default_value ),
+				'get_site_option'    => fn( $name, $default_value = false ) => 'active_sitewide_plugins' === $name ? array( WooPaymentsRuntimeArbiter::PLUGIN_FILE => 1 ) : get_site_option( $name, $default_value ),
+				'deactivate_plugins' => function ( $plugin, $silent = false, $for_every_site = null ) use ( &$calls ): void {
+					$calls[] = array( $plugin, $silent, $for_every_site );
+				},
+			)
+		);
+
+		$this->assertFalse( $this->create_sut()->deactivate_woopayments_plugin(), 'The extension is still active for every site.' );
+		$this->assertSame( array( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false, false ) ), $calls );
 	}
 
 	/**

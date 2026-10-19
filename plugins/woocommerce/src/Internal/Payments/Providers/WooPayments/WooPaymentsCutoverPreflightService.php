@@ -339,21 +339,21 @@ class WooPaymentsCutoverPreflightService {
 	}
 
 	/**
-	 * Deactivate WooPayments on the site, or network-wide where it is network-active.
+	 * Deactivate WooPayments on the current site only.
 	 *
-	 * A plugin that is no longer active on the site or the network counts as deactivated: a retry after a crash that
-	 * followed a successful deactivation finds nothing to deactivate.
+	 * A plugin that is no longer active counts as deactivated: a retry after a crash that followed a successful deactivation
+	 * finds nothing to deactivate. A plugin active for every site stays active, and this reports false.
 	 */
 	public function deactivate_woopayments_plugin(): bool {
 		if ( ! function_exists( 'deactivate_plugins' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
-		// The lookup scans the same site and network lists as the activity checks, so an empty result means inactive.
+		// The lookup scans the same active-plugins lists as the activity checks, so an empty result means inactive.
 		$plugin_file = $this->get_active_woopayments_plugin_file();
 		if ( '' === $plugin_file ) {
 			return true;
 		}
-		$this->legacy_proxy->call_function( 'deactivate_plugins', $plugin_file, false, $this->is_woopayments_network_active() );
+		$this->legacy_proxy->call_function( 'deactivate_plugins', $plugin_file, false, false );
 		return ! $this->is_woopayments_site_active() && ! $this->is_woopayments_network_active();
 	}
 

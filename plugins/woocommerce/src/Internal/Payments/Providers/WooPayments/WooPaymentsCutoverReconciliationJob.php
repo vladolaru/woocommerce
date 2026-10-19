@@ -52,9 +52,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/** Step of a claim recovered after its worker stopped. */
 	private const STEP_RECOVERED_STALE_RUNNING = 'recovered_stale_running';
 
-	/** Step of a network generation waiting to carry an exclusion to every site. */
-	private const STEP_NETWORK_EXCLUSION_PROPAGATION = 'network_exclusion_propagation';
-
 	/** Source of the merchant's start. */
 	private const SOURCE_MERCHANT = 'merchant';
 
@@ -63,15 +60,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
 	/** Source of a site excluded on its own. */
 	private const SOURCE_LOCAL_EXCLUSION = 'local_exclusion';
-
-	/** Source of a site record written while carrying a network exclusion. */
-	private const SOURCE_NETWORK_EXCLUSION_REPAIR = 'network_exclusion_repair';
-
-	/** Source of a site record written while repairing the network fan-out. */
-	private const SOURCE_NETWORK_FANOUT_REPAIR = 'network_fanout_repair';
-
-	/** Source of a site record moved to a newer network generation. */
-	private const SOURCE_NETWORK_GENERATION_SUPERSEDED = 'network_generation_superseded';
 
 	/** Record key of the claiming worker's token; the stored name keeps "lease". */
 	private const CLAIM_TOKEN_KEY = 'lease_token';
@@ -84,6 +72,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
 	/** Condition code of a data migration that failed; the stored code keeps its first name. */
 	private const CODE_DATA_MIGRATION_FAILED = 'normalization_failed';
+
+	/** Condition code of a finalize that waits because the WooPayments extension is active for every site. */
+	private const CODE_PLUGIN_ACTIVE_SITEWIDE = 'plugin_active_sitewide';
 
 	/** Time a claimed attempt may run before repair_schedule() recovers it as stale; fixed at claim, there is no heartbeat. */
 	public const RUNNING_TIMEOUT = 15 * MINUTE_IN_SECONDS;
@@ -244,29 +235,19 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Start one reconciliation generation: across the network where the extension is network-active, else on this site.
+	 * Start one reconciliation generation on this site.
+	 *
+	 * Nothing starts while the WooPayments extension is active sitewide: a switch deactivates the extension on its own site
+	 * only, so a super admin first activates WooPayments per site.
 	 *
 	 * @param string $source Trigger source.
 	 * @return bool True when durable work already exists or was scheduled.
 	 */
 	private function start_generation( string $source ): bool {
-		if ( ! $this->arbiter->is_builtin_enabled() ) {
+		if ( ! $this->arbiter->is_builtin_enabled() || ( is_multisite() && $this->preflight_service->is_woopayments_network_active() ) ) {
 			return false;
 		}
-		if ( is_multisite() && $this->preflight_service->is_woopayments_network_active() ) {
-			return $this->enqueue_network_generation( $source );
-		}
 
-		return $this->enqueue_local_generation( $source );
-	}
-
-	/**
-	 * Start one site-local generation without applying network fan-out.
-	 *
-	 * @param string $source Trigger source.
-	 * @return bool True when durable work exists or was scheduled.
-	 */
-	private function enqueue_local_generation( string $source ): bool {
 		$now = time();
 		return $this->with_write_lock(
 			$now,
@@ -300,19 +281,15 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Record a successful external plugin activation as a rollback awaiting merchant confirmation.
 	 *
-	 * A completed switch is replaced by a new generation awaiting the merchant's start. An open site-level one that is not
-	 * awaiting it, a claim running in another request included, is rolled back (roll_back_open_generation()); a running
-	 * worker's finalize fence then refuses to deactivate the extension.
+	 * A completed switch is replaced by a new generation awaiting the merchant's start. An open one that is not awaiting it,
+	 * a claim running in another request included, is rolled back (roll_back_open_generation()); a running worker's
+	 * finalize fence then refuses to deactivate the extension.
 	 *
-	 * @param bool $network_wide Whether the external activation was network-wide.
 	 * @return bool True when the rollback was already recorded or a new generation was opened.
 	 */
-	public function record_plugin_activation( bool $network_wide = false ): bool {
+	public function record_plugin_activation(): bool {
 		if ( ! $this->arbiter->is_builtin_enabled() ) {
 			return false;
-		}
-		if ( $network_wide && is_multisite() ) {
-			return $this->record_network_plugin_activation();
 		}
 
 		$now = time();
@@ -331,7 +308,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				}
 				// The hook fires only for an inactive extension, so an open merchant start sees this only after finalize
 				// deactivated the extension.
-				if ( ! in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED, WooPaymentsCutoverStateStore::STATE_RUNNING ), true ) || $this->is_network( $record ) ) {
+				if ( ! in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED, WooPaymentsCutoverStateStore::STATE_RUNNING ), true ) ) {
 					return false;
 				}
 
@@ -339,87 +316,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			},
 			false
 		);
-	}
-
-	/**
-	 * Open one coherent unscheduled rollback generation across the current network.
-	 *
-	 * @return bool True when every site is at the rollback generation or newer active work.
-	 */
-	private function record_network_plugin_activation(): bool {
-		$site_ids = $this->get_current_network_site_ids();
-		if ( array() === $site_ids ) {
-			return false;
-		}
-		$network_token = $this->acquire_network_lease( time() );
-		if ( null === $network_token ) {
-			return false;
-		}
-
-		$maximum_generation    = 0;
-		$awaiting_generation   = 0;
-		$has_completed_cutover = false;
-		try {
-			$this->run_on_sites(
-				$site_ids,
-				function () use ( &$maximum_generation, &$awaiting_generation, &$has_completed_cutover ): void {
-					$record = $this->state_store->get_record();
-					if ( ! is_array( $record ) || ! $this->is_network( $record ) ) {
-						return;
-					}
-					$maximum_generation = max( $maximum_generation, $record['generation'] );
-					if ( WooPaymentsCutoverStateStore::STATE_DONE === $record['state'] ) {
-						$has_completed_cutover = true;
-					}
-					if ( $this->is_awaiting_start( $record ) ) {
-						$awaiting_generation = max( $awaiting_generation, $record['generation'] );
-					}
-				}
-			);
-			if ( ! $has_completed_cutover && 0 === $awaiting_generation ) {
-				return false;
-			}
-
-			$generation = $awaiting_generation >= $maximum_generation ? $awaiting_generation : $maximum_generation + 1;
-			$complete   = true;
-			$this->run_on_sites_with_write_locks(
-				$site_ids,
-				function ( int $site_id, bool $lock_held ) use ( &$complete, $generation ): void {
-					if ( ! $lock_held ) {
-						$complete = false;
-						return;
-					}
-						$record = $this->state_store->get_record();
-					if ( is_array( $record ) && $record['generation'] > $generation ) {
-						return;
-					}
-					if ( is_array( $record ) && $record['generation'] === $generation ) {
-						if ( $this->is_awaiting_start( $record ) ) {
-							return;
-						}
-						$complete = false;
-						return;
-					}
-
-						$now      = time();
-						$awaiting = $this->to_awaiting_merchant_start( self::SOURCE_ROLLBACK, $now, $generation, true );
-					if ( is_array( $record ) ) {
-						$awaiting['revision'] = $record['revision'] + 1;
-						$stored               = $this->state_store->compare_and_set_record( $record, $awaiting );
-						if ( $stored ) {
-							$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
-						}
-					} else {
-						$stored = $this->state_store->create_record( $awaiting );
-					}
-						$complete = $stored && $complete;
-				}
-			);
-
-			return $complete;
-		} finally {
-			$this->release_network_lease( $network_token );
-		}
 	}
 
 	/**
@@ -433,13 +329,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		$record = $this->state_store->get_record();
 		if ( is_array( $record ) ) {
 			if ( $this->is_awaiting_start( $record ) && $this->record_has_stripe_billing_failure( $record ) ) {
-				if ( $this->is_network( $record ) ) {
-					if ( $this->schedule_network_exclusion_convergence( $record, WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS ) ) {
-						$this->propagate_network_exclusion( $record['generation'], WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
-					}
-				} else {
-					$this->exclude_awaiting_record( $record, WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
-				}
+				$this->exclude_awaiting_record( $record, WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
 				return $this->state_store->get_record();
 			}
 			if ( $this->can_reopen_terminal_record( $record, true ) ) {
@@ -616,178 +506,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Fan one generation out to every site in the current network.
-	 *
-	 * A start, merchant or mandatory, is refused and writes nothing unless the WooPayments feature is on at every runnable
-	 * site, so no generation holds a site the built-in WooPayments cannot run on.
-	 *
-	 * @param string $source Trigger source.
-	 * @return bool True when at least one site owns scheduled durable work; the first attempt's fan-out repair adds any site skipped here.
-	 */
-	private function enqueue_network_generation( string $source ): bool {
-		$site_ids = $this->get_current_network_site_ids();
-		if ( array() === $site_ids ) {
-			return false;
-		}
-		$network_token = $this->acquire_network_lease( time() );
-		if ( null === $network_token ) {
-			return false;
-		}
-
-		$scheduled_somewhere = false;
-		$propagate_exclusion = null;
-		try {
-			$maximum_generation   = 0;
-			$active_generations   = array();
-			$terminal_generations = array();
-			$excluded_generations = array();
-			$feature_off_sites    = array();
-			$this->run_on_sites(
-				$site_ids,
-				function ( int $site_id ) use ( &$maximum_generation, &$active_generations, &$terminal_generations, &$excluded_generations, &$feature_off_sites ): void {
-					if ( $this->is_site_runnable( $site_id ) && ! $this->arbiter->is_builtin_enabled() ) {
-						$feature_off_sites[] = $site_id;
-					}
-						$record             = $this->state_store->get_record();
-						$record_generation  = is_array( $record ) ? $record['generation'] : 0;
-						$maximum_generation = max( $maximum_generation, $record_generation );
-					if ( is_array( $record ) && $this->is_network( $record ) ) {
-						if ( in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_RUNNING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
-							$active_generations[] = $record_generation;
-						} else {
-							$terminal_generations[] = $record_generation;
-							if ( WooPaymentsCutoverStateStore::STATE_EXCLUDED === $record['state'] ) {
-								$excluded_generations[ $record_generation ] = $record[ self::BLOCKING_CODES_KEY ][0] ?? WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS;
-							}
-						}
-					}
-				}
-			);
-			if ( array() !== $feature_off_sites ) {
-				$this->log_error( 'WooPayments cutover: the network switch was not started because the WooPayments feature is off at some sites.', array( 'site_ids' => $feature_off_sites ) );
-				return false;
-			}
-			$highest_active_generation = array() === $active_generations ? 0 : max( $active_generations );
-			$generation                = $highest_active_generation >= $maximum_generation ? max( 1, $highest_active_generation ) : $maximum_generation + 1;
-			if ( isset( $excluded_generations[ $generation ] ) ) {
-				$propagate_exclusion = $excluded_generations[ $generation ];
-			}
-
-			if ( null === $propagate_exclusion ) {
-				$this->run_on_sites_with_write_locks(
-					$site_ids,
-					function ( int $site_id, bool $lock_held ) use ( $generation, &$scheduled_somewhere, $source ): void {
-							// A peer whose lease is busy is skipped; the first attempt's fan-out repair adds it.
-						if ( ! $lock_held ) {
-							return;
-						}
-							$record = $this->state_store->get_record();
-						if ( is_array( $record ) && $generation === $record['generation'] && $this->is_network( $record ) ) {
-							if ( $this->is_awaiting_start( $record ) ) {
-								$scheduled_somewhere = $this->start_awaiting_generation( $record, $source, time() ) || $scheduled_somewhere;
-							} elseif ( in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
-								$scheduled_somewhere = $this->ensure_record_scheduled( $record, time() ) || $scheduled_somewhere;
-							} else {
-								// A running attempt of this generation is durable work already.
-								$scheduled_somewhere = true;
-							}
-							return;
-						}
-
-							$now                        = time();
-							$pending                    = $this->create_pending_record( $source, $now );
-							$pending['generation']      = $generation;
-							$pending['network_cutover'] = true;
-						if ( is_array( $record ) ) {
-							$pending['revision'] = $record['revision'] + 1;
-							$stored              = $this->state_store->compare_and_set_record( $record, $pending );
-							if ( $stored ) {
-								$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
-							}
-						} else {
-							$stored = $this->state_store->create_record( $pending );
-						}
-							$scheduled_somewhere = ( $stored && $this->ensure_record_scheduled( $pending, $now ) ) || $scheduled_somewhere;
-					}
-				);
-			}
-		} finally {
-			$this->release_network_lease( $network_token );
-		}
-
-		return null !== $propagate_exclusion ? $this->propagate_network_exclusion( $generation, $propagate_exclusion ) : $scheduled_somewhere;
-	}
-
-	/**
-	 * Get site IDs in the current network.
-	 *
-	 * @return int[]
-	 */
-	private function get_current_network_site_ids(): array {
-		$site_ids = get_sites(
-			array(
-				'network_id' => get_current_network_id(),
-				'fields'     => 'ids',
-				'number'     => 0,
-			)
-		);
-
-		return array_values( array_map( 'intval', $site_ids ) );
-	}
-
-	/**
-	 * Run a callback with each given site current, then restore the site the request started on.
-	 *
-	 * @param int[]    $site_ids Site IDs.
-	 * @param callable $callback Called with the site ID while that site is current.
-	 */
-	private function run_on_sites( array $site_ids, callable $callback ): void {
-		$current_blog_id = get_current_blog_id();
-		foreach ( $site_ids as $site_id ) {
-			if ( get_current_blog_id() !== $site_id ) {
-				switch_to_blog( $site_id );
-			}
-			try {
-				$callback( $site_id );
-			} finally {
-				if ( get_current_blog_id() !== $current_blog_id ) {
-					restore_current_blog();
-				}
-			}
-		}
-	}
-
-	/**
-	 * Run a callback with each given site current and its write lock taken, then restore the site the request started on.
-	 *
-	 * The lock is taken after the switch and released before the restore. The network main site takes no site lock: the
-	 * network lock is its lock, so it always counts as held. The callback decides what a busy lock means.
-	 *
-	 * @param int[]    $site_ids Site IDs.
-	 * @param callable $callback Called with the site ID and whether its write lock is held, while that site is current.
-	 */
-	private function run_on_sites_with_write_locks( array $site_ids, callable $callback ): void {
-		$current_blog_id      = get_current_blog_id();
-		$network_main_site_id = get_main_site_id( get_current_network_id() );
-		foreach ( $site_ids as $site_id ) {
-			if ( get_current_blog_id() !== $site_id ) {
-				switch_to_blog( $site_id );
-			}
-			$site_token = $network_main_site_id === $site_id ? null : $this->state_store->acquire_lease( time() );
-			try {
-				$callback( $site_id, $network_main_site_id === $site_id || null !== $site_token );
-			} finally {
-				if ( is_string( $site_token ) ) {
-					$this->state_store->release_lease( $site_token );
-				}
-				if ( get_current_blog_id() !== $current_blog_id ) {
-					restore_current_blog();
-				}
-			}
-		}
-	}
-
-	/**
 	 * Claim one current Action Scheduler callback.
 	 *
 	 * @since 11.2.0
@@ -920,41 +638,17 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			// A merchant who turned the extension back on after this generation's finalize deactivated it chose the extension:
 			// the rollback, not the switch (that finalize left its request token on the record). The request reads ownership
 			// once, so this sees an activation made before the request started.
-			if ( ! $this->is_network( $claimed ) && null !== ( $claimed['request_origin_token'] ?? null ) && $this->arbiter->is_extension_owner() ) {
+			if ( null !== ( $claimed['request_origin_token'] ?? null ) && $this->arbiter->is_extension_owner() ) {
 				$this->roll_back_claim( $claimed );
 				return;
 			}
-			if ( $this->is_network( $claimed ) ) {
-				$fanout = $this->repair_network_generation_fanout( $claimed );
-				if ( 'superseded' === $fanout['status'] ) {
-					$this->supersede_network_claim( $claimed, $fanout['generation'], $fanout['phase'] );
-					return;
-				}
-				if ( 'excluded' === $fanout['status'] ) {
-					if ( ! $this->propagate_network_exclusion( $claimed['generation'], $fanout['code'] ) ) {
-						$this->defer( $claimed, array( 'network_exclusion_propagation_pending' ) );
-					}
-					return;
-				}
-				if ( 'complete' !== $fanout['status'] ) {
-					$this->defer( $claimed, array( 'network_fanout_pending' ) );
-					return;
-				}
-			}
 			$this->log_late_first_attempt( $claimed );
 			// Past finalize the extension is already off and the built-in WooPayments owns payments, so an exclusion would
-			// protect nothing and leave the store with no owner: the bundled failure defers the claim instead. A token next to an
-			// active extension (a network barrier that stopped before or at the deactivation) is not past finalize.
+			// protect nothing and leave the store with no owner: the bundled failure defers the claim instead.
 			$past_finalize = null !== ( $claimed['request_origin_token'] ?? null ) && ! $this->arbiter->is_extension_owner();
 			$failures      = $this->normalize_codes( $this->preflight_service->get_failures() );
 			if ( ! $past_finalize && in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $failures, true ) ) {
-				if ( $this->is_network( $claimed ) ) {
-					if ( ! $this->propagate_network_exclusion( $claimed['generation'], WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS ) ) {
-						$this->defer( $claimed, array( 'network_exclusion_propagation_pending' ) );
-					}
-				} else {
-					$this->exclude( $claimed, WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
-				}
+				$this->exclude( $claimed, WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
 				return;
 			}
 
@@ -973,13 +667,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$this->preflight_service->invalidate_current_blog_memoization();
 			$remaining_failures = $this->normalize_codes( $this->preflight_service->get_failures() );
 			if ( ! $past_finalize && in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $remaining_failures, true ) ) {
-				if ( $this->is_network( $claimed ) ) {
-					if ( ! $this->propagate_network_exclusion( $claimed['generation'], WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS ) ) {
-						$this->defer( $claimed, array( 'network_exclusion_propagation_pending' ), $outcomes );
-					}
-				} else {
-					$this->exclude( $claimed, WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
-				}
+				$this->exclude( $claimed, WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
 				return;
 			}
 			// The plugin records its new version only on its next request, so check the installed files instead.
@@ -992,161 +680,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				return;
 			}
 
-			if ( $this->is_network( $claimed ) ) {
-				$this->finalize_network_claim( $claimed, $outcomes );
-			} else {
-				$this->finalize_site_claim( $claimed, $outcomes );
-			}
+			$this->finalize_site_claim( $claimed, $outcomes );
 		} catch ( \Throwable $error ) {
 			$this->log_error( 'WooPayments cutover reconciliation resolver failed.', array( 'error' => $error->getMessage() ) );
 			$this->defer( $claimed, array( 'reconciliation_resolver_failed' ) );
 		}
-	}
-
-	/**
-	 * Repair missing or older site records before a network worker can enter the all-site barrier.
-	 *
-	 * @param array<string,mixed> $claimed Exact running source record.
-	 * @return array{status:string,generation:int,code:string,phase:string} Fan-out disposition.
-	 */
-	private function repair_network_generation_fanout( array $claimed ): array {
-		$network_token = $this->acquire_network_lease( time() );
-		if ( null === $network_token ) {
-			return array(
-				'status'     => 'incomplete',
-				'generation' => $claimed['generation'],
-				'code'       => '',
-				'phase'      => 'active',
-			);
-		}
-
-		$complete = true;
-		try {
-			$highest_generation = $claimed['generation'];
-			$excluded_code      = '';
-			$highest_phase      = 'active';
-			$sites_to_repair    = array();
-			$this->run_on_sites(
-				$this->get_current_network_site_ids(),
-				function ( int $site_id ) use ( $claimed, &$sites_to_repair, &$highest_generation, &$highest_phase, &$excluded_code ): void {
-						$record = $this->state_store->get_record();
-					if ( ! $this->is_settled_network_peer( $record, $claimed['generation'] ) ) {
-						$sites_to_repair[] = $site_id;
-					}
-					if ( is_array( $record ) && $record['generation'] > $highest_generation ) {
-						$highest_generation = $record['generation'];
-						$highest_phase      = $this->is_awaiting_start( $record ) ? 'awaiting_merchant_start' : 'active';
-					}
-					if ( is_array( $record ) && $record['generation'] === $highest_generation && $highest_generation > $claimed['generation'] && self::STEP_AWAITING_MERCHANT_START !== $record['current_step'] ) {
-						$highest_phase = 'active';
-					}
-					if ( is_array( $record ) && $record['generation'] === $claimed['generation'] && WooPaymentsCutoverStateStore::STATE_EXCLUDED === $record['state'] ) {
-						$excluded_code = $record[ self::BLOCKING_CODES_KEY ][0] ?? WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS;
-					}
-				}
-			);
-			if ( $highest_generation > $claimed['generation'] ) {
-				return array(
-					'status'     => 'superseded',
-					'generation' => $highest_generation,
-					'code'       => '',
-					'phase'      => $highest_phase,
-				);
-			}
-			if ( '' !== $excluded_code ) {
-				return array(
-					'status'     => 'excluded',
-					'generation' => $claimed['generation'],
-					'code'       => $excluded_code,
-					'phase'      => 'active',
-				);
-			}
-
-			// Only sites the read-only pass found unsettled are written, so a steady network takes no site leases.
-			$this->run_on_sites_with_write_locks(
-				$sites_to_repair,
-				function ( int $site_id, bool $lock_held ) use ( &$complete, $claimed ): void {
-					if ( ! $lock_held ) {
-						$complete = false;
-						return;
-					}
-
-						$record = $this->state_store->get_record();
-					if ( is_array( $record ) && $record['generation'] > $claimed['generation'] ) {
-						$complete = false;
-						return;
-					}
-					if ( is_array( $record ) && $record['generation'] === $claimed['generation'] && $this->is_network( $record ) ) {
-						if ( $this->is_awaiting_start( $record ) ) {
-							$complete = $this->start_awaiting_generation( $record, self::SOURCE_NETWORK_FANOUT_REPAIR, time() ) && $complete;
-						} elseif ( in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
-							$complete = $this->ensure_record_scheduled( $record, time() ) && $complete;
-						}
-						return;
-					}
-
-						$now                        = time();
-						$pending                    = $this->create_pending_record( self::SOURCE_NETWORK_FANOUT_REPAIR, $now );
-						$pending['generation']      = $claimed['generation'];
-						$pending['network_cutover'] = true;
-					if ( is_array( $record ) ) {
-						$pending['revision'] = $record['revision'] + 1;
-						if ( $pending['generation'] === $record['generation'] ) {
-							$pending['attempt'] = $record['attempt'];
-						}
-						$stored = $this->state_store->compare_and_set_record( $record, $pending );
-						if ( $stored ) {
-							$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
-						}
-					} else {
-						$stored = $this->state_store->create_record( $pending );
-					}
-						$complete = $stored && $this->ensure_record_scheduled( $pending, $now ) && $complete;
-				}
-			);
-		} finally {
-			$this->release_network_lease( $network_token );
-		}
-
-		return array(
-			'status'     => $complete ? 'complete' : 'incomplete',
-			'generation' => $claimed['generation'],
-			'code'       => '',
-			'phase'      => 'active',
-		);
-	}
-
-	/**
-	 * Replace a stale source claim with durable work for the higher observed network generation.
-	 *
-	 * @param array<string,mixed> $claimed    Exact stale running source record.
-	 * @param int                 $generation Higher observed generation.
-	 * @param string              $phase      Higher generation phase.
-	 */
-	private function supersede_network_claim( array $claimed, int $generation, string $phase ): void {
-		$now = time();
-		$this->with_write_lock(
-			$now,
-			function () use ( $claimed, $now, $generation, $phase ): void {
-				$record = $this->state_store->get_record();
-				if ( ! is_array( $record ) || $record !== $claimed ) {
-					return;
-				}
-				if ( 'awaiting_merchant_start' === $phase ) {
-					$pending = $this->to_awaiting_merchant_start( self::SOURCE_NETWORK_GENERATION_SUPERSEDED, $now, $generation, true );
-				} else {
-					$pending                    = $this->create_pending_record( self::SOURCE_NETWORK_GENERATION_SUPERSEDED, $now );
-					$pending['generation']      = $generation;
-					$pending['network_cutover'] = true;
-				}
-				$pending['revision'] = $record['revision'] + 1;
-				if ( $this->state_store->compare_and_set_record( $record, $pending ) ) {
-					if ( 'awaiting_merchant_start' !== $phase ) {
-						$this->ensure_record_scheduled( $pending, $now );
-					}
-				}
-			}
-		);
 	}
 
 	/**
@@ -1156,6 +694,12 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @param array<int,mixed>    $outcomes Informational outcomes accumulated during reconciliation.
 	 */
 	private function finalize_site_claim( array $claimed, array $outcomes ): void {
+		// Deactivating an extension that is active sitewide would take it from every site, leaving the sites that still run it
+		// with no payments, so the switch waits until a super admin activates WooPayments per site.
+		if ( $this->preflight_service->is_woopayments_network_active() ) {
+			$this->defer( $claimed, array( self::CODE_PLUGIN_ACTIVE_SITEWIDE ), $outcomes );
+			return;
+		}
 		$claimed = $this->prepare_finalization_claim( $claimed, $outcomes );
 		if ( null === $claimed ) {
 			return;
@@ -1169,7 +713,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		$deactivated = true;
 		try {
 			// An extension the merchant already deactivated, or a retry whose earlier finalize did, has nothing to deactivate.
-			if ( $this->preflight_service->is_woopayments_site_active() || $this->preflight_service->is_woopayments_network_active() ) {
+			if ( $this->preflight_service->is_woopayments_site_active() ) {
 				$this->internal_plugin_lifecycle_change = true;
 				$deactivated                            = $this->preflight_service->deactivate_woopayments_plugin();
 			}
@@ -1182,7 +726,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		if ( ! $deactivated ) {
 			// A hook that threw after WordPress wrote the active plugins still left the extension inactive.
 			try {
-				$deactivated = ! $this->preflight_service->is_woopayments_site_active() && ! $this->preflight_service->is_woopayments_network_active();
+				$deactivated = ! $this->preflight_service->is_woopayments_site_active();
 			} catch ( \Throwable $error ) {
 				$deactivated = false;
 			}
@@ -1290,282 +834,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Mark one site ready, then let the last ready site complete the network barrier.
-	 *
-	 * @param array<string,mixed> $claimed  Exact running state owned by this worker.
-	 * @param array<int,mixed>    $outcomes Informational outcomes accumulated during reconciliation.
-	 */
-	private function finalize_network_claim( array $claimed, array $outcomes ): void {
-		$claimed = $this->prepare_finalization_claim( $claimed, $outcomes );
-		if ( null === $claimed ) {
-			return;
-		}
-
-		$outcomes[] = array(
-			'code'       => 'network_site_ready',
-			'generation' => $claimed['generation'],
-			'site_id'    => get_current_blog_id(),
-		);
-		if ( ! $this->defer( $claimed, array( 'network_barrier' ), $outcomes ) ) {
-			return;
-		}
-
-		$this->try_complete_network_barrier( $claimed['generation'] );
-	}
-
-	/**
-	 * Complete an all-ready network generation once under a network-wide lock.
-	 *
-	 * @param int $generation Generation being finalized.
-	 */
-	private function try_complete_network_barrier( int $generation ): void {
-		$network_token = $this->acquire_network_lease( time() );
-		if ( null === $network_token ) {
-			return;
-		}
-
-		$paused_site_marker = null;
-		try {
-			if ( ! $this->is_network_generation_ready( $generation ) ) {
-				return;
-			}
-
-			// A paused site never runs its own claim, so its Stripe Billing marker is checked here, before the plugin leaves every
-			// site. Once the extension is off network-wide the switch has handed over, and an exclusion would only remove owners.
-			$paused_site_marker = $this->preflight_service->is_woopayments_network_active() ? $this->paused_site_has_stripe_billing_marker() : false;
-			if ( false === $paused_site_marker ) {
-				$this->deactivate_network_plugin_for_generation( $generation );
-			}
-		} finally {
-			$this->release_network_lease( $network_token );
-		}
-
-		// Propagation takes the network lease itself; when it cannot, the sites waiting at the barrier retry and check again.
-		if ( true === $paused_site_marker ) {
-			$this->propagate_network_exclusion( $generation, WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
-		}
-	}
-
-	/**
-	 * Deactivate the network-active plugin for a completed barrier, then schedule every site's ownership verification.
-	 *
-	 * @param int $generation Completed network barrier generation.
-	 */
-	private function deactivate_network_plugin_for_generation( int $generation ): void {
-		if ( ! $this->store_network_finalize_tokens( $generation ) ) {
-			return;
-		}
-		$deactivated = ! $this->preflight_service->is_woopayments_network_active();
-		if ( ! $deactivated ) {
-			try {
-				$this->internal_plugin_lifecycle_change = true;
-				$deactivated                            = $this->preflight_service->deactivate_woopayments_plugin();
-			} catch ( \Throwable $error ) {
-				$this->log_error( 'WooPayments network cutover plugin deactivation failed.', array( 'error' => $error->getMessage() ) );
-				$deactivated = false;
-			} finally {
-				$this->internal_plugin_lifecycle_change = false;
-			}
-		}
-		if ( ! $deactivated ) {
-			return;
-		}
-
-		$this->schedule_network_ownership_verification( $generation );
-	}
-
-	/**
-	 * Store this request's token and the built-in tier on every site waiting at the network barrier, before the network
-	 * deactivation, so each site's built-in WooPayments owns payments once the extension leaves.
-	 *
-	 * @param int $generation Completed network barrier generation.
-	 * @return bool True when every waiting site stored them; false deactivates nothing, and the barrier retries.
-	 */
-	private function store_network_finalize_tokens( int $generation ): bool {
-		$stored = true;
-		$this->run_on_sites_with_write_locks(
-			$this->get_current_network_site_ids(),
-			function ( int $site_id, bool $lock_held ) use ( $generation, &$stored ): void {
-				if ( ! $stored ) {
-					return;
-				}
-				$record = $this->state_store->get_record();
-				if ( ! is_array( $record ) || $generation !== $record['generation'] || WooPaymentsCutoverStateStore::STATE_DEFERRED !== $record['state'] || ! in_array( 'network_barrier', $record[ self::BLOCKING_CODES_KEY ], true ) ) {
-					// A site the barrier does not wait for (archived, spam or deleted), or one already handed over, needs nothing.
-					// Any other runnable site moved on since the readiness check, so it is not prepared and the extension stays.
-					if ( $this->is_site_runnable( $site_id ) && ! $this->has_network_handoff( $record, $generation ) ) {
-						$stored = false;
-					}
-					return;
-				}
-				if ( ! $lock_held ) {
-					$stored = false;
-					return;
-				}
-				$marked                         = $record;
-				$marked['revision']             = $record['revision'] + 1;
-				$marked['updated_at']           = time();
-				$marked['request_origin_token'] = self::$request_token;
-				$stored                         = $this->state_store->compare_and_set_record( $record, $marked );
-				if ( $stored ) {
-					$this->account_service->sync_setup_tier_from_options( false );
-				}
-			}
-		);
-
-		return $stored;
-	}
-
-	/**
-	 * Tell whether a site's record already holds this generation's handoff: finalize's token, the ownership check, or done.
-	 *
-	 * @param mixed $record     The site's cutover record.
-	 * @param int   $generation Network generation.
-	 * @return bool
-	 */
-	private function has_network_handoff( $record, int $generation ): bool {
-		return is_array( $record )
-			&& $generation === $record['generation']
-			&& ( null !== ( $record['request_origin_token'] ?? null ) || in_array( $record['current_step'], array( self::STEP_VERIFY_BUILTIN_OWNERSHIP, self::STEP_DONE ), true ) );
-	}
-
-	/**
-	 * Tell whether an archived, spam or deleted site of the network has the Stripe Billing marker.
-	 *
-	 * @return bool|null True or false, or null when a site could not be checked, so the barrier waits.
-	 */
-	private function paused_site_has_stripe_billing_marker(): ?bool {
-		$current_blog_id = get_current_blog_id();
-		foreach ( $this->get_current_network_site_ids() as $site_id ) {
-			if ( $this->is_site_runnable( $site_id ) ) {
-				continue;
-			}
-			if ( get_current_blog_id() !== $site_id ) {
-				switch_to_blog( $site_id );
-			}
-			try {
-				$this->preflight_service->invalidate_current_blog_memoization();
-				if ( in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $this->normalize_codes( $this->preflight_service->get_failures() ), true ) ) {
-					return true;
-				}
-			} catch ( \Throwable $error ) {
-				$this->log_error(
-					'WooPayments network cutover could not check a paused site before deactivating the plugin.',
-					array(
-						'site_id' => $site_id,
-						'error'   => $error->getMessage(),
-					)
-				);
-				return null;
-			} finally {
-				if ( get_current_blog_id() !== $current_blog_id ) {
-					restore_current_blog();
-				}
-			}
-		}
-
-		return false;
-	}
-
-	/**
-	 * Tell whether every site reached the barrier for one generation.
-	 *
-	 * While the extension is still network-active, a runnable site whose WooPayments feature is off holds the barrier, so the
-	 * network deactivation never leaves a site without a payments runtime. Once the extension is gone the read protects
-	 * nothing, so a site that arrives late, restored or left behind by a busy lock, still completes.
-	 *
-	 * @param int $generation Generation being checked.
-	 * @return bool
-	 */
-	private function is_network_generation_ready( int $generation ): bool {
-		$current_blog_id  = get_current_blog_id();
-		$extension_active = $this->preflight_service->is_woopayments_network_active();
-		foreach ( $this->get_current_network_site_ids() as $site_id ) {
-			// An archived, spam or deleted site's queue does not run, so it cannot hold the barrier. Its record stays: if
-			// the site is restored, its pending attempt runs, finds the barrier complete and verifies on its own.
-			if ( ! $this->is_site_runnable( $site_id ) ) {
-				continue;
-			}
-			if ( get_current_blog_id() !== $site_id ) {
-				switch_to_blog( $site_id );
-			}
-			try {
-				if ( $extension_active && ! $this->arbiter->is_builtin_enabled() ) {
-					$this->write_log_warning(
-						sprintf( 'WooPayments cutover: generation %1$d waits at the network barrier while the WooPayments feature is off on site %2$d', $generation, $site_id ),
-						array(
-							'source'     => self::LOG_SOURCE,
-							'generation' => $generation,
-							'site_id'    => $site_id,
-						)
-					);
-					return false;
-				}
-				$record        = $this->state_store->get_record();
-				$is_ready      = is_array( $record ) && WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && in_array( 'network_barrier', $record[ self::BLOCKING_CODES_KEY ], true );
-				$is_finalizing = is_array( $record ) && ( in_array( $record['current_step'], array( self::STEP_VERIFY_BUILTIN_OWNERSHIP, self::STEP_DONE ), true ) );
-				if ( ! is_array( $record ) || $generation !== $record['generation'] || ( ! $is_ready && ! $is_finalizing ) ) {
-					return false;
-				}
-			} finally {
-				if ( get_current_blog_id() !== $current_blog_id ) {
-					restore_current_blog();
-				}
-			}
-		}
-
-		return true;
-	}
-
-	/**
-	 * Tell whether a network site's scheduled actions run: archived, spam and deleted sites do not serve requests.
-	 *
-	 * @param int $site_id Site ID.
-	 * @return bool
-	 */
-	private function is_site_runnable( int $site_id ): bool {
-		$site = get_site( $site_id );
-
-		return $site instanceof \WP_Site && '1' !== (string) $site->archived && '1' !== (string) $site->spam && '1' !== (string) $site->deleted;
-	}
-
-	/**
-	 * Schedule a future native-ownership probe on every ready site.
-	 *
-	 * @param int $generation Completed network barrier generation.
-	 */
-	private function schedule_network_ownership_verification( int $generation ): void {
-		$this->run_on_sites_with_write_locks(
-			$this->get_current_network_site_ids(),
-			function ( int $site_id, bool $lock_held ) use ( $generation ): void {
-				if ( ! $lock_held ) {
-					return;
-				}
-					$record = $this->state_store->get_record();
-				if ( ! is_array( $record ) || $generation !== $record['generation'] || WooPaymentsCutoverStateStore::STATE_DEFERRED !== $record['state'] || ! in_array( 'network_barrier', $record[ self::BLOCKING_CODES_KEY ], true ) ) {
-					return;
-				}
-					$now                                      = time();
-					$verification                             = $record;
-					$verification['revision']                 = $record['revision'] + 1;
-					$verification['state']                    = WooPaymentsCutoverStateStore::STATE_PENDING;
-					$verification['action_id']                = 0;
-					$verification['current_step']             = self::STEP_VERIFY_BUILTIN_OWNERSHIP;
-					$verification['updated_at']               = $now;
-					$verification[ self::BLOCKING_CODES_KEY ] = array();
-					$verification['next_attempt_at']          = $now + self::FAST_RETRY_DELAY;
-					$verification['request_origin_token']     = self::$request_token;
-					$verification                             = $this->append_step( $verification, self::STEP_VERIFY_BUILTIN_OWNERSHIP, $now );
-				if ( $this->state_store->compare_and_set_record( $record, $verification ) ) {
-					$this->account_service->sync_setup_tier_from_options( false );
-					$this->scheduler->cancel( $generation, $record['attempt'] + 1 );
-					$this->ensure_record_scheduled( $verification, $now );
-				}
-			}
-		);
-	}
-
-	/**
 	 * Complete one verification claim only after a fresh request observes native ownership.
 	 *
 	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
@@ -1587,7 +855,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return;
 		}
 		$this->account_service->sync_setup_tier_from_options( false );
-		// Every finalized claim reaches this step on its own site, network ones included, once native owns it.
+		// Every finalized claim reaches this step once native owns its site.
 		try {
 			$remediation_scheduled = $this->preflight_service->ensure_fee_remediation_scheduled();
 		} catch ( \Throwable $error ) {
@@ -1633,16 +901,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 */
 	public function is_awaiting_start( array $record ): bool {
 		return WooPaymentsCutoverStateStore::STATE_PENDING === $record['state'] && self::STEP_AWAITING_MERCHANT_START === ( $record['current_step'] ?? null );
-	}
-
-	/**
-	 * Tell whether a record belongs to a network-wide cutover.
-	 *
-	 * @param array<string,mixed> $record Cutover record.
-	 * @return bool
-	 */
-	private function is_network( array $record ): bool {
-		return true === ( $record['network_cutover'] ?? false );
 	}
 
 	/**
@@ -1716,130 +974,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
 				}
 			}
-		);
-	}
-
-	/**
-	 * Fence every site in a network generation into the same terminal exclusion.
-	 *
-	 * @param int    $generation Excluded network generation.
-	 * @param string $code       Exclusion condition code.
-	 */
-	private function propagate_network_exclusion( int $generation, string $code ): bool {
-		$network_token = $this->acquire_network_lease( time() );
-		if ( null === $network_token ) {
-			return false;
-		}
-		$current_blog_id      = get_current_blog_id();
-		$network_main_site_id = get_main_site_id( get_current_network_id() );
-		$site_ids             = $this->get_current_network_site_ids();
-		usort(
-			$site_ids,
-			static function ( int $first, int $second ) use ( $current_blog_id ): int {
-				return (int) ( $first === $current_blog_id ) <=> (int) ( $second === $current_blog_id );
-			}
-		);
-		$complete = true;
-		try {
-			foreach ( $site_ids as $site_id ) {
-				if ( $current_blog_id === $site_id && ! $complete ) {
-					continue;
-				}
-				if ( get_current_blog_id() !== $site_id ) {
-					switch_to_blog( $site_id );
-				}
-				$site_token = $network_main_site_id === $site_id ? null : $this->state_store->acquire_lease( time() );
-				try {
-					if ( $network_main_site_id !== $site_id && null === $site_token ) {
-						$complete = false;
-						continue;
-					}
-					$site_complete = false;
-					for ( $tries = 0; $tries < 10; ++$tries ) {
-						$record = $this->state_store->get_record();
-						if ( is_array( $record ) && $record['generation'] > $generation ) {
-							$site_complete = true;
-							break;
-						}
-						if ( is_array( $record ) && $generation === $record['generation'] && WooPaymentsCutoverStateStore::STATE_EXCLUDED === $record['state'] ) {
-							$site_complete = true;
-							break;
-						}
-						$now                                    = time();
-						$excluded                               = is_array( $record ) && $generation === $record['generation'] ? $record : $this->create_pending_record( self::SOURCE_NETWORK_EXCLUSION_REPAIR, $now );
-						$excluded['generation']                 = $generation;
-						$excluded['revision']                   = is_array( $record ) ? $record['revision'] + 1 : 1;
-						$excluded['state']                      = WooPaymentsCutoverStateStore::STATE_EXCLUDED;
-						$excluded['action_id']                  = 0;
-						$excluded['current_step']               = self::STEP_EXCLUDED;
-						$excluded['updated_at']                 = $now;
-						$excluded[ self::BLOCKING_CODES_KEY ]   = array( $code );
-						$excluded['next_attempt_at']            = null;
-						$excluded[ self::CLAIM_TOKEN_KEY ]      = null;
-						$excluded[ self::CLAIM_EXPIRES_AT_KEY ] = null;
-						$excluded['request_origin_token']       = null;
-						$excluded['network_cutover']            = true;
-						$excluded                               = $this->append_step( $excluded, self::STEP_EXCLUDED, $now, array( 'code' => $code ) );
-						$stored                                 = is_array( $record ) ? $this->state_store->compare_and_set_record( $record, $excluded ) : $this->state_store->create_record( $excluded );
-						if ( $stored ) {
-							$this->scheduler->cancel( is_array( $record ) ? $record['generation'] : $generation, is_array( $record ) ? $record['attempt'] + 1 : 1 );
-							$site_complete = true;
-							break;
-						}
-					}
-					$complete = $site_complete && $complete;
-				} finally {
-					if ( is_string( $site_token ) ) {
-						$this->state_store->release_lease( $site_token );
-					}
-					if ( get_current_blog_id() !== $current_blog_id ) {
-						restore_current_blog();
-					}
-				}
-			}
-		} finally {
-			$this->release_network_lease( $network_token );
-		}
-
-		return $complete;
-	}
-
-	/**
-	 * Turn an awaiting source site into durable retry work before network exclusion propagation.
-	 *
-	 * @param array<string,mixed> $record Current awaiting source record.
-	 * @param string              $code   Exclusion condition code.
-	 * @return bool True when convergence is already durable or was just scheduled.
-	 */
-	private function schedule_network_exclusion_convergence( array $record, string $code ): bool {
-		$now = time();
-		return $this->with_write_lock(
-			$now,
-			function () use ( $record, $now, $code ): bool {
-				$current = $this->state_store->get_record();
-				if ( ! is_array( $current ) || $current !== $record ) {
-					return is_array( $current ) && ! $this->is_awaiting_start( $current );
-				}
-
-				$deferred                               = $current;
-				$deferred['revision']                   = $current['revision'] + 1;
-				$deferred['state']                      = WooPaymentsCutoverStateStore::STATE_DEFERRED;
-				$deferred['action_id']                  = 0;
-				$deferred['current_step']               = self::STEP_NETWORK_EXCLUSION_PROPAGATION;
-				$deferred['updated_at']                 = $now;
-				$deferred[ self::BLOCKING_CODES_KEY ]   = array( 'network_exclusion_propagation_pending' );
-				$deferred['next_attempt_at']            = $now;
-				$deferred[ self::CLAIM_TOKEN_KEY ]      = null;
-				$deferred[ self::CLAIM_EXPIRES_AT_KEY ] = null;
-				$deferred                               = $this->append_step( $deferred, self::STEP_NETWORK_EXCLUSION_PROPAGATION, $now, array( 'code' => $code ) );
-				if ( ! $this->state_store->compare_and_set_record( $current, $deferred ) ) {
-					return false;
-				}
-
-				$this->ensure_record_scheduled( $deferred, $now );
-				return true;
-			},
-			false
 		);
 	}
 
@@ -2039,41 +1173,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Acquire the existing atomic state-store lease on the network main site.
-	 *
-	 * @param int $now Current UTC timestamp.
-	 * @return string|null Lease token, or null while another network operation owns it.
-	 */
-	private function acquire_network_lease( int $now ): ?string {
-		$switched = $this->switch_to_plugin_update_lock_blog();
-		if ( null === $switched ) {
-			return null;
-		}
-		try {
-			return $this->state_store->acquire_lease( $now );
-		} finally {
-			$this->restore_plugin_update_lock_blog( $switched );
-		}
-	}
-
-	/**
-	 * Release a network lease on the same main-site option that granted it.
-	 *
-	 * @param string $token Lease owner token.
-	 */
-	private function release_network_lease( string $token ): void {
-		$switched = $this->switch_to_plugin_update_lock_blog();
-		if ( null === $switched ) {
-			return;
-		}
-		try {
-			$this->state_store->release_lease( $token );
-		} finally {
-			$this->restore_plugin_update_lock_blog( $switched );
-		}
-	}
-
-	/**
 	 * Restore a calling blog after a main-site plugin-lock operation.
 	 *
 	 * @param bool $switched Whether this worker switched to the main site.
@@ -2210,24 +1309,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether a site's record already belongs to the network generation and needs no fan-out repair.
-	 *
-	 * @param array<string,mixed>|null $record     Site record, or null when none exists.
-	 * @param int                      $generation Network generation being repaired.
-	 * @return bool
-	 */
-	private function is_settled_network_peer( ?array $record, int $generation ): bool {
-		if ( ! is_array( $record ) || $record['generation'] !== $generation || ! $this->is_network( $record ) ) {
-			return false;
-		}
-		if ( ! in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
-			return true;
-		}
-
-		return self::STEP_AWAITING_MERCHANT_START !== $record['current_step'] && $this->is_recorded_attempt_scheduled( $record );
-	}
-
-	/**
 	 * Open a new generation after rollback or removal of a local exclusion marker.
 	 *
 	 * @param array<string,mixed> $record Current terminal record.
@@ -2256,7 +1337,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool True when the awaiting generation was stored.
 	 */
 	private function replace_terminal_with_awaiting_start( array $record, string $source, int $now ): bool {
-		$replacement             = $this->to_awaiting_merchant_start( $source, $now, $record['generation'] + 1, $this->is_network( $record ) );
+		$replacement             = $this->to_awaiting_merchant_start( $source, $now, $record['generation'] + 1 );
 		$replacement['revision'] = $record['revision'] + 1;
 
 		return $this->state_store->compare_and_set_record( $record, $replacement );
@@ -2307,9 +1388,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		if ( $for_admin_notice ) {
 			return false === $this->get_admin_stripe_billing_classification( $record );
 		}
-		if ( $this->is_network( $record ) && is_multisite() ) {
-			return ! $this->network_has_stripe_billing_failure();
-		}
 
 		try {
 			$failures = $this->normalize_codes( $this->preflight_service->get_failures() );
@@ -2321,7 +1399,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the record's site or network currently has a Stripe Billing exclusion marker.
+	 * Tell whether the record's site currently has a Stripe Billing exclusion marker.
 	 *
 	 * @param array<string,mixed> $record Current record.
 	 * @return bool
@@ -2333,24 +1411,21 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Classify the Stripe Billing marker for admin notices, reusing the result for one record revision and an hour.
 	 *
-	 * The full preflight scans Action Scheduler and order meta, and a network record scans it on every site, so it must not
-	 * run on every admin page. The worker re-checks before it acts.
+	 * The full preflight scans Action Scheduler and order meta, so it must not run on every admin page. The worker re-checks
+	 * before it acts.
 	 *
 	 * @param array<string,mixed>|null $record Current record, or null when none exists.
 	 * @return bool|null Whether the marker is present, or null when the preflight failed.
 	 */
 	private function get_admin_stripe_billing_classification( ?array $record ): ?bool {
-		$network = is_array( $record ) && $this->is_network( $record ) && is_multisite();
-		$key     = is_array( $record ) ? $record['generation'] . ':' . $record['revision'] . ( $network ? ':network' : '' ) : 'none';
-		$cached  = get_option( self::ADMIN_CLASSIFICATION_OPTION, null );
+		$key    = is_array( $record ) ? $record['generation'] . ':' . $record['revision'] : 'none';
+		$cached = get_option( self::ADMIN_CLASSIFICATION_OPTION, null );
 		if ( is_array( $cached ) && ( $cached['key'] ?? null ) === $key && is_bool( $cached['present'] ?? null ) && time() < (int) ( $cached['expires_at'] ?? 0 ) ) {
 			return $cached['present'];
 		}
 
 		try {
-			$present = $network
-				? $this->network_has_stripe_billing_failure()
-				: in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $this->normalize_codes( $this->preflight_service->get_failures() ), true );
+			$present = in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $this->normalize_codes( $this->preflight_service->get_failures() ), true );
 		} catch ( \Throwable $error ) {
 			$this->log_error( 'WooPayments cutover could not classify the admin notice.', array( 'error' => $error->getMessage() ) );
 			return null;
@@ -2399,35 +1474,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether any site in the current network still has a Stripe Billing marker.
-	 *
-	 * @return bool
-	 */
-	private function network_has_stripe_billing_failure(): bool {
-		$current_blog_id = get_current_blog_id();
-		foreach ( $this->get_current_network_site_ids() as $site_id ) {
-			if ( get_current_blog_id() !== $site_id ) {
-				switch_to_blog( $site_id );
-			}
-			try {
-				$this->preflight_service->invalidate_current_blog_memoization();
-				$failures = $this->normalize_codes( $this->preflight_service->get_failures() );
-				if ( in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $failures, true ) ) {
-					return true;
-				}
-			} catch ( \Throwable $error ) {
-				return true;
-			} finally {
-				if ( get_current_blog_id() !== $current_blog_id ) {
-					restore_current_blog();
-				}
-			}
-		}
-
-		return false;
-	}
-
-	/**
 	 * Build a new pending record.
 	 *
 	 * @param string $source Trigger source.
@@ -2458,7 +1504,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			self::CLAIM_TOKEN_KEY      => null,
 			self::CLAIM_EXPIRES_AT_KEY => null,
 			'request_origin_token'     => null,
-			'network_cutover'          => false,
 		);
 	}
 
@@ -2470,15 +1515,13 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @param string $source     Source recorded in its first step.
 	 * @param int    $now        Current UTC timestamp.
 	 * @param int    $generation Generation it opens.
-	 * @param bool   $network    Whether it belongs to a network-wide cutover.
 	 * @return array<string,mixed>
 	 */
-	private function to_awaiting_merchant_start( string $source, int $now, int $generation, bool $network ): array {
-		$awaiting                    = $this->create_pending_record( $source, $now );
-		$awaiting['generation']      = $generation;
-		$awaiting['network_cutover'] = $network;
-		$awaiting['current_step']    = self::STEP_AWAITING_MERCHANT_START;
-		$awaiting['step_log']        = array(
+	private function to_awaiting_merchant_start( string $source, int $now, int $generation ): array {
+		$awaiting                 = $this->create_pending_record( $source, $now );
+		$awaiting['generation']   = $generation;
+		$awaiting['current_step'] = self::STEP_AWAITING_MERCHANT_START;
+		$awaiting['step_log']     = array(
 			array(
 				'step'    => self::STEP_AWAITING_MERCHANT_START,
 				'at'      => $now,

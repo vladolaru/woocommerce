@@ -316,8 +316,8 @@ class WooPaymentsCutoverNormalizationRunner implements RegisterHooksInterface {
 	/**
 	 * Clear the plugin's daily WP-Cron WooPay compatibility event.
 	 *
-	 * Client 11.1.0 woopay/class-woopay-scheduler.php:51, :57-59 clears it only from its own deactivation hook, which
-	 * misses other sites of a network activation; native runs the same check through Action Scheduler.
+	 * Client 11.1.0 woopay/class-woopay-scheduler.php:51, :57-59 clears it only from its own deactivation hook; native runs
+	 * the same check through Action Scheduler.
 	 *
 	 * @return bool Whether an event was cleared.
 	 */
