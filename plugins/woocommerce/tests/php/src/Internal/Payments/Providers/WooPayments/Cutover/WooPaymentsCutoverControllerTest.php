@@ -1260,7 +1260,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$logger = $this->createMock( \WC_Logger_Interface::class );
 		$logger->expects( $feature_on ? $this->once() : $this->never() )
 			->method( 'error' )
-			->with( $this->stringContains( 'switch' ), array( 'source' => 'woocommerce-woopayments-cutover' ) );
+			->with( $this->stringContains( 'switch' ), array( 'source' => 'woopayments-cutover' ) );
 		$this->register_legacy_proxy_function_mocks(
 			array(
 				'wc_get_logger' => static fn() => $logger,

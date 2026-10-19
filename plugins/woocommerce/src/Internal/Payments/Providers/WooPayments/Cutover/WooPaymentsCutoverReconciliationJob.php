@@ -97,7 +97,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	private const SLOW_RETRY_DELAY = DAY_IN_SECONDS;
 
 	/** Source used for cutover diagnostics. */
-	private const LOG_SOURCE = 'woocommerce-woopayments-cutover';
+	private const LOG_SOURCE = 'woopayments-cutover';
 
 	/** WordPress core upgrader lock name for the filesystem-global plugin update. */
 	private const PLUGIN_UPDATE_LOCK_NAME = 'woocommerce_woopayments_cutover_plugin_update_lock';
@@ -858,7 +858,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		try {
 			$result = $this->data_migration->run();
 		} catch ( \Throwable $error ) {
-			$this->log_error( 'WooPayments cutover normalization failed.', array( 'error' => $error->getMessage() ) );
+			$this->log_error( 'WooPayments cutover data migration failed.', array( 'error' => $error->getMessage() ) );
 			$this->defer( $claimed, array( self::CODE_DATA_MIGRATION_FAILED ), $outcomes );
 			return null;
 		}
@@ -882,7 +882,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		try {
 			$extension_owns = $this->arbiter->is_extension_owner();
 		} catch ( \Throwable $error ) {
-			$this->log_error( 'WooPayments cutover could not verify native ownership.', array( 'error' => $error->getMessage() ) );
+			$this->log_error( 'WooPayments cutover could not verify that the built-in WooPayments owns payments.', array( 'error' => $error->getMessage() ) );
 			$this->defer( $claimed, array( 'builtin_ownership_verification_failed' ) );
 			return;
 		}

@@ -746,8 +746,8 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	 */
 	private function log_summary( array $changes ): void {
 		wc_get_logger()->info(
-			'Native WooPayments cutover normalization completed: ' . implode( ', ', $changes ),
-			array( 'source' => 'woocommerce-native-payments' )
+			'WooPayments cutover data migration completed: ' . implode( ', ', $changes ),
+			array( 'source' => 'woopayments-cutover' )
 		);
 	}
 
@@ -758,8 +758,8 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	 */
 	private function log_persistence_failure( array $failed_option_names ): void {
 		wc_get_logger()->error(
-			'Native WooPayments cutover normalization could not persist settings: ' . implode( ', ', $failed_option_names ),
-			array( 'source' => 'woocommerce-native-payments' )
+			'WooPayments cutover data migration could not persist settings: ' . implode( ', ', $failed_option_names ),
+			array( 'source' => 'woopayments-cutover' )
 		);
 	}
 }

@@ -58,7 +58,7 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	public const FEATURE_SCAN_TRANSIENT = 'woocommerce_woopayments_feature_on_at_some_site';
 
 	/** Log source shared with the switch. */
-	private const LOG_SOURCE = 'woocommerce-woopayments-cutover';
+	private const LOG_SOURCE = 'woopayments-cutover';
 
 	/**
 	 * Runtime owner arbiter.

@@ -374,7 +374,7 @@ class WooPaymentsCutoverPreflightService {
 	 */
 	public function ensure_fee_remediation_scheduled(): bool {
 		if ( 'unavailable' === $this->get_fee_remediation_service()->ensure_scheduled() ) {
-			wc_get_logger()->error( 'Native WooPayments could not schedule the canceled-authorization fee remediation after the cutover.', array( 'source' => 'woocommerce-woopayments-cutover' ) );
+			wc_get_logger()->error( 'WooPayments could not schedule the canceled-authorization fee remediation after the cutover.', array( 'source' => 'woopayments-cutover' ) );
 			return false;
 		}
 

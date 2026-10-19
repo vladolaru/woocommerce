@@ -1440,7 +1440,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
 		$this->assertSame( array(), get_option( 'active_plugins' ) );
 		$this->assertCount( 1, $job->logged_warnings );
-		$this->assertSame( 'woocommerce-woopayments-cutover', $job->logged_warnings[0]['source'] );
+		$this->assertSame( 'woopayments-cutover', $job->logged_warnings[0]['source'] );
 		$this->assertSame( $aged['generation'], $job->logged_warnings[0]['generation'] );
 		$this->assertGreaterThanOrEqual( DAY_IN_SECONDS, $job->logged_warnings[0]['delay_seconds'] );
 	}
