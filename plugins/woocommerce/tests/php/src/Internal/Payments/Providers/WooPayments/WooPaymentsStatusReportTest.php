@@ -692,7 +692,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( WooPaymentsHttpClient::class, $http_client );
 		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
 
-		$rows = $this->get_sut()->get_client_status_rows();
+		$rows = $this->get_sut()->get_woopayments_extension_status_rows();
 
 		$this->assertSame( array( 'Version', 'Connected to WPCOM', 'WPCOM Blog ID', 'Account ID', 'Logging' ), array_column( $rows, 'export_label' ) );
 		$this->assertSame( 'Not connected', $rows[3]['value'] );
@@ -745,7 +745,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$http_client->method( 'is_connected' )->willReturn( false );
 		wc_get_container()->replace( WooPaymentsHttpClient::class, $http_client );
 
-		$rows = $this->get_sut()->get_client_status_rows();
+		$rows = $this->get_sut()->get_woopayments_extension_status_rows();
 
 		$this->assertSame( array( 'Version', 'Connected to WPCOM', 'Logging' ), array_column( $rows, 'export_label' ) );
 		$this->assertSame( 'No', $rows[1]['value'] );

@@ -81,7 +81,7 @@ class WooPaymentsDebugTools {
 			return $tools;
 		}
 
-		$native_tools = array(
+		$woopayments_tools = array(
 			'clear_wcpay_account_cache'            => array(
 				'name'     => __( 'Clear WooPayments account cache', 'woocommerce' ),
 				'button'   => __( 'Clear', 'woocommerce' ),
@@ -123,13 +123,13 @@ class WooPaymentsDebugTools {
 
 		if ( $this->arbiter->is_extension_owner() ) {
 			$namespaced_tools = array();
-			foreach ( $native_tools as $tool_id => $tool ) {
+			foreach ( $woopayments_tools as $tool_id => $tool ) {
 				$namespaced_tools[ 'builtin-' . $tool_id ] = $tool;
 			}
-			$native_tools = $namespaced_tools;
+			$woopayments_tools = $namespaced_tools;
 		}
 
-		return array_merge( $tools, $native_tools );
+		return array_merge( $tools, $woopayments_tools );
 	}
 
 	/**
