@@ -9,7 +9,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -377,6 +380,86 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 		return array(
 			'the built-in WooPayments owns payments'  => array( false, WooPaymentsSetupTier::ACTIVE ),
 			'the WooPayments extension owns payments' => array( true, WooPaymentsSetupTier::AVAILABLE ),
+		);
+	}
+
+	/**
+	 * A store that ran the extension (its version option) belongs to the built-in WooPayments only after its one-click switch:
+	 * once the switch's finalize deactivated the extension (finalize's token on the record) or the record is done (N-484,
+	 * N-504). Until then it has no WooPayments and is offered the switch while the feature is on.
+	 *
+	 * @testdox The owner, the effective tier and the registered classes follow the switch: $_dataName.
+	 * @dataProvider provide_switch_states
+	 *
+	 * @param bool        $extension_ran    Whether the extension's version option is stored.
+	 * @param string|null $record_state     The cutover record's state, or null for no record.
+	 * @param bool        $finalize_token   Whether the record holds finalize's request token.
+	 * @param bool        $extension_active Whether the extension is active.
+	 * @param string      $feature          The WooPayments feature option.
+	 * @param string      $owner            Expected owner.
+	 * @param string      $tier             Expected effective tier.
+	 */
+	public function test_owner_and_tier_follow_the_switch( bool $extension_ran, ?string $record_state, bool $finalize_token, bool $extension_active, string $feature, string $owner, string $tier ): void {
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $feature );
+		if ( $extension_ran ) {
+			update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
+		} else {
+			delete_option( 'woocommerce_woocommerce_payments_version' );
+		}
+		if ( null === $record_state ) {
+			update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD );
+		} else {
+			update_option(
+				WooPaymentsCutoverStateStore::OPTION_NAME,
+				array(
+					'state'                => $record_state,
+					'request_origin_token' => $finalize_token ? 'finalize-request-token' : null,
+				)
+			);
+		}
+		if ( $extension_active ) {
+			$this->make_plugin_own_the_runtime();
+		}
+		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+		$arbiter->invalidate();
+		$this->state->invalidate();
+
+		$this->assertSame( $owner, $arbiter->get_runtime_owner() );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE === $owner && 'yes' === $feature, $arbiter->is_awaiting_switch() );
+		$this->assertSame( $tier, $this->state->get_effective_tier() );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN === $owner, in_array( WooPaymentsProvider::class, $this->state->get_classes_for_request( 'front' ), true ), 'A WooPayments gateway at checkout only while the built-in owns payments.' );
+		$this->assertSame( WooPaymentsSetupTier::DISABLED !== $tier, in_array( WooPaymentsCutoverController::class, $this->state->get_classes_for_request( 'admin' ), true ), 'The switch controller loads in admin wherever a tier is on.' );
+		if ( WooPaymentsSetupTier::DISABLED === $tier ) {
+			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request_type ) {
+				$this->assertSame( array(), $this->state->get_classes_for_request( $request_type ), $request_type );
+			}
+		}
+	}
+
+	/**
+	 * Switch states, with the owner and the effective tier each gives (the stored tier is active in every case).
+	 *
+	 * @return array<string,array{0:bool,1:string|null,2:bool,3:bool,4:string,5:string,6:string}>
+	 */
+	public function provide_switch_states(): array {
+		$none      = WooPaymentsRuntimeArbiter::OWNER_NONE;
+		$builtin   = WooPaymentsRuntimeArbiter::OWNER_BUILTIN;
+		$extension = WooPaymentsRuntimeArbiter::OWNER_EXTENSION;
+		$pending   = WooPaymentsCutoverStateStore::STATE_PENDING;
+		$deferred  = WooPaymentsCutoverStateStore::STATE_DEFERRED;
+		$done      = WooPaymentsCutoverStateStore::STATE_DONE;
+
+		return array(
+			'a store that never ran the extension'     => array( false, null, false, false, 'yes', $builtin, WooPaymentsSetupTier::ACTIVE ),
+			'deactivated by hand, no record'           => array( true, null, false, false, 'yes', $none, WooPaymentsSetupTier::AVAILABLE ),
+			'deactivated by hand, merchant start open' => array( true, $pending, false, false, 'yes', $none, WooPaymentsSetupTier::AVAILABLE ),
+			'past finalize, before done'               => array( true, $pending, true, false, 'yes', $builtin, WooPaymentsSetupTier::ACTIVE ),
+			'ownership check deferred for days'        => array( true, $deferred, true, false, 'yes', $builtin, WooPaymentsSetupTier::ACTIVE ),
+			'switch done'                              => array( true, $done, false, false, 'yes', $builtin, WooPaymentsSetupTier::ACTIVE ),
+			'extension active again during the check'  => array( true, $pending, true, true, 'yes', $extension, WooPaymentsSetupTier::AVAILABLE ),
+			'feature off, extension deactivated'       => array( true, null, false, false, 'no', $none, WooPaymentsSetupTier::DISABLED ),
+			'feature off after the switch'             => array( true, $done, false, false, 'no', $none, WooPaymentsSetupTier::DISABLED ),
 		);
 	}
 

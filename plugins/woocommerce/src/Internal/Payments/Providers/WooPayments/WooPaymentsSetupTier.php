@@ -7,14 +7,16 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNoticesPassthrough;
+
 /**
  * Stores the built-in WooPayments setup tier, reports the effective tier and lists the classes each request type loads for it.
  *
- * The effective tier is `disabled` while the WooPayments feature is off or nothing owns payments, `available` while the
- * WooPayments extension owns payments, and the stored tier while the built-in WooPayments owns payments. The stored tier
- * is `disabled` until the built-in WooPayments is first set up (the install value), then `available`, `connected` or
- * `active`. While the extension owns payments the stored tier is not read: it may hold `available`, or the tier of an
- * earlier switch.
+ * The effective tier is `disabled` while the WooPayments feature is off, the stored tier while the built-in WooPayments
+ * owns payments, and `available` otherwise: while the WooPayments extension owns payments, or while a store that ran it
+ * waits for its one-click switch (WooPaymentsRuntimeArbiter::is_awaiting_switch()). The stored tier is `disabled` until the
+ * built-in WooPayments is first set up (the install value), then `available`, `connected` or `active`. In the two
+ * `available` cases the stored tier is not read: it may hold `available`, or the tier of an earlier switch.
  *
  * @since 11.2.0
  * @internal
@@ -81,16 +83,16 @@ final class WooPaymentsSetupTier {
 	 * @return string One of the setup tier constants.
 	 */
 	public function get_effective_tier(): string {
-		$owner = $this->runtime_arbiter->get_runtime_owner();
-		if ( WooPaymentsRuntimeArbiter::OWNER_NONE === $owner || ! $this->runtime_arbiter->is_builtin_enabled() ) {
+		if ( ! $this->runtime_arbiter->is_builtin_enabled() ) {
 			return self::DISABLED;
 		}
 
-		if ( WooPaymentsRuntimeArbiter::OWNER_EXTENSION === $owner ) {
-			return self::AVAILABLE;
+		if ( WooPaymentsRuntimeArbiter::OWNER_BUILTIN === $this->runtime_arbiter->get_runtime_owner() ) {
+			return $this->get_stored_tier();
 		}
 
-		return $this->get_stored_tier();
+		// With the feature on, nothing else owns payments only on a store waiting for its switch, which is offered it.
+		return self::AVAILABLE;
 	}
 
 	/**
@@ -113,7 +115,13 @@ final class WooPaymentsSetupTier {
 			$this->classes_by_setup_tier = WooPaymentsProvider::get_classes_by_setup_tier();
 		}
 
-		return $this->classes_by_setup_tier[ $tier ][ $request_type ] ?? array();
+		$classes = $this->classes_by_setup_tier[ $tier ][ $request_type ] ?? array();
+		// A store waiting for its switch keeps the switch notice on the WooPayments pages, which strip other notices.
+		if ( 'admin' === $request_type && self::AVAILABLE === $tier && $this->runtime_arbiter->is_awaiting_switch() ) {
+			$classes[] = WooPaymentsAdminNoticesPassthrough::class;
+		}
+
+		return $classes;
 	}
 
 	/**

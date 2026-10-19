@@ -7,6 +7,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaym
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoticesController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsCurrencyComplianceNotice;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use WC_Settings_Payment_Gateways;
 use WC_Unit_Test_Case;
 
@@ -132,6 +136,55 @@ class WooPaymentsAdminNoticesPassthroughTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_action( 'admin_notices', array( $this->currency_notice, 'display_isk_decimal_notice' ) ), 'The ISK decimal notice should be stripped.' );
 		$this->assertFalse( has_action( 'admin_notices', array( $this->multi_currency_notices, 'handle_admin_notices' ) ), 'The multi-currency notices should be stripped.' );
 		$this->assertFalse( has_action( 'admin_notices', array( $this->cutover_notices, 'output_admin_notices' ) ), 'The cutover notices should be stripped.' );
+	}
+
+	/**
+	 * A store that ran the extension and deactivated it by hand has no WooPayments row on the Payments tab; the switch notice
+	 * is its one offer there (N-506 (a), N-507). The passthrough comes from the setup tier's admin class list, as in the
+	 * bootstrap, so the row fails if the waiting store stops loading it or the passthrough stops keeping the notice.
+	 *
+	 * @testdox On the Payments tab itself only the switch notice is kept, and only on a store waiting for its switch ($_dataName).
+	 * @testWith ["a store waiting for its switch", true]
+	 *           ["a store that never ran the extension", false]
+	 *
+	 * @param string $label         Case label.
+	 * @param bool   $extension_ran Whether the extension's version option is stored.
+	 */
+	public function test_keeps_the_switch_notice_on_the_payments_tab_only_while_the_store_waits( string $label, bool $extension_ran ): void {
+		unset( $label );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
+		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD );
+		if ( $extension_ran ) {
+			update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
+		} else {
+			delete_option( 'woocommerce_woocommerce_payments_version' );
+		}
+		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+		$tier    = wc_get_container()->get( WooPaymentsSetupTier::class );
+		$arbiter->invalidate();
+		$tier->invalidate();
+		// Only the passthrough the admin class list loads takes part.
+		remove_action( 'in_admin_header', array( $this->sut, 'keep_woopayments_notices' ), PHP_INT_MAX - 1 );
+		$loaded = null;
+		if ( in_array( WooPaymentsAdminNoticesPassthrough::class, $tier->get_classes_for_request( 'admin' ), true ) ) {
+			$loaded = wc_get_container()->get( WooPaymentsAdminNoticesPassthrough::class );
+			$loaded->register();
+		}
+		$this->open_payments_tab( '' );
+
+		try {
+			do_action( 'in_admin_header' );
+		} finally {
+			if ( null !== $loaded ) {
+				remove_action( 'in_admin_header', array( $loaded, 'keep_woopayments_notices' ), PHP_INT_MAX - 1 );
+			}
+			$arbiter->invalidate();
+			$tier->invalidate();
+		}
+
+		$this->assertSame( $extension_ran ? 10 : false, has_action( 'admin_notices', array( $this->cutover_notices, 'output_admin_notices' ) ), 'The switch notice.' );
+		$this->assertFalse( has_action( 'admin_notices', array( $this->currency_notice, 'display_isk_decimal_notice' ) ), 'Only the switch notice is kept on the Payments tab.' );
 	}
 
 	/**

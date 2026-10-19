@@ -767,59 +767,9 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Manual-deactivation work is silent unless the atomic reconnect information is available.
-	 * @testWith [false]
-	 *           [true]
-	 *
-	 * @param bool $reconnect_available Whether Decision 7 reconnect information can be consumed.
+	 * @testdox The controller sends the merchant start and the extension activation into the one reconciliation job with exact scope, and a hand deactivation of the extension starts nothing.
 	 */
-	public function test_manual_deactivation_notice_only_renders_reconnect_information( bool $reconnect_available ): void {
-		$job = new class( $reconnect_available ) extends WooPaymentsCutoverReconciliationJob {
-			/** @var bool */
-			private bool $reconnect_available;
-
-			/**
-			 * @param bool $reconnect_available Whether reconnect information is available.
-			 */
-			public function __construct( bool $reconnect_available ) {
-				$this->reconnect_available = $reconnect_available;
-			}
-
-			/** @return array<string,mixed>|null */
-			public function classify_for_admin_notice(): ?array {
-				return array(
-					'state'                  => WooPaymentsCutoverStateStore::STATE_DEFERRED,
-					'current_step'           => 'deferred',
-					'origin_plugin_file'     => 'renamed-wcpay/woocommerce-payments.php',
-					'origin_plugin_scope'    => 'site',
-					'informational_outcomes' => $this->reconnect_available ? array( array( 'code' => 'reconnect_required' ) ) : array(),
-				);
-			}
-
-			/** Consume controlled reconnect information once. */
-			public function consume_reconnect_notice(): bool {
-				$available                 = $this->reconnect_available;
-				$this->reconnect_available = false;
-				return $available;
-			}
-		};
-
-		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
-		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job ) );
-
-		$this->assertStringNotContainsString( 'Switch in progress', $notice );
-		$this->assertStringNotContainsString( 'Start the switch', $notice );
-		if ( $reconnect_available ) {
-			$this->assertStringContainsString( 'The connection owner is no longer available. Reconnect this site to continue the switch.', $notice );
-		} else {
-			$this->assertStringNotContainsString( 'The connection owner is no longer available. Reconnect this site to continue the switch.', $notice );
-		}
-	}
-
-	/**
-	 * @testdox The controller sends merchant, activation, and manual-deactivation triggers into the one reconciliation job with exact scope.
-	 */
-	public function test_controller_routes_merchant_and_manual_triggers_into_the_job(): void {
+	public function test_controller_routes_the_start_and_the_activation_into_the_job(): void {
 		$renamed_plugin_file = 'renamed-woocommerce-payments/woocommerce-payments.php';
 		$this->fake_plugin_active( true, false, $renamed_plugin_file );
 		$this->fake_current_user_caps( true );
@@ -827,9 +777,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
 			/** @var string[] */
 			public array $sources = array();
-
-			/** @var array<int,array{string,bool}> */
-			public array $manual = array();
 
 			/** @var bool[] */
 			public array $activation_scopes = array();
@@ -839,15 +786,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			 */
 			public function enqueue( string $source ): bool {
 				$this->sources[] = $source;
-				return true;
-			}
-
-			/**
-			 * @param string $plugin_file  Exact plugin path.
-			 * @param bool   $network_wide Network scope.
-			 */
-			public function enqueue_manual_deactivation( string $plugin_file, bool $network_wide ): bool {
-				$this->manual[] = array( $plugin_file, $network_wide );
 				return true;
 			}
 
@@ -881,10 +819,37 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$controller->handle_plugin_deactivated( $renamed_plugin_file, false );
 		$controller->handle_plugin_activated( $renamed_plugin_file, true );
 
-		$this->assertSame( array( 'merchant' ), $job->sources );
-		$this->assertSame( array( array( $renamed_plugin_file, false ) ), $job->manual );
+		$this->assertSame( array( 'merchant' ), $job->sources, 'The hand deactivation enqueues nothing.' );
 		$this->assertSame( array( true ), $job->activation_scopes );
 		$this->assertSame( array(), $this->deactivate_plugin_calls );
+	}
+
+	/**
+	 * A store that ran the extension (its version option, seeded in setUp()) and deactivated it by hand waits for its switch.
+	 *
+	 * @testdox A store waiting for its switch is offered the switch while the WooPayments feature is on, and nothing while it is off ($_dataName).
+	 * @testWith ["yes", true]
+	 *           ["no", false]
+	 *
+	 * @param string $feature The WooPayments feature option.
+	 * @param bool   $offered Whether the switch is offered.
+	 */
+	public function test_store_waiting_for_its_switch_is_offered_it_only_with_the_feature_on( string $feature, bool $offered ): void {
+		$this->fake_plugin_active( false );
+		$this->fake_current_user_caps( true );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $feature );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		$controller = $this->create_cutover_controller();
+
+		$this->assertSame( $offered, wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_awaiting_switch() );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->get_runtime_owner() );
+		if ( $offered ) {
+			$this->assertStringContainsString( 'Start the switch', $this->render_admin_notices( $controller ) );
+			$this->assertTrue( $controller->disable_woopayments_plugin() );
+		} else {
+			$this->assertSame( '', trim( $this->render_admin_notices( $controller ) ) );
+			$this->assertFalse( $controller->disable_woopayments_plugin() );
+		}
 	}
 
 	/**

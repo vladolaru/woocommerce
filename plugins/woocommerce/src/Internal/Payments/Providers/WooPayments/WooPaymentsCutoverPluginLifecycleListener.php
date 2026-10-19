@@ -62,7 +62,8 @@ class WooPaymentsCutoverPluginLifecycleListener implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Hand a plugin deactivation to the cutover controller.
+	 * Hand a plugin deactivation to the cutover controller, which only forgets its cached WooCommerce Subscriptions
+	 * classification; a WooPayments deactivation records nothing.
 	 *
 	 * @internal
 	 *

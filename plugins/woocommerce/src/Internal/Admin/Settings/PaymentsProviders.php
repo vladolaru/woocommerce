@@ -778,9 +778,10 @@ class PaymentsProviders {
 		$active_extensions = array();
 
 		foreach ( $extensions as $extension ) {
+			// A store waiting for its switch from the WooPayments extension is offered the switch (its admin notice), not onboarding.
 			if (
 				ExtensionSuggestions::WOOPAYMENTS === ( $extension['id'] ?? null ) &&
-				$this->has_registered_payment_gateway( WooPaymentsService::GATEWAY_ID )
+				( $this->has_registered_payment_gateway( WooPaymentsService::GATEWAY_ID ) || wc_get_container()->get( WooPaymentsPaymentsSettingsAdapter::class )->is_awaiting_switch() )
 			) {
 				$active_extensions[] = ExtensionSuggestions::WOOPAYMENTS;
 				continue;

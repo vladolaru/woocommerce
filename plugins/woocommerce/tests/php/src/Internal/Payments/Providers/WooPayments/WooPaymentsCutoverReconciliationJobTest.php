@@ -214,7 +214,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$sut->enqueue( 'merchant' );
 		$first_record = $this->require_state_store()->get_record();
 
-		$this->assertTrue( $sut->enqueue( 'manual_deactivation' ) );
+		$this->assertTrue( $sut->enqueue( 'mandatory' ) );
 
 		$this->assertSame( $first_record, $this->require_state_store()->get_record(), 'A duplicate trigger should not rewrite the active generation.' );
 		$this->assertSame( 1, $this->count_cutover_actions(), 'A duplicate trigger should retain one scheduled action.' );
@@ -324,6 +324,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			 */
 			public function is_woopayments_network_active(): bool {
 				return false;
+			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
 			}
 		};
 		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
@@ -454,6 +459,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public function is_woopayments_network_active(): bool {
 				return false;
 			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
+			}
 		};
 		$job       = $this->create_state_writing_job( true, $preflight );
 		$this->assertTrue( $job->enqueue( 'merchant' ) );
@@ -519,6 +529,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** Report a site-local activation. */
 			public function is_woopayments_network_active(): bool {
 				return false;
+			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
 			}
 		};
 		$job                = $this->create_state_writing_job( true, $preflight );
@@ -594,6 +609,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** Report a site-local activation. */
 			public function is_woopayments_network_active(): bool {
 				return false;
+			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
 			}
 		};
 		$job       = new class() extends WooPaymentsCutoverReconciliationJob {
@@ -724,6 +744,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public function is_woopayments_network_active(): bool {
 				return false;
 			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
+			}
 		};
 		$migration          = new class( $migration_runs ) extends WooPaymentsCutoverNormalizationRunner {
 			/** @var int */
@@ -760,17 +785,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 		$job_for_activation = $make_job( false );
 
-		if ( 'a manual deactivation that deferred' === $shape ) {
-			$this->assertTrue( $make_job( false )->enqueue_manual_deactivation( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false ) );
-			$failures = array( 'builtin_transport_unavailable' );
-			$record   = $run_attempt( $this->require_state_store()->get_record(), false );
-			$failures = array();
-			$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $record['state'] );
-		} else {
-			$this->assertTrue( $make_job( true )->enqueue( 'merchant' ) );
-			$record = $this->require_state_store()->get_record();
-			$this->assertIsArray( $record );
-		}
+		$this->assertTrue( $make_job( true )->enqueue( 'merchant' ) );
+		$record = $this->require_state_store()->get_record();
+		$this->assertIsArray( $record );
 		if ( in_array( $shape, array( 'an ownership check deferred while the extension still read as active', 'an ownership check deferred on financial_migrations_unavailable', 'a stale running claim recovered after finalize', "the job's own plugin lifecycle change" ), true ) ) {
 			$record = $run_attempt( $record, true );
 			$this->assertSame( 'verify_builtin_ownership', $record['current_step'] );
@@ -833,7 +850,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $after['state'] );
 		$this->assertSame( 'awaiting_merchant_start', $after['current_step'] );
 		$this->assertSame( array( 'source' => 'rollback' ), $after['step_log'][0]['context'] ?? null );
-		$this->assertNull( $after['origin_plugin_file'] );
 		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $record['generation'], $record['attempt'] + 1 ), 'The superseded attempt is cancelled.' );
 		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $after['generation'], 1 ), 'The rollback generation waits for a fresh merchant start.' );
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The tier follows the extension again.' );
@@ -853,7 +869,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	public function open_cutover_activation_provider(): array {
 		return array(
-			'a manual deactivation that deferred'          => array( 'a manual deactivation that deferred', true ),
 			'an ownership check deferred while the extension still read as active' => array( 'an ownership check deferred while the extension still read as active', true ),
 			'an ownership check deferred on financial_migrations_unavailable' => array( 'an ownership check deferred on financial_migrations_unavailable', true ),
 			'a stale running claim recovered after finalize' => array( 'a stale running claim recovered after finalize', true ),
@@ -936,6 +951,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** Site-local scenario. */
 			public function is_woopayments_network_active(): bool {
 				return false;
+			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
 			}
 		};
 		$migration         = new class( $migration_runs, $during_run ) extends WooPaymentsCutoverNormalizationRunner {
@@ -1026,21 +1046,13 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$make_job()->record_plugin_activation( false );
 		};
 
-		$manual = in_array( $shape, array( 'a manual record whose extension is active when its attempt starts', 'a manual record whose extension is active again at the ownership check' ), true );
-		if ( $manual ) {
-			$extension_owner = false;
-			$this->assertTrue( $make_job()->enqueue_manual_deactivation( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false ) );
-		} else {
-			$this->assertTrue( $make_job()->enqueue( 'merchant' ) );
-		}
+		$this->assertTrue( $make_job()->enqueue( 'merchant' ) );
 		$record = $this->require_state_store()->get_record();
 		$this->assertIsArray( $record );
-		if ( 'a manual record whose extension is active when its attempt starts' !== $shape ) {
-			// The first finalize: the job deactivates the extension (a manual record needs no deactivation) and schedules the ownership check.
-			$record = $run_attempt( $record );
-			$this->assertSame( 'verify_builtin_ownership', $record['current_step'] );
-			$extension_owner = false;
-		}
+		// The first finalize: the job deactivates the extension and schedules the ownership check.
+		$record = $run_attempt( $record );
+		$this->assertSame( 'verify_builtin_ownership', $record['current_step'] );
+		$extension_owner = false;
 		if ( in_array( $shape, array( 'an activation during the attempt after a deferred ownership check', 'a retry finalize whose activation lost the write lock' ), true ) ) {
 			$schedulable = false;
 			$record      = $run_attempt( $record );
@@ -1071,7 +1083,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The tier follows the extension, not the built-in WooPayments.' );
 		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $record['generation'], $record['attempt'] + 2 ), 'No further attempt of the switch is scheduled.' );
 		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $after['generation'], 1 ), 'The rollback waits for a fresh merchant start.' );
-		if ( in_array( $shape, array( 'a manual record whose extension is active when its attempt starts', 'a retry finalize whose activation lost the write lock' ), true ) ) {
+		if ( 'a retry finalize whose activation lost the write lock' === $shape ) {
 			$this->assertSame( $preflight_reads_before, $preflight_reads, 'The rollback comes before the preflight and the plugin update.' );
 			$this->assertSame( $migration_runs_before, $migration_runs, 'The rollback comes before the data migration.' );
 		}
@@ -1095,8 +1107,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			'an activation during the attempt after a deferred ownership check' => array( 'an activation during the attempt after a deferred ownership check', 1 ),
 			'a retry finalize whose activation lost the write lock' => array( 'a retry finalize whose activation lost the write lock', 1 ),
 			'an activation recorded while the ownership check ran' => array( 'an activation recorded while the ownership check ran', 1 ),
-			'a manual record whose extension is active when its attempt starts' => array( 'a manual record whose extension is active when its attempt starts', 0 ),
-			'a manual record whose extension is active again at the ownership check' => array( 'a manual record whose extension is active again at the ownership check', 0 ),
 		);
 	}
 
@@ -1198,6 +1208,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public function is_woopayments_network_active(): bool {
 				return false;
 			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
+			}
 		};
 	}
 
@@ -1241,6 +1256,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** Site-local scenario. */
 			public function is_woopayments_network_active(): bool {
 				return false;
+			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
 			}
 		};
 		$sut           = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
@@ -1709,6 +1729,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox Ownership verification cannot complete in its originating request and completes only after a fresh native-owned request.
 	 */
 	public function test_ownership_verification_requires_a_fresh_native_owned_request(): void {
+		// A store that ran the extension, which finalize deactivated.
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
+		$owner     = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		$preflight = $this->create_preflight_with_failures( array() );
 		$origin    = $this->create_job( true, $preflight );
 		$this->assertTrue( $origin->enqueue( 'merchant' ) );
@@ -1725,6 +1749,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$verification['next_attempt_at']      = time() + MINUTE_IN_SECONDS;
 		$verification['request_origin_token'] = $request_token->getValue();
 		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $queued, $verification ) );
+		$owner->invalidate();
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $owner->get_runtime_owner(), 'Past finalize, before done, the built-in WooPayments owns payments.' );
 
 		$origin->handle_reconcile( $verification['generation'], 2 );
 
@@ -1743,6 +1769,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'done', $done['current_step'] );
 		$this->assertNull( $done['next_attempt_at'] );
 		$this->assertNull( $done['request_origin_token'] );
+		$owner->invalidate();
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $owner->get_runtime_owner(), 'The done record keeps the owner once the done write clears the token.' );
 	}
 
 	/**
@@ -1794,42 +1822,21 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
 		$this->assertSame( array( 'builtin_ownership_verification_failed' ), $deferred['deferred_codes'] );
 	}
-	/**
-	 * @testdox Manual deactivation keeps the plugin inactive and persists its exact origin with an unresolved disposition.
-	 */
-	public function test_manual_deactivation_defers_without_reactivating_plugin(): void {
-		$preflight = $this->create_preflight_with_failures( array( 'builtin_transport_unavailable' ) );
-		$sut       = $this->create_job( true, $preflight, null, false );
-
-		$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', false ) );
-		$pending = $this->require_state_store()->get_record();
-		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
-		$sut->handle_reconcile( $pending['generation'], 1 );
-
-		$deferred = $this->require_state_store()->get_record();
-		$this->assertIsArray( $deferred );
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
-		$this->assertSame( array( 'builtin_transport_unavailable' ), $deferred['deferred_codes'] );
-		$this->assertSame( 'renamed-wcpay/woocommerce-payments.php', $deferred['origin_plugin_file'] );
-		$this->assertSame( 'site', $deferred['origin_plugin_scope'] );
-		$this->assertFalse( method_exists( $sut, 'activate_woopayments_plugin_file' ) );
-	}
 
 	/**
-	 * @testdox An all-clear manual deactivation remains native-owned and completes after a future ownership check.
+	 * @testdox A claim that finds WooPayments already inactive at finalization deactivates nothing and continues to ownership verification.
 	 */
-	public function test_all_clear_manual_deactivation_verifies_native_ownership_without_deactivating_again(): void {
-		$deactivation_calls = 0;
-		$preflight          = new class( $deactivation_calls ) extends WooPaymentsCutoverPreflightService {
+	public function test_claim_with_an_already_inactive_plugin_reaches_ownership_verification(): void {
+		$deactivations = 0;
+		$preflight     = new class( $deactivations ) extends WooPaymentsCutoverPreflightService {
 			/** @var int */
-			private int $deactivation_calls;
+			private int $deactivations;
 
 			/**
-			 * @param int $deactivation_calls Deactivation calls.
+			 * @param int $deactivations Count of deactivation calls.
 			 */
-			public function __construct( int &$deactivation_calls ) {
-				$this->deactivation_calls =& $deactivation_calls;
+			public function __construct( int &$deactivations ) {
+				$this->deactivations =& $deactivations;
 			}
 
 			/** @return string[] */
@@ -1846,71 +1853,23 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				return array();
 			}
 
-			/** Record any unexpected second deactivation. */
+			/** Count the deactivation calls. */
 			public function deactivate_woopayments_plugin(): bool {
-				++$this->deactivation_calls;
+				++$this->deactivations;
 				return true;
 			}
 
-			/**
-			 * Report the controlled site-local (non-network) activation state.
-			 *
-			 * The real implementation reads through `$legacy_proxy`, which this
-			 * isolated double never initializes; this scenario is site-local, so
-			 * the answer is fixed.
-			 */
+			/** The merchant already deactivated the extension. */
+			public function is_woopayments_site_active(): bool {
+				return false;
+			}
+
+			/** Site-local scenario. */
 			public function is_woopayments_network_active(): bool {
 				return false;
 			}
 		};
-		$normalization      = new class() extends WooPaymentsCutoverNormalizationRunner {
-			/** @return array{ran:bool,changes:string[]} */
-			public function run(): array {
-				return array(
-					'ran'     => true,
-					'changes' => array(),
-				);
-			}
-		};
-		$sut                = $this->create_job( true, $preflight, null, false, $normalization );
-
-		$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', false ) );
-		$pending = $this->require_state_store()->get_record();
-		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
-		$before = time();
-		$sut->handle_reconcile( $pending['generation'], 1 );
-
-		$verification = $this->require_state_store()->get_record();
-		$this->assertIsArray( $verification );
-		$this->assertSame( 0, $deactivation_calls );
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $verification['state'] );
-		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
-		$this->assertSame( 'renamed-wcpay/woocommerce-payments.php', $verification['origin_plugin_file'] );
-		$this->assertSame( 'site', $verification['origin_plugin_scope'] );
-		$this->assertGreaterThan( $before, $verification['next_attempt_at'] );
-		$this->assertGreaterThan( 0, $verification['action_id'] );
-		$this->assertSame( $verification['action_id'], $this->require_scheduler()->get_scheduled_action_id( $verification['generation'], 2 ) );
-
-		$this->require_scheduler()->cancel( $verification['generation'], 2 );
-		$request_token = new \ReflectionProperty( WooPaymentsCutoverReconciliationJob::class, 'request_token' );
-		$request_token->setAccessible( true );
-		$request_token->setValue( null );
-		$fresh_request = $this->create_job( true, $preflight, null, false, $normalization );
-		$fresh_request->handle_reconcile( $verification['generation'], 2 );
-
-		$done = $this->require_state_store()->get_record();
-		$this->assertIsArray( $done );
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DONE, $done['state'] );
-		$this->assertSame( 'done', $done['current_step'] );
-		$this->assertSame( 0, $deactivation_calls );
-	}
-
-	/**
-	 * @testdox A claim that finds WooPayments already inactive at finalization continues to ownership verification instead of deferring forever.
-	 */
-	public function test_claim_with_an_already_inactive_plugin_reaches_ownership_verification(): void {
-		$sut = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, false, $this->create_noop_normalization() );
+		$sut           = $this->create_job( true, $preflight, null, false, $this->create_noop_normalization() );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $this->require_state_store()->get_record();
 		$this->assertIsArray( $pending );
@@ -1923,19 +1882,20 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $verification['state'] );
 		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
 		$this->assertSame( array(), $verification['deferred_codes'] );
+		$this->assertSame( 0, $deactivations, 'Finalize deactivates nothing when the extension is already inactive.' );
 	}
 
 	/**
-	 * @testdox Ownership verification schedules the canceled-authorization fee remediation once native owns the site, for a manual deactivation too.
+	 * @testdox Ownership verification schedules the canceled-authorization fee remediation once native owns the site.
 	 */
-	public function test_ownership_verification_schedules_fee_remediation_for_a_manual_deactivation(): void {
+	public function test_ownership_verification_schedules_fee_remediation_once_native_owns_the_site(): void {
 		$scheduling_calls = 0;
 		$schedulable      = true;
 		$throws           = false;
 		$preflight        = $this->create_preflight_with_fee_remediation( $scheduling_calls, $schedulable, $throws );
 		$sut              = $this->create_job( true, $preflight, null, false, $this->create_noop_normalization() );
 
-		$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', false ) );
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $this->require_state_store()->get_record();
 		$this->assertIsArray( $pending );
 		$this->require_scheduler()->cancel( $pending['generation'], 1 );
@@ -1968,7 +1928,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$preflight        = $this->create_preflight_with_fee_remediation( $scheduling_calls, $schedulable, $throws );
 		$sut              = $this->create_job( true, $preflight, null, false, $this->create_noop_normalization() );
 
-		$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', false ) );
+		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $this->require_state_store()->get_record();
 		$this->assertIsArray( $pending );
 		$this->require_scheduler()->cancel( $pending['generation'], 1 );
@@ -2085,6 +2045,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public function is_woopayments_network_active(): bool {
 				return false;
 			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
+			}
 		};
 		$sync_calls         = 0;
 		$account_service    = new class( $sync_calls ) extends WooPaymentsAccountService {
@@ -2175,6 +2140,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** Site-local scenario. */
 			public function is_woopayments_network_active(): bool {
 				return false;
+			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
 			}
 		};
 		$sut                = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
@@ -2281,99 +2251,12 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public function is_woopayments_network_active(): bool {
 				return false;
 			}
-		};
-	}
 
-	/**
-	 * @testdox Every exceptional manual-deactivation exit defers without reactivating and retains exact origin metadata.
-	 * @dataProvider manual_exception_provider
-	 *
-	 * @param string $failure_step  Controlled failing step.
-	 * @param string $expected_code Expected deferred code.
-	 */
-	public function test_manual_deactivation_exception_defers_without_reactivation( string $failure_step, string $expected_code ): void {
-		$preflight     = new class( $failure_step ) extends WooPaymentsCutoverPreflightService {
-			/** @var string */
-			private string $failure_step;
-
-			/**
-			 * @param string $failure_step Controlled failing step.
-			 */
-			public function __construct( string $failure_step ) {
-				$this->failure_step = $failure_step;
-			}
-
-			/** @return string[] */
-			public function get_failures(): array {
-				if ( 'resolver' === $this->failure_step ) {
-					throw new \RuntimeException( 'Expected resolver failure.' );
-				}
-				return array();
-			}
-
-			/** Invalidate controlled facts. */
-			public function invalidate_current_blog_memoization(): void {
-			}
-
-			/** @return array<int,array{action_id:int,hook:string,group:string}> */
-			public function get_queued_operational_actions(): array {
-				return array();
-			}
-
-			/**
-			 * Report the controlled site-local (non-network) activation state.
-			 *
-			 * The real implementation reads through `$legacy_proxy`, which this
-			 * isolated double never initializes; this scenario is site-local, so
-			 * the answer is fixed.
-			 */
-			public function is_woopayments_network_active(): bool {
+			/** The plugin is already inactive in these scenarios. */
+			public function is_woopayments_site_active(): bool {
 				return false;
 			}
 		};
-		$normalization = new class( $failure_step ) extends WooPaymentsCutoverNormalizationRunner {
-			/** @var string */
-			private string $failure_step;
-
-			/**
-			 * @param string $failure_step Controlled failing step.
-			 */
-			public function __construct( string $failure_step ) {
-				$this->failure_step = $failure_step;
-			}
-
-			/** Return controlled normalization. */
-			public function run(): array {
-				if ( 'normalization' === $this->failure_step ) {
-					throw new \RuntimeException( 'Expected normalization failure.' );
-				}
-				return array(
-					'ran'     => true,
-					'changes' => array(),
-				);
-			}
-		};
-		$sut           = $this->create_job( true, $preflight, null, false, $normalization );
-		$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', false ) );
-		$pending = $this->require_state_store()->get_record();
-		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
-		$sut->handle_reconcile( $pending['generation'], 1 );
-
-		$deferred = $this->require_state_store()->get_record();
-		$this->assertIsArray( $deferred );
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
-		$this->assertSame( array( $expected_code ), $deferred['deferred_codes'] );
-		$this->assertSame( 'renamed-wcpay/woocommerce-payments.php', $deferred['origin_plugin_file'] );
-		$this->assertSame( 'site', $deferred['origin_plugin_scope'] );
-	}
-
-	/** @return array<string,array{string,string}> */
-	public function manual_exception_provider(): array {
-		return array(
-			'resolver'      => array( 'resolver', 'reconciliation_resolver_failed' ),
-			'normalization' => array( 'normalization', 'normalization_failed' ),
-		);
 	}
 
 	/**
@@ -2629,32 +2512,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $excluded['generation'] + 1, 1 ), 'No generation may be scheduled.' );
 	}
 
-	/** @testdox A manual deactivation supersedes a current Stripe exclusion and persists the same exclusion without reactivation. */
-	public function test_manual_deactivation_supersedes_a_current_stripe_exclusion(): void {
-		$preflight = $this->create_preflight_with_failures( array( 'bundled_stripe_billing_subscriptions_present' ) );
-		$sut       = $this->create_job( true, $preflight );
-		$excluded  = $sut->classify_for_admin_notice();
-		$this->assertIsArray( $excluded );
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_EXCLUDED, $excluded['state'] );
-
-		$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', false ) );
-		$manual = $this->require_state_store()->get_record();
-		$this->assertIsArray( $manual );
-		$this->assertSame( $excluded['generation'] + 1, $manual['generation'] );
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $manual['state'] );
-		$this->assertSame( 'renamed-wcpay/woocommerce-payments.php', $manual['origin_plugin_file'] );
-		$this->assertSame( 'site', $manual['origin_plugin_scope'] );
-		$this->assertGreaterThan( 0, $manual['action_id'] );
-		$this->require_scheduler()->cancel( $manual['generation'], 1 );
-		// The attempt runs in a later request, where the hand-deactivated extension no longer owns payments.
-		$this->create_job( true, $preflight, null, false )->handle_reconcile( $manual['generation'], 1 );
-		$manual_excluded = $this->require_state_store()->get_record();
-		$this->assertIsArray( $manual_excluded );
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_EXCLUDED, $manual_excluded['state'] );
-		$this->assertSame( 'renamed-wcpay/woocommerce-payments.php', $manual_excluded['origin_plugin_file'] );
-		$this->assertSame( 'site', $manual_excluded['origin_plugin_scope'] );
-	}
-
 	/** @testdox A classifier cannot overwrite pending work created while it resolves an initial Stripe marker. */
 	public function test_no_record_notice_classifier_rereads_under_the_state_lease(): void {
 		$job       = null;
@@ -2697,127 +2554,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $classified['state'] );
 		$this->assertSame( 'queued', $classified['current_step'] );
 		$this->assertGreaterThan( 0, $classified['action_id'] );
-	}
-
-	/**
-	 * @testdox Manual deactivation supersedes an existing queued attempt with exact origin context and a fresh action.
-	 */
-	public function test_manual_deactivation_replaces_pending_action_with_exact_origin(): void {
-		if ( is_multisite() ) {
-			$this->markTestSkipped( 'A network-scope deactivation takes the network path on multisite; see the multisite twin below.' );
-		}
-
-		$sut = $this->require_sut();
-		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$queued = $this->require_state_store()->get_record();
-		$this->assertIsArray( $queued );
-		$old_action_id = $queued['action_id'];
-
-		$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', true ) );
-		$manual = $this->require_state_store()->get_record();
-		$this->assertIsArray( $manual );
-		$this->assertSame( 'renamed-wcpay/woocommerce-payments.php', $manual['origin_plugin_file'] );
-		$this->assertSame( 'network', $manual['origin_plugin_scope'] );
-		$this->assertSame( $queued['attempt'] + 1, $manual['attempt'] );
-		$this->assertNotSame( $old_action_id, $manual['action_id'] );
-		$this->assertSame( ActionScheduler_Store::STATUS_CANCELED, ActionScheduler::store()->get_status( $old_action_id ) );
-		$this->assertSame( $manual['action_id'], $this->require_scheduler()->get_scheduled_action_id( $manual['generation'], $manual['attempt'] + 1 ) );
-	}
-
-	/**
-	 * @testdox Network deactivation of a plugin that was site-active when the cutover started opens a new network generation with the exact origin on every site.
-	 *
-	 * @group multisite
-	 */
-	public function test_network_deactivation_of_a_site_level_cutover_carries_the_exact_origin_everywhere(): void {
-		if ( ! is_multisite() ) {
-			$this->markTestSkipped( 'Test only runs on Multisite.' );
-		}
-
-		$main_site_id   = get_current_blog_id();
-		$second_site_id = $this->create_cutover_multisite_site( 'cutover-network-deactivation.example.org' );
-		$preflight      = new class() extends WooPaymentsCutoverPreflightService {
-			/** @var bool */
-			public bool $network_active = false;
-
-			/** @return string[] */
-			public function get_failures(): array {
-				return array();
-			}
-
-			/** Invalidate controlled facts. */
-			public function invalidate_current_blog_memoization(): void {
-			}
-
-			/** @return array<int,array{action_id:int,hook:string,group:string}> */
-			public function get_queued_operational_actions(): array {
-				return array();
-			}
-
-			/** Return the controlled network activation. */
-			public function is_woopayments_network_active(): bool {
-				return $this->network_active;
-			}
-		};
-		$sut            = $this->create_job( true, $preflight );
-
-		try {
-			$this->assertTrue( $sut->enqueue( 'merchant' ) );
-			$site_pending = $this->require_state_store()->get_record();
-			$this->assertIsArray( $site_pending );
-			$this->assertFalse( $site_pending['network_cutover'] );
-			$old_action_id = $site_pending['action_id'];
-			switch_to_blog( $second_site_id );
-			$this->assertNull( $this->require_state_store()->get_record(), 'A site-level cutover must not reach other sites.' );
-			restore_current_blog();
-
-			$preflight->network_active = true;
-			$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', true ) );
-
-			$this->assertSame( ActionScheduler_Store::STATUS_CANCELED, ActionScheduler::store()->get_status( $old_action_id ) );
-			foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
-				switch_to_blog( $site_id );
-				$manual = $this->require_state_store()->get_record();
-				$this->assertIsArray( $manual );
-				$this->assertSame( $site_pending['generation'] + 1, $manual['generation'], "Site {$site_id} must join the new network generation." );
-				$this->assertTrue( $manual['network_cutover'] );
-				$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $manual['state'] );
-				$this->assertSame( 'renamed-wcpay/woocommerce-payments.php', $manual['origin_plugin_file'] );
-				$this->assertSame( 'network', $manual['origin_plugin_scope'] );
-				$this->assertGreaterThan( 0, $manual['action_id'] );
-				$this->assertSame( $manual['action_id'], $this->require_scheduler()->get_scheduled_action_id( $manual['generation'], $manual['attempt'] + 1 ) );
-				restore_current_blog();
-			}
-		} finally {
-			while ( get_current_blog_id() !== $main_site_id ) {
-				restore_current_blog();
-			}
-			switch_to_blog( $second_site_id );
-			$this->cleanup_state();
-			restore_current_blog();
-			wpmu_delete_blog( $second_site_id, true );
-		}
-	}
-
-	/**
-	 * @testdox Manual deactivation fences a running worker before recording exact origin context.
-	 */
-	public function test_manual_deactivation_supersedes_running_claim(): void {
-		$sut = $this->require_sut();
-		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
-		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
-		$running = $this->create_running_record( $pending );
-
-		$this->assertTrue( $sut->enqueue_manual_deactivation( 'renamed-wcpay/woocommerce-payments.php', false ) );
-		$manual = $this->require_state_store()->get_record();
-		$this->assertIsArray( $manual );
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $manual['state'] );
-		$this->assertSame( 'renamed-wcpay/woocommerce-payments.php', $manual['origin_plugin_file'] );
-		$this->assertSame( 'site', $manual['origin_plugin_scope'] );
-		$this->assertFalse( $sut->defer( $running, array( 'builtin_transport_unavailable' ) ) );
-		$this->assertSame( $manual, $this->require_state_store()->get_record() );
 	}
 
 	/**
@@ -3273,10 +3009,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A stale lower callback mirrors a higher awaiting generation's origin without scheduling or regressing it.
+	 * @testdox A stale lower callback mirrors a higher awaiting generation without scheduling or regressing it.
 	 * @group multisite
 	 */
-	public function test_stale_network_callback_mirrors_higher_awaiting_origin_without_starting_it(): void {
+	public function test_stale_network_callback_mirrors_higher_awaiting_generation_without_starting_it(): void {
 		if ( ! is_multisite() ) {
 			$this->markTestSkipped( 'Test only runs on Multisite.' );
 		}
@@ -3292,15 +3028,13 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$peer = $this->require_state_store()->get_record();
 			$this->assertIsArray( $peer );
 			$this->require_scheduler()->cancel( $peer['generation'], 1 );
-			$higher                        = $peer;
-			$higher['generation']          = $peer['generation'] + 1;
-			$higher['revision']            = $peer['revision'] + 1;
-			$higher['action_id']           = 0;
-			$higher['current_step']        = 'awaiting_merchant_start';
-			$higher['next_attempt_at']     = null;
-			$higher['network_cutover']     = false;
-			$higher['origin_plugin_file']  = 'newer-wcpay/woocommerce-payments.php';
-			$higher['origin_plugin_scope'] = 'network';
+			$higher                    = $peer;
+			$higher['generation']      = $peer['generation'] + 1;
+			$higher['revision']        = $peer['revision'] + 1;
+			$higher['action_id']       = 0;
+			$higher['current_step']    = 'awaiting_merchant_start';
+			$higher['next_attempt_at'] = null;
+			$higher['network_cutover'] = false;
 			$this->assertTrue( $this->require_state_store()->compare_and_set_record( $peer, $higher ) );
 			restore_current_blog();
 
@@ -3312,8 +3046,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $superseded['state'] );
 			$this->assertSame( 'awaiting_merchant_start', $superseded['current_step'] );
 			$this->assertSame( 0, $superseded['action_id'] );
-			$this->assertSame( 'newer-wcpay/woocommerce-payments.php', $superseded['origin_plugin_file'] );
-			$this->assertSame( 'network', $superseded['origin_plugin_scope'] );
 		} finally {
 			if ( get_current_blog_id() !== $main_site_id ) {
 				restore_current_blog();
@@ -3585,6 +3317,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				++$this->deactivation_calls;
 				return true;
 			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
+			}
 		};
 		$normalization      = new class() extends WooPaymentsCutoverNormalizationRunner {
 			/** Return successful normalization. */
@@ -3687,6 +3424,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public function deactivate_woopayments_plugin(): bool {
 				++$this->deactivation_calls;
 				return true;
+			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
 			}
 		};
 		// The real per-site feature read, with the network-active extension owning payments on every site.
@@ -3822,6 +3564,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				$site_id                               = get_current_blog_id();
 				$this->remediation_by_site[ $site_id ] = ( $this->remediation_by_site[ $site_id ] ?? 0 ) + 1;
 				return true;
+			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
 			}
 		};
 		$normalization      = new class() extends WooPaymentsCutoverNormalizationRunner {
@@ -4015,6 +3762,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				++$this->deactivation_calls;
 				return true;
 			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
+			}
 		};
 		$sut                = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
 
@@ -4109,6 +3861,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public function deactivate_woopayments_plugin(): bool {
 				++$this->deactivation_calls;
 				return true;
+			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
 			}
 		};
 		$job       = new class() extends WooPaymentsCutoverReconciliationJob {
@@ -4440,6 +4197,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				$this->scheduled_by_site[ $site_id ] = ( $this->scheduled_by_site[ $site_id ] ?? 0 ) + 1;
 				return true;
 			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
+			}
 		};
 		$sut               = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
 
@@ -4548,6 +4310,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** Report a completed network deactivation. */
 			public function deactivate_woopayments_plugin(): bool {
 				return true;
+			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
 			}
 		};
 		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
@@ -4935,6 +4702,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public function deactivate_woopayments_plugin(): bool {
 				++$this->deactivation_calls;
 				return true;
+			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
 			}
 		};
 		$normalization = new class() extends WooPaymentsCutoverNormalizationRunner {
@@ -5465,6 +5237,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			 */
 			public function is_woopayments_network_active(): bool {
 				return false;
+			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
 			}
 		};
 		$job           = new class() extends WooPaymentsCutoverReconciliationJob {
@@ -6486,6 +6263,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			false
 		);
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+		// The extension records its version on every update (client 11.1.0 includes/class-wc-payments.php:1580).
+		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
@@ -6525,6 +6304,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public function is_woopayments_network_active(): bool {
 				return false;
 			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
+			}
 		};
 	}
 
@@ -6563,6 +6347,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** Report a site-local activation. */
 			public function is_woopayments_network_active(): bool {
 				return false;
+			}
+
+			/** Active on the site until the job deactivates it. */
+			public function is_woopayments_site_active(): bool {
+				return ! $this->is_woopayments_network_active();
 			}
 		};
 		$preflight->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ) );
@@ -6731,6 +6520,15 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** Return the configured plugin ownership state. */
 			public function is_extension_owner(): bool {
 				return $this->plugin_active;
+			}
+
+			/** Return the owner the two configured answers give. */
+			public function get_runtime_owner(): string {
+				if ( $this->plugin_active ) {
+					return self::OWNER_EXTENSION;
+				}
+
+				return $this->native_enabled ? self::OWNER_BUILTIN : self::OWNER_NONE;
 			}
 		};
 
@@ -6959,6 +6757,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			 */
 			public function add_queued_operational_action( array $action ): void {
 				$this->queued_actions[] = $action;
+			}
+
+			/** Active on the site while a plugin file resolves. */
+			public function is_woopayments_site_active(): bool {
+				return '' !== $this->get_active_woopayments_plugin_file();
 			}
 		};
 	}

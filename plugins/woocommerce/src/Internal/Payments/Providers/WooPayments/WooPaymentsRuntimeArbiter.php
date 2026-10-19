@@ -13,6 +13,13 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
  * Decides per site whether the WooPayments extension, the built-in WooPayments or nothing owns payments.
  * The WooPayments feature (WooPaymentsFeatureController) decides whether the built-in WooPayments is enabled.
  *
+ * The owner is, in this order:
+ * - the extension, while it is active, whatever the feature says;
+ * - the built-in WooPayments, while the feature is on and the store either never ran the extension or switched from it
+ *   with the one-click switch (its cutover record is done, or the switch's finalize deactivated the extension);
+ * - nothing otherwise. A store that ran the extension and deactivated it without switching has no WooPayments, as it
+ *   would without the extension; with the feature on it is offered the switch (is_awaiting_switch()).
+ *
  * At most one WooPayments runtime owns payments on a site; the WooPayments extension wins while it is active. The extension is
  * found by its main file name, in any folder, in the per-site and network active-plugins lists, with `WCPAY_PLUGIN_FILE` as
  * the fallback for a copy included before WooCommerce. The owner is resolved once per blog and request.
@@ -102,11 +109,42 @@ class WooPaymentsRuntimeArbiter {
 	public function get_runtime_owner(): string {
 		$blog_id = get_current_blog_id();
 		if ( ! array_key_exists( $blog_id, $this->runtime_owners ) ) {
-			// The WooPayments extension wins while it is active, whatever the built-in WooPayments setting says.
-			$this->runtime_owners[ $blog_id ] = $this->is_woopayments_plugin_active() ? self::OWNER_EXTENSION : ( $this->is_builtin_enabled() ? self::OWNER_BUILTIN : self::OWNER_NONE );
+			$this->runtime_owners[ $blog_id ] = $this->resolve_runtime_owner();
 		}
 
 		return $this->runtime_owners[ $blog_id ];
+	}
+
+	/**
+	 * Work out the owner, in the order of the class docblock; the extension evidence and the cutover record are read only
+	 * on a store with the feature on and the extension inactive.
+	 *
+	 * @return string One of self::OWNER_EXTENSION, self::OWNER_BUILTIN, self::OWNER_NONE.
+	 */
+	private function resolve_runtime_owner(): string {
+		// The WooPayments extension wins while it is active, whatever the built-in WooPayments setting says.
+		if ( $this->is_woopayments_plugin_active() ) {
+			return self::OWNER_EXTENSION;
+		}
+		if ( ! $this->is_builtin_enabled() ) {
+			return self::OWNER_NONE;
+		}
+
+		return ! $this->has_run_woopayments_extension() || $this->has_switched_from_extension() ? self::OWNER_BUILTIN : self::OWNER_NONE;
+	}
+
+	/**
+	 * Tell whether this site switched from the extension: its cutover record is done, or the current generation holds the
+	 * token the switch's finalize leaves on it once the extension is deactivated (it stays through deferred retries of the
+	 * ownership check, and every new generation, a rollback included, starts without it).
+	 *
+	 * @return bool
+	 */
+	private function has_switched_from_extension(): bool {
+		$record = get_option( WooPaymentsCutoverStateStore::OPTION_NAME, null );
+
+		return is_array( $record )
+			&& ( WooPaymentsCutoverStateStore::STATE_DONE === ( $record['state'] ?? null ) || null !== ( $record['request_origin_token'] ?? null ) );
 	}
 
 	/**
@@ -145,6 +183,18 @@ class WooPaymentsRuntimeArbiter {
 	 */
 	public function is_extension_owner(): bool {
 		return self::OWNER_EXTENSION === $this->get_runtime_owner();
+	}
+
+	/**
+	 * Tell whether this site waits for its one-click switch: the feature is on, and the store ran the extension, deactivated
+	 * it and has not switched, so nothing owns payments.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool
+	 */
+	public function is_awaiting_switch(): bool {
+		return self::OWNER_NONE === $this->get_runtime_owner() && $this->is_builtin_enabled();
 	}
 
 	/**

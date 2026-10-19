@@ -314,8 +314,10 @@ class WooPaymentsCutoverPreflightService {
 
 	/**
 	 * Tell whether WooPayments is active for the current site.
+	 *
+	 * @since 11.2.0
 	 */
-	private function is_woopayments_site_active(): bool {
+	public function is_woopayments_site_active(): bool {
 		foreach ( (array) $this->legacy_proxy->call_function( 'get_option', 'active_plugins', array() ) as $plugin_file ) {
 			if ( is_string( $plugin_file ) && $this->is_woopayments_plugin_file( $plugin_file ) ) {
 				return true;

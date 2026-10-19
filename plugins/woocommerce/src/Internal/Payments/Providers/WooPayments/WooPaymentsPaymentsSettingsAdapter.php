@@ -141,6 +141,17 @@ class WooPaymentsPaymentsSettingsAdapter {
 	}
 
 	/**
+	 * Tell whether a store that ran the WooPayments extension waits for its one-click switch to the built-in WooPayments.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool
+	 */
+	public function is_awaiting_switch(): bool {
+		return $this->arbiter->is_awaiting_switch();
+	}
+
+	/**
 	 * Get the WooPayments extension's gateway while it is active, otherwise the built-in gateway when its onboarding is
 	 * available.
 	 *

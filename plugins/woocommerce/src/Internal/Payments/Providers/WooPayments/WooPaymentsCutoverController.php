@@ -261,7 +261,9 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Record a manual WooPayments deactivation for reconciliation in a later request.
+	 * Forget the cached admin classification when WooCommerce Subscriptions is deactivated.
+	 *
+	 * A deactivation of the WooPayments extension records nothing: it is never a request to switch (N-484).
 	 *
 	 * @internal
 	 *
@@ -273,12 +275,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			return;
 		}
 		$this->maybe_forget_admin_classification( $plugin );
-		$active_plugin_file = $this->preflight_service->get_active_woopayments_plugin_file();
-		if ( WooPaymentsRuntimeArbiter::PLUGIN_FILE !== $plugin && $active_plugin_file !== $plugin ) {
-			return;
-		}
-
-		$this->reconciliation_job->enqueue_manual_deactivation( $plugin, $network_deactivating );
 	}
 
 	/**
@@ -373,13 +369,13 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether this request may start the switch: the WooPayments extension owns payments and the current user may
-	 * manage WooCommerce and the extension's plugin scope.
+	 * Tell whether this request may start the switch: the WooPayments extension owns payments, or the store waits for its
+	 * switch after the extension was deactivated, and the current user may manage WooCommerce and the extension's plugin scope.
 	 *
 	 * @return bool
 	 */
 	private function can_start_cutover(): bool {
-		if ( ! $this->arbiter->is_extension_owner() || ! $this->legacy_proxy->call_function( 'current_user_can', 'manage_woocommerce' ) ) {
+		if ( ! ( $this->arbiter->is_extension_owner() || $this->arbiter->is_awaiting_switch() ) || ! $this->legacy_proxy->call_function( 'current_user_can', 'manage_woocommerce' ) ) {
 			return false;
 		}
 
@@ -449,17 +445,10 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 				return;
 			}
 			if ( in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_RUNNING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
-				$is_manual_deactivation = $this->reconciliation_job->is_manual_deactivation( $record );
-				if ( ! $is_manual_deactivation ) {
-					?>
-						<div class="notice notice-info"><p><?php esc_html_e( 'Switch in progress', 'woocommerce' ); ?></p></div>
-						<?php
-						// The job cannot update the plugin itself where the site blocks file changes, so retries alone never finish.
-						if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && in_array( WooPaymentsCutoverPreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, (array) ( $record['deferred_codes'] ?? array() ), true ) && ! wp_is_file_mod_allowed( 'automatic_updater' ) ) {
-							?>
-						<div class="notice notice-warning"><p><?php esc_html_e( 'The switch needs a newer version of the WooPayments extension, but this site does not allow automatic plugin updates. Update WooPayments to continue the switch.', 'woocommerce' ); ?></p></div>
-							<?php
-						}
+				echo '<div class="notice notice-info"><p>' . esc_html__( 'Switch in progress', 'woocommerce' ) . '</p></div>';
+				// The job cannot update the plugin itself where the site blocks file changes, so retries alone never finish.
+				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && in_array( WooPaymentsCutoverPreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, (array) ( $record['deferred_codes'] ?? array() ), true ) && ! wp_is_file_mod_allowed( 'automatic_updater' ) ) {
+					echo '<div class="notice notice-warning"><p>' . esc_html__( 'The switch needs a newer version of the WooPayments extension, but this site does not allow automatic plugin updates. Update WooPayments to continue the switch.', 'woocommerce' ) . '</p></div>';
 				}
 				if ( $this->reconciliation_job->consume_reconnect_notice() ) {
 					?>

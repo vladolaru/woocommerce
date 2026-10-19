@@ -7,6 +7,9 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\PaymentGateway;
 use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\PaymentsExtensionSuggestions as ExtensionSuggestions;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\RestApi\UnitTests\CorePayPalGatewayTrait;
 use Automattic\WooCommerce\Tests\Internal\Admin\Settings\Mocks\FakePaymentGateway;
@@ -1860,6 +1863,60 @@ class PaymentsProvidersTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array( 'alternate-psp' ), array_column( $suggestions['preferred'], 'id' ) );
 		$this->assertSame( array(), array_column( $suggestions['other'], 'id' ), 'WooPayments should count as active so BNPL suggestions stay suppressed.' );
+	}
+
+	/**
+	 * With the feature on, the WooPayments suggestion carries no plugin details
+	 * (PaymentsExtensionSuggestions::standardize_extension_details()), so it offers built-in onboarding. A store that ran
+	 * the extension and waits for its switch is offered the switch instead.
+	 *
+	 * @testdox The WooPayments suggestion, and its built-in onboarding, is offered on a store that never ran the extension and not on one waiting for its switch ($_dataName).
+	 * @testWith ["a store that never ran the extension", false, true]
+	 *           ["a store waiting for its switch", true, false]
+	 *
+	 * @param string $label         Case label.
+	 * @param bool   $extension_ran Whether the extension's version option is stored.
+	 * @param bool   $offered       Whether the WooPayments suggestion is offered.
+	 */
+	public function test_get_extension_suggestions_offers_woopayments_only_where_onboarding_can_run( string $label, bool $extension_ran, bool $offered ): void {
+		unset( $label );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD );
+		if ( $extension_ran ) {
+			update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
+		} else {
+			delete_option( 'woocommerce_woocommerce_payments_version' );
+		}
+		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+		$arbiter->invalidate();
+		$this->assertSame( $extension_ran, $arbiter->is_awaiting_switch() );
+
+		$this->mock_extension_suggestions
+			->expects( $this->once() )
+			->method( 'get_country_extensions' )
+			->with( 'US' )
+			->willReturn(
+				array(
+					array(
+						'id'          => ExtensionSuggestions::WOOPAYMENTS,
+						'_priority'   => 10,
+						'_type'       => ExtensionSuggestions::TYPE_PSP,
+						'title'       => 'Accept payments with Woo',
+						'description' => 'Credit/debit cards, Apple Pay, Google Pay, and more.',
+						'icon'        => 'http://example.com/woopayments-icon.svg',
+						'links'       => array(),
+						'tags'        => array( ExtensionSuggestions::TAG_PREFERRED ),
+					),
+				)
+			);
+
+		$suggestions = $this->sut->get_extension_suggestions( 'US' );
+		$arbiter->invalidate();
+
+		$listed = array_merge( $suggestions['preferred'], $suggestions['other'] );
+		// The suggestion's id with its built-in onboarding flag: both are offered, or neither.
+		$this->assertSame( $offered ? array( ExtensionSuggestions::WOOPAYMENTS => true ) : array(), array_column( $listed, '_native', 'id' ) );
+		$this->assertSame( $offered ? array( ExtensionSuggestions::WOOPAYMENTS ) : array(), array_column( $listed, 'id' ) );
 	}
 
 	/**

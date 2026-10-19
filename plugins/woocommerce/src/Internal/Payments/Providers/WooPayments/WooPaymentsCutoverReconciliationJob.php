@@ -58,9 +58,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/** Source of the merchant's start. */
 	private const SOURCE_MERCHANT = 'merchant';
 
-	/** Source of a generation opened by a hand deactivation of the WooPayments extension. */
-	private const SOURCE_MANUAL_DEACTIVATION = 'manual_deactivation';
-
 	/** Source of a generation opened by the WooPayments extension being activated again. */
 	private const SOURCE_ROLLBACK = 'rollback';
 
@@ -229,23 +226,12 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool True when durable work already exists or was scheduled.
 	 */
 	public function enqueue( string $source ): bool {
-		$accepted = $this->enqueue_with_context( $source, null, null );
+		$accepted = $this->start_generation( $source );
 		if ( $accepted && self::SOURCE_MERCHANT === $source ) {
 			$this->scheduler->dispatch_async();
 		}
 
 		return $accepted;
-	}
-
-	/**
-	 * Record a manual deactivation and reconcile it after WordPress updates active-plugin options.
-	 *
-	 * @param string $plugin_file  Exact deactivated WooPayments plugin file.
-	 * @param bool   $network_wide Whether WordPress is deactivating it network-wide.
-	 * @return bool True when durable reconciliation already exists or was scheduled.
-	 */
-	public function enqueue_manual_deactivation( string $plugin_file, bool $network_wide ): bool {
-		return $this->enqueue_with_context( self::SOURCE_MANUAL_DEACTIVATION, $plugin_file, $network_wide ? 'network' : 'site' );
 	}
 
 	/**
@@ -258,62 +244,49 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Start one reconciliation generation with optional plugin-origin context.
+	 * Start one reconciliation generation: across the network where the extension is network-active, else on this site.
 	 *
-	 * @param string      $source              Trigger source.
-	 * @param string|null $origin_plugin_file  Exact plugin path for manual deactivation.
-	 * @param string|null $origin_plugin_scope Either site or network for manual deactivation.
+	 * @param string $source Trigger source.
 	 * @return bool True when durable work already exists or was scheduled.
 	 */
-	private function enqueue_with_context( string $source, ?string $origin_plugin_file, ?string $origin_plugin_scope ): bool {
+	private function start_generation( string $source ): bool {
 		if ( ! $this->arbiter->is_builtin_enabled() ) {
 			return false;
 		}
-		if ( is_multisite() && ( 'network' === $origin_plugin_scope || $this->preflight_service->is_woopayments_network_active() ) ) {
-			return $this->enqueue_network_generation( $source, $origin_plugin_file, $origin_plugin_scope );
+		if ( is_multisite() && $this->preflight_service->is_woopayments_network_active() ) {
+			return $this->enqueue_network_generation( $source );
 		}
 
-		return $this->enqueue_local_generation( $source, $origin_plugin_file, $origin_plugin_scope );
+		return $this->enqueue_local_generation( $source );
 	}
 
 	/**
 	 * Start one site-local generation without applying network fan-out.
 	 *
-	 * @param string      $source              Trigger source.
-	 * @param string|null $origin_plugin_file  Exact deactivated plugin path.
-	 * @param string|null $origin_plugin_scope Site or network scope.
+	 * @param string $source Trigger source.
 	 * @return bool True when durable work exists or was scheduled.
 	 */
-	private function enqueue_local_generation( string $source, ?string $origin_plugin_file, ?string $origin_plugin_scope ): bool {
+	private function enqueue_local_generation( string $source ): bool {
 		$now = time();
 		return $this->with_write_lock(
 			$now,
-			function () use ( $origin_plugin_file, $origin_plugin_scope, $source, $now ): bool {
+			function () use ( $source, $now ): bool {
 				$record = $this->state_store->get_record();
 				if ( is_array( $record ) ) {
 					if ( in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
-						if ( null !== $origin_plugin_file && null !== $origin_plugin_scope ) {
-							return $this->replace_pending_with_manual_origin( $record, $source, $origin_plugin_file, $origin_plugin_scope, $now );
-						}
 						if ( self::STEP_AWAITING_MERCHANT_START === $record['current_step'] ) {
 							return $this->start_awaiting_generation( $record, $source, $now );
 						}
 						return $this->ensure_record_scheduled( $record, $now );
 					}
-					if ( WooPaymentsCutoverStateStore::STATE_RUNNING === $record['state'] && null !== $origin_plugin_file && null !== $origin_plugin_scope ) {
-						return $this->replace_running_with_manual_origin( $record, $source, $origin_plugin_file, $origin_plugin_scope, $now );
-					}
-					if ( null !== $origin_plugin_file && null !== $origin_plugin_scope && in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_DONE, WooPaymentsCutoverStateStore::STATE_EXCLUDED ), true ) ) {
-						return $this->replace_terminal_with_pending( $record, $source, $origin_plugin_file, $origin_plugin_scope, $now );
-					}
 					if ( $this->can_reopen_terminal_record( $record ) ) {
-						return $this->replace_terminal_with_pending( $record, $source, $origin_plugin_file, $origin_plugin_scope, $now );
+						return $this->replace_terminal_with_pending( $record, $source, $now );
 					}
 
 					return true;
 				}
 
-				$record = $this->create_pending_record( $source, $now, $origin_plugin_file, $origin_plugin_scope );
+				$record = $this->create_pending_record( $source, $now );
 				if ( ! $this->state_store->create_record( $record ) ) {
 					return false;
 				}
@@ -356,8 +329,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				if ( WooPaymentsCutoverStateStore::STATE_DONE === $record['state'] ) {
 					return $this->replace_terminal_with_awaiting_start( $record, self::SOURCE_ROLLBACK, $now );
 				}
-				// The hook fires only for an inactive extension, and a merchant's own deactivation makes the record manual, so an
-				// open merchant start sees this only after finalize deactivated the extension.
+				// The hook fires only for an inactive extension, so an open merchant start sees this only after finalize
+				// deactivated the extension.
 				if ( ! in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED, WooPaymentsCutoverStateStore::STATE_RUNNING ), true ) || $this->is_network( $record ) ) {
 					return false;
 				}
@@ -483,8 +456,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			}
 			return $this->state_store->get_record();
 		}
-		// Without the plugin there is no switch to offer, so the preflight scan would run on every admin page for nothing.
-		if ( ! $this->arbiter->is_builtin_enabled() || ! $this->arbiter->is_extension_owner() ) {
+		// Without the extension or a store waiting for its switch there is nothing to offer, so the preflight scan would run
+		// on every admin page for nothing.
+		if ( ! $this->arbiter->is_builtin_enabled() || ! ( $this->arbiter->is_extension_owner() || $this->arbiter->is_awaiting_switch() ) ) {
 			return $record;
 		}
 
@@ -647,12 +621,10 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * A start, merchant or mandatory, is refused and writes nothing unless the WooPayments feature is on at every runnable
 	 * site, so no generation holds a site the built-in WooPayments cannot run on.
 	 *
-	 * @param string      $source              Trigger source.
-	 * @param string|null $origin_plugin_file  Exact deactivated plugin path.
-	 * @param string|null $origin_plugin_scope Site or network scope.
+	 * @param string $source Trigger source.
 	 * @return bool True when at least one site owns scheduled durable work; the first attempt's fan-out repair adds any site skipped here.
 	 */
-	private function enqueue_network_generation( string $source, ?string $origin_plugin_file, ?string $origin_plugin_scope ): bool {
+	private function enqueue_network_generation( string $source ): bool {
 		$site_ids = $this->get_current_network_site_ids();
 		if ( array() === $site_ids ) {
 			return false;
@@ -691,13 +663,12 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					}
 				}
 			);
-			if ( array() !== $feature_off_sites && null === $origin_plugin_file ) {
+			if ( array() !== $feature_off_sites ) {
 				$this->log_error( 'WooPayments cutover: the network switch was not started because the WooPayments feature is off at some sites.', array( 'site_ids' => $feature_off_sites ) );
 				return false;
 			}
-			$highest_active_generation  = array() === $active_generations ? 0 : max( $active_generations );
-			$manual_supersedes_terminal = null !== $origin_plugin_file && null !== $origin_plugin_scope && in_array( $maximum_generation, $terminal_generations, true );
-			$generation                 = ! $manual_supersedes_terminal && $highest_active_generation >= $maximum_generation ? max( 1, $highest_active_generation ) : $maximum_generation + 1;
+			$highest_active_generation = array() === $active_generations ? 0 : max( $active_generations );
+			$generation                = $highest_active_generation >= $maximum_generation ? max( 1, $highest_active_generation ) : $maximum_generation + 1;
 			if ( isset( $excluded_generations[ $generation ] ) ) {
 				$propagate_exclusion = $excluded_generations[ $generation ];
 			}
@@ -705,18 +676,14 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			if ( null === $propagate_exclusion ) {
 				$this->run_on_sites_with_write_locks(
 					$site_ids,
-					function ( int $site_id, bool $lock_held ) use ( $generation, $origin_plugin_file, $origin_plugin_scope, &$scheduled_somewhere, $source ): void {
+					function ( int $site_id, bool $lock_held ) use ( $generation, &$scheduled_somewhere, $source ): void {
 							// A peer whose lease is busy is skipped; the first attempt's fan-out repair adds it.
 						if ( ! $lock_held ) {
 							return;
 						}
 							$record = $this->state_store->get_record();
 						if ( is_array( $record ) && $generation === $record['generation'] && $this->is_network( $record ) ) {
-							if ( null !== $origin_plugin_file && null !== $origin_plugin_scope && in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
-								$scheduled_somewhere = $this->replace_pending_with_manual_origin( $record, $source, $origin_plugin_file, $origin_plugin_scope, time() ) || $scheduled_somewhere;
-							} elseif ( null !== $origin_plugin_file && null !== $origin_plugin_scope && WooPaymentsCutoverStateStore::STATE_RUNNING === $record['state'] ) {
-								$scheduled_somewhere = $this->replace_running_with_manual_origin( $record, $source, $origin_plugin_file, $origin_plugin_scope, time() ) || $scheduled_somewhere;
-							} elseif ( $this->is_awaiting_start( $record ) ) {
+							if ( $this->is_awaiting_start( $record ) ) {
 								$scheduled_somewhere = $this->start_awaiting_generation( $record, $source, time() ) || $scheduled_somewhere;
 							} elseif ( in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
 								$scheduled_somewhere = $this->ensure_record_scheduled( $record, time() ) || $scheduled_somewhere;
@@ -728,7 +695,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 						}
 
 							$now                        = time();
-							$pending                    = $this->create_pending_record( $source, $now, $origin_plugin_file, $origin_plugin_scope );
+							$pending                    = $this->create_pending_record( $source, $now );
 							$pending['generation']      = $generation;
 							$pending['network_cutover'] = true;
 						if ( is_array( $record ) ) {
@@ -950,17 +917,17 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 */
 	private function reconcile_claim( array $claimed ): void {
 		try {
-			// A merchant who turned the extension back on chose it: the rollback, not the switch. That holds for a hand
-			// deactivation, and for a retry whose earlier finalize deactivated the extension (that finalize left its request
-			// token on the record). The request reads ownership once, so this sees an activation made before the request started.
-			if ( ! $this->is_network( $claimed ) && ( $this->is_manual_deactivation( $claimed ) || null !== ( $claimed['request_origin_token'] ?? null ) ) && $this->arbiter->is_extension_owner() ) {
+			// A merchant who turned the extension back on after this generation's finalize deactivated it chose the extension:
+			// the rollback, not the switch (that finalize left its request token on the record). The request reads ownership
+			// once, so this sees an activation made before the request started.
+			if ( ! $this->is_network( $claimed ) && null !== ( $claimed['request_origin_token'] ?? null ) && $this->arbiter->is_extension_owner() ) {
 				$this->roll_back_claim( $claimed );
 				return;
 			}
 			if ( $this->is_network( $claimed ) ) {
 				$fanout = $this->repair_network_generation_fanout( $claimed );
 				if ( 'superseded' === $fanout['status'] ) {
-					$this->supersede_network_claim( $claimed, $fanout['generation'], $fanout['phase'], $fanout['origin_plugin_file'], $fanout['origin_plugin_scope'] );
+					$this->supersede_network_claim( $claimed, $fanout['generation'], $fanout['phase'] );
 					return;
 				}
 				if ( 'excluded' === $fanout['status'] ) {
@@ -1036,58 +1003,38 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * Repair missing or older site records before a network worker can enter the all-site barrier.
 	 *
 	 * @param array<string,mixed> $claimed Exact running source record.
-	 * @return array{status:string,generation:int,code:string,phase:string,origin_plugin_file:?string,origin_plugin_scope:?string} Fan-out disposition.
+	 * @return array{status:string,generation:int,code:string,phase:string} Fan-out disposition.
 	 */
 	private function repair_network_generation_fanout( array $claimed ): array {
 		$network_token = $this->acquire_network_lease( time() );
 		if ( null === $network_token ) {
 			return array(
-				'status'              => 'incomplete',
-				'generation'          => $claimed['generation'],
-				'code'                => '',
-				'phase'               => 'active',
-				'origin_plugin_file'  => null,
-				'origin_plugin_scope' => null,
+				'status'     => 'incomplete',
+				'generation' => $claimed['generation'],
+				'code'       => '',
+				'phase'      => 'active',
 			);
 		}
 
 		$complete = true;
 		try {
-			$highest_generation      = $claimed['generation'];
-			$excluded_code           = '';
-			$highest_phase           = 'active';
-			$highest_origin_file     = null;
-			$highest_origin_scope    = null;
-			$highest_origin_conflict = false;
-			$sites_to_repair         = array();
+			$highest_generation = $claimed['generation'];
+			$excluded_code      = '';
+			$highest_phase      = 'active';
+			$sites_to_repair    = array();
 			$this->run_on_sites(
 				$this->get_current_network_site_ids(),
-				function ( int $site_id ) use ( $claimed, &$sites_to_repair, &$highest_generation, &$highest_phase, &$highest_origin_file, &$highest_origin_scope, &$highest_origin_conflict, &$excluded_code ): void {
+				function ( int $site_id ) use ( $claimed, &$sites_to_repair, &$highest_generation, &$highest_phase, &$excluded_code ): void {
 						$record = $this->state_store->get_record();
 					if ( ! $this->is_settled_network_peer( $record, $claimed['generation'] ) ) {
 						$sites_to_repair[] = $site_id;
 					}
 					if ( is_array( $record ) && $record['generation'] > $highest_generation ) {
-						$highest_generation      = $record['generation'];
-						$highest_phase           = $this->is_awaiting_start( $record ) ? 'awaiting_merchant_start' : 'active';
-						$highest_origin_file     = null;
-						$highest_origin_scope    = null;
-						$highest_origin_conflict = false;
+						$highest_generation = $record['generation'];
+						$highest_phase      = $this->is_awaiting_start( $record ) ? 'awaiting_merchant_start' : 'active';
 					}
-					if ( is_array( $record ) && $record['generation'] === $highest_generation && $highest_generation > $claimed['generation'] ) {
-						if ( self::STEP_AWAITING_MERCHANT_START !== $record['current_step'] ) {
-							$highest_phase = 'active';
-						}
-						$record_origin_file  = is_string( $record['origin_plugin_file'] ?? null ) && '' !== $record['origin_plugin_file'] ? $record['origin_plugin_file'] : null;
-						$record_origin_scope = in_array( $record['origin_plugin_scope'] ?? null, array( 'site', 'network' ), true ) ? $record['origin_plugin_scope'] : null;
-						if ( null !== $record_origin_file && null !== $record_origin_scope ) {
-							if ( null === $highest_origin_file || null === $highest_origin_scope ) {
-								$highest_origin_file  = $record_origin_file;
-								$highest_origin_scope = $record_origin_scope;
-							} elseif ( $record_origin_file !== $highest_origin_file || $record_origin_scope !== $highest_origin_scope ) {
-								$highest_origin_conflict = true;
-							}
-						}
+					if ( is_array( $record ) && $record['generation'] === $highest_generation && $highest_generation > $claimed['generation'] && self::STEP_AWAITING_MERCHANT_START !== $record['current_step'] ) {
+						$highest_phase = 'active';
 					}
 					if ( is_array( $record ) && $record['generation'] === $claimed['generation'] && WooPaymentsCutoverStateStore::STATE_EXCLUDED === $record['state'] ) {
 						$excluded_code = $record[ self::BLOCKING_CODES_KEY ][0] ?? WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS;
@@ -1095,34 +1042,19 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				}
 			);
 			if ( $highest_generation > $claimed['generation'] ) {
-				if ( $highest_origin_conflict ) {
-					$this->log_error( 'WooPayments cutover found conflicting manual origins for a newer network generation.', array( 'generation' => $highest_generation ) );
-					return array(
-						'status'              => 'incomplete',
-						'generation'          => $claimed['generation'],
-						'code'                => '',
-						'phase'               => 'active',
-						'origin_plugin_file'  => null,
-						'origin_plugin_scope' => null,
-					);
-				}
 				return array(
-					'status'              => 'superseded',
-					'generation'          => $highest_generation,
-					'code'                => '',
-					'phase'               => $highest_phase,
-					'origin_plugin_file'  => $highest_origin_file,
-					'origin_plugin_scope' => $highest_origin_scope,
+					'status'     => 'superseded',
+					'generation' => $highest_generation,
+					'code'       => '',
+					'phase'      => $highest_phase,
 				);
 			}
 			if ( '' !== $excluded_code ) {
 				return array(
-					'status'              => 'excluded',
-					'generation'          => $claimed['generation'],
-					'code'                => $excluded_code,
-					'phase'               => 'active',
-					'origin_plugin_file'  => null,
-					'origin_plugin_scope' => null,
+					'status'     => 'excluded',
+					'generation' => $claimed['generation'],
+					'code'       => $excluded_code,
+					'phase'      => 'active',
 				);
 			}
 
@@ -1150,7 +1082,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					}
 
 						$now                        = time();
-						$pending                    = $this->create_pending_record( self::SOURCE_NETWORK_FANOUT_REPAIR, $now, $claimed['origin_plugin_file'] ?? null, $claimed['origin_plugin_scope'] ?? null );
+						$pending                    = $this->create_pending_record( self::SOURCE_NETWORK_FANOUT_REPAIR, $now );
 						$pending['generation']      = $claimed['generation'];
 						$pending['network_cutover'] = true;
 					if ( is_array( $record ) ) {
@@ -1173,12 +1105,10 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		}
 
 		return array(
-			'status'              => $complete ? 'complete' : 'incomplete',
-			'generation'          => $claimed['generation'],
-			'code'                => '',
-			'phase'               => 'active',
-			'origin_plugin_file'  => null,
-			'origin_plugin_scope' => null,
+			'status'     => $complete ? 'complete' : 'incomplete',
+			'generation' => $claimed['generation'],
+			'code'       => '',
+			'phase'      => 'active',
 		);
 	}
 
@@ -1188,22 +1118,20 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @param array<string,mixed> $claimed    Exact stale running source record.
 	 * @param int                 $generation Higher observed generation.
 	 * @param string              $phase      Higher generation phase.
-	 * @param string|null         $origin_plugin_file  Higher generation's manual-deactivation path.
-	 * @param string|null         $origin_plugin_scope Higher generation's manual-deactivation scope.
 	 */
-	private function supersede_network_claim( array $claimed, int $generation, string $phase, ?string $origin_plugin_file, ?string $origin_plugin_scope ): void {
+	private function supersede_network_claim( array $claimed, int $generation, string $phase ): void {
 		$now = time();
 		$this->with_write_lock(
 			$now,
-			function () use ( $claimed, $now, $origin_plugin_file, $origin_plugin_scope, $generation, $phase ): void {
+			function () use ( $claimed, $now, $generation, $phase ): void {
 				$record = $this->state_store->get_record();
 				if ( ! is_array( $record ) || $record !== $claimed ) {
 					return;
 				}
 				if ( 'awaiting_merchant_start' === $phase ) {
-					$pending = $this->to_awaiting_merchant_start( self::SOURCE_NETWORK_GENERATION_SUPERSEDED, $now, $generation, true, $origin_plugin_file, $origin_plugin_scope );
+					$pending = $this->to_awaiting_merchant_start( self::SOURCE_NETWORK_GENERATION_SUPERSEDED, $now, $generation, true );
 				} else {
-					$pending                    = $this->create_pending_record( self::SOURCE_NETWORK_GENERATION_SUPERSEDED, $now, $origin_plugin_file, $origin_plugin_scope );
+					$pending                    = $this->create_pending_record( self::SOURCE_NETWORK_GENERATION_SUPERSEDED, $now );
 					$pending['generation']      = $generation;
 					$pending['network_cutover'] = true;
 				}
@@ -1233,16 +1161,17 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return;
 		}
 		$deactivated = true;
-		if ( ! $this->is_manual_deactivation( $claimed ) ) {
-			try {
+		try {
+			// An extension the merchant already deactivated, or a retry whose earlier finalize did, has nothing to deactivate.
+			if ( $this->preflight_service->is_woopayments_site_active() || $this->preflight_service->is_woopayments_network_active() ) {
 				$this->internal_plugin_lifecycle_change = true;
 				$deactivated                            = $this->preflight_service->deactivate_woopayments_plugin();
-			} catch ( \Throwable $error ) {
-				$this->log_error( 'WooPayments cutover plugin deactivation failed.', array( 'error' => $error->getMessage() ) );
-				$deactivated = false;
-			} finally {
-				$this->internal_plugin_lifecycle_change = false;
 			}
+		} catch ( \Throwable $error ) {
+			$this->log_error( 'WooPayments cutover plugin deactivation failed.', array( 'error' => $error->getMessage() ) );
+			$deactivated = false;
+		} finally {
+			$this->internal_plugin_lifecycle_change = false;
 		}
 		if ( ! $deactivated ) {
 			$this->defer( $claimed, array( 'plugin_deactivation_failed' ), $outcomes );
@@ -1572,10 +1501,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return;
 		}
 		if ( $plugin_active ) {
-			if ( $this->is_manual_deactivation( $claimed ) ) {
-				$this->roll_back_claim( $claimed );
-				return;
-			}
 			$this->defer( $claimed, array( 'builtin_ownership_unverified' ) );
 			return;
 		}
@@ -1584,7 +1509,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return;
 		}
 		$this->account_service->sync_setup_tier_from_options( false );
-		// Every finalized claim reaches this step on its own site, manual and network ones included, once native owns it.
+		// Every finalized claim reaches this step on its own site, network ones included, once native owns it.
 		try {
 			$remediation_scheduled = $this->preflight_service->ensure_fee_remediation_scheduled();
 		} catch ( \Throwable $error ) {
@@ -1642,15 +1567,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		return true === ( $record['network_cutover'] ?? false );
 	}
 
-	/**
-	 * Tell whether a record was opened by WordPress's manual deactivation hook.
-	 *
-	 * @param array<string,mixed> $record Cutover record.
-	 * @return bool
-	 */
-	public function is_manual_deactivation( array $record ): bool {
-		return is_string( $record['origin_plugin_file'] ?? null ) && '' !== $record['origin_plugin_file'] && in_array( $record['origin_plugin_scope'] ?? null, array( 'site', 'network' ), true );
-	}
 	/**
 	 * Persist a future ownership-verification attempt after plugin deactivation.
 	 *
@@ -2234,98 +2150,15 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Replace a queued attempt with an exact manual-deactivation origin and a fresh action identity.
-	 *
-	 * @param array<string,mixed> $record              Current pending or deferred record.
-	 * @param string              $source              Trigger source.
-	 * @param string              $origin_plugin_file  Exact deactivated plugin path.
-	 * @param string              $origin_plugin_scope Site or network scope.
-	 * @param int                 $now                 Current UTC timestamp.
-	 * @return bool True when the replacement was stored and scheduled.
-	 */
-	private function replace_pending_with_manual_origin( array $record, string $source, string $origin_plugin_file, string $origin_plugin_scope, int $now ): bool {
-		$old_attempt                         = $record['attempt'] + 1;
-		$replacement                         = $record;
-		$replacement['revision']             = $record['revision'] + 1;
-		$replacement['attempt']              = $old_attempt;
-		$replacement['action_id']            = 0;
-		$replacement['current_step']         = self::STEP_QUEUED;
-		$replacement['updated_at']           = $now;
-		$replacement['next_attempt_at']      = $now;
-		$replacement['origin_plugin_file']   = $origin_plugin_file;
-		$replacement['origin_plugin_scope']  = $origin_plugin_scope;
-		$replacement['request_origin_token'] = null;
-		$replacement                         = $this->append_step(
-			$replacement,
-			'manual_deactivation_recorded',
-			$now,
-			array(
-				'source'      => $source,
-				'plugin_file' => $origin_plugin_file,
-				'scope'       => $origin_plugin_scope,
-			)
-		);
-		if ( ! $this->state_store->compare_and_set_record( $record, $replacement ) ) {
-			return false;
-		}
-
-		$this->scheduler->cancel( $record['generation'], $old_attempt );
-		return $this->ensure_record_scheduled( $replacement, $now );
-	}
-
-	/**
-	 * Fence a running worker and schedule a fresh attempt carrying exact manual-deactivation context.
-	 *
-	 * @param array<string,mixed> $record              Current running record.
-	 * @param string              $source              Trigger source.
-	 * @param string              $origin_plugin_file  Exact deactivated plugin path.
-	 * @param string              $origin_plugin_scope Site or network scope.
-	 * @param int                 $now                 Current UTC timestamp.
-	 * @return bool True when the replacement was stored and scheduled.
-	 */
-	private function replace_running_with_manual_origin( array $record, string $source, string $origin_plugin_file, string $origin_plugin_scope, int $now ): bool {
-		$replacement                               = $record;
-		$replacement['revision']                   = $record['revision'] + 1;
-		$replacement['state']                      = WooPaymentsCutoverStateStore::STATE_PENDING;
-		$replacement['action_id']                  = 0;
-		$replacement['current_step']               = self::STEP_QUEUED;
-		$replacement['updated_at']                 = $now;
-		$replacement['next_attempt_at']            = $now;
-		$replacement[ self::CLAIM_TOKEN_KEY ]      = null;
-		$replacement[ self::CLAIM_EXPIRES_AT_KEY ] = null;
-		$replacement['origin_plugin_file']         = $origin_plugin_file;
-		$replacement['origin_plugin_scope']        = $origin_plugin_scope;
-		$replacement['request_origin_token']       = null;
-		$replacement                               = $this->append_step(
-			$replacement,
-			'manual_deactivation_recorded',
-			$now,
-			array(
-				'source'      => $source,
-				'plugin_file' => $origin_plugin_file,
-				'scope'       => $origin_plugin_scope,
-			)
-		);
-		if ( ! $this->state_store->compare_and_set_record( $record, $replacement ) ) {
-			return false;
-		}
-
-		$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
-		return $this->ensure_record_scheduled( $replacement, $now );
-	}
-
-	/**
 	 * Open a new generation after rollback or removal of a local exclusion marker.
 	 *
-	 * @param array<string,mixed> $record              Current terminal record.
-	 * @param string              $source              Trigger source.
-	 * @param string|null         $origin_plugin_file  Exact deactivated plugin path.
-	 * @param string|null         $origin_plugin_scope Site or network scope.
-	 * @param int                 $now                 Current UTC timestamp.
+	 * @param array<string,mixed> $record Current terminal record.
+	 * @param string              $source Trigger source.
+	 * @param int                 $now    Current UTC timestamp.
 	 * @return bool True when the new generation was stored and scheduled.
 	 */
-	private function replace_terminal_with_pending( array $record, string $source, ?string $origin_plugin_file, ?string $origin_plugin_scope, int $now ): bool {
-		$replacement                           = $this->create_pending_record( $source, $now, $origin_plugin_file, $origin_plugin_scope );
+	private function replace_terminal_with_pending( array $record, string $source, int $now ): bool {
+		$replacement                           = $this->create_pending_record( $source, $now );
 		$replacement['generation']             = $record['generation'] + 1;
 		$replacement['revision']               = $record['revision'] + 1;
 		$replacement['informational_outcomes'] = array();
@@ -2519,13 +2352,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Build a new pending record.
 	 *
-	 * @param string      $source              Trigger source.
-	 * @param int         $now                 Current UTC timestamp.
-	 * @param string|null $origin_plugin_file  Exact plugin path for manual deactivation.
-	 * @param string|null $origin_plugin_scope Site or network scope for manual deactivation.
+	 * @param string $source Trigger source.
+	 * @param int    $now    Current UTC timestamp.
 	 * @return array<string,mixed>
 	 */
-	private function create_pending_record( string $source, int $now, ?string $origin_plugin_file = null, ?string $origin_plugin_scope = null ): array {
+	private function create_pending_record( string $source, int $now ): array {
 		return array(
 			'schema_version'           => WooPaymentsCutoverStateStore::SCHEMA_VERSION,
 			'generation'               => $this->state_store->get_next_generation(),
@@ -2548,8 +2379,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			'next_attempt_at'          => null,
 			self::CLAIM_TOKEN_KEY      => null,
 			self::CLAIM_EXPIRES_AT_KEY => null,
-			'origin_plugin_file'       => $origin_plugin_file,
-			'origin_plugin_scope'      => $origin_plugin_scope,
 			'request_origin_token'     => null,
 			'network_cutover'          => false,
 		);
@@ -2560,16 +2389,14 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 *
 	 * The callers set its revision against the record it replaces, if any.
 	 *
-	 * @param string      $source              Source recorded in its first step.
-	 * @param int         $now                 Current UTC timestamp.
-	 * @param int         $generation          Generation it opens.
-	 * @param bool        $network             Whether it belongs to a network-wide cutover.
-	 * @param string|null $origin_plugin_file  Exact deactivated plugin path, for a manual deactivation.
-	 * @param string|null $origin_plugin_scope Site or network scope, for a manual deactivation.
+	 * @param string $source     Source recorded in its first step.
+	 * @param int    $now        Current UTC timestamp.
+	 * @param int    $generation Generation it opens.
+	 * @param bool   $network    Whether it belongs to a network-wide cutover.
 	 * @return array<string,mixed>
 	 */
-	private function to_awaiting_merchant_start( string $source, int $now, int $generation, bool $network, ?string $origin_plugin_file = null, ?string $origin_plugin_scope = null ): array {
-		$awaiting                    = $this->create_pending_record( $source, $now, $origin_plugin_file, $origin_plugin_scope );
+	private function to_awaiting_merchant_start( string $source, int $now, int $generation, bool $network ): array {
+		$awaiting                    = $this->create_pending_record( $source, $now );
 		$awaiting['generation']      = $generation;
 		$awaiting['network_cutover'] = $network;
 		$awaiting['current_step']    = self::STEP_AWAITING_MERCHANT_START;

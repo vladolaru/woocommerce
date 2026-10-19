@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -16,7 +17,8 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  *
  * Core's Payments tab removes every non-core `admin_notices` callback (`WC_Settings_Payment_Gateways::suppress_admin_notices()`).
  * On the WooPayments routes, onboarding aside, this puts back the callbacks of the classes it names, as they were
- * registered; every other Payments tab route keeps core's stripping.
+ * registered. On a store waiting for its switch it also puts back the switch notice on the Payments tab itself, the one
+ * offer of the switch there; every other Payments tab route keeps core's stripping.
  *
  * @since 11.2.0
  * @internal
@@ -58,7 +60,14 @@ class WooPaymentsAdminNoticesPassthrough implements RegisterHooksInterface {
 		global $wp_filter;
 
 		$this->kept_callbacks = array();
-		if ( ! $this->is_woopayments_route() || ! isset( $wp_filter['admin_notices'] ) ) {
+		if ( ! isset( $wp_filter['admin_notices'] ) ) {
+			return;
+		}
+		if ( $this->is_woopayments_route() ) {
+			$kept_classes = self::KEPT_NOTICE_CLASSES;
+		} elseif ( $this->is_payments_tab() && wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_awaiting_switch() ) {
+			$kept_classes = array( WooPaymentsCutoverController::class );
+		} else {
 			return;
 		}
 
@@ -66,7 +75,7 @@ class WooPaymentsAdminNoticesPassthrough implements RegisterHooksInterface {
 			foreach ( (array) $callbacks as $callback ) {
 				$function = is_array( $callback ) ? ( $callback['function'] ?? null ) : null;
 				$object   = is_array( $function ) ? ( $function[0] ?? null ) : null;
-				if ( ! is_object( $object ) || ! $this->is_kept_notice_object( $object ) ) {
+				if ( ! is_object( $object ) || ! $this->is_kept_notice_object( $object, $kept_classes ) ) {
 					continue;
 				}
 
@@ -103,17 +112,34 @@ class WooPaymentsAdminNoticesPassthrough implements RegisterHooksInterface {
 	/**
 	 * Tell whether a callback object is one whose notices are kept.
 	 *
-	 * @param object $callback_object The callback's object.
+	 * @param object                  $callback_object The callback's object.
+	 * @param array<int,class-string> $kept_classes    The classes whose notices are kept on this route.
 	 * @return bool
 	 */
-	private function is_kept_notice_object( object $callback_object ): bool {
-		foreach ( self::KEPT_NOTICE_CLASSES as $class_name ) {
+	private function is_kept_notice_object( object $callback_object, array $kept_classes ): bool {
+		foreach ( $kept_classes as $class_name ) {
 			if ( $callback_object instanceof $class_name ) {
 				return true;
 			}
 		}
 
 		return false;
+	}
+
+	/**
+	 * Tell whether the request is the Payments settings tab itself, its provider list.
+	 *
+	 * @return bool
+	 */
+	private function is_payments_tab(): bool {
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only request routing.
+		$page    = isset( $_GET['page'] ) && is_scalar( $_GET['page'] ) ? sanitize_text_field( wp_unslash( (string) $_GET['page'] ) ) : '';
+		$tab     = isset( $_GET['tab'] ) && is_scalar( $_GET['tab'] ) ? sanitize_text_field( wp_unslash( (string) $_GET['tab'] ) ) : '';
+		$path    = isset( $_GET['path'] ) && is_scalar( $_GET['path'] ) ? sanitize_text_field( wp_unslash( (string) $_GET['path'] ) ) : '';
+		$section = isset( $_GET['section'] ) && is_scalar( $_GET['section'] ) ? sanitize_text_field( wp_unslash( (string) $_GET['section'] ) ) : '';
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+		return 'wc-settings' === $page && 'checkout' === $tab && '' === trim( $path, '/' ) && '' === $section;
 	}
 
 	/**
