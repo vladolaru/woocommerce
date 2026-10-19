@@ -1,14 +1,14 @@
 <?php
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Compat;
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Admin;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyAdminLinkHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminLinkController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCapitalRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
@@ -19,14 +19,14 @@ use WC_Unit_Test_Case;
 /**
  * Tests for the native legacy admin link handler.
  */
-class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
+class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * The System Under Test.
 	 *
-	 * @var LegacyAdminLinkHandler
+	 * @var WooPaymentsAdminLinkController
 	 */
-	private LegacyAdminLinkHandler $sut;
+	private WooPaymentsAdminLinkController $sut;
 
 	/**
 	 * Recording API client.
@@ -74,7 +74,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
-		remove_action( 'admin_init', array( $this->sut, 'handle_request' ) );
+		remove_action( 'admin_init', array( $this->sut, 'handle_account_link_request' ) );
 		remove_action( 'admin_init', array( $this->sut, 'handle_login_request' ) );
 		remove_action( 'admin_init', array( $this->sut, 'handle_kyc_reminder_return' ), 9 );
 		remove_action( 'admin_init', array( $this->sut, 'handle_hosted_kyc_return' ), 9 );
@@ -124,7 +124,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 	public function test_registers_the_link_and_login_handlers_at_admin_init(): void {
 		$this->sut->register();
 
-		$this->assertNotFalse( has_action( 'admin_init', array( $this->sut, 'handle_request' ) ) );
+		$this->assertNotFalse( has_action( 'admin_init', array( $this->sut, 'handle_account_link_request' ) ) );
 		$this->assertNotFalse( has_action( 'admin_init', array( $this->sut, 'handle_login_request' ) ) );
 	}
 
@@ -266,7 +266,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
 
 		try {
-			$this->sut->handle_request();
+			$this->sut->handle_account_link_request();
 			$this->fail( 'Expected the redirect to be intercepted.' );
 		} catch ( \RuntimeException $exception ) {
 			$this->assertSame( 'wp_redirect intercepted: https://connect.stripe.com/setup/session', $exception->getMessage() );
@@ -297,7 +297,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
 
 		try {
-			$this->sut->handle_request();
+			$this->sut->handle_account_link_request();
 			$this->fail( 'Expected the redirect to be intercepted.' );
 		} catch ( \RuntimeException $caught ) {
 			$location = rawurldecode( $caught->getMessage() );
@@ -343,7 +343,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 			wp_set_current_user( 0 );
 		}
 
-		$this->sut->handle_request();
+		$this->sut->handle_account_link_request();
 
 		$this->assertSame( array(), $this->api_client->last_args );
 	}
@@ -431,7 +431,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 		$navigation = $this->createMock( WooPaymentsAdminNavigationController::class );
 		$navigation->method( 'get_payments_path_redirect_url' )->willReturn( '' );
-		$handler = new LegacyAdminLinkHandler();
+		$handler = new WooPaymentsAdminLinkController();
 		$handler->init( $arbiter, $this->api_client, $navigation, $this->capital, $this->account_service );
 		$_GET = array(
 			'page'                   => 'wc-admin',
@@ -762,9 +762,9 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 	 * Create a native legacy admin link handler.
 	 *
 	 * @param bool $native_register Whether native should own hook registration.
-	 * @return LegacyAdminLinkHandler
+	 * @return WooPaymentsAdminLinkController
 	 */
-	private function create_handler( bool $native_register ): LegacyAdminLinkHandler {
+	private function create_handler( bool $native_register ): WooPaymentsAdminLinkController {
 		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_builtin_owner' ) )
@@ -787,7 +787,7 @@ class LegacyAdminLinkHandlerTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$handler = new LegacyAdminLinkHandler();
+		$handler = new WooPaymentsAdminLinkController();
 		$handler->init( $arbiter, $this->api_client, $navigation, $this->capital, $this->account_service );
 
 		return $handler;

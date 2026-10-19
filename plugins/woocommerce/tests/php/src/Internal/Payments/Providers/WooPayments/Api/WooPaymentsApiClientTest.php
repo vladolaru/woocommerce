@@ -3542,7 +3542,7 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	 * @testdox The gated transport log keeps only the host of a dashboard login link, and the caller still gets the whole link.
 	 *
 	 * The answer is Stripe's documented Login Link object (https://docs.stripe.com/api/accounts/login_link/create), which
-	 * the platform's accounts/login_links route returns; LegacyAdminLinkHandler::handle_login_request() reaches this call.
+	 * the platform's accounts/login_links route returns; WooPaymentsAdminLinkController::handle_login_request() reaches this call.
 	 */
 	public function test_transport_log_keeps_only_the_host_of_a_login_link(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
@@ -5030,8 +5030,8 @@ class WooPaymentsApiClientTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Updating a noncompliant dispute adds the Visa compliance enhanced-evidence flag the pre-read reason requires.
 	 *
-	 * REC-5b never recorded a `noncompliant` dispute (the test card used to record
-	 * R-d always produces `fraudulent`, per `data/rec-5b-disputes.md`). This test
+	 * The recorded disputes include no `noncompliant` one (the test card used to
+	 * record them always produces `fraudulent`). This test
 	 * takes the recorded `win_update_pre_read` GET response and overrides only its
 	 * `reason` field to `noncompliant` (labelled below), then feeds the recorded
 	 * `win_update_submit` POST response unchanged. Client `api:698-708`: when the

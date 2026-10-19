@@ -111,7 +111,7 @@ PHP;
 		$multi_currency_loader = 'Automattic\\WooCommerce\\Internal\\MultiCurrency\\Compat\\LegacyMultiCurrencyFacadeLoader';
 		$source                = <<<'PHP'
 <?php
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\{LegacyAdminLinkHandler, WooPaymentsExtensionFacadeLoader as PaymentsCompatibilityLoader};
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\{WooPaymentsCompatClassAliases, WooPaymentsExtensionFacadeLoader as PaymentsCompatibilityLoader};
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter, Automattic\WooCommerce\Internal\MultiCurrency\Compat\LegacyMultiCurrencyFacadeLoader as MultiCurrencyCompatibilityLoader;
 $container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsExtensionFacadeLoader::class )->register();
 $container

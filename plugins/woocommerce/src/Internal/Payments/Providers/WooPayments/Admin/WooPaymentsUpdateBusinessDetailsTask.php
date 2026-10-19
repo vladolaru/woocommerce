@@ -177,7 +177,7 @@ class WooPaymentsUpdateBusinessDetailsTask extends Task {
 			return Utils::wc_payments_settings_url( WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH );
 		}
 
-		// The Stripe dashboard login link `LegacyAdminLinkHandler::handle_login_request()` serves, with its `from` and `source` args.
+		// The Stripe dashboard login link `WooPaymentsAdminLinkController::handle_login_request()` serves, with its `from` and `source` args.
 		return Utils::wc_payments_settings_url(
 			WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH,
 			array(

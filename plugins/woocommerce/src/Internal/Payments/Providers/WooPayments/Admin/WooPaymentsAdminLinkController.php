@@ -1,14 +1,13 @@
 <?php
 /**
- * LegacyAdminLinkHandler class file.
+ * WooPaymentsAdminLinkController class file.
  */
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat;
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
@@ -21,12 +20,15 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTr
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Handles platform-issued WooPayments admin links while native owns the runtime.
+ * Serves the WooPayments links that arrive as `wcpay-*` query arguments: the Stripe dashboard login link of the Overview page,
+ * and the links in the platform's KYC and Capital emails.
+ *
+ * WooPaymentsAdminNavigationController redirects the `/payments/*` path links; this class takes the query-argument ones.
  *
  * @since 11.2.0
- * @internal Transitional compatibility component for the native payments runtime.
+ * @internal
  */
-class LegacyAdminLinkHandler implements RegisterHooksInterface {
+class WooPaymentsAdminLinkController implements RegisterHooksInterface {
 
 	/**
 	 * Runtime owner arbiter.
@@ -89,7 +91,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	 * WooPayments owns the store. Each callback still checks ownership when it runs.
 	 */
 	public function register() {
-		add_action( 'admin_init', array( $this, 'handle_request' ) );
+		add_action( 'admin_init', array( $this, 'handle_account_link_request' ) );
 
 		add_action( 'admin_init', array( $this, 'handle_login_request' ) );
 
@@ -221,7 +223,7 @@ class LegacyAdminLinkHandler implements RegisterHooksInterface {
 	/**
 	 * Create and redirect to the platform account link requested by a legacy email URL.
 	 */
-	public function handle_request(): void {
+	public function handle_account_link_request(): void {
 		if ( ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}

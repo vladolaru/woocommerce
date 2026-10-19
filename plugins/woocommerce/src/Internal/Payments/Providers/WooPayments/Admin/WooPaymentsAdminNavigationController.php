@@ -139,7 +139,7 @@ class WooPaymentsAdminNavigationController implements RegisterHooksInterface {
 	 * The onboarding route uses the `/woopayments/onboarding` path the Launch Your Store hub links to and checks for
 	 * (`client/admin/client/launch-your-store/hub/main-content/xstate.tsx:122`, `launch-your-store/data/setup-payments-context.tsx:130`).
 	 * Old `/payments/*` links keep working through this map; the platform's email links go through
-	 * `Compat/LegacyAdminLinkHandler`.
+	 * `WooPaymentsAdminLinkController`.
 	 */
 	private const PAYMENTS_PATH_REDIRECTS = array(
 		'/payments/connect'                    => self::PATH_ONBOARDING,

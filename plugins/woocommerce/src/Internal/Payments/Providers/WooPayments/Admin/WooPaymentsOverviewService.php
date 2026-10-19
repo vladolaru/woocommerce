@@ -199,7 +199,7 @@ class WooPaymentsOverviewService {
 	}
 
 	/**
-	 * Get the Stripe dashboard login URL that `LegacyAdminLinkHandler::handle_login_request()` serves.
+	 * Get the Stripe dashboard login URL that `WooPaymentsAdminLinkController::handle_login_request()` serves.
 	 *
 	 * Client 11.1.0 `class-wc-payments-account.php:382,1888-1895`: test-drive accounts have no dashboard access, so they get no link.
 	 *
