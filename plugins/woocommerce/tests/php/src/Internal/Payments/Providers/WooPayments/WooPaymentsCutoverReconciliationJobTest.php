@@ -3246,7 +3246,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$higher['action_id']       = 0;
 			$higher['current_step']    = 'awaiting_merchant_start';
 			$higher['next_attempt_at'] = null;
-			$higher['network_cutover'] = false;
+			$higher['network_cutover'] = true;
 			$this->assertTrue( $this->require_state_store()->compare_and_set_record( $peer, $higher ) );
 			restore_current_blog();
 
@@ -4098,6 +4098,316 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				wpmu_delete_blog( $site_id, true );
 			}
 			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		}
+	}
+
+	/**
+	 * N-517 D1: after a network switch, a site-level activation of the extension on one site rolls that site back as its
+	 * own local generation; its later start switches that site alone and never resets the sites that switched.
+	 *
+	 * @testdox A site-level activation after a network switch opens a local rollback, and that site's next start leaves the switched sites done.
+	 * @group multisite
+	 */
+	public function test_site_level_activation_after_a_network_switch_rolls_back_locally(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-d1-done.example.org' );
+		$this->arrange_network_extension_sites( array( $main_site_id, $second_site_id ) );
+		$deactivations    = 0;
+		$failures_by_site = array();
+		$preflight        = $this->create_network_switch_preflight( $deactivations, $failures_by_site );
+
+		try {
+			$generation = $this->switch_network( $preflight, array( $main_site_id, $second_site_id ) );
+			$active     = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization(), wc_get_container()->get( WooPaymentsAccountService::class ) );
+
+			switch_to_blog( $second_site_id );
+			$this->assertTrue( $active->record_plugin_activation( false ), 'The site-level activation is the rollback.' );
+			$rolled_back = $this->require_state_store()->get_record();
+			$this->assertIsArray( $rolled_back );
+			$this->assertSame( $generation + 1, $rolled_back['generation'] );
+			$this->assertFalse( $rolled_back['network_cutover'], 'The rollback is this site\'s own generation.' );
+			// The merchant starts the switch again on that site, and its attempt runs.
+			$this->assertTrue( $active->enqueue( 'merchant' ) );
+			$this->require_scheduler()->cancel( $generation + 1, 1 );
+			$active->handle_reconcile( $generation + 1, 1 );
+			restore_current_blog();
+
+			$this->assertSame( WooPaymentsCutoverStateStore::STATE_DONE, $this->read_site_record( $main_site_id )['state'], 'The switched main site stays done.' );
+			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->read_site_owner( $main_site_id ) );
+		} finally {
+			$this->remove_network_sites( $main_site_id, array( $second_site_id ) );
+		}
+	}
+
+	/**
+	 * N-517 D1, the open branch: a site-level activation over an open network record past the handoff rolls that site
+	 * back locally, and the rest of the network finishes without it: fan-out, readiness and the token pass leave it alone.
+	 *
+	 * @testdox A site-level activation over an open network generation rolls that site back locally, and the other sites still finish their switch.
+	 * @group multisite
+	 */
+	public function test_site_level_activation_over_an_open_network_generation_rolls_back_locally(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-d1-open.example.org' );
+		$this->arrange_network_extension_sites( array( $main_site_id, $second_site_id ) );
+		$deactivations    = 0;
+		$failures_by_site = array();
+		$preflight        = $this->create_network_switch_preflight( $deactivations, $failures_by_site );
+
+		try {
+			$generation = $this->switch_network( $preflight, array( $main_site_id, $second_site_id ), true );
+			$account    = wc_get_container()->get( WooPaymentsAccountService::class );
+			$active     = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization(), $account );
+
+			switch_to_blog( $second_site_id );
+			$this->assertTrue( $active->record_plugin_activation( false ) );
+			restore_current_blog();
+			$second = $this->read_site_record( $second_site_id );
+			$this->assertSame( $generation + 1, $second['generation'] );
+			$this->assertFalse( $second['network_cutover'] );
+			$this->assertSame( 'awaiting_merchant_start', $second['current_step'] );
+
+			// The main site's ownership check defers (its request still reads the extension) and it goes round the barrier again.
+			// Each attempt runs in a fresh request, whose job holds that request's token.
+			$this->start_fresh_request();
+			$active = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization(), $account );
+			$main   = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main );
+			$this->require_scheduler()->cancel( $generation, $main['attempt'] + 1 );
+			$active->handle_reconcile( $generation, $main['attempt'] + 1 );
+			$deferred = $this->require_state_store()->get_record();
+			$this->assertIsArray( $deferred );
+			$this->start_fresh_request();
+			$active = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization(), $account );
+			$this->require_scheduler()->cancel( $generation, $deferred['attempt'] + 1 );
+			$active->handle_reconcile( $generation, $deferred['attempt'] + 1 );
+
+			$after = $this->require_state_store()->get_record();
+			$this->assertIsArray( $after );
+			$this->assertSame( $generation, $after['generation'], 'The site that left does not supersede the network generation.' );
+			$this->assertSame( 'verify_builtin_ownership', $after['current_step'], 'The barrier completes without the site that left.' );
+			$this->assertIsString( $after['request_origin_token'] );
+			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->read_site_owner( $main_site_id ) );
+		} finally {
+			$this->remove_network_sites( $main_site_id, array( $second_site_id ) );
+		}
+	}
+
+	/**
+	 * N-517 D2: the activation hook fires only for an inactive extension, so a network activation over an open network
+	 * generation (here, the ownership checks scheduled after the network deactivation) is the rollback.
+	 *
+	 * @testdox A network activation before the first site is done rolls the whole network back to a generation awaiting the merchant's start.
+	 * @group multisite
+	 */
+	public function test_network_activation_during_the_ownership_checks_is_a_rollback(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-d2.example.org' );
+		$this->arrange_network_extension_sites( array( $main_site_id, $second_site_id ) );
+		$deactivations    = 0;
+		$failures_by_site = array();
+		$preflight        = $this->create_network_switch_preflight( $deactivations, $failures_by_site );
+
+		try {
+			$generation = $this->switch_network( $preflight, array( $main_site_id, $second_site_id ), true );
+			$this->assertSame( 1, $deactivations );
+			// The merchant network-activates the extension again.
+			$deactivations = 0;
+			$active        = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization(), wc_get_container()->get( WooPaymentsAccountService::class ) );
+			$this->assertTrue( $active->record_plugin_activation( true ) );
+
+			foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
+				$record = $this->read_site_record( $site_id );
+				$this->assertSame( $generation + 1, $record['generation'], "Site {$site_id} rolled back." );
+				$this->assertSame( 'awaiting_merchant_start', $record['current_step'] );
+				$this->assertTrue( $record['network_cutover'] );
+				switch_to_blog( $site_id );
+				$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $generation, 2 ), 'The open generation keeps no scheduled attempt.' );
+				restore_current_blog();
+			}
+		} finally {
+			$this->remove_network_sites( $main_site_id, array( $second_site_id ) );
+		}
+	}
+
+	/**
+	 * N-517 D3: a paused site restored after the network handoff runs its own attempt; a Stripe Billing marker there defers
+	 * that site and never excludes the sites that switched.
+	 *
+	 * @testdox A restored paused site whose own attempt finds bundled Stripe Billing subscriptions after the handoff defers, and the switched sites stay done.
+	 * @group multisite
+	 */
+	public function test_restored_paused_site_marker_after_the_handoff_keeps_switched_sites(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+		$main_site_id     = get_current_blog_id();
+		$second_site_id   = $this->create_cutover_multisite_site( 'cutover-d3-live.example.org' );
+		$archived_site_id = $this->create_cutover_multisite_site( 'cutover-d3-archived.example.org' );
+		$this->arrange_network_extension_sites( array( $main_site_id, $second_site_id, $archived_site_id ) );
+		update_blog_status( $archived_site_id, 'archived', '1' );
+		$deactivations    = 0;
+		$failures_by_site = array();
+		$preflight        = $this->create_network_switch_preflight( $deactivations, $failures_by_site );
+
+		try {
+			$generation = $this->switch_network( $preflight, array( $main_site_id, $second_site_id ) );
+			update_blog_status( $archived_site_id, 'archived', '0' );
+			$failures_by_site[ $archived_site_id ] = array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
+			$this->start_fresh_request();
+			$builtin = $this->create_job( true, $preflight, null, false, $this->create_noop_normalization(), wc_get_container()->get( WooPaymentsAccountService::class ) );
+			switch_to_blog( $archived_site_id );
+			$this->require_scheduler()->cancel( $generation, 1 );
+			$builtin->handle_reconcile( $generation, 1 );
+			$restored = $this->require_state_store()->get_record();
+			restore_current_blog();
+
+			$this->assertIsArray( $restored );
+			$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $restored['state'], 'The restored site defers on its marker.' );
+			$this->assertContains( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $restored['deferred_codes'] );
+			foreach ( array( $main_site_id, $second_site_id ) as $site_id ) {
+				$this->assertSame( WooPaymentsCutoverStateStore::STATE_DONE, $this->read_site_record( $site_id )['state'], "Site {$site_id} stays done." );
+				$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->read_site_owner( $site_id ) );
+			}
+		} finally {
+			$this->remove_network_sites( $main_site_id, array( $second_site_id, $archived_site_id ) );
+		}
+	}
+
+	/**
+	 * N-517 D3: once the extension is off network-wide, the admin classification's network exclusion writes nothing.
+	 *
+	 * @testdox After the network handoff, a Stripe Billing marker seen by the admin classification excludes no site.
+	 * @group multisite
+	 */
+	public function test_admin_classification_after_the_handoff_excludes_no_site(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-d3-classify.example.org' );
+		$this->arrange_network_extension_sites( array( $main_site_id, $second_site_id ) );
+		$deactivations    = 0;
+		$failures_by_site = array();
+		$preflight        = $this->create_network_switch_preflight( $deactivations, $failures_by_site );
+
+		try {
+			$generation = $this->switch_network( $preflight, array( $main_site_id, $second_site_id ) );
+			$active     = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization(), wc_get_container()->get( WooPaymentsAccountService::class ) );
+			// A network awaiting record on the second site (as a pre-fix site-level rollback left) and a marker there.
+			$this->open_awaiting_generation_on_site( $active, $second_site_id, true );
+			$failures_by_site[ $second_site_id ] = array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
+			switch_to_blog( $second_site_id );
+			$active->forget_admin_classification();
+			$active->classify_for_admin_notice();
+			restore_current_blog();
+
+			$second = $this->read_site_record( $second_site_id );
+			$this->assertNotSame( WooPaymentsCutoverStateStore::STATE_EXCLUDED, $second['state'], 'Nothing is excluded once the extension left the network.' );
+			$this->assertSame( $generation + 1, $second['generation'] );
+			$this->assertSame( WooPaymentsCutoverStateStore::STATE_DONE, $this->read_site_record( $main_site_id )['state'] );
+			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->read_site_owner( $main_site_id ) );
+		} finally {
+			$this->remove_network_sites( $main_site_id, array( $second_site_id ) );
+		}
+	}
+
+	/**
+	 * N-517 D3: while the extension is network-active, a network exclusion still never rewrites a site that handed over.
+	 *
+	 * @testdox A network exclusion while the extension is active excludes the open sites and leaves a done site as it is.
+	 * @group multisite
+	 */
+	public function test_network_exclusion_leaves_a_done_site_as_it_is(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-d3-handoff.example.org' );
+		$this->arrange_network_extension_sites( array( $main_site_id, $second_site_id ) );
+		$deactivations    = 0;
+		$failures_by_site = array();
+		$preflight        = $this->create_network_switch_preflight( $deactivations, $failures_by_site );
+
+		try {
+			$generation = $this->switch_network( $preflight, array( $main_site_id, $second_site_id ) );
+			// The extension is network-active again, and the second site awaits a new start with a marker.
+			$deactivations = 0;
+			$active        = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization(), wc_get_container()->get( WooPaymentsAccountService::class ) );
+			$this->open_awaiting_generation_on_site( $active, $second_site_id, true );
+			$failures_by_site[ $second_site_id ] = array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
+			switch_to_blog( $second_site_id );
+			$active->forget_admin_classification();
+			$active->classify_for_admin_notice();
+			restore_current_blog();
+
+			$this->assertSame( WooPaymentsCutoverStateStore::STATE_EXCLUDED, $this->read_site_record( $second_site_id )['state'], 'The open site is excluded.' );
+			$main = $this->read_site_record( $main_site_id );
+			$this->assertSame( WooPaymentsCutoverStateStore::STATE_DONE, $main['state'], 'The done site is left as it is.' );
+			$this->assertSame( $generation, $main['generation'] );
+		} finally {
+			$this->remove_network_sites( $main_site_id, array( $second_site_id ) );
+		}
+	}
+
+	/**
+	 * N-517 D8: a network rollback that missed a busy site is finished by that site's own repair, so a later hand
+	 * deactivation of the extension never switches it without a click.
+	 *
+	 * @testdox A done network site a network rollback missed reopens as awaiting the merchant's start on its next request.
+	 * @group multisite
+	 */
+	public function test_done_site_a_network_rollback_missed_reopens_on_its_own(): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+		$main_site_id   = get_current_blog_id();
+		$second_site_id = $this->create_cutover_multisite_site( 'cutover-d8.example.org' );
+		$this->arrange_network_extension_sites( array( $main_site_id, $second_site_id ) );
+		$deactivations    = 0;
+		$failures_by_site = array();
+		$preflight        = $this->create_network_switch_preflight( $deactivations, $failures_by_site );
+		$busy             = null;
+
+		try {
+			$generation = $this->switch_network( $preflight, array( $main_site_id, $second_site_id ) );
+
+			// The merchant network-activates the extension again while another request holds the second site's lock.
+			$deactivations = 0;
+			$active        = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization(), wc_get_container()->get( WooPaymentsAccountService::class ) );
+			switch_to_blog( $second_site_id );
+			$busy = $this->require_state_store()->acquire_lease( time() );
+			restore_current_blog();
+			$this->assertIsString( $busy );
+			$this->assertFalse( $active->record_plugin_activation( true ), 'The rollback missed the busy site.' );
+			switch_to_blog( $second_site_id );
+			$this->require_state_store()->release_lease( $busy );
+			$busy = null;
+			$this->assertSame( WooPaymentsCutoverStateStore::STATE_DONE, $this->require_state_store()->get_record()['state'] ?? null );
+
+			$active->repair_schedule();
+			restore_current_blog();
+
+			$second = $this->read_site_record( $second_site_id );
+			$this->assertSame( $generation + 1, $second['generation'] );
+			$this->assertSame( 'awaiting_merchant_start', $second['current_step'] );
+			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->read_site_owner( $second_site_id ), 'Without the extension it waits for a click, it is not switched.' );
+		} finally {
+			if ( is_string( $busy ) ) {
+				switch_to_blog( $second_site_id );
+				$this->require_state_store()->release_lease( $busy );
+				restore_current_blog();
+			}
+			$this->remove_network_sites( $main_site_id, array( $second_site_id ) );
 		}
 	}
 
@@ -5009,6 +5319,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$sut->handle_reconcile( $main_pending['generation'], 1 );
 
 			$this->assertSame( 0, $deactivations, 'A site without its token stops the network deactivation.' );
+			$main_waiting = $this->require_state_store()->get_record();
+			$this->assertIsArray( $main_waiting );
+			$this->assertNull( $main_waiting['request_origin_token'], 'The main site\'s token from the aborted pass is cleared (N-517 D4).' );
 			switch_to_blog( $second_site_id );
 			$waiting = $this->require_state_store()->get_record();
 			$this->assertIsArray( $waiting );
@@ -5140,7 +5453,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->assertSame( 1, $deactivations, 'The barrier tried the network deactivation once.' );
 			$barrier = $this->require_state_store()->get_record();
 			$this->assertIsArray( $barrier );
-			$this->assertIsString( $barrier['request_origin_token'], 'The barrier stored the token before the deactivation.' );
+			$this->assertNull( $barrier['request_origin_token'], 'The failed network deactivation cleared the token the barrier stored (N-517 D4).' );
 
 			// WooCommerce Subscriptions is deactivated on the main site before its next barrier attempt.
 			$failures = array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
@@ -7911,6 +8224,216 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->jobs[] = $job;
 
 		return $job;
+	}
+
+	/**
+	 * Arrange network sites that ran the extension, with the WooPayments feature on and a connected, enabled account.
+	 *
+	 * @param int[] $site_ids Sites.
+	 */
+	private function arrange_network_extension_sites( array $site_ids ): void {
+		foreach ( $site_ids as $site_id ) {
+			switch_to_blog( $site_id );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+			// The extension records its version on every update (client 11.1.0 includes/class-wc-payments.php:1580).
+			update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
+			// The account cache envelope (data, fetched, errored, consecutive_errors): client 11.1.0 includes/class-database-cache.php:377-382; the account_id and is_live fields: includes/class-wc-payments-account.php:164-171, :757-759.
+			update_option(
+				'wcpay_account_data',
+				array(
+					'data'               => array(
+						'account_id' => 'acct_network_' . $site_id,
+						'is_live'    => true,
+					),
+					'fetched'            => time(),
+					'errored'            => false,
+					'consecutive_errors' => 0,
+				),
+				false
+			);
+			update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
+			update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
+			restore_current_blog();
+		}
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+	}
+
+	/**
+	 * Create preflight facts for a network switch: the extension is network-active until the barrier deactivates it (or
+	 * while $deactivations is reset to 0, as after a network reactivation), failures come per site.
+	 *
+	 * @param int                 $deactivations    Count of network deactivations.
+	 * @param array<int,string[]> $failures_by_site Controlled failures by site.
+	 * @return WooPaymentsCutoverPreflightService
+	 */
+	private function create_network_switch_preflight( int &$deactivations, array &$failures_by_site ): WooPaymentsCutoverPreflightService {
+		return new class( $deactivations, $failures_by_site ) extends WooPaymentsCutoverPreflightService {
+			/** @var int */
+			private int $deactivations;
+
+			/** @var array<int,string[]> */
+			private array $failures_by_site;
+
+			/**
+			 * @param int                 $deactivations    Count of network deactivations.
+			 * @param array<int,string[]> $failures_by_site Controlled failures by site.
+			 */
+			public function __construct( int &$deactivations, array &$failures_by_site ) {
+				$this->deactivations    =& $deactivations;
+				$this->failures_by_site =& $failures_by_site;
+			}
+
+			/** @return string[] */
+			public function get_failures(): array {
+				return $this->failures_by_site[ get_current_blog_id() ] ?? array();
+			}
+
+			/** Invalidate controlled facts. */
+			public function invalidate_current_blog_memoization(): void {
+			}
+
+			/** @return array<int,array{action_id:int,hook:string,group:string}> */
+			public function get_queued_operational_actions(): array {
+				return array();
+			}
+
+			/** Network-active until the barrier deactivates it. */
+			public function is_woopayments_network_active(): bool {
+				return 0 === $this->deactivations;
+			}
+
+			/** Count the network deactivation. */
+			public function deactivate_woopayments_plugin(): bool {
+				++$this->deactivations;
+				return true;
+			}
+
+			/** Not active on the site alone. */
+			public function is_woopayments_site_active(): bool {
+				return false;
+			}
+
+			/** The fee remediation is scheduled. */
+			public function ensure_fee_remediation_scheduled(): bool {
+				return true;
+			}
+		};
+	}
+
+	/**
+	 * Run a merchant-started network switch on the given sites through the barrier, and, unless told to stop there, every
+	 * site's ownership check to done in a fresh request.
+	 *
+	 * @param WooPaymentsCutoverPreflightService $preflight     Network preflight facts.
+	 * @param int[]                              $site_ids      Sites that take part.
+	 * @param bool                               $stop_at_check Stop once the ownership checks are scheduled.
+	 * @return int The network generation.
+	 */
+	private function switch_network( WooPaymentsCutoverPreflightService $preflight, array $site_ids, bool $stop_at_check = false ): int {
+		$account = wc_get_container()->get( WooPaymentsAccountService::class );
+		$active  = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization(), $account );
+		$this->assertTrue( $active->enqueue( 'merchant' ) );
+		$main = $this->require_state_store()->get_record();
+		$this->assertIsArray( $main );
+		$generation = $main['generation'];
+		foreach ( $site_ids as $site_id ) {
+			switch_to_blog( $site_id );
+			$this->require_scheduler()->cancel( $generation, 1 );
+			$active->handle_reconcile( $generation, 1 );
+			restore_current_blog();
+		}
+		if ( $stop_at_check ) {
+			return $generation;
+		}
+		$this->start_fresh_request();
+		$builtin = $this->create_job( true, $preflight, null, false, $this->create_noop_normalization(), $account );
+		foreach ( $site_ids as $site_id ) {
+			switch_to_blog( $site_id );
+			$verification = $this->require_state_store()->get_record();
+			$this->assertIsArray( $verification );
+			$this->require_scheduler()->cancel( $generation, $verification['attempt'] + 1 );
+			$builtin->handle_reconcile( $generation, $verification['attempt'] + 1 );
+			$done = $this->require_state_store()->get_record();
+			$this->assertIsArray( $done );
+			$this->assertSame( WooPaymentsCutoverStateStore::STATE_DONE, $done['state'], "Site {$site_id} finished the network switch." );
+			restore_current_blog();
+		}
+
+		return $generation;
+	}
+
+	/**
+	 * Read the real runtime owner of a site.
+	 *
+	 * @param int $site_id Site.
+	 * @return string
+	 */
+	private function read_site_owner( int $site_id ): string {
+		switch_to_blog( $site_id );
+		try {
+			$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+			$arbiter->invalidate();
+			return $arbiter->get_runtime_owner();
+		} finally {
+			restore_current_blog();
+		}
+	}
+
+	/**
+	 * Read a site's cutover record.
+	 *
+	 * @param int $site_id Site.
+	 * @return array<string,mixed>
+	 */
+	private function read_site_record( int $site_id ): array {
+		switch_to_blog( $site_id );
+		try {
+			$record = $this->require_state_store()->get_record();
+			$this->assertIsArray( $record );
+			return $record;
+		} finally {
+			restore_current_blog();
+		}
+	}
+
+	/**
+	 * Open an awaiting generation over a site's record the way a rollback does.
+	 *
+	 * @param WooPaymentsCutoverReconciliationJob $job     Job.
+	 * @param int                                 $site_id Site.
+	 * @param bool                                $network Whether the awaiting generation is a network one.
+	 */
+	private function open_awaiting_generation_on_site( WooPaymentsCutoverReconciliationJob $job, int $site_id, bool $network ): void {
+		$replace = new \ReflectionMethod( WooPaymentsCutoverReconciliationJob::class, 'replace_terminal_with_awaiting_start' );
+		$replace->setAccessible( true );
+		switch_to_blog( $site_id );
+		try {
+			$record = $this->require_state_store()->get_record();
+			$this->assertIsArray( $record );
+			$this->assertTrue( $replace->invoke( $job, $record, 'rollback', time(), $network ) );
+		} finally {
+			restore_current_blog();
+		}
+	}
+
+	/**
+	 * Delete the extra network sites and their cutover state.
+	 *
+	 * @param int   $main_site_id Main site.
+	 * @param int[] $site_ids     Extra sites.
+	 */
+	private function remove_network_sites( int $main_site_id, array $site_ids ): void {
+		while ( get_current_blog_id() !== $main_site_id ) {
+			restore_current_blog();
+		}
+		foreach ( $site_ids as $site_id ) {
+			switch_to_blog( $site_id );
+			$this->cleanup_state();
+			restore_current_blog();
+			wpmu_delete_blog( $site_id, true );
+		}
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 	}
 
 	/**

@@ -327,16 +327,18 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				if ( $this->is_awaiting_start( $record ) ) {
 					return true;
 				}
+				// A site-level activation means the extension is not network-active, so a network record here follows the
+				// network handoff: this site rolls back on its own, as a local generation the network one leaves alone.
 				if ( WooPaymentsCutoverStateStore::STATE_DONE === $record['state'] ) {
-					return $this->replace_terminal_with_awaiting_start( $record, self::SOURCE_ROLLBACK, $now );
+					return $this->replace_terminal_with_awaiting_start( $record, self::SOURCE_ROLLBACK, $now, false );
 				}
 				// The hook fires only for an inactive extension, so an open merchant start sees this only after finalize
 				// deactivated the extension.
-				if ( ! in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED, WooPaymentsCutoverStateStore::STATE_RUNNING ), true ) || $this->is_network( $record ) ) {
+				if ( ! in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED, WooPaymentsCutoverStateStore::STATE_RUNNING ), true ) ) {
 					return false;
 				}
 
-				return $this->roll_back_open_generation( $record, $now );
+				return $this->roll_back_open_generation( $record, $now, false );
 			},
 			false
 		);
@@ -369,7 +371,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 						return;
 					}
 					$maximum_generation = max( $maximum_generation, $record['generation'] );
-					if ( WooPaymentsCutoverStateStore::STATE_DONE === $record['state'] ) {
+					// The activation hook fires only for an inactive extension, so an open network generation here is past a
+					// deactivation (the job's or the merchant's): a rollback, as a completed one is.
+					if ( WooPaymentsCutoverStateStore::STATE_DONE === $record['state'] || ( in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED, WooPaymentsCutoverStateStore::STATE_RUNNING ), true ) && ! $this->is_awaiting_start( $record ) ) ) {
 						$has_completed_cutover = true;
 					}
 					if ( $this->is_awaiting_start( $record ) ) {
@@ -960,7 +964,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			// Past finalize the extension is already off and the built-in WooPayments owns payments, so an exclusion would
 			// protect nothing and leave the store with no owner: the bundled failure defers the claim instead. A token next to an
 			// active extension (a network barrier that stopped before or at the deactivation) is not past finalize.
-			$past_finalize = null !== ( $claimed['request_origin_token'] ?? null ) && ! $this->arbiter->is_extension_owner();
+			// On a network the handoff is the network deactivation: once the extension is off network-wide, no site of the
+			// generation is excluded (propagate_network_exclusion() refuses too).
+			$past_finalize = $this->is_network( $claimed )
+				? ! $this->preflight_service->is_woopayments_network_active()
+				: null !== ( $claimed['request_origin_token'] ?? null ) && ! $this->arbiter->is_extension_owner();
 			$failures      = $this->normalize_codes( $this->preflight_service->get_failures() );
 			if ( ! $past_finalize && in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $failures, true ) ) {
 				if ( $this->is_network( $claimed ) ) {
@@ -1045,6 +1053,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				$this->get_current_network_site_ids(),
 				function ( int $site_id ) use ( $claimed, &$sites_to_repair, &$highest_generation, &$highest_phase, &$excluded_code ): void {
 						$record = $this->state_store->get_record();
+					if ( $this->has_left_network_generation( $record, $claimed['generation'] ) ) {
+						return;
+					}
 					if ( ! $this->is_settled_network_peer( $record, $claimed['generation'] ) ) {
 						$sites_to_repair[] = $site_id;
 					}
@@ -1267,12 +1278,13 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * The open generation loses its next attempt, so it never deactivates the extension or migrates data again, and the
 	 * tier is re-synced for the extension.
 	 *
-	 * @param array<string,mixed> $record Current open record.
-	 * @param int                 $now    Current UTC timestamp.
+	 * @param array<string,mixed> $record  Current open record.
+	 * @param int                 $now     Current UTC timestamp.
+	 * @param bool|null           $network Whether the rollback generation is a network one; null keeps the record's scope.
 	 * @return bool True when the rollback generation was stored.
 	 */
-	private function roll_back_open_generation( array $record, int $now ): bool {
-		if ( ! $this->replace_terminal_with_awaiting_start( $record, self::SOURCE_ROLLBACK, $now ) ) {
+	private function roll_back_open_generation( array $record, int $now, ?bool $network = null ): bool {
+		if ( ! $this->replace_terminal_with_awaiting_start( $record, self::SOURCE_ROLLBACK, $now, $network ) ) {
 			return false;
 		}
 		$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
@@ -1367,7 +1379,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @param int $generation Completed network barrier generation.
 	 */
 	private function deactivate_network_plugin_for_generation( int $generation ): void {
-		if ( ! $this->store_network_finalize_tokens( $generation ) ) {
+		$marked_sites = $this->store_network_finalize_tokens( $generation );
+		if ( null === $marked_sites ) {
 			return;
 		}
 		$deactivated = ! $this->preflight_service->is_woopayments_network_active();
@@ -1383,6 +1396,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			}
 		}
 		if ( ! $deactivated ) {
+			$this->clear_network_finalize_tokens( $generation, $marked_sites );
 			return;
 		}
 
@@ -1394,13 +1408,15 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * deactivation, so each site's built-in WooPayments owns payments once the extension leaves.
 	 *
 	 * @param int $generation Completed network barrier generation.
-	 * @return bool True when every waiting site stored them; false deactivates nothing, and the barrier retries.
+	 * @return int[]|null The sites whose token this request stored, or null when a site failed: nothing is deactivated, the
+	 *                    tokens this pass stored are cleared while the extension stays, and the barrier retries.
 	 */
-	private function store_network_finalize_tokens( int $generation ): bool {
-		$stored = true;
+	private function store_network_finalize_tokens( int $generation ): ?array {
+		$stored       = true;
+		$marked_sites = array();
 		$this->run_on_sites_with_write_locks(
 			$this->get_current_network_site_ids(),
-			function ( int $site_id, bool $lock_held ) use ( $generation, &$stored ): void {
+			function ( int $site_id, bool $lock_held ) use ( $generation, &$stored, &$marked_sites ): void {
 				if ( ! $stored ) {
 					return;
 				}
@@ -1408,7 +1424,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				if ( ! is_array( $record ) || $generation !== $record['generation'] || WooPaymentsCutoverStateStore::STATE_DEFERRED !== $record['state'] || ! in_array( 'network_barrier', $record[ self::BLOCKING_CODES_KEY ], true ) ) {
 					// A site the barrier does not wait for (archived, spam or deleted), or one already handed over, needs nothing.
 					// Any other runnable site moved on since the readiness check, so it is not prepared and the extension stays.
-					if ( $this->is_site_runnable( $site_id ) && ! $this->has_network_handoff( $record, $generation ) ) {
+					if ( $this->is_site_runnable( $site_id ) && ! $this->has_network_handoff( $record, $generation ) && ! $this->has_left_network_generation( $record, $generation ) ) {
 						$stored = false;
 					}
 					return;
@@ -1423,12 +1439,57 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				$marked['request_origin_token'] = self::$request_token;
 				$stored                         = $this->state_store->compare_and_set_record( $record, $marked );
 				if ( $stored ) {
+					$marked_sites[] = $site_id;
 					$this->account_service->sync_setup_tier_from_options( false );
 				}
 			}
 		);
+		if ( ! $stored ) {
+			$this->clear_network_finalize_tokens( $generation, $marked_sites );
+			return null;
+		}
 
-		return $stored;
+		return $marked_sites;
+	}
+
+	/**
+	 * Clear the tokens this request stored at the barrier while the extension stays network-active, so no site keeps a
+	 * token beside the active extension once the barrier stops; a later deactivation by the merchant then switches no site alone.
+	 *
+	 * @param int   $generation Network generation.
+	 * @param int[] $site_ids   Sites whose token this request stored.
+	 */
+	private function clear_network_finalize_tokens( int $generation, array $site_ids ): void {
+		if ( array() === $site_ids || ! $this->preflight_service->is_woopayments_network_active() ) {
+			return;
+		}
+		$this->run_on_sites_with_write_locks(
+			$site_ids,
+			function ( int $site_id, bool $lock_held ) use ( $generation ): void {
+				$record = $this->state_store->get_record();
+				if ( ! $lock_held || ! is_array( $record ) || $generation !== $record['generation'] || ( $record['request_origin_token'] ?? null ) !== self::$request_token ) {
+					$this->log_error( 'WooPayments network cutover could not clear a barrier token beside the active extension.', array( 'site_id' => $site_id ) );
+					return;
+				}
+				$cleared                         = $record;
+				$cleared['revision']             = $record['revision'] + 1;
+				$cleared['updated_at']           = time();
+				$cleared['request_origin_token'] = null;
+				$this->state_store->compare_and_set_record( $record, $cleared );
+			}
+		);
+	}
+
+	/**
+	 * Tell whether a site left a network generation through its own rollback: a site-level activation of the extension
+	 * after the handoff leaves a local record of a later generation (record_plugin_activation()).
+	 *
+	 * @param mixed $record     The site's cutover record.
+	 * @param int   $generation Network generation.
+	 * @return bool
+	 */
+	private function has_left_network_generation( $record, int $generation ): bool {
+		return is_array( $record ) && ! $this->is_network( $record ) && $record['generation'] > $generation;
 	}
 
 	/**
@@ -1516,7 +1577,10 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					);
 					return false;
 				}
-				$record        = $this->state_store->get_record();
+				$record = $this->state_store->get_record();
+				if ( $this->has_left_network_generation( $record, $generation ) ) {
+					continue;
+				}
 				$is_ready      = is_array( $record ) && WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && in_array( 'network_barrier', $record[ self::BLOCKING_CODES_KEY ], true );
 				$is_finalizing = is_array( $record ) && ( in_array( $record['current_step'], array( self::STEP_VERIFY_BUILTIN_OWNERSHIP, self::STEP_DONE ), true ) );
 				if ( ! is_array( $record ) || $generation !== $record['generation'] || ( ! $is_ready && ! $is_finalizing ) ) {
@@ -1741,6 +1805,10 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @param string $code       Exclusion condition code.
 	 */
 	private function propagate_network_exclusion( int $generation, string $code ): bool {
+		// Once the extension is off network-wide the switch handed over: an exclusion would only remove owners.
+		if ( ! $this->preflight_service->is_woopayments_network_active() ) {
+			return true;
+		}
 		$network_token = $this->acquire_network_lease( time() );
 		if ( null === $network_token ) {
 			return false;
@@ -1777,6 +1845,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 							break;
 						}
 						if ( is_array( $record ) && $generation === $record['generation'] && WooPaymentsCutoverStateStore::STATE_EXCLUDED === $record['state'] ) {
+							$site_complete = true;
+							break;
+						}
+						// A site that handed over (its token, its ownership check, or done) is not excluded.
+						if ( $this->has_network_handoff( $record, $generation ) || ( is_array( $record ) && WooPaymentsCutoverStateStore::STATE_DONE === $record['state'] ) ) {
 							$site_complete = true;
 							break;
 						}
@@ -2162,6 +2235,19 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
 		$now    = time();
 		$record = $this->state_store->get_record();
+		// A done network record beside an active extension is a rollback that missed this site (its lock was busy, or the
+		// activation's request had the feature off): it reopens here, so a later deactivation by the merchant never switches it alone.
+		if ( is_array( $record ) && $this->is_network( $record ) && WooPaymentsCutoverStateStore::STATE_DONE === $record['state'] && $this->arbiter->is_extension_owner() ) {
+			$this->with_write_lock(
+				$now,
+				function () use ( $record, $now ): void {
+					if ( $this->state_store->get_record() === $record ) {
+						$this->replace_terminal_with_awaiting_start( $record, self::SOURCE_ROLLBACK, $now, $this->preflight_service->is_woopayments_network_active() );
+					}
+				}
+			);
+			return;
+		}
 		if (
 			! is_array( $record )
 			|| $this->is_awaiting_start( $record )
@@ -2265,13 +2351,14 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Open a superseding generation without scheduling it before merchant confirmation.
 	 *
-	 * @param array<string,mixed> $record Current record it supersedes.
-	 * @param string              $source Supersession source.
-	 * @param int                 $now    Current UTC timestamp.
+	 * @param array<string,mixed> $record  Current record it supersedes.
+	 * @param string              $source  Supersession source.
+	 * @param int                 $now     Current UTC timestamp.
+	 * @param bool|null           $network Whether the awaiting generation is a network one; null keeps the record's scope.
 	 * @return bool True when the awaiting generation was stored.
 	 */
-	private function replace_terminal_with_awaiting_start( array $record, string $source, int $now ): bool {
-		$replacement             = $this->to_awaiting_merchant_start( $source, $now, $record['generation'] + 1, $this->is_network( $record ) );
+	private function replace_terminal_with_awaiting_start( array $record, string $source, int $now, ?bool $network = null ): bool {
+		$replacement             = $this->to_awaiting_merchant_start( $source, $now, $record['generation'] + 1, $network ?? $this->is_network( $record ) );
 		$replacement['revision'] = $record['revision'] + 1;
 
 		return $this->state_store->compare_and_set_record( $record, $replacement );

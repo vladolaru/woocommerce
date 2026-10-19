@@ -877,12 +877,13 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Codex 402 F3: the old-version rule guards the start action only; the bundled-exclusion notice is information.
 	 *
-	 * @testdox A store waiting for its switch with an old extension that is excluded for bundled Stripe Billing subscriptions is still told why, with no start button.
+	 * @testdox A store waiting for its switch with an old extension that is excluded for bundled Stripe Billing subscriptions is still told why, with no start button, also to a shop manager who cannot manage plugins.
 	 */
 	public function test_old_extension_store_excluded_for_bundled_subscriptions_is_told_why(): void {
 		update_option( 'woocommerce_woocommerce_payments_version', '10.4.9' );
 		$this->fake_plugin_active( false );
-		$this->fake_current_user_caps( true );
+		// A shop manager: WooCommerce, but not plugins (Codex 405 G2).
+		$this->fake_current_user_capabilities( array( 'manage_woocommerce' ) );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
