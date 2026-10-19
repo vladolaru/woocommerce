@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsLegacySubscriptionsGuard;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsBundledSubscriptionsGuard;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
@@ -342,7 +342,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @param string $plugin Activated or deactivated plugin path.
 	 */
 	private function maybe_forget_admin_classification( string $plugin ): void {
-		if ( WooPaymentsLegacySubscriptionsGuard::SUBSCRIPTIONS_PLUGIN_FILE === basename( $plugin ) ) {
+		if ( WooPaymentsBundledSubscriptionsGuard::SUBSCRIPTIONS_PLUGIN_FILE === basename( $plugin ) ) {
 			$this->reconciliation_job->forget_admin_classification();
 		}
 	}

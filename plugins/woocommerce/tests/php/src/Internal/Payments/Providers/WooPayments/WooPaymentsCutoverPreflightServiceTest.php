@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsLegacySubscriptionsGuard;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsBundledSubscriptionsGuard;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverActionScheduler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
@@ -385,7 +385,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 				return $this->database;
 			}
 		};
-		$this->init_preflight_service( $sut, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), $provider, new WooPaymentsLegacySubscriptionsGuard(), $fee_remediation, $platform_connection, $rate_account, $rate_client );
+		$this->init_preflight_service( $sut, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), $provider, new WooPaymentsBundledSubscriptionsGuard(), $fee_remediation, $platform_connection, $rate_account, $rate_client );
 		return $sut;
 	}
 
@@ -415,13 +415,13 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsRuntimeArbiter                             $arbiter                     The runtime arbiter.
 	 * @param LegacyProxy                                           $legacy_proxy                The legacy proxy.
 	 * @param WooPaymentsProvider                                   $provider                    The native provider.
-	 * @param WooPaymentsLegacySubscriptionsGuard                   $legacy_subscriptions_guard  The legacy subscription data guard.
+	 * @param WooPaymentsBundledSubscriptionsGuard                  $legacy_subscriptions_guard  The legacy subscription data guard.
 	 * @param WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service     The fee remediation owner.
 	 * @param WooPaymentsPlatformConnectionService                  $platform_connection_service The platform connection readiness service.
 	 * @param WooPaymentsNativeAccountAdapter                       $native_rate_account         The native rate account boundary.
 	 * @param WooPaymentsNativeApiClientAdapter                     $native_rate_api_client      The native rate API client boundary.
 	 */
-	private function init_preflight_service( WooPaymentsCutoverPreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, WooPaymentsProvider $provider, WooPaymentsLegacySubscriptionsGuard $legacy_subscriptions_guard, WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service, WooPaymentsPlatformConnectionService $platform_connection_service, WooPaymentsNativeAccountAdapter $native_rate_account, WooPaymentsNativeApiClientAdapter $native_rate_api_client ): void {
+	private function init_preflight_service( WooPaymentsCutoverPreflightService $service, WooPaymentsRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, WooPaymentsProvider $provider, WooPaymentsBundledSubscriptionsGuard $legacy_subscriptions_guard, WooPaymentsCanceledAuthorizationFeeRemediationService $fee_remediation_service, WooPaymentsPlatformConnectionService $platform_connection_service, WooPaymentsNativeAccountAdapter $native_rate_account, WooPaymentsNativeApiClientAdapter $native_rate_api_client ): void {
 		$service->init( $arbiter, $legacy_proxy );
 
 		$collaborators = array(

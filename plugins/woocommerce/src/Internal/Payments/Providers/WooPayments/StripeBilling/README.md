@@ -28,7 +28,7 @@ Code outside this folder names only `WooPaymentsStripeBillingModule`, and only i
 | S5 | `WooPaymentsGateway.php` | fires `woocommerce_payments_changed_subscription_payment_method` after a payment method change |
 | S6 | `WooPaymentsStoreSetupReportController.php` | reports whether Stripe Billing is enabled |
 | S7 | `WooPaymentsSettingsService.php`, `WooPaymentsMerchantRestController.php` | the Stripe Billing settings fields, the toggle write, and the bundled subscriptions flag, its eligibility and its turn-off |
-| S8 | `Cutover/WooPaymentsLegacySubscriptionsGuard.php`, `WooPaymentsCutoverReconciliationJob.php` | cutover rules for stores with Stripe Billing data |
+| S8 | `Cutover/WooPaymentsBundledSubscriptionsGuard.php`, `WooPaymentsCutoverReconciliationJob.php` | cutover rules for stores with Stripe Billing data |
 
 The Stripe Billing fee context on payment intents is not a seam: the module sets `payment_context` through the existing `wcpay_metadata_from_order` filter.
 

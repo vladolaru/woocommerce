@@ -1,13 +1,13 @@
 <?php
 /**
- * WooPaymentsLegacySubscriptionsGuard multisite tests.
+ * WooPaymentsBundledSubscriptionsGuard multisite tests.
  */
 
 declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Cutover;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsLegacySubscriptionsGuard;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsBundledSubscriptionsGuard;
 use WC_Unit_Test_Case;
 
 /**
@@ -15,7 +15,7 @@ use WC_Unit_Test_Case;
  *
  * @group multisite
  */
-class WooPaymentsLegacySubscriptionsGuardMultisiteTest extends WC_Unit_Test_Case {
+class WooPaymentsBundledSubscriptionsGuardMultisiteTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Remove the network activation the tests add.
@@ -60,7 +60,7 @@ class WooPaymentsLegacySubscriptionsGuardMultisiteTest extends WC_Unit_Test_Case
 			);
 			update_post_meta( $subscription_id, '_wcpay_subscription_id', 'sub_1UM1VrBzWlxcwgpP6A3GwGLe' );
 
-			$is_bundled = ( new WooPaymentsLegacySubscriptionsGuard() )->is_bundled_stripe_billing_store();
+			$is_bundled = ( new WooPaymentsBundledSubscriptionsGuard() )->is_bundled_stripe_billing_store();
 		} finally {
 			restore_current_blog();
 		}

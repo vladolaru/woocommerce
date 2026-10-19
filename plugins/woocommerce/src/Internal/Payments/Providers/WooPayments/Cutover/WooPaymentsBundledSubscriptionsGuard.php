@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsLegacySubscriptionsGuard class file.
+ * WooPaymentsBundledSubscriptionsGuard class file.
  */
 
 declare( strict_types = 1 );
@@ -21,7 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions
  * @since 11.0.0
  * @internal Transitional internal component for the native payments runtime.
  */
-class WooPaymentsLegacySubscriptionsGuard {
+class WooPaymentsBundledSubscriptionsGuard {
 
 	/**
 	 * Order type of the subscriptions Stripe Billing bills.

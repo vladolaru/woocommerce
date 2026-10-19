@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverActionScheduler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsLegacySubscriptionsGuard;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsBundledSubscriptionsGuard;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
@@ -106,9 +106,9 @@ class WooPaymentsCutoverPreflightService {
 	/**
 	 * Legacy subscription data guard.
 	 *
-	 * @var WooPaymentsLegacySubscriptionsGuard|null
+	 * @var WooPaymentsBundledSubscriptionsGuard|null
 	 */
-	private ?WooPaymentsLegacySubscriptionsGuard $legacy_subscriptions_guard = null;
+	private ?WooPaymentsBundledSubscriptionsGuard $legacy_subscriptions_guard = null;
 
 	/**
 	 * Fee remediation owner.
@@ -537,11 +537,11 @@ class WooPaymentsCutoverPreflightService {
 	/**
 	 * Get the legacy subscription data guard, resolving it on first use.
 	 *
-	 * @return WooPaymentsLegacySubscriptionsGuard
+	 * @return WooPaymentsBundledSubscriptionsGuard
 	 */
-	private function get_legacy_subscriptions_guard(): WooPaymentsLegacySubscriptionsGuard {
+	private function get_legacy_subscriptions_guard(): WooPaymentsBundledSubscriptionsGuard {
 		if ( null === $this->legacy_subscriptions_guard ) {
-			$this->legacy_subscriptions_guard = wc_get_container()->get( WooPaymentsLegacySubscriptionsGuard::class );
+			$this->legacy_subscriptions_guard = wc_get_container()->get( WooPaymentsBundledSubscriptionsGuard::class );
 		}
 
 		return $this->legacy_subscriptions_guard;
