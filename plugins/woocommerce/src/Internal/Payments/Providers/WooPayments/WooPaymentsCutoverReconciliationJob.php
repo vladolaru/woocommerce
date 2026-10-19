@@ -1463,14 +1463,16 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Tell whether every site reached the barrier for one generation.
 	 *
-	 * A runnable site whose WooPayments feature is off holds the barrier, so the network deactivation never leaves a site
-	 * without a payments runtime.
+	 * While the extension is still network-active, a runnable site whose WooPayments feature is off holds the barrier, so the
+	 * network deactivation never leaves a site without a payments runtime. Once the extension is gone the read protects
+	 * nothing, so a site that arrives late, restored or left behind by a busy lock, still completes.
 	 *
 	 * @param int $generation Generation being checked.
 	 * @return bool
 	 */
 	private function is_network_generation_ready( int $generation ): bool {
-		$current_blog_id = get_current_blog_id();
+		$current_blog_id  = get_current_blog_id();
+		$extension_active = $this->preflight_service->is_woopayments_network_active();
 		foreach ( $this->get_current_network_site_ids() as $site_id ) {
 			// An archived, spam or deleted site's queue does not run, so it cannot hold the barrier. Its record stays: if
 			// the site is restored, its pending attempt runs, finds the barrier complete and verifies on its own.
@@ -1481,7 +1483,15 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				switch_to_blog( $site_id );
 			}
 			try {
-				if ( ! $this->arbiter->is_builtin_enabled() ) {
+				if ( $extension_active && ! $this->arbiter->is_builtin_enabled() ) {
+					$this->write_log_warning(
+						sprintf( 'WooPayments cutover: generation %1$d waits at the network barrier while the WooPayments feature is off on site %2$d', $generation, $site_id ),
+						array(
+							'source'     => self::LOG_SOURCE,
+							'generation' => $generation,
+							'site_id'    => $site_id,
+						)
+					);
 					return false;
 				}
 				$record        = $this->state_store->get_record();

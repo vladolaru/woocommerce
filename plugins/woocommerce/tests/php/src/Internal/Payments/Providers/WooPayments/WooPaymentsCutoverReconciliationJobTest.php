@@ -2727,8 +2727,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Network deactivation of a plugin that was site-active when the cutover started opens a new network generation with the exact origin on every site.
 	 *
-	 * Source: plan-cutover-reconciliation.md:112-113 (a manual deactivation opens a new generation carrying its exact origin).
-	 *
 	 * @group multisite
 	 */
 	public function test_network_deactivation_of_a_site_level_cutover_carries_the_exact_origin_everywhere(): void {
@@ -3641,7 +3639,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A site that turned the WooPayments feature off after reaching the network barrier holds the barrier, so the extension stays active.
+	 * @testdox A site that turned the WooPayments feature off after reaching the network barrier holds the barrier, so the extension stays active, until the feature is back on.
 	 * @group multisite
 	 */
 	public function test_network_barrier_waits_for_a_site_whose_feature_turned_off(): void {
@@ -3698,7 +3696,20 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				return true;
 			}
 		};
-		$sut     = new WooPaymentsCutoverReconciliationJob();
+		$sut     = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @var array<int,array<string,mixed>> */
+			public array $warnings = array();
+
+			/**
+			 * Capture warnings.
+			 *
+			 * @param string              $message Warning message.
+			 * @param array<string,mixed> $context Warning context.
+			 */
+			protected function write_log_warning( string $message, array $context ): void {
+				$this->warnings[] = array_merge( array( 'message' => $message ), $context );
+			}
+		};
 		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight, $this->create_noop_normalization(), $this->create_inert_account_service() );
 		$this->jobs[] = $sut;
 
@@ -3725,6 +3736,17 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->assertIsArray( $main_after );
 			$this->assertSame( array( 'network_barrier' ), $main_after['deferred_codes'], 'The main site waits at the barrier.' );
 			$this->assertSame( 0, $deactivation_calls, 'The extension stays active across the network.' );
+			$holds = array_values( array_filter( $sut->warnings, static fn( array $warning ): bool => isset( $warning['site_id'] ) ) );
+			$this->assertCount( 1, $holds, 'One line names the site holding the barrier.' );
+			$this->assertSame( $second_site_id, $holds[0]['site_id'] );
+
+			// The feature goes back on at the second site: the main site's next attempt completes the barrier.
+			switch_to_blog( $second_site_id );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+			restore_current_blog();
+			$this->require_scheduler()->cancel( $main_after['generation'], $main_after['attempt'] + 1 );
+			$sut->handle_reconcile( $main_after['generation'], $main_after['attempt'] + 1 );
+			$this->assertSame( 1, $deactivation_calls, 'The barrier completes once every site has the feature on.' );
 		} finally {
 			while ( ms_is_switched() ) {
 				restore_current_blog();
