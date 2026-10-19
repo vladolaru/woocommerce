@@ -9,11 +9,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsLegacySubscriptionsGuard;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
-use Automattic\WooCommerce\Utilities\OrderUtil;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -329,8 +327,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	/**
 	 * Refuse activating WooPayments on a store that never ran the plugin while native owns payments.
 	 *
-	 * A store with plugin evidence (a recorded plugin version, a WooPayments order or token) may activate it, which is the
-	 * rollback after a switch.
+	 * A store that ran the extension (its version option is stored) may activate it, which is the rollback after a switch.
 	 *
 	 * @internal
 	 */
@@ -339,7 +336,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( ! $this->arbiter->is_builtin_owner() || $this->store_has_woopayments_plugin_evidence() ) {
+		if ( ! $this->arbiter->is_builtin_owner() || $this->arbiter->has_run_woopayments_extension() ) {
 			return;
 		}
 
@@ -351,69 +348,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 				'link_text' => esc_html__( 'Go to Payments settings', 'woocommerce' ),
 			)
 		);
-	}
-
-	/**
-	 * Tell whether the store has evidence that WooPayments was previously installed.
-	 *
-	 * @return bool
-	 */
-	private function store_has_woopayments_plugin_evidence(): bool {
-		if ( false !== get_option( 'woocommerce_woocommerce_payments_version', false ) ) {
-			return true;
-		}
-
-		return $this->store_has_woopayments_order() || $this->store_has_woopayments_token();
-	}
-
-	/**
-	 * Tell whether the store contains a WooPayments order, canonical or prefixed gateway, in one scan.
-	 *
-	 * @return bool
-	 */
-	private function store_has_woopayments_order(): bool {
-		global $wpdb;
-		$gateway_prefix = $wpdb->esc_like( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) . '%';
-
-		if ( OrderUtil::custom_orders_table_usage_is_enabled() ) {
-			$table_name = OrdersTableDataStore::get_orders_table_name();
-			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table_name is a trusted WooCommerce table name.
-			$query = $wpdb->prepare(
-				"SELECT id FROM {$table_name} WHERE payment_method = %s OR payment_method LIKE %s LIMIT 1",
-				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-				$gateway_prefix
-			);
-			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		} else {
-			$query = $wpdb->prepare(
-				"SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = %s AND ( meta_value = %s OR meta_value LIKE %s ) LIMIT 1",
-				'_payment_method',
-				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-				$gateway_prefix
-			);
-		}
-
-		return null !== $wpdb->get_var( $query ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $query is prepared immediately above with trusted table identifiers.
-	}
-
-	/**
-	 * Tell whether the store contains a WooPayments payment token without loading a collection.
-	 *
-	 * @return bool
-	 */
-	private function store_has_woopayments_token(): bool {
-		global $wpdb;
-		$gateway_prefix = $wpdb->esc_like( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX ) . '%';
-		$table_name     = $wpdb->prefix . 'woocommerce_payment_tokens';
-		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table_name is a trusted WordPress table name.
-		$query = $wpdb->prepare(
-			"SELECT token_id FROM {$table_name} WHERE gateway_id = %s OR gateway_id LIKE %s LIMIT 1",
-			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-			$gateway_prefix
-		);
-		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-
-		return null !== $wpdb->get_var( $query ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $query is prepared immediately above with a trusted table identifier.
 	}
 
 	/**

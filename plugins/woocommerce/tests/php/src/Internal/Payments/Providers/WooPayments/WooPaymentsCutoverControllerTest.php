@@ -24,8 +24,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPlatformConnectionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
-use Automattic\WooCommerce\RestApi\UnitTests\Helpers\OrderHelper;
-use Automattic\WooCommerce\Utilities\OrderUtil;
 use WC_Unit_Test_Case;
 use WC_Payment_Token_CC;
 
@@ -870,7 +868,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Native WooPayments should block a first-time standalone plugin activation.
 	 */
-	public function test_native_activation_guard_blocks_a_store_without_woopayments_plugin_evidence(): void {
+	public function test_native_activation_guard_blocks_a_store_that_never_ran_the_extension(): void {
 		delete_option( 'woocommerce_woocommerce_payments_version' );
 		$this->enable_native_runtime_owner();
 		$this->fake_wp_die_handler();
@@ -897,95 +895,28 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native WooPayments should allow plugin reactivation after canonical or prefixed WooPayments orders.
+	 * The built-in WooPayments writes the extension's gateway ids, so its orders and tokens are not evidence that the extension ran.
 	 *
-	 * @dataProvider data_provider_woopayments_gateway_ids
+	 * @testdox Native WooPayments should block a first-time plugin activation on a store with built-in WooPayments $_dataName.
+	 * @dataProvider data_provider_builtin_payment_records
 	 *
+	 * @param string $record     The built-in WooPayments record the store holds: order or token.
 	 * @param string $gateway_id WooPayments gateway identity.
 	 */
-	public function test_native_activation_guard_allows_a_store_with_a_woopayments_order( string $gateway_id ): void {
+	public function test_native_activation_guard_blocks_a_store_with_only_builtin_payment_records( string $record, string $gateway_id ): void {
 		delete_option( 'woocommerce_woocommerce_payments_version' );
-		$order = wc_create_order();
-		$order->set_payment_method( $gateway_id );
-		$order->save();
-		$this->enable_native_runtime_owner();
-
-		$this->sut->guard_woopayments_activation();
-
-		$this->assertTrue( true );
-	}
-
-	/**
-	 * @testdox The activation guard looks for WooPayments orders with one scan, finding canonical and prefixed gateways, with HPOS on or off.
-	 * @testWith [true, ""]
-	 *           [true, "woocommerce_payments"]
-	 *           [true, "woocommerce_payments_sepa_debit"]
-	 *           [false, ""]
-	 *           [false, "woocommerce_payments"]
-	 *           [false, "woocommerce_payments_sepa_debit"]
-	 *
-	 * @param bool   $hpos       Whether orders live in the HPOS tables.
-	 * @param string $gateway_id Payment method of the store's one order, or empty for no WooPayments order.
-	 */
-	public function test_native_activation_guard_scans_orders_once( bool $hpos, string $gateway_id ): void {
-		$hpos_was_enabled = OrderUtil::custom_orders_table_usage_is_enabled();
-		OrderHelper::toggle_cot_feature_and_usage( $hpos );
-		$order       = null;
-		$order_scans = 0;
-		$count_scans = static function ( $query ) use ( &$order_scans ) {
-			if ( is_string( $query ) && 1 === preg_match( '/payment_method/', $query ) ) {
-				++$order_scans;
-			}
-			return $query;
-		};
-
-		try {
-			delete_option( 'woocommerce_woocommerce_payments_version' );
+		if ( 'order' === $record ) {
 			$order = wc_create_order();
-			$order->set_payment_method( '' === $gateway_id ? 'bacs' : $gateway_id );
+			$order->set_payment_method( $gateway_id );
 			$order->save();
-			$this->enable_native_runtime_owner();
-			$this->fake_wp_die_handler();
-			add_filter( 'query', $count_scans );
-
-			$blocked = false;
-			try {
-				$this->sut->guard_woopayments_activation();
-			} catch ( WooPaymentsCutoverBlockedException $exception ) {
-				$blocked = true;
-			}
-			remove_filter( 'query', $count_scans );
-
-			$this->assertSame( '' === $gateway_id, $blocked, 'Only a store without a WooPayments order is refused.' );
-			$this->assertSame( 1, $order_scans, 'Activation requests scan the order table once.' );
-		} finally {
-			remove_filter( 'query', $count_scans );
-			// Storage cannot switch back while this order exists only in the posts tables.
-			if ( $order instanceof \WC_Order ) {
-				$order->delete( true );
-			}
-			OrderHelper::toggle_cot_feature_and_usage( $hpos_was_enabled );
+		} else {
+			$this->create_woopayments_token( $gateway_id );
 		}
-	}
-
-	/**
-	 * @testdox Native WooPayments should allow plugin reactivation after canonical or prefixed WooPayments tokens.
-	 *
-	 * @dataProvider data_provider_woopayments_gateway_ids
-	 *
-	 * @param string $gateway_id WooPayments gateway identity.
-	 */
-	public function test_native_activation_guard_allows_a_store_with_a_woopayments_token( string $gateway_id ): void {
-		delete_option( 'woocommerce_woocommerce_payments_version' );
-		$token = $this->create_woopayments_token( $gateway_id );
 		$this->enable_native_runtime_owner();
+		$this->fake_wp_die_handler();
 
-		try {
-			$this->sut->guard_woopayments_activation();
-			$this->assertTrue( true );
-		} finally {
-			$token->delete( true );
-		}
+		$this->expectException( WooPaymentsCutoverBlockedException::class );
+		$this->sut->guard_woopayments_activation();
 	}
 
 	/** @testdox Plugin activation remains available while native WooPayments does not own the runtime. */
@@ -1031,14 +962,16 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * WooPayments gateway identities that permit a standalone plugin rollback.
+	 * Built-in WooPayments orders and tokens, with the canonical and a prefixed gateway id.
 	 *
-	 * @return array<string,array{string}>
+	 * @return array<string,array{0:string,1:string}>
 	 */
-	public function data_provider_woopayments_gateway_ids(): array {
+	public function data_provider_builtin_payment_records(): array {
 		return array(
-			'canonical gateway ID' => array( 'woocommerce_payments' ),
-			'prefixed gateway ID'  => array( 'woocommerce_payments_card' ),
+			'orders, canonical gateway ID' => array( 'order', 'woocommerce_payments' ),
+			'orders, prefixed gateway ID'  => array( 'order', 'woocommerce_payments_card' ),
+			'tokens, canonical gateway ID' => array( 'token', 'woocommerce_payments' ),
+			'tokens, prefixed gateway ID'  => array( 'token', 'woocommerce_payments_card' ),
 		);
 	}
 

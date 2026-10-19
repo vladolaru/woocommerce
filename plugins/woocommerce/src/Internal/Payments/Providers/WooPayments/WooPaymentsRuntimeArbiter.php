@@ -58,6 +58,13 @@ class WooPaymentsRuntimeArbiter {
 	private const PLUGIN_MAIN_FILE_NAME = 'woocommerce-payments.php';
 
 	/**
+	 * The option the WooPayments extension writes its version to on every update.
+	 *
+	 * @var string
+	 */
+	private const EXTENSION_VERSION_OPTION = 'woocommerce_woocommerce_payments_version';
+
+	/**
 	 * The legacy proxy, used for mockable calls to global functions.
 	 *
 	 * The plugin lists, the multisite check and the WCPAY_PLUGIN_FILE constant are read through it so tests can stand in
@@ -152,6 +159,20 @@ class WooPaymentsRuntimeArbiter {
 	 */
 	public function is_builtin_enabled(): bool {
 		return 'yes' === get_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, wc_bool_to_string( WooPaymentsFeatureController::ENABLED_BY_DEFAULT ) );
+	}
+
+	/**
+	 * Tell whether the WooPayments extension ever ran on this site: its version option is stored.
+	 *
+	 * The extension writes the option autoloaded and nothing deletes it, so this is one option read with no plugin scan. Orders
+	 * and tokens are not evidence: the built-in WooPayments writes the same gateway ids.
+	 *
+	 * @since 11.2.0
+	 *
+	 * @return bool
+	 */
+	public function has_run_woopayments_extension(): bool {
+		return false !== get_option( self::EXTENSION_VERSION_OPTION, false );
 	}
 
 	/**

@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use WC_Payment_Token_CC;
 use WC_Unit_Test_Case;
 
 /**
@@ -389,6 +390,49 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 			'absent, no extension'  => array( null, false, false ),
 			'on, extension active'  => array( 'yes', true, true ),
 			'off, extension active' => array( 'no', true, false ),
+		);
+	}
+
+	/**
+	 * The built-in WooPayments writes the extension's gateway ids, so orders and tokens prove nothing about the extension.
+	 *
+	 * @testdox has_run_woopayments_extension() counts only the extension's version option ($_dataName).
+	 * @dataProvider provide_extension_evidence
+	 *
+	 * @param bool $version_recorded Whether the extension's version option is stored.
+	 * @param bool $expected         Whether the store reads as having run the extension.
+	 */
+	public function test_has_run_woopayments_extension_counts_only_the_version_option( bool $version_recorded, bool $expected ): void {
+		$order = wc_create_order();
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->save();
+		$token = new WC_Payment_Token_CC();
+		$token->set_gateway_id( 'woocommerce_payments' );
+		$token->set_user_id( self::factory()->user->create() );
+		$token->set_token( 'pm_builtin_only' );
+		$token->set_card_type( 'visa' );
+		$token->set_last4( '4242' );
+		$token->set_expiry_month( '12' );
+		$token->set_expiry_year( '2030' );
+		$token->save();
+		if ( $version_recorded ) {
+			update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
+		} else {
+			delete_option( 'woocommerce_woocommerce_payments_version' );
+		}
+
+		$this->assertSame( $expected, $this->sut->has_run_woopayments_extension() );
+	}
+
+	/**
+	 * Stores with a built-in WooPayments order and token, with and without the extension's version option.
+	 *
+	 * @return array<string,array{0:bool,1:bool}>
+	 */
+	public function provide_extension_evidence(): array {
+		return array(
+			'version option recorded'         => array( true, true ),
+			'only built-in orders and tokens' => array( false, false ),
 		);
 	}
 }
