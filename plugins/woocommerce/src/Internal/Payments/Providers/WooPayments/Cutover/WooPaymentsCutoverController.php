@@ -599,7 +599,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		?>
 		<div class="notice notice-info" style="position:relative;">
 			<?php echo $this->get_dismiss_notice_link( WooPaymentsCutoverReconciliationJob::NOTICE_BUNDLED_EXCLUSION ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?>
-			<p><?php esc_html_e( "WooPayments is now part of WooCommerce, but this store can't switch yet. Its subscriptions are billed through Stripe Billing, which needs the Woo Subscriptions extension. Install and activate Woo Subscriptions to make the switch available. Until then nothing changes and WooPayments keeps running from the plugin.", 'woocommerce' ); ?></p>
+			<p><?php esc_html_e( "WooPayments is now part of WooCommerce, but this store can't switch yet. Its subscriptions are billed through Stripe Billing, which needs the Woo Subscriptions extension. Install and activate Woo Subscriptions to make the switch available. Until then nothing changes and WooPayments keeps running from the WooPayments extension.", 'woocommerce' ); ?></p>
 		</div>
 		<?php
 	}

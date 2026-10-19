@@ -597,7 +597,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 
 		try {
 			$notices = $this->render_admin_notices( $controller );
-			$this->assertStringContainsString( 'WooPayments is now part of WooCommerce, but this store can&#039;t switch yet. Its subscriptions are billed through Stripe Billing, which needs the Woo Subscriptions extension. Install and activate Woo Subscriptions to make the switch available. Until then nothing changes and WooPayments keeps running from the plugin.', $notices );
+			$this->assertStringContainsString( 'WooPayments is now part of WooCommerce, but this store can&#039;t switch yet. Its subscriptions are billed through Stripe Billing, which needs the Woo Subscriptions extension. Install and activate Woo Subscriptions to make the switch available. Until then nothing changes and WooPayments keeps running from the WooPayments extension.', $notices );
 			$this->assertStringNotContainsString( 'Start the switch', $notices );
 			$this->assertStringNotContainsString( 'button', $notices );
 
