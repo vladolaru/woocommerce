@@ -427,6 +427,10 @@ final class WooCommerce {
 		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\LegacyFacadeLoader::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\MultiCurrency\Compat\LegacyMultiCurrencyFacadeLoader::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayVerifiedEmailRestoreService::class )->register();
+		// The network admin notice that turns a network-wide activation of the WooPayments extension into per-site activations.
+		if ( is_multisite() && is_network_admin() ) {
+			$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPerSiteActivationController::class )->register();
+		}
 
 		// The WooPayments personal-data eraser runs on every setup tier, since the stored customer data outlives the
 		// connection; the class loads only when WordPress builds its eraser list.

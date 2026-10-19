@@ -40,7 +40,7 @@ export default {
 			testMatch: wooPaymentsSpecs,
 			use: { storageState: ADMIN_STATE_PATH },
 			grepInvert:
-				/@woopayments-provider|@woopayments-transition|@woopayments-extension-compat/,
+				/@woopayments-provider|@woopayments-transition|@woopayments-extension-compat|@woopayments-multisite/,
 			metadata: {
 				woopaymentsReadonlySetup: readonlySetupSelected,
 			},
@@ -82,6 +82,17 @@ export default {
 			name: 'woopayments-native-transition',
 			testMatch: wooPaymentsSpecs,
 			grep: /@woopayments-transition/,
+			metadata: {
+				woopaymentsReadonlySetup: false,
+			},
+			retries: 0,
+			workers: serializedProjectWorkerLimit,
+		},
+		{
+			// The multisite e2e store (:8601) only: E2E_WOOPAYMENTS_MULTISITE=true, BASE_URL and E2E_WP_ENV_CONFIG name it.
+			name: 'woopayments-native-multisite',
+			testMatch: wooPaymentsSpecs,
+			grep: /@woopayments-multisite/,
 			metadata: {
 				woopaymentsReadonlySetup: false,
 			},
