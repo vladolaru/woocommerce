@@ -12,7 +12,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
@@ -66,7 +65,6 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		wc_get_container()->reset_replacement( WooPaymentsHttpClient::class );
 		delete_transient( 'wcpay_fraud_protection_settings' );
 		delete_option( 'current_protection_level' );
-		wc_get_container()->reset_replacement( WooPaymentsCanceledAuthorizationFeeRemediationService::class );
 		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::DISABLED, true );
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
@@ -82,7 +80,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$sut = new WooPaymentsStatusReport();
 		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsSetupTier::class ) );
 
-		foreach ( array( 'account_service', 'frontend_styles_service', 'fee_remediation_service', 'cutover_preflight_service', 'provider_registry_factory', 'cutover_state_store' ) as $property ) {
+		foreach ( array( 'account_service', 'cutover_preflight_service', 'provider_registry_factory', 'cutover_state_store' ) as $property ) {
 			$reflection = new \ReflectionProperty( WooPaymentsStatusReport::class, $property );
 			$reflection->setAccessible( true );
 			$this->assertNull( $reflection->getValue( $sut ), $property . ' must be resolved when a diagnostic runs, not when the report is initialized.' );
@@ -379,59 +377,6 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox WooCommerce debug tools include account, order, styles, and fee-remediation actions.
-	 */
-	public function test_debug_tools_include_support_callbacks(): void {
-		$this->fake_plugin( false );
-		$tools = $this->get_sut()->add_debug_tools( array() );
-
-		foreach (
-			array(
-				'clear_wcpay_account_cache',
-				'delete_wcpay_test_orders',
-				'clear_wcpay_styles_cache',
-				'remediate_canceled_auth_fees_dry_run',
-				'remediate_canceled_auth_fees',
-			) as $tool_id
-		) {
-			$this->assertArrayHasKey( $tool_id, $tools );
-			$this->assertArrayNotHasKey( 'builtin-' . $tool_id, $tools );
-			$this->assertArrayHasKey( 'callback', $tools[ $tool_id ] );
-			$this->assertIsCallable( $tools[ $tool_id ]['callback'] );
-		}
-	}
-
-	/**
-	 * @testdox Native debug tools use distinct keys while the WooPayments plugin is active.
-	 */
-	public function test_debug_tools_use_native_prefix_without_overwriting_plugin_tools_during_coexistence(): void {
-		$this->fake_plugin( true );
-		$tool_ids     = array(
-			'clear_wcpay_account_cache',
-			'delete_wcpay_test_orders',
-			'clear_wcpay_styles_cache',
-			'remediate_canceled_auth_fees_dry_run',
-			'remediate_canceled_auth_fees',
-		);
-		$plugin_tools = array();
-
-		foreach ( $tool_ids as $tool_id ) {
-			$plugin_tools[ $tool_id ] = array(
-				'name'     => 'Plugin tool',
-				'callback' => '__return_null',
-			);
-		}
-
-		$tools = $this->get_sut()->add_debug_tools( $plugin_tools );
-
-		foreach ( $tool_ids as $tool_id ) {
-			$this->assertSame( $plugin_tools[ $tool_id ], $tools[ $tool_id ] );
-			$this->assertArrayHasKey( 'builtin-' . $tool_id, $tools );
-			$this->assertIsCallable( $tools[ 'builtin-' . $tool_id ]['callback'] );
-		}
-	}
-
-	/**
 	 * @testdox The account cache tool refetches the account once and leaves the cache as the client does ($fetch_fails, $had_cached_account).
 	 *
 	 * Client 11.1.0 runs `refresh_account_data()` (class-wc-payments-status.php:89-102), which is `get_cached_account_data( true )`
@@ -518,48 +463,6 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->assertSame( $cache_before, get_option( 'wcpay_account_data' ), 'The tool must leave the account cache untouched.' );
 		$this->assertTrue( $result['success'] );
 		$this->assertSame( 'Tool ran.', $result['message'] );
-	}
-
-	/**
-	 * @testdox A pending remediation dry run alone leaves the remediation tools enabled.
-	 *
-	 * Client 11.1.0 disables both tools from `is_remediation_action_scheduled()`, which checks only the full-run hook
-	 * (class-wc-payments-status.php:400-422).
-	 */
-	public function test_pending_dry_run_alone_leaves_remediation_tools_enabled(): void {
-		$this->fake_plugin( false );
-		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::STATUS_OPTION_KEY );
-		as_schedule_single_action( time() + HOUR_IN_SECONDS, WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK, array(), WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID );
-
-		$tools = $this->get_sut()->add_debug_tools( array() );
-
-		$this->assertFalse( $tools['remediate_canceled_auth_fees_dry_run']['disabled'], 'A pending dry run alone must not disable the dry-run tool.' );
-		$this->assertFalse( $tools['remediate_canceled_auth_fees']['disabled'], 'A pending dry run alone must not disable the remediation tool.' );
-	}
-
-	/**
-	 * @testdox The remediation tools report the client's error message when scheduling throws.
-	 *
-	 * Client 11.1.0 wraps the scheduling in try/catch and returns "Error scheduling remediation: %s" or
-	 * "Error scheduling dry run: %s" (class-wc-payments-status.php:249-255, 293-299).
-	 *
-	 * @testWith ["schedule_canceled_auth_remediation", "schedule_remediation", "Error scheduling remediation: Scheduler is down."]
-	 *           ["schedule_canceled_auth_dry_run", "schedule_dry_run", "Error scheduling dry run: Scheduler is down."]
-	 *
-	 * @param string $tool_callback    Status report tool callback.
-	 * @param string $service_method   Remediation service scheduling method.
-	 * @param string $expected_message Message the merchant sees.
-	 */
-	public function test_remediation_tools_report_a_scheduling_error( string $tool_callback, string $service_method, string $expected_message ): void {
-		$remediation_service = $this->createMock( WooPaymentsCanceledAuthorizationFeeRemediationService::class );
-		$remediation_service->method( 'is_complete' )->willReturn( false );
-		$remediation_service->method( $service_method )->willThrowException( new \Exception( 'Scheduler is down.' ) );
-		wc_get_container()->replace( WooPaymentsCanceledAuthorizationFeeRemediationService::class, $remediation_service );
-		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
-		$sut = new WooPaymentsStatusReport();
-		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsSetupTier::class ) );
-
-		$this->assertSame( $expected_message, $sut->$tool_callback() );
 	}
 
 	/**
