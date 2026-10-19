@@ -6,7 +6,7 @@
 	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
 	"source_test_paths": [
 		"plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/multi-currency.spec.ts",
-		"plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsCutoverReconciliationJobTest.php"
+		"plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/Cutover/WooPaymentsCutoverReconciliationJobTest.php"
 	],
 	"source_test_sha256": "bc25efaaba2f394c75540ad862760aba59a035c4685e63ec4d1273cea880225a",
 	"contract_ids": [

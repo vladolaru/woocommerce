@@ -6,7 +6,7 @@
 	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
 	"source_test_paths": [
 		"plugins/woocommerce/src/Internal/Payments/Providers/WooPayments/WooPaymentsIntentRequestBuilder.php",
-		"plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsCutoverReconciliationJobTest.php",
+		"plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/Cutover/WooPaymentsCutoverReconciliationJobTest.php",
 		"plugins/woocommerce/tests/php/src/Internal/Payments/NativeWooPaymentsGatewayTest.php",
 		"plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsProviderGatewayAdapterTest.php",
 		"plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/provider-fidelity-subscriptions.spec.ts"
@@ -17,7 +17,7 @@
 	],
 	"targets": [
 		{
-			"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsCutoverReconciliationJobTest.php",
+			"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/Cutover/WooPaymentsCutoverReconciliationJobTest.php",
 			"contract": "the selected persisted WooPayments 11.1.0 customer, saved token, parent order, subscription-shaped order, schedule, gateway, and provider metadata fields remain exact through the real cutover normalization runner"
 		},
 		{
@@ -90,7 +90,7 @@
 		{
 			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-renew-subscription.spec.ts:45::Subscriptions › Renew a subscription in my account › should be able to renew a subscription in my account",
 			"target": {
-				"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsCutoverReconciliationJobTest.php;plugins/woocommerce/tests/php/src/Internal/Payments/NativeWooPaymentsGatewayTest.php;plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsProviderGatewayAdapterTest.php",
+				"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/Cutover/WooPaymentsCutoverReconciliationJobTest.php;plugins/woocommerce/tests/php/src/Internal/Payments/NativeWooPaymentsGatewayTest.php;plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsProviderGatewayAdapterTest.php",
 				"contract": "the selected persisted fields of the plugin-origin subscription-shaped order graph remain exact through cutover, native checkout reuses its saved credential for one recorded successful early renewal, and the request is recurring renewal metadata without scheduled-only semantics"
 			},
 			"provider_evidence": "plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/subscription-provider-lifecycle-family-closure.json",
