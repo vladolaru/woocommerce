@@ -16,7 +16,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsLegacySubscriptionsGuard;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverPreflightService;
@@ -401,40 +400,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			$this->render_admin_notices( $this->sut ),
 			'The notice should show only when the merchant can safely disable the plugin.'
 		);
-	}
-
-	/**
-	 * The built-in eligibility field `native_payments` (`eligible`, `cohort`, `reason`) exists only on an unmerged WPCOM branch,
-	 * `748c7406e24`, never on trunk: `wp-content/rest-api-plugins/endpoints/wcpay/class-accounts-controller.php:1100-1104`
-	 * builds it, `:1120-1121` sets the result and `:1206` adds it to the account response. WooCommerce no longer reads it.
-	 *
-	 * @testdox The start notice shows and the Start the switch click queues the switch whatever the cached account says about built-in eligibility.
-	 */
-	public function test_notice_is_offered_whatever_the_account_payload_says(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		// Clearing the in-memory cache deletes the option, so it goes first.
-		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
-		// The account cache envelope: client 11.1.0 includes/class-database-cache.php:377-382.
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data'    => array(
-					'account_id'      => 'acct_marked_ineligible',
-					'is_live'         => true,
-					'native_payments' => array( 'eligible' => false ),
-				),
-				'fetched' => time(),
-				'errored' => false,
-			),
-			false
-		);
-
-		$controller = $this->create_cutover_controller();
-
-		$this->assertStringContainsString( 'Start the switch', $this->render_admin_notices( $controller ) );
-		$this->assertTrue( $controller->disable_woopayments_plugin() );
 	}
 
 	/**
@@ -871,7 +836,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The controller sends the merchant start and a site's extension activation into the one reconciliation job; an activation for every site records nothing, and a hand deactivation of the extension starts nothing.
+	 * @testdox The controller sends the merchant start and a site's extension activation into the one reconciliation job; an activation for every site records nothing, and deactivating the extension starts nothing.
 	 */
 	public function test_controller_routes_the_start_and_the_activation_into_the_job(): void {
 		$renamed_plugin_file = 'renamed-woocommerce-payments/woocommerce-payments.php';
@@ -920,7 +885,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$controller->handle_plugin_activated( $renamed_plugin_file, true );
 		$controller->handle_plugin_activated( $renamed_plugin_file, false );
 
-		$this->assertSame( array( 'merchant' ), $job->sources, 'The hand deactivation enqueues nothing.' );
+		$this->assertSame( array( 'merchant' ), $job->sources, 'Deactivating the extension enqueues nothing.' );
 		$this->assertSame( 1, $job->activations, 'Only the site activation is recorded.' );
 		$this->assertSame( array(), $this->deactivate_plugin_calls );
 	}

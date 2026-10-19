@@ -400,7 +400,7 @@ const getCartTotalsCurrency = ( cart ) =>
 const getCartTotalsAmount = ( cart ) => getCartTotalPrice( cart );
 
 // Defaults to true when the flag is absent; the platform's
-// ece_confirmation_tokens_disabled kill switch turns it off.
+// ece_confirmation_tokens_disabled flag turns it off.
 const shouldUseConfirmationTokens = () =>
 	params?.flags?.isEceUsingConfirmationTokens ?? true;
 

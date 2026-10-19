@@ -199,7 +199,7 @@
 
 	function shouldUseConfirmationTokens() {
 		// Defaults to true when the flag is absent; the platform's
-		// ece_confirmation_tokens_disabled kill switch turns it off.
+		// ece_confirmation_tokens_disabled flag turns it off.
 		return Boolean(
 			config.flags &&
 			config.flags.isEceUsingConfirmationTokens !== undefined

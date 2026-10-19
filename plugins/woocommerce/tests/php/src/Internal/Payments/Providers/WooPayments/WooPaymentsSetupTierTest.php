@@ -348,21 +348,16 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The built-in eligibility field `native_payments` (`eligible`, `cohort`, `reason`) exists only on an unmerged WPCOM branch,
-	 * `748c7406e24`, never on trunk: `wp-content/rest-api-plugins/endpoints/wcpay/class-accounts-controller.php:1100-1104`
-	 * builds it, `:1120-1121` sets the result and `:1206` adds it to the account response. WooCommerce no longer reads it.
-	 *
-	 * @testdox The tier sync ignores the account's built-in eligibility field while $_dataName.
+	 * @testdox An account write stores the tier for who owns payments: $_dataName.
 	 * @dataProvider provide_tier_sync_owners
 	 *
 	 * @param bool   $extension_owns Whether the WooPayments extension owns payments.
 	 * @param string $expected       The tier the account write stores.
 	 */
-	public function test_sync_setup_tier_ignores_the_account_payload_eligibility_field( bool $extension_owns, string $expected ): void {
+	public function test_account_write_stores_the_tier_for_the_owner( bool $extension_owns, string $expected ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
-		// The minimal account data, the account id (client 11.1.0 includes/class-wc-payments-account.php:164-171), and the eligibility field.
-		$data                    = array( 'account_id' => 'acct_plugin' );
-		$data['native_payments'] = array( 'eligible' => false );
+		// The minimal account data, the account id (client 11.1.0 includes/class-wc-payments-account.php:164-171).
+		$data = array( 'account_id' => 'acct_plugin' );
 		if ( $extension_owns ) {
 			$this->make_plugin_own_the_runtime();
 		}

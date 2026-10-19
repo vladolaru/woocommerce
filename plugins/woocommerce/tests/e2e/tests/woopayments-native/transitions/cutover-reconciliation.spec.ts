@@ -933,7 +933,7 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 				doneGeneration
 			);
 
-			// And forward again: a hand deactivation hands payments to nobody.
+			// And forward again: deactivating the extension hands payments to nobody.
 			// The store waits for its switch, and the merchant's click on the
 			// reopened generation finishes it.
 			await wpCLI( [
@@ -952,7 +952,7 @@ test.describe( 'WooPayments transition: rollback round trip', () => {
 			);
 			expect(
 				( await readCutoverStatus( 0 ) ).record?.current_step,
-				'a hand deactivation queues nothing'
+				'deactivating the extension queues nothing'
 			).toBe( 'awaiting_merchant_start' );
 			expect(
 				await readGatewayIds( restApi ),

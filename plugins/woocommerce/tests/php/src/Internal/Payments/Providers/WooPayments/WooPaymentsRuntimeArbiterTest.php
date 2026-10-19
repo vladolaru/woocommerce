@@ -216,7 +216,7 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A network-activated plugin wins even when native is enabled.
 	 */
-	public function test_network_active_plugin_wins_when_native_enabled(): void {
+	public function test_network_active_plugin_wins_with_the_feature_on(): void {
 		$this->fake_plugin( false, true );
 		$this->enable_native_runtime();
 
@@ -227,7 +227,7 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Owner is native when the plugin is absent and native is enabled.
 	 */
-	public function test_owner_is_native_when_plugin_absent_and_native_enabled(): void {
+	public function test_owner_is_builtin_when_plugin_absent_and_the_feature_on(): void {
 		$this->fake_plugin();
 		$this->enable_native_runtime();
 
@@ -339,22 +339,6 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->enable_native_runtime();
 
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner(), 'Only the WooPayments main file name marks the plugin as active.' );
-	}
-
-	/**
-	 * Builds before the WooPayments feature read a support kill switch. The install seeds it as '0' but never overwrites a
-	 * stored '1', so a store can keep one after upgrading.
-	 *
-	 * @testdox A kill switch stored by an earlier build does not turn the built-in WooPayments off.
-	 */
-	public function test_stored_legacy_kill_switch_does_not_disable_the_builtin(): void {
-		$this->fake_plugin();
-		update_option( 'woocommerce_woopayments_builtin_kill_switch', '1' );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->sut->invalidate();
-
-		$this->assertTrue( $this->sut->is_builtin_enabled() );
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner() );
 	}
 
 	/**

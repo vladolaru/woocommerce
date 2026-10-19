@@ -900,7 +900,7 @@ describe( 'woopayments-express-checkout', () => {
 		} );
 	} );
 
-	describe( 'confirmation-token kill switch', () => {
+	describe( 'confirmation-token flag', () => {
 		const disabledFlagParams = () =>
 			baseParams( {
 				flags: { isEceUsingConfirmationTokens: false },
