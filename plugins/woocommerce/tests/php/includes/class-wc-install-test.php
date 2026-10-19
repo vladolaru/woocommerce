@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Caches\ProductCountCache;
 use Automattic\WooCommerce\Enums\ProductStatus;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\RestApi\UnitTests\LoggerSpyTrait;
 

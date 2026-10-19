@@ -221,9 +221,9 @@ foreach ( $options as $name => $saved ) {
 		update_option( $name, $saved['value'] );
 	}
 }
-as_unschedule_all_actions( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverActionScheduler::ACTION_HOOK );
+as_unschedule_all_actions( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverActionScheduler::ACTION_HOOK );
 global $wpdb;
-$wpdb->delete( $wpdb->prefix . 'actionscheduler_actions', array( 'hook' => Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverActionScheduler::ACTION_HOOK ) );
+$wpdb->delete( $wpdb->prefix . 'actionscheduler_actions', array( 'hook' => Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverActionScheduler::ACTION_HOOK ) );
 update_blog_status( get_current_blog_id(), 'archived', '${ entry.archived }' );
 return true;
 `

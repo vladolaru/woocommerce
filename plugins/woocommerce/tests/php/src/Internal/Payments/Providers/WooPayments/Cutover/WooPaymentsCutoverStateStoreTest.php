@@ -5,9 +5,9 @@
 
 declare( strict_types = 1 );
 
-namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Cutover;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverStateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
 use InvalidArgumentException;
 use WC_Unit_Test_Case;
 
