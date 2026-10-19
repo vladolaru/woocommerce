@@ -19,8 +19,8 @@ defined( 'ABSPATH' ) || exit;
  * settings, deletes retired options and transients, and clears retired cron events.
  *
  * Each retired setting, option and transient it removes carries the extension version that stopped reading it, so
- * re-activating the extension at the floor version still finds what it reads. Appearance caches are deleted too; the extension
- * rebuilds them.
+ * re-activating the extension at the floor version still finds what it reads. It also deletes obsolete appearance transients
+ * removed by the extension in 10.6.0 (`includes/migrations/class-delete-appearance-transients.php`).
  *
  * @since 11.2.0
  * @internal
