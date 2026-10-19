@@ -169,11 +169,11 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function handle_admin_init(): void {
-		$this->maybe_auto_deactivate_plugin();
+		$this->enqueue_mandatory_cutover();
 
 		$action = isset( $_GET[ self::QUERY_ACTION ] ) ? sanitize_key( wp_unslash( $_GET[ self::QUERY_ACTION ] ) ) : '';
 		if ( self::ACTION_DISMISS_NOTICE === $action ) {
-			$this->dismiss_completion_notice();
+			$this->dismiss_notice();
 			return;
 		}
 		if ( self::ACTION_DISABLE !== $action ) {
@@ -185,7 +185,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			$this->refuse_action();
 		}
 
-		$this->disable_woopayments_plugin();
+		$this->enqueue_merchant_start();
 		wp_safe_redirect( admin_url( 'plugins.php' ) );
 		$this->legacy_proxy->exit();
 	}
@@ -194,7 +194,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * Persist a store manager's dismissal of a cutover notice, then return to the same page: the completion or bundled
 	 * exclusion notice on the durable record, or "Not now" on the switch notice for 30 days.
 	 */
-	private function dismiss_completion_notice(): void {
+	private function dismiss_notice(): void {
 		$nonce = isset( $_GET[ self::NONCE_NAME ] ) ? sanitize_text_field( wp_unslash( $_GET[ self::NONCE_NAME ] ) ) : '';
 		if ( ! wp_verify_nonce( $nonce, self::DISMISS_NONCE_ACTION ) ) {
 			$this->refuse_action();
@@ -207,7 +207,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		if ( self::NOTICE_START_SWITCH === $notice ) {
 			update_option( WooPaymentsCutoverReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION, (int) $this->legacy_proxy->call_function( 'time' ) + self::START_NOTICE_SNOOZE );
 		} else {
-			$this->reconciliation_job->dismiss_completion_notice( $notice );
+			$this->reconciliation_job->dismiss_notice( $notice );
 		}
 
 		$return_url = remove_query_arg( array( self::QUERY_ACTION, self::QUERY_NOTICE, self::NONCE_NAME ), $this->get_request_uri() );
@@ -267,7 +267,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			return;
 		}
 
-		$this->output_reconciliation_notice();
+		$this->output_cutover_notice();
 	}
 
 	/**
@@ -275,7 +275,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 *
 	 * @return bool True when reconciliation was queued.
 	 */
-	public function disable_woopayments_plugin(): bool {
+	public function enqueue_merchant_start(): bool {
 		if ( ! $this->arbiter->is_builtin_enabled() || ! $this->can_start_cutover() ) {
 			return false;
 		}
@@ -292,7 +292,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	/**
 	 * Forget the cached admin classification when WooCommerce Subscriptions is deactivated.
 	 *
-	 * A deactivation of the WooPayments extension records nothing: it is never a request to switch (N-484).
+	 * A deactivation of the WooPayments extension records nothing: it is never a request to switch.
 	 *
 	 * @internal
 	 *
@@ -373,9 +373,9 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Auto-deactivate WooPayments when mandatory cutover is enabled and safe.
+	 * Queue the mandatory cutover when the lever is on and the WooPayments extension owns the store.
 	 */
-	private function maybe_auto_deactivate_plugin(): void {
+	private function enqueue_mandatory_cutover(): void {
 		if (
 			! $this->is_mandatory_cutover_enabled() ||
 			! $this->arbiter->is_extension_owner() ||
@@ -468,11 +468,11 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Output the soft cutover notice, with "Not now" outside Payments settings.
+	 * Output the notice that offers the switch, with "Not now" outside Payments settings.
 	 *
 	 * @param bool $can_snooze Whether the notice offers "Not now".
 	 */
-	private function output_soft_cutover_notice( bool $can_snooze ): void {
+	private function output_start_switch_notice( bool $can_snooze ): void {
 		?>
 		<div class="notice notice-info">
 			<p>
@@ -527,8 +527,8 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		if ( $this->can_start_cutover() ) {
 			// Payments settings keeps the switch notice, with no "Not now"; every other admin page honours the snooze.
 			$on_payments_settings = $this->is_payments_settings_request();
-			if ( ( $on_payments_settings || ! $this->is_start_notice_snoozed() ) && $this->reconciliation_job->should_offer_start() ) {
-				$this->output_soft_cutover_notice( ! $on_payments_settings );
+			if ( ( $on_payments_settings || ! $this->is_start_notice_snoozed() ) && $this->reconciliation_job->can_offer_start() ) {
+				$this->output_start_switch_notice( ! $on_payments_settings );
 			}
 			return;
 		}
@@ -540,8 +540,8 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	/**
 	 * Render the notice derived from durable reconciliation state.
 	 */
-	private function output_reconciliation_notice(): void {
-		$record = $this->reconciliation_job->classify_for_admin_notice();
+	private function output_cutover_notice(): void {
+		$record = $this->reconciliation_job->refresh_notice_record();
 		if ( is_array( $record ) ) {
 			if ( $this->reconciliation_job->is_awaiting_start( $record ) ) {
 				$this->output_start_notice();
@@ -593,7 +593,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Output the notice telling a store on the bundled WooPayments subscriptions why it cannot switch yet (spec section 7).
+	 * Output the notice telling a store on the bundled WooPayments subscriptions why it cannot switch yet.
 	 */
 	private function output_bundled_exclusion_notice(): void {
 		?>

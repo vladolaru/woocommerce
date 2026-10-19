@@ -410,12 +410,12 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$job = new class() extends WooPaymentsCutoverReconciliationJob {
 			/** @return array<string,mixed>|null */
-			public function classify_for_admin_notice(): ?array {
+			public function refresh_notice_record(): ?array {
 				return null;
 			}
 
 			/** Offer the first generation. */
-			public function should_offer_start(): bool {
+			public function can_offer_start(): bool {
 				return true;
 			}
 		};
@@ -441,7 +441,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$job = new class() extends WooPaymentsCutoverReconciliationJob {
 			/** @return array<string,mixed>|null */
-			public function classify_for_admin_notice(): ?array {
+			public function refresh_notice_record(): ?array {
 				return array(
 					'state'          => WooPaymentsCutoverStateStore::STATE_DEFERRED,
 					'current_step'   => 'deferred',
@@ -475,12 +475,12 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$job = new class() extends WooPaymentsCutoverReconciliationJob {
 			/** @return array<string,mixed>|null */
-			public function classify_for_admin_notice(): ?array {
+			public function refresh_notice_record(): ?array {
 				return null;
 			}
 
 			/** Offer the first generation. */
-			public function should_offer_start(): bool {
+			public function can_offer_start(): bool {
 				return true;
 			}
 		};
@@ -584,7 +584,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A store excluded for the bundled WooPayments subscriptions is told why it cannot switch, with no start button, until a manager dismisses it (spec section 7).
+	 * @testdox A store excluded for the bundled WooPayments subscriptions is told why it cannot switch, with no start button, until a manager dismisses it.
 	 */
 	public function test_bundled_store_is_told_why_it_cannot_switch_until_dismissed(): void {
 		$this->fake_plugin_active();
@@ -717,7 +717,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		);
 		$job = new class() extends WooPaymentsCutoverReconciliationJob {
 			/** @return array<string,mixed>|null */
-			public function classify_for_admin_notice(): ?array {
+			public function refresh_notice_record(): ?array {
 				return array(
 					'state'                  => WooPaymentsCutoverStateStore::STATE_DEFERRED,
 					'deferred_codes'         => array( 'woopayments_plugin_version_unsupported' ),
@@ -765,7 +765,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return array<string,mixed>|null */
-			public function classify_for_admin_notice(): ?array {
+			public function refresh_notice_record(): ?array {
 				return array(
 					'state'                  => $this->state,
 					'informational_outcomes' => array(),
@@ -794,7 +794,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$job = new class() extends WooPaymentsCutoverReconciliationJob {
 			/** @return array<string,mixed>|null */
-			public function classify_for_admin_notice(): ?array {
+			public function refresh_notice_record(): ?array {
 				return array(
 					'state'        => WooPaymentsCutoverStateStore::STATE_PENDING,
 					'current_step' => 'awaiting_merchant_start',
@@ -818,7 +818,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			private bool $available = true;
 
 			/** @return array<string,mixed>|null */
-			public function classify_for_admin_notice(): ?array {
+			public function refresh_notice_record(): ?array {
 				return array(
 					'state'        => WooPaymentsCutoverStateStore::STATE_DEFERRED,
 					'current_step' => 'deferred',
@@ -890,7 +890,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		};
 		$controller = $this->create_cutover_controller( $job );
 
-		$this->assertTrue( $controller->disable_woopayments_plugin() );
+		$this->assertTrue( $controller->enqueue_merchant_start() );
 		$controller->handle_plugin_deactivated( $renamed_plugin_file, false );
 		$controller->handle_plugin_activated( $renamed_plugin_file, true );
 		$controller->handle_plugin_activated( $renamed_plugin_file, false );
@@ -921,15 +921,15 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->get_runtime_owner() );
 		if ( $offered ) {
 			$this->assertStringContainsString( 'Start the switch', $this->render_admin_notices( $controller ) );
-			$this->assertTrue( $controller->disable_woopayments_plugin() );
+			$this->assertTrue( $controller->enqueue_merchant_start() );
 		} else {
 			$this->assertSame( '', trim( $this->render_admin_notices( $controller ) ) );
-			$this->assertFalse( $controller->disable_woopayments_plugin() );
+			$this->assertFalse( $controller->enqueue_merchant_start() );
 		}
 	}
 
 	/**
-	 * Opus gate F2 on FG4d (N-509): the switch's version check reads the recorded version, which only a running extension
+	 * The switch's version check reads the recorded version, which only a running extension
 	 * updates, so a click on such a store would defer forever.
 	 *
 	 * @testdox A store waiting for its switch that last ran an extension below the switch's minimum is told to activate and update it, and is offered no click.
@@ -947,11 +947,11 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->assertTrue( wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_awaiting_switch() );
 		$this->assertStringContainsString( 'To switch, first activate the WooPayments extension in Plugins and update it to the latest version.', $notices );
 		$this->assertStringNotContainsString( 'Start the switch', $notices );
-		$this->assertFalse( $controller->disable_woopayments_plugin() );
+		$this->assertFalse( $controller->enqueue_merchant_start() );
 	}
 
 	/**
-	 * Codex 402 F3: the old-version rule guards the start action only; the bundled-exclusion notice is information.
+	 * The old-version rule guards the start action only; the bundled-exclusion notice is information.
 	 *
 	 * @testdox A store waiting for its switch with an old extension that is excluded for bundled Stripe Billing subscriptions is still told why, with no start button.
 	 */
@@ -1104,7 +1104,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		};
 		$controller = $this->create_cutover_controller( $job );
 
-		$controller->disable_woopayments_plugin();
+		$controller->enqueue_merchant_start();
 
 		$this->assertSame( $expected, $job->sources );
 	}
@@ -1566,7 +1566,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Cutover preflight blocks a store without WooCommerce Subscriptions while a subscription is still Stripe-billed (bundled flavor, spec section 7).
+	 * @testdox Cutover preflight blocks a store without WooCommerce Subscriptions while a subscription is still Stripe-billed (bundled flavor).
 	 */
 	public function test_preflight_blocks_when_legacy_stripe_billing_subscription_marker_exists(): void {
 		$this->fake_plugin_active();
@@ -1692,12 +1692,12 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 
 		$job        = $job ?? new class() extends WooPaymentsCutoverReconciliationJob {
 			/** Return no durable state after notice classification. */
-			public function classify_for_admin_notice(): ?array {
+			public function refresh_notice_record(): ?array {
 				return null;
 			}
 
 			/** Offer a new generation. */
-			public function should_offer_start(): bool {
+			public function can_offer_start(): bool {
 				return true;
 			}
 
@@ -1739,7 +1739,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			);
 
 			/** @return array<string,mixed>|null */
-			public function classify_for_admin_notice(): ?array {
+			public function refresh_notice_record(): ?array {
 				return $this->record;
 			}
 
@@ -1748,7 +1748,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			 *
 			 * @param string $notice Notice to dismiss.
 			 */
-			public function dismiss_completion_notice( string $notice ): bool {
+			public function dismiss_notice( string $notice ): bool {
 				if ( ! $this->is_completion_notice_due( $this->record, $notice ) ) {
 					return false;
 				}
@@ -1786,7 +1786,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			}
 
 			/** @return array<string,mixed>|null */
-			public function classify_for_admin_notice(): ?array {
+			public function refresh_notice_record(): ?array {
 				return $this->record;
 			}
 
@@ -1795,7 +1795,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			 *
 			 * @param string $notice Notice to dismiss.
 			 */
-			public function dismiss_completion_notice( string $notice ): bool {
+			public function dismiss_notice( string $notice ): bool {
 				if ( self::NOTICE_BUNDLED_EXCLUSION !== $notice || ! $this->is_bundled_exclusion_notice_due( $this->record ) ) {
 					return false;
 				}

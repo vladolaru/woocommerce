@@ -219,6 +219,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Start one reconciliation generation.
 	 *
+	 * A merchant start also dispatches the async queue runner.
+	 *
 	 * @since 11.2.0
 	 *
 	 * @param string $source Trigger source recorded for diagnostics.
@@ -346,13 +348,15 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Classify the Stripe Billing marker for the admin notices and return the record to render.
+	 * Refresh the cutover record the admin notices render, and return it.
 	 *
-	 * Not read-only: it may exclude, supersede or create the record before returning it.
+	 * Not read-only. It writes in three cases: an awaiting record on a store with the bundled subscriptions marker becomes
+	 * excluded, a reopenable terminal record is superseded by a new awaiting generation, and a store with no record that has
+	 * the marker gets an excluded one.
 	 *
 	 * @return array<string,mixed>|null Current durable record.
 	 */
-	public function classify_for_admin_notice(): ?array {
+	public function refresh_notice_record(): ?array {
 		$record = $this->state_store->get_record();
 		if ( is_array( $record ) ) {
 			if ( $this->is_awaiting_start( $record ) && $this->refresh_has_bundled_subscriptions_marker( $record ) ) {
@@ -412,9 +416,11 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Tell whether the stored record lets an extension-owned store start a cutover generation.
 	 *
+	 * For an awaiting record it refreshes the cached admin classification.
+	 *
 	 * @return bool
 	 */
-	public function should_offer_start(): bool {
+	public function can_offer_start(): bool {
 		$record = $this->state_store->get_record();
 		if ( ! is_array( $record ) ) {
 			return true;
@@ -438,6 +444,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Tell whether a completed record still shows a completion notice, which stays until a manager dismisses it.
 	 *
+	 * Only the success notice is ever due here, so dismissing any other notice name through dismiss_notice() records nothing.
+	 *
 	 * @param array<string,mixed>|null $record Cutover record.
 	 * @param string                   $notice One of the NOTICE_* constants.
 	 * @return bool
@@ -456,7 +464,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @param string $notice One of the NOTICE_* constants.
 	 * @return bool True only for the request that recorded the dismissal.
 	 */
-	public function dismiss_completion_notice( string $notice ): bool {
+	public function dismiss_notice( string $notice ): bool {
 		if ( self::NOTICE_BUNDLED_EXCLUSION === $notice ) {
 			return $this->consume_notice( fn( ?array $record ): bool => $this->is_bundled_exclusion_notice_due( $record ), $notice . '_notice_dismissed' );
 		}

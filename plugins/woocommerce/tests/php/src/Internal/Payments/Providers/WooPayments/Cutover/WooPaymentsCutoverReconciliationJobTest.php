@@ -512,7 +512,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Inbox N-510: the token is written with the fence, so a busy write lock stops finalize before the deactivation.
+	 * The token is written with the fence, so a busy write lock stops finalize before the deactivation.
 	 *
 	 * @testdox A finalize whose token write is refused, because another request holds the write lock, deactivates nothing and leaves the WooPayments extension owning payments.
 	 */
@@ -615,7 +615,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Opus re-gate R2 on fg4d-3: WordPress fires the deactivation hooks before it writes the active plugins, so only a throw
+	 * WordPress fires the deactivation hooks before it writes the active plugins, so only a throw
 	 * after that write (an update_option_active_plugins listener) reaches finalize with the extension already inactive.
 	 *
 	 * @testdox A deactivation whose hook throws after WordPress wrote the active plugins counts as done: the tier follows and the built-in WooPayments takes payments, even from a stored disabled tier.
@@ -1837,7 +1837,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Opus gate F1 on FG4d: past finalize the extension is off, so an exclusion would leave the store with no WooPayments
+	 * Past finalize the extension is off, so an exclusion would leave the store with no WooPayments
 	 * owner.
 	 *
 	 * @testdox A deferred claim past finalize whose re-run preflight finds bundled Stripe Billing subscriptions defers, keeps finalize's token, and the built-in WooPayments keeps payments.
@@ -2386,11 +2386,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->assertTrue( $sut->is_completion_notice_due( $store->get_record(), $success ) );
 		}
 		$this->assertSame( $done, $store->get_record(), 'Showing the notice must not change the record.' );
-		$this->assertFalse( $sut->dismiss_completion_notice( 'unknown' ) );
+		$this->assertFalse( $sut->dismiss_notice( 'unknown' ) );
 		$this->assertSame( $done, $store->get_record(), 'An unknown notice must not change the record.' );
 
-		$this->assertTrue( $sut->dismiss_completion_notice( $success ) );
-		$this->assertFalse( $sut->dismiss_completion_notice( $success ), 'A dismissed notice stays dismissed.' );
+		$this->assertTrue( $sut->dismiss_notice( $success ) );
+		$this->assertFalse( $sut->dismiss_notice( $success ), 'A dismissed notice stays dismissed.' );
 		wp_cache_flush();
 		$dismissed = $store->get_record();
 		$this->assertIsArray( $dismissed );
@@ -2416,15 +2416,15 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$sut       = $this->create_job( true, $preflight );
 
 		for ( $page = 0; $page < 3; $page++ ) {
-			$this->assertNull( $sut->classify_for_admin_notice() );
-			$this->assertTrue( $sut->should_offer_start() );
+			$this->assertNull( $sut->refresh_notice_record() );
+			$this->assertTrue( $sut->can_offer_start() );
 		}
 		$this->assertSame( 1, $preflight->scans, 'Three admin pages without a record should share one scan.' );
 
 		$cached               = get_option( 'woocommerce_woopayments_cutover_admin_classification' );
 		$cached['expires_at'] = time() - 1;
 		update_option( 'woocommerce_woopayments_cutover_admin_classification', $cached );
-		$sut->classify_for_admin_notice();
+		$sut->refresh_notice_record();
 		$this->assertSame( 2, $preflight->scans, 'An expired classification must be scanned again.' );
 	}
 
@@ -2444,13 +2444,13 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 		$sut       = $this->create_job( true, $preflight, null, false );
 
-		$this->assertNull( $sut->classify_for_admin_notice() );
+		$this->assertNull( $sut->refresh_notice_record() );
 		$this->assertSame( 0, $preflight->scans, 'Every admin page would otherwise scan Action Scheduler, order meta and tables.' );
 		$this->assertNull( $this->require_state_store()->get_record() );
 	}
 
 	/**
-	 * @testdox A bundled-flavor store owes its notice once per exclusion: dismissed, it stays dismissed; reopened and excluded again, it is owed again (spec section 7).
+	 * @testdox A bundled-flavor store owes its notice once per exclusion: dismissed, it stays dismissed; reopened and excluded again, it is owed again.
 	 */
 	public function test_bundled_exclusion_notice_is_owed_once_per_exclusion(): void {
 		$failures  = array( 'bundled_stripe_billing_subscriptions_present' );
@@ -2458,18 +2458,18 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$sut       = $this->create_job( true, $preflight );
 		$bundled   = WooPaymentsCutoverReconciliationJob::NOTICE_BUNDLED_EXCLUSION;
 
-		$excluded = $sut->classify_for_admin_notice();
+		$excluded = $sut->refresh_notice_record();
 		$this->assertTrue( $sut->is_bundled_exclusion_notice_due( $excluded ) );
-		$this->assertTrue( $sut->dismiss_completion_notice( $bundled ) );
-		$this->assertFalse( $sut->dismiss_completion_notice( $bundled ), 'A dismissed notice stays dismissed.' );
+		$this->assertTrue( $sut->dismiss_notice( $bundled ) );
+		$this->assertFalse( $sut->dismiss_notice( $bundled ), 'A dismissed notice stays dismissed.' );
 		wp_cache_flush();
 		$this->assertFalse( $sut->is_bundled_exclusion_notice_due( $this->require_state_store()->get_record() ) );
 
 		$failures = array();
-		$awaiting = $sut->classify_for_admin_notice();
+		$awaiting = $sut->refresh_notice_record();
 		$this->assertFalse( $sut->is_bundled_exclusion_notice_due( $awaiting ), 'A store that can switch gets the start notice instead.' );
 		$failures   = array( 'bundled_stripe_billing_subscriptions_present' );
-		$reexcluded = $sut->classify_for_admin_notice();
+		$reexcluded = $sut->refresh_notice_record();
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_EXCLUDED, $reexcluded['state'] );
 		$this->assertSame( $excluded['generation'] + 1, $reexcluded['generation'] );
 		$this->assertTrue( $sut->is_bundled_exclusion_notice_due( $reexcluded ), 'The dismissal belonged to the earlier exclusion.' );
@@ -2482,15 +2482,15 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$failures  = array( 'bundled_stripe_billing_subscriptions_present' );
 		$preflight = $this->create_controllable_preflight( $failures );
 		$sut       = $this->create_job( true, $preflight );
-		$excluded  = $sut->classify_for_admin_notice();
+		$excluded  = $sut->refresh_notice_record();
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_EXCLUDED, $excluded['state'] );
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_EXCLUDED, $sut->classify_for_admin_notice()['state'], 'The excluded record is classified and cached.' );
+		$this->assertSame( WooPaymentsCutoverStateStore::STATE_EXCLUDED, $sut->refresh_notice_record()['state'], 'The excluded record is classified and cached.' );
 
 		$failures = array();
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_EXCLUDED, $sut->classify_for_admin_notice()['state'], 'The cached classification still says bundled.' );
+		$this->assertSame( WooPaymentsCutoverStateStore::STATE_EXCLUDED, $sut->refresh_notice_record()['state'], 'The cached classification still says bundled.' );
 		$sut->forget_admin_classification();
 
-		$this->assertSame( 'awaiting_merchant_start', $sut->classify_for_admin_notice()['current_step'] );
+		$this->assertSame( 'awaiting_merchant_start', $sut->refresh_notice_record()['current_step'] );
 	}
 
 	/**
@@ -2557,25 +2557,25 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 		$sut       = $this->create_job( true, $preflight );
 
-		$excluded = $sut->classify_for_admin_notice();
+		$excluded = $sut->refresh_notice_record();
 		$this->assertIsArray( $excluded );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_EXCLUDED, $excluded['state'] );
 		$this->assertSame( 0, $excluded['action_id'] );
 		$failures = array();
 
-		$awaiting = $sut->classify_for_admin_notice();
+		$awaiting = $sut->refresh_notice_record();
 		$this->assertIsArray( $awaiting );
 		$this->assertSame( $excluded['generation'] + 1, $awaiting['generation'] );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $awaiting['state'] );
 		$this->assertSame( 'awaiting_merchant_start', $awaiting['current_step'] );
 		$this->assertSame( 0, $awaiting['action_id'] );
 		$failures   = array( 'bundled_stripe_billing_subscriptions_present' );
-		$reexcluded = $sut->classify_for_admin_notice();
+		$reexcluded = $sut->refresh_notice_record();
 		$this->assertIsArray( $reexcluded );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_EXCLUDED, $reexcluded['state'] );
 		$this->assertSame( $awaiting['generation'], $reexcluded['generation'] );
 		$failures = array();
-		$awaiting = $sut->classify_for_admin_notice();
+		$awaiting = $sut->refresh_notice_record();
 		$this->assertIsArray( $awaiting );
 		$this->assertSame( 'awaiting_merchant_start', $awaiting['current_step'] );
 		$sut->register();
@@ -2595,7 +2595,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	public function test_start_click_ignores_the_cached_admin_classification(): void {
 		$preflight = $this->create_preflight_with_failures( array( 'bundled_stripe_billing_subscriptions_present' ) );
 		$sut       = $this->create_job( true, $preflight );
-		$excluded  = $sut->classify_for_admin_notice();
+		$excluded  = $sut->refresh_notice_record();
 		$this->assertIsArray( $excluded );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_EXCLUDED, $excluded['state'] );
 		// An earlier admin page cached this revision as "marker gone"; the subscription is still there.
@@ -2652,7 +2652,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 		$job       = $this->create_job( true, $preflight );
 
-		$classified = $job->classify_for_admin_notice();
+		$classified = $job->refresh_notice_record();
 		$this->assertIsArray( $classified );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $classified['state'] );
 		$this->assertSame( 'queued', $classified['current_step'] );
@@ -2797,7 +2797,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Reconciliation adopts native queue callbacks, Stripe Billing migrations included: a pending migration stays queued for native's migrator (spec section 7).
+	 * @testdox Reconciliation adopts native queue callbacks, Stripe Billing migrations included: a pending migration stays queued for native's migrator.
 	 */
 	public function test_reconciliation_adopts_native_queue_callbacks_and_stripe_billing_migrations(): void {
 		$native_action_id   = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_store_setup_sync', array(), 'cutover-test', false );
@@ -3347,12 +3347,12 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $store->compare_and_set_record( $pending, $done ) );
 
 		// The extension is active again (the job's arbiter reads it as the owner), and an admin page reads the record.
-		$record = $sut->classify_for_admin_notice();
+		$record = $sut->refresh_notice_record();
 
 		$this->assertIsArray( $record );
 		$this->assertSame( $done['generation'] + 1, $record['generation'] );
 		$this->assertTrue( $sut->is_awaiting_start( $record ), 'The site waits for its own switch again.' );
-		$this->assertTrue( $sut->should_offer_start() );
+		$this->assertTrue( $sut->can_offer_start() );
 	}
 
 	/**
