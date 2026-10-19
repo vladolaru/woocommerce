@@ -203,6 +203,40 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A second conversion after a finished one changes nothing: a switched site and a started switch keep their record and no plugin is activated or deactivated.
+	 * @group multisite
+	 */
+	public function test_second_conversion_after_a_finished_one_changes_nothing(): void {
+		$this->skip_unless_multisite();
+		$main     = get_current_blog_id();
+		$switched = $this->create_site( 'switched', true, true );
+		$started  = $this->create_site( 'started', true, true );
+		$this->arrange_site( $main, false, true );
+		$this->activate_for_every_site();
+		$this->create_sut()->convert();
+		$this->assertArrayNotHasKey( WooPaymentsRuntimeArbiter::PLUGIN_FILE, (array) get_site_option( 'active_sitewide_plugins', array() ), 'The first conversion finished.' );
+		// Since then, one site finished its switch (its extension deactivated) and another started one.
+		switch_to_blog( $switched );
+		try {
+			update_option( 'active_plugins', array() );
+		} finally {
+			restore_current_blog();
+		}
+		$this->create_record( $switched, WooPaymentsCutoverStateStore::STATE_DONE, 'done', array() );
+		$this->create_record( $started, WooPaymentsCutoverStateStore::STATE_DEFERRED, 'deferred', array() );
+		$done_before    = $this->read_record( $switched );
+		$started_before = $this->read_record( $started );
+		$this->calls    = array();
+
+		$result = $this->create_sut()->convert();
+
+		$this->assertNull( $result, 'Nothing to convert.' );
+		$this->assertSame( array(), $this->calls, 'No plugin is activated or deactivated.' );
+		$this->assertSame( $done_before, $this->read_record( $switched ), 'The switched site keeps its done record.' );
+		$this->assertSame( $started_before, $this->read_record( $started ), 'The started switch keeps its record.' );
+	}
+
+	/**
 	 * @testdox A site with the WooPayments feature on that never ran the extension keeps WooPayments in WooCommerce: it is not activated, not counted as failed, and named in the result.
 	 * @group multisite
 	 */

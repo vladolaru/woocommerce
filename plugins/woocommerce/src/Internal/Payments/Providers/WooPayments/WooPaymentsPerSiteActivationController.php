@@ -158,9 +158,10 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 		}
 
 		$result = $this->convert();
+		// With nothing to convert, the page shows no result.
 		wp_safe_redirect(
 			add_query_arg(
-				array(
+				null === $result ? array() : array(
 					self::QUERY_DONE                => 1,
 					self::QUERY_FAILED              => implode( ',', $result['failed'] ),
 					self::QUERY_KEPT                => implode( ',', $result['kept'] ),
@@ -184,9 +185,19 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	 * skipped and listed apart: the extension cannot be activated without it. The network activation is removed only when no
 	 * site failed, so a failed site keeps the extension; a run that stops part way leaves the network activation in place.
 	 *
-	 * @return array<string,int[]> Site IDs by outcome: activated, skipped (already active), without_woocommerce, kept and failed.
+	 * Nothing runs once the extension is no longer active for every site: every legitimate re-run keeps the network
+	 * activation, and a stale button clicked after a finished conversion would otherwise activate the extension again on
+	 * the sites that switched since.
+	 *
+	 * @return array<string,int[]>|null Site IDs by outcome (activated, skipped (already active), without_woocommerce, kept and
+	 *                                  failed), or null when there is nothing to convert.
 	 */
-	public function convert(): array {
+	public function convert(): ?array {
+		if ( ! $this->preflight_service->is_woopayments_network_active() ) {
+			$this->log( 'info', 'WooPayments per-site activation: the WooPayments extension is not active for every site, so there is nothing to convert.', array() );
+			return null;
+		}
+
 		$result      = array(
 			'activated'           => array(),
 			'skipped'             => array(),
@@ -195,12 +206,7 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 			'failed'              => array(),
 		);
 		$site_ids    = $this->get_site_ids();
-		$plugin_file = $this->get_plugin_file();
-		if ( '' === $plugin_file ) {
-			$this->log( 'error', 'WooPayments per-site activation found no WooPayments extension to activate.', array() );
-			$result['failed'] = $site_ids;
-			return $result;
-		}
+		$plugin_file = $this->preflight_service->get_active_woopayments_plugin_file();
 
 		require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		foreach ( $site_ids as $site_id ) {
@@ -223,7 +229,7 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 			$result[ $outcome ][] = $site_id;
 		}
 
-		if ( array() === $result['failed'] && $this->preflight_service->is_woopayments_network_active() ) {
+		if ( array() === $result['failed'] ) {
 			$this->legacy_proxy->call_function( 'deactivate_plugins', $plugin_file, false, true );
 			if ( array_key_exists( $plugin_file, (array) $this->legacy_proxy->call_function( 'get_site_option', 'active_sitewide_plugins', array() ) ) ) {
 				$this->log( 'error', 'WooPayments per-site activation could not deactivate the network-wide WooPayments extension.', array( 'plugin_file' => $plugin_file ) );
@@ -362,30 +368,6 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 		} catch ( \Throwable $error ) {
 			$this->log( 'error', 'WooPayments per-site activation could not record the rollback of this site\'s switch.', array_merge( $context, array( 'error' => $error->getMessage() ) ) );
 		}
-	}
-
-	/**
-	 * Get the WooPayments extension's plugin file: the active one, else an installed copy, the canonical folder first.
-	 *
-	 * @return string Plugin file relative to the plugins directory, or an empty string when none is installed.
-	 */
-	private function get_plugin_file(): string {
-		$active = $this->preflight_service->get_active_woopayments_plugin_file();
-		if ( '' !== $active ) {
-			return $active;
-		}
-		require_once ABSPATH . 'wp-admin/includes/plugin.php';
-		$installed = array_keys( (array) $this->legacy_proxy->call_function( 'get_plugins' ) );
-		if ( in_array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, $installed, true ) ) {
-			return WooPaymentsRuntimeArbiter::PLUGIN_FILE;
-		}
-		foreach ( $installed as $plugin_file ) {
-			if ( is_string( $plugin_file ) && WooPaymentsRuntimeArbiter::is_woopayments_plugin_file( $plugin_file ) ) {
-				return $plugin_file;
-			}
-		}
-
-		return '';
 	}
 
 	/**
