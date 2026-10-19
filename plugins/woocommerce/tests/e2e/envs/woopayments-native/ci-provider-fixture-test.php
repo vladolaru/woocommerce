@@ -492,20 +492,21 @@ assert_true(
 	'Jetpack package-version reports must remain confined to the exact HTTPS provider origin'
 );
 
-$recommendations = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/wcpay/payment_methods/recommended?country_code=CA&locale=fr_FR&transport_metadata=ignored' ) );
+$recommendations       = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/wcpay/payment_methods/recommended?country_code=CA&locale=fr_FR&transport_metadata=ignored' ) );
+$recommendation_fields = array( 'id', 'type', 'category', 'title', 'description', 'priority', 'required', 'icon' );
 assert_true(
-	array(
-		array(
-			'id'    => 'card',
-			'title' => 'Cards',
-		),
-		array(
-			'id'    => 'klarna',
-			'title' => 'Klarna',
-		),
-	) === $recommendations,
-	'public payment recommendations must use the production id/title response schema'
+	array( 'card', 'apple_pay', 'google_pay', 'woopay', 'affirm', 'afterpay_clearpay', 'klarna', 'bancontact', 'eps', 'ideal', 'multibanco', 'amazon_pay', 'alipay', 'wechat_pay' ) === array_column( $recommendations, 'id' ),
+	'public payment recommendations must keep the platform list and order for a US account'
 );
+foreach ( $recommendations as $recommendation ) {
+	assert_true(
+		array_keys( $recommendation ) === $recommendation_fields
+		&& 'https://s0.wp.com/i/payment-methods/' . $recommendation['id'] . '.svg' === $recommendation['icon']
+		&& '' !== $recommendation['title']
+		&& '' !== $recommendation['description'],
+		'public payment recommendations must carry every field the platform sends, with the platform icon: ' . $recommendation['id']
+	);
+}
 $fraud_services = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/wcpay/accounts/fraud_services' ) );
 assert_true( array() !== $fraud_services, 'public fraud-service configuration must be deterministic and non-empty' );
 $incentives = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/wcpay/incentives?future_business_key=ignored' ) );
