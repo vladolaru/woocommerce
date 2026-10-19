@@ -36,6 +36,8 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	private const NATIVE_RUNTIME_FIELDS = array(
 		'runtime_owner'                => 'Runtime owner',
 		'builtin_enabled'              => 'Built-in WooPayments feature',
+		'setup_tier'                   => 'Stored setup tier',
+		'effective_setup_tier'         => 'Effective setup tier',
 		'preflight_failures'           => 'Cutover preflight failures',
 		'multi_currency_rate_provider' => 'WooPayments rate provider',
 		'last_webhook_fetch'           => 'Last fetch of failed webhook events',
@@ -139,13 +141,14 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	/**
 	 * Tell whether this store has native payments state for support to read. Every read is autoloaded.
 	 *
-	 * The stored tier is checked, not the effective one, because a connected store whose WooPayments feature is off reads as disabled.
+	 * The stored tier is checked, not the effective one, because a connected store whose WooPayments feature is off reads as
+	 * disabled. A store the WooPayments extension owns reports only while the feature is on, since only then can it switch.
 	 *
 	 * @return bool
 	 */
 	private function has_support_diagnostics(): bool {
 		return in_array( $this->setup_tier->get_stored_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true )
-			|| $this->arbiter->is_extension_owner()
+			|| ( $this->arbiter->is_extension_owner() && $this->arbiter->is_builtin_enabled() )
 			|| null !== $this->get_cutover_state_store()->get_record();
 	}
 
@@ -239,6 +242,8 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		return array(
 			'runtime_owner'           => $this->arbiter->get_runtime_owner(),
 			'builtin_enabled'         => $this->arbiter->is_builtin_enabled(),
+			'setup_tier'              => $this->setup_tier->get_stored_tier(),
+			'effective_setup_tier'    => $this->setup_tier->get_effective_tier(),
 			'preflight_failures'      => $this->get_preflight_failures(),
 			'account_id'              => $this->get_account_service()->get_account_id(),
 			'account_connected'       => $account_connected,
@@ -281,6 +286,14 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			'builtin_enabled'              => array(
 				'label' => __( 'Built-in WooPayments feature', 'woocommerce' ),
 				'value' => $this->format_enabled( (bool) $data['builtin_enabled'] ),
+			),
+			'setup_tier'                   => array(
+				'label' => __( 'Stored setup tier', 'woocommerce' ),
+				'value' => (string) $data['setup_tier'],
+			),
+			'effective_setup_tier'         => array(
+				'label' => __( 'Effective setup tier', 'woocommerce' ),
+				'value' => (string) $data['effective_setup_tier'],
 			),
 			'preflight_failures'           => array(
 				'label' => __( 'Cutover preflight failures', 'woocommerce' ),

@@ -365,9 +365,6 @@ class WC_Install {
 		'11.2.0-4' => array(
 			'wc_update_11204_seed_multi_currency_feature',
 		),
-		'11.2.0-5' => array(
-			'wc_update_11205_seed_woopayments_setup_tier',
-		),
 	);
 
 	/**

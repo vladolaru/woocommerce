@@ -17,11 +17,8 @@ use Automattic\WooCommerce\Internal\Admin\OrderTaxLookupMigrator;
 use Automattic\WooCommerce\Internal\BatchProcessing\BatchProcessingController;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\VariationGallery\Package as VariationGalleryPackage;
 
 /**
@@ -694,88 +691,5 @@ class WC_Update_Functions_Test extends \WC_Unit_Test_Case {
 
 		$this->assertSame( 'no', get_option( 'woocommerce_feature_multi_currency_enabled' ), 'The migration should preserve an existing feature decision.' );
 		$this->assertSame( 'woocommerce_feature_multi_currency_enabled', MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
-	}
-
-	/**
-	 * @testdox Migration moves a plugin-active upgraded store off the never-written disabled tier so the switch controller loads on admin requests.
-	 */
-	public function test_wc_update_11205_seed_woopayments_setup_tier(): void {
-		include_once WC_ABSPATH . 'includes/wc-update-functions.php';
-
-		$db_updates = WC_Install::get_db_update_callbacks();
-		$this->assertArrayHasKey( '11.2.0-5', $db_updates );
-		$this->assertContains( 'wc_update_11205_seed_woopayments_setup_tier', $db_updates['11.2.0-5'] );
-
-		$container = wc_get_container();
-		$arbiter   = $container->get( WooPaymentsRuntimeArbiter::class );
-		$state     = $container->get( WooPaymentsSetupTier::class );
-		$matrix    = WooPaymentsProvider::get_classes_by_setup_tier();
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data'    => array(
-					'account_id' => 'acct_upgraded_store',
-					'is_live'    => true,
-				),
-				'fetched' => time(),
-				'errored' => false,
-			),
-			false
-		);
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
-		// WC_Install::create_options() seeds the disabled default before the update callbacks run.
-		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::DISABLED, true );
-		$arbiter->invalidate();
-		$state->invalidate();
-
-		$this->assertSame( WooPaymentsSetupTier::DISABLED, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'An upgraded plugin store only has the seeded default.' );
-		$this->assertSame( WooPaymentsSetupTier::DISABLED, $state->get_effective_tier() );
-		$this->assertArrayNotHasKey( WooPaymentsSetupTier::DISABLED, $matrix, 'The disabled tier loads no switch controller.' );
-
-		wc_update_11205_seed_woopayments_setup_tier();
-		$state->invalidate();
-
-		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
-		$this->assertContains( WooPaymentsCutoverController::class, $matrix[ $state->get_effective_tier() ]['admin'] );
-
-		delete_option( WooPaymentsSetupTier::OPTION_NAME );
-		update_option( 'active_plugins', array() );
-		$arbiter->invalidate();
-		$state->invalidate();
-
-		wc_update_11205_seed_woopayments_setup_tier();
-
-		$this->assertFalse( get_option( WooPaymentsSetupTier::OPTION_NAME ), 'A store without the active plugin keeps its state for the cutover writers.' );
-	}
-
-	/**
-	 * @testdox Migration writes the disabled tier for a plugin-active store while the WooPayments feature is off.
-	 */
-	public function test_wc_update_11205_repair_writes_disabled_while_the_feature_is_off(): void {
-		include_once WC_ABSPATH . 'includes/wc-update-functions.php';
-
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
-		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
-		update_option(
-			'wcpay_account_data',
-			array(
-				'data'    => array(
-					'account_id' => 'acct_upgraded_store',
-					'is_live'    => true,
-				),
-				'fetched' => time(),
-				'errored' => false,
-			),
-			false
-		);
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
-		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
-		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
-
-		wc_update_11205_seed_woopayments_setup_tier();
-
-		$this->assertSame( WooPaymentsSetupTier::DISABLED, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
 	}
 }

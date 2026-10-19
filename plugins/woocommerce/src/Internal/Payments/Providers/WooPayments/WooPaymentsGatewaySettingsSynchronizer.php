@@ -217,7 +217,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	/**
 	 * Recompute the setup tier after a direct settings write, only while the built-in WooPayments owns payments.
 	 *
-	 * The WooPayments extension writes the same option while it owns payments, and a recompute then would write `disabled`.
+	 * The WooPayments extension writes the same option while it owns payments; the stored tier is not its to change.
 	 *
 	 * @param mixed $value New settings.
 	 */
@@ -230,18 +230,13 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	}
 
 	/**
-	 * Set the setup tier from the settings just written: `disabled` when the built-in WooPayments is off, else `active` or
-	 * `connected` by the enabled setting, and only from those two tiers.
+	 * Set the setup tier from the settings just written: `active` or `connected` by the enabled setting, and only from those
+	 * two effective tiers, so nothing is written while the WooPayments feature is off.
 	 *
 	 * @param array<string,mixed> $settings Persisted canonical settings.
 	 */
 	private function sync_setup_tier( array $settings ): void {
 		if ( null === $this->setup_tier || null === $this->runtime_arbiter ) {
-			return;
-		}
-
-		if ( ! $this->runtime_arbiter->is_builtin_enabled() ) {
-			$this->setup_tier->write_tier( WooPaymentsSetupTier::DISABLED );
 			return;
 		}
 

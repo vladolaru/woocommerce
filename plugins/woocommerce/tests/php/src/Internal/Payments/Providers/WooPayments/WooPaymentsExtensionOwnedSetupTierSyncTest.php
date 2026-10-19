@@ -5,11 +5,12 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use WC_Unit_Test_Case;
 
 /**
- * Pins how a store the WooPayments extension owns leaves the `disabled` setup tier: the extension writes its account
- * cache, and the listener the payments bootstrap registers for every request type re-derives the stored tier.
+ * Pins that a store the WooPayments extension owns, with the WooPayments feature on, reads the `available` tier in every
+ * request type the payments bootstrap tells apart, without a tier write: the extension's account cache writes change nothing.
  */
 class WooPaymentsExtensionOwnedSetupTierSyncTest extends WC_Unit_Test_Case {
 
@@ -22,12 +23,12 @@ class WooPaymentsExtensionOwnedSetupTierSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox On a store the WooPayments extension owns, with the WooPayments feature on and the stored setup tier disabled, an eligible account cache write in a $request_type request stores the available tier.
+	 * @testdox On a store the WooPayments extension owns, with the WooPayments feature on and the stored setup tier disabled, a $request_type request reads the available tier, and an account cache write leaves the stored tier.
 	 * @dataProvider request_types
 	 *
 	 * @param string $request_type Request type: front, admin, ajax, rest, cron or cli.
 	 */
-	public function test_extension_account_cache_write_moves_a_disabled_store_to_available( string $request_type ): void {
+	public function test_extension_owned_store_reads_available_without_a_tier_write( string $request_type ): void {
 		update_option( 'active_plugins', array( 'woocommerce-payments/woocommerce-payments.php' ) );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( 'woocommerce_woopayments_setup_tier', 'disabled' );
@@ -38,16 +39,12 @@ class WooPaymentsExtensionOwnedSetupTierSyncTest extends WC_Unit_Test_Case {
 
 		$this->register_payments_bootstrap_as( $request_type );
 
-		$this->assertSame( 'disabled', get_option( 'woocommerce_woopayments_setup_tier' ), 'Registering the bootstrap must not change the stored tier.' );
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, wc_get_container()->get( WooPaymentsSetupTier::class )->get_effective_tier() );
 
-		update_option( 'wcpay_account_data', $this->eligible_account_cache( 'acct_first_write' ) );
+		update_option( 'wcpay_account_data', $this->account_cache( 'acct_first_write' ) );
 
-		$this->assertSame( 'available', get_option( 'woocommerce_woopayments_setup_tier' ), 'The first account cache write must store the available tier.' );
-
-		update_option( 'woocommerce_woopayments_setup_tier', 'disabled' );
-		update_option( 'wcpay_account_data', $this->eligible_account_cache( 'acct_later_write' ) );
-
-		$this->assertSame( 'available', get_option( 'woocommerce_woopayments_setup_tier' ), 'A later account cache write must store the available tier.' );
+		$this->assertSame( 'disabled', get_option( 'woocommerce_woopayments_setup_tier' ), 'No listener writes the stored tier.' );
+		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, wc_get_container()->get( WooPaymentsSetupTier::class )->get_effective_tier() );
 	}
 
 	/**
@@ -110,14 +107,14 @@ class WooPaymentsExtensionOwnedSetupTierSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * An account cache the WooPayments extension writes for an account the built-in WooPayments can serve.
+	 * An account cache the WooPayments extension writes.
 	 *
 	 * The subset of the cache client 11.1.0 writes that the test needs: the envelope's `data`, `fetched` and `errored` (`includes/class-database-cache.php:377-382`), and the account's `account_id` and `country` (read at `includes/class-wc-payments-account.php:171,2733`).
 	 *
 	 * @param string $account_id Account ID.
 	 * @return array<string,mixed>
 	 */
-	private function eligible_account_cache( string $account_id ): array {
+	private function account_cache( string $account_id ): array {
 		return array(
 			'data'    => array(
 				'account_id' => $account_id,

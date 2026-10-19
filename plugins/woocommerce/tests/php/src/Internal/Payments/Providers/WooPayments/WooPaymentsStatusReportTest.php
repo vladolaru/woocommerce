@@ -90,21 +90,27 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Supportability hooks are registered even when the plugin owns runtime.
+	 * @testdox While the plugin owns payments, the supportability hooks are registered only with the WooPayments feature on ($_dataName).
+	 * @testWith ["yes", true]
+	 *           ["no", false]
+	 *
+	 * @param string $feature  The WooPayments feature option.
+	 * @param bool   $expected Whether the hooks are registered.
 	 */
-	public function test_registers_supportability_hooks_even_when_plugin_owns_runtime(): void {
+	public function test_registers_supportability_hooks_while_plugin_owns_runtime_only_with_the_feature_on( string $feature, bool $expected ): void {
 		$this->fake_plugin( true );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $feature, true );
 		$this->set_native_state( WooPaymentsSetupTier::AVAILABLE );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
 
 		$sut->register();
 
-		$this->assertSame( 1, has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
-		$this->assertSame( 10, has_filter( 'woocommerce_debug_tools', array( $sut, 'add_debug_tools' ) ) );
-		$this->assertSame( 10, has_filter( 'debug_information', array( $sut, 'add_site_health_debug_info' ) ) );
-		$this->assertSame( 10, has_filter( 'site_status_tests', array( $sut, 'add_site_status_tests' ) ) );
-		$this->assertSame( 10, has_action( 'wp_ajax_health-check-woocommerce-woopayments-native-cutover', array( $sut, 'run_cutover_site_health_ajax_test' ) ) );
+		$this->assertSame( $expected ? 1 : false, has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
+		$this->assertSame( $expected ? 10 : false, has_filter( 'woocommerce_debug_tools', array( $sut, 'add_debug_tools' ) ) );
+		$this->assertSame( $expected ? 10 : false, has_filter( 'debug_information', array( $sut, 'add_site_health_debug_info' ) ) );
+		$this->assertSame( $expected ? 10 : false, has_filter( 'site_status_tests', array( $sut, 'add_site_status_tests' ) ) );
+		$this->assertSame( $expected ? 10 : false, has_action( 'wp_ajax_health-check-woocommerce-woopayments-native-cutover', array( $sut, 'run_cutover_site_health_ajax_test' ) ) );
 	}
 
 	/**
@@ -263,6 +269,8 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $data['runtime_owner'] );
 		$this->assertTrue( $data['builtin_enabled'] );
+		$this->assertSame( get_option( WooPaymentsSetupTier::OPTION_NAME ), $data['setup_tier'] );
+		$this->assertSame( wc_get_container()->get( WooPaymentsSetupTier::class )->get_effective_tier(), $data['effective_setup_tier'] );
 		$this->assertSame( 'acct_native_test', $data['account_id'] );
 		$this->assertTrue( $data['account_connected'] );
 		$this->assertTrue( $data['gateway_enabled'] );

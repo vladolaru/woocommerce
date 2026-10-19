@@ -65,7 +65,7 @@ return array(
 	'plugin_version' => $headers['Version'],
 	'preflight_failures' => $preflight->get_failures(),
 	'migrator_action' => $action ? array( 'status' => ActionScheduler::store()->get_status( $migrator_id ) ) : null,
-	'native_state' => get_option( 'woocommerce_woopayments_setup_tier', null ),
+	'native_state' => wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier::class )->get_effective_tier(),
 );
 `;
 
@@ -216,8 +216,7 @@ test.describe( 'WooPayments transition: cutover reconciliation', () => {
 		expect( identity.blog_token_present ).toBe( true );
 		expect( identity.user_token_present ).toBe( true );
 		expect( identity.is_live ).toBe( false );
-		// The seed runs the 11.2.0-5 repair update the way an upgraded
-		// plugin-era store does, which writes `available`.
+		// The extension owns payments, so the effective tier is `available`.
 		expect( identity.native_state ).toBe( 'available' );
 		expect( identity.migrator_action_id ).toBeGreaterThan( 0 );
 		migratorActionId = identity.migrator_action_id;

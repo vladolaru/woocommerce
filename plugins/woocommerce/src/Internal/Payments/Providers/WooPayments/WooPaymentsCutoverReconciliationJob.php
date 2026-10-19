@@ -1249,8 +1249,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return;
 		}
 		// The built-in WooPayments owns payments from here, so the tier follows now, even when the ownership check below
-		// cannot be stored. A rollback made since is unharmed: the effective tier stays capped at available while the
-		// extension owns payments (WooPaymentsSetupTier::get_effective_tier()).
+		// cannot be stored. A rollback made since is unharmed: the effective tier reads available while the extension owns
+		// payments (WooPaymentsSetupTier::get_effective_tier()).
 		$this->account_service->sync_setup_tier_from_options( false );
 
 		$this->schedule_ownership_verification( $claimed, $outcomes );

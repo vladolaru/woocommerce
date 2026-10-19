@@ -24,7 +24,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCutoverNormalizationRunner;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTierSyncController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\NativePaymentsShadowMode;
 use ReflectionMethod;
 use WC_Unit_Test_Case;
@@ -232,10 +231,10 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The recording container clamps the stored tier with its own copy of the rule; the real clamp is checked by
-	 * WooPaymentsSetupTierTest::test_get_state_clamps_connected_tiers_while_plugin_is_active.
+	 * The recording container uses the real setup tier with a stubbed owner; the owner rule itself is checked by
+	 * WooPaymentsSetupTierTest::test_extension_owner_reads_available_whatever_is_stored.
 	 *
-	 * @testdox An extension-owned site with an available effective tier registers only the setup tier sync controller and the plugin lifecycle listener, not shadow mode.
+	 * @testdox An extension-owned site with an available effective tier registers only the plugin lifecycle listener, not shadow mode.
 	 */
 	public function test_extension_owner_registers_no_shadow_mode_by_default(): void {
 		$container = $this->make_container( WooPaymentsSetupTier::ACTIVE, WooPaymentsRuntimeArbiter::OWNER_EXTENSION );
@@ -244,7 +243,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$sut->register( $container, '__return_false' );
 
 		// A plugin deactivated over XML-RPC (Jetpack remote management, a front request) must still start the switch.
-		$this->assertSame( $this->expected_events( array( WooPaymentsSetupTierSyncController::class, WooPaymentsCutoverPluginLifecycleListener::class ) ), $container->events );
+		$this->assertSame( $this->expected_events( array( WooPaymentsCutoverPluginLifecycleListener::class ) ), $container->events );
 		$this->assertNotContains( NativePaymentsShadowMode::class, $container->resolved );
 	}
 
@@ -264,10 +263,10 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( $this->expected_events( array() ), $container->events );
 	}
 
-	/** @testdox The setup tier sync controller is registered, on a disabled tier too, only on sites the WooPayments extension owns. */
-	public function test_setup_tier_sync_controller_registers_only_for_the_extension_owner(): void {
+	/** @testdox A stored disabled tier registers the available classes on a site the WooPayments extension owns, and nothing on the others. */
+	public function test_a_stored_disabled_tier_follows_the_owner(): void {
 		$owners = array(
-			WooPaymentsRuntimeArbiter::OWNER_EXTENSION => array( WooPaymentsSetupTierSyncController::class ),
+			WooPaymentsRuntimeArbiter::OWNER_EXTENSION => array( WooPaymentsCutoverPluginLifecycleListener::class ),
 			WooPaymentsRuntimeArbiter::OWNER_BUILTIN   => array(),
 			WooPaymentsRuntimeArbiter::OWNER_NONE      => array(),
 		);
@@ -563,6 +562,11 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 						/** Return the case's owner. */
 						public function get_runtime_owner(): string {
 							return $this->owner;
+						}
+
+						/** A site with an owner has the WooPayments feature on, as these cases assume. */
+						public function is_builtin_enabled(): bool {
+							return WooPaymentsRuntimeArbiter::OWNER_NONE !== $this->owner;
 						}
 					};
 					$tier    = new WooPaymentsSetupTier();

@@ -35,8 +35,6 @@ use Automattic\WooCommerce\Internal\EmailEditor\WCTransactionalEmails\WCEmailPos
 use Automattic\WooCommerce\Internal\EmailEditor\WCTransactionalEmails\WCEmailTemplateSyncBackfill;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\ProductAttributesLookup\DataRegenerator;
 use Automattic\WooCommerce\Internal\ProductAttributesLookup\LookupDataStore;
 use Automattic\WooCommerce\Internal\ProductDownloads\ApprovedDirectories\Register as Download_Directories;
@@ -3813,23 +3811,4 @@ function wc_update_11202_reset_refund_returning_customer_markers() {
  */
 function wc_update_11204_seed_multi_currency_feature(): void {
 	MultiCurrencyFeatureController::seed_from_prior_use();
-}
-
-/**
- * Write the setup tier for stores that upgraded with the WooPayments extension active.
- *
- * Those stores never wrote the setup tier, so they read as disabled and never load the switch notice.
- *
- * @since 11.2.0
- *
- * @return void
- */
-function wc_update_11205_seed_woopayments_setup_tier(): void {
-	$container               = wc_get_container();
-	$extension_owns_payments = $container->get( WooPaymentsRuntimeArbiter::class )->is_extension_owner();
-	if ( ! $extension_owns_payments ) {
-		return;
-	}
-
-	$container->get( WooPaymentsAccountService::class )->sync_setup_tier_from_options( $extension_owns_payments );
 }

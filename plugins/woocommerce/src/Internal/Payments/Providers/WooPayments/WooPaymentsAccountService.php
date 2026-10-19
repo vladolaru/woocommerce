@@ -528,33 +528,10 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Rewrite the setup tier when the WooPayments extension writes its account cache.
-	 *
-	 * An errored or data-less write keeps the stored tier.
-	 *
-	 * @since 11.2.0
-	 *
-	 * @param mixed $cache_contents Account cache contents the WooPayments extension wrote.
-	 */
-	public function sync_setup_tier_from_extension_account_cache( $cache_contents ): void {
-		if (
-			null === $this->runtime_arbiter ||
-			! $this->runtime_arbiter->is_extension_owner() ||
-			! is_array( $cache_contents ) ||
-			true === ( $cache_contents['errored'] ?? null ) ||
-			! is_array( $cache_contents['data'] ?? null )
-		) {
-			return;
-		}
-
-		$this->sync_setup_tier( $cache_contents['data'], true );
-	}
-
-	/**
 	 * Write the setup tier for this account data.
 	 *
-	 * Missing account data keeps the stored tier unless the built-in WooPayments is disabled or the WooPayments extension
-	 * owns payments.
+	 * Nothing is written while the WooPayments feature is off. Missing account data keeps the stored tier unless the
+	 * WooPayments extension owns payments.
 	 *
 	 * @param mixed $account_data            Last persisted account data.
 	 * @param bool  $extension_owns_payments True while the WooPayments extension takes payments.
@@ -565,7 +542,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 		}
 
 		if ( ! $this->runtime_arbiter->is_builtin_enabled() ) {
-			$this->setup_tier->write_tier( WooPaymentsSetupTier::DISABLED );
 			return;
 		}
 

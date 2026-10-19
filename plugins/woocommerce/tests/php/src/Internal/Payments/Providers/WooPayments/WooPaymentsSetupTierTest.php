@@ -159,20 +159,43 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Plugin ownership clamps connected and active stored tiers to available.
-	 * @dataProvider provide_connected_tiers
+	 * @testdox With the WooPayments feature on, a store the WooPayments extension owns reads available whatever is stored ($_dataName).
+	 * @dataProvider provide_stored_tiers_and_none
 	 *
-	 * @param string $stored_state Stored connected tier.
+	 * @param string|null $stored_state Stored tier, or null for a store that never stored one.
 	 */
-	public function test_get_effective_tier_clamps_connected_tiers_while_plugin_is_active( string $stored_state ): void {
-		update_option( WooPaymentsSetupTier::OPTION_NAME, $stored_state );
+	public function test_extension_owner_reads_available_whatever_is_stored( ?string $stored_state ): void {
+		if ( null === $stored_state ) {
+			delete_option( WooPaymentsSetupTier::OPTION_NAME );
+		} else {
+			update_option( WooPaymentsSetupTier::OPTION_NAME, $stored_state );
+		}
+		$this->make_plugin_own_the_runtime();
 		$this->state->invalidate();
-		$this->assertSame( $stored_state, $this->state->get_effective_tier() );
-
-		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
-		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->state->get_effective_tier() );
+		$this->assertSame( $stored_state ?? false, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'Reading the effective tier writes nothing.' );
+	}
+
+	/**
+	 * @testdox With the WooPayments feature off, a stored active tier reads disabled and lists no class for any request type, whoever owns payments ($_dataName).
+	 * @dataProvider provide_extension_states
+	 *
+	 * @param bool $extension_active Whether the WooPayments extension is active.
+	 */
+	public function test_feature_off_reads_disabled_and_lists_no_class( bool $extension_active ): void {
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+		if ( $extension_active ) {
+			$this->make_plugin_own_the_runtime();
+		}
+		$this->state->invalidate();
+
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_effective_tier() );
+		foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request_type ) {
+			$this->assertSame( array(), $this->state->get_classes_for_request( $request_type ), $request_type );
+		}
+		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
 	}
 
 	/**
@@ -220,14 +243,29 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Provide connected state tiers.
+	 * Provide every stored tier, and a store that never stored one.
 	 *
-	 * @return array<string,array{string}>
+	 * @return array<string,array{string|null}>
 	 */
-	public function provide_connected_tiers(): array {
+	public function provide_stored_tiers_and_none(): array {
 		return array(
-			'connected' => array( WooPaymentsSetupTier::CONNECTED ),
-			'active'    => array( WooPaymentsSetupTier::ACTIVE ),
+			'never stored' => array( null ),
+			'disabled'     => array( WooPaymentsSetupTier::DISABLED ),
+			'available'    => array( WooPaymentsSetupTier::AVAILABLE ),
+			'connected'    => array( WooPaymentsSetupTier::CONNECTED ),
+			'active'       => array( WooPaymentsSetupTier::ACTIVE ),
+		);
+	}
+
+	/**
+	 * Provide the WooPayments extension's states.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public function provide_extension_states(): array {
+		return array(
+			'the extension active'   => array( true ),
+			'the extension inactive' => array( false ),
 		);
 	}
 
@@ -289,16 +327,19 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A turned-off WooPayments feature writes the disabled tier.
+	 * @testdox With the WooPayments feature off, neither the account writer nor the settings writer writes the tier.
 	 */
-	public function test_account_writer_writes_disabled_while_the_feature_is_off(): void {
+	public function test_tier_writers_write_nothing_while_the_feature_is_off(): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
-		$this->state->write_tier( WooPaymentsSetupTier::ACTIVE );
+		$this->state->write_tier( WooPaymentsSetupTier::CONNECTED );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+		$this->state->invalidate();
 
 		$this->account_service->cache_account_data( array( 'account_id' => 'acct_456' ) );
+		$this->assertSame( WooPaymentsSetupTier::CONNECTED, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The account writer.' );
 
-		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_effective_tier() );
+		$this->settings_synchronizer->persist( array( 'enabled' => 'yes' ) );
+		$this->assertSame( WooPaymentsSetupTier::CONNECTED, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The settings writer.' );
 	}
 
 	/**
@@ -310,24 +351,23 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	 * @dataProvider provide_tier_sync_owners
 	 *
 	 * @param bool   $extension_owns Whether the WooPayments extension owns payments.
-	 * @param string $expected       The tier the account write leaves.
+	 * @param string $expected       The tier the account write stores.
 	 */
 	public function test_sync_setup_tier_ignores_the_account_payload_eligibility_field( bool $extension_owns, string $expected ): void {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
-		$cache                            = $this->plugin_account_cache();
-		$cache['data']['native_payments'] = array( 'eligible' => false );
+		$data                    = array( 'account_id' => 'acct_plugin' );
+		$data['native_payments'] = array( 'eligible' => false );
 		if ( $extension_owns ) {
 			$this->make_plugin_own_the_runtime();
-			$this->account_service->sync_setup_tier_from_extension_account_cache( $cache );
-		} else {
-			$this->account_service->cache_account_data( $cache['data'] );
 		}
 
-		$this->assertSame( $expected, $this->state->get_effective_tier() );
+		$this->account_service->cache_account_data( $data );
+
+		$this->assertSame( $expected, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
 	}
 
 	/**
-	 * Who owns payments when the account is written, and the tier that follows.
+	 * Who owns payments when the account is written, and the tier the write stores.
 	 *
 	 * @return array<string,array{0:bool,1:string}>
 	 */
@@ -339,66 +379,10 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Errored or data-less plugin account cache writes keep the prior state.
-	 */
-	public function test_plugin_account_cache_write_ignores_errored_and_empty_writes(): void {
-		$this->make_plugin_own_the_runtime();
-		$this->state->write_tier( WooPaymentsSetupTier::DISABLED );
-
-		$errored            = $this->plugin_account_cache();
-		$errored['errored'] = true;
-		$this->account_service->sync_setup_tier_from_extension_account_cache( $errored );
-		$this->account_service->sync_setup_tier_from_extension_account_cache(
-			array(
-				'data'    => null,
-				'fetched' => time(),
-				'errored' => false,
-			)
-		);
-		$this->account_service->sync_setup_tier_from_extension_account_cache( false );
-
-		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_effective_tier() );
-	}
-
-	/**
-	 * @testdox A plugin account cache write changes nothing once the plugin no longer owns the runtime.
-	 */
-	public function test_plugin_account_cache_write_needs_the_plugin_runtime(): void {
-		$this->state->write_tier( WooPaymentsSetupTier::DISABLED );
-
-		$this->account_service->sync_setup_tier_from_extension_account_cache( $this->plugin_account_cache() );
-
-		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_effective_tier() );
-	}
-
-	/**
-	 * @testdox A store without the WooPayments plugin adds no account cache listener.
-	 */
-	public function test_store_without_the_plugin_adds_no_account_cache_listener(): void {
-		$this->assertFalse( has_action( 'add_option_wcpay_account_data' ) );
-		$this->assertFalse( has_action( 'update_option_wcpay_account_data' ) );
-	}
-
-	/**
 	 * Mark the WooPayments plugin active so it owns the payments runtime.
 	 */
 	private function make_plugin_own_the_runtime(): void {
 		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
-	}
-
-	/**
-	 * Build account cache contents in the shape the plugin's Database_Cache writes (client 11.1.0
-	 * includes/class-database-cache.php:377-382).
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function plugin_account_cache(): array {
-		return array(
-			'data'               => array( 'account_id' => 'acct_plugin' ),
-			'fetched'            => time(),
-			'errored'            => false,
-			'consecutive_errors' => 0,
-		);
 	}
 }

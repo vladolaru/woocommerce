@@ -10,8 +10,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 /**
  * Stores the built-in WooPayments setup tier, reports the effective tier and lists the classes each request type loads for it.
  *
- * The effective tier is `disabled` while no WooPayments runtime is enabled and at most `available` while the WooPayments
- * extension owns payments, because the extension takes payments then.
+ * The effective tier is `disabled` while the WooPayments feature is off or nothing owns payments, `available` while the
+ * WooPayments extension owns payments, and the stored tier while the built-in WooPayments owns payments. The stored tier
+ * is `disabled` until the built-in WooPayments is first set up (the install value), then `available`, `connected` or `active`.
  *
  * @since 11.2.0
  * @internal
@@ -21,7 +22,7 @@ final class WooPaymentsSetupTier {
 	/** The option that stores the setup tier. */
 	public const OPTION_NAME = 'woocommerce_woopayments_setup_tier';
 
-	/** The built-in WooPayments is unavailable. */
+	/** The built-in WooPayments is unavailable: the feature is off, nothing owns payments, or it was never set up. */
 	public const DISABLED = 'disabled';
 
 	/** The built-in WooPayments can be offered, or a store on the WooPayments extension can switch to it. */
@@ -78,25 +79,22 @@ final class WooPaymentsSetupTier {
 	 * @return string One of the setup tier constants.
 	 */
 	public function get_effective_tier(): string {
-		$tier  = $this->get_stored_tier();
 		$owner = $this->runtime_arbiter->get_runtime_owner();
-		if ( WooPaymentsRuntimeArbiter::OWNER_NONE === $owner ) {
+		if ( WooPaymentsRuntimeArbiter::OWNER_NONE === $owner || ! $this->runtime_arbiter->is_builtin_enabled() ) {
 			return self::DISABLED;
 		}
 
-		if ( WooPaymentsRuntimeArbiter::OWNER_EXTENSION === $owner && in_array( $tier, array( self::CONNECTED, self::ACTIVE ), true ) ) {
+		if ( WooPaymentsRuntimeArbiter::OWNER_EXTENSION === $owner ) {
 			return self::AVAILABLE;
 		}
 
-		return $tier;
+		return $this->get_stored_tier();
 	}
 
 	/**
 	 * Get the classes a request type registers for WooPayments, in registration order.
 	 *
-	 * While the WooPayments extension owns payments, the setup tier sync controller comes first on every request type, so
-	 * a store the extension owns leaves the `disabled` tier when the extension writes its account cache. A `disabled` tier
-	 * lists nothing else and reads no provider class list.
+	 * A `disabled` tier lists nothing and reads no provider class list.
 	 *
 	 * @since 11.2.0
 	 *
@@ -104,25 +102,20 @@ final class WooPaymentsSetupTier {
 	 * @return array<int,class-string>
 	 */
 	public function get_classes_for_request( string $request_type ): array {
-		$classes = array();
-		if ( $this->runtime_arbiter->is_extension_owner() ) {
-			$classes[] = WooPaymentsSetupTierSyncController::class;
-		}
-
 		$tier = $this->get_effective_tier();
 		if ( self::DISABLED === $tier ) {
-			return $classes;
+			return array();
 		}
 
 		if ( null === $this->classes_by_setup_tier ) {
 			$this->classes_by_setup_tier = WooPaymentsProvider::get_classes_by_setup_tier();
 		}
 
-		return array_merge( $classes, $this->classes_by_setup_tier[ $tier ][ $request_type ] ?? array() );
+		return $this->classes_by_setup_tier[ $tier ][ $request_type ] ?? array();
 	}
 
 	/**
-	 * Get the stored setup tier for the current blog, before runtime ownership clamps it.
+	 * Get the stored setup tier for the current blog, before the WooPayments feature and runtime ownership decide the effective one.
 	 *
 	 * Support surfaces use it: a connected store keeps its stored tier while its WooPayments feature is off.
 	 *

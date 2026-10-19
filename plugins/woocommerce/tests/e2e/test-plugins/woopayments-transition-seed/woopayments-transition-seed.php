@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: WooPayments transition seed
- * Description: WP-CLI seed/reset for the T.4 Batch T transition rows. Installs a pinned WooPayments zip and a donor-borrowed Jetpack/account connection read from a git-ignored `connection.local.json` beside this file (export command in `data/t4-transition-seed.md` 4d). Never commit that file.
+ * Description: WP-CLI seed/reset for the T.4 Batch T transition rows. Installs a pinned WooPayments zip and a donor-borrowed Jetpack/account connection read from a git-ignored `connection.local.json` beside this file (a JSON object with the donor store's `blog_id`, `blog_token`, `user_token`, `account_id`, `account_data`, `local_wpcom_base_url` and `redirect_to`). Never commit that file.
  *
  * @package woopayments-transition-seed
  */
@@ -165,13 +165,6 @@ final class WooPayments_Transition_Seed_CLI {
 		}
 		WC_Payments_Onboarding_Service::set_test_mode( true );
 		WC_Payments::get_database_cache()->add( WCPay\Database_Cache::ACCOUNT_KEY, $account );
-		// This store is a fresh install, so WooCommerce never runs the 11.2.0-5
-		// update that an upgraded plugin-era store runs. Call it here, as that
-		// upgrade would, so the store reaches `available` the real way.
-		if ( ! function_exists( 'wc_update_11205_seed_woopayments_setup_tier' ) ) {
-			include_once WC_ABSPATH . 'includes/wc-update-functions.php';
-		}
-		wc_update_11205_seed_woopayments_setup_tier();
 		$migrator_action_id = null;
 		if ( ! empty( $assoc_args['pending-migrator'] ) ) {
 			$migrator_action_id = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_migrate_subscription_retry' );
@@ -180,8 +173,9 @@ final class WooPayments_Transition_Seed_CLI {
 			}
 			$migrator_action_id = (int) $migrator_action_id;
 		}
+		// `native_state` is the effective tier: while the extension owns payments it reads `available` whatever is stored.
 		$identity                       = $this->read_identity();
-		$identity['native_state']       = get_option( 'woocommerce_woopayments_setup_tier', null );
+		$identity['native_state']       = wc_get_container()->get( \Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier::class )->get_effective_tier();
 		$identity['migrator_action_id'] = $migrator_action_id;
 		WP_CLI::line( wp_json_encode( $identity ) );
 	}
@@ -295,7 +289,7 @@ final class WooPayments_Transition_Seed_CLI {
 	private function read_donor_payload(): array {
 		$path = __DIR__ . '/connection.local.json';
 		if ( ! file_exists( $path ) ) {
-			WP_CLI::error( 'connection.local.json is missing. Export the donor payload first (data/t4-transition-seed.md 4d).' );
+			WP_CLI::error( 'connection.local.json is missing. Export the donor store\'s connection and account payload into it first.' );
 		}
 		$donor = json_decode( (string) file_get_contents( $path ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- local, git-ignored file, not a remote fetch.
 		if ( ! is_array( $donor ) || empty( $donor['blog_id'] ) || empty( $donor['blog_token'] ) || empty( $donor['user_token'] ) || empty( $donor['account_id'] ) || ! is_array( $donor['account_data'] ?? null ) || empty( $donor['local_wpcom_base_url'] ) || empty( $donor['redirect_to'] ) ) {
