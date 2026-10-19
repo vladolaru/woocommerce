@@ -355,7 +355,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	public function classify_for_admin_notice(): ?array {
 		$record = $this->state_store->get_record();
 		if ( is_array( $record ) ) {
-			if ( $this->is_awaiting_start( $record ) && $this->record_has_stripe_billing_failure( $record ) ) {
+			if ( $this->is_awaiting_start( $record ) && $this->refresh_has_bundled_subscriptions_marker( $record ) ) {
 				$this->exclude_awaiting_record( $record, WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
 				return $this->state_store->get_record();
 			}
@@ -379,7 +379,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return $record;
 		}
 
-		if ( true !== $this->get_admin_stripe_billing_classification( null ) ) {
+		if ( true !== $this->refresh_admin_classification( null ) ) {
 			return null;
 		}
 
@@ -420,7 +420,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return true;
 		}
 		if ( $this->is_awaiting_start( $record ) ) {
-			return ! $this->record_has_stripe_billing_failure( $record );
+			return ! $this->refresh_has_bundled_subscriptions_marker( $record );
 		}
 
 		return $this->can_reopen_terminal_record( $record, true );
@@ -599,7 +599,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
 		if ( is_array( $claimed ) ) {
 			if ( self::STEP_VERIFY_BUILTIN_OWNERSHIP === $claimed['current_step'] ) {
-				$this->verify_native_ownership_claim( $claimed );
+				$this->complete_verified_claim( $claimed );
 			} else {
 				$this->reconcile_claim( $claimed );
 			}
@@ -727,7 +727,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$this->defer( $claimed, array( self::CODE_PLUGIN_ACTIVE_SITEWIDE ), $outcomes );
 			return;
 		}
-		$claimed = $this->prepare_finalization_claim( $claimed, $outcomes );
+		$claimed = $this->migrate_data_for_claim( $claimed, $outcomes );
 		if ( null === $claimed ) {
 			return;
 		}
@@ -840,11 +840,13 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Run the data migration for a claim about to finalize.
 	 *
+	 * A migration that throws, or that could not persist the gateway settings, defers the claim.
+	 *
 	 * @param array<string,mixed> $claimed  Exact running state owned by this worker.
 	 * @param array<int,mixed>    $outcomes Informational outcomes accumulated during reconciliation.
 	 * @return array<string,mixed>|null The claim, or null after a deferred result.
 	 */
-	private function prepare_finalization_claim( array $claimed, array $outcomes ): ?array {
+	private function migrate_data_for_claim( array $claimed, array $outcomes ): ?array {
 		try {
 			$result = $this->data_migration->run();
 		} catch ( \Throwable $error ) {
@@ -861,19 +863,22 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Complete one verification claim only after a fresh request observes native ownership.
+	 * Complete one verification claim once a fresh request shows that the built-in WooPayments owns the site: fence the claim,
+	 * sync the setup tier, schedule the fee remediation and record the switch as done.
+	 *
+	 * An extension that still owns the site, or an ownership check that throws, defers the claim.
 	 *
 	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
 	 */
-	private function verify_native_ownership_claim( array $claimed ): void {
+	private function complete_verified_claim( array $claimed ): void {
 		try {
-			$plugin_active = $this->arbiter->is_extension_owner();
+			$extension_owns = $this->arbiter->is_extension_owner();
 		} catch ( \Throwable $error ) {
 			$this->log_error( 'WooPayments cutover could not verify native ownership.', array( 'error' => $error->getMessage() ) );
 			$this->defer( $claimed, array( 'builtin_ownership_verification_failed' ) );
 			return;
 		}
-		if ( $plugin_active ) {
+		if ( $extension_owns ) {
 			$this->defer( $claimed, array( 'builtin_ownership_unverified' ) );
 			return;
 		}
@@ -882,7 +887,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return;
 		}
 		$this->account_service->sync_setup_tier_from_options( false );
-		// Every finalized claim reaches this step once native owns its site.
+		// Every finalized claim reaches this step once the built-in WooPayments owns its site.
 		try {
 			$remediation_scheduled = $this->preflight_service->ensure_fee_remediation_scheduled();
 		} catch ( \Throwable $error ) {
@@ -1074,7 +1079,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			require_once ABSPATH . 'wp-admin/includes/admin.php';
 			require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
 
-			$switched = $this->switch_to_plugin_update_lock_blog();
+			$switched = $this->switch_to_main_site();
 			if ( null === $switched ) {
 				$this->log_error( 'WooPayments cutover could not resolve the network main site for the shared plugin update lock.' );
 				return false;
@@ -1101,7 +1106,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 						\WP_Upgrader::release_lock( self::PLUGIN_UPDATE_LOCK_NAME );
 					}
 				} finally {
-					$this->restore_plugin_update_lock_blog( $switched );
+					$this->restore_from_main_site( $switched );
 				}
 			}
 		} catch ( \Throwable $error ) {
@@ -1178,7 +1183,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 *
 	 * @return bool|null Whether the current blog must be restored afterward, or null when no main site is available.
 	 */
-	private function switch_to_plugin_update_lock_blog(): ?bool {
+	private function switch_to_main_site(): ?bool {
 		if ( ! is_multisite() ) {
 			return false;
 		}
@@ -1224,7 +1229,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 *
 	 * @param bool $switched Whether this worker switched to the main site.
 	 */
-	private function restore_plugin_update_lock_blog( bool $switched ): void {
+	private function restore_from_main_site( bool $switched ): void {
 		if ( $switched ) {
 			restore_current_blog();
 		}
@@ -1440,7 +1445,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		}
 
 		if ( $for_admin_notice ) {
-			return false === $this->get_admin_stripe_billing_classification( $record );
+			return false === $this->refresh_admin_classification( $record );
 		}
 
 		try {
@@ -1453,25 +1458,27 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the record's site currently has a Stripe Billing exclusion marker.
+	 * Tell whether the record's site currently has the bundled subscriptions exclusion marker.
+	 *
+	 * Refreshes the cached admin classification when it is stale, which runs the preflight and writes an option.
 	 *
 	 * @param array<string,mixed> $record Current record.
 	 * @return bool
 	 */
-	private function record_has_stripe_billing_failure( array $record ): bool {
-		return true === $this->get_admin_stripe_billing_classification( $record );
+	private function refresh_has_bundled_subscriptions_marker( array $record ): bool {
+		return true === $this->refresh_admin_classification( $record );
 	}
 
 	/**
-	 * Classify the Stripe Billing marker for admin notices, reusing the result for one record revision and an hour.
+	 * Refresh the cached bundled subscriptions classification for admin notices, reusing it for one record revision and an hour.
 	 *
-	 * The full preflight scans Action Scheduler and order meta, so it must not run on every admin page. The worker re-checks
-	 * before it acts.
+	 * Otherwise this runs the preflight and writes the cache option. The full preflight scans Action Scheduler and order meta,
+	 * so it must not run on every admin page. The worker re-checks before it acts.
 	 *
 	 * @param array<string,mixed>|null $record Current record, or null when none exists.
 	 * @return bool|null Whether the marker is present, or null when the preflight failed.
 	 */
-	private function get_admin_stripe_billing_classification( ?array $record ): ?bool {
+	private function refresh_admin_classification( ?array $record ): ?bool {
 		$key    = is_array( $record ) ? $record['generation'] . ':' . $record['revision'] : 'none';
 		$cached = get_option( self::ADMIN_CLASSIFICATION_OPTION, null );
 		if ( is_array( $cached ) && ( $cached['key'] ?? null ) === $key && is_bool( $cached['present'] ?? null ) && time() < (int) ( $cached['expires_at'] ?? 0 ) ) {
