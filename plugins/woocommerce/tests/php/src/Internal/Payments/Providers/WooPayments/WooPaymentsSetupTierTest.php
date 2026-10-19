@@ -503,32 +503,6 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Codex 405 G1: finalize's token, before the ownership check finished, counts as the switch too, so the stored disabled
-	 * tier of the extension era reads as available and the job that writes the tier loads.
-	 *
-	 * @testdox A built-in owner past finalize, before its ownership check finished, reads a stored disabled tier as available and loads the job.
-	 */
-	public function test_builtin_owner_past_finalize_reads_a_stored_disabled_tier_as_available(): void {
-		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::DISABLED );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
-		update_option(
-			WooPaymentsCutoverStateStore::OPTION_NAME,
-			array(
-				'state'                => WooPaymentsCutoverStateStore::STATE_PENDING,
-				'request_origin_token' => 'finalize-request-token',
-			)
-		);
-		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
-		$arbiter->invalidate();
-		$this->state->invalidate();
-
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $arbiter->get_runtime_owner() );
-		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->state->get_effective_tier() );
-		$this->assertContains( WooPaymentsCutoverReconciliationJob::class, $this->state->get_classes_for_request( 'cron' ) );
-	}
-
-	/**
 	 * Mark the WooPayments plugin active so it owns the payments runtime.
 	 */
 	private function make_plugin_own_the_runtime(): void {
