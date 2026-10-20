@@ -123,9 +123,28 @@ const bannerProps = () =>
 		onNotificationsChange: jest.Mock;
 	};
 
-const renderWithBanner = async () => {
+// Resolves every step the banner waits on by awaiting it inside act(), so no assertion races a timer: the page renders,
+// the shell resolves, the lazy banner chunk (preloaded in beforeAll) resolves, then the account session settles.
+const renderAndSettle = async () => {
 	render( <WooPaymentsOverviewPage /> );
-	await screen.findByTestId( 'stripe-notification-banner' );
+	await act( async () => {
+		await mockGetShell.mock.results[ 0 ].value;
+	} );
+	await act( async () => {
+		await import( '../overview/components/stripe-notifications-banner' );
+	} );
+	await act( async () => {
+		await mockCreateAccountSession.mock.results[ 0 ].value.catch(
+			() => {}
+		);
+	} );
+};
+
+const renderWithBanner = async () => {
+	await renderAndSettle();
+	expect(
+		screen.getByTestId( 'stripe-notification-banner' )
+	).toBeInTheDocument();
 	return bannerProps();
 };
 
@@ -142,11 +161,13 @@ const getBannerWrapper = () =>
 		.closest( '.stripe-notifications-banner-wrapper' ) as HTMLElement;
 
 describe( 'WooPayments Overview Stripe notifications banner', () => {
-	// The banner is a React.lazy chunk. Its cold import can outlast a test's timeout on a loaded CI runner, so load
-	// the module once here; every render then resolves the lazy import from the module registry.
+	// The page lazy-loads the banner and the inbox notifications. A cold import is synchronous module loading that can
+	// take seconds on a loaded CI runner, so load both once here; every render then resolves from the module registry
+	// and the remaining chain is microtasks only.
 	beforeAll( async () => {
 		await import( '../overview/components/stripe-notifications-banner' );
-	}, 30000 );
+		await import( '../overview/components/inbox-notifications' );
+	}, 60000 );
 
 	beforeEach( () => {
 		jest.clearAllMocks();
@@ -315,11 +336,9 @@ describe( 'WooPayments Overview Stripe notifications banner', () => {
 		async ( _label, arrange ) => {
 			arrange();
 
-			render( <WooPaymentsOverviewPage /> );
+			await renderAndSettle();
 
-			expect(
-				await screen.findByText( FINISH_SETUP_TASK )
-			).toBeInTheDocument();
+			expect( screen.getByText( FINISH_SETUP_TASK ) ).toBeInTheDocument();
 			expect( screen.queryByText( ONBOARDING_FAILURE ) ).toBeNull();
 			expect(
 				screen.queryByText( /Unable to start onboarding/ )
@@ -410,11 +429,9 @@ describe( 'WooPayments Overview Stripe notifications banner', () => {
 		it( 'keeps the Overview and shows the update-details task when the banner throws', async () => {
 			mockBannerError = new Error( 'Stripe wrapper failed' );
 
-			render( <WooPaymentsOverviewPage /> );
+			await renderAndSettle();
 
-			expect(
-				await screen.findByText( FINISH_SETUP_TASK )
-			).toBeInTheDocument();
+			expect( screen.getByText( FINISH_SETUP_TASK ) ).toBeInTheDocument();
 			expect(
 				screen.getByRole( 'heading', { level: 1, name: 'Overview' } )
 			).toBeInTheDocument();
