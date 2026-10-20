@@ -360,7 +360,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public function run(): array {
 				++$this->run_count;
 				return array(
-					'ran'     => true,
 					'changes' => array( 'no_changes' ),
 				);
 			}
@@ -583,7 +582,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public function run(): array {
 				$this->busy = $this->store->acquire_write_lock( time() );
 				return array(
-					'ran'     => true,
 					'changes' => array( 'no_changes' ),
 				);
 			}
@@ -844,7 +842,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public function run(): array {
 				++$this->runs;
 				return array(
-					'ran'     => true,
 					'changes' => array(),
 				);
 			}
@@ -1062,7 +1059,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 					$during_run();
 				}
 				return array(
-					'ran'     => true,
 					'changes' => array(),
 				);
 			}
@@ -1217,7 +1213,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 					$during_run();
 				}
 				return array(
-					'ran'     => true,
 					'changes' => array(),
 				);
 			}
@@ -1403,7 +1398,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** @return array{ran:bool,changes:string[]} */
 			public function run(): array {
 				return array(
-					'ran'     => true,
 					'changes' => array( 'no_changes' ),
 				);
 			}
@@ -1910,7 +1904,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** Return a controlled persistence failure. */
 			public function run(): array {
 				return array(
-					'ran'     => true,
 					'changes' => array( 'settings_persistence_failed' ),
 				);
 			}
@@ -2285,7 +2278,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** @return array{ran:bool,changes:string[]} */
 			public function run(): array {
 				return array(
-					'ran'     => true,
 					'changes' => array(),
 				);
 			}
@@ -3304,7 +3296,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			public function run(): array {
 				++$this->runs;
 				return array(
-					'ran'     => true,
 					'changes' => array(),
 				);
 			}
@@ -3729,7 +3720,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** @return array{ran:bool,changes:string[]} */
 			public function run(): array {
 				return array(
-					'ran'     => true,
 					'changes' => array(),
 				);
 			}
@@ -4775,7 +4765,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** @return array{ran:bool,changes:string[]} */
 			public function run(): array {
 				return array(
-					'ran'     => true,
 					'changes' => array( 'no_changes' ),
 				);
 			}
@@ -4875,7 +4864,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** Return a controlled persistence failure for tests that do not exercise finalization. */
 			public function run(): array {
 				return array(
-					'ran'     => true,
 					'changes' => array( 'settings_persistence_failed' ),
 				);
 			}

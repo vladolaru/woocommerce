@@ -116,7 +116,7 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Normalizes pre-cutover gateway option shapes on the first request the built-in WooPayments owns.
+	 * @testdox Normalizes the shared gateway options of a floor-version extension store once on the first request the built-in WooPayments owns.
 	 */
 	public function test_run_normalizes_pre_cutover_gateway_option_shapes_once(): void {
 		$this->seed_extension_options();
@@ -125,32 +125,17 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 		$stored  = get_option( self::SETTINGS_OPTION );
 
 		$this->assertIsArray( $stored );
-		$this->assertTrue( $summary['ran'] );
-		$this->assertContains( 'express_checkout_locations', $summary['changes'] );
-		$this->assertContains( 'split_gateway_settings', $summary['changes'] );
-		$this->assertContains( 'amazon_pay_express_checkout_locations', $summary['changes'] );
-		$this->assertContains( 'payment_request_button_size', $summary['changes'] );
-		$this->assertContains( 'payment_request_button_type', $summary['changes'] );
 		$this->assertContains( 'manual_capture_payment_methods', $summary['changes'] );
-		$this->assertContains( 'link_woopay_mutual_exclusion', $summary['changes'] );
-		$this->assertArrayNotHasKey( 'payment_request', $stored );
-		$this->assertSame( array( 'product', 'cart', 'checkout' ), $stored['payment_request_button_locations'] );
-		$this->assertArrayNotHasKey( 'platform_checkout_button_locations', $stored );
-		$this->assertArrayNotHasKey( 'payment_request_button_branded_type', $stored );
+		$this->assertSame( array( 'card', 'link', 'amazon_pay' ), $stored['upe_enabled_payment_method_ids'] );
 		$this->assertSame( array( 'payment_request', 'amazon_pay' ), $stored['express_checkout_product_methods'] );
 		$this->assertSame( array( 'woopay', 'amazon_pay' ), $stored['express_checkout_cart_methods'] );
 		$this->assertSame( array( 'payment_request', 'amazon_pay' ), $stored['express_checkout_checkout_methods'] );
 		$this->assertSame( 'small', $stored['payment_request_button_size'] );
 		$this->assertSame( 'buy', $stored['payment_request_button_type'] );
-		$this->assertSame( array( 'card', 'amazon_pay' ), $stored['upe_enabled_payment_method_ids'] );
-		$expected_split_settings = array( 'enabled' => 'yes' );
-		$this->assertSame( $expected_split_settings, get_option( 'woocommerce_woocommerce_payments_apple_pay_settings' ) );
-		$this->assertSame( $expected_split_settings, get_option( 'woocommerce_woocommerce_payments_google_pay_settings' ) );
 		$this->assertSame( '4', get_option( self::MIGRATION_VERSION_OPTION ) );
 
 		$second_summary = $this->create_runner()->run();
 
-		$this->assertFalse( $second_summary['ran'] );
 		$this->assertSame( array( 'already_normalized' ), $second_summary['changes'] );
 	}
 
@@ -158,86 +143,17 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	 * @testdox Stores the completed cutover marker in the autoloaded option set.
 	 */
 	public function test_run_stores_completed_marker_as_an_autoloaded_option(): void {
-		$summary    = $this->create_runner()->run();
+		$this->create_runner()->run();
 		$alloptions = wp_load_alloptions( true );
 
-		$this->assertTrue( $summary['ran'] );
 		$this->assertSame( '4', $alloptions[ self::MIGRATION_VERSION_OPTION ] ?? null, 'Completed cutover normalization must not leave its marker as a request-level option read.' );
 	}
 
 	/**
-	 * @testdox Repairs a historical non-autoloaded marker without rerunning cutover normalization.
-	 */
-	public function test_run_repairs_historical_non_autoloaded_marker_without_rerunning_normalization(): void {
-		add_option( self::MIGRATION_VERSION_OPTION, '4', '', false );
-
-		$this->assertArrayNotHasKey( self::MIGRATION_VERSION_OPTION, wp_load_alloptions( true ), 'The historical marker fixture must begin outside alloptions.' );
-
-		$summary    = $this->create_runner()->run();
-		$alloptions = wp_load_alloptions( true );
-
-		$this->assertFalse( $summary['ran'] );
-		$this->assertSame( array( 'already_normalized' ), $summary['changes'] );
-		$this->assertSame( '4', $alloptions[ self::MIGRATION_VERSION_OPTION ] ?? null, 'An existing cutover marker must be repaired into alloptions.' );
-	}
-
-	/**
-	 * @testdox Reruns only discontinued method cleanup for the previous completed marker.
-	 */
-	public function test_run_reruns_discontinued_method_cleanup_from_previous_completed_marker(): void {
-		update_option( self::MIGRATION_VERSION_OPTION, '3' );
-		update_option( self::VERSION_OPTION, '10.4.0' );
-		update_option(
-			self::SETTINGS_OPTION,
-			array(
-				'upe_enabled_payment_method_ids'    => array( 'card', 'ideal', 'sofort' ),
-				'upe_available_payment_methods'     => array( 'card', 'ideal', 'sofort' ),
-				'express_checkout_product_methods'  => array( 'payment_request' ),
-				'express_checkout_cart_methods'     => array( 'woopay' ),
-				'express_checkout_checkout_methods' => array(),
-			)
-		);
-		update_option(
-			'woocommerce_woocommerce_payments_sofort_settings',
-			array(
-				'enabled' => 'yes',
-				'custom'  => 'preserve-me',
-			)
-		);
-
-		$summary = $this->create_runner()->run();
-		$stored  = get_option( self::SETTINGS_OPTION );
-
-		$this->assertTrue( $summary['ran'] );
-		$this->assertSame( array( 'discontinued_payment_methods', 'split_gateway_settings' ), $summary['changes'] );
-		$this->assertSame( array( 'card', 'ideal' ), $stored['upe_enabled_payment_method_ids'] );
-		$this->assertSame( array( 'card', 'ideal' ), $stored['upe_available_payment_methods'] );
-		$this->assertSame( array( 'payment_request' ), $stored['express_checkout_product_methods'] );
-		$this->assertSame( array( 'woopay' ), $stored['express_checkout_cart_methods'] );
-		$this->assertSame( array(), $stored['express_checkout_checkout_methods'] );
-		$this->assertArrayNotHasKey( 'manual_capture', $stored );
-		$this->assertSame(
-			array(
-				'enabled'                        => 'no',
-				'custom'                         => 'preserve-me',
-				'upe_enabled_payment_method_ids' => array( 'card', 'ideal' ),
-			),
-			get_option( 'woocommerce_woocommerce_payments_sofort_settings' )
-		);
-		$this->assertSame( '4', wp_load_alloptions( true )[ self::MIGRATION_VERSION_OPTION ] ?? null );
-
-		$second_summary = $this->create_runner()->run();
-
-		$this->assertFalse( $second_summary['ran'] );
-		$this->assertSame( array( 'already_normalized' ), $second_summary['changes'] );
-	}
-
-	/**
-	 * @testdox Retains the previous marker when a discontinued split gateway update fails and retries it.
+	 * @testdox Leaves the marker unset when a discontinued split gateway update fails and retries it.
 	 */
 	public function test_run_retries_discontinued_method_cleanup_after_split_gateway_write_failure(): void {
 		$option_name = 'woocommerce_woocommerce_payments_sofort_settings';
-		update_option( self::MIGRATION_VERSION_OPTION, '3' );
 		update_option(
 			self::SETTINGS_OPTION,
 			array(
@@ -261,23 +177,20 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 			remove_filter( 'pre_update_option_' . $option_name, $reject_update, 10 );
 		}
 
-		$this->assertFalse( $failed_summary['ran'] );
 		$this->assertSame( array( 'settings_persistence_failed' ), $failed_summary['changes'] );
-		$this->assertSame( '3', get_option( self::MIGRATION_VERSION_OPTION ) );
+		$this->assertFalse( get_option( self::MIGRATION_VERSION_OPTION, false ) );
 		$this->assertSame( array( 'card' ), get_option( self::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
 		$this->assertSame( array( 'card' ), get_option( self::SETTINGS_OPTION )['upe_available_payment_methods'] );
 		$this->assertSame( 'yes', get_option( $option_name )['enabled'] );
 
 		$retry_summary = $this->create_runner()->run();
 
-		$this->assertTrue( $retry_summary['ran'] );
 		$this->assertSame( array( 'split_gateway_settings' ), $retry_summary['changes'] );
 		$this->assertSame( '4', get_option( self::MIGRATION_VERSION_OPTION ) );
 		$this->assertSame( 'no', get_option( $option_name )['enabled'] );
 
 		$third_summary = $this->create_runner()->run();
 
-		$this->assertFalse( $third_summary['ran'] );
 		$this->assertSame( array( 'already_normalized' ), $third_summary['changes'] );
 	}
 
@@ -288,10 +201,9 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 		update_option( self::VERSION_OPTION, '10.8.0' );
 		update_option( self::SETTINGS_OPTION, array( 'saved_cards' => 'no' ) );
 
-		$summary = $this->create_runner()->run();
-		$stored  = get_option( self::SETTINGS_OPTION );
+		$this->create_runner()->run();
+		$stored = get_option( self::SETTINGS_OPTION );
 
-		$this->assertTrue( $summary['ran'] );
 		$this->assertIsArray( $stored );
 		$this->assertSame( 'no', $stored['saved_cards'] );
 		$this->assertArrayHasKey( 'manual_capture', $stored );
@@ -344,7 +256,6 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 			remove_filter( 'pre_update_option_' . $option_name, $reject_update, 10 );
 		}
 
-		$this->assertFalse( $summary['ran'] );
 		$this->assertSame( array( 'settings_persistence_failed' ), $summary['changes'] );
 		$this->assertFalse( get_option( self::MIGRATION_VERSION_OPTION, false ) );
 		$this->assertSame( array( 'theme' => 'stale' ), get_transient( 'wcpay_upe_appearance' ) );
@@ -377,10 +288,9 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$summary = $this->create_runner()->run();
-		$stored  = get_option( self::SETTINGS_OPTION );
+		$this->create_runner()->run();
+		$stored = get_option( self::SETTINGS_OPTION );
 
-		$this->assertContains( 'payment_request_split_settings', $summary['changes'] );
 		$this->assertIsArray( $stored );
 		$this->assertArrayNotHasKey( 'payment_request', $stored );
 		$this->assertSame(
@@ -490,7 +400,7 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	 * @testdox Cutover removes discontinued method IDs and projects canonical split gateway availability.
 	 */
 	public function test_run_projects_split_gateway_settings_and_removes_discontinued_methods(): void {
-		update_option( self::VERSION_OPTION, '7.3.0' );
+		update_option( self::VERSION_OPTION, WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION );
 		update_option(
 			self::SETTINGS_OPTION,
 			array(
@@ -511,106 +421,6 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_ideal_settings' )['enabled'] );
 		$this->assertSame( 'no', get_option( 'woocommerce_woocommerce_payments_giropay_settings' )['enabled'] );
 		$this->assertSame( 'no', get_option( 'woocommerce_woocommerce_payments_sofort_settings' )['enabled'] );
-	}
-
-	/**
-	 * @testdox Versioned settings migrations honor before, equal, and after boundaries and are intrinsically idempotent.
-	 * @dataProvider versioned_settings_migration_provider
-	 *
-	 * @param string              $method_name     Migration method name.
-	 * @param string              $before_version  Version before the migration boundary.
-	 * @param string              $boundary_version Exact migration boundary.
-	 * @param string              $after_version   Version after the migration boundary.
-	 * @param array<string,mixed> $initial         Pre-migration settings.
-	 * @param array<string,mixed> $expected        Expected migrated settings.
-	 */
-	public function test_versioned_settings_migration_boundaries(
-		string $method_name,
-		string $before_version,
-		string $boundary_version,
-		string $after_version,
-		array $initial,
-		array $expected
-	): void {
-		$runner = $this->create_runner();
-		$method = new \ReflectionMethod( $runner, $method_name );
-		$method->setAccessible( true );
-		$settings  = $initial;
-		$arguments = array( &$settings, $before_version );
-
-		$this->assertTrue( $method->invokeArgs( $runner, $arguments ) );
-		$this->assertSame( $expected, $settings );
-
-		$arguments = array( &$settings, $before_version );
-		$this->assertFalse( $method->invokeArgs( $runner, $arguments ), 'A migrated shape should be an intrinsic no-op when the outer marker is absent.' );
-		$this->assertSame( $expected, $settings );
-
-		foreach ( array( $boundary_version, $after_version ) as $non_migrating_version ) {
-			$settings  = $initial;
-			$arguments = array( &$settings, $non_migrating_version );
-			$this->assertFalse( $method->invokeArgs( $runner, $arguments ) );
-			$this->assertSame( $initial, $settings );
-		}
-	}
-
-	/**
-	 * Versioned settings migration fixtures.
-	 *
-	 * @return array<string,array{string,string,string,string,array<string,mixed>,array<string,mixed>}>
-	 */
-	public function versioned_settings_migration_provider(): array {
-		return array(
-			'express checkout locations'  => array(
-				'migrate_express_checkout_locations',
-				'10.3.9',
-				'10.4.0',
-				'10.4.1',
-				array(
-					'payment_request_button_locations'   => array( 'product', 'checkout' ),
-					'platform_checkout_button_locations' => array( 'cart' ),
-				),
-				array(
-					'express_checkout_product_methods'  => array( 'payment_request' ),
-					'express_checkout_cart_methods'     => array( 'woopay' ),
-					'express_checkout_checkout_methods' => array( 'payment_request' ),
-				),
-			),
-			'Amazon Pay locations'        => array(
-				'add_amazon_pay_to_express_checkout_locations',
-				'10.4.9',
-				'10.5.0',
-				'10.5.1',
-				array(
-					'express_checkout_product_methods'  => array( 'payment_request' ),
-					'express_checkout_cart_methods'     => array( 'woopay' ),
-					'express_checkout_checkout_methods' => array(),
-				),
-				array(
-					'express_checkout_product_methods'  => array( 'payment_request', 'amazon_pay' ),
-					'express_checkout_cart_methods'     => array( 'woopay', 'amazon_pay' ),
-					'express_checkout_checkout_methods' => array( 'amazon_pay' ),
-				),
-			),
-			'payment request button size' => array(
-				'normalize_payment_request_button_size',
-				'6.8.9',
-				'6.9.0',
-				'6.9.1',
-				array( 'payment_request_button_size' => 'default' ),
-				array( 'payment_request_button_size' => 'small' ),
-			),
-			'payment request button type' => array(
-				'normalize_payment_request_button_type',
-				'2.5.9',
-				'2.6.0',
-				'2.6.1',
-				array(
-					'payment_request_button_type'         => 'branded',
-					'payment_request_button_branded_type' => 'long',
-				),
-				array( 'payment_request_button_type' => 'buy' ),
-			),
-		);
 	}
 
 	/**
@@ -640,7 +450,7 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	 */
 	public function unversioned_settings_migration_provider(): array {
 		return array(
-			'manual capture methods'    => array(
+			'manual capture methods' => array(
 				'normalize_manual_capture_payment_methods',
 				array(
 					'manual_capture'                 => 'yes',
@@ -649,23 +459,6 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 				array(
 					'manual_capture'                 => 'yes',
 					'upe_enabled_payment_method_ids' => array( 'card', 'amazon_pay' ),
-				),
-			),
-			'Link and WooPay exclusion' => array(
-				'normalize_link_woopay_mutual_exclusion',
-				array(
-					'platform_checkout'                 => 'yes',
-					'upe_enabled_payment_method_ids'    => array( 'card', 'link' ),
-					'express_checkout_product_methods'  => array( 'link', 'payment_request' ),
-					'express_checkout_cart_methods'     => array( 'woopay', 'link' ),
-					'express_checkout_checkout_methods' => array( 'link' ),
-				),
-				array(
-					'platform_checkout'                 => 'yes',
-					'upe_enabled_payment_method_ids'    => array( 'card' ),
-					'express_checkout_product_methods'  => array( 'payment_request' ),
-					'express_checkout_cart_methods'     => array( 'woopay' ),
-					'express_checkout_checkout_methods' => array(),
 				),
 			),
 		);
@@ -716,45 +509,42 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Normalization removes or reshapes only allowlisted shared settings keys ($fixture_name).
-	 * @dataProvider shared_settings_contract_provider
-	 *
-	 * @param string              $fixture_name     Fixture label.
-	 * @param string              $previous_version Last active plugin version.
-	 * @param array<string,mixed> $settings         Settings before normalization, without the unknown keys.
-	 * @param bool                $expects_removal  Whether the fixture holds retired keys that must go.
+	 * @testdox Normalization removes no shared settings key and reshapes none of a store at the cutover floor.
 	 */
-	public function test_run_removes_or_reshapes_only_allowlisted_shared_settings( string $fixture_name, string $previous_version, array $settings, bool $expects_removal ): void {
-		unset( $fixture_name );
-		$settings = array_merge( $settings, self::UNKNOWN_SETTINGS );
-		update_option( self::VERSION_OPTION, $previous_version );
+	public function test_run_removes_or_reshapes_only_allowlisted_shared_settings(): void {
+		$settings = array_merge(
+			array(
+				'enabled'                           => 'yes',
+				'test_mode'                         => 'yes',
+				'manual_capture'                    => 'yes',
+				'saved_cards'                       => 'yes',
+				'platform_checkout'                 => 'yes',
+				'upe_enabled_payment_method_ids'    => array( 'card', 'link', 'ideal' ),
+				'express_checkout_product_methods'  => array( 'payment_request', 'link' ),
+				'express_checkout_cart_methods'     => array( 'woopay' ),
+				'express_checkout_checkout_methods' => array(),
+				'payment_request_button_type'       => 'buy',
+				'payment_request_button_size'       => 'small',
+			),
+			self::UNKNOWN_SETTINGS
+		);
+		update_option( self::VERSION_OPTION, WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION );
 		update_option( self::SETTINGS_OPTION, $settings );
 		foreach ( self::SPLIT_SETTINGS as $option_name => $split_settings ) {
 			update_option( $option_name, $split_settings );
 		}
-		$retired_keys = array_keys( WooPaymentsCutoverDataMigration::RETIRED_SETTINGS_KEYS );
 
-		$summary = $this->create_runner()->run();
-		$stored  = get_option( self::SETTINGS_OPTION );
+		$this->create_runner()->run();
+		$stored = get_option( self::SETTINGS_OPTION );
 
-		$this->assertTrue( $summary['ran'] );
 		$this->assertIsArray( $stored );
-		$removed = array_keys( array_diff_key( $settings, $stored ) );
-		$this->assertSame( array(), array_values( array_diff( $removed, $retired_keys ) ), 'Normalization removed shared settings keys that are not on the retired allowlist.' );
-		if ( $expects_removal ) {
-			$this->assertNotEmpty( $removed, 'The legacy fixture must exercise at least one retired-key removal.' );
-		} else {
-			$this->assertSame( array(), $removed, 'A store at the cutover floor holds no retired key, so nothing may be removed.' );
-		}
+		$this->assertSame( array(), array_keys( array_diff_key( $settings, $stored ) ), 'A store at the cutover floor holds no retired key, so nothing may be removed.' );
 		foreach ( self::UNKNOWN_SETTINGS as $key => $value ) {
 			$this->assertArrayHasKey( $key, $stored, "Unknown shared setting {$key} must survive normalization." );
 			$this->assertSame( $value, $stored[ $key ], "Unknown shared setting {$key} must keep its value." );
 		}
 		foreach ( array_intersect_key( $settings, $stored ) as $key => $value ) {
-			if ( in_array( $key, $retired_keys, true ) ) {
-				continue;
-			}
-			$this->assertSame( $this->value_shape( $value ), $this->value_shape( $stored[ $key ] ), "Normalization reshaped the shared setting {$key}, which is not on the retired allowlist." );
+			$this->assertSame( $this->value_shape( $value ), $this->value_shape( $stored[ $key ] ), "Normalization reshaped the shared setting {$key}." );
 		}
 		foreach ( self::SPLIT_SETTINGS as $option_name => $split_settings ) {
 			$stored_split = get_option( $option_name );
@@ -764,51 +554,6 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 				$this->assertSame( $this->value_shape( $value ), $this->value_shape( $stored_split[ $key ] ), "Normalization reshaped {$key} in {$option_name}." );
 			}
 		}
-	}
-
-	/**
-	 * Shared settings contract fixtures.
-	 *
-	 * @return array<string,array{string,string,array<string,mixed>,bool}>
-	 */
-	public function shared_settings_contract_provider(): array {
-		return array(
-			'extension 2.5.0 shapes'      => array(
-				'extension 2.5.0 shapes',
-				'2.5.0',
-				array(
-					'enabled'                             => 'yes',
-					'payment_request'                     => 'yes',
-					'payment_request_button_locations'    => array( 'product', 'checkout' ),
-					'platform_checkout_button_locations'  => array( 'cart' ),
-					'payment_request_button_size'         => 'default',
-					'payment_request_button_type'         => 'branded',
-					'payment_request_button_branded_type' => 'long',
-					'manual_capture'                      => 'yes',
-					'platform_checkout'                   => 'yes',
-					'upe_enabled_payment_method_ids'      => array( 'card', 'link', 'sepa_debit', 'amazon_pay', 'ideal', 'sofort' ),
-				),
-				true,
-			),
-			'plugin at the cutover floor' => array(
-				'plugin at the cutover floor',
-				WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION,
-				array(
-					'enabled'                           => 'yes',
-					'test_mode'                         => 'yes',
-					'manual_capture'                    => 'yes',
-					'saved_cards'                       => 'yes',
-					'platform_checkout'                 => 'yes',
-					'upe_enabled_payment_method_ids'    => array( 'card', 'link', 'ideal' ),
-					'express_checkout_product_methods'  => array( 'payment_request', 'link' ),
-					'express_checkout_cart_methods'     => array( 'woopay' ),
-					'express_checkout_checkout_methods' => array(),
-					'payment_request_button_type'       => 'buy',
-					'payment_request_button_size'       => 'small',
-				),
-				false,
-			),
-		);
 	}
 
 	/**
@@ -843,24 +588,6 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 			$this->assertSame( $value, get_option( $option_name ), "Plugin-read option {$option_name} must survive normalization unchanged." );
 		}
 		$this->assertSame( array( 'kept' => true ), get_transient( 'wcpay_fraud_protection_settings' ) );
-	}
-
-	/**
-	 * @testdox Refuses to remove a shared settings key that is not on the retired allowlist.
-	 */
-	public function test_remove_retired_settings_refuses_a_key_outside_the_allowlist(): void {
-		$runner   = $this->create_runner();
-		$method   = new \ReflectionMethod( $runner, 'remove_retired_settings' );
-		$settings = array(
-			'saved_cards'     => 'yes',
-			'payment_request' => 'yes',
-		);
-		$method->setAccessible( true );
-		$this->setExpectedIncorrectUsage( WooPaymentsCutoverDataMigration::class . '::remove_retired_settings' );
-
-		$method->invokeArgs( $runner, array( &$settings, 'saved_cards', 'payment_request' ) );
-
-		$this->assertSame( array( 'saved_cards' => 'yes' ), $settings );
 	}
 
 	/**
@@ -903,29 +630,28 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Seed legacy WooPayments option shapes.
+	 * Seed the shared options of an extension store at the cutover floor.
 	 */
 	private function seed_extension_options(): void {
-		update_option( self::VERSION_OPTION, '2.5.0' );
+		update_option( self::VERSION_OPTION, WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION );
 		update_option(
 			self::SETTINGS_OPTION,
 			array(
-				'enabled'                             => 'yes',
-				'payment_request'                     => 'yes',
-				'payment_request_button_locations'    => array( 'product', 'checkout' ),
-				'platform_checkout_button_locations'  => array( 'cart' ),
-				'payment_request_button_size'         => 'default',
-				'payment_request_button_type'         => 'branded',
-				'payment_request_button_branded_type' => 'long',
-				'manual_capture'                      => 'yes',
-				'platform_checkout'                   => 'yes',
-				'upe_enabled_payment_method_ids'      => array(
+				'enabled'                           => 'yes',
+				'payment_request_button_size'       => 'small',
+				'payment_request_button_type'       => 'buy',
+				'manual_capture'                    => 'yes',
+				'platform_checkout'                 => 'yes',
+				'upe_enabled_payment_method_ids'    => array(
 					'card',
 					'link',
 					'sepa_debit',
 					'amazon_pay',
 					'ideal',
 				),
+				'express_checkout_product_methods'  => array( 'payment_request', 'amazon_pay' ),
+				'express_checkout_cart_methods'     => array( 'woopay', 'amazon_pay' ),
+				'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
 			)
 		);
 	}

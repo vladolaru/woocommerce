@@ -39,8 +39,6 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	 */
 	private const MIGRATION_VERSION = '4';
 
-	private const LOCATIONS = array( 'product', 'cart', 'checkout' );
-
 	private const MANUAL_CAPTURE_PAYMENT_METHOD_IDS = array(
 		'amazon_pay',
 		'apple_pay',
@@ -178,73 +176,31 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	/**
 	 * Run the data migration.
 	 *
-	 * @return array{ran:bool,changes:string[]}
+	 * @return array{changes:string[]}
 	 */
 	public function run(): array {
-		$completed_normalization_version = (string) get_option( self::MIGRATION_VERSION_OPTION, '' );
-		if ( self::MIGRATION_VERSION === $completed_normalization_version ) {
-			$alloptions = wp_load_alloptions();
-			if ( ! array_key_exists( self::MIGRATION_VERSION_OPTION, $alloptions ) ) {
-				wp_set_option_autoload( self::MIGRATION_VERSION_OPTION, true );
-			}
-
-			return array(
-				'ran'     => false,
-				'changes' => array( 'already_normalized' ),
-			);
+		if ( self::MIGRATION_VERSION === (string) get_option( self::MIGRATION_VERSION_OPTION, '' ) ) {
+			return array( 'changes' => array( 'already_normalized' ) );
 		}
 
-		$changes           = array();
-		$settings          = $this->get_gateway_settings();
-		$incremental_rerun = '3' === $completed_normalization_version;
-		$previous_version  = '';
+		$changes          = array();
+		$settings         = $this->get_gateway_settings();
+		$previous_version = $this->get_previous_version();
 
-		if ( ! $incremental_rerun ) {
-			$previous_version = $this->get_previous_version();
+		if ( $this->normalize_manual_capture_payment_methods( $settings ) ) {
+			$changes[] = 'manual_capture_payment_methods';
+		}
 
-			if ( $this->should_migrate_payment_request_split_settings( $settings, $previous_version ) ) {
-				$changes[] = 'payment_request_split_settings';
-			}
-
-			if ( $this->migrate_express_checkout_locations( $settings, $previous_version ) ) {
-				$changes[] = 'express_checkout_locations';
-			}
-
-			if ( $this->add_amazon_pay_to_express_checkout_locations( $settings, $previous_version ) ) {
-				$changes[] = 'amazon_pay_express_checkout_locations';
-			}
-
-			if ( $this->normalize_payment_request_button_size( $settings, $previous_version ) ) {
-				$changes[] = 'payment_request_button_size';
-			}
-
-			if ( $this->normalize_payment_request_button_type( $settings, $previous_version ) ) {
-				$changes[] = 'payment_request_button_type';
-			}
-
-			if ( $this->normalize_manual_capture_payment_methods( $settings ) ) {
-				$changes[] = 'manual_capture_payment_methods';
-			}
-
-			if ( $this->normalize_link_woopay_mutual_exclusion( $settings ) ) {
-				$changes[] = 'link_woopay_mutual_exclusion';
-			}
-
-			if ( $this->add_missing_form_field_defaults( $settings ) ) {
-				$changes[] = 'form_field_defaults';
-			}
+		if ( $this->add_missing_form_field_defaults( $settings ) ) {
+			$changes[] = 'form_field_defaults';
 		}
 
 		$persisted = $this->gateway_settings_synchronizer->persist( $settings );
 		if ( ! $persisted['persisted'] ) {
 			$this->log_persistence_failure( $persisted['failed_option_names'] );
 
-			return array(
-				'ran'     => false,
-				'changes' => array( 'settings_persistence_failed' ),
-			);
+			return array( 'changes' => array( 'settings_persistence_failed' ) );
 		}
-		$settings = $persisted['settings'];
 		if ( ! empty( $persisted['removed_discontinued_method_ids'] ) ) {
 			$changes[] = 'discontinued_payment_methods';
 		}
@@ -252,22 +208,20 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 			$changes[] = 'split_gateway_settings';
 		}
 
-		if ( ! $incremental_rerun ) {
-			if ( $this->delete_appearance_transients() ) {
-				$changes[] = 'appearance_transients';
-			}
+		if ( $this->delete_appearance_transients() ) {
+			$changes[] = 'appearance_transients';
+		}
 
-			if ( $this->delete_deprecated_options() ) {
-				$changes[] = 'deprecated_flags_and_options';
-			}
+		if ( $this->delete_deprecated_options() ) {
+			$changes[] = 'deprecated_flags_and_options';
+		}
 
-			if ( $this->delete_bnpl_announcement_state() ) {
-				$changes[] = 'bnpl_announcement_state';
-			}
+		if ( $this->delete_bnpl_announcement_state() ) {
+			$changes[] = 'bnpl_announcement_state';
+		}
 
-			if ( $this->mark_multi_currency_cache_autodetect_done( $previous_version ) ) {
-				$changes[] = 'multi_currency_cache_autodetect';
-			}
+		if ( $this->mark_multi_currency_cache_autodetect_done( $previous_version ) ) {
+			$changes[] = 'multi_currency_cache_autodetect';
 		}
 
 		if ( $this->clear_retired_woopay_compatibility_cron() ) {
@@ -286,10 +240,7 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 
 		$this->log_summary( $changes );
 
-		return array(
-			'ran'     => true,
-			'changes' => $changes,
-		);
+		return array( 'changes' => $changes );
 	}
 
 	/**
@@ -374,129 +325,6 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the shared settings synchronizer should consume the retired payment-request setting.
-	 *
-	 * @param array<string,mixed> $settings         Gateway settings.
-	 * @param string              $previous_version Previous WooPayments extension version.
-	 * @return bool
-	 */
-	private function should_migrate_payment_request_split_settings( array $settings, string $previous_version ): bool {
-		return $this->is_upgrade_from_before( $previous_version, '10.4.0' ) && array_key_exists( 'payment_request', $settings );
-	}
-
-	/**
-	 * Convert method-centric express-checkout location settings into location-centric settings.
-	 *
-	 * @param array<string,mixed> $settings         Gateway settings.
-	 * @param string              $previous_version Previous WooPayments extension version.
-	 * @return bool
-	 */
-	private function migrate_express_checkout_locations( array &$settings, string $previous_version ): bool {
-		if ( ! $this->is_upgrade_from_before( $previous_version, '10.4.0' ) ) {
-			return false;
-		}
-
-		$has_old_settings = isset( $settings['payment_request_button_locations'] )
-			|| isset( $settings['platform_checkout_button_locations'] );
-		if ( ! $has_old_settings || isset( $settings['express_checkout_product_methods'] ) ) {
-			return false;
-		}
-
-		$payment_request_locations = $this->normalize_location_list( $settings['payment_request_button_locations'] ?? self::LOCATIONS );
-		$woopay_locations          = $this->normalize_location_list( $settings['platform_checkout_button_locations'] ?? self::LOCATIONS );
-
-		foreach ( self::LOCATIONS as $location ) {
-			$methods = array();
-
-			if ( in_array( $location, $payment_request_locations, true ) ) {
-				$methods[] = 'payment_request';
-			}
-
-			if ( in_array( $location, $woopay_locations, true ) ) {
-				$methods[] = 'woopay';
-			}
-
-			$settings[ "express_checkout_{$location}_methods" ] = $methods;
-		}
-
-		$this->remove_retired_settings( $settings, 'payment_request_button_locations', 'platform_checkout_button_locations' );
-
-		return true;
-	}
-
-	/**
-	 * Add Amazon Pay to current express-checkout location settings for older installs.
-	 *
-	 * @param array<string,mixed> $settings         Gateway settings.
-	 * @param string              $previous_version Previous WooPayments extension version.
-	 * @return bool
-	 */
-	private function add_amazon_pay_to_express_checkout_locations( array &$settings, string $previous_version ): bool {
-		if ( ! $this->is_upgrade_from_before( $previous_version, '10.5.0' ) || ! isset( $settings['express_checkout_product_methods'] ) ) {
-			return false;
-		}
-
-		$updated = false;
-		foreach ( self::LOCATIONS as $location ) {
-			$key     = "express_checkout_{$location}_methods";
-			$methods = $this->normalize_string_list( $settings[ $key ] ?? array() );
-
-			if ( ! in_array( 'amazon_pay', $methods, true ) ) {
-				$methods[] = 'amazon_pay';
-				$updated   = true;
-			}
-
-			$settings[ $key ] = $methods;
-		}
-
-		return $updated;
-	}
-
-	/**
-	 * Normalize payment request button size.
-	 *
-	 * @param array<string,mixed> $settings         Gateway settings.
-	 * @param string              $previous_version Previous WooPayments extension version.
-	 * @return bool
-	 */
-	private function normalize_payment_request_button_size( array &$settings, string $previous_version ): bool {
-		if ( ! $this->is_upgrade_from_before( $previous_version, '6.9.0' ) || 'default' !== ( $settings['payment_request_button_size'] ?? null ) ) {
-			return false;
-		}
-
-		$settings['payment_request_button_size'] = 'small';
-
-		return true;
-	}
-
-	/**
-	 * Normalize payment request button type and remove stale branded-type helper state.
-	 *
-	 * @param array<string,mixed> $settings         Gateway settings.
-	 * @param string              $previous_version Previous WooPayments extension version.
-	 * @return bool
-	 */
-	private function normalize_payment_request_button_type( array &$settings, string $previous_version ): bool {
-		if ( ! $this->is_upgrade_from_before( $previous_version, '2.6.0' ) ) {
-			return false;
-		}
-
-		$previous_type = $settings['payment_request_button_type'] ?? null;
-		$mapped_type   = $this->map_payment_request_button_type(
-			$previous_type,
-			$settings['payment_request_button_branded_type'] ?? null
-		);
-		$changed       = $mapped_type !== $previous_type || array_key_exists( 'payment_request_button_branded_type', $settings );
-
-		if ( null !== $mapped_type ) {
-			$settings['payment_request_button_type'] = $mapped_type;
-		}
-		$this->remove_retired_settings( $settings, 'payment_request_button_branded_type' );
-
-		return $changed;
-	}
-
-	/**
 	 * Keep only the payment methods that are safe with manual capture when manual capture is enabled.
 	 *
 	 * @param array<string,mixed> $settings Gateway settings.
@@ -522,75 +350,6 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 		$settings['upe_enabled_payment_method_ids'] = $filtered;
 
 		return true;
-	}
-
-	/**
-	 * Remove Link when WooPay is enabled.
-	 *
-	 * @param array<string,mixed> $settings Gateway settings.
-	 * @return bool
-	 */
-	private function normalize_link_woopay_mutual_exclusion( array &$settings ): bool {
-		if ( 'yes' !== (string) ( $settings['platform_checkout'] ?? 'no' ) ) {
-			return false;
-		}
-
-		$updated = false;
-		if ( is_array( $settings['upe_enabled_payment_method_ids'] ?? null ) ) {
-			$updated = $this->remove_method_from_setting( $settings, 'upe_enabled_payment_method_ids', 'link' );
-		}
-
-		foreach ( self::LOCATIONS as $location ) {
-			$key = "express_checkout_{$location}_methods";
-			if ( is_array( $settings[ $key ] ?? null ) ) {
-				$updated = $this->remove_method_from_setting( $settings, $key, 'link' ) || $updated;
-			}
-		}
-
-		return $updated;
-	}
-
-	/**
-	 * Remove a method ID from a settings array.
-	 *
-	 * @param array<string,mixed> $settings Gateway settings.
-	 * @param string              $key      Settings key.
-	 * @param string              $method   Method ID to remove.
-	 * @return bool
-	 */
-	private function remove_method_from_setting( array &$settings, string $key, string $method ): bool {
-		$previous = $this->normalize_string_list( $settings[ $key ] ?? array() );
-		$filtered = array_values(
-			array_filter(
-				$previous,
-				static fn( string $payment_method_id ): bool => $method !== $payment_method_id
-			)
-		);
-
-		if ( $filtered === $previous ) {
-			return false;
-		}
-
-		$settings[ $key ] = $filtered;
-
-		return true;
-	}
-
-	/**
-	 * Remove retired keys from the shared settings; a key outside RETIRED_SETTINGS_KEYS is kept.
-	 *
-	 * @param array<string,mixed> $settings Gateway settings.
-	 * @param string              ...$keys  Retired settings keys.
-	 */
-	private function remove_retired_settings( array &$settings, string ...$keys ): void {
-		foreach ( $keys as $key ) {
-			if ( ! array_key_exists( $key, self::RETIRED_SETTINGS_KEYS ) ) {
-				wc_doing_it_wrong( __METHOD__, sprintf( 'Cutover normalization must not remove the shared WooPayments setting "%s": an extension at the minimum cutover version may still read it.', $key ), '11.2.0' );
-				continue;
-			}
-
-			unset( $settings[ $key ] );
-		}
 	}
 
 	/**
@@ -675,23 +434,6 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Normalize express checkout location values.
-	 *
-	 * @param mixed $locations Raw location list.
-	 * @return string[]
-	 */
-	private function normalize_location_list( $locations ): array {
-		$locations = is_array( $locations ) ? $locations : array();
-
-		return array_values(
-			array_intersect(
-				self::LOCATIONS,
-				$this->normalize_string_list( $locations )
-			)
-		);
-	}
-
-	/**
 	 * Normalize scalar string arrays.
 	 *
 	 * @param mixed $values Raw values.
@@ -713,31 +455,6 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 				)
 			)
 		);
-	}
-
-	/**
-	 * Map deprecated payment request button types.
-	 *
-	 * @param mixed $button_type  Existing button type.
-	 * @param mixed $branded_type Existing branded helper type.
-	 * @return string|null
-	 */
-	private function map_payment_request_button_type( $button_type, $branded_type ): ?string {
-		if ( ! is_scalar( $button_type ) ) {
-			return null;
-		}
-
-		$button_type = (string) $button_type;
-
-		if ( 'branded' === $button_type && 'short' === $branded_type ) {
-			return 'default';
-		}
-
-		if ( 'branded' === $button_type || 'custom' === $button_type ) {
-			return 'buy';
-		}
-
-		return $button_type;
 	}
 
 	/**
