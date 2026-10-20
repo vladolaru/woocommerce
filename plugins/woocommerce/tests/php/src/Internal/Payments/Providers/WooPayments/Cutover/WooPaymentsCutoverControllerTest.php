@@ -839,10 +839,23 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The activation guard should block a first-time activation of the WooPayments extension.
+	 * The built-in WooPayments writes the extension's gateway ids, so its orders and tokens are not evidence that the extension ran.
+	 *
+	 * @testdox The activation guard blocks a first-time activation of the WooPayments extension on a store the built-in owns: $_dataName.
+	 * @dataProvider provide_first_activation_stores
+	 *
+	 * @param string $record     The built-in WooPayments record the store holds: none, order or token.
+	 * @param string $gateway_id WooPayments gateway identity of that record.
 	 */
-	public function test_activation_guard_blocks_a_store_that_never_ran_the_extension(): void {
+	public function test_activation_guard_blocks_a_first_activation( string $record, string $gateway_id ): void {
 		delete_option( 'woocommerce_woocommerce_payments_version' );
+		if ( 'order' === $record ) {
+			$order = wc_create_order();
+			$order->set_payment_method( $gateway_id );
+			$order->save();
+		} elseif ( 'token' === $record ) {
+			$this->create_woopayments_token( $gateway_id );
+		}
 		$this->enable_builtin_runtime_owner();
 		$this->fake_wp_die_handler();
 
@@ -858,93 +871,75 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->assertStringNotContainsString( 'plugins.php', $this->wp_die_arguments['link_url'] );
 	}
 
-	/** @testdox The activation guard should allow reactivating the WooPayments extension after a recorded version. */
-	public function test_activation_guard_allows_a_store_with_a_woopayments_plugin_version(): void {
-		$this->enable_builtin_runtime_owner();
-
-		$this->sut->guard_woopayments_activation();
-
-		$this->assertTrue( true );
-	}
-
 	/**
-	 * The built-in WooPayments writes the extension's gateway ids, so its orders and tokens are not evidence that the extension ran.
-	 *
-	 * @testdox The activation guard should block a first-time activation of the WooPayments extension on a store with built-in WooPayments $_dataName.
-	 * @dataProvider data_provider_builtin_payment_records
-	 *
-	 * @param string $record     The built-in WooPayments record the store holds: order or token.
-	 * @param string $gateway_id WooPayments gateway identity.
-	 */
-	public function test_activation_guard_blocks_a_store_with_only_builtin_payment_records( string $record, string $gateway_id ): void {
-		delete_option( 'woocommerce_woocommerce_payments_version' );
-		if ( 'order' === $record ) {
-			$order = wc_create_order();
-			$order->set_payment_method( $gateway_id );
-			$order->save();
-		} else {
-			$this->create_woopayments_token( $gateway_id );
-		}
-		$this->enable_builtin_runtime_owner();
-		$this->fake_wp_die_handler();
-
-		$this->expectException( WooPaymentsCutoverBlockedException::class );
-		$this->sut->guard_woopayments_activation();
-	}
-
-	/** @testdox Activating the WooPayments extension remains available while the built-in WooPayments does not own the runtime. */
-	public function test_activation_guard_allows_plugin_activation_when_the_builtin_does_not_own_the_runtime(): void {
-		delete_option( 'woocommerce_woocommerce_payments_version' );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
-		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
-
-		$this->sut->guard_woopayments_activation();
-
-		$this->assertTrue( true );
-	}
-
-	/** @testdox Internal lifecycle changes bypass the activation guard. */
-	public function test_activation_guard_allows_internal_plugin_lifecycle_changes(): void {
-		delete_option( 'woocommerce_woocommerce_payments_version' );
-		$this->enable_builtin_runtime_owner();
-		$job = new class() extends WooPaymentsCutoverReconciliationJob {
-			/**
-			 * Return whether lifecycle work is job-owned.
-			 *
-			 * @return bool
-			 */
-			public function is_internal_plugin_lifecycle_change(): bool {
-				return true;
-			}
-		};
-
-		$this->create_cutover_controller( $job )->guard_woopayments_activation();
-
-		$this->assertTrue( true );
-	}
-
-	/** @testdox Merged feature development bypasses the activation guard. */
-	public function test_activation_guard_allows_merged_feature_development(): void {
-		delete_option( 'woocommerce_woocommerce_payments_version' );
-		$this->enable_builtin_runtime_owner();
-		Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
-
-		$this->sut->guard_woopayments_activation();
-
-		$this->assertTrue( true );
-	}
-
-	/**
-	 * Built-in WooPayments orders and tokens, with the canonical and a prefixed gateway id.
+	 * Stores that never ran the extension: without a payment record, and with built-in WooPayments orders and tokens under
+	 * the canonical and a prefixed gateway id.
 	 *
 	 * @return array<string,array{0:string,1:string}>
 	 */
-	public function data_provider_builtin_payment_records(): array {
+	public function provide_first_activation_stores(): array {
 		return array(
+			'never ran the extension'      => array( 'none', '' ),
 			'orders, canonical gateway ID' => array( 'order', 'woocommerce_payments' ),
 			'orders, prefixed gateway ID'  => array( 'order', 'woocommerce_payments_card' ),
 			'tokens, canonical gateway ID' => array( 'token', 'woocommerce_payments' ),
 			'tokens, prefixed gateway ID'  => array( 'token', 'woocommerce_payments_card' ),
+		);
+	}
+
+	/**
+	 * @testdox The activation guard lets the WooPayments extension activate: $_dataName.
+	 * @dataProvider provide_allowed_activations
+	 *
+	 * @param string $store Which allowed activation to arrange.
+	 */
+	public function test_activation_guard_allows_the_activation( string $store ): void {
+		$controller = $this->sut;
+		if ( 'recorded version' === $store ) {
+			// setUp() records extension version 10.5.0.
+			$this->enable_builtin_runtime_owner();
+		} elseif ( 'not the owner' === $store ) {
+			delete_option( 'woocommerce_woocommerce_payments_version' );
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		} elseif ( 'job change' === $store ) {
+			delete_option( 'woocommerce_woocommerce_payments_version' );
+			$this->enable_builtin_runtime_owner();
+			$job        = new class() extends WooPaymentsCutoverReconciliationJob {
+				/**
+				 * Return whether lifecycle work is job-owned.
+				 *
+				 * @return bool
+				 */
+				public function is_internal_plugin_lifecycle_change(): bool {
+					return true;
+				}
+			};
+			$controller = $this->create_cutover_controller( $job );
+		} elseif ( 'merged feature development' === $store ) {
+			delete_option( 'woocommerce_woocommerce_payments_version' );
+			$this->enable_builtin_runtime_owner();
+			Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
+		}
+		$this->fake_wp_die_handler();
+
+		$controller->guard_woopayments_activation();
+
+		$this->assertSame( array(), $this->wp_die_arguments, 'The guard lets the activation through without wp_die().' );
+	}
+
+	/**
+	 * Activations the guard allows: a store that ran the extension, a store the built-in does not own, the job's own plugin
+	 * change, and merged feature development.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function provide_allowed_activations(): array {
+		return array(
+			'a recorded extension version'       => array( 'recorded version' ),
+			'the built-in does not own payments' => array( 'not the owner' ),
+			'a plugin change the job makes'      => array( 'job change' ),
+			'merged feature development'         => array( 'merged feature development' ),
 		);
 	}
 
