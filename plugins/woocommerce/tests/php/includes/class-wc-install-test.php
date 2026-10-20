@@ -434,7 +434,7 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 	/**
 	 * @testdox create_options seeds the built-in WooPayments setup tier as autoloaded, so no request queries a missing option.
 	 */
-	public function test_create_options_seeds_autoloaded_native_payments_runtime_options(): void {
+	public function test_create_options_seeds_autoloaded_woopayments_runtime_options(): void {
 		delete_option( 'woocommerce_woopayments_setup_tier' );
 
 		try {
@@ -470,7 +470,7 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 	/**
 	 * @testdox create_options keeps an existing built-in WooPayments setup tier and cutover record.
 	 */
-	public function test_create_options_keeps_existing_native_payments_runtime_options(): void {
+	public function test_create_options_keeps_existing_woopayments_runtime_options(): void {
 		update_option( 'woocommerce_woopayments_setup_tier', 'active', true );
 		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, array( 'state' => 'done' ), true );
 
@@ -486,12 +486,12 @@ class WC_Install_Test extends \WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox create_options keeps native payments values another request wrote after this request read them as missing.
+	 * @testdox create_options keeps built-in WooPayments values another request wrote after this request read them as missing.
 	 *
 	 * On the upgrade request the cutover job reads the missing record at init priority 1, before install runs
 	 * create_options(). A start click or plugin deactivation can write the first record in between.
 	 */
-	public function test_create_options_keeps_native_payments_values_written_after_a_missed_read(): void {
+	public function test_create_options_keeps_woopayments_values_written_after_a_missed_read(): void {
 		global $wpdb;
 		$written = array(
 			'woocommerce_woopayments_setup_tier'      => 'active',
