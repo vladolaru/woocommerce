@@ -2549,10 +2549,13 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A missing connection owner records the sanctioned reconnect information once while retrying, and its notice stays until a manager dismisses it.
+	 * Jetpack reports a deleted connection owner, and an owner without a user token, as no owner, so the preflight of a
+	 * connected site records `wpcom_connection_owner_unavailable` alone (see WooPaymentsPlatformConnectionServiceTest).
+	 *
+	 * @testdox A missing connection owner on a connected site records the sanctioned reconnect information once while retrying, and its notice stays until a manager dismisses it.
 	 */
 	public function test_missing_connection_owner_records_reconnect_information_once(): void {
-		$preflight = $this->create_preflight_with_failures( array( 'wpcom_connection_owner_user_token_unavailable' ), true );
+		$preflight = $this->create_preflight_with_failures( array( 'wpcom_connection_owner_unavailable' ) );
 		$sut       = $this->create_job_with_preflight( true, $preflight );
 		$sut->enqueue( 'merchant' );
 		$pending = $this->require_state_store()->get_record();
@@ -2563,6 +2566,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$deferred = $this->require_state_store()->get_record();
 		$this->assertIsArray( $deferred );
+		$this->assertSame( array( 'wpcom_connection_owner_unavailable' ), $deferred['deferred_codes'] );
 		$sut->handle_reconcile( $deferred['generation'], 2 );
 
 		$replayed = $this->require_state_store()->get_record();
@@ -2593,16 +2597,16 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 	/**
 	 * A reconnect that worked leaves the record deferred for another failure, or pending ownership verification, with no
-	 * owner-token failure among its codes.
+	 * connection owner failure among its codes. A site that lost its blog token as well has no connection to repair here.
 	 *
-	 * @testdox The reconnect notice stops once the record no longer carries the owner-token failure, with no dismissal ($_dataName).
+	 * @testdox The reconnect notice stops once the record no longer carries the connection owner failure on a connected site, with no dismissal ($_dataName).
 	 * @dataProvider provide_reconnect_records
 	 *
 	 * @param string   $state    Record state.
 	 * @param string[] $codes    The record's deferred codes.
 	 * @param bool     $expected Whether the notice is due.
 	 */
-	public function test_reconnect_notice_stops_once_the_owner_token_failure_is_gone( string $state, array $codes, bool $expected ): void {
+	public function test_reconnect_notice_stops_once_the_connection_owner_failure_is_gone( string $state, array $codes, bool $expected ): void {
 		$record = array(
 			'state'                  => $state,
 			'deferred_codes'         => $codes,
@@ -2616,14 +2620,38 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @return array<string,array{string,string[],bool}>
 	 */
 	public function provide_reconnect_records(): array {
-		$token = 'wpcom_connection_owner_user_token_unavailable';
+		$owner = 'wpcom_connection_owner_unavailable';
 
 		return array(
-			'still failing on the owner token'            => array( WooPaymentsCutoverStateStore::STATE_DEFERRED, array( $token ), true ),
-			'still failing on the owner token and the version' => array( WooPaymentsCutoverStateStore::STATE_DEFERRED, array( 'woopayments_plugin_version_unsupported', $token ), true ),
+			'still failing on the owner'                  => array( WooPaymentsCutoverStateStore::STATE_DEFERRED, array( $owner ), true ),
+			'still failing on the owner and the version'  => array( WooPaymentsCutoverStateStore::STATE_DEFERRED, array( 'woopayments_plugin_version_unsupported', $owner ), true ),
+			'the owner and the connection both failing'   => array( WooPaymentsCutoverStateStore::STATE_DEFERRED, array( 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', $owner ), false ),
 			'deferred for another failure only'           => array( WooPaymentsCutoverStateStore::STATE_DEFERRED, array( 'woopayments_plugin_version_unsupported' ), false ),
 			'pending ownership verification, no failures' => array( WooPaymentsCutoverStateStore::STATE_PENDING, array(), false ),
 		);
+	}
+
+	/**
+	 * A site with no working connection has no owner to replace either, so the attempt defers without the reconnect
+	 * information.
+	 *
+	 * @testdox A disconnected site, with no blog token, records no reconnect information while its connection owner is also gone.
+	 */
+	public function test_disconnected_site_records_no_reconnect_information(): void {
+		$preflight = $this->create_preflight_with_failures( array( 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable' ) );
+		$sut       = $this->create_job_with_preflight( true, $preflight );
+		$sut->enqueue( 'merchant' );
+		$pending = $this->require_state_store()->get_record();
+		$this->assertIsArray( $pending );
+		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$sut->register();
+		$sut->handle_reconcile( $pending['generation'], 1 );
+
+		$deferred = $this->require_state_store()->get_record();
+		$this->assertIsArray( $deferred );
+		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
+		$this->assertNotContains( array( 'code' => 'reconnect_required' ), $deferred['informational_outcomes'] );
+		$this->assertFalse( $sut->is_reconnect_notice_due( $deferred ) );
 	}
 
 	/** @testdox Dismissing a reconnect notice that is not due takes no cutover lease. */
@@ -2641,7 +2669,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 	/** @testdox Dismissing reconnect information cannot revise or fence a live worker claim. */
 	public function test_reconnect_notice_dismissal_does_not_revise_a_running_claim(): void {
-		$preflight = $this->create_preflight_with_failures( array( 'wpcom_connection_owner_user_token_unavailable' ), true );
+		$preflight = $this->create_preflight_with_failures( array( 'wpcom_connection_owner_unavailable' ) );
 		$sut       = $this->create_job_with_preflight( true, $preflight );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $this->require_state_store()->get_record();
@@ -2661,7 +2689,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox A thrown resolver is deferred instead of leaving its claim running.
 	 */
 	public function test_thrown_resolver_defers_the_claim(): void {
-		$preflight = $this->create_preflight_with_failures( array(), false, true );
+		$preflight = $this->create_preflight_with_failures( array(), true );
 		$sut       = $this->create_job_with_preflight( true, $preflight );
 		$sut->enqueue( 'merchant' );
 		$pending = $this->require_state_store()->get_record();
@@ -2696,7 +2724,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertIsInt( $migrator_action_id );
 		$preflight = $this->create_preflight_with_failures(
 			array( 'operational_queue_hooks_unhandled' ),
-			false,
 			false,
 			array(
 				array(
@@ -2751,7 +2778,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertIsInt( $action_id );
 		$preflight = $this->create_preflight_with_failures(
 			array(),
-			false,
 			false,
 			array(
 				array(
@@ -2828,7 +2854,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				return true;
 			}
 		};
-		$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, false, array(), 'woocommerce-payments/woocommerce-payments.php' );
+		$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, array(), 'woocommerce-payments/woocommerce-payments.php' );
 		$sut       = $this->create_job( true, $preflight, $job );
 		$lock_name = 'woocommerce_woopayments_cutover_plugin_update_lock';
 		if ( 'lock' === $blocker ) {
@@ -2926,7 +2952,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 					return $this->lock_observations;
 				}
 			};
-			$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, false, array(), 'woocommerce-payments/woocommerce-payments.php' );
+			$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, array(), 'woocommerce-payments/woocommerce-payments.php' );
 			$this->create_job( true, $preflight, $job );
 			$this->assertSame( $subsite_id, get_current_blog_id() );
 			$method = new \ReflectionMethod( WooPaymentsCutoverReconciliationJob::class, 'update_woopayments_plugin' );
@@ -3001,7 +3027,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 					return $this->errors;
 				}
 			};
-			$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, false, array(), 'woocommerce-payments/woocommerce-payments.php' );
+			$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, array(), 'woocommerce-payments/woocommerce-payments.php' );
 			$this->create_job( true, $preflight, $job );
 			add_action( $delete_hook, $thrower );
 
@@ -3236,7 +3262,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$preflight = $this->create_preflight_with_failures(
 			array( 'operational_queue_hooks_unhandled' ),
 			false,
-			false,
 			array(
 				array(
 					'action_id' => $action_id,
@@ -3382,7 +3407,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				return $this->errors;
 			}
 		};
-		$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, false, array(), 'woocommerce-payments/woocommerce-payments.php' );
+		$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, array(), 'woocommerce-payments/woocommerce-payments.php' );
 		$sut       = $this->create_job( true, $preflight, $job );
 		$sut->enqueue( 'merchant' );
 		$pending = $this->require_state_store()->get_record();
@@ -3664,7 +3689,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		try {
 			$installed_version = $job->read_installed_plugin_version( $plugin_file );
 
-			$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, false, array(), $plugin_file );
+			$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, array(), $plugin_file );
 			$sut       = $this->create_job( true, $preflight, $job );
 			$sut->enqueue( 'merchant' );
 			$pending = $this->require_state_store()->get_record();
@@ -3825,7 +3850,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				protected function refresh_plugin_update_metadata(): void {
 				}
 			};
-			$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, false, array(), $plugin_file );
+			$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, array(), $plugin_file );
 			$sut       = $this->create_job( true, $preflight, $job );
 			$sut->enqueue( 'merchant' );
 			$pending = $this->require_state_store()->get_record();
@@ -4672,20 +4697,16 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * Create deterministic preflight facts without loading external services.
 	 *
 	 * @param string[]                                                 $failures      Reconciliation failures.
-	 * @param bool                                                     $owner_missing Whether the saved connection owner is gone.
 	 * @param bool                                                     $should_throw  Whether resolving facts should throw.
 	 * @param array<int,array{action_id:int,hook:string,group:string}> $queued_actions Controlled operational actions.
 	 * @param string                                                   $plugin_file    Resolved active plugin file.
 	 * @param bool                                                     $derive_operational_queue_failure Whether queued actions dynamically control their failure.
 	 * @return WooPaymentsCutoverPreflightService
 	 */
-	private function create_preflight_with_failures( array $failures, bool $owner_missing = false, bool $should_throw = false, array $queued_actions = array(), string $plugin_file = '', bool $derive_operational_queue_failure = false ): WooPaymentsCutoverPreflightService {
-		return new class( $failures, $owner_missing, $should_throw, $queued_actions, $plugin_file, $derive_operational_queue_failure ) extends WooPaymentsCutoverPreflightService {
+	private function create_preflight_with_failures( array $failures, bool $should_throw = false, array $queued_actions = array(), string $plugin_file = '', bool $derive_operational_queue_failure = false ): WooPaymentsCutoverPreflightService {
+		return new class( $failures, $should_throw, $queued_actions, $plugin_file, $derive_operational_queue_failure ) extends WooPaymentsCutoverPreflightService {
 			/** @var string[] */
 			private array $failures;
-
-			/** @var bool */
-			private bool $owner_missing;
 
 			/** @var bool */
 			private bool $should_throw;
@@ -4703,15 +4724,13 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			 * Initialize the controlled failures.
 			 *
 			 * @param string[]                                                 $failures      Reconciliation failures.
-			 * @param bool                                                     $owner_missing Whether the saved connection owner is gone.
 			 * @param bool                                                     $should_throw  Whether resolving facts should throw.
 			 * @param array<int,array{action_id:int,hook:string,group:string}> $queued_actions Controlled operational actions.
 			 * @param string                                                   $plugin_file    Resolved active plugin file.
 			 * @param bool                                                     $derive_operational_queue_failure Whether queued actions dynamically control their failure.
 			 */
-			public function __construct( array $failures, bool $owner_missing, bool $should_throw, array $queued_actions, string $plugin_file, bool $derive_operational_queue_failure ) {
+			public function __construct( array $failures, bool $should_throw, array $queued_actions, string $plugin_file, bool $derive_operational_queue_failure ) {
 				$this->failures                         = $failures;
-				$this->owner_missing                    = $owner_missing;
 				$this->should_throw                     = $should_throw;
 				$this->queued_actions                   = $queued_actions;
 				$this->plugin_file                      = $plugin_file;
@@ -4755,13 +4774,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			 */
 			public function is_woopayments_network_active(): bool {
 				return false;
-			}
-
-			/**
-			 * Keep the matrix owner-token condition on the ordinary retry path.
-			 */
-			public function is_cutover_connection_owner_user_missing(): bool {
-				return $this->owner_missing;
 			}
 
 			/**

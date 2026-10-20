@@ -91,7 +91,7 @@ class WooPaymentsAdminLinkController implements RegisterHooksInterface {
 		// Priority 9 also finalizes a hosted KYC return before the `/payments/*` path redirect sends it on to Overview.
 		add_action( 'admin_init', array( $this, 'handle_hosted_kyc_return' ), 9 );
 
-		// The Capital controller loads only for REST requests, so an admin request hands the offer link to it here.
+		// Forward admin offer links to the Capital controller.
 		add_action( 'admin_init', array( $this, 'handle_loan_offer_request' ), 12 );
 	}
 

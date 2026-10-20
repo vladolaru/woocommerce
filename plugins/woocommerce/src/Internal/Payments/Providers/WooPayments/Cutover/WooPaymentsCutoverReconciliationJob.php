@@ -533,7 +533,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
 	/**
 	 * Tell whether a waiting switch still shows its reconnect notice, which stays until a manager dismisses it or the record
-	 * stops carrying the owner-token failure, as it does once the connection is back.
+	 * stops carrying the connection owner failure, as it does once the connection is back.
 	 *
 	 * @param array<string,mixed>|null $record Cutover record.
 	 * @return bool
@@ -543,8 +543,22 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			&& in_array( $record['state'] ?? null, array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true )
 			&& is_array( $record['informational_outcomes'] ?? null )
 			&& in_array( array( 'code' => 'reconnect_required' ), $record['informational_outcomes'], true )
-			&& in_array( WooPaymentsPlatformConnectionService::FAILURE_CONNECTION_OWNER_USER_TOKEN_UNAVAILABLE, (array) ( $record[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ] ?? array() ), true )
+			&& $this->needs_reconnect( (array) ( $record[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ] ?? array() ) )
 			&& ! in_array( array( 'code' => self::NOTICE_RECONNECT . '_notice_dismissed' ), $record['informational_outcomes'], true );
+	}
+
+	/**
+	 * Tell whether the failure codes describe a connected site whose connection owner is gone.
+	 *
+	 * Jetpack reports a deleted owner, and an owner without a user token, as no owner. A site with no blog token has no
+	 * connection to repair from here, so it is not told to reconnect.
+	 *
+	 * @param array<int|string,mixed> $codes Failure codes.
+	 * @return bool
+	 */
+	private function needs_reconnect( array $codes ): bool {
+		return in_array( WooPaymentsPlatformConnectionService::FAILURE_CONNECTION_OWNER_UNAVAILABLE, $codes, true )
+			&& ! in_array( WooPaymentsPlatformConnectionService::FAILURE_CONNECTION_UNAVAILABLE, $codes, true );
 	}
 
 	/**
@@ -696,7 +710,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			}
 
 			$outcomes = array();
-			if ( in_array( WooPaymentsPlatformConnectionService::FAILURE_CONNECTION_OWNER_USER_TOKEN_UNAVAILABLE, $failures, true ) && $this->preflight_service->is_cutover_connection_owner_user_missing() ) {
+			if ( $this->needs_reconnect( $failures ) ) {
 				$outcomes[] = array( 'code' => 'reconnect_required' );
 			}
 

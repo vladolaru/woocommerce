@@ -26,7 +26,7 @@ class WooPaymentsPlatformConnectionService {
 	/** The site has no WordPress.com blog ID. */
 	public const FAILURE_BLOG_ID_UNAVAILABLE = 'wpcom_blog_id_unavailable';
 
-	/** The connection has no owner. */
+	/** The connection has no usable owner: the owner was deleted, or has no user token. */
 	public const FAILURE_CONNECTION_OWNER_UNAVAILABLE = 'wpcom_connection_owner_unavailable';
 
 	/** The connection owner no longer exists or has no user token. */
@@ -87,8 +87,6 @@ class WooPaymentsPlatformConnectionService {
 
 	/**
 	 * Get the connection owner's ID, whether that user exists and whether it has a user token.
-	 *
-	 * The cutover preflight also reads it to tell a deleted owner apart.
 	 *
 	 * @return array{owner_id:int,owner_exists:bool,user_token_available:bool} Connection owner details.
 	 */

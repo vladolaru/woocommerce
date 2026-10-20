@@ -38,17 +38,6 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	/** @var string[] */
 	private array $platform_failures = array();
 
-	/**
-	 * Connection-owner details exposed by the platform boundary.
-	 *
-	 * @var array{owner_id:int,owner_exists:bool,user_token_available:bool}
-	 */
-	private array $platform_owner_status = array(
-		'owner_id'             => 1,
-		'owner_exists'         => true,
-		'user_token_available' => true,
-	);
-
 	/** @var bool */
 	private bool $fee_remediation_ready = true;
 
@@ -162,24 +151,6 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array( 'builtin_runtime_disabled', 'woopayments_plugin_version_unsupported', 'builtin_transport_unavailable', 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable', 'wpcom_connection_owner_user_token_unavailable', 'multi_currency_rates_unavailable', 'operational_queue_hooks_unhandled', 'financial_migrations_unavailable', 'bundled_stripe_billing_subscriptions_present' ), $unique_codes );
 		$this->assertCount( 11, $unique_codes );
-	}
-
-	/**
-	 * @testdox Owner-token preflight exposes only the deleted-owner fact needed by reconciliation.
-	 */
-	public function test_connection_owner_user_missing_distinguishes_deleted_owner_from_missing_token(): void {
-		$this->platform_owner_status = array(
-			'owner_id'             => 7,
-			'owner_exists'         => true,
-			'user_token_available' => false,
-		);
-		$this->assertFalse( $this->create_sut()->is_cutover_connection_owner_user_missing() );
-
-		$this->platform_owner_status['owner_exists'] = false;
-		$this->assertTrue( $this->create_sut()->is_cutover_connection_owner_user_missing() );
-
-		$this->platform_owner_status['owner_id'] = 0;
-		$this->assertFalse( $this->create_sut()->is_cutover_connection_owner_user_missing() );
 	}
 
 	/**
@@ -584,15 +555,10 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 				return $this->fee_remediation_status;
 			}
 		);
-		$platform_connection = $this->getMockBuilder( WooPaymentsPlatformConnectionService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_preflight_failures', 'get_connection_owner_user_token_status' ) )->getMock();
+		$platform_connection = $this->getMockBuilder( WooPaymentsPlatformConnectionService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_preflight_failures' ) )->getMock();
 		$platform_connection->method( 'get_preflight_failures' )->willReturnCallback(
 			function (): array {
 				return $this->platform_failures;
-			}
-		);
-		$platform_connection->method( 'get_connection_owner_user_token_status' )->willReturnCallback(
-			function (): array {
-				return $this->platform_owner_status;
 			}
 		);
 		$rate_account = $this->getMockBuilder( WooPaymentsNativeAccountAdapter::class )->disableOriginalConstructor()->onlyMethods( array( 'is_provider_connected', 'is_account_rejected' ) )->getMock();

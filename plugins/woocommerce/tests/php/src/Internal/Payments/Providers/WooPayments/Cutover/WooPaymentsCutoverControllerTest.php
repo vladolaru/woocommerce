@@ -670,6 +670,30 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A switch deferred on a connection owner failure while the site is disconnected too shows no reconnect notice.
+	 */
+	public function test_disconnected_site_shows_no_reconnect_notice(): void {
+		$this->fake_plugin_active();
+		$this->fake_current_user_caps( true );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$job = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @return array<string,mixed>|null */
+			public function refresh_notice_record(): ?array {
+				return array(
+					'state'                  => WooPaymentsCutoverStateStore::STATE_DEFERRED,
+					'deferred_codes'         => array( 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable' ),
+					'informational_outcomes' => array( array( 'code' => 'reconnect_required' ) ),
+				);
+			}
+		};
+
+		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job ) );
+
+		$this->assertStringContainsString( 'Switch in progress', $notice );
+		$this->assertStringNotContainsString( 'Reconnect this site', $notice );
+	}
+
+	/**
 	 * @testdox A switch waiting on the WooPayments version on a site that blocks plugin updates tells the merchant to update WooPayments (blocked: $blocked).
 	 * @testWith [true]
 	 *           [false]
@@ -1405,7 +1429,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			private array $record = array(
 				'state'                  => WooPaymentsCutoverStateStore::STATE_DEFERRED,
 				'current_step'           => 'deferred',
-				'deferred_codes'         => array( WooPaymentsPlatformConnectionService::FAILURE_CONNECTION_OWNER_USER_TOKEN_UNAVAILABLE ),
+				'deferred_codes'         => array( WooPaymentsPlatformConnectionService::FAILURE_CONNECTION_OWNER_UNAVAILABLE ),
 				'informational_outcomes' => array( array( 'code' => 'reconnect_required' ) ),
 			);
 

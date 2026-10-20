@@ -196,19 +196,6 @@ class WooPaymentsCutoverPreflightService {
 	}
 
 	/**
-	 * Determine whether a saved connection owner no longer maps to a WordPress user.
-	 *
-	 * A missing owner ID is a separate preflight condition and does not qualify for the deleted-owner informational outcome.
-	 *
-	 * @return bool
-	 */
-	public function is_cutover_connection_owner_user_missing(): bool {
-		$status = $this->get_platform_connection_service()->get_connection_owner_user_token_status();
-
-		return $status['owner_id'] > 0 && ! $status['owner_exists'];
-	}
-
-	/**
 	 * Evaluate the cutover failures for the current site.
 	 *
 	 * @return string[] Failure codes.
