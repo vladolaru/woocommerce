@@ -25,7 +25,7 @@ class WooPaymentsActionSchedulerServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @var string
 	 */
-	private string $hook = 'wcpay_native_payments_test_action';
+	private string $hook = 'wcpay_test_action';
 
 	/**
 	 * Set up test fixtures.

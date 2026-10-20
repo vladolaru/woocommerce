@@ -204,7 +204,7 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Owner-less sites return disabled without overwriting their stored state.
-	 * @dataProvider provide_native_payments_states
+	 * @dataProvider provide_setup_tier_states
 	 *
 	 * @param string $stored_state Stored native payments tier.
 	 */
@@ -278,7 +278,7 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	 *
 	 * @return array<string,array{string}>
 	 */
-	public function provide_native_payments_states(): array {
+	public function provide_setup_tier_states(): array {
 		return array(
 			'disabled'  => array( WooPaymentsSetupTier::DISABLED ),
 			'available' => array( WooPaymentsSetupTier::AVAILABLE ),
@@ -381,8 +381,8 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 
 	/**
 	 * A store that ran the extension (its version option) belongs to the built-in WooPayments only after its one-click switch:
-	 * once the switch's finalize deactivated the extension (finalize's token on the record) or the record is done (N-484,
-	 * N-504). Until then it has no WooPayments and is offered the switch while the feature is on.
+	 * once the switch's finalize deactivated the extension (finalize's token on the record) or the record is done.
+	 * Until then it has no WooPayments and is offered the switch while the feature is on.
 	 *
 	 * @testdox The owner, the effective tier and the registered classes follow the switch: $_dataName.
 	 * @dataProvider provide_switch_states
@@ -460,7 +460,7 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * N-512 hardening: an extension store keeps the disabled tier of its install; once it switched, reading that as
+	 * An extension store keeps the disabled tier of its install; once it switched, reading that as
 	 * disabled would register nothing, not even the job that writes the tier. A store never set up stays dormant.
 	 *
 	 * @testdox A built-in owner reads a stored disabled tier as available after a switch from the extension, and as disabled on a store that never ran it ($_dataName).

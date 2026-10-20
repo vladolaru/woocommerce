@@ -89,17 +89,17 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox While the plugin owns payments, the supportability hooks are registered only with the WooPayments feature on ($_dataName).
+	 * @testdox While the extension owns payments, the supportability hooks are registered only with the WooPayments feature on ($_dataName).
 	 * @testWith ["yes", true]
 	 *           ["no", false]
 	 *
 	 * @param string $feature  The WooPayments feature option.
 	 * @param bool   $expected Whether the hooks are registered.
 	 */
-	public function test_registers_supportability_hooks_while_plugin_owns_runtime_only_with_the_feature_on( string $feature, bool $expected ): void {
+	public function test_registers_supportability_hooks_while_the_extension_owns_runtime_only_with_the_feature_on( string $feature, bool $expected ): void {
 		$this->fake_plugin( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $feature, true );
-		$this->set_native_state( WooPaymentsSetupTier::AVAILABLE );
+		$this->set_setup_tier( WooPaymentsSetupTier::AVAILABLE );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
 
@@ -113,16 +113,16 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A store without a connected native account or the plugin registers no supportability hook, so the Status page runs no preflight or account read (client 11.1.0 is absent there).
+	 * @testdox A store without a connected account or the extension registers no supportability hook, so the Status page runs no preflight or account read (client 11.1.0 is absent there).
 	 * @testWith ["disabled"]
 	 *           ["available"]
 	 *
 	 * @param string $state Stored native payments state.
 	 */
-	public function test_registers_nothing_without_a_connected_account_or_the_plugin( string $state ): void {
+	public function test_registers_nothing_without_a_connected_account_or_the_extension( string $state ): void {
 		$this->fake_plugin( false );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes', true );
-		$this->set_native_state( $state );
+		$this->set_setup_tier( $state );
 		// WC_Install::create_options() seeds this autoloaded, so a dormant store reads it for free.
 		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
 		$sut = $this->get_sut();
@@ -152,12 +152,12 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A connected native store registers the supportability hooks.
+	 * @testdox A connected store registers the supportability hooks.
 	 */
-	public function test_registers_supportability_hooks_for_a_connected_native_store(): void {
+	public function test_registers_supportability_hooks_for_a_connected_store(): void {
 		$this->fake_plugin( false );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->set_native_state( WooPaymentsSetupTier::CONNECTED );
+		$this->set_setup_tier( WooPaymentsSetupTier::CONNECTED );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
 
@@ -172,7 +172,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	public function test_registers_supportability_hooks_for_a_connected_store_with_the_feature_off(): void {
 		$this->fake_plugin( false );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
-		$this->set_native_state( WooPaymentsSetupTier::CONNECTED );
+		$this->set_setup_tier( WooPaymentsSetupTier::CONNECTED );
 		$this->assertSame( WooPaymentsSetupTier::DISABLED, wc_get_container()->get( WooPaymentsSetupTier::class )->get_effective_tier(), 'A store with the feature off reads as disabled.' );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
@@ -190,7 +190,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	public function test_registers_supportability_hooks_when_a_cutover_record_exists(): void {
 		$this->fake_plugin( false );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->set_native_state( WooPaymentsSetupTier::AVAILABLE );
+		$this->set_setup_tier( WooPaymentsSetupTier::AVAILABLE );
 		$this->assertTrue(
 			( new WooPaymentsCutoverStateStore() )->create_record(
 				array(
@@ -229,7 +229,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		// The extension's version option is the evidence that it ran (WooPaymentsRuntimeArbiter::has_run_woopayments_extension()).
 		update_option( 'woocommerce_woocommerce_payments_version', '10.5.0', true );
 		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
-		$this->set_native_state( WooPaymentsSetupTier::DISABLED );
+		$this->set_setup_tier( WooPaymentsSetupTier::DISABLED );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
 
@@ -277,7 +277,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Status data reports runtime, account, checkout, multi-currency, and webhook state.
 	 */
-	public function test_status_data_uses_native_services_and_the_feature_option(): void {
+	public function test_status_data_uses_the_builtin_services_and_the_feature_option(): void {
 		$this->fake_plugin( false );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		// A connected store: without a connection the account read returns no account, like the client.
@@ -310,7 +310,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	public function test_status_data_reports_the_stored_and_the_effective_tier_apart(): void {
 		$this->fake_plugin( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes', true );
-		$this->set_native_state( WooPaymentsSetupTier::DISABLED );
+		$this->set_setup_tier( WooPaymentsSetupTier::DISABLED );
 
 		$data = $this->get_sut()->get_status_data();
 
@@ -400,7 +400,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The account cache tool refetches the account once and leaves the cache as the client does ($fetch_fails, $had_cached_account).
+	 * @testdox The account cache tool refetches the account once and leaves the cache as the extension does ($fetch_fails, $had_cached_account).
 	 *
 	 * Client 11.1.0 runs `refresh_account_data()` (class-wc-payments-status.php:89-102), which is `get_cached_account_data( true )`
 	 * (class-wc-payments-account.php:2534-2536): one fetch; a failed fetch keeps the old data marked errored, or returns false
@@ -433,7 +433,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->fake_plugin( false );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->seed_connected_store();
-		$this->set_native_state( WooPaymentsSetupTier::CONNECTED );
+		$this->set_setup_tier( WooPaymentsSetupTier::CONNECTED );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
 		$sut->register();
@@ -474,7 +474,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->fake_plugin( false );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->seed_connected_store();
-		$this->set_native_state( WooPaymentsSetupTier::CONNECTED );
+		$this->set_setup_tier( WooPaymentsSetupTier::CONNECTED );
 		$cache_before = get_option( 'wcpay_account_data' );
 		$sut          = $this->get_sut();
 		$this->remove_status_hooks( $sut );
@@ -489,7 +489,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Site Health debug info exposes the native status fields and the WooPayments feature.
+	 * @testdox Site Health debug info exposes the built-in status fields and the WooPayments feature.
 	 */
 	public function test_site_health_debug_info_exposes_status_values(): void {
 		$this->fake_plugin( false );
@@ -545,7 +545,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The status report keeps the client's WooPayments section labels and values, and adds the native diagnostics as their own table.
+	 * @testdox The status report keeps the extension's WooPayments section labels and values, and adds the built-in diagnostics as their own table.
 	 *
 	 * Client 11.1.0 `includes/class-wc-payments-status.php:427-641`; support macros and copied reports key on these labels.
 	 *
@@ -556,7 +556,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 * @param string $manual_capture The manual_capture gateway setting.
 	 * @param string $expected       The Auth and Capture value.
 	 */
-	public function test_status_report_renders_the_client_section_for_a_connected_store( string $manual_capture, string $expected ): void {
+	public function test_status_report_renders_the_extension_section_for_a_connected_store( string $manual_capture, string $expected ): void {
 		$html = $this->render_report_for_connected_store( array(), array( 'manual_capture' => $manual_capture ) );
 
 		$tables = $this->get_status_tables( $html );
@@ -593,9 +593,9 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The native runtime table exports fixed English labels in a translated admin, as core's status tables do.
+	 * @testdox The runtime table exports fixed English labels in a translated admin, as core's status tables do.
 	 */
-	public function test_native_runtime_table_exports_english_labels_in_a_translated_admin(): void {
+	public function test_runtime_table_exports_english_labels_in_a_translated_admin(): void {
 		$translate = static function ( $translation, $text, $domain ) {
 			return 'woocommerce' === $domain && 'Runtime owner' === $text ? 'Propriétaire du runtime' : $translation;
 		};
@@ -610,7 +610,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The status report shows the client's enabled WooPay rows for a WooPay-eligible account.
+	 * @testdox The status report shows the extension's enabled WooPay rows for a WooPay-eligible account.
 	 *
 	 * Client 11.1.0 `includes/class-wc-payments-status.php:507-535`; WooPay counts as enabled only for 'yes'
 	 * (`includes/class-wc-payments-features.php:54-59`).
@@ -663,7 +663,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The status report names the advanced fraud filters in force, as the client does.
+	 * @testdox The status report names the advanced fraud filters in force, as the extension does.
 	 *
 	 * Client 11.1.0 `includes/class-wc-payments-status.php:554-594`.
 	 */
@@ -700,11 +700,11 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox While the plugin owns payments the report leaves the WooPayments section to the plugin and reads no fraud settings.
+	 * @testdox While the extension owns payments the report leaves the WooPayments section to the extension and reads no fraud settings.
 	 */
-	public function test_status_report_leaves_the_client_section_to_the_plugin_while_it_owns_payments(): void {
+	public function test_status_report_leaves_the_extension_section_to_the_extension_while_it_owns_payments(): void {
 		$this->fake_plugin( true );
-		$this->set_native_state( WooPaymentsSetupTier::AVAILABLE );
+		$this->set_setup_tier( WooPaymentsSetupTier::AVAILABLE );
 		$api_client = $this->createMock( WooPaymentsApiClient::class );
 		$api_client->expects( $this->never() )->method( 'get_latest_fraud_ruleset' );
 		wc_get_container()->replace( WooPaymentsApiClient::class, $api_client );
@@ -717,7 +717,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Dev mode triggers follow the wcpay_dev_mode filter, which can turn dev mode on or off, as in the client.
+	 * @testdox Dev mode triggers follow the wcpay_dev_mode filter, which can turn dev mode on or off, as in the extension.
 	 *
 	 * Client 11.1.0 `includes/core/class-mode.php:72-111`.
 	 */
@@ -738,9 +738,9 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The status report shows only the client's connection rows when the store has no WPCOM connection.
+	 * @testdox The status report shows only the extension's connection rows when the store has no WPCOM connection.
 	 */
-	public function test_status_report_without_a_wpcom_connection_shows_the_client_connection_rows(): void {
+	public function test_status_report_without_a_wpcom_connection_shows_the_extension_connection_rows(): void {
 		$http_client = $this->createMock( WooPaymentsHttpClient::class );
 		$http_client->method( 'is_connected' )->willReturn( false );
 		wc_get_container()->replace( WooPaymentsHttpClient::class, $http_client );
@@ -997,7 +997,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string $state Native payments state.
 	 */
-	private function set_native_state( string $state ): void {
+	private function set_setup_tier( string $state ): void {
 		update_option( WooPaymentsSetupTier::OPTION_NAME, $state, true );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
