@@ -356,7 +356,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** @var int */
 			private int $run_count = 0;
 
-			/** @return array{ran:bool,changes:string[]} */
+			/** @return array{changes:string[]} */
 			public function run(): array {
 				++$this->run_count;
 				return array(
@@ -578,7 +578,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				$this->store = $store;
 			}
 
-			/** @return array{ran:bool,changes:string[]} */
+			/** @return array{changes:string[]} */
 			public function run(): array {
 				$this->busy = $this->store->acquire_write_lock( time() );
 				return array(
@@ -838,7 +838,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				$this->runs =& $runs;
 			}
 
-			/** @return array{ran:bool,changes:string[]} */
+			/** @return array{changes:string[]} */
 			public function run(): array {
 				++$this->runs;
 				return array(
@@ -1050,7 +1050,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				$this->during_run =& $during_run;
 			}
 
-			/** @return array{ran:bool,changes:string[]} */
+			/** @return array{changes:string[]} */
 			public function run(): array {
 				++$this->runs;
 				if ( is_callable( $this->during_run ) ) {
@@ -1205,7 +1205,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				$this->during_run =& $during_run;
 			}
 
-			/** @return array{ran:bool,changes:string[]} */
+			/** @return array{changes:string[]} */
 			public function run(): array {
 				if ( is_callable( $this->during_run ) ) {
 					$during_run       = $this->during_run;
@@ -1395,7 +1395,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->arrange_extension_era_store();
 		$preflight     = $this->create_plugin_deactivating_preflight();
 		$normalization = new class() extends WooPaymentsCutoverDataMigration {
-			/** @return array{ran:bool,changes:string[]} */
+			/** @return array{changes:string[]} */
 			public function run(): array {
 				return array(
 					'changes' => array( 'no_changes' ),
@@ -2275,7 +2275,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	private function create_noop_normalization(): WooPaymentsCutoverDataMigration {
 		return new class() extends WooPaymentsCutoverDataMigration {
-			/** @return array{ran:bool,changes:string[]} */
+			/** @return array{changes:string[]} */
 			public function run(): array {
 				return array(
 					'changes' => array(),
@@ -3292,7 +3292,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				$this->runs =& $runs;
 			}
 
-			/** @return array{ran:bool,changes:string[]} */
+			/** @return array{changes:string[]} */
 			public function run(): array {
 				++$this->runs;
 				return array(
@@ -3717,7 +3717,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 		};
 		$normalization = new class() extends WooPaymentsCutoverDataMigration {
-			/** @return array{ran:bool,changes:string[]} */
+			/** @return array{changes:string[]} */
 			public function run(): array {
 				return array(
 					'changes' => array(),
@@ -4762,7 +4762,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	private function create_state_writing_job( bool $extension_owns, WooPaymentsCutoverPreflightService $preflight ): WooPaymentsCutoverReconciliationJob {
 		$normalization = new class() extends WooPaymentsCutoverDataMigration {
-			/** @return array{ran:bool,changes:string[]} */
+			/** @return array{changes:string[]} */
 			public function run(): array {
 				return array(
 					'changes' => array( 'no_changes' ),

@@ -15,12 +15,14 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Migrates the WooPayments extension's stored settings and options once per migration version: reshapes the shared gateway
- * settings, deletes retired options and transients, and clears retired cron events.
+ * Migrates the WooPayments extension's stored settings and options once per migration version: limits manual-capture payment
+ * methods, adds missing gateway setting defaults, persists the gateway settings, deletes retired options and transients, and
+ * clears retired cron events.
  *
- * Each retired setting, option and transient it removes carries the extension version that stopped reading it, so
- * re-activating the extension at the floor version still finds what it reads. It also deletes obsolete appearance transients
- * removed by the extension in 10.6.0 (`includes/migrations/class-delete-appearance-transients.php`).
+ * Each retired option and transient it removes carries the extension version that stopped reading it, so re-activating the
+ * extension at the floor version still finds what it reads. It also deletes obsolete appearance transients removed by the
+ * extension in 10.6.0 (`includes/migrations/class-delete-appearance-transients.php`). The gateway settings synchronizer
+ * removes the retired `payment_request` setting when it persists the settings.
  *
  * @since 11.2.0
  * @internal
@@ -48,21 +50,17 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	);
 
 	/**
-	 * Shared settings keys the migration may remove or reshape, with the WooPayments extension version that stopped reading each.
+	 * Shared settings keys the cutover removes, with the WooPayments extension version that stopped reading each.
 	 *
-	 * Re-activating the extension is the rollback lever, so the migration never removes or reshapes a shared setting that the
+	 * Re-activating the extension is the rollback lever, so the cutover never removes or reshapes a shared setting that the
 	 * cutover floor (WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION) still reads; raising the floor is the
 	 * only way to widen this list. Each version is the first extension release tag with no read outside its own migrations.
-	 * The split per-method options have no retired keys.
+	 * The gateway settings synchronizer removes these keys, not this class.
 	 *
 	 * @var array<string,string>
 	 */
 	public const RETIRED_SETTINGS_KEYS = array(
-		'payment_request'                     => '10.4.0',
-		// Client 11.1.0 still declares the form field (class-wc-payment-gateway-wcpay.php:471), but nothing reads it.
-		'payment_request_button_locations'    => '10.4.0',
-		'platform_checkout_button_locations'  => '10.4.0',
-		'payment_request_button_branded_type' => '2.9.0',
+		'payment_request' => '10.4.0',
 	);
 
 	/**
@@ -167,7 +165,7 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Run the data migration unless it has already completed.
+	 * Run the data migration as an `init` callback, which must return nothing; `run()` returns the list of changes.
 	 */
 	public function maybe_run(): void {
 		$this->run();

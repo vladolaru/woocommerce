@@ -509,23 +509,30 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Normalization removes no shared settings key and reshapes none of a store at the cutover floor.
+	 * @testdox Normalization keeps every shared setting of a store at the cutover floor, with its express checkout location lists unchanged.
 	 */
-	public function test_run_removes_or_reshapes_only_allowlisted_shared_settings(): void {
-		$settings = array_merge(
+	public function test_run_keeps_every_shared_setting_of_a_floor_store(): void {
+		// Client 11.1.0 includes/class-wc-payment-gateway-wcpay.php: all three express checkout location lists accept `link`
+		// (:510-540), and `payment_request_button_locations` is still declared (:471). Link next to WooPay (`platform_checkout`
+		// 'yes') is deliberately combined: the extension's settings endpoint accepts it (includes/admin/class-wc-rest-payments-settings-controller.php:322-347, :1236-1247).
+		$express_locations = array(
+			'express_checkout_product_methods'  => array( 'payment_request', 'link', 'amazon_pay' ),
+			'express_checkout_cart_methods'     => array( 'woopay', 'link' ),
+			'express_checkout_checkout_methods' => array( 'link' ),
+		);
+		$settings          = array_merge(
 			array(
-				'enabled'                           => 'yes',
-				'test_mode'                         => 'yes',
-				'manual_capture'                    => 'yes',
-				'saved_cards'                       => 'yes',
-				'platform_checkout'                 => 'yes',
-				'upe_enabled_payment_method_ids'    => array( 'card', 'link', 'ideal' ),
-				'express_checkout_product_methods'  => array( 'payment_request', 'link' ),
-				'express_checkout_cart_methods'     => array( 'woopay' ),
-				'express_checkout_checkout_methods' => array(),
-				'payment_request_button_type'       => 'buy',
-				'payment_request_button_size'       => 'small',
+				'enabled'                          => 'yes',
+				'test_mode'                        => 'yes',
+				'manual_capture'                   => 'yes',
+				'saved_cards'                      => 'yes',
+				'platform_checkout'                => 'yes',
+				'upe_enabled_payment_method_ids'   => array( 'card', 'link', 'ideal' ),
+				'payment_request_button_type'      => 'buy',
+				'payment_request_button_size'      => 'small',
+				'payment_request_button_locations' => array( 'product', 'cart', 'checkout' ),
 			),
+			$express_locations,
 			self::UNKNOWN_SETTINGS
 		);
 		update_option( self::VERSION_OPTION, WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION );
@@ -539,6 +546,9 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 
 		$this->assertIsArray( $stored );
 		$this->assertSame( array(), array_keys( array_diff_key( $settings, $stored ) ), 'A store at the cutover floor holds no retired key, so nothing may be removed.' );
+		foreach ( $express_locations as $key => $methods ) {
+			$this->assertSame( $methods, $stored[ $key ], "Normalization changed the express checkout location list {$key}; the extension accepts Link in every location." );
+		}
 		foreach ( self::UNKNOWN_SETTINGS as $key => $value ) {
 			$this->assertArrayHasKey( $key, $stored, "Unknown shared setting {$key} must survive normalization." );
 			$this->assertSame( $value, $stored[ $key ], "Unknown shared setting {$key} must keep its value." );
@@ -631,6 +641,13 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Seed the shared options of an extension store at the cutover floor.
+	 *
+	 * Shapes follow client 11.1.0 includes/class-wc-payment-gateway-wcpay.php: `upe_enabled_payment_method_ids` (:491-496),
+	 * `payment_request_button_type` (:432-443), `payment_request_button_size` (:497-507) and the location-centric express
+	 * checkout lists (:510-540) that includes/migrations/class-migrate-express-checkout-locations.php:73-97 and
+	 * class-add-amazon-pay-to-express-checkout-locations.php:65-80 write. Deliberately adversarial: `manual_capture` 'yes' with
+	 * `sepa_debit` and `ideal` enabled (the extension's own manual-capture migration, class-manual-capture-payment-method-settings-update.php:68-87,
+	 * removes such methods), and Link next to WooPay (`platform_checkout` 'yes'), which the extension's settings endpoint accepts.
 	 */
 	private function seed_extension_options(): void {
 		update_option( self::VERSION_OPTION, WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION );
