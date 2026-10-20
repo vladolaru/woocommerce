@@ -25,7 +25,8 @@ defined( 'ABSPATH' ) || exit;
  * WooPayments feature is on at one site or more, and a store site's refusal notice offers it to super admins. The
  * conversion starts no switch. Its activations run as changes the cutover job initiated, so the plugin lifecycle listener
  * records nothing, and record_rollback() runs for each site where the extension is active afterwards. A network-wide
- * activation of the extension is refused while a site would refuse its own activation.
+ * activation of the extension is refused while a site would refuse its own activation; once it goes ahead,
+ * record_rollback() runs for each site, as a site's own activation records its rollback.
  *
  * @since 11.2.0
  * @internal
@@ -126,12 +127,14 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	/**
 	 * Register the hooks every request of a multisite needs, whatever the setup tier of the current site.
 	 *
-	 * They are the feature scan reset, the check of a network-wide activation of the extension, and the conversion's
-	 * handler and result notice for the site it starts from. The callbacks resolve the controller only when they act.
+	 * They are the feature scan reset, the check of a network-wide activation of the extension and the rollback it records,
+	 * and the conversion's handler and result notice for the site it starts from. The callbacks resolve the controller only
+	 * when they act.
 	 */
 	public static function register_multisite_hooks(): void {
 		add_action( FeaturesController::FEATURE_ENABLED_CHANGED_ACTION, array( self::class, 'handle_feature_enabled_changed' ) );
 		add_action( 'activate_plugin', array( self::class, 'handle_activate_plugin' ), 10, 2 );
+		add_action( 'activated_plugin', array( self::class, 'handle_activated_plugin' ), 10, 2 );
 		add_action( 'admin_init', array( self::class, 'handle_conversion_request' ) );
 		add_action( 'admin_notices', array( self::class, 'handle_site_admin_notices' ) );
 	}
@@ -163,6 +166,22 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 		}
 
 		wc_get_container()->get( self::class )->guard_network_activation();
+	}
+
+	/**
+	 * Record each site's rollback after a network-wide activation of the WooPayments extension, from any plugin folder.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $plugin       Activated plugin path from the public WordPress hook.
+	 * @param mixed $network_wide Whether WordPress activated the plugin for every site.
+	 */
+	public static function handle_activated_plugin( $plugin = '', $network_wide = false ): void {
+		if ( true !== $network_wide || ! is_string( $plugin ) || ! WooPaymentsRuntimeArbiter::is_woopayments_plugin_file( $plugin ) ) {
+			return;
+		}
+
+		wc_get_container()->get( self::class )->record_network_activation_rollbacks();
 	}
 
 	/**
@@ -235,6 +254,26 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 				'link_text' => esc_html__( 'Go to Plugins', 'woocommerce' ),
 			)
 		);
+	}
+
+	/**
+	 * Record the rollback of each site's switch after the WooPayments extension was activated for every site.
+	 *
+	 * The extension then owns payments on every site, as after a site's own activation, so a completed switch, or one past
+	 * finalize, goes back to awaiting the merchant's start before the extension can leave again. The sites are the network's
+	 * sites that are not deleted.
+	 *
+	 * @internal
+	 */
+	public function record_network_activation_rollbacks(): void {
+		foreach ( $this->get_site_ids() as $site_id ) {
+			switch_to_blog( $site_id );
+			try {
+				$this->record_rollback( array( 'site_id' => $site_id ) );
+			} finally {
+				restore_current_blog();
+			}
+		}
 	}
 
 	/**
@@ -504,8 +543,9 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	 *
 	 * A started switch that has not reached finalize's fence is left as it is (has_started_switch_before_finalize()), so the
 	 * merchant keeps the start they made. This is the conversion's only rollback path, because the plugin lifecycle listener
-	 * records nothing during its activations. Idempotent for a record already awaiting the merchant's start; best effort: a
-	 * busy write lock records nothing, and an error is logged.
+	 * records nothing during its activations. A network-wide activation, which the listener leaves alone, records through
+	 * it too. Idempotent for a record already awaiting the merchant's start; best effort: a busy write lock records nothing,
+	 * and an error is logged.
 	 *
 	 * @param array<string,mixed> $context Log context.
 	 */

@@ -828,7 +828,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The controller sends the merchant start and a site's extension activation into the one reconciliation job; an activation for every site records nothing, and deactivating the extension starts nothing.
+	 * @testdox The controller sends the merchant start and a site's extension activation into the one reconciliation job; it leaves an activation for every site to the per-site activation controller, and deactivating the extension starts nothing.
 	 */
 	public function test_controller_routes_the_start_and_the_activation_into_the_job(): void {
 		$renamed_plugin_file = 'renamed-woocommerce-payments/woocommerce-payments.php';

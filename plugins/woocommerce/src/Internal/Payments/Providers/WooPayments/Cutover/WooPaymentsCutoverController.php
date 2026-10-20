@@ -307,8 +307,9 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	/**
 	 * Open a new generation when activating the WooPayments extension again rolls back a completed cutover.
 	 *
-	 * An activation for every site of a multisite records nothing: each site is a store of its own, and a switched site
-	 * beside the reactivated extension is reopened the next time an admin page reads its record.
+	 * An activation for every site of a multisite is recorded for each site by WooPaymentsPerSiteActivationController, which
+	 * runs where no setup tier loads this controller. A switched site whose rollback was not recorded is reopened the next
+	 * time an admin page reads its record.
 	 *
 	 * @internal
 	 *

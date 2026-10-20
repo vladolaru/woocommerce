@@ -11,11 +11,13 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverActionScheduler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverDataMigration;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPluginLifecycleListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsPerSiteActivationController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
@@ -417,6 +419,120 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A network-wide activation of the extension sends every switched site back to awaiting the merchant's start with a new generation, so once the network activation goes nothing owns payments there until the merchant starts the switch.
+	 * @group multisite
+	 */
+	public function test_network_activation_records_the_rollback_of_each_switched_site(): void {
+		$this->skip_unless_multisite();
+		$main = get_current_blog_id();
+		$done = $this->create_site( 'done', true, true );
+		$past = $this->create_site( 'past-finalize', true, true );
+		$this->arrange_site( $main, false, true );
+		$this->create_record( $done, WooPaymentsCutoverStateStore::STATE_DONE, 'done', array() );
+		$this->create_record( $past, WooPaymentsCutoverStateStore::STATE_DEFERRED, 'deferred', array( 'builtin_ownership_unverified' ), array( 'request_origin_token' => 'finalize-token' ) );
+		$this->activate_for_every_site();
+
+		$this->fire_activated_plugin( true );
+
+		$this->assertSame( $main, get_current_blog_id(), 'The scan returns to the main site.' );
+		foreach ( array( $done, $past ) as $site_id ) {
+			$record = $this->read_record( $site_id );
+			$this->assertSame( 4, $record['generation'], 'One rollback generation.' );
+			$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $record['state'] );
+			$this->assertSame( 'awaiting_merchant_start', $record['current_step'] );
+		}
+
+		delete_site_option( 'active_sitewide_plugins' );
+		foreach ( array( $done, $past ) as $site_id ) {
+			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->read_owner( $site_id ), 'Nothing owns payments until the merchant starts the switch.' );
+		}
+	}
+
+	/**
+	 * @testdox A network-wide activation leaves a site with nothing to roll back as it is, while it rolls back a switched site: $_dataName.
+	 * @group multisite
+	 * @dataProvider provider_sites_a_network_activation_leaves_alone
+	 *
+	 * @param string $kind The other site: no record, a record awaiting the merchant's start, a switch started before finalize, or a deleted site with a completed switch.
+	 */
+	public function test_network_activation_leaves_a_site_with_nothing_to_roll_back( string $kind ): void {
+		$this->skip_unless_multisite();
+		$main     = get_current_blog_id();
+		$switched = $this->create_site( 'switched', true, true );
+		$other    = $this->create_site( 'other', true, true );
+		$this->arrange_site( $main, false, true );
+		$this->create_record( $switched, WooPaymentsCutoverStateStore::STATE_DONE, 'done', array() );
+		if ( 'awaiting the merchant\'s start' === $kind ) {
+			$this->create_record( $other, WooPaymentsCutoverStateStore::STATE_PENDING, 'awaiting_merchant_start', array() );
+		} elseif ( 'started before finalize' === $kind ) {
+			$this->create_record( $other, WooPaymentsCutoverStateStore::STATE_DEFERRED, 'deferred', array( 'plugin_active_sitewide' ) );
+		} elseif ( 'deleted, with a completed switch' === $kind ) {
+			$this->create_record( $other, WooPaymentsCutoverStateStore::STATE_DONE, 'done', array() );
+			update_blog_status( $other, 'deleted', '1' );
+		}
+		$before = $this->get_record_on( $other );
+		$this->activate_for_every_site();
+
+		$this->fire_activated_plugin( true );
+
+		$this->assertSame( 4, $this->read_record( $switched )['generation'], 'The switched site rolls back.' );
+		$this->assertSame( $before, $this->get_record_on( $other ), 'The other site keeps its record.' );
+	}
+
+	/**
+	 * @return array<string,array{0:string}>
+	 */
+	public function provider_sites_a_network_activation_leaves_alone(): array {
+		return array(
+			'no record'                        => array( 'no record' ),
+			'awaiting the merchant\'s start'   => array( 'awaiting the merchant\'s start' ),
+			'started before finalize'          => array( 'started before finalize' ),
+			'deleted, with a completed switch' => array( 'deleted, with a completed switch' ),
+		);
+	}
+
+	/**
+	 * @testdox The rollback scan after a network-wide activation goes on past a site whose record cannot be read, and ends on the site it started from.
+	 * @group multisite
+	 */
+	public function test_network_rollback_scan_goes_on_past_a_failing_site_and_restores_the_site(): void {
+		$this->skip_unless_multisite();
+		$main    = get_current_blog_id();
+		$failing = $this->create_site( 'failing', true, true );
+		$next    = $this->create_site( 'next', true, true );
+		$this->arrange_site( $main, false, true );
+		$this->create_record( $failing, WooPaymentsCutoverStateStore::STATE_DONE, 'done', array() );
+		$this->create_record( $next, WooPaymentsCutoverStateStore::STATE_DONE, 'done', array() );
+		$job               = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @var int Site whose record read throws. */
+			public int $failing_site = 0;
+
+			/**
+			 * Throw on the failing site.
+			 *
+			 * @throws \RuntimeException On the failing site.
+			 */
+			public function has_started_switch_before_finalize(): bool {
+				if ( get_current_blog_id() === $this->failing_site ) {
+					throw new \RuntimeException( 'Unreadable record.' );
+				}
+				return parent::has_started_switch_before_finalize();
+			}
+		};
+		$job->failing_site = $failing;
+		$job->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsCutoverStateStore::class ), wc_get_container()->get( WooPaymentsCutoverActionScheduler::class ), wc_get_container()->get( WooPaymentsCutoverPreflightService::class ), wc_get_container()->get( WooPaymentsCutoverDataMigration::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$sut = new WooPaymentsPerSiteActivationController();
+		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsCutoverPreflightService::class ), $job, wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsSetupTier::class ) );
+
+		$sut->record_network_activation_rollbacks();
+
+		$this->assertSame( $main, get_current_blog_id() );
+		$this->assertFalse( ms_is_switched(), 'No site switch is left open.' );
+		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DONE, $this->read_record( $failing )['state'] );
+		$this->assertSame( 4, $this->read_record( $next )['generation'], 'The site after the failing one rolls back.' );
+	}
+
+	/**
 	 * @testdox The conversion button stops before any plugin change ($_dataName).
 	 * @group multisite
 	 * @dataProvider provider_conversion_requests_that_change_no_plugin
@@ -766,6 +882,17 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Fire WordPress's activated_plugin hook for the extension, as activate_plugin() does after it writes the active list.
+	 *
+	 * WordPress 7.1.3 wp-admin/includes/plugin.php:736 fires it with the plugin file and whether the activation is network-wide.
+	 *
+	 * @param bool $network_wide Whether the activation is for every site.
+	 */
+	private function fire_activated_plugin( bool $network_wide ): void {
+		do_action( 'activated_plugin', WooPaymentsRuntimeArbiter::PLUGIN_FILE, $network_wide ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WordPress's own hook, fired as the core function does.
+	}
+
+	/**
 	 * Record the message, title and arguments of the next wp_die() call, then stop as WordPress's test handler does.
 	 */
 	private function fake_wp_die(): void {
@@ -967,16 +1094,43 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	 * @return array<string,mixed>
 	 */
 	private function read_record( int $site_id ): array {
-		switch_to_blog( $site_id );
-		try {
-			wp_cache_delete( WooPaymentsCutoverStateStore::OPTION_NAME, 'options' );
-			$record = wc_get_container()->get( WooPaymentsCutoverStateStore::class )->get_record();
-		} finally {
-			restore_current_blog();
-		}
+		$record = $this->get_record_on( $site_id );
 		$this->assertIsArray( $record );
 
 		return $record;
+	}
+
+	/**
+	 * Get a site's cutover record, or null when it has none.
+	 *
+	 * @param int $site_id Site ID.
+	 * @return array<string,mixed>|null
+	 */
+	private function get_record_on( int $site_id ): ?array {
+		switch_to_blog( $site_id );
+		try {
+			wp_cache_delete( WooPaymentsCutoverStateStore::OPTION_NAME, 'options' );
+			return wc_get_container()->get( WooPaymentsCutoverStateStore::class )->get_record();
+		} finally {
+			restore_current_blog();
+		}
+	}
+
+	/**
+	 * Read who owns payments on a site, as a new request there would.
+	 *
+	 * @param int $site_id Site ID.
+	 * @return string
+	 */
+	private function read_owner( int $site_id ): string {
+		switch_to_blog( $site_id );
+		try {
+			$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+			$arbiter->invalidate();
+			return $arbiter->get_runtime_owner();
+		} finally {
+			restore_current_blog();
+		}
 	}
 
 	/**

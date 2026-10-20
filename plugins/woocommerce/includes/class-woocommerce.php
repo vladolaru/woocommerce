@@ -429,8 +429,9 @@ final class WooCommerce {
 		$container->get( Automattic\WooCommerce\Internal\MultiCurrency\Compat\LegacyMultiCurrencyFacadeLoader::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayVerifiedEmailRestoreService::class )->register();
 		// The conversion of a network-wide activation of the WooPayments extension into per-site activations, offered on network
-		// admin and in a store site's refusal notice, and the check of a network-wide activation. They run where no setup tier
-		// is active, so they are registered here and not in the tier matrix; Cutover/README.md lists what to remove with the Cutover folder.
+		// admin and in a store site's refusal notice, and the check of a network-wide activation and the rollbacks it records.
+		// They run where no setup tier is active, so they are registered here and not in the tier matrix; Cutover/README.md
+		// lists what to remove with the Cutover folder.
 		if ( is_multisite() ) {
 			Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsPerSiteActivationController::register_multisite_hooks();
 			if ( is_network_admin() ) {

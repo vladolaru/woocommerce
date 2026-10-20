@@ -13,7 +13,7 @@ This folder moves a store from the WooPayments extension to the built-in WooPaym
 | `WooPaymentsCutoverDataMigration` | Migrates the extension's stored settings and options once per migration version. |
 | `WooPaymentsBundledSubscriptionsGuard` | Tells whether a store runs the bundled WooPayments subscriptions, which the cutover excludes. |
 | `WooPaymentsPlatformConnectionService` | Checks the WordPress.com connection the cutover needs. |
-| `WooPaymentsPerSiteActivationController` | Offers the network-wide to per-site activation conversion and checks network-wide activations of the extension. |
+| `WooPaymentsPerSiteActivationController` | Offers the network-wide to per-site activation conversion, checks network-wide activations of the extension and records each site's rollback after one. |
 
 ## Remove with this folder
 
