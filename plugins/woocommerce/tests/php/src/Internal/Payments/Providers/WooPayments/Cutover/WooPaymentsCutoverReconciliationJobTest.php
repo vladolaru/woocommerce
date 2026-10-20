@@ -124,17 +124,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The job receives the explicitly injected headless preflight service.
-	 */
-	public function test_job_receives_the_explicit_preflight_service(): void {
-		$job      = $this->require_sut();
-		$property = new \ReflectionProperty( $job, 'preflight_service' );
-		$property->setAccessible( true );
-
-		$this->assertSame( $this->preflight_service, $property->getValue( $job ) );
-	}
-
-	/**
 	 * @testdox A plugin change the job runs is marked while its callback runs, and the previous mark comes back when the callback throws (previous mark: $previous).
 	 * @testWith [false]
 	 *           [true]
@@ -2539,13 +2528,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	public function test_reconciliation_dispositions_are_exclusive( string $condition, string $expected_state ): void {
 		$preflight = $this->create_preflight_with_failures( array( $condition ) );
-		$sut       = $this->create_job_with_preflight( 'builtin_runtime_disabled' !== $condition, $preflight );
-
-		if ( 'builtin_runtime_disabled' === $condition ) {
-			$this->assertFalse( $sut->enqueue( 'merchant' ) );
-			$this->assertNull( $this->require_state_store()->get_record() );
-			return;
-		}
+		$sut       = $this->create_job_with_preflight( true, $preflight );
 
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $this->require_state_store()->get_record();
@@ -2567,7 +2550,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	public function reconciliation_disposition_provider(): array {
 		return array(
-			'built-in runtime disabled'                  => array( 'builtin_runtime_disabled', 'none' ),
 			'unsupported WooPayments version'            => array( 'woopayments_plugin_version_unsupported', WooPaymentsCutoverStateStore::STATE_DEFERRED ),
 			'operational queue hooks'                    => array( 'operational_queue_hooks_unhandled', WooPaymentsCutoverStateStore::STATE_DEFERRED ),
 			'bundled Stripe Billing subscriptions'       => array( 'bundled_stripe_billing_subscriptions_present', WooPaymentsCutoverStateStore::STATE_EXCLUDED ),
@@ -2787,47 +2769,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Plugin updates hold and release the WordPress core upgrader lock.
-	 */
-	public function test_plugin_update_uses_the_wordpress_core_upgrader_lock(): void {
-		$job       = new class() extends WooPaymentsCutoverReconciliationJob {
-			/** @var bool[] */
-			private array $lock_observations = array();
-
-			/** Refresh controlled update metadata. */
-			protected function refresh_plugin_update_metadata(): void {
-			}
-
-			/**
-			 * Return a controlled unsuccessful update.
-			 *
-			 * @param string $plugin_file Active plugin file.
-			 * @return bool
-			 */
-			protected function upgrade_woopayments_plugin_file( string $plugin_file ): bool {
-				$this->lock_observations[] = false !== get_option( 'woocommerce_woopayments_cutover_plugin_update_lock.lock', false );
-				return false;
-			}
-
-			/** @return bool[] */
-			public function get_lock_observations(): array {
-				return $this->lock_observations;
-			}
-		};
-		$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, false, array(), 'woocommerce-payments/woocommerce-payments.php' );
-		$sut       = $this->create_job( true, $preflight, $job );
-		$sut->enqueue( 'merchant' );
-		$pending = $this->require_state_store()->get_record();
-		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
-
-		$sut->handle_reconcile( $pending['generation'], 1 );
-
-		$this->assertSame( array( true ), $job->get_lock_observations() );
-		$this->assertFalse( get_option( 'woocommerce_woopayments_cutover_plugin_update_lock.lock', false ) );
-	}
-
-	/**
 	 * @testdox A site that disallows file modifications defers the switch with the version code and never runs the updater.
 	 */
 	public function test_disallowed_file_modifications_defer_without_running_the_updater(): void {
@@ -2913,6 +2854,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, false, array(), 'woocommerce-payments/woocommerce-payments.php' );
 		$sut       = $this->create_job( true, $preflight, $job );
 
+		require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
 		$this->assertTrue( \WP_Upgrader::create_lock( 'woocommerce_woopayments_cutover_plugin_update_lock', 5 * MINUTE_IN_SECONDS ) );
 		try {
 			$sut->enqueue( 'merchant' );

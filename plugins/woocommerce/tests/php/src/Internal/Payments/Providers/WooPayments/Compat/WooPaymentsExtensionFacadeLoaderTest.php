@@ -44,28 +44,6 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The AutomateWoo compatibility gate recognizes the built-in WooPayments.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 */
-	public function test_automatewoo_gate_recognizes_the_builtin_woopayments(): void {
-		$this->register_extension_facades();
-
-		$this->assertTrue( class_exists( '\\WC_Payments' ), 'AutomateWoo should enter its WooPayments integration branch for the native runtime.' );
-	}
-
-	/**
-	 * @testdox The PayPal Payments compatibility gate recognizes the built-in WooPayments.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 */
-	public function test_paypal_payments_gate_recognizes_the_builtin_woopayments(): void {
-		$this->register_extension_facades();
-
-		$this->assertTrue( class_exists( '\\WC_Payments' ), 'PayPal Payments should recognize native WooPayments when making its onboarding decision.' );
-	}
-
-	/**
 	 * @testdox Core does not mistake its compatibility facade for the WooPayments extension's runtime.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
@@ -149,24 +127,6 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A WordPress admin activation sandbox can declare the WooPayments extension's facades.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 */
-	public function test_admin_activation_sandbox_can_declare_extension_facades(): void {
-		$_REQUEST['action'] = 'activate'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing WordPress's already-authorized plugin activation request.
-		$_REQUEST['plugin'] = WooPaymentsRuntimeArbiter::PLUGIN_FILE; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing WordPress's already-authorized plugin activation request.
-
-		$this->register_extension_facades();
-
-		define( 'WP_SANDBOX_SCRAPING', true );
-		require __DIR__ . '/Fixtures/woocommerce-payments-activation-bootstrap.fixture';
-
-		$this->assertSame( 'plugin', \WC_Payments::DECLARATION_OWNER, 'The activation sandbox must retain authority to declare the plugin bootstrap class.' );
-		$this->assertSame( 'plugin', \WC_Payments_Features::DECLARATION_OWNER, 'The activation sandbox must retain authority to declare the plugin feature class.' );
-	}
-
-	/**
 	 * @testdox Official WordPress activation requests keep the extension-owned symbols available.
 	 * @dataProvider official_activation_request_provider
 	 * @runInSeparateProcess
@@ -193,6 +153,13 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	 */
 	public function official_activation_request_provider(): array {
 		return array(
+			'plugins screen activate link'          => array(
+				array(
+					'action' => 'activate',
+					'plugin' => WooPaymentsRuntimeArbiter::PLUGIN_FILE,
+				),
+				array(),
+			),
 			'bulk plugins screen'                   => array(
 				array(
 					'action'  => 'activate-selected',

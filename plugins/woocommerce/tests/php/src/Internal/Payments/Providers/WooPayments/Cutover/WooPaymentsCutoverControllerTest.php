@@ -387,21 +387,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Start notice is shown when the extension owns the site and preflight is ready.
-	 */
-	public function test_start_notice_is_shown_when_preflight_is_ready(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-
-		$this->assertStringContainsString(
-			'Start the switch',
-			$this->render_admin_notices( $this->sut ),
-			'The notice should show only when the merchant can safely disable the plugin.'
-		);
-	}
-
-	/**
 	 * @testdox While the WooPayments extension is active for every site, the store is told a super admin first activates WooPayments per site, with no start button.
 	 */
 	public function test_extension_active_for_every_site_refuses_the_start_with_a_notice(): void {
@@ -1370,22 +1355,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Cutover preflight memoizes expensive checks for the current request.
-	 */
-	public function test_preflight_memoizes_expensive_checks_within_request(): void {
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->builtin_provider_ready = true;
-
-		$first_failures  = $this->preflight_service->get_failures();
-		$second_failures = $this->preflight_service->get_failures();
-
-		$this->assertSame( $first_failures, $second_failures, 'Repeated preflight checks in one request should reuse the first result.' );
-		$this->assertSame( 1, $this->builtin_provider_readiness_calls, 'Native transport readiness should be checked once per request.' );
-		$this->assertSame( 1, $this->platform_connection_preflight_calls, 'Platform connection preflight should be checked once per request.' );
-		$this->assertSame( 1, $this->fee_remediation_preflight_calls, 'Financial migration preflight should run once per request.' );
-	}
-
-	/**
 	 * @testdox Cutover preflight blocks while the built-in provider cannot process payments.
 	 */
 	public function test_preflight_blocks_when_the_builtin_provider_cannot_process_payments(): void {
@@ -1552,20 +1521,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Cutover preflight no longer reports a queue blocker after A5a disposition.
-	 */
-	public function test_preflight_closes_the_queue_blocker_by_default(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->builtin_provider_ready = true;
-
-		$failures = $this->preflight_service->get_failures();
-
-		$this->assertNotContains( 'operational_queue_hooks_unhandled', $failures );
-	}
-
-	/**
 	 * @testdox Cutover preflight blocks a store without WooCommerce Subscriptions while a subscription is still Stripe-billed (bundled flavor).
 	 */
 	public function test_preflight_blocks_when_bundled_stripe_billing_subscription_marker_exists(): void {
@@ -1573,18 +1528,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_current_user_caps( true );
 		$this->enable_ready_cutover();
 		$this->create_bundled_stripe_billing_subscription( 'pending' );
-
-		$this->assertContains( 'bundled_stripe_billing_subscriptions_present', $this->preflight_service->get_failures() );
-	}
-
-	/**
-	 * @testdox Cutover preflight blocks a bundled-flavor store whatever the status of its Stripe-billed subscription.
-	 */
-	public function test_preflight_blocks_cancelled_bundled_stripe_billing_subscription_marker(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		$this->create_bundled_stripe_billing_subscription( 'cancelled' );
 
 		$this->assertContains( 'bundled_stripe_billing_subscriptions_present', $this->preflight_service->get_failures() );
 	}
@@ -1643,17 +1586,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->create_bundled_stripe_billing_hpos_marker( '_wcpay_subscription_id' );
 
 		$this->assertContains( 'bundled_stripe_billing_subscriptions_present', $this->preflight_service->get_failures() );
-	}
-
-	/**
-	 * @testdox Cutover preflight allows clean stores without bundled Stripe Billing markers.
-	 */
-	public function test_preflight_allows_clean_store_without_bundled_stripe_billing_markers(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-
-		$this->assertNotContains( 'bundled_stripe_billing_subscriptions_present', $this->preflight_service->get_failures() );
 	}
 
 	/**

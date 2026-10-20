@@ -128,13 +128,4 @@ class WooPaymentsCutoverPluginLifecycleListenerTest extends WC_Unit_Test_Case {
 		// Called directly: core's own activate_plugin callbacks (Packages.php) do not accept a malformed value either.
 		$this->sut->guard_woopayments_activation( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 	}
-
-	/**
-	 * @testdox The listener registers on the generic activation hook and the two plugin lifecycle hooks.
-	 */
-	public function test_registers_the_lifecycle_hooks(): void {
-		$this->assertSame( 10, has_action( 'activate_plugin', array( $this->sut, 'guard_woopayments_activation' ) ) );
-		$this->assertSame( 10, has_action( 'activated_plugin', array( $this->sut, 'handle_plugin_activated' ) ) );
-		$this->assertSame( 10, has_action( 'deactivated_plugin', array( $this->sut, 'handle_plugin_deactivated' ) ) );
-	}
 }

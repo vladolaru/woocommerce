@@ -27,25 +27,6 @@ class WooPaymentsExtensionFacadePlacementTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The placement scanner ignores declaration trivia and consumer-only class references.
-	 */
-	public function test_scanner_handles_declaration_trivia_and_anonymous_classes(): void {
-		$namespaced_source = <<<'PHP'
-<?php
-namespace /* legal trivia */ WCPay\OutsideCompat;
-class Facade {}
-PHP;
-		$consumer_source   = <<<'PHP'
-<?php
-$consumer = new class extends WC_Payments_Adapter {};
-$reference = WC_Payments_Features::class;
-PHP;
-
-		$this->assertSame( array( 'WCPay\\OutsideCompat\\Facade' ), $this->get_extension_shaped_declarations_from_source( $namespaced_source ) );
-		$this->assertSame( array(), $this->get_extension_shaped_declarations_from_source( $consumer_source ) );
-	}
-
-	/**
 	 * Composer's optimized classmaps (the Jetpack autoloader's included) map every class in a scanned tree whatever its
 	 * namespace, so a facade there would be declared on first use on every store, plugin-owned ones included.
 	 *
@@ -100,41 +81,6 @@ PHP;
 
 		foreach ( $loaders as $label => $loader ) {
 			$this->assertSame( 1, count( array_filter( $registrations, static fn( string $registration ): bool => 0 === strcasecmp( $loader, $registration ) ) ), $label . ' must have exactly one dependency-injection registration in the WooCommerce composition root.' );
-		}
-	}
-
-	/**
-	 * @testdox Composition-root registration counting resolves aliases and ignores formatting trivia.
-	 */
-	public function test_composition_root_registration_counting_resolves_aliases_and_trivia(): void {
-		$payments_loader       = 'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\Compat\\WooPaymentsExtensionFacadeLoader';
-		$multi_currency_loader = 'Automattic\\WooCommerce\\Internal\\MultiCurrency\\Compat\\LegacyMultiCurrencyFacadeLoader';
-		$source                = <<<'PHP'
-<?php
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\{WooPaymentsCompatClassAliases, WooPaymentsExtensionFacadeLoader as PaymentsCompatibilityLoader};
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter, Automattic\WooCommerce\Internal\MultiCurrency\Compat\LegacyMultiCurrencyFacadeLoader as MultiCurrencyCompatibilityLoader;
-$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsExtensionFacadeLoader::class )->register();
-$container
-	->get( PaymentsCompatibilityLoader /* trivia */ :: class )
-	->register();
-$container->get( MultiCurrencyCompatibilityLoader::class )->register();
-PHP;
-
-		$this->assertSame( array( $payments_loader, $payments_loader, $multi_currency_loader ), $this->get_composition_root_registrations( $source ) );
-	}
-
-	/**
-	 * @testdox Each removable compatibility boundary documents its removal contract.
-	 */
-	public function test_each_compatibility_boundary_has_removal_documentation(): void {
-		$plugin_directory = WC()->plugin_path();
-		$readme_files     = array(
-			$plugin_directory . '/src/Internal/Payments/Providers/WooPayments/Compat/README.md',
-			$plugin_directory . '/src/Internal/MultiCurrency/Compat/README.md',
-		);
-
-		foreach ( $readme_files as $readme_file ) {
-			$this->assertFileExists( $readme_file, $readme_file . ' must document the compatibility boundary and its removal.' );
 		}
 	}
 

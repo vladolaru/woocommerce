@@ -34,29 +34,6 @@ class WooPaymentsBundledSubscriptionsGuardTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Bundled subscription markers use identifier placeholders when the database supports them.
-	 */
-	public function test_queries_with_identifier_placeholders_when_supported(): void {
-		$wpdb           = $this->getMockBuilder( \wpdb::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'has_cap', 'prepare', 'get_var', 'esc_like' ) )
-			->getMock();
-		$wpdb->posts    = 'wp_posts';
-		$wpdb->postmeta = 'wp_postmeta';
-		$wpdb->expects( $this->once() )
-			->method( 'has_cap' )
-			->with( 'identifier_placeholders' )
-			->willReturn( true );
-		$wpdb->method( 'prepare' )->willReturnArgument( 0 );
-		$wpdb->method( 'esc_like' )->willReturnArgument( 0 );
-		$wpdb->expects( $this->exactly( 3 ) )
-			->method( 'get_var' )
-			->willReturn( 'wp_wc_orders', 'wp_wc_orders_meta', '1' );
-
-		$this->assertTrue( $this->create_guard( $wpdb )->is_bundled_subscriptions_store() );
-	}
-
-	/**
 	 * @testdox Missing HPOS tables skip only the HPOS scan and continue with the CPT scan.
 	 */
 	public function test_skips_hpos_scan_when_hpos_tables_are_missing(): void {

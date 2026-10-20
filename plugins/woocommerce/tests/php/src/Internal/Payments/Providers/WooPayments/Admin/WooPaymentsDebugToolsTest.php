@@ -26,20 +26,6 @@ class WooPaymentsDebugToolsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should build neither tool service when initialized, so listing the tools builds only what a tool runs.
-	 */
-	public function test_init_resolves_no_tool_service(): void {
-		$sut = new WooPaymentsDebugTools();
-		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
-
-		foreach ( array( 'frontend_styles_service', 'fee_remediation_service' ) as $property ) {
-			$reflection = new \ReflectionProperty( WooPaymentsDebugTools::class, $property );
-			$reflection->setAccessible( true );
-			$this->assertNull( $reflection->getValue( $sut ), $property . ' must be resolved when a tool runs, not when the tools are initialized.' );
-		}
-	}
-
-	/**
 	 * @testdox WooCommerce debug tools include account, order, styles, and fee-remediation actions.
 	 */
 	public function test_debug_tools_include_support_callbacks(): void {

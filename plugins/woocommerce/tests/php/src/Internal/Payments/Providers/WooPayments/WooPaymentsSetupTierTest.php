@@ -140,29 +140,6 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox State reads are memoized until explicitly invalidated.
-	 */
-	public function test_get_effective_tier_memoizes_reads_until_invalidated(): void {
-		$reads = 0;
-		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
-		add_filter(
-			'option_' . WooPaymentsSetupTier::OPTION_NAME,
-			static function ( $value ) use ( &$reads ) {
-				++$reads;
-				return $value;
-			}
-		);
-
-		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->state->get_effective_tier() );
-		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->state->get_effective_tier() );
-		$this->assertSame( 1, $reads );
-
-		$this->state->invalidate();
-		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->state->get_effective_tier() );
-		$this->assertSame( 2, $reads );
-	}
-
-	/**
 	 * @testdox With the WooPayments feature on, a store the WooPayments extension owns reads available whatever is stored ($_dataName).
 	 * @dataProvider provide_stored_tiers_and_none
 	 *

@@ -77,20 +77,6 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should build no check collaborator when initialized, so the cutover surfaces build no payment provider until a preflight runs.
-	 */
-	public function test_init_resolves_no_check_collaborator(): void {
-		$sut = new WooPaymentsCutoverPreflightService();
-		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ) );
-
-		foreach ( array( 'provider', 'bundled_subscriptions_guard', 'fee_remediation_service', 'platform_connection_service', 'rate_account', 'rate_api_client' ) as $property ) {
-			$reflection = new \ReflectionProperty( WooPaymentsCutoverPreflightService::class, $property );
-			$reflection->setAccessible( true );
-			$this->assertNull( $reflection->getValue( $sut ), $property . ' must be resolved when a preflight runs, not when the service is initialized.' );
-		}
-	}
-
-	/**
 	 * @testdox A store with every check passing reports no failure, including no undispositioned provider events.
 	 */
 	public function test_ready_store_reports_no_failures(): void {

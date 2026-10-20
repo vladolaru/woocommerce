@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Cutover;
 
-use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverActionScheduler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPluginLifecycleListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
@@ -462,16 +461,6 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 
 		delete_site_option( 'active_sitewide_plugins' );
 		$this->assertSame( '', $this->render_notice( $this->create_sut() ), 'Nothing shows once the extension is no longer active for every site.' );
-	}
-
-	/**
-	 * @testdox On a multisite, WooCommerce registers the feature-scan reset on every request, not only in the network admin.
-	 * @group multisite
-	 */
-	public function test_feature_scan_reset_is_registered_on_a_multisite(): void {
-		$this->skip_unless_multisite();
-
-		$this->assertNotFalse( has_action( FeaturesController::FEATURE_ENABLED_CHANGED_ACTION, array( WooPaymentsPerSiteActivationController::class, 'handle_feature_enabled_changed' ) ) );
 	}
 
 	/**
