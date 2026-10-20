@@ -13,14 +13,14 @@ This folder moves a store from the WooPayments extension to the built-in WooPaym
 | `WooPaymentsCutoverDataMigration` | Migrates the extension's stored settings and options once per migration version. |
 | `WooPaymentsBundledSubscriptionsGuard` | Tells whether a store runs the bundled WooPayments subscriptions, which the cutover excludes. |
 | `WooPaymentsPlatformConnectionService` | Checks the WordPress.com connection the cutover needs. |
-| `WooPaymentsPerSiteActivationController` | Offers the network-wide to per-site activation conversion. |
+| `WooPaymentsPerSiteActivationController` | Offers the network-wide to per-site activation conversion and checks network-wide activations of the extension. |
 
 ## Remove with this folder
 
 Deleting the folder alone breaks the code that reads it. Make these edits in the same commit:
 
 - `WooPaymentsProvider::get_classes_by_setup_tier()`: the three `$cutover_*` locals under the comment that points here, every tier row that spreads them, the `WooPaymentsCutoverDataMigration` entry of `$active_maintenance_prefix`, and the loop that appends `$cutover_every_request` to every request type.
-- `includes/class-woocommerce.php`: the multisite block that registers `WooPaymentsPerSiteActivationController`. It sits outside the tier matrix because it must run where no setup tier is active.
+- `includes/class-woocommerce.php`: the multisite block that registers `WooPaymentsPerSiteActivationController` (its multisite hooks on every request, its network admin notice in network admin). It sits outside the tier matrix because it must run where no setup tier is active.
 - `WooPaymentsStatusReport`: the two lazy getters for the preflight service and the state store, the cutover Site Health test (`add_site_status_tests()`, `run_cutover_site_health_ajax_test()`, `run_cutover_site_health_test()` and their two ID constants), the `preflight_failures` field and `get_preflight_failures()`, and the record read in `has_support_diagnostics()`. `WooPaymentsCLICommand` prints the `preflight_failures` row.
 - `WooPaymentsAdminNoticesPassthrough`: `KEPT_NOTICE_CLASSES` and the branch that keeps the cutover controller's notices on the Payments tab.
 - `WooPaymentsRuntimeArbiter::has_switched_from_extension()`, which reads the record's `done` state and finalize token for the ownership rule. Without it the rule becomes "the WooPayments feature is on and the extension is not active", and `resolve_runtime_owner()` and the readers of `is_awaiting_switch()` (`WooPaymentsSetupTier`, `WooPaymentsPaymentsSettingsAdapter`, `PaymentsProviders` and the status report) simplify with it.

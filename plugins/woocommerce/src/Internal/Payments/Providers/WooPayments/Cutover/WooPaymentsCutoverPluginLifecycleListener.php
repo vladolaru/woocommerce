@@ -27,7 +27,7 @@ class WooPaymentsCutoverPluginLifecycleListener implements RegisterHooksInterfac
 	 * Register the plugin lifecycle hooks.
 	 */
 	public function register() {
-		add_action( 'activate_plugin', array( $this, 'guard_woopayments_activation' ) );
+		add_action( 'activate_plugin', array( $this, 'guard_woopayments_activation' ), 10, 2 );
 		add_action( 'activated_plugin', array( $this, 'handle_plugin_activated' ), 10, 2 );
 		add_action( 'deactivated_plugin', array( $this, 'handle_plugin_deactivated' ) );
 	}
@@ -36,14 +36,15 @@ class WooPaymentsCutoverPluginLifecycleListener implements RegisterHooksInterfac
 	 * Refuse a WooPayments activation the cutover does not allow, from any plugin folder.
 	 *
 	 * The guard matches the arbiter's identity rule, the main file name in any folder, rather than the canonical
-	 * folder's own activation hook.
+	 * folder's own activation hook. A network-wide activation is checked site by site by WooPaymentsPerSiteActivationController.
 	 *
 	 * @internal
 	 *
-	 * @param mixed $plugin Activated plugin path from the public WordPress hook.
+	 * @param mixed $plugin       Activated plugin path from the public WordPress hook.
+	 * @param mixed $network_wide Whether WordPress activates the plugin for every site.
 	 */
-	public function guard_woopayments_activation( $plugin = '' ): void {
-		if ( ! is_string( $plugin ) || ! WooPaymentsRuntimeArbiter::is_woopayments_plugin_file( $plugin ) ) {
+	public function guard_woopayments_activation( $plugin = '', $network_wide = false ): void {
+		if ( true === $network_wide || ! is_string( $plugin ) || ! WooPaymentsRuntimeArbiter::is_woopayments_plugin_file( $plugin ) ) {
 			return;
 		}
 

@@ -7,7 +7,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Cutover;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverActionScheduler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPluginLifecycleListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverReconciliationJob;
@@ -15,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsPerSiteActivationController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
@@ -85,12 +88,21 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	private array $site_ids = array();
 
 	/**
+	 * The message, title and arguments of the wp_die() call the test stopped, or an empty array.
+	 *
+	 * @var array<string,mixed>
+	 */
+	private array $wp_die = array();
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
 		foreach ( $this->site_ids as $site_id ) {
 			wpmu_delete_blog( $site_id, true );
+			wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate( $site_id );
 		}
+		Constants::clear_single_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' );
 		if ( is_multisite() ) {
 			delete_site_option( 'active_sitewide_plugins' );
 			delete_site_transient( WooPaymentsPerSiteActivationController::FEATURE_SCAN_TRANSIENT );
@@ -497,6 +509,192 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The single-site guard refuses the extension only where its listener loads (a stored setup tier past disabled), on a
+	 * store the built-in owns that never ran the extension; a network activation applies that rule to each site.
+	 *
+	 * @testdox A network-wide activation of the extension is refused, naming the sites, while sites with WooCommerce active and a setup tier past disabled have the WooPayments feature on and never ran the extension ($_dataName).
+	 * @group multisite
+	 * @dataProvider provider_network_activation_refused
+	 *
+	 * @param string $tier            The first site's stored setup tier.
+	 * @param bool   $main_feature_on Whether the WooPayments feature is on at the main site, which ran the extension.
+	 */
+	public function test_network_activation_is_refused_while_sites_keep_woopayments_in_woocommerce( string $tier, bool $main_feature_on ): void {
+		$this->skip_unless_multisite();
+		$main   = get_current_blog_id();
+		$first  = $this->create_site( 'first', true, false );
+		$second = $this->create_site( 'second', true, false );
+		$this->arrange_site( $main, $main_feature_on, true );
+		$this->set_stored_tier( $first, $tier );
+		$this->set_stored_tier( $second, WooPaymentsSetupTier::ACTIVE );
+		$this->mock_plugin_functions();
+		$this->fake_wp_die();
+
+		try {
+			$this->fire_activate_plugin( true );
+			$this->fail( 'The network-wide activation must be refused.' );
+		} catch ( \WPDieException $refused ) {
+			unset( $refused );
+		}
+
+		$sites = $this->get_site_label( $first ) . ', ' . $this->get_site_label( $second );
+		$this->assertSame( "The WooPayments extension can&#039;t be activated for the whole network because the built-in WooPayments is turned on for these sites: $sites. Activate the extension on each of the other sites instead.", $this->wp_die['message'] );
+		$this->assertSame( 'Plugin activation error', $this->wp_die['title'] );
+		$this->assertSame( network_admin_url( 'plugins.php' ), $this->wp_die['args']['link_url'] ?? null );
+		$this->assertSame( 'Go to Plugins', $this->wp_die['args']['link_text'] ?? null );
+	}
+
+	/**
+	 * Sites that keep WooPayments in WooCommerce under the activation rule, with the main site's own feature on or off.
+	 *
+	 * @return array<string,array{string,bool}>
+	 */
+	public function provider_network_activation_refused(): array {
+		return array(
+			'stored tier available'           => array( WooPaymentsSetupTier::AVAILABLE, true ),
+			'stored tier connected'           => array( WooPaymentsSetupTier::CONNECTED, true ),
+			'stored tier active'              => array( WooPaymentsSetupTier::ACTIVE, true ),
+			"the main site's own feature off" => array( WooPaymentsSetupTier::AVAILABLE, false ),
+		);
+	}
+
+	/**
+	 * @testdox A WooPayments activation goes ahead when no site keeps WooPayments in WooCommerce under the activation rule ($_dataName).
+	 * @group multisite
+	 * @dataProvider provider_activation_allowed
+	 *
+	 * @param string $store How the one other site, set up and with the WooPayments feature on, is made allowed.
+	 */
+	public function test_activation_is_allowed_where_no_site_keeps_woopayments_in_woocommerce( string $store ): void {
+		$this->skip_unless_multisite();
+		$main = get_current_blog_id();
+		$site = $this->create_site( 'site', 'feature off' !== $store, 'plugin-era' === $store );
+		$this->arrange_site( $main, true, true );
+		$this->set_stored_tier( $site, 'never set up' === $store ? WooPaymentsSetupTier::DISABLED : WooPaymentsSetupTier::AVAILABLE );
+		if ( 'without WooCommerce' === $store ) {
+			$this->sites_without_woocommerce = array( $site );
+		} elseif ( 'deleted' === $store ) {
+			update_blog_status( $site, 'deleted', '1' );
+		} elseif ( 'merged feature development' === $store ) {
+			Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
+		}
+		$this->mock_plugin_functions();
+		$this->fake_wp_die();
+
+		$this->fire_activate_plugin( 'site activation' !== $store );
+
+		$this->assertSame( array(), $this->wp_die, 'The activation goes ahead without wp_die().' );
+	}
+
+	/**
+	 * Allowed activations: the other site ran the extension, has the feature off, was never set up, has no WooCommerce
+	 * (a bare sub-site), or is deleted; merged feature development; and an activation for the main site alone.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function provider_activation_allowed(): array {
+		return array(
+			'the other site ran the extension'            => array( 'plugin-era' ),
+			'the feature is off at the other site'        => array( 'feature off' ),
+			'the other site was never set up'             => array( 'never set up' ),
+			'WooCommerce is not active at the other site' => array( 'without WooCommerce' ),
+			'the other site is deleted'                   => array( 'deleted' ),
+			'merged feature development'                  => array( 'merged feature development' ),
+			'an activation for the main site only'        => array( 'site activation' ),
+		);
+	}
+
+	/**
+	 * @testdox A conversion started from a store site's notice returns to that site's Plugins page with its result, and the result shows there.
+	 * @group multisite
+	 */
+	public function test_conversion_started_on_a_site_returns_to_that_site_with_its_result(): void {
+		$this->skip_unless_multisite();
+		$main = get_current_blog_id();
+		$shop = $this->create_site( 'shop', true, true );
+		$this->arrange_site( $main, true, true );
+		$this->activate_for_every_site();
+		wp_set_current_user( 1 );
+		$location = '';
+		add_filter(
+			'wp_redirect',
+			function ( $url ) use ( &$location ) {
+				$location = (string) $url;
+				return false;
+			}
+		);
+		$this->register_exit_mock(
+			function (): void {
+				throw new \LengthException( 'exit' );
+			}
+		);
+
+		switch_to_blog( $shop );
+		try {
+			$_GET[ WooPaymentsPerSiteActivationController::QUERY_ACTION ] = WooPaymentsPerSiteActivationController::ACTION_CONVERT;
+			$_GET[ WooPaymentsPerSiteActivationController::NONCE_NAME ]   = wp_create_nonce( WooPaymentsPerSiteActivationController::NONCE_ACTION );
+			try {
+				$this->create_sut()->handle_admin_init();
+			} catch ( \LengthException $exited ) {
+				unset( $exited );
+			}
+			$shop_plugins = admin_url( 'plugins.php' );
+			$notice       = '';
+			if ( str_starts_with( $location, $shop_plugins . '?' ) ) {
+				unset( $_GET[ WooPaymentsPerSiteActivationController::QUERY_ACTION ], $_GET[ WooPaymentsPerSiteActivationController::NONCE_NAME ] );
+				wp_parse_str( (string) wp_parse_url( $location, PHP_URL_QUERY ), $query );
+				foreach ( $query as $key => $value ) {
+					$_GET[ $key ] = $value;
+				}
+				ob_start();
+				WooPaymentsPerSiteActivationController::handle_site_admin_notices();
+				$notice = (string) ob_get_clean();
+			}
+		} finally {
+			restore_current_blog();
+		}
+
+		$this->assertStringStartsWith( $shop_plugins . '?', $location, 'The result returns to the store site the conversion started from.' );
+		$this->assertStringContainsString( WooPaymentsPerSiteActivationController::QUERY_DONE . '=1', $location );
+		$this->assertStringContainsString( 'WooPayments is now active on each site. Each site&#039;s administrators can start their switch.', $notice );
+	}
+
+	/**
+	 * @testdox On a network whose main site has no WooCommerce, a store site still offers the per-site activation: its handler, its result notice and the network activation check are hooked outside network admin, and the store's refusal notice offers a super admin the button posting to that site.
+	 * @group multisite
+	 */
+	public function test_store_site_offers_the_per_site_activation_without_woocommerce_on_the_main_site(): void {
+		$this->skip_unless_multisite();
+		$this->assertFalse( is_network_admin() );
+		$this->assertSame( 10, has_action( 'admin_init', array( WooPaymentsPerSiteActivationController::class, 'handle_conversion_request' ) ), 'The handler is hooked outside network admin.' );
+		$this->assertSame( 10, has_action( 'admin_notices', array( WooPaymentsPerSiteActivationController::class, 'handle_site_admin_notices' ) ), 'The site result notice is hooked outside network admin.' );
+		$this->assertSame( 10, has_action( 'activate_plugin', array( WooPaymentsPerSiteActivationController::class, 'handle_activate_plugin' ) ), 'The network activation check is hooked outside the setup tiers.' );
+		$main = get_current_blog_id();
+		$shop = $this->create_site( 'shop', true, true );
+		$this->arrange_site( $main, false, false );
+		$this->activate_for_every_site();
+		$this->sites_without_woocommerce = array( $main );
+		wp_set_current_user( 1 );
+
+		switch_to_blog( $shop );
+		try {
+			wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+			ob_start();
+			wc_get_container()->get( WooPaymentsCutoverController::class )->output_admin_notices();
+			$notice       = (string) ob_get_clean();
+			$shop_plugins = admin_url( 'plugins.php' );
+		} finally {
+			restore_current_blog();
+		}
+
+		$this->assertStringContainsString( 'A super admin first needs to activate WooPayments on each site instead.', $notice );
+		$this->assertSame( 1, preg_match( '/<a class="button button-primary" href="([^"]*)">Activate WooPayments per site<\/a>/', $notice, $matches ), 'The refusal offers the per-site activation.' );
+		$href = html_entity_decode( $matches[1] );
+		$this->assertStringStartsWith( $shop_plugins . '?', $href, 'The button posts to the store site itself.' );
+		$this->assertStringContainsString( WooPaymentsPerSiteActivationController::QUERY_ACTION . '=' . WooPaymentsPerSiteActivationController::ACTION_CONVERT, $href );
+	}
+
+	/**
 	 * @testdox Nothing shows on a single site, whatever the plugin lists say.
 	 */
 	public function test_nothing_shows_on_a_single_site(): void {
@@ -511,7 +709,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 			}
 		};
 		$sut       = new WooPaymentsPerSiteActivationController();
-		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), $preflight, wc_get_container()->get( WooPaymentsCutoverReconciliationJob::class ), wc_get_container()->get( LegacyProxy::class ) );
+		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), $preflight, wc_get_container()->get( WooPaymentsCutoverReconciliationJob::class ), wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsSetupTier::class ) );
 		$this->mock_plugin_functions();
 
 		$this->assertSame( '', $this->render_notice( $sut ) );
@@ -532,6 +730,52 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( array(), $this->calls, 'No plugin is activated or deactivated.' );
+	}
+
+	/**
+	 * Store a site's setup tier and forget the tier the container read for it.
+	 *
+	 * @param int    $site_id Site ID.
+	 * @param string $tier    Setup tier.
+	 */
+	private function set_stored_tier( int $site_id, string $tier ): void {
+		switch_to_blog( $site_id );
+		try {
+			update_option( WooPaymentsSetupTier::OPTION_NAME, $tier );
+		} finally {
+			restore_current_blog();
+		}
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate( $site_id );
+	}
+
+	/**
+	 * Fire WordPress's activate_plugin hook for the extension, as activate_plugin() does before it writes the active list.
+	 *
+	 * WordPress 7.1 wp-admin/includes/plugin.php:688 fires it with the plugin file and whether the activation is network-wide.
+	 *
+	 * @param bool $network_wide Whether the activation is for every site.
+	 */
+	private function fire_activate_plugin( bool $network_wide ): void {
+		do_action( 'activate_plugin', WooPaymentsRuntimeArbiter::PLUGIN_FILE, $network_wide ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WordPress's own hook, fired as the core function does.
+	}
+
+	/**
+	 * Record the message, title and arguments of the next wp_die() call, then stop as WordPress's test handler does.
+	 */
+	private function fake_wp_die(): void {
+		add_filter(
+			'wp_die_handler',
+			function () {
+				return function ( $message = '', $title = '', $args = array() ): void {
+					$this->wp_die = array(
+						'message' => $message,
+						'title'   => $title,
+						'args'    => is_array( $args ) ? $args : array(),
+					);
+					throw new \WPDieException( esc_html( (string) $message ) );
+				};
+			}
+		);
 	}
 
 	/**
@@ -798,7 +1042,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function create_sut(): WooPaymentsPerSiteActivationController {
 		$sut = new WooPaymentsPerSiteActivationController();
-		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsCutoverPreflightService::class ), wc_get_container()->get( WooPaymentsCutoverReconciliationJob::class ), wc_get_container()->get( LegacyProxy::class ) );
+		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsCutoverPreflightService::class ), wc_get_container()->get( WooPaymentsCutoverReconciliationJob::class ), wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsSetupTier::class ) );
 
 		return $sut;
 	}

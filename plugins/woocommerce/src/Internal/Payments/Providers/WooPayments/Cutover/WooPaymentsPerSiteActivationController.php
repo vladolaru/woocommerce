@@ -7,9 +7,11 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
@@ -20,9 +22,10 @@ defined( 'ABSPATH' ) || exit;
  *
  * Each site switches on its own, and a switch deactivates the extension on its own site only, so no site can start its
  * switch while the extension is network-active. The network admin notice offers the conversion while that holds and the
- * WooPayments feature is on at one site or more. The conversion starts no switch. Its activations run as changes the cutover
- * job initiated, so the plugin lifecycle listener records nothing, and record_rollback() runs for each site where the
- * extension is active afterwards.
+ * WooPayments feature is on at one site or more, and a store site's refusal notice offers it to super admins. The
+ * conversion starts no switch. Its activations run as changes the cutover job initiated, so the plugin lifecycle listener
+ * records nothing, and record_rollback() runs for each site where the extension is active afterwards. A network-wide
+ * activation of the extension is refused while a site would refuse its own activation.
  *
  * @since 11.2.0
  * @internal
@@ -88,6 +91,13 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	private LegacyProxy $legacy_proxy;
 
 	/**
+	 * Setup tier, whose stored value tells whether a site's own activation guard runs.
+	 *
+	 * @var WooPaymentsSetupTier
+	 */
+	private WooPaymentsSetupTier $setup_tier;
+
+	/**
 	 * Whether the conversion is offered, worked out once per request.
 	 *
 	 * @var bool|null
@@ -103,21 +113,27 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	 * @param WooPaymentsCutoverPreflightService  $preflight_service  WooPayments extension activity facts.
 	 * @param WooPaymentsCutoverReconciliationJob $reconciliation_job The switch's job.
 	 * @param LegacyProxy                         $legacy_proxy       Legacy proxy.
+	 * @param WooPaymentsSetupTier                $setup_tier         Setup tier.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsCutoverPreflightService $preflight_service, WooPaymentsCutoverReconciliationJob $reconciliation_job, LegacyProxy $legacy_proxy ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsCutoverPreflightService $preflight_service, WooPaymentsCutoverReconciliationJob $reconciliation_job, LegacyProxy $legacy_proxy, WooPaymentsSetupTier $setup_tier ): void {
 		$this->arbiter            = $arbiter;
 		$this->preflight_service  = $preflight_service;
 		$this->reconciliation_job = $reconciliation_job;
 		$this->legacy_proxy       = $legacy_proxy;
+		$this->setup_tier         = $setup_tier;
 	}
 
 	/**
-	 * Forget the cached feature scan whenever the WooPayments feature is turned on or off on any site of the network.
+	 * Register the hooks every request of a multisite needs, whatever the setup tier of the current site.
 	 *
-	 * Registered on every request of a multisite, so the network admin notice reads a fresh answer after a change.
+	 * They are the feature scan reset, the check of a network-wide activation of the extension, and the conversion's
+	 * handler and result notice for the site it starts from. The callbacks resolve the controller only when they act.
 	 */
-	public static function register_feature_scan_reset(): void {
+	public static function register_multisite_hooks(): void {
 		add_action( FeaturesController::FEATURE_ENABLED_CHANGED_ACTION, array( self::class, 'handle_feature_enabled_changed' ) );
+		add_action( 'activate_plugin', array( self::class, 'handle_activate_plugin' ), 10, 2 );
+		add_action( 'admin_init', array( self::class, 'handle_conversion_request' ) );
+		add_action( 'admin_notices', array( self::class, 'handle_site_admin_notices' ) );
 	}
 
 	/**
@@ -134,15 +150,111 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register the network admin notice and its button's handler.
+	 * Check a network-wide activation of the WooPayments extension, from any plugin folder.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $plugin       Activated plugin path from the public WordPress hook.
+	 * @param mixed $network_wide Whether WordPress activates the plugin for every site.
+	 */
+	public static function handle_activate_plugin( $plugin = '', $network_wide = false ): void {
+		if ( true !== $network_wide || ! is_string( $plugin ) || ! WooPaymentsRuntimeArbiter::is_woopayments_plugin_file( $plugin ) ) {
+			return;
+		}
+
+		wc_get_container()->get( self::class )->guard_network_activation();
+	}
+
+	/**
+	 * Run the conversion when the request carries its action.
+	 *
+	 * @internal
+	 */
+	public static function handle_conversion_request(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- handle_admin_init() verifies the nonce.
+		if ( isset( $_GET[ self::QUERY_ACTION ] ) ) {
+			wc_get_container()->get( self::class )->handle_admin_init();
+		}
+	}
+
+	/**
+	 * Output the result of a conversion on the site it was started from.
+	 *
+	 * @internal
+	 */
+	public static function handle_site_admin_notices(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only display of the redirect's result.
+		if ( isset( $_GET[ self::QUERY_DONE ] ) ) {
+			wc_get_container()->get( self::class )->output_site_admin_notice();
+		}
+	}
+
+	/**
+	 * Register the network admin notice.
 	 */
 	public function register(): void {
-		add_action( 'admin_init', array( $this, 'handle_admin_init' ) );
 		add_action( 'network_admin_notices', array( $this, 'output_network_admin_notice' ) );
 	}
 
 	/**
-	 * Run the conversion when a super admin clicks the button, then return to the network Plugins page with its result.
+	 * Refuse a network-wide activation of the WooPayments extension while a site would refuse its own activation, naming
+	 * the sites.
+	 *
+	 * The sites are the network's sites that are not deleted, read one by one.
+	 *
+	 * @internal
+	 */
+	public function guard_network_activation(): void {
+		if ( $this->reconciliation_job->is_internal_plugin_lifecycle_change() || Constants::is_true( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' ) ) {
+			return;
+		}
+
+		$refusing = array();
+		foreach ( $this->get_site_ids() as $site_id ) {
+			switch_to_blog( $site_id );
+			try {
+				$refuses = $this->refuses_extension_activation_on_current_site();
+			} finally {
+				restore_current_blog();
+			}
+			if ( $refuses ) {
+				$refusing[] = $site_id;
+			}
+		}
+		if ( array() === $refusing ) {
+			return;
+		}
+
+		$this->log( 'warning', 'WooPayments per-site activation: refused a network-wide activation of the WooPayments extension while sites keep WooPayments in WooCommerce.', array( 'site_ids' => $refusing ) );
+		wp_die(
+			/* translators: %s: comma-separated list of sites. */
+			esc_html( sprintf( __( 'The WooPayments extension can\'t be activated for the whole network because the built-in WooPayments is turned on for these sites: %s. Activate the extension on each of the other sites instead.', 'woocommerce' ), $this->get_site_labels( $refusing ) ) ),
+			esc_html__( 'Plugin activation error', 'woocommerce' ),
+			array(
+				'link_url'  => esc_url( network_admin_url( 'plugins.php' ) ),
+				'link_text' => esc_html__( 'Go to Plugins', 'woocommerce' ),
+			)
+		);
+	}
+
+	/**
+	 * Tell whether the current site refuses its own activation of the WooPayments extension.
+	 *
+	 * The site's guard runs only where a stored setup tier past disabled loads it, and there it refuses on a store the
+	 * built-in WooPayments owns that never ran the extension. A site without WooCommerce runs no guard.
+	 *
+	 * @return bool
+	 */
+	private function refuses_extension_activation_on_current_site(): bool {
+		return $this->legacy_proxy->call_function( 'is_plugin_active', plugin_basename( WC_PLUGIN_FILE ) )
+			&& WooPaymentsSetupTier::DISABLED !== $this->setup_tier->get_stored_tier()
+			&& $this->arbiter->is_builtin_enabled()
+			&& ! $this->arbiter->has_run_woopayments_extension();
+	}
+
+	/**
+	 * Run the conversion when a super admin clicks the button, then return to the Plugins page it was started from, on the
+	 * network admin or on a site, with its result.
 	 *
 	 * A second click at nearly the same time changes nothing: the sites the first run activated are skipped, and recording the
 	 * rollback writes nothing on a record already awaiting the merchant's start.
@@ -172,7 +284,7 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 					self::QUERY_KEPT                => implode( ',', $result['kept'] ),
 					self::QUERY_WITHOUT_WOOCOMMERCE => implode( ',', $result['without_woocommerce'] ),
 				),
-				network_admin_url( 'plugins.php' )
+				self_admin_url( 'plugins.php' )
 			)
 		);
 		$this->legacy_proxy->exit();
@@ -257,24 +369,48 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 		if ( ! is_multisite() || ! $this->legacy_proxy->call_function( 'current_user_can', 'manage_network_plugins' ) ) {
 			return;
 		}
-		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only display of the redirect's result.
-		if ( isset( $_GET[ self::QUERY_DONE ] ) ) {
-			$failed = $this->parse_site_ids( isset( $_GET[ self::QUERY_FAILED ] ) ? sanitize_text_field( wp_unslash( $_GET[ self::QUERY_FAILED ] ) ) : '' );
-			$kept   = $this->parse_site_ids( isset( $_GET[ self::QUERY_KEPT ] ) ? sanitize_text_field( wp_unslash( $_GET[ self::QUERY_KEPT ] ) ) : '' );
-			$bare   = $this->parse_site_ids( isset( $_GET[ self::QUERY_WITHOUT_WOOCOMMERCE ] ) ? sanitize_text_field( wp_unslash( $_GET[ self::QUERY_WITHOUT_WOOCOMMERCE ] ) ) : '' );
-			$this->output_result_notice( $failed, $kept, $bare );
+		if ( $this->output_requested_result() ) {
 			return;
 		}
-		// phpcs:enable WordPress.Security.NonceVerification.Recommended
 		if ( ! $this->is_conversion_offered() ) {
 			return;
 		}
 		?>
 		<div class="notice notice-info">
 			<p><?php esc_html_e( 'WooPayments is now part of WooCommerce, and each site switches to it on its own. No site can switch while the WooPayments extension is active for the whole network. Activate WooPayments per site so each site\'s administrators can start their switch.', 'woocommerce' ); ?></p>
-			<p><?php $this->output_button(); ?></p>
+			<p><?php self::output_button(); ?></p>
 		</div>
 		<?php
+	}
+
+	/**
+	 * Output the result of a conversion on the site it was started from, to a super admin.
+	 *
+	 * @internal
+	 */
+	public function output_site_admin_notice(): void {
+		if ( is_multisite() && $this->legacy_proxy->call_function( 'current_user_can', 'manage_network_plugins' ) ) {
+			$this->output_requested_result();
+		}
+	}
+
+	/**
+	 * Output the result a conversion's redirect carries, if the request carries one.
+	 *
+	 * @return bool Whether the request carries a result.
+	 */
+	private function output_requested_result(): bool {
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Read-only display of the redirect's result.
+		if ( ! isset( $_GET[ self::QUERY_DONE ] ) ) {
+			return false;
+		}
+		$failed = $this->parse_site_ids( isset( $_GET[ self::QUERY_FAILED ] ) ? sanitize_text_field( wp_unslash( $_GET[ self::QUERY_FAILED ] ) ) : '' );
+		$kept   = $this->parse_site_ids( isset( $_GET[ self::QUERY_KEPT ] ) ? sanitize_text_field( wp_unslash( $_GET[ self::QUERY_KEPT ] ) ) : '' );
+		$bare   = $this->parse_site_ids( isset( $_GET[ self::QUERY_WITHOUT_WOOCOMMERCE ] ) ? sanitize_text_field( wp_unslash( $_GET[ self::QUERY_WITHOUT_WOOCOMMERCE ] ) ) : '' );
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended
+		$this->output_result_notice( $failed, $kept, $bare );
+
+		return true;
 	}
 
 	/**
@@ -294,7 +430,7 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	/**
 	 * Tell whether the WooPayments feature is on at one site of the network or more, deleted sites aside.
 	 *
-	 * The answer is kept in a site transient that a feature change on any site clears (register_feature_scan_reset()), so
+	 * The answer is kept in a site transient that a feature change on any site clears (register_multisite_hooks()), so
 	 * network admin pages scan the sites once, not on every page while the feature is off everywhere.
 	 *
 	 * @return bool
@@ -419,7 +555,7 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 					echo esc_html( sprintf( __( 'WooPayments could not be activated on these sites: %s. Activate WooPayments per site again to finish.', 'woocommerce' ), $this->get_site_labels( $failed ) ) );
 					?>
 				</p>
-				<p><?php $this->output_button(); ?></p>
+				<p><?php self::output_button(); ?></p>
 			</div>
 			<?php
 		} else {
@@ -436,10 +572,10 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Output the conversion button.
+	 * Output the conversion button, which posts to the Plugins page of the network admin or of the site it shows on.
 	 */
-	private function output_button(): void {
-		$url = wp_nonce_url( add_query_arg( self::QUERY_ACTION, self::ACTION_CONVERT, network_admin_url( 'plugins.php' ) ), self::NONCE_ACTION, self::NONCE_NAME );
+	public static function output_button(): void {
+		$url = wp_nonce_url( add_query_arg( self::QUERY_ACTION, self::ACTION_CONVERT, self_admin_url( 'plugins.php' ) ), self::NONCE_ACTION, self::NONCE_NAME );
 		printf( '<a class="button button-primary" href="%s">%s</a>', esc_url( $url ), esc_html__( 'Activate WooPayments per site', 'woocommerce' ) );
 	}
 
@@ -474,7 +610,7 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	/**
 	 * Write one log line under the switch's log source.
 	 *
-	 * @param string              $level   Log level: info or error.
+	 * @param string              $level   Log level: info, warning or error.
 	 * @param string              $message Message.
 	 * @param array<string,mixed> $context Context.
 	 */

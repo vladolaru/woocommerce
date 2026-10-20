@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\C
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsPerSiteActivationController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
@@ -296,6 +297,56 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertStringContainsString( 'WooPayments is now part of WooCommerce. This store can&#039;t switch yet because the WooPayments extension is active for every site of the network. A super admin first needs to activate WooPayments on each site instead.', $notice );
 		$this->assertStringNotContainsString( 'Start the switch', $notice );
+	}
+
+	/**
+	 * @testdox The refusal shown while the extension is active for every site offers the per-site activation, posting to this site, only to a user who may manage network plugins ($_dataName).
+	 * @dataProvider provide_refusal_audiences
+	 *
+	 * @param string[] $capabilities The current user's capabilities among manage_woocommerce, activate_plugins and manage_network_plugins.
+	 * @param bool     $offered      Whether the notice offers the per-site activation.
+	 */
+	public function test_refusal_offers_the_per_site_activation_to_a_super_admin( array $capabilities, bool $offered ): void {
+		$this->fake_plugin_active( false, true );
+		$this->fake_current_user_capabilities( $capabilities );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$job = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @return array<string,mixed>|null */
+			public function refresh_notice_record(): ?array {
+				return null;
+			}
+
+			/** Offer the first generation. */
+			public function can_offer_start(): bool {
+				return true;
+			}
+		};
+
+		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job ) );
+
+		$this->assertStringContainsString( 'A super admin first needs to activate WooPayments on each site instead.', $notice );
+		if ( ! $offered ) {
+			$this->assertStringNotContainsString( 'Activate WooPayments per site', $notice );
+			return;
+		}
+		$this->assertSame( 1, preg_match( '/<a class="button button-primary" href="([^"]*)">Activate WooPayments per site<\/a>/', $notice, $matches ), 'The refusal offers the per-site activation.' );
+		$href = html_entity_decode( $matches[1] );
+		$this->assertStringStartsWith( admin_url( 'plugins.php' ) . '?', $href, 'The button posts to this site.' );
+		wp_parse_str( (string) wp_parse_url( $href, PHP_URL_QUERY ), $query );
+		$this->assertSame( WooPaymentsPerSiteActivationController::ACTION_CONVERT, $query[ WooPaymentsPerSiteActivationController::QUERY_ACTION ] ?? null );
+		$this->assertSame( 1, wp_verify_nonce( $query[ WooPaymentsPerSiteActivationController::NONCE_NAME ] ?? '', WooPaymentsPerSiteActivationController::NONCE_ACTION ) );
+	}
+
+	/**
+	 * Who reads the refusal: a super admin, and a site administrator who may not manage network plugins.
+	 *
+	 * @return array<string,array{string[],bool}>
+	 */
+	public function provide_refusal_audiences(): array {
+		return array(
+			'a super admin'        => array( array( 'manage_woocommerce', 'activate_plugins', 'manage_network_plugins' ), true ),
+			'a site administrator' => array( array( 'manage_woocommerce', 'activate_plugins' ), false ),
+		);
 	}
 
 	/**
@@ -1524,7 +1575,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 						$this->plugin_active = false;
 					}
 				},
-				'current_user_can'   => fn( $capability ) => in_array( $capability, array( 'manage_woocommerce', 'activate_plugins' ), true )
+				'current_user_can'   => fn( $capability ) => in_array( $capability, array( 'manage_woocommerce', 'activate_plugins', 'manage_network_plugins' ), true )
 					? in_array( $capability, $this->granted_cutover_capabilities, true )
 					: current_user_can( $capability ),
 			)

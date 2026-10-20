@@ -107,6 +107,15 @@ class WooPaymentsCutoverPluginLifecycleListenerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A network-wide WooPayments activation does not reach the site guard: the per-site activation controller checks it site by site.
+	 */
+	public function test_network_wide_activation_skips_the_site_guard(): void {
+		$this->controller->expects( $this->never() )->method( 'guard_woopayments_activation' );
+
+		do_action( 'activate_plugin', WooPaymentsRuntimeArbiter::PLUGIN_FILE, true ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fires core's plugin activation hook as a network activation does.
+	}
+
+	/**
 	 * @testdox Activating another plugin does not reach the guard.
 	 */
 	public function test_other_plugin_activation_skips_the_guard(): void {

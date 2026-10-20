@@ -570,10 +570,17 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Output the notice telling a store that it cannot switch while the WooPayments extension is active for every site.
+	 * Output the notice telling a store that it cannot switch while the WooPayments extension is active for every site, with
+	 * the button that activates WooPayments per site for a user who may manage network plugins.
 	 */
 	private function output_sitewide_refusal_notice(): void {
-		echo '<div class="notice notice-info"><p>' . esc_html__( 'WooPayments is now part of WooCommerce. This store can\'t switch yet because the WooPayments extension is active for every site of the network. A super admin first needs to activate WooPayments on each site instead.', 'woocommerce' ) . '</p></div>';
+		echo '<div class="notice notice-info"><p>' . esc_html__( 'WooPayments is now part of WooCommerce. This store can\'t switch yet because the WooPayments extension is active for every site of the network. A super admin first needs to activate WooPayments on each site instead.', 'woocommerce' ) . '</p>';
+		if ( $this->legacy_proxy->call_function( 'current_user_can', 'manage_network_plugins' ) ) {
+			echo '<p>';
+			WooPaymentsPerSiteActivationController::output_button();
+			echo '</p>';
+		}
+		echo '</div>';
 	}
 
 	/**
