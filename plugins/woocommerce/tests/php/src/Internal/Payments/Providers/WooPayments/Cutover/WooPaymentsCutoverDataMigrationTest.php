@@ -253,6 +253,53 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Different Apple Pay and Google Pay choices stay as the merchant saved them.
+	 *
+	 * The extension's settings controller enables and disables each wallet gateway on its own (client 11.1.0
+	 * includes/admin/class-wc-rest-payments-settings-controller.php:766).
+	 */
+	public function test_run_preserves_asymmetric_wallet_settings(): void {
+		update_option(
+			self::SETTINGS_OPTION,
+			array(
+				'enabled'                        => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card' ),
+			)
+		);
+		update_option(
+			'woocommerce_woocommerce_payments_apple_pay_settings',
+			array(
+				'enabled'     => 'no',
+				'button_type' => 'plain',
+			)
+		);
+		update_option(
+			'woocommerce_woocommerce_payments_google_pay_settings',
+			array(
+				'enabled'     => 'yes',
+				'button_type' => 'buy',
+			)
+		);
+
+		$this->create_runner()->run();
+
+		$this->assertSame(
+			array(
+				'enabled'     => 'no',
+				'button_type' => 'plain',
+			),
+			get_option( 'woocommerce_woocommerce_payments_apple_pay_settings' )
+		);
+		$this->assertSame(
+			array(
+				'enabled'     => 'yes',
+				'button_type' => 'buy',
+			),
+			get_option( 'woocommerce_woocommerce_payments_google_pay_settings' )
+		);
+	}
+
+	/**
 	 * @testdox Cleans stale local state that is safe to remove during the cutover.
 	 */
 	public function test_run_deletes_stale_transients_options_and_user_meta(): void {
