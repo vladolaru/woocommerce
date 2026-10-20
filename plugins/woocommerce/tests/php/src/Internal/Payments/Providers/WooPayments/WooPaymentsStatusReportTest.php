@@ -214,7 +214,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	public function test_store_waiting_for_its_switch_reports_that_it_awaits_the_switch(): void {
 		$this->fake_plugin( false );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes', true );
-		// The extension's version option is the evidence that it ran (WooPaymentsRuntimeArbiter::has_run_woopayments_extension()).
+		// The extension's version option is the evidence that it ran (WooPaymentsRuntimeArbiter::has_run_woopayments_extension()); the extension writes it in client 11.1.0 `includes/class-wc-payments.php:1579-1580`.
 		update_option( 'woocommerce_woocommerce_payments_version', '10.5.0', true );
 		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
 		$this->set_setup_tier( WooPaymentsSetupTier::DISABLED );
@@ -229,6 +229,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $sut->get_status_data()['runtime_owner'] );
 		$this->assertSame( 'none (awaiting the switch)', $sut->get_status_fields()['runtime_owner']['value'] );
 		$this->assertArrayHasKey( 'woocommerce_woopayments_cutover', $sut->add_site_status_tests( array() )['async'], 'The waiting store is offered the switch, so Site Health checks it.' );
+		// The tool IDs are the extension's (client 11.1.0 `includes/class-wc-payments-status.php:85-140`).
 		$this->assertSame( array( 'clear_wcpay_account_cache', 'delete_wcpay_test_orders', 'clear_wcpay_styles_cache' ), array_keys( $sut->add_debug_tools( array() ) ), 'The canceled-authorization tools need handlers that load only while the built-in WooPayments owns payments.' );
 
 		ob_start();
@@ -1064,6 +1065,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->fake_plugin( $plugin );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $feature, true );
 		if ( $ran_before ) {
+			// The extension writes its version here (client 11.1.0 `includes/class-wc-payments.php:1579-1580`).
 			update_option( 'woocommerce_woocommerce_payments_version', '10.5.0', true );
 		}
 		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );

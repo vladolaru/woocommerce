@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendStylesService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderMode;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Exception;
 use Throwable;
 use WC_Order;
@@ -51,6 +52,13 @@ class WooPaymentsDebugTools {
 	private ?WooPaymentsFrontendStylesService $frontend_styles_service = null;
 
 	/**
+	 * Setup tier.
+	 *
+	 * @var WooPaymentsSetupTier
+	 */
+	private WooPaymentsSetupTier $setup_tier;
+
+	/**
 	 * Canceled-authorization fee remediation service.
 	 *
 	 * @var WooPaymentsCanceledAuthorizationFeeRemediationService|null
@@ -64,17 +72,19 @@ class WooPaymentsDebugTools {
 	 *
 	 * @param WooPaymentsRuntimeArbiter $arbiter         Runtime owner arbiter.
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 * @param WooPaymentsSetupTier      $setup_tier      Setup tier.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsAccountService $account_service ): void {
+	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsAccountService $account_service, WooPaymentsSetupTier $setup_tier ): void {
 		$this->arbiter         = $arbiter;
 		$this->account_service = $account_service;
+		$this->setup_tier      = $setup_tier;
 	}
 
 	/**
 	 * Add the WooPayments debug tools, none while the WooPayments extension owns payments (it lists its own).
 	 *
-	 * The two canceled-authorization tools schedule actions whose handlers load only while the built-in WooPayments owns
-	 * payments, so they are listed only then.
+	 * The two canceled-authorization tools schedule actions whose handlers load only in the connected and active setup tiers,
+	 * which the built-in WooPayments reaches only as the owner, so they are listed only then.
 	 *
 	 * @param mixed $tools Debug tools.
 	 * @return mixed
@@ -109,7 +119,7 @@ class WooPaymentsDebugTools {
 			),
 		);
 
-		if ( $this->arbiter->is_builtin_owner() ) {
+		if ( in_array( $this->setup_tier->get_effective_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true ) ) {
 			$woopayments_tools['remediate_canceled_auth_fees_dry_run'] = array(
 				'name'     => __( 'Preview canceled authorization fix (Dry Run)', 'woocommerce' ),
 				'button'   => $this->get_dry_run_button_text(),

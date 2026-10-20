@@ -7,7 +7,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaym
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use WC_Unit_Test_Case;
 
 /**
@@ -17,11 +19,15 @@ class WooPaymentsDebugToolsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * The option the WooPayments extension stores its version in; its presence says the store ran the extension.
+	 *
+	 * Client 11.1.0 `includes/class-wc-payments.php:1579-1580` writes it.
 	 */
 	private const EXTENSION_VERSION_OPTION = 'woocommerce_woocommerce_payments_version';
 
 	/**
 	 * The tools the built-in WooPayments lists on every store it serves with support diagnostics.
+	 *
+	 * Client 11.1.0 `includes/class-wc-payments-status.php:85-140` defines these IDs and the remediation ones below.
 	 */
 	private const ACCOUNT_AND_ORDER_TOOLS = array( 'clear_wcpay_account_cache', 'delete_wcpay_test_orders', 'clear_wcpay_styles_cache' );
 
@@ -37,28 +43,40 @@ class WooPaymentsDebugToolsTest extends WC_Unit_Test_Case {
 		wc_get_container()->reset_replacement( WooPaymentsCanceledAuthorizationFeeRemediationService::class );
 		$this->reset_legacy_proxy_mocks();
 		delete_option( self::EXTENSION_VERSION_OPTION );
+		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::DISABLED, true );
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
 		parent::tearDown();
 	}
 
 	/**
-	 * @testdox The debug tools follow who runs WooPayments: all five for the built-in, three while it waits or is off, none beside the extension ($_dataName).
+	 * @testdox The debug tools follow who runs WooPayments: all five for a connected or active built-in, three while it waits, is off or sits in the available tier, none beside the extension ($_dataName).
 	 * @dataProvider provide_debug_tool_stores
 	 *
 	 * @param string   $feature      The WooPayments feature option.
 	 * @param bool     $plugin       Whether the WooPayments extension is active.
 	 * @param bool     $ran_before   Whether the store ran the extension before (its version option is stored).
+	 * @param string   $tier         The stored setup tier.
+	 * @param bool     $switched     Whether the store holds a completed switch record.
 	 * @param string[] $input_ids    Tools already listed, as the extension lists its own.
 	 * @param string[] $expected_ids Tool IDs expected after the filter, in order.
 	 */
-	public function test_debug_tools_follow_who_runs_woopayments( string $feature, bool $plugin, bool $ran_before, array $input_ids, array $expected_ids ): void {
+	public function test_debug_tools_follow_who_runs_woopayments( string $feature, bool $plugin, bool $ran_before, string $tier, bool $switched, array $input_ids, array $expected_ids ): void {
 		$this->fake_plugin( $plugin );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $feature );
 		if ( $ran_before ) {
 			update_option( self::EXTENSION_VERSION_OPTION, '10.5.0' );
 		}
+		update_option( WooPaymentsSetupTier::OPTION_NAME, $tier, true );
+		if ( $switched ) {
+			// The arbiter reads only the record's state, so a one-field record is enough for a completed switch.
+			update_option( WooPaymentsCutoverStateStore::OPTION_NAME, array( 'state' => WooPaymentsCutoverStateStore::STATE_DONE ), true );
+		}
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		// Minimal sentinels: the tests assert only that a listed tool comes through untouched, not the extension's full tool definitions.
 		$input = array();
 		foreach ( $input_ids as $tool_id ) {
 			$input[ $tool_id ] = array(
@@ -79,17 +97,19 @@ class WooPaymentsDebugToolsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @return array<string,array{string,bool,bool,string[],string[]}>
+	 * @return array<string,array{string,bool,bool,string,bool,string[],string[]}>
 	 */
 	public function provide_debug_tool_stores(): array {
 		$all = array_merge( self::ACCOUNT_AND_ORDER_TOOLS, self::REMEDIATION_TOOLS );
 
 		return array(
-			'built-in owns payments'                  => array( 'yes', false, false, array(), $all ),
-			'waiting for the switch'                  => array( 'yes', false, true, array(), self::ACCOUNT_AND_ORDER_TOOLS ),
-			'feature off, extension not running'      => array( 'no', false, true, array(), self::ACCOUNT_AND_ORDER_TOOLS ),
-			'extension owns payments, feature on'     => array( 'yes', true, true, $all, $all ),
-			'extension owns payments, no extra tools' => array( 'yes', true, true, array(), array() ),
+			'built-in owns a connected store, keeping other tools' => array( 'yes', false, false, WooPaymentsSetupTier::CONNECTED, false, array( 'clear_transients' ), array_merge( array( 'clear_transients' ), $all ) ),
+			'built-in owns an active store'              => array( 'yes', false, false, WooPaymentsSetupTier::ACTIVE, false, array(), $all ),
+			'switched store reset to the available tier' => array( 'yes', false, true, WooPaymentsSetupTier::AVAILABLE, true, array(), self::ACCOUNT_AND_ORDER_TOOLS ),
+			'waiting for the switch'                     => array( 'yes', false, true, WooPaymentsSetupTier::DISABLED, false, array(), self::ACCOUNT_AND_ORDER_TOOLS ),
+			'feature off, extension not running'         => array( 'no', false, true, WooPaymentsSetupTier::CONNECTED, false, array(), self::ACCOUNT_AND_ORDER_TOOLS ),
+			'extension owns payments, feature on'        => array( 'yes', true, true, WooPaymentsSetupTier::AVAILABLE, false, $all, $all ),
+			'extension owns payments, no extra tools'    => array( 'yes', true, true, WooPaymentsSetupTier::AVAILABLE, false, array(), array() ),
 		);
 	}
 
@@ -102,6 +122,8 @@ class WooPaymentsDebugToolsTest extends WC_Unit_Test_Case {
 	public function test_pending_dry_run_alone_leaves_remediation_tools_enabled(): void {
 		$this->fake_plugin( false );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::CONNECTED, true );
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::STATUS_OPTION_KEY );
 		as_schedule_single_action( time() + HOUR_IN_SECONDS, WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK, array(), WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID );
@@ -132,7 +154,7 @@ class WooPaymentsDebugToolsTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( WooPaymentsCanceledAuthorizationFeeRemediationService::class, $remediation_service );
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'administrator' ) ) );
 		$sut = new WooPaymentsDebugTools();
-		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsAccountService::class ), wc_get_container()->get( WooPaymentsSetupTier::class ) );
 
 		$this->assertSame( $expected_message, $sut->$tool_callback() );
 	}
