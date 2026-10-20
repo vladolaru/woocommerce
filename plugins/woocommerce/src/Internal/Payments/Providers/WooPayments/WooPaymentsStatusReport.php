@@ -22,17 +22,17 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPay
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Adds native WooPayments diagnostic data to WooCommerce support surfaces.
+ * Adds WooPayments diagnostics to the system status report and Site Health, and its tools to Status > Tools.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsStatusReport implements RegisterHooksInterface {
 
 	private const WOOPAY_EXPRESS_CHECKOUT_FLAG_OPTION = '_wcpay_feature_woopay_express_checkout';
 
 	/**
-	 * The native diagnostics the status report shows in its own table, by field, with their untranslated export labels.
+	 * The built-in WooPayments diagnostics the status report shows in its own table, by field, with their untranslated export labels.
 	 */
 	private const RUNTIME_FIELDS = array(
 		'runtime_owner'                => 'Runtime owner',
@@ -77,7 +77,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	private ?CurrencyRateProviderRegistryFactory $provider_registry_factory = null;
 
 	/**
-	 * Native payments state store.
+	 * Setup tier.
 	 *
 	 * @var WooPaymentsSetupTier
 	 */
@@ -99,7 +99,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @internal
 	 *
 	 * @param WooPaymentsRuntimeArbiter $arbiter               Runtime owner arbiter.
-	 * @param WooPaymentsSetupTier      $setup_tier Native payments state store.
+	 * @param WooPaymentsSetupTier      $setup_tier Setup tier.
 	 */
 	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsSetupTier $setup_tier ): void {
 		$this->arbiter    = $arbiter;
@@ -109,9 +109,8 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	/**
 	 * Register supportability hooks.
 	 *
-	 * Registered where the WooPayments client would report too: a connected native store, or
-	 * while the plugin owns payments (cutover diagnostics during coexistence). Support also needs them
-	 * once a cutover started. Other stores skip the preflight and account read.
+	 * Registered on a store with something for support to read: a connected or active tier, the WooPayments extension owning
+	 * payments with the feature on, a wait for the switch, or a cutover record. Other stores register nothing.
 	 */
 	public function register(): void {
 		if ( ! $this->has_support_diagnostics() ) {
@@ -126,7 +125,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether this store has native payments state for support to read. Every read is autoloaded.
+	 * Tell whether this store has WooPayments state for support to read. Every read is autoloaded.
 	 *
 	 * The stored tier is checked, not the effective one, because a connected store whose WooPayments feature is off reads as
 	 * disabled. A store the WooPayments extension owns reports only while the feature is on, since only then can it switch. A store
@@ -142,7 +141,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Add the native WooPayments cutover check to Site Health.
+	 * Add the cutover check to Site Health.
 	 *
 	 * @param mixed $tests Site Health tests.
 	 * @return mixed
@@ -164,7 +163,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Run the native WooPayments cutover Site Health check over AJAX.
+	 * Run the cutover Site Health check over AJAX.
 	 */
 	public function run_cutover_site_health_ajax_test(): void {
 		check_ajax_referer( 'health-check-site-status' );
@@ -177,7 +176,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Run the native WooPayments cutover Site Health check.
+	 * Run the cutover Site Health check.
 	 *
 	 * @return array<string,mixed> Site Health test result.
 	 */
@@ -217,7 +216,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get native WooPayments diagnostic data.
+	 * Get the WooPayments diagnostic data.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -338,7 +337,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Render the client's WooPayments section, then the native runtime diagnostics as a separate table.
+	 * Render the WooPayments extension's status section, then the built-in WooPayments diagnostics as a separate table.
 	 */
 	public function render_status_report_section(): void {
 		$fields       = $this->get_status_fields();
@@ -347,7 +346,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			$runtime_rows[] = $this->status_row( $export_label, $fields[ $field_id ]['label'], '', $fields[ $field_id ]['value'] );
 		}
 
-		// While the plugin owns payments it renders this section itself (client 11.1.0 `includes/class-wc-payments-status.php:55-56`).
+		// While the WooPayments extension owns payments it renders this section itself (client 11.1.0 `includes/class-wc-payments-status.php:55-56`).
 		if ( ! $this->arbiter->is_extension_owner() ) {
 			$this->render_status_table( 'WooPayments', $this->get_woopayments_extension_status_rows() );
 		}
@@ -355,7 +354,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the rows of the client's WooPayments status section, with the client's labels and values.
+	 * Get the rows of the WooPayments extension's status section, with its labels and values.
 	 *
 	 * Client 11.1.0 `includes/class-wc-payments-status.php:427-641`: the account rows show only with a WPCOM
 	 * connection, and the settings rows only with a connected account.
@@ -418,7 +417,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the client's rows that need a connected account.
+	 * Get the extension's status rows that need a connected account.
 	 *
 	 * @param WooPaymentsGateway $gateway The WooPayments gateway.
 	 * @return array<int,array{export_label:string,label:string,help:string,value:string,warning:bool}>
@@ -592,7 +591,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Add native WooPayments Site Health debug information.
+	 * Add the built-in WooPayments Site Health debug information.
 	 *
 	 * @param mixed $info Debug information.
 	 * @return mixed
@@ -812,7 +811,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Format an express checkout method the way the client's status section does.
+	 * Format an express checkout method the way the WooPayments extension's status section does.
 	 *
 	 * @param bool     $enabled   Whether the method is enabled.
 	 * @param string[] $locations Enabled locations.
@@ -827,7 +826,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Name the advanced fraud filters in a ruleset, as the client's status section does.
+	 * Name the advanced fraud filters in a ruleset, as the WooPayments extension's status section does.
 	 *
 	 * Client 11.1.0 `includes/class-wc-payments-status.php:555-592`; a ruleset that failed to load names none.
 	 *

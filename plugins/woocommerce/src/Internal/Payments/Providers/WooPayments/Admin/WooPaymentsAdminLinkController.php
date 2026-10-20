@@ -38,14 +38,14 @@ class WooPaymentsAdminLinkController implements RegisterHooksInterface {
 	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
-	 * Native WooPayments API client.
+	 * WooPayments API client.
 	 *
 	 * @var WooPaymentsApiClient
 	 */
 	private WooPaymentsApiClient $api_client;
 
 	/**
-	 * Native WooPayments admin navigation, which resolves legacy admin routes.
+	 * WooPayments admin navigation, which resolves the `/payments/*` path links.
 	 *
 	 * @var WooPaymentsAdminNavigationController
 	 */
@@ -71,8 +71,8 @@ class WooPaymentsAdminLinkController implements RegisterHooksInterface {
 	 * @internal
 	 *
 	 * @param WooPaymentsRuntimeArbiter            $arbiter         Runtime owner arbiter.
-	 * @param WooPaymentsApiClient                 $api_client      Native WooPayments API client.
-	 * @param WooPaymentsAdminNavigationController $navigation      Native WooPayments admin navigation.
+	 * @param WooPaymentsApiClient                 $api_client      WooPayments API client.
+	 * @param WooPaymentsAdminNavigationController $navigation      WooPayments admin navigation.
 	 * @param WooPaymentsCapitalRestController     $capital         Capital controller.
 	 * @param WooPaymentsAccountService            $account_service WooPayments account service.
 	 */
@@ -95,10 +95,10 @@ class WooPaymentsAdminLinkController implements RegisterHooksInterface {
 
 		add_action( 'admin_init', array( $this, 'handle_login_request' ) );
 
-		// Priority 9 runs before the legacy route redirect, which would otherwise leave the connect page first.
+		// Priority 9 runs before the `/payments/*` path redirect (priority 10), which would otherwise leave the connect page first.
 		add_action( 'admin_init', array( $this, 'handle_kyc_reminder_return' ), 9 );
 
-		// Priority 9 also finalizes a hosted KYC return before the legacy route redirect sends it on to Overview.
+		// Priority 9 also finalizes a hosted KYC return before the `/payments/*` path redirect sends it on to Overview.
 		add_action( 'admin_init', array( $this, 'handle_hosted_kyc_return' ), 9 );
 
 		// The Capital controller loads only for REST requests, after admin_init, so its own hook never ran.
@@ -106,7 +106,7 @@ class WooPaymentsAdminLinkController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Redirect a Capital offer email link, like the plugin's `maybe_redirect_by_get_param()` at admin_init priority 12 (11.1.0).
+	 * Redirect a Capital offer email link at admin_init priority 12, as the WooPayments extension's `maybe_redirect_by_get_param()` does (client 11.1.0 `includes/class-wc-payments-account.php:767`).
 	 */
 	public function handle_loan_offer_request(): void {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Email links carry no nonce; the controller checks the capability.
@@ -116,9 +116,9 @@ class WooPaymentsAdminLinkController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Record a merchant returning from a platform KYC reminder email and continue to the native route for the connect page.
+	 * Record a merchant returning from a platform KYC reminder email and continue to the built-in route for the connect page.
 	 *
-	 * The email links to `page=wc-admin&path=/payments/connect&wcpay-connect-redirect=<reminder>`, matching the plugin's `maybe_redirect_by_get_param()` (11.1.0).
+	 * The email links to `page=wc-admin&path=/payments/connect&wcpay-connect-redirect=<reminder>`, which the WooPayments extension's `maybe_redirect_by_get_param()` also takes (client 11.1.0 `includes/class-wc-payments-account.php:767`).
 	 */
 	public function handle_kyc_reminder_return(): void {
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Email links carry no nonce; the capability check guards this read-only redirect.
@@ -155,7 +155,7 @@ class WooPaymentsAdminLinkController implements RegisterHooksInterface {
 			)
 		);
 
-		// The plugin continues with from=WCPAY_KYC_REMINDER (11.1.0 `redirect_to_wcpay_connect()`), which native onboarding keeps for attribution.
+		// The WooPayments extension continues with from=WCPAY_KYC_REMINDER (client 11.1.0 `includes/class-wc-payments-redirect-service.php:60`), which the built-in onboarding keeps for attribution.
 		$from         = array( 'from' => 'WCPAY_KYC_REMINDER' );
 		$redirect_url = $this->navigation->get_payments_path_redirect_url( $connect_page + $from );
 		wp_safe_redirect( '' !== $redirect_url ? $redirect_url : Utils::wc_payments_settings_url( WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH, $from ) );
@@ -165,11 +165,11 @@ class WooPaymentsAdminLinkController implements RegisterHooksInterface {
 	/**
 	 * Finalize the return from the platform's hosted KYC (`wcpay-state` and `wcpay-mode`), started by a `complete_kyc_link`.
 	 *
-	 * Mirrors the plugin's `finalize_connection()` (11.1.0 `class-wc-payments-account.php:2354-2437`), reached from
-	 * `maybe_handle_onboarding()` (:1866-1880). The plugin's `wcpay_account_connect_finished` event is superseded by NOX events.
+	 * Does what the WooPayments extension's `finalize_connection()` does (client 11.1.0 `class-wc-payments-account.php:2354-2437`),
+	 * reached from `maybe_handle_onboarding()` (:1866-1880). The extension's `wcpay_account_connect_finished` event is replaced by the NOX events.
 	 */
 	public function handle_hosted_kyc_return(): void {
-		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- The platform return carries no nonce; the stored state secret is the check, like the plugin.
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- The platform return carries no nonce; the stored state secret is the check, as in the WooPayments extension.
 		if ( wp_doing_ajax() || ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->is_builtin_owner() || ! isset( $_GET['wcpay-state'], $_GET['wcpay-mode'] ) ) {
 			return;
 		}
@@ -204,7 +204,7 @@ class WooPaymentsAdminLinkController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Redirect to the native route for the plugin's connect page, or to Overview when none resolves.
+	 * Redirect to the built-in route for the connect page, or to Overview when none resolves.
 	 *
 	 * @param array<string,string> $params Query arguments to carry.
 	 * @return never
@@ -221,14 +221,14 @@ class WooPaymentsAdminLinkController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Create and redirect to the platform account link requested by a legacy email URL.
+	 * Create and redirect to the platform account link requested by an email URL with the `wcpay-link-handler` argument.
 	 */
 	public function handle_account_link_request(): void {
 		if ( ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
-		// The GET flag is an authenticated email-link instruction, matching the standalone plugin behavior; it does not authorize the request.
+		// The GET flag is an authenticated email-link instruction, as in the WooPayments extension; it does not authorize the request.
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		if ( ! isset( $_GET['wcpay-link-handler'] ) ) {
 			return;
@@ -245,7 +245,7 @@ class WooPaymentsAdminLinkController implements RegisterHooksInterface {
 	/**
 	 * Redirect the Overview "Edit details" link (`wcpay-login`) to the Stripe dashboard.
 	 *
-	 * Mirrors the plugin's `maybe_handle_onboarding()` login branch (11.1.0 `class-wc-payments-account.php:1276-1297`):
+	 * Does what the login branch of the WooPayments extension's `maybe_handle_onboarding()` does (client 11.1.0 `class-wc-payments-account.php:1276-1297`):
 	 * an account with unsubmitted details goes to the KYC link instead, and a failure lands on Overview with `wcpay-login-error`.
 	 */
 	public function handle_login_request(): void {
@@ -267,7 +267,7 @@ class WooPaymentsAdminLinkController implements RegisterHooksInterface {
 
 		$url = '';
 		try {
-			// Like the plugin, drop the account cache so details edited on the dashboard show on return.
+			// Drop the account cache, as the WooPayments extension does, so details edited on the dashboard show on return.
 			$this->account_service->clear_cache();
 			$login = $this->api_client->create_login_link( Utils::wc_payments_settings_url( WooPaymentsPaymentsSettingsAdapter::OVERVIEW_PATH ) );
 			$url   = isset( $login['url'] ) && is_string( $login['url'] ) ? $login['url'] : '';

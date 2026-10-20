@@ -71,7 +71,7 @@ class WooPaymentsDebugTools {
 	}
 
 	/**
-	 * Add native WooPayments debug tools.
+	 * Add the WooPayments debug tools, with a `builtin-` ID prefix while the WooPayments extension owns payments.
 	 *
 	 * @param mixed $tools Debug tools.
 	 * @return mixed
@@ -133,10 +133,10 @@ class WooPaymentsDebugTools {
 	}
 
 	/**
-	 * Refetch the WooPayments account so the cache holds fresh data, as the client's tool does.
+	 * Refetch the WooPayments account so the cache holds fresh data, as the WooPayments extension's tool does.
 	 *
 	 * Returns the account data, or false when the fetch failed with no account to keep, so WooCommerce
-	 * shows the client's "Tool ran." or error message.
+	 * shows "Tool ran." or its error message.
 	 *
 	 * @return array<string,mixed>|false|string Account data, false on failure, or a permission message.
 	 */
