@@ -49,6 +49,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 
+		$this->set_wallet_gateway_settings( true );
 		$account_service = $this->create_account_service(
 			true,
 			array(
@@ -57,7 +58,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			),
 			array(
 				'express_checkout_in_payment_methods' => 'yes',
-				'payment_request_method_ids'          => array( 'apple_pay', 'google_pay' ),
 				'upe_enabled_payment_method_ids'      => array( 'apple_pay', 'google_pay' ),
 			)
 		);
@@ -124,6 +124,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		set_query_var( 'order-pay', $order->get_id() );
 		$_GET['key'] = $order->get_order_key();
 
+		$this->set_wallet_gateway_settings( true );
 		$account_service = $this->create_account_service(
 			true,
 			array(
@@ -132,7 +133,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			),
 			array(
 				'express_checkout_in_payment_methods' => 'yes',
-				'payment_request_method_ids'          => array( 'apple_pay', 'google_pay' ),
 				'upe_enabled_payment_method_ids'      => array( 'apple_pay', 'google_pay' ),
 			)
 		);
@@ -743,6 +743,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_payment_fields_js_config_exposes_payment_list_wallets_with_gateway_identity(): void {
 		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
+		$this->set_wallet_gateway_settings( true );
 		$account_service = $this->create_account_service(
 			true,
 			array(
@@ -751,7 +752,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			),
 			array(
 				'express_checkout_in_payment_methods' => 'yes',
-				'payment_request_method_ids'          => array( 'apple_pay', 'google_pay' ),
 				'upe_enabled_payment_method_ids'      => array( 'card' ),
 			)
 		);
@@ -778,6 +778,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_get_payment_fields_js_config_omits_payment_list_wallets_without_active_card_payments(): void {
 		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '1' );
+		$this->set_wallet_gateway_settings( true );
 		$account_service = $this->create_account_service(
 			true,
 			array(
@@ -786,7 +787,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			),
 			array(
 				'express_checkout_in_payment_methods' => 'yes',
-				'payment_request_method_ids'          => array( 'apple_pay', 'google_pay' ),
 				'upe_enabled_payment_method_ids'      => array( 'card' ),
 			)
 		);
@@ -2343,7 +2343,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	private function create_account_service( bool $can_process_payments, array $account_data = array( 'country' => 'RO' ), array $gateway_settings = array() ) {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_publishable_key', 'get_account_id', 'get_cached_account_data', 'get_gateway_setting', 'is_payment_request_method_enabled', 'can_process_payments', 'is_test_mode_enabled' ) )
+			->onlyMethods( array( 'get_publishable_key', 'get_account_id', 'get_cached_account_data', 'get_gateway_setting', 'can_process_payments', 'is_test_mode_enabled' ) )
 			->getMock();
 		$account_service
 			->method( 'get_publishable_key' )
@@ -2359,15 +2359,6 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 			->willReturnCallback(
 				static function ( string $key, $fallback = null ) use ( $gateway_settings ) {
 					return array_key_exists( $key, $gateway_settings ) ? $gateway_settings[ $key ] : $fallback;
-				}
-			);
-		$account_service
-			->method( 'is_payment_request_method_enabled' )
-			->willReturnCallback(
-				static function ( string $method_id ) use ( $gateway_settings ): bool {
-					$enabled_method_ids = $gateway_settings['payment_request_method_ids'] ?? array();
-
-					return is_array( $enabled_method_ids ) && in_array( $method_id, $enabled_method_ids, true );
 				}
 			);
 		$account_service
