@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Cutover;
 
 use Automattic\Jetpack\Connection\Manager as JetpackConnectionManager;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsPlatformConnectionService;
 use WC_Unit_Test_Case;
 
@@ -29,7 +30,9 @@ class WooPaymentsPlatformConnectionServiceTest extends WC_Unit_Test_Case {
 	public function test_get_cutover_preflight_failures( bool $is_connected, int $connection_owner_id, bool $connection_owner_connected, ?int $blog_id, array $expected ): void {
 		$sut          = new TestableWooPaymentsPlatformConnectionService();
 		$sut->manager = $this->create_connection_manager( $is_connected, $connection_owner_id, $connection_owner_connected );
-		$sut->blog_id = $blog_id;
+		$http_client  = $this->createMock( WooPaymentsHttpClient::class );
+		$http_client->method( 'get_blog_id' )->willReturn( $blog_id );
+		$sut->init( $http_client );
 
 		$this->assertSame( $expected, $sut->get_cutover_preflight_failures() );
 	}

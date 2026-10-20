@@ -60,35 +60,20 @@ class WooPaymentsCutoverPluginLifecycleListenerTest extends WC_Unit_Test_Case {
 	public function test_deactivation_reaches_the_controller(): void {
 		$this->controller->expects( $this->once() )
 			->method( 'handle_plugin_deactivated' )
-			->with( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false );
+			->with( WooPaymentsRuntimeArbiter::PLUGIN_FILE );
 
 		do_action( 'deactivated_plugin', WooPaymentsRuntimeArbiter::PLUGIN_FILE, false );
 	}
 
 	/**
-	 * @testdox A network-wide WooPayments deactivation reaches the controller as network-wide.
+	 * @testdox A caller firing the activation hook with only the plugin path reaches the controller as a site-only change.
 	 */
-	public function test_network_deactivation_reaches_the_controller_as_network_wide(): void {
-		$this->controller->expects( $this->once() )
-			->method( 'handle_plugin_deactivated' )
-			->with( WooPaymentsRuntimeArbiter::PLUGIN_FILE, true );
-
-		do_action( 'deactivated_plugin', WooPaymentsRuntimeArbiter::PLUGIN_FILE, true );
-	}
-
-	/**
-	 * @testdox A caller firing the lifecycle hooks with only the plugin path reaches the controller as a site-only change.
-	 */
-	public function test_one_argument_lifecycle_hooks_reach_the_controller_as_site_only(): void {
+	public function test_one_argument_activation_hook_reaches_the_controller_as_site_only(): void {
 		$this->controller->expects( $this->once() )
 			->method( 'handle_plugin_activated' )
 			->with( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false );
-		$this->controller->expects( $this->once() )
-			->method( 'handle_plugin_deactivated' )
-			->with( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false );
 
 		do_action( 'activated_plugin', WooPaymentsRuntimeArbiter::PLUGIN_FILE ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fires the core hook with one argument, as some callers do.
-		do_action( 'deactivated_plugin', WooPaymentsRuntimeArbiter::PLUGIN_FILE ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fires the core hook with one argument, as some callers do.
 	}
 
 	/**

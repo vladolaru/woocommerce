@@ -15,7 +15,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\Wo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCapitalRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentsSettingsAdapter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTracks;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
@@ -29,13 +28,6 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  * @internal
  */
 class WooPaymentsAdminLinkController implements RegisterHooksInterface {
-
-	/**
-	 * Runtime owner arbiter.
-	 *
-	 * @var WooPaymentsRuntimeArbiter
-	 */
-	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
 	 * WooPayments API client.
@@ -70,14 +62,12 @@ class WooPaymentsAdminLinkController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter            $arbiter         Runtime owner arbiter.
 	 * @param WooPaymentsApiClient                 $api_client      WooPayments API client.
 	 * @param WooPaymentsAdminNavigationController $navigation      WooPayments admin navigation.
 	 * @param WooPaymentsCapitalRestController     $capital         Capital controller.
 	 * @param WooPaymentsAccountService            $account_service WooPayments account service.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $arbiter, WooPaymentsApiClient $api_client, WooPaymentsAdminNavigationController $navigation, WooPaymentsCapitalRestController $capital, WooPaymentsAccountService $account_service ): void {
-		$this->arbiter         = $arbiter;
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAdminNavigationController $navigation, WooPaymentsCapitalRestController $capital, WooPaymentsAccountService $account_service ): void {
 		$this->api_client      = $api_client;
 		$this->navigation      = $navigation;
 		$this->capital         = $capital;
@@ -88,7 +78,7 @@ class WooPaymentsAdminLinkController implements RegisterHooksInterface {
 	 * Register the admin-link hooks.
 	 *
 	 * The setup tier lists this class only on connected and active admin requests, which exist only while the built-in
-	 * WooPayments owns the store. Each callback still checks ownership when it runs.
+	 * WooPayments owns the store.
 	 */
 	public function register() {
 		add_action( 'admin_init', array( $this, 'handle_account_link_request' ) );
@@ -122,7 +112,7 @@ class WooPaymentsAdminLinkController implements RegisterHooksInterface {
 	 */
 	public function handle_kyc_reminder_return(): void {
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- Email links carry no nonce; the capability check guards this read-only redirect.
-		if ( wp_doing_ajax() || ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->is_builtin_owner() || ! isset( $_GET['wcpay-connect-redirect'] ) ) {
+		if ( wp_doing_ajax() || ! current_user_can( 'manage_woocommerce' ) || ! isset( $_GET['wcpay-connect-redirect'] ) ) {
 			return;
 		}
 
@@ -170,7 +160,7 @@ class WooPaymentsAdminLinkController implements RegisterHooksInterface {
 	 */
 	public function handle_hosted_kyc_return(): void {
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended -- The platform return carries no nonce; the stored state secret is the check, as in the WooPayments extension.
-		if ( wp_doing_ajax() || ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->is_builtin_owner() || ! isset( $_GET['wcpay-state'], $_GET['wcpay-mode'] ) ) {
+		if ( wp_doing_ajax() || ! current_user_can( 'manage_woocommerce' ) || ! isset( $_GET['wcpay-state'], $_GET['wcpay-mode'] ) ) {
 			return;
 		}
 
@@ -224,7 +214,7 @@ class WooPaymentsAdminLinkController implements RegisterHooksInterface {
 	 * Create and redirect to the platform account link requested by an email URL with the `wcpay-link-handler` argument.
 	 */
 	public function handle_account_link_request(): void {
-		if ( ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->is_builtin_owner() ) {
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
 			return;
 		}
 
@@ -250,7 +240,7 @@ class WooPaymentsAdminLinkController implements RegisterHooksInterface {
 	 */
 	public function handle_login_request(): void {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- check_admin_referer() below verifies the nonce.
-		if ( ! isset( $_GET['wcpay-login'] ) || ! current_user_can( 'manage_woocommerce' ) || ! $this->arbiter->is_builtin_owner() ) {
+		if ( ! isset( $_GET['wcpay-login'] ) || ! current_user_can( 'manage_woocommerce' ) ) {
 			return;
 		}
 

@@ -29,7 +29,7 @@ class WooPaymentsCutoverPluginLifecycleListener implements RegisterHooksInterfac
 	public function register() {
 		add_action( 'activate_plugin', array( $this, 'guard_woopayments_activation' ) );
 		add_action( 'activated_plugin', array( $this, 'handle_plugin_activated' ), 10, 2 );
-		add_action( 'deactivated_plugin', array( $this, 'handle_plugin_deactivated' ), 10, 2 );
+		add_action( 'deactivated_plugin', array( $this, 'handle_plugin_deactivated' ) );
 	}
 
 	/**
@@ -68,11 +68,10 @@ class WooPaymentsCutoverPluginLifecycleListener implements RegisterHooksInterfac
 	 *
 	 * @internal
 	 *
-	 * @param mixed $plugin               Deactivated plugin path from the public WordPress hook.
-	 * @param mixed $network_deactivating Whether WordPress deactivated the plugin network-wide; a caller firing the hook with one argument means no.
+	 * @param mixed $plugin Deactivated plugin path from the public WordPress hook.
 	 */
-	public function handle_plugin_deactivated( $plugin, $network_deactivating = false ): void {
-		$this->get_controller()->handle_plugin_deactivated( $plugin, $network_deactivating );
+	public function handle_plugin_deactivated( $plugin ): void {
+		$this->get_controller()->handle_plugin_deactivated( $plugin );
 	}
 
 	/**

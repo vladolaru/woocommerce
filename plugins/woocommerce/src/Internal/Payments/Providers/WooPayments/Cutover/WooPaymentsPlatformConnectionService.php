@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover
 
 use Automattic\Jetpack\Connection\Manager as JetpackConnectionManager;
 use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 
 /**
  * Checks the WordPress.com connection the cutover needs: the site is connected and has a blog ID, and the connection
@@ -32,6 +33,24 @@ class WooPaymentsPlatformConnectionService {
 	public const FAILURE_CONNECTION_OWNER_USER_TOKEN_UNAVAILABLE = 'wpcom_connection_owner_user_token_unavailable';
 
 	/**
+	 * WooPayments HTTP client, which holds the connected blog ID.
+	 *
+	 * @var WooPaymentsHttpClient
+	 */
+	private WooPaymentsHttpClient $http_client;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param WooPaymentsHttpClient $http_client WooPayments HTTP client.
+	 */
+	final public function init( WooPaymentsHttpClient $http_client ): void {
+		$this->http_client = $http_client;
+	}
+
+	/**
 	 * Get the connection failure codes that block the cutover.
 	 *
 	 * @return array<int,string> Failure codes.
@@ -52,7 +71,7 @@ class WooPaymentsPlatformConnectionService {
 			$failures[] = self::FAILURE_CONNECTION_UNAVAILABLE;
 		}
 
-		if ( null === $this->get_blog_id() ) {
+		if ( null === $this->http_client->get_blog_id() ) {
 			$failures[] = self::FAILURE_BLOG_ID_UNAVAILABLE;
 		}
 
@@ -103,21 +122,6 @@ class WooPaymentsPlatformConnectionService {
 		} catch ( \Throwable $e ) {
 			return null;
 		}
-	}
-
-	/**
-	 * Get the connected WPCOM blog ID.
-	 *
-	 * @return int|null
-	 */
-	protected function get_blog_id(): ?int {
-		if ( ! class_exists( 'Jetpack_Options' ) ) {
-			return null;
-		}
-
-		$blog_id = \Jetpack_Options::get_option( 'id' );
-
-		return is_numeric( $blog_id ) && (int) $blog_id > 0 ? (int) $blog_id : null;
 	}
 
 	/**

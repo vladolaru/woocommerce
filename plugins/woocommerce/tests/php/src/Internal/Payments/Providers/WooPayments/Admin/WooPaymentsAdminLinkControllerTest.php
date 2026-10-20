@@ -5,7 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\A
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminLinkController;
@@ -65,7 +64,7 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 			->onlyMethods( array( 'has_account', 'is_details_submitted', 'clear_cache' ) )
 			->getMock();
 		$this->account_service->method( 'has_account' )->willReturn( true );
-		$this->sut = $this->create_handler( true );
+		$this->sut = $this->create_handler();
 
 		wp_set_current_user( $this->factory->user->create( array( 'role' => 'administrator' ) ) );
 	}
@@ -327,15 +326,13 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The handler ignores requests without the capability, flag, or built-in ownership.
+	 * @testdox The handler ignores requests without the capability or the flag.
 	 * @dataProvider provider_ignored_requests
 	 *
-	 * @param bool $builtin_owner Whether native owns the runtime.
-	 * @param bool $has_flag     Whether the request has the handler flag.
-	 * @param bool $has_access   Whether the current user has admin access.
+	 * @param bool $has_flag   Whether the request has the handler flag.
+	 * @param bool $has_access Whether the current user has admin access.
 	 */
-	public function test_ignores_ineligible_requests( bool $builtin_owner, bool $has_flag, bool $has_access ): void {
-		$this->sut = $this->create_handler( $builtin_owner );
+	public function test_ignores_ineligible_requests( bool $has_flag, bool $has_access ): void {
 		if ( $has_flag ) {
 			$_GET['wcpay-link-handler'] = '';
 		}
@@ -351,24 +348,17 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Ignored request states.
 	 *
-	 * @return array<string,array{builtin_owner:bool,has_flag:bool,has_access:bool}>
+	 * @return array<string,array{has_flag:bool,has_access:bool}>
 	 */
 	public function provider_ignored_requests(): array {
 		return array(
-			'extension owns runtime' => array(
-				'builtin_owner' => false,
-				'has_flag'      => true,
-				'has_access'    => true,
+			'missing flag'       => array(
+				'has_flag'   => false,
+				'has_access' => true,
 			),
-			'missing flag'           => array(
-				'builtin_owner' => true,
-				'has_flag'      => false,
-				'has_access'    => true,
-			),
-			'missing capability'     => array(
-				'builtin_owner' => true,
-				'has_flag'      => true,
-				'has_access'    => false,
+			'missing capability' => array(
+				'has_flag'   => true,
+				'has_access' => false,
 			),
 		);
 	}
@@ -427,12 +417,10 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	 * @testdox A KYC reminder link falls back to the overview with the extension's `from=WCPAY_KYC_REMINDER` when no built-in route resolves.
 	 */
 	public function test_kyc_reminder_link_falls_back_to_overview_with_from(): void {
-		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
-		$arbiter->method( 'is_builtin_owner' )->willReturn( true );
 		$navigation = $this->createMock( WooPaymentsAdminNavigationController::class );
 		$navigation->method( 'get_payments_path_redirect_url' )->willReturn( '' );
 		$handler = new WooPaymentsAdminLinkController();
-		$handler->init( $arbiter, $this->api_client, $navigation, $this->capital, $this->account_service );
+		$handler->init( $this->api_client, $navigation, $this->capital, $this->account_service );
 		$_GET = array(
 			'page'                   => 'wc-admin',
 			'path'                   => '/payments/connect',
@@ -446,7 +434,7 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A KYC reminder link is ignored off the extension's connect page, without the capability, or when the extension owns the runtime.
+	 * @testdox A KYC reminder link is ignored off the extension's connect page or without the capability.
 	 */
 	public function test_kyc_reminder_link_ignores_ineligible_requests(): void {
 		$recorded = $this->record_tracks_events();
@@ -458,8 +446,6 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 		$this->sut->handle_kyc_reminder_return();
 
 		$_GET['path'] = '/payments/connect';
-		$this->create_handler( false )->handle_kyc_reminder_return();
-
 		wp_set_current_user( 0 );
 		$this->sut->handle_kyc_reminder_return();
 
@@ -678,7 +664,7 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A hosted KYC return is ignored during an AJAX request, without the capability, or when the extension owns the runtime.
+	 * @testdox A hosted KYC return is ignored during an AJAX request or without the capability.
 	 */
 	public function test_hosted_kyc_return_ignores_ineligible_requests(): void {
 		$this->account_service->expects( $this->never() )->method( 'clear_cache' );
@@ -686,7 +672,6 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 		$_GET = $this->get_hosted_kyc_return_query( 'state_kyc', 'live' );
 		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
 
-		$this->create_handler( false )->handle_hosted_kyc_return();
 		add_filter( 'wp_doing_ajax', '__return_true' );
 		$this->sut->handle_hosted_kyc_return();
 		remove_all_filters( 'wp_doing_ajax' );
@@ -759,18 +744,11 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a native legacy admin link handler.
+	 * Create an admin link handler.
 	 *
-	 * @param bool $builtin_owner Whether native should own hook registration.
 	 * @return WooPaymentsAdminLinkController
 	 */
-	private function create_handler( bool $builtin_owner ): WooPaymentsAdminLinkController {
-		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'is_builtin_owner' ) )
-			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_owner );
-
+	private function create_handler(): WooPaymentsAdminLinkController {
 		$navigation = $this->getMockBuilder( WooPaymentsAdminNavigationController::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_payments_path_redirect_url' ) )
@@ -788,7 +766,7 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 		);
 
 		$handler = new WooPaymentsAdminLinkController();
-		$handler->init( $arbiter, $this->api_client, $navigation, $this->capital, $this->account_service );
+		$handler->init( $this->api_client, $navigation, $this->capital, $this->account_service );
 
 		return $handler;
 	}

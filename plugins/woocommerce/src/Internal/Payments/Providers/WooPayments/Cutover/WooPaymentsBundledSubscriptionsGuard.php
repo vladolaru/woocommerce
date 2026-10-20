@@ -58,34 +58,10 @@ class WooPaymentsBundledSubscriptionsGuard {
 			return $this->is_bundled_store[ $blog_id ];
 		}
 
-		$this->is_bundled_store[ $blog_id ] = ! $this->is_subscriptions_plugin_active()
+		$this->is_bundled_store[ $blog_id ] = ! WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active()
 			&& ( '1' === get_option( WooPaymentsStripeBillingModule::BUNDLED_SUBSCRIPTIONS_FLAG_OPTION, '0' ) || $this->query_stripe_billed_subscription_exists() );
 
 		return $this->is_bundled_store[ $blog_id ];
-	}
-
-	/**
-	 * Tell whether WooCommerce Subscriptions is active on the current site.
-	 *
-	 * On the site serving the request the subscription method policy answers. A site visited with switch_to_blog() has not
-	 * loaded its plugins, so its active plugin options are read instead.
-	 *
-	 * @return bool
-	 */
-	protected function is_subscriptions_plugin_active(): bool {
-		if ( ! is_multisite() || ! ms_is_switched() ) {
-			return WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active();
-		}
-
-		$active_plugins = (array) get_option( 'active_plugins', array() );
-		$network_active = array_keys( (array) get_site_option( 'active_sitewide_plugins', array() ) );
-		foreach ( array_merge( $active_plugins, $network_active ) as $plugin_file ) {
-			if ( is_string( $plugin_file ) && self::SUBSCRIPTIONS_PLUGIN_FILE === basename( $plugin_file ) ) {
-				return true;
-			}
-		}
-
-		return false;
 	}
 
 	/**

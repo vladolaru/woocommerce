@@ -296,14 +296,12 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param mixed $plugin               Deactivated plugin path from the public WordPress hook.
-	 * @param mixed $network_deactivating Whether WordPress is deactivating the plugin network-wide.
+	 * @param mixed $plugin Deactivated plugin path from the public WordPress hook.
 	 */
-	public function handle_plugin_deactivated( $plugin, $network_deactivating ): void {
-		if ( $this->reconciliation_job->is_internal_plugin_lifecycle_change() || ! is_string( $plugin ) || ! is_bool( $network_deactivating ) ) {
-			return;
+	public function handle_plugin_deactivated( $plugin ): void {
+		if ( is_string( $plugin ) ) {
+			$this->maybe_forget_admin_classification( $plugin );
 		}
-		$this->maybe_forget_admin_classification( $plugin );
 	}
 
 	/**
@@ -565,18 +563,15 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 					return;
 			}
 			if ( WooPaymentsCutoverStateStore::STATE_EXCLUDED === $record['state'] ) {
-				// Information for store managers; the start action keeps its own checks.
-				if ( $this->legacy_proxy->call_function( 'current_user_can', 'manage_woocommerce' ) && $this->reconciliation_job->is_bundled_exclusion_notice_due( $record ) ) {
+				if ( $this->reconciliation_job->is_bundled_exclusion_notice_due( $record ) ) {
 					$this->output_bundled_exclusion_notice();
 				}
 				return;
 			}
 			if ( WooPaymentsCutoverStateStore::STATE_DONE === $record['state'] && ! $this->arbiter->is_extension_owner() ) {
-				// Shown to store managers until they dismiss them; rendering claims nothing, since some screens hide notices.
-				if ( $this->legacy_proxy->call_function( 'current_user_can', 'manage_woocommerce' ) ) {
-					if ( $this->reconciliation_job->is_completion_notice_due( $record, WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS ) ) {
-						$this->output_success_notice();
-					}
+				// Shown until dismissed; rendering claims nothing, since some screens hide notices.
+				if ( $this->reconciliation_job->is_completion_notice_due( $record, WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS ) ) {
+					$this->output_success_notice();
 				}
 				return;
 			}

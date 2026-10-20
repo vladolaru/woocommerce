@@ -647,7 +647,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		if ( 'activated' === $change ) {
 			$controller->handle_plugin_activated( $plugin, false );
 		} else {
-			$controller->handle_plugin_deactivated( $plugin, false );
+			$controller->handle_plugin_deactivated( $plugin );
 		}
 
 		$this->assertSame( $expected_cached, is_array( get_option( WooPaymentsCutoverReconciliationJob::ADMIN_CLASSIFICATION_OPTION ) ) );
@@ -891,7 +891,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$controller = $this->create_cutover_controller( $job );
 
 		$this->assertTrue( $controller->enqueue_merchant_start() );
-		$controller->handle_plugin_deactivated( $renamed_plugin_file, false );
+		$controller->handle_plugin_deactivated( $renamed_plugin_file );
 		$controller->handle_plugin_activated( $renamed_plugin_file, true );
 		$controller->handle_plugin_activated( $renamed_plugin_file, false );
 

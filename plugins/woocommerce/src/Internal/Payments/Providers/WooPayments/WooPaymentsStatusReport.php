@@ -226,6 +226,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		$payment_request_locations = $this->get_express_checkout_method_locations( 'payment_request' );
 		$woopay_locations          = $this->get_express_checkout_method_locations( 'woopay' );
 		$multi_currency_enabled    = $this->is_multi_currency_running();
+		$woopay_setting            = $this->get_account_service()->get_gateway_setting( 'platform_checkout', 'no' );
 
 		return array(
 			'runtime_owner'           => $this->arbiter->get_runtime_owner(),
@@ -240,15 +241,11 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			'test_mode'               => $this->get_account_service()->is_test_mode_enabled(),
 			'enabled_payment_methods' => $enabled_payment_methods,
 			'woopay'                  => array(
-				'enabled'                 => $this->is_setting_enabled( 'platform_checkout' ),
-				'enabled_locations'       => $woopay_locations,
-				'incompatible_extensions' => (bool) get_option( 'woopay_invalid_extension_found', false ),
+				'enabled'           => 'yes' === (string) $woopay_setting || true === $woopay_setting || '1' === (string) $woopay_setting,
+				'enabled_locations' => $woopay_locations,
 			),
 			'express_checkout'        => array(
 				'payment_request' => $payment_request_locations,
-				'woopay'          => $woopay_locations,
-				'amazon_pay'      => $this->get_express_checkout_method_locations( 'amazon_pay' ),
-				'link'            => $this->get_express_checkout_method_locations( 'link' ),
 			),
 			'multi_currency'          => array(
 				'enabled'                 => $multi_currency_enabled,
@@ -660,7 +657,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 */
 	private function get_preflight_failures(): array {
 		try {
-			return $this->sanitize_string_list( $this->get_cutover_preflight_service()->get_failures() );
+			return $this->get_cutover_preflight_service()->get_failures();
 		} catch ( Throwable $exception ) {
 			return array( 'preflight_unavailable' );
 		}
@@ -690,19 +687,6 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		} catch ( Throwable $exception ) {
 			return false;
 		}
-	}
-
-	/**
-	 * Tell whether a yes/no gateway setting is enabled.
-	 *
-	 * @param string $key             Setting key.
-	 * @param bool   $default_enabled Default value.
-	 * @return bool
-	 */
-	private function is_setting_enabled( string $key, bool $default_enabled = false ): bool {
-		$value = $this->get_account_service()->get_gateway_setting( $key, $default_enabled ? 'yes' : 'no' );
-
-		return 'yes' === (string) $value || true === $value || '1' === (string) $value;
 	}
 
 	/**
@@ -778,28 +762,24 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	/**
 	 * Format a list.
 	 *
-	 * @param mixed $values Values.
+	 * @param string[] $values Values.
 	 * @return string
 	 */
-	private function format_list( $values ): string {
-		$values = is_array( $values ) ? $this->sanitize_string_list( $values ) : array();
-
+	private function format_list( array $values ): string {
 		return empty( $values ) ? '-' : implode( ', ', $values );
 	}
 
 	/**
 	 * Format express checkout state.
 	 *
-	 * @param bool  $enabled   Enabled state.
-	 * @param mixed $locations Enabled locations.
+	 * @param bool     $enabled   Enabled state.
+	 * @param string[] $locations Enabled locations.
 	 * @return string
 	 */
-	private function format_express_checkout_status( bool $enabled, $locations ): string {
+	private function format_express_checkout_status( bool $enabled, array $locations ): string {
 		if ( ! $enabled ) {
 			return __( 'Disabled', 'woocommerce' );
 		}
-
-		$locations = is_array( $locations ) ? $this->sanitize_string_list( $locations ) : array();
 
 		return empty( $locations )
 			? __( 'Enabled (no locations enabled)', 'woocommerce' )
