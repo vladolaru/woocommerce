@@ -174,7 +174,7 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 		} else {
 			update_option( WooPaymentsSetupTier::OPTION_NAME, $stored_state );
 		}
-		$this->make_plugin_own_the_runtime();
+		$this->make_extension_own_the_runtime();
 		$this->state->invalidate();
 
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->state->get_effective_tier() );
@@ -191,7 +191,7 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		if ( $extension_active ) {
-			$this->make_plugin_own_the_runtime();
+			$this->make_extension_own_the_runtime();
 		}
 		$this->state->invalidate();
 
@@ -359,7 +359,7 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 		// The minimal account data, the account id (client 11.1.0 includes/class-wc-payments-account.php:164-171).
 		$data = array( 'account_id' => 'acct_plugin' );
 		if ( $extension_owns ) {
-			$this->make_plugin_own_the_runtime();
+			$this->make_extension_own_the_runtime();
 		}
 
 		$this->account_service->cache_account_data( $data );
@@ -415,7 +415,7 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 			);
 		}
 		if ( $extension_active ) {
-			$this->make_plugin_own_the_runtime();
+			$this->make_extension_own_the_runtime();
 		}
 		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		$arbiter->invalidate();
@@ -498,9 +498,9 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Mark the WooPayments plugin active so it owns the payments runtime.
+	 * Mark the WooPayments extension active so it owns the payments runtime.
 	 */
-	private function make_plugin_own_the_runtime(): void {
+	private function make_extension_own_the_runtime(): void {
 		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 	}
