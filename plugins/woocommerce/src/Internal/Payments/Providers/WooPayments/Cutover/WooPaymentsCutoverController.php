@@ -540,9 +540,9 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && $this->preflight_service->is_woopayments_network_active() && in_array( WooPaymentsCutoverReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE, (array) ( $record[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ] ?? array() ), true ) ) {
 					$this->output_sitewide_refusal_notice();
 				}
-				// The job cannot update the extension itself where the site blocks file changes, so retries alone never finish.
-				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && in_array( WooPaymentsCutoverPreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, (array) ( $record[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ] ?? array() ), true ) && ! wp_is_file_mod_allowed( 'automatic_updater' ) ) {
-					echo '<div class="notice notice-warning"><p>' . esc_html__( 'The switch needs a newer version of the WooPayments extension, but this site does not allow automatic plugin updates. Update WooPayments to continue the switch.', 'woocommerce' ) . '</p></div>';
+				// The job could not bring the extension files up to the supported version, so retries alone never finish.
+				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && in_array( WooPaymentsCutoverPreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, (array) ( $record[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ] ?? array() ), true ) && ! $this->reconciliation_job->is_installed_woopayments_plugin_version_supported() ) {
+					$this->output_extension_update_warning();
 				}
 				// Shown until dismissed; rendering claims nothing, since some screens hide notices.
 				if ( $this->reconciliation_job->is_reconnect_notice_due( $record ) ) {
@@ -580,6 +580,16 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			echo '</p>';
 		}
 		echo '</div>';
+	}
+
+	/**
+	 * Output the warning telling a store that the switch waits for the merchant to update the WooPayments extension.
+	 */
+	private function output_extension_update_warning(): void {
+		$message = wp_is_file_mod_allowed( 'automatic_updater' )
+			? __( 'The switch needs a newer version of the WooPayments extension, but it could not be updated automatically. Update WooPayments to continue the switch.', 'woocommerce' )
+			: __( 'The switch needs a newer version of the WooPayments extension, but this site does not allow automatic plugin updates. Update WooPayments to continue the switch.', 'woocommerce' );
+		echo '<div class="notice notice-warning"><p>' . esc_html( $message ) . '</p></div>';
 	}
 
 	/**

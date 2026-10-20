@@ -1155,7 +1155,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 *
 	 * @return bool
 	 */
-	private function is_installed_woopayments_plugin_version_supported(): bool {
+	public function is_installed_woopayments_plugin_version_supported(): bool {
 		$plugin_file = $this->preflight_service->get_active_woopayments_plugin_file();
 		$version     = '' === $plugin_file ? '' : $this->get_installed_plugin_version( $plugin_file );
 

@@ -694,25 +694,40 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A switch waiting on the WooPayments version on a site that blocks plugin updates tells the merchant to update WooPayments (blocked: $blocked).
-	 * @testWith [true]
-	 *           [false]
+	 * The job tries to update the extension itself, and the update can fail where file changes are allowed too (a host that
+	 * asks for FTP credentials, no update offered, a release that needs a newer WordPress or PHP). The warning follows the
+	 * installed files, not the reason.
 	 *
-	 * @param bool $blocked Whether the site disallows automatic file changes.
+	 * @testdox A switch deferred on the WooPayments version tells the merchant to update WooPayments while the installed extension is below the supported version ($_dataName).
+	 * @dataProvider provide_extension_update_warnings
+	 *
+	 * @param bool        $file_mods_blocked Whether the site disallows automatic file changes.
+	 * @param bool        $installed_current Whether the installed extension files carry a supported version.
+	 * @param string|null $warning           The reason the warning gives, or null when none shows.
 	 */
-	public function test_blocked_plugin_update_explains_the_waiting_switch( bool $blocked ): void {
+	public function test_deferred_extension_update_explains_the_waiting_switch( bool $file_mods_blocked, bool $installed_current, ?string $warning ): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		add_filter(
 			'file_mod_allowed',
-			static function ( $allowed, $context ) use ( $blocked ) {
-				return 'automatic_updater' === $context ? ! $blocked : $allowed;
+			static function ( $allowed, $context ) use ( $file_mods_blocked ) {
+				return 'automatic_updater' === $context ? ! $file_mods_blocked : $allowed;
 			},
 			10,
 			2
 		);
-		$job = new class() extends WooPaymentsCutoverReconciliationJob {
+		$job = new class( $installed_current ) extends WooPaymentsCutoverReconciliationJob {
+			/** @var bool */
+			private bool $installed_current;
+
+			/**
+			 * @param bool $installed_current Whether the installed extension files carry a supported version.
+			 */
+			public function __construct( bool $installed_current ) {
+				$this->installed_current = $installed_current;
+			}
+
 			/** @return array<string,mixed>|null */
 			public function refresh_notice_record(): ?array {
 				return array(
@@ -721,16 +736,33 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 					'informational_outcomes' => array(),
 				);
 			}
+
+			/** Report the installed extension version the row sets. */
+			public function is_installed_woopayments_plugin_version_supported(): bool {
+				return $this->installed_current;
+			}
 		};
 
 		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job ) );
 
 		$this->assertStringContainsString( 'Switch in progress', $notice );
-		if ( $blocked ) {
-			$this->assertStringContainsString( 'Update WooPayments to continue the switch.', $notice );
-		} else {
+		if ( null === $warning ) {
 			$this->assertStringNotContainsString( 'Update WooPayments', $notice );
+		} else {
+			$this->assertStringContainsString( 'The switch needs a newer version of the WooPayments extension, but ' . $warning . '. Update WooPayments to continue the switch.', $notice );
 		}
+	}
+
+	/**
+	 * @return array<string,array{bool,bool,string|null}>
+	 */
+	public function provide_extension_update_warnings(): array {
+		return array(
+			'file changes disallowed, extension below the floor' => array( true, false, 'this site does not allow automatic plugin updates' ),
+			'file changes allowed but the update failed'   => array( false, false, 'it could not be updated automatically' ),
+			'file changes allowed, extension at the floor' => array( false, true, null ),
+			'file changes disallowed, extension updated by hand' => array( true, true, null ),
+		);
 	}
 
 	/**
