@@ -18,12 +18,12 @@ use WC_Unit_Test_Case;
 class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox The APFS compatibility gate recognizes the native runtime.
+	 * @testdox The APFS compatibility gate recognizes the built-in WooPayments.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_apfs_gate_recognizes_native_runtime(): void {
-		$this->register_legacy_facades();
+	public function test_apfs_gate_recognizes_the_builtin_woopayments(): void {
+		$this->register_extension_facades();
 
 		$gate_open = class_exists( 'WC_Payments' ) && class_exists( 'WC_Payments_Features' );
 		$this->assertTrue( $gate_open, 'APFS should recognize native WooPayments through both legacy facade classes.' );
@@ -44,34 +44,34 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The AutomateWoo compatibility gate recognizes the native runtime.
+	 * @testdox The AutomateWoo compatibility gate recognizes the built-in WooPayments.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_automatewoo_gate_recognizes_native_runtime(): void {
-		$this->register_legacy_facades();
+	public function test_automatewoo_gate_recognizes_the_builtin_woopayments(): void {
+		$this->register_extension_facades();
 
 		$this->assertTrue( class_exists( '\\WC_Payments' ), 'AutomateWoo should enter its WooPayments integration branch for the native runtime.' );
 	}
 
 	/**
-	 * @testdox The PayPal Payments compatibility gate recognizes the native runtime.
+	 * @testdox The PayPal Payments compatibility gate recognizes the built-in WooPayments.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_paypal_payments_gate_recognizes_native_runtime(): void {
-		$this->register_legacy_facades();
+	public function test_paypal_payments_gate_recognizes_the_builtin_woopayments(): void {
+		$this->register_extension_facades();
 
 		$this->assertTrue( class_exists( '\\WC_Payments' ), 'PayPal Payments should recognize native WooPayments when making its onboarding decision.' );
 	}
 
 	/**
-	 * @testdox Core does not mistake its compatibility facade for the standalone WooPayments runtime.
+	 * @testdox Core does not mistake its compatibility facade for the WooPayments extension's runtime.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_native_facade_does_not_report_standalone_runtime_as_loaded(): void {
-		$this->register_legacy_facades();
+	public function test_facade_does_not_report_the_extension_runtime_as_loaded(): void {
+		$this->register_extension_facades();
 
 		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
 		$arbiter->method( 'is_extension_owner' )->willReturn( false );
@@ -84,12 +84,12 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The WC_Payments facade returns the container-owned native gateway.
+	 * @testdox The WC_Payments facade returns the container-owned gateway.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_wc_payments_facade_returns_native_gateway(): void {
-		$this->register_legacy_facades();
+	public function test_wc_payments_facade_returns_the_container_gateway(): void {
+		$this->register_extension_facades();
 		$this->assertTrue( class_exists( 'WC_Payments' ), 'The legacy WooPayments facade should be loaded.' );
 		if ( ! class_exists( 'WC_Payments' ) ) {
 			return;
@@ -100,12 +100,12 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The WC_Payments facade keeps the legacy Blueprint settings call safe.
+	 * @testdox The WC_Payments facade keeps the extension's Blueprint settings call safe.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
 	public function test_wc_payments_facade_keeps_blueprint_settings_call_safe(): void {
-		$this->register_legacy_facades();
+		$this->register_extension_facades();
 		$this->assertTrue( class_exists( 'WC_Payments' ), 'The legacy WooPayments facade should be loaded.' );
 		if ( ! class_exists( 'WC_Payments' ) ) {
 			return;
@@ -119,12 +119,12 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The loader does not emulate the standalone plugin gateway class.
+	 * @testdox The loader does not emulate the WooPayments extension's gateway class.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_native_gateway_does_not_satisfy_legacy_gateway_class_identity(): void {
-		$this->register_legacy_facades();
+	public function test_gateway_does_not_satisfy_the_extension_gateway_class_identity(): void {
+		$this->register_extension_facades();
 
 		$gateway = wc_get_container()->get( WooPaymentsGateway::class );
 
@@ -133,15 +133,15 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Legacy facades stay absent when native does not own payments.
+	 * @testdox The extension facades stay absent when the built-in WooPayments does not own payments.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_facades_stay_absent_when_native_does_not_own_payments(): void {
+	public function test_facades_stay_absent_when_the_builtin_does_not_own_payments(): void {
 		if ( 'yes' === getenv( 'WOOPAYMENTS_FEATURE' ) ) {
 			$this->markTestSkipped( 'The feature-on run loads the built-in WooPayments at boot, which declares the facades for the whole process.' );
 		}
-		$this->register_legacy_facades( false );
+		$this->register_extension_facades( false );
 
 		$this->assertFalse( class_exists( 'WC_Payments', false ), 'The plugin or ownerless runtime must retain authority over the WC_Payments symbol.' );
 		$this->assertFalse( class_exists( 'WC_Payments_Features', false ), 'The plugin or ownerless runtime must retain authority over the WC_Payments_Features symbol.' );
@@ -149,15 +149,15 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A WordPress admin activation sandbox can declare the standalone plugin facades.
+	 * @testdox A WordPress admin activation sandbox can declare the WooPayments extension's facades.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_admin_activation_sandbox_can_declare_plugin_facades(): void {
+	public function test_admin_activation_sandbox_can_declare_extension_facades(): void {
 		$_REQUEST['action'] = 'activate'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing WordPress's already-authorized plugin activation request.
 		$_REQUEST['plugin'] = WooPaymentsRuntimeArbiter::PLUGIN_FILE; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing WordPress's already-authorized plugin activation request.
 
-		$this->register_legacy_facades();
+		$this->register_extension_facades();
 
 		define( 'WP_SANDBOX_SCRAPING', true );
 		require __DIR__ . '/Fixtures/woocommerce-payments-activation-bootstrap.fixture';
@@ -167,7 +167,7 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Official WordPress activation requests keep the plugin-owned symbols available.
+	 * @testdox Official WordPress activation requests keep the extension-owned symbols available.
 	 * @dataProvider official_activation_request_provider
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
@@ -175,11 +175,11 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed>  $request Request parameters.
 	 * @param array<string,string> $server  Server parameters.
 	 */
-	public function test_official_activation_requests_keep_plugin_symbols_available( array $request, array $server ): void {
+	public function test_official_activation_requests_keep_extension_symbols_available( array $request, array $server ): void {
 		$_REQUEST = $request; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing WordPress's already-authorized plugin activation requests.
 		$_SERVER  = array_merge( $_SERVER, $server );
 
-		$this->register_legacy_facades();
+		$this->register_extension_facades();
 
 		// Even a consumer probing the classes earlier in the request must not declare them: no autoloader is registered.
 		$this->assertFalse( class_exists( 'WC_Payments' ), 'An activation request must reach the plugin sandbox without a predeclared bootstrap class. ' . $this->describe_facade_state() );
@@ -256,18 +256,18 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox WP-CLI keeps plugin-owned symbols available for programmatic activation.
+	 * @testdox WP-CLI keeps extension-owned symbols available for programmatic activation.
 	 * @dataProvider wp_cli_activation_request_provider
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 *
 	 * @param array<int,string> $arguments WP-CLI arguments.
 	 */
-	public function test_wp_cli_keeps_plugin_symbols_available_for_activation( array $arguments ): void {
+	public function test_wp_cli_keeps_extension_symbols_available_for_activation( array $arguments ): void {
 		define( 'WP_CLI', true );
 		$_SERVER['argv'] = $arguments;
 
-		$this->register_legacy_facades();
+		$this->register_extension_facades();
 
 		// Probing with autoload: a recognized activation registers no autoloader, so even a probe declares nothing.
 		$this->assertFalse( class_exists( 'WC_Payments' ), 'WP-CLI must be able to activate the standalone plugin without a class collision. ' . $this->describe_facade_state() );
@@ -291,18 +291,18 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Non-activating WP-CLI requests retain native compatibility facades.
+	 * @testdox Non-activating WP-CLI requests retain the compatibility facades.
 	 * @dataProvider wp_cli_non_activation_request_provider
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 *
 	 * @param array<int,string> $arguments WP-CLI arguments.
 	 */
-	public function test_ordinary_wp_cli_request_keeps_native_facades( array $arguments ): void {
+	public function test_ordinary_wp_cli_request_keeps_the_facades( array $arguments ): void {
 		define( 'WP_CLI', true );
 		$_SERVER['argv'] = $arguments;
 
-		$this->register_legacy_facades();
+		$this->register_extension_facades();
 
 		$this->assertTrue( class_exists( 'WC_Payments' ), 'Ordinary WP-CLI commands should retain native WooPayments compatibility.' );
 		$this->assertTrue( class_exists( 'WC_Payments_Features' ), 'Ordinary WP-CLI commands should retain native WooPayments feature compatibility.' );
@@ -322,12 +322,12 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The facades are declared on first use, so an activation nothing probed first leaves both names to the plugin.
+	 * @testdox The facades are declared on first use, so an activation nothing probed first leaves both names to the extension.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
 	public function test_facades_are_declared_on_first_use(): void {
-		$this->register_legacy_facades();
+		$this->register_extension_facades();
 
 		$this->assertFalse( class_exists( 'WC_Payments', false ), 'Loading must not declare the bootstrap facade before it is used.' );
 		$this->assertFalse( class_exists( 'WC_Payments_Features', false ), 'Loading must not declare the feature facade before it is used.' );
@@ -342,12 +342,12 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Probing WC_Payments declares only that facade, so the plugin's main file can still declare WC_Payments_Features.
+	 * @testdox Probing WC_Payments declares only that facade, so the extension's main file can still declare WC_Payments_Features.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_probing_wc_payments_leaves_the_feature_class_to_the_plugin(): void {
-		$this->register_legacy_facades();
+	public function test_probing_wc_payments_leaves_the_feature_class_to_the_extension(): void {
+		$this->register_extension_facades();
 
 		$this->assertTrue( class_exists( 'WC_Payments' ), 'A consumer probe declares the bootstrap facade.' );
 		$this->assertFalse( class_exists( 'WC_Payments_Features', false ), 'The bootstrap facade must not pull in the feature facade.' );
@@ -358,33 +358,33 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Activating an unrelated plugin does not hide the native compatibility facades.
+	 * @testdox Activating an unrelated plugin does not hide the compatibility facades.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
-	public function test_unrelated_plugin_activation_keeps_native_facades(): void {
+	public function test_unrelated_plugin_activation_keeps_the_facades(): void {
 		$_REQUEST['action'] = 'activate'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing WordPress's already-authorized plugin activation request.
 		$_REQUEST['plugin'] = 'another-plugin/another-plugin.php'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing WordPress's already-authorized plugin activation request.
 
-		$this->register_legacy_facades();
+		$this->register_extension_facades();
 
 		$this->assertTrue( class_exists( 'WC_Payments' ), 'Unrelated activation requests should retain native WooPayments compatibility.' );
 		$this->assertTrue( class_exists( 'WC_Payments_Features' ), 'Unrelated activation requests should retain native WooPayments feature compatibility.' );
 	}
 
 	/**
-	 * @testdox WooCommerce's plugin job status routes are not activations and keep the native facades.
+	 * @testdox WooCommerce's plugin job status routes are not activations and keep the facades.
 	 * @dataProvider plugin_status_route_provider
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 *
 	 * @param string $route Status route.
 	 */
-	public function test_plugin_status_routes_keep_native_facades( string $route ): void {
+	public function test_plugin_status_routes_keep_the_facades( string $route ): void {
 		$_REQUEST = array( 'rest_route' => $route ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing a REST request.
 		$_SERVER  = array_merge( $_SERVER, array( 'REQUEST_METHOD' => 'POST' ) );
 
-		$this->register_legacy_facades();
+		$this->register_extension_facades();
 
 		$this->assertTrue( class_exists( 'WC_Payments' ) );
 		$this->assertTrue( class_exists( 'WC_Payments_Features' ) );
@@ -405,9 +405,9 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	/**
 	 * Register the facade loader under a controlled ownership decision.
 	 *
-	 * @param bool $native_owns Whether the native runtime owns payments.
+	 * @param bool $builtin_owns Whether the native runtime owns payments.
 	 */
-	private function register_legacy_facades( bool $native_owns = true ): void {
+	private function register_extension_facades( bool $builtin_owns = true ): void {
 		$this->assertTrue( class_exists( WooPaymentsExtensionFacadeLoader::class ), 'The native runtime should provide a dedicated legacy facade loader.' );
 
 		// A process whose bootstrap found native payments enabled already registered the production loader for an ordinary
@@ -419,7 +419,7 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 		}
 
 		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_owns );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_owns );
 
 		$loader = new WooPaymentsExtensionFacadeLoader();
 		$loader->init( $arbiter );
