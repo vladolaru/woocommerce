@@ -4,7 +4,7 @@ This folder holds what Woo extensions still expect from the WooPayments extensio
 
 ## What it holds
 
-- `WooPaymentsExtensionFacadeLoader` defines `WCPAY_VERSION_NUMBER` and declares the two facade classes on first use. It declares nothing in a request that is activating the WooPayments extension, and the extension's own classes win whenever it is active.
+- `WooPaymentsExtensionFacadeLoader` defines `WCPAY_VERSION_NUMBER` and declares the two facade classes on first use. It declares nothing in a recognized WooPayments activation request, and the extension's own classes win whenever it is active.
 - `WooPaymentsCompatClassAliases` declares two WooPayments extension class names as aliases of the classes that answer for them where those classes first reach a hook or WooCommerce Subscriptions: `WCPay\Constants\Payment_Type`, the third argument of `wcpay_metadata_from_order`, and `WC_Payments_Email_Failed_Authentication_Retry`, the retry email class WooCommerce Subscriptions instantiates by name. An autoloader that can load the extension's own class wins.
 - The facade classes live in `includes/legacy/woopayments-compat/`, outside every tree Composer scans (see the placement rule).
 - The extension's request and response classes (`WCPay\Core\Server\*`) and `WC_Payment_Gateway_WCPay` are not declared: the built-in WooPayments passes its own request objects to the request filters and keeps the `woocommerce_payments` gateway ID.

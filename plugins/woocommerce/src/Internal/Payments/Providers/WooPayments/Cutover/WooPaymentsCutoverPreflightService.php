@@ -37,8 +37,8 @@ class WooPaymentsCutoverPreflightService {
 	/**
 	 * Oldest WooPayments extension version the cutover switches from.
 	 *
-	 * The data migration removes only the settings, options and transients this version no longer reads, so re-activating
-	 * the extension at this version still finds what it reads.
+	 * The data migration removes only the retired settings, options and transients this version no longer reads, so
+	 * re-activating the extension at this version still finds what it reads; the appearance caches it clears are rebuilt.
 	 */
 	public const MINIMUM_CUTOVER_PLUGIN_VERSION = '10.5.0';
 

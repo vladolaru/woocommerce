@@ -7,7 +7,7 @@ This folder moves a store from the WooPayments extension to the built-in WooPaym
 | `WooPaymentsCutoverController` | Shows the notices, takes the start click and the dismissals, applies the mandatory lever. |
 | `WooPaymentsCutoverPluginLifecycleListener` | Hears plugin activation and deactivation on every request type and hands them to the controller. |
 | `WooPaymentsCutoverReconciliationJob` | Runs a site's cutover and keeps the notice state. |
-| `WooPaymentsCutoverStateStore` | Reads and writes the cutover record option under a write lock. |
+| `WooPaymentsCutoverStateStore` | Reads and validates the cutover record, provides atomic writes, and manages its write lock. |
 | `WooPaymentsCutoverActionScheduler` | Holds the Action Scheduler identity of the job. |
 | `WooPaymentsCutoverPreflightService` | Evaluates the conditions that block the cutover and manages the active extension. |
 | `WooPaymentsCutoverDataMigration` | Migrates the extension's stored settings and options once per migration version. |
@@ -34,5 +34,5 @@ Deleting the folder alone breaks the code that reads it. Make these edits in the
 ## How long it lives
 
 - The cutover has no removal version. It exists while stores can still run the WooPayments extension.
-- The rollback rule lives as long as the folder does. The cutover never removes or reshapes a setting that the extension version in `WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION` still reads (`RETIRED_SETTINGS_KEYS`, `RETIRED_OPTIONS`, `RETIRED_TRANSIENTS` and `APPEARANCE_TRANSIENTS` on `WooPaymentsCutoverDataMigration`), and the activation guard in `WooPaymentsCutoverController` refuses the extension only on a store that never ran it.
+- The rollback rule lives as long as the folder does. The cutover never removes or reshapes a setting that the extension version in `WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION` still reads (`RETIRED_SETTINGS_KEYS`, `RETIRED_OPTIONS` and `RETIRED_TRANSIENTS` on `WooPaymentsCutoverDataMigration`); it also clears the appearance caches in `APPEARANCE_TRANSIENTS`, which that version rebuilds. The activation guard in `WooPaymentsCutoverController` refuses the extension only on a store that never ran it.
 - The cutover adds no `wc_update_*` routine. An upgrade routine is a one-shot key that is never deleted, so none belongs to this checklist.

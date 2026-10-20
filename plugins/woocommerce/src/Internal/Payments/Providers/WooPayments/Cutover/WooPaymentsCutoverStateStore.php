@@ -12,7 +12,7 @@ use InvalidArgumentException;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Reads, validates, creates and compare-and-sets the cutover record option under a write lock, with direct SQL.
+ * Reads and validates the cutover record, provides atomic writes, and manages its write lock.
  *
  * @since 11.2.0
  * @internal
