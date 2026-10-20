@@ -130,15 +130,15 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The induced reconciliation vocabulary is exactly the 11 conditions a store can reach.
+	 * @testdox The induced reconciliation vocabulary is exactly the 10 conditions a store can reach.
 	 */
-	public function test_induced_reconciliation_vocabulary_is_exactly_the_eleven_reachable_conditions(): void {
+	public function test_induced_reconciliation_vocabulary_is_exactly_the_ten_reachable_conditions(): void {
 		$codes = array();
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		$codes = array_merge( $codes, $this->create_sut()->get_failures() );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->provider_ready            = false;
-		$this->platform_failures         = array( 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable', 'wpcom_connection_owner_user_token_unavailable' );
+		$this->platform_failures         = array( 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable' );
 		$this->fee_remediation_ready     = false;
 		$this->rate_api_client_connected = false;
 		update_option( 'woocommerce_woocommerce_payments_version', '10.4.9' );
@@ -149,8 +149,8 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 
 		$unique_codes = array_values( array_unique( $codes ) );
 
-		$this->assertSame( array( 'builtin_runtime_disabled', 'woopayments_plugin_version_unsupported', 'builtin_transport_unavailable', 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable', 'wpcom_connection_owner_user_token_unavailable', 'multi_currency_rates_unavailable', 'operational_queue_hooks_unhandled', 'financial_migrations_unavailable', 'bundled_stripe_billing_subscriptions_present' ), $unique_codes );
-		$this->assertCount( 11, $unique_codes );
+		$this->assertSame( array( 'builtin_runtime_disabled', 'woopayments_plugin_version_unsupported', 'builtin_transport_unavailable', 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable', 'multi_currency_rates_unavailable', 'operational_queue_hooks_unhandled', 'financial_migrations_unavailable', 'bundled_stripe_billing_subscriptions_present' ), $unique_codes );
+		$this->assertCount( 10, $unique_codes );
 	}
 
 	/**
@@ -386,10 +386,10 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 					$test->provider_ready = false;
 				},
 			),
-			'the platform connection owner user token is unavailable' => array(
-				'wpcom_connection_owner_user_token_unavailable',
+			'the platform connection owner is unavailable' => array(
+				'wpcom_connection_owner_unavailable',
 				static function ( self $test ): void {
-					$test->platform_failures = array( 'wpcom_connection_owner_user_token_unavailable' );
+					$test->platform_failures = array( 'wpcom_connection_owner_unavailable' );
 				},
 			),
 			'automatic multi-currency rates have no provider' => array(

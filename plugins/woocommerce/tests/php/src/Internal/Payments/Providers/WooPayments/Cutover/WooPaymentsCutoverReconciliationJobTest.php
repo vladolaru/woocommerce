@@ -2544,7 +2544,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			'WordPress.com blog ID unavailable'          => array( 'wpcom_blog_id_unavailable', WooPaymentsCutoverStateStore::STATE_DEFERRED ),
 			'WordPress.com connection unavailable'       => array( 'wpcom_connection_unavailable', WooPaymentsCutoverStateStore::STATE_DEFERRED ),
 			'WordPress.com connection owner unavailable' => array( 'wpcom_connection_owner_unavailable', WooPaymentsCutoverStateStore::STATE_DEFERRED ),
-			'WordPress.com owner token unavailable'      => array( 'wpcom_connection_owner_user_token_unavailable', WooPaymentsCutoverStateStore::STATE_DEFERRED ),
 		);
 	}
 
