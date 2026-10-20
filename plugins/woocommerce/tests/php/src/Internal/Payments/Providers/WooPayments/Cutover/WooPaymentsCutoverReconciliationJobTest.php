@@ -1428,11 +1428,14 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Finalization moves an extension-era store to the active tier so the next shopper request registers the built-in gateway, and the ownership check rewrites the tier when that write did not land.
+	 * @testdox Finalization moves an extension-era store to the active tier so the next shopper request registers the built-in gateway, and the ownership check leaves the tier active ($_dataName).
+	 * @dataProvider finalization_tier_write_provider
 	 *
 	 * With an account cached and the gateway enabled, the tier the switch writes is `active`.
+	 *
+	 * @param bool $write_lost Whether the finalization write did not land, so the ownership check must write the tier itself.
 	 */
-	public function test_finalization_activates_the_builtin_woopayments_and_verification_repairs_the_tier(): void {
+	public function test_finalization_activates_the_builtin_woopayments_and_verification_keeps_the_tier( bool $write_lost ): void {
 		$this->arrange_extension_era_store();
 		$preflight = $this->create_plugin_deactivating_preflight();
 		$origin    = $this->create_state_writing_job( true, $preflight );
@@ -1449,12 +1452,25 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The deactivating request must leave the tier the next request bootstraps from.' );
 		$this->assert_next_front_request_registers_the_gateway();
 
-		// The finalization write did not land: the ownership check must write the tier itself.
-		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
+		if ( $write_lost ) {
+			update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
+		}
 		$this->run_ownership_verification_in_a_fresh_request( $verification, $preflight );
 
 		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
 		$this->assert_next_front_request_registers_the_gateway();
+	}
+
+	/**
+	 * Whether the finalization tier write landed before the ownership check runs.
+	 *
+	 * @return array<string,array{bool}>
+	 */
+	public function finalization_tier_write_provider(): array {
+		return array(
+			'the finalization write landed'       => array( false ),
+			'the finalization write did not land' => array( true ),
+		);
 	}
 
 	/**
