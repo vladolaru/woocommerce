@@ -510,6 +510,8 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 				},
 			);
 		}
+		// The extension's migrator leaves only `_migrated_*` meta on subscriptions it moved off Stripe Billing (client
+		// `includes/subscriptions/class-wc-payments-subscriptions-migrator.php:271-300`).
 		$rows['a store migrated off Stripe Billing']               = array(
 			'bundled_stripe_billing_subscriptions_present',
 			static function ( self $test ): void {

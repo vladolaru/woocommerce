@@ -429,12 +429,14 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 
 		$this->assertContains( 'manual_capture_payment_methods', $first['changes'] );
 		$this->assertSame( array( 'card', 'amazon_pay' ), get_option( self::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'yes', get_option( self::SETTINGS_OPTION )['manual_capture'], 'The merchant keeps manual capture.' );
 
 		delete_option( self::MIGRATION_VERSION_OPTION );
 		$second = $this->create_runner()->run();
 
 		$this->assertNotContains( 'manual_capture_payment_methods', $second['changes'] );
 		$this->assertSame( array( 'card', 'amazon_pay' ), get_option( self::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+		$this->assertSame( 'yes', get_option( self::SETTINGS_OPTION )['manual_capture'], 'The merchant keeps manual capture.' );
 	}
 
 	/**
