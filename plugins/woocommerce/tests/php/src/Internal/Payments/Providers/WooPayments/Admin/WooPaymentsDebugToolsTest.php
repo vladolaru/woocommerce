@@ -63,30 +63,30 @@ class WooPaymentsDebugToolsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native debug tools use distinct keys while the WooPayments plugin is active.
+	 * @testdox The built-in debug tools use distinct keys while the WooPayments extension is active.
 	 */
-	public function test_debug_tools_use_native_prefix_without_overwriting_plugin_tools_during_coexistence(): void {
+	public function test_debug_tools_use_the_builtin_prefix_without_overwriting_extension_tools_during_coexistence(): void {
 		$this->fake_plugin( true );
-		$tool_ids     = array(
+		$tool_ids        = array(
 			'clear_wcpay_account_cache',
 			'delete_wcpay_test_orders',
 			'clear_wcpay_styles_cache',
 			'remediate_canceled_auth_fees_dry_run',
 			'remediate_canceled_auth_fees',
 		);
-		$plugin_tools = array();
+		$extension_tools = array();
 
 		foreach ( $tool_ids as $tool_id ) {
-			$plugin_tools[ $tool_id ] = array(
+			$extension_tools[ $tool_id ] = array(
 				'name'     => 'Plugin tool',
 				'callback' => '__return_null',
 			);
 		}
 
-		$tools = $this->get_sut()->add_debug_tools( $plugin_tools );
+		$tools = $this->get_sut()->add_debug_tools( $extension_tools );
 
 		foreach ( $tool_ids as $tool_id ) {
-			$this->assertSame( $plugin_tools[ $tool_id ], $tools[ $tool_id ] );
+			$this->assertSame( $extension_tools[ $tool_id ], $tools[ $tool_id ] );
 			$this->assertArrayHasKey( 'builtin-' . $tool_id, $tools );
 			$this->assertIsCallable( $tools[ 'builtin-' . $tool_id ]['callback'] );
 		}
@@ -110,7 +110,7 @@ class WooPaymentsDebugToolsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The remediation tools report the client's error message when scheduling throws.
+	 * @testdox The remediation tools report the extension's error message when scheduling throws.
 	 *
 	 * Client 11.1.0 wraps the scheduling in try/catch and returns "Error scheduling remediation: %s" or
 	 * "Error scheduling dry run: %s" (class-wc-payments-status.php:249-255, 293-299).

@@ -249,7 +249,7 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The legacy admin link forwards sanitized query arguments and redirects to the returned provider URL.
+	 * @testdox The admin link forwards sanitized query arguments and redirects to the returned provider URL.
 	 */
 	public function test_forwards_query_arguments_and_redirects_to_provider_url(): void {
 		$this->api_client->response = array(
@@ -284,7 +284,7 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Link failures redirect to the native overview error notice.
+	 * @testdox Link failures redirect to the overview error notice.
 	 * @dataProvider provider_failed_link_responses
 	 *
 	 * @param array<string,mixed>          $response  API response.
@@ -327,15 +327,15 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The handler ignores requests without the capability, flag, or native ownership.
+	 * @testdox The handler ignores requests without the capability, flag, or built-in ownership.
 	 * @dataProvider provider_ignored_requests
 	 *
-	 * @param bool $native_owner Whether native owns the runtime.
+	 * @param bool $builtin_owner Whether native owns the runtime.
 	 * @param bool $has_flag     Whether the request has the handler flag.
 	 * @param bool $has_access   Whether the current user has admin access.
 	 */
-	public function test_ignores_ineligible_requests( bool $native_owner, bool $has_flag, bool $has_access ): void {
-		$this->sut = $this->create_handler( $native_owner );
+	public function test_ignores_ineligible_requests( bool $builtin_owner, bool $has_flag, bool $has_access ): void {
+		$this->sut = $this->create_handler( $builtin_owner );
 		if ( $has_flag ) {
 			$_GET['wcpay-link-handler'] = '';
 		}
@@ -351,30 +351,30 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Ignored request states.
 	 *
-	 * @return array<string,array{native_owner:bool,has_flag:bool,has_access:bool}>
+	 * @return array<string,array{builtin_owner:bool,has_flag:bool,has_access:bool}>
 	 */
 	public function provider_ignored_requests(): array {
 		return array(
-			'plugin owns runtime' => array(
-				'native_owner' => false,
-				'has_flag'     => true,
-				'has_access'   => true,
+			'extension owns runtime' => array(
+				'builtin_owner' => false,
+				'has_flag'      => true,
+				'has_access'    => true,
 			),
-			'missing flag'        => array(
-				'native_owner' => true,
-				'has_flag'     => false,
-				'has_access'   => true,
+			'missing flag'           => array(
+				'builtin_owner' => true,
+				'has_flag'      => false,
+				'has_access'    => true,
 			),
-			'missing capability'  => array(
-				'native_owner' => true,
-				'has_flag'     => true,
-				'has_access'   => false,
+			'missing capability'     => array(
+				'builtin_owner' => true,
+				'has_flag'      => true,
+				'has_access'    => false,
 			),
 		);
 	}
 
 	/**
-	 * @testdox A KYC reminder email link records the merchant return and redirects to the native route for the legacy connect page.
+	 * @testdox A KYC reminder email link records the merchant return and redirects the extension's connect page to the built-in route.
 	 * @dataProvider provider_kyc_reminder_links
 	 *
 	 * Source: platform `class-onboarding-reminder-email.php:63` and `class-onboarding-reminder-followup-email.php:45` mint
@@ -385,7 +385,7 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	 * @param int    $offset      Expected offset in days.
 	 * @param string $description Expected description.
 	 */
-	public function test_kyc_reminder_link_records_return_and_redirects_to_native_route( string $reminder, int $offset, string $description ): void {
+	public function test_kyc_reminder_link_records_return_and_redirects_to_the_builtin_route( string $reminder, int $offset, string $description ): void {
 		FixedTrackingInfoService::install();
 		$recorded = $this->record_tracks_events();
 		$_GET     = array(
@@ -424,7 +424,7 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A KYC reminder link falls back to the overview with the plugin's `from=WCPAY_KYC_REMINDER` when no native route resolves.
+	 * @testdox A KYC reminder link falls back to the overview with the extension's `from=WCPAY_KYC_REMINDER` when no built-in route resolves.
 	 */
 	public function test_kyc_reminder_link_falls_back_to_overview_with_from(): void {
 		$arbiter = $this->createMock( WooPaymentsRuntimeArbiter::class );
@@ -446,7 +446,7 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A KYC reminder link is ignored off the legacy connect page, without the capability, or when the plugin owns the runtime.
+	 * @testdox A KYC reminder link is ignored off the extension's connect page, without the capability, or when the extension owns the runtime.
 	 */
 	public function test_kyc_reminder_link_ignores_ineligible_requests(): void {
 		$recorded = $this->record_tracks_events();
@@ -485,7 +485,7 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The KYC reminder hook runs before the legacy route redirect at the default priority.
+	 * @testdox The KYC reminder hook runs before the payments path redirect at the default priority.
 	 */
 	public function test_registers_kyc_reminder_hook_before_payments_path_redirects(): void {
 		$this->sut->register();
@@ -656,7 +656,7 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	 * @param string               $referer       Request referer.
 	 * @param array<string,string> $extra_query   Extra query arguments.
 	 */
-	public function test_hosted_kyc_return_with_unknown_state_derives_from_like_the_client( string $expected_from, string $referer, array $extra_query ): void {
+	public function test_hosted_kyc_return_with_unknown_state_derives_from_like_the_extension( string $expected_from, string $referer, array $extra_query ): void {
 		set_transient( 'wcpay_stripe_onboarding_state', 'state_kyc', DAY_IN_SECONDS );
 		$_GET                    = $extra_query + $this->get_hosted_kyc_return_query( 'state_forged', 'live' );
 		$_SERVER['HTTP_REFERER'] = $referer;
@@ -678,7 +678,7 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A hosted KYC return is ignored during an AJAX request, without the capability, or when the plugin owns the runtime.
+	 * @testdox A hosted KYC return is ignored during an AJAX request, without the capability, or when the extension owns the runtime.
 	 */
 	public function test_hosted_kyc_return_ignores_ineligible_requests(): void {
 		$this->account_service->expects( $this->never() )->method( 'clear_cache' );
@@ -761,15 +761,15 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a native legacy admin link handler.
 	 *
-	 * @param bool $native_register Whether native should own hook registration.
+	 * @param bool $builtin_owner Whether native should own hook registration.
 	 * @return WooPaymentsAdminLinkController
 	 */
-	private function create_handler( bool $native_register ): WooPaymentsAdminLinkController {
+	private function create_handler( bool $builtin_owner ): WooPaymentsAdminLinkController {
 		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'is_builtin_owner' )->willReturn( $native_register );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $builtin_owner );
 
 		$navigation = $this->getMockBuilder( WooPaymentsAdminNavigationController::class )
 			->disableOriginalConstructor()
