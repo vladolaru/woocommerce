@@ -703,7 +703,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			$outcomes = array_merge( $outcomes, $this->get_adopted_queue_action_outcomes() );
 
 			// The extension records its new version only on its next request, so check the installed files instead.
-			if ( $plugin_update_succeeded && in_array( WooPaymentsCutoverPreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, $failures, true ) && ! $this->is_installed_woopayments_plugin_version_supported() ) {
+			if ( $plugin_update_succeeded && ! $this->is_installed_woopayments_plugin_version_supported() ) {
 				$this->log_error( 'WooPayments cutover extension update completed without installing a supported version.' );
 			}
 
@@ -864,7 +864,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * Complete one verification claim once a fresh request shows that the built-in WooPayments owns the site: fence the claim,
 	 * sync the setup tier, schedule the fee remediation and record the switch as done.
 	 *
-	 * An extension that still owns the site, or an ownership check that throws, defers the claim.
+	 * An extension that still owns the site defers the claim.
 	 *
 	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
 	 */

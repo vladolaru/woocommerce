@@ -307,6 +307,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_network_activity_is_only_reported_on_a_multisite(): void {
 		$is_multisite = false;
+		// WordPress stores active_sitewide_plugins as a plugin-file => activation-timestamp map (wp-admin/includes/plugin.php:712-715).
 		$this->register_legacy_proxy_function_mocks(
 			array(
 				'get_site_option' => fn( $name, $default_value = false ) => 'active_sitewide_plugins' === $name ? array( WooPaymentsRuntimeArbiter::PLUGIN_FILE => 1 ) : get_site_option( $name, $default_value ),
