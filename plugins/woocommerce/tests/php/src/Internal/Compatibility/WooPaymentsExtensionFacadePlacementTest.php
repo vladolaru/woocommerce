@@ -8,10 +8,10 @@ use WC_Unit_Test_Case;
 /**
  * Tests the placement and removal contract for legacy WooPayments compatibility symbols.
  */
-class LegacyWooPaymentsCompatibilityPlacementTest extends WC_Unit_Test_Case {
+class WooPaymentsExtensionFacadePlacementTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox The placement scanner recognizes every sanctioned plugin-shaped declaration.
+	 * @testdox The placement scanner recognizes every sanctioned extension-shaped declaration.
 	 */
 	public function test_scanner_recognizes_sanctioned_declarations(): void {
 		$plugin_directory = WC()->plugin_path();
@@ -22,7 +22,7 @@ class LegacyWooPaymentsCompatibilityPlacementTest extends WC_Unit_Test_Case {
 		);
 
 		foreach ( $expected_symbols as $file => $symbols ) {
-			$this->assertSame( $symbols, $this->get_plugin_shaped_declarations( $file ), $file . ' must remain visible to the compatibility placement scanner.' );
+			$this->assertSame( $symbols, $this->get_extension_shaped_declarations( $file ), $file . ' must remain visible to the compatibility placement scanner.' );
 		}
 	}
 
@@ -41,17 +41,17 @@ $consumer = new class extends WC_Payments_Adapter {};
 $reference = WC_Payments_Features::class;
 PHP;
 
-		$this->assertSame( array( 'WCPay\\OutsideCompat\\Facade' ), $this->get_plugin_shaped_declarations_from_source( $namespaced_source ) );
-		$this->assertSame( array(), $this->get_plugin_shaped_declarations_from_source( $consumer_source ) );
+		$this->assertSame( array( 'WCPay\\OutsideCompat\\Facade' ), $this->get_extension_shaped_declarations_from_source( $namespaced_source ) );
+		$this->assertSame( array(), $this->get_extension_shaped_declarations_from_source( $consumer_source ) );
 	}
 
 	/**
 	 * Composer's optimized classmaps (the Jetpack autoloader's included) map every class in a scanned tree whatever its
 	 * namespace, so a facade there would be declared on first use on every store, plugin-owned ones included.
 	 *
-	 * @testdox Plugin-shaped compatibility declarations live only in the legacy compat folders, outside every tree Composer scans.
+	 * @testdox Extension-shaped compatibility declarations live only in the compat folders, outside every tree Composer scans.
 	 */
-	public function test_plugin_shaped_declarations_live_outside_every_composer_scanned_tree(): void {
+	public function test_extension_shaped_declarations_live_outside_every_composer_scanned_tree(): void {
 		$plugin_directory = WC()->plugin_path();
 		$sanctioned       = array( '/includes/legacy/woopayments-compat/', '/includes/legacy/woopayments-multi-currency-compat/' );
 		$violations       = array();
@@ -74,7 +74,7 @@ PHP;
 					}
 				}
 
-				foreach ( $this->get_plugin_shaped_declarations( $file->getPathname() ) as $declaration ) {
+				foreach ( $this->get_extension_shaped_declarations( $file->getPathname() ) as $declaration ) {
 					$violations[] = ltrim( $relative, '/' ) . ': ' . $declaration;
 				}
 			}
@@ -144,11 +144,11 @@ PHP;
 	 * @param string $file Source file.
 	 * @return list<string>
 	 */
-	private function get_plugin_shaped_declarations( string $file ): array {
+	private function get_extension_shaped_declarations( string $file ): array {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading immutable local production source for a placement assertion.
 		$source = (string) file_get_contents( $file );
 
-		return $this->get_plugin_shaped_declarations_from_source( $source );
+		return $this->get_extension_shaped_declarations_from_source( $source );
 	}
 
 	/**
@@ -157,7 +157,7 @@ PHP;
 	 * @param string $source PHP source.
 	 * @return list<string>
 	 */
-	private function get_plugin_shaped_declarations_from_source( string $source ): array {
+	private function get_extension_shaped_declarations_from_source( string $source ): array {
 		if ( false === stripos( $source, 'WC_Payments' ) && false === stripos( $source, 'WCPay' ) ) {
 			return array();
 		}

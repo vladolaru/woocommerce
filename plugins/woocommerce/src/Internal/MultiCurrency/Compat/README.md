@@ -20,7 +20,7 @@ WooCommerce Deposits projects a fixed deposit through `get_price( ..., 'product'
 
 ## Placement invariant
 
-`LegacyWooPaymentsCompatibilityPlacementTest` requires every global `WC_Payments*` or namespaced `WCPay\` type declaration to live in `includes/legacy/woopayments-compat/` or `includes/legacy/woopayments-multi-currency-compat/`, outside every tree Composer scans for its classmaps: `src/` and `includes/rest-api/`, and `tests/php/src/` for development installs. The Jetpack autoloader's optimized classmap, built on every `composer install` and for the release zip, maps each class it finds in those trees whatever its namespace, so a facade placed there would be declared on first use on every store, plugin-owned ones included; outside them, only the loaders can declare the facades. Test fixtures that declare plugin-shaped names use the `.fixture` extension, which Composer does not scan. The test also requires exactly one composition-root registration for each compatibility loader and a removal README for each boundary. New plugin-shaped compatibility surfaces belong here only when grounded in an observed consumer contract and must delegate to native services.
+`WooPaymentsExtensionFacadePlacementTest` requires every global `WC_Payments*` or namespaced `WCPay\` type declaration to live in `includes/legacy/woopayments-compat/` or `includes/legacy/woopayments-multi-currency-compat/`, outside every tree Composer scans for its classmaps: `src/` and `includes/rest-api/`, and `tests/php/src/` for development installs. The Jetpack autoloader's optimized classmap, built on every `composer install` and for the release zip, maps each class it finds in those trees whatever its namespace, so a facade placed there would be declared on first use on every store, plugin-owned ones included; outside them, only the loaders can declare the facades. Test fixtures that declare plugin-shaped names use the `.fixture` extension, which Composer does not scan. The test also requires exactly one composition-root registration for each compatibility loader and a removal README for each boundary. New plugin-shaped compatibility surfaces belong here only when grounded in an observed consumer contract and must delegate to native services.
 
 ## Removal
 
@@ -30,7 +30,7 @@ This facade is scheduled for removal in WooCommerce 12.0.0 after supported exten
 - The `LegacyMultiCurrencyFacadeLoader` registration line in `includes/class-woocommerce.php`.
 - The `LegacyMultiCurrencyFacadeLoader` import and request-provenance check in `MultiCurrencyDepositsCompatibilityController`.
 - The matching `tests/php/src/Internal/MultiCurrency/Compat/` test and fixture.
-- This boundary's expected symbol, loader and README entries in `LegacyWooPaymentsCompatibilityPlacementTest`.
+- This boundary's expected symbol, loader and README entries in `WooPaymentsExtensionFacadePlacementTest`.
 - The plugin asset handle aliases registered outside this folder: `wcpay-multi-currency-async-renderer` (script and style, `MultiCurrencyAsyncPriceRendererController` and `MultiCurrencyAsyncPriceProjectionService`) and the switcher block's legacy editor script handle (`MultiCurrencySwitcherBlockController::LEGACY_EDITOR_SCRIPT_HANDLE`).
 
 Keep the native projection and state services; they are not compatibility code.

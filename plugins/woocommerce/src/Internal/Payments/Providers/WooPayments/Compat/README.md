@@ -26,7 +26,7 @@ Some extensions probe `WC_Payments_Features` early in every request, so the load
 
 ## Placement rule
 
-`LegacyWooPaymentsCompatibilityPlacementTest` requires every global `WC_Payments*` or namespaced `WCPay\` type declaration to live in `includes/legacy/woopayments-compat/` or `includes/legacy/woopayments-multi-currency-compat/`. Composer's optimized classmaps map every class in a scanned tree whatever its namespace (`src/`, `includes/rest-api/`, and `tests/php/src/` for development installs), so a facade placed there would be declared on first use on every store, extension-owned ones included. Test fixtures that declare these names use the `.fixture` extension, which Composer does not scan. The test also requires exactly one registration of each loader in the composition root and a removal README for each boundary.
+`WooPaymentsExtensionFacadePlacementTest` requires every global `WC_Payments*` or namespaced `WCPay\` type declaration to live in `includes/legacy/woopayments-compat/` or `includes/legacy/woopayments-multi-currency-compat/`. Composer's optimized classmaps map every class in a scanned tree whatever its namespace (`src/`, `includes/rest-api/`, and `tests/php/src/` for development installs), so a facade placed there would be declared on first use on every store, extension-owned ones included. Test fixtures that declare these names use the `.fixture` extension, which Composer does not scan. The test also requires exactly one registration of each loader in the composition root and a removal README for each boundary.
 
 ## Removed in WooCommerce 12.0.0
 
@@ -37,4 +37,4 @@ Remove these pieces together once supported extensions no longer depend on the W
 - The one registration line, `WooPaymentsExtensionFacadeLoader::register()` in `includes/class-woocommerce.php`.
 - The two alias first-use sites, which call `WooPaymentsCompatClassAliases::register_compat_class_alias()`: `WooPaymentsIntentRequestBuilder::metadata_from_order()` and `Subscriptions/WooPaymentsFailedRenewalAuthenticationEmail::set_store_owner_custom_email()`. `git grep -n WooPaymentsCompatClassAliases -- src/Internal/Payments` lists them.
 - The tests in `tests/php/src/Internal/Payments/Providers/WooPayments/Compat/`, with their `.fixture` files.
-- This boundary's expected symbols, loader and README entries in `LegacyWooPaymentsCompatibilityPlacementTest`, in the same removal commit.
+- This boundary's expected symbols, loader and README entries in `WooPaymentsExtensionFacadePlacementTest`, in the same removal commit.
