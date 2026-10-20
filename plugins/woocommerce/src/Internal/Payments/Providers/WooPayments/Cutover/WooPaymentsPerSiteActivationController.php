@@ -9,7 +9,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
-use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
@@ -241,16 +240,15 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	/**
 	 * Tell whether the current site refuses its own activation of the WooPayments extension.
 	 *
-	 * The site's guard runs only where a stored setup tier past disabled loads it and the payment providers load, and there
-	 * it refuses on a store the built-in WooPayments owns that never ran the extension. A site without WooCommerce runs no
-	 * guard.
+	 * The site's guard runs only where a stored setup tier past disabled loads it, and there it refuses on a store the
+	 * built-in WooPayments owns that never ran the extension. A site without WooCommerce runs no guard. The check does not
+	 * read woocommerce_load_payment_providers: its callbacks belong to the request that runs the check, not to the site, so
+	 * a site whose own requests turn the providers off is still counted.
 	 *
 	 * @return bool
 	 */
 	private function refuses_extension_activation_on_current_site(): bool {
 		return $this->legacy_proxy->call_function( 'is_plugin_active', plugin_basename( WC_PLUGIN_FILE ) )
-			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Documented where WooCommerce loads the payment providers, PaymentsBootstrap::register().
-			&& apply_filters( PaymentsBootstrap::FILTER_LOAD_PAYMENT_PROVIDERS, true )
 			&& WooPaymentsSetupTier::DISABLED !== $this->setup_tier->get_stored_tier()
 			&& $this->arbiter->is_builtin_enabled()
 			&& ! $this->arbiter->has_run_woopayments_extension();

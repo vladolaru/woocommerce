@@ -527,7 +527,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether a waiting switch still shows its reconnect notice, which stays until a manager dismisses it.
+	 * Tell whether a waiting switch still shows its reconnect notice, which stays until a manager dismisses it or the record
+	 * stops carrying the owner-token failure, as it does once the connection is back.
 	 *
 	 * @param array<string,mixed>|null $record Cutover record.
 	 * @return bool
@@ -537,6 +538,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			&& in_array( $record['state'] ?? null, array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true )
 			&& is_array( $record['informational_outcomes'] ?? null )
 			&& in_array( array( 'code' => 'reconnect_required' ), $record['informational_outcomes'], true )
+			&& in_array( WooPaymentsPlatformConnectionService::FAILURE_CONNECTION_OWNER_USER_TOKEN_UNAVAILABLE, (array) ( $record[ self::BLOCKING_CODES_KEY ] ?? array() ), true )
 			&& ! in_array( array( 'code' => self::NOTICE_RECONNECT . '_notice_dismissed' ), $record['informational_outcomes'], true );
 	}
 

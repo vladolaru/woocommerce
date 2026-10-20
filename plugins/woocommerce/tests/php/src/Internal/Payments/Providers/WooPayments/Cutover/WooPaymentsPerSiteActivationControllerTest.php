@@ -519,9 +519,13 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string $tier            The first site's stored setup tier.
 	 * @param bool   $main_feature_on Whether the WooPayments feature is on at the main site, which ran the extension.
+	 * @param bool   $providers_off   Whether a callback turns the payment providers off in the network request, which says nothing about the sites' own requests.
 	 */
-	public function test_network_activation_is_refused_while_sites_keep_woopayments_in_woocommerce( string $tier, bool $main_feature_on ): void {
+	public function test_network_activation_is_refused_while_sites_keep_woopayments_in_woocommerce( string $tier, bool $main_feature_on, bool $providers_off = false ): void {
 		$this->skip_unless_multisite();
+		if ( $providers_off ) {
+			add_filter( PaymentsBootstrap::FILTER_LOAD_PAYMENT_PROVIDERS, '__return_false' );
+		}
 		$main   = get_current_blog_id();
 		$first  = $this->create_site( 'first', true, false );
 		$second = $this->create_site( 'second', true, false );
@@ -548,10 +552,11 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Sites that keep WooPayments in WooCommerce under the activation rule, with the main site's own feature on or off.
 	 *
-	 * @return array<string,array{string,bool}>
+	 * @return array<string,array{string,bool,bool}>
 	 */
 	public function provider_network_activation_refused(): array {
 		return array(
+			'a callback turns the providers off in the network request' => array( WooPaymentsSetupTier::AVAILABLE, true, true ),
 			'stored tier available'           => array( WooPaymentsSetupTier::AVAILABLE, true ),
 			'stored tier connected'           => array( WooPaymentsSetupTier::CONNECTED, true ),
 			'stored tier active'              => array( WooPaymentsSetupTier::ACTIVE, true ),
@@ -578,12 +583,6 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 			update_blog_status( $site, 'deleted', '1' );
 		} elseif ( 'merged feature development' === $store ) {
 			Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
-		} elseif ( 'payment providers off' === $store ) {
-			// A host that turns the payment providers off for one site: the site's own guard never loads there.
-			add_filter(
-				PaymentsBootstrap::FILTER_LOAD_PAYMENT_PROVIDERS,
-				static fn( $load ) => get_current_blog_id() === $site ? false : $load
-			);
 		}
 		$this->mock_plugin_functions();
 		$this->fake_wp_die();
@@ -595,8 +594,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Allowed activations: the other site ran the extension, has the feature off, was never set up, has no WooCommerce
-	 * (a bare sub-site), is deleted, or loads no payment providers; merged feature development; and an activation for the
-	 * main site alone.
+	 * (a bare sub-site), or is deleted; merged feature development; and an activation for the main site alone.
 	 *
 	 * @return array<string,array{string}>
 	 */
@@ -608,7 +606,6 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 			'WooCommerce is not active at the other site' => array( 'without WooCommerce' ),
 			'the other site is deleted'                   => array( 'deleted' ),
 			'merged feature development'                  => array( 'merged feature development' ),
-			'the payment providers are off at the other site' => array( 'payment providers off' ),
 			'an activation for the main site only'        => array( 'site activation' ),
 		);
 	}

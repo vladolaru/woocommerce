@@ -2591,6 +2591,40 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $dismissed['state'], 'Dismissing information must not stop silent retries.' );
 	}
 
+	/**
+	 * A reconnect that worked leaves the record deferred for another failure, or pending ownership verification, with no
+	 * owner-token failure among its codes.
+	 *
+	 * @testdox The reconnect notice stops once the record no longer carries the owner-token failure, with no dismissal ($_dataName).
+	 * @dataProvider provide_reconnect_records
+	 *
+	 * @param string   $state    Record state.
+	 * @param string[] $codes    The record's deferred codes.
+	 * @param bool     $expected Whether the notice is due.
+	 */
+	public function test_reconnect_notice_stops_once_the_owner_token_failure_is_gone( string $state, array $codes, bool $expected ): void {
+		$record = array(
+			'state'                  => $state,
+			'deferred_codes'         => $codes,
+			'informational_outcomes' => array( array( 'code' => 'reconnect_required' ) ),
+		);
+
+		$this->assertSame( $expected, $this->create_job( true )->is_reconnect_notice_due( $record ) );
+	}
+
+	/**
+	 * @return array<string,array{string,string[],bool}>
+	 */
+	public function provide_reconnect_records(): array {
+		$token = 'wpcom_connection_owner_user_token_unavailable';
+
+		return array(
+			'still failing on the owner token'            => array( WooPaymentsCutoverStateStore::STATE_DEFERRED, array( $token ), true ),
+			'deferred for another failure only'           => array( WooPaymentsCutoverStateStore::STATE_DEFERRED, array( 'woopayments_plugin_version_unsupported' ), false ),
+			'pending ownership verification, no failures' => array( WooPaymentsCutoverStateStore::STATE_PENDING, array(), false ),
+		);
+	}
+
 	/** @testdox Dismissing a reconnect notice that is not due takes no cutover lease. */
 	public function test_reconnect_notice_dismissal_takes_no_lease_when_nothing_is_due(): void {
 		$sut = $this->create_job( true );

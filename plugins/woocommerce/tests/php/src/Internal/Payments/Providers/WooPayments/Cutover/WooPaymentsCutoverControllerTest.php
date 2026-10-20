@@ -1405,6 +1405,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			private array $record = array(
 				'state'                  => WooPaymentsCutoverStateStore::STATE_DEFERRED,
 				'current_step'           => 'deferred',
+				'deferred_codes'         => array( WooPaymentsPlatformConnectionService::FAILURE_CONNECTION_OWNER_USER_TOKEN_UNAVAILABLE ),
 				'informational_outcomes' => array( array( 'code' => 'reconnect_required' ) ),
 			);
 
