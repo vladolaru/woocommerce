@@ -12,14 +12,14 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
 
 /**
- * Detects stores on the bundled WooPayments subscriptions flavor, which keep the WooPayments extension at cutover.
+ * Tells whether a store runs the bundled WooPayments subscriptions, which the cutover excludes.
  *
- * Stores with WooCommerce Subscriptions active switch with their Stripe Billing data, which the built-in WooPayments serves. A store without it
- * is bundled when the bundled subscriptions flag is on or a subscription is still billed by Stripe Billing; subscriptions
- * migrated off Stripe Billing keep only `_migrated_*` meta, so they do not count.
+ * A store with WooCommerce Subscriptions active switches with its Stripe Billing data, which the built-in WooPayments serves.
+ * A store without it is bundled when the bundled subscriptions flag is on or a subscription is still billed by Stripe Billing;
+ * subscriptions migrated off Stripe Billing keep only `_migrated_*` meta, so they do not count.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsBundledSubscriptionsGuard {
 
@@ -46,9 +46,9 @@ class WooPaymentsBundledSubscriptionsGuard {
 	private array $is_bundled_store = array();
 
 	/**
-	 * Tell whether the store uses the bundled WooPayments subscriptions, so cutover would strand its subscriptions.
+	 * Tell whether the store uses the bundled WooPayments subscriptions, so the cutover would strand its subscriptions.
 	 *
-	 * A database error counts as bundled, so cutover never proceeds on an unknown answer.
+	 * A database error counts as bundled, so the cutover never proceeds on an unknown answer.
 	 *
 	 * @return bool True when WooCommerce Subscriptions is inactive and the bundled flag is on or a subscription is still Stripe-billed.
 	 */

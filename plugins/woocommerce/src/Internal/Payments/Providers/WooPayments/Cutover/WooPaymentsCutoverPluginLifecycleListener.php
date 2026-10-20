@@ -11,15 +11,15 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Listens to WooPayments plugin activation and deactivation on every request class and hands them to the cutover controller.
+ * Hears WordPress activate or deactivate a plugin on every request class and hands the change to the cutover controller.
  *
  * WordPress fires these hooks from activate_plugin() and deactivate_plugins() in whatever request calls them: wp-admin,
- * admin-ajax, the wp/v2/plugins and wc-admin plugin REST routes, Action Scheduler and WP-CLI. The client registers its
- * lifecycle callbacks on every request (client 11.1.0 `woocommerce-payments.php:67-68`). The controller is resolved only
- * when a plugin changes, so requests that change no plugin pay for three hook registrations.
+ * admin-ajax, the wp/v2/plugins and wc-admin plugin REST routes, Action Scheduler and WP-CLI. The WooPayments extension
+ * registers its lifecycle callbacks on every request (client 11.1.0 `woocommerce-payments.php:67-68`). The controller is
+ * resolved only when a plugin changes, so requests that change no plugin pay for three hook registrations.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsCutoverPluginLifecycleListener implements RegisterHooksInterface {
 

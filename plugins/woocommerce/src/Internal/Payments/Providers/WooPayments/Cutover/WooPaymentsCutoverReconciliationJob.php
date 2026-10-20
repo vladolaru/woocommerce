@@ -17,10 +17,14 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Orchestrates durable site-local WooPayments cutover attempts.
+ * Runs a site's cutover as a durable, resumable job.
+ *
+ * A claimed attempt checks the preflight, migrates the stored data and deactivates the WooPayments extension, and a later
+ * request verifies that the built-in WooPayments owns the site. The job also repairs a lost schedule and keeps the notice
+ * state the controller renders: what to offer, and what was shown or dismissed.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
@@ -308,7 +312,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Record a successful external plugin activation as a rollback awaiting merchant confirmation.
+	 * Record an activation of the WooPayments extension as a rollback awaiting merchant confirmation.
 	 *
 	 * A completed switch is replaced by a new generation awaiting the merchant's start. An open one that is not awaiting it,
 	 * a claim running in another request included, is rolled back (roll_back_open_generation()); a running worker's
@@ -335,8 +339,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				if ( WooPaymentsCutoverStateStore::STATE_DONE === $record['state'] ) {
 					return $this->replace_terminal_with_awaiting_start( $record, self::SOURCE_ROLLBACK, $now );
 				}
-				// The hook fires only for an inactive extension, so an open merchant start sees this only after finalize
-				// deactivated the extension.
+				// An activation starts from an inactive extension, so an open generation here is one the merchant now reverses:
+				// its finalize deactivated the extension, or the merchant had deactivated it before starting.
 				if ( ! in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED, WooPaymentsCutoverStateStore::STATE_RUNNING ), true ) ) {
 					return false;
 				}
@@ -703,7 +707,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				$this->exclude( $claimed, WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
 				return;
 			}
-			// The plugin records its new version only on its next request, so check the installed files instead.
+			// The extension records its new version only on its next request, so check the installed files instead.
 			if ( $plugin_update_succeeded && in_array( WooPaymentsCutoverPreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, $remaining_failures, true ) && ! $this->is_installed_woopayments_plugin_version_supported() ) {
 				$this->log_error( 'WooPayments cutover plugin update completed without installing a supported version.' );
 			}
@@ -944,11 +948,12 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether this site's switch has started and not reached finalize: its record is pending past the merchant's start,
-	 * running or deferred, and carries no request token.
+	 * Tell whether this site's record is a started switch that has not reached finalize's fence: pending past the merchant's
+	 * start, running or deferred, and carrying no request token.
 	 *
-	 * This generation has no persisted finalize token; the conversion keeps the merchant's existing start. A start that
-	 * meets the network activation defers before it migrates (plugin_active_sitewide). Read-only.
+	 * Finalize stores the token before it deactivates the extension, so no token means this switch has not deactivated it.
+	 * The data migration may have run. A start that meets a network-active extension defers before it migrates
+	 * (plugin_active_sitewide). The WooPayments feature is not checked. Read-only.
 	 *
 	 * @return bool
 	 */
@@ -962,7 +967,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Persist a future ownership-verification attempt after plugin deactivation.
+	 * Persist a future ownership-verification attempt after the extension is deactivated.
 	 *
 	 * @param array<string,mixed> $claimed  Exact running state owned by this worker.
 	 * @param array<int,mixed>    $outcomes Informational outcomes accumulated during reconciliation.
@@ -1058,7 +1063,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Update the resolved active WooPayments plugin with WordPress core APIs.
+	 * Update the resolved active WooPayments extension with WordPress core APIs.
 	 *
 	 * Runs only where the site allows automatic file changes: the upgrader classes do not check DISALLOW_FILE_MODS or the
 	 * `file_mod_allowed` filter, so this asks the same question core's background updater asks first.
@@ -1138,8 +1143,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * Upgrade one resolved WooPayments plugin file with WordPress core.
 	 *
 	 * Uses `bulk_upgrade()`, core's own AJAX "Update now" path. Unlike `Plugin_Upgrader::upgrade()`, it
-	 * never deactivates the active plugin outside WP-Cron (it uses maintenance mode instead), so the
-	 * plugin keeps owning payments through a deferred update instead of being silently deactivated with
+	 * never deactivates the active extension outside WP-Cron (it uses maintenance mode instead), so the
+	 * extension keeps owning payments through a deferred update instead of being silently deactivated with
 	 * nothing to reactivate it.
 	 *
 	 * @param string $plugin_file Active WooPayments plugin file.
@@ -1152,7 +1157,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the installed WooPayments plugin files carry a cutover-supported version.
+	 * Tell whether the installed WooPayments extension files carry a cutover-supported version.
 	 *
 	 * @return bool
 	 */

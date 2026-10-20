@@ -55,7 +55,7 @@ class WooPaymentsCutoverPluginLifecycleListenerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A WooPayments deactivation in any request reaches the controller, which queues the reconciliation.
+	 * @testdox A WooPayments deactivation in any request reaches the controller.
 	 */
 	public function test_deactivation_reaches_the_controller(): void {
 		$this->controller->expects( $this->once() )
@@ -92,7 +92,7 @@ class WooPaymentsCutoverPluginLifecycleListenerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A WooPayments activation in any request reaches the controller, which records a rollback.
+	 * @testdox A network-wide WooPayments activation in any request reaches the controller.
 	 */
 	public function test_activation_reaches_the_controller(): void {
 		$this->controller->expects( $this->once() )

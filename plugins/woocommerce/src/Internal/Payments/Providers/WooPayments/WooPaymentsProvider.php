@@ -125,7 +125,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * @return array<string,array<string,array<int,class-string>>> Root classes in registration order.
 	 */
 	public static function get_classes_by_setup_tier(): array {
-		// The cutover from the WooPayments extension adds these roots; every row that needs one reads it from here.
+		// The cutover from the WooPayments extension adds these roots, and every row that needs one reads it from here.
+		// Cutover/README.md lists everything to remove with the Cutover folder.
 		$cutover_admin         = array( WooPaymentsCutoverController::class, WooPaymentsCutoverReconciliationJob::class );
 		$cutover_cron          = array( WooPaymentsCutoverReconciliationJob::class );
 		$cutover_every_request = array( WooPaymentsCutoverPluginLifecycleListener::class );

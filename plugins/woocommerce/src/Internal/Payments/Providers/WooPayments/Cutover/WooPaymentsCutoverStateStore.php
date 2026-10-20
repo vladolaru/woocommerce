@@ -12,10 +12,10 @@ use InvalidArgumentException;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Persists validated site-local WooPayments cutover state and its write lock.
+ * Reads, validates, creates and compare-and-sets the cutover record option under a write lock, with direct SQL.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsCutoverStateStore {
 

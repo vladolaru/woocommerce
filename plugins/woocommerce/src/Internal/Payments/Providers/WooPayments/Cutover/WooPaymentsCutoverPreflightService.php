@@ -24,13 +24,22 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Provides headless facts for WooPayments cutover reconciliation.
+ * Evaluates the conditions that block the cutover on a site.
+ *
+ * It also finds, deactivates and version-checks the active WooPayments extension and schedules the fee remediation, because
+ * those share its active-plugins scan.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsCutoverPreflightService {
 
+	/**
+	 * Oldest WooPayments extension version the cutover switches from.
+	 *
+	 * The data migration removes only the settings, options and transients this version no longer reads, so re-activating
+	 * the extension at this version still finds what it reads.
+	 */
 	public const MINIMUM_CUTOVER_PLUGIN_VERSION = '10.5.0';
 
 	/** The WooPayments feature is off on this site, so no other check runs. */
@@ -83,7 +92,7 @@ class WooPaymentsCutoverPreflightService {
 		WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK,
 		WooPaymentsWebhookReliabilityService::WEBHOOK_FETCH_EVENTS_ACTION,
 		WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
-		// Stripe Billing migration off Stripe, continued by native's migrator after the switch.
+		// Stripe Billing migration off Stripe, continued by the built-in WooPayments' migrator after the switch.
 		'wcpay_schedule_subscription_migrations',
 		'wcpay_migrate_subscription',
 		'wcpay_migrate_subscription_retry',
@@ -104,7 +113,7 @@ class WooPaymentsCutoverPreflightService {
 	private LegacyProxy $legacy_proxy;
 
 	/**
-	 * Native WooPayments provider.
+	 * Built-in WooPayments provider.
 	 *
 	 * @var WooPaymentsProvider|null
 	 */
@@ -349,8 +358,8 @@ class WooPaymentsCutoverPreflightService {
 	/**
 	 * Deactivate WooPayments on the current site only.
 	 *
-	 * A plugin that is no longer active counts as deactivated: a retry after a crash that followed a successful deactivation
-	 * finds nothing to deactivate. A plugin active for every site stays active, and this reports false.
+	 * An extension that is not active counts as deactivated: a retry after a crash that followed a successful deactivation
+	 * finds nothing to deactivate. An extension active for every site stays active, and this reports false.
 	 */
 	public function deactivate_woopayments_plugin(): bool {
 		if ( ! function_exists( 'deactivate_plugins' ) ) {
@@ -366,9 +375,9 @@ class WooPaymentsCutoverPreflightService {
 	}
 
 	/**
-	 * Make sure native runs the canceled-authorization fee remediation the plugin left behind on this site.
+	 * Make sure the built-in WooPayments runs the canceled-authorization fee remediation the extension left behind on this site.
 	 *
-	 * Called once native owns the site, so the remediation's Action Scheduler callback is registered when it runs.
+	 * Called once the built-in WooPayments owns the site, so the remediation's Action Scheduler callback is registered when it runs.
 	 *
 	 * @return bool False when the remediation is needed but cannot be scheduled.
 	 */
@@ -529,7 +538,7 @@ class WooPaymentsCutoverPreflightService {
 	}
 
 	/**
-	 * Get the native WooPayments provider, resolving it on first use.
+	 * Get the built-in WooPayments provider, resolving it on first use.
 	 *
 	 * @return WooPaymentsProvider
 	 */

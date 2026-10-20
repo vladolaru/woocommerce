@@ -18,15 +18,14 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Lets a super admin turn a network-wide activation of the WooPayments extension into one activation per site.
  *
- * Each site switches to WooPayments in WooCommerce on its own, and a switch deactivates the extension on its own site only,
- * so no site can start it while the extension is network-active. The network admin notice offers the conversion while the
- * extension is network-active and the WooPayments feature is on at one site or more. The conversion moves no data and
- * leaves the feature as it is. The conversion starts no switch. Its activations run as changes the switch's job initiated, so
- * the cutover's plugin lifecycle listener records nothing, and the conversion records each site's rollback itself
- * (record_rollback()).
+ * Each site switches on its own, and a switch deactivates the extension on its own site only, so no site can start its
+ * switch while the extension is network-active. The network admin notice offers the conversion while that holds and the
+ * WooPayments feature is on at one site or more. The conversion starts no switch. Its activations run as changes the cutover
+ * job initiated, so the plugin lifecycle listener records nothing, and record_rollback() runs for each site where the
+ * extension is active afterwards.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 
@@ -68,7 +67,7 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
-	 * Plugin activity facts.
+	 * WooPayments extension activity facts.
 	 *
 	 * @var WooPaymentsCutoverPreflightService
 	 */
@@ -101,7 +100,7 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	 * @internal
 	 *
 	 * @param WooPaymentsRuntimeArbiter           $arbiter            Runtime owner arbiter.
-	 * @param WooPaymentsCutoverPreflightService  $preflight_service  Plugin activity facts.
+	 * @param WooPaymentsCutoverPreflightService  $preflight_service  WooPayments extension activity facts.
 	 * @param WooPaymentsCutoverReconciliationJob $reconciliation_job The switch's job.
 	 * @param LegacyProxy                         $legacy_proxy       Legacy proxy.
 	 */
@@ -362,17 +361,17 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	/**
 	 * Record the current site's rollback of a completed switch, or of one past finalize, as an activation of the extension does.
 	 *
-	 * A started switch with no persisted finalize token continues: the conversion keeps the merchant's existing start. This is
-	 * the conversion's only rollback path, because the cutover's plugin lifecycle listener records nothing during its
-	 * activations. Idempotent for a record already awaiting the merchant's start; best effort: a busy write lock records
-	 * nothing, and an error is logged.
+	 * A started switch that has not reached finalize's fence is left as it is (has_started_switch_before_finalize()), so the
+	 * merchant keeps the start they made. This is the conversion's only rollback path, because the plugin lifecycle listener
+	 * records nothing during its activations. Idempotent for a record already awaiting the merchant's start; best effort: a
+	 * busy write lock records nothing, and an error is logged.
 	 *
 	 * @param array<string,mixed> $context Log context.
 	 */
 	private function record_rollback( array $context ): void {
 		try {
 			if ( $this->reconciliation_job->has_started_switch_before_finalize() ) {
-				$this->log( 'info', 'WooPayments per-site activation: this site\'s switch has started and continues.', $context );
+				$this->log( 'info', 'WooPayments per-site activation: this site\'s started switch is left as it is.', $context );
 				return;
 			}
 			$this->reconciliation_job->record_plugin_activation();

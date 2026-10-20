@@ -16,10 +16,12 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Owns the WooPayments plugin-to-native cutover UX.
+ * Shows the cutover notices, takes the merchant's start click and the notice dismissals, and applies the mandatory lever.
+ *
+ * The plugin lifecycle listener calls its activation and deactivation handlers.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsCutoverController implements RegisterHooksInterface {
 
@@ -38,9 +40,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	public const FILTER_MANDATORY_CUTOVER_ENABLED = 'woocommerce_woopayments_mandatory_cutover_enabled';
 
 	/**
-	 * Default state for mandatory WooPayments native cutover.
-	 *
-	 * This intentionally remains false until the final A5 stage-boundary gates approve the release/default-on flip.
+	 * Default state of the mandatory lever: off, and a host turns it on through the filter.
 	 *
 	 * @var bool
 	 */
@@ -156,7 +156,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * Register the admin notice and click hooks.
 	 *
 	 * The plugin lifecycle hooks are registered by WooPaymentsCutoverPluginLifecycleListener, which loads on every request
-	 * class where a plugin can change, and call this controller's handlers.
+	 * class where a plugin can change and calls this controller's handlers.
 	 */
 	public function register() {
 		add_action( 'admin_init', array( $this, 'handle_admin_init' ) );
@@ -307,7 +307,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Open a new generation when a completed WooPayments cutover is rolled back by plugin activation.
+	 * Open a new generation when activating the WooPayments extension again rolls back a completed cutover.
 	 *
 	 * An activation for every site of a multisite records nothing: each site is a store of its own, and a switched site
 	 * beside the reactivated extension is reopened the next time an admin page reads its record.
@@ -347,7 +347,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Refuse activating WooPayments on a store that never ran the plugin while native owns payments.
+	 * Refuse activating the WooPayments extension on a store that never ran it while the built-in WooPayments owns payments.
 	 *
 	 * A store that ran the extension (its version option is stored) may activate it, which is the rollback after a switch.
 	 *
@@ -388,17 +388,17 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether mandatory native cutover is enabled.
+	 * Tell whether the mandatory lever is on.
 	 *
 	 * @return bool
 	 */
 	private function is_mandatory_cutover_enabled(): bool {
 		/**
-		 * Filters whether mandatory WooPayments native cutover is enabled.
+		 * Filters whether the mandatory lever starts the cutover on admin requests of stores where the WooPayments extension owns payments.
 		 *
 		 * @since 11.2.0
 		 *
-		 * @param bool $enabled Whether mandatory cutover is enabled.
+		 * @param bool $enabled Whether the mandatory lever is on.
 		 */
 		return (bool) apply_filters( self::FILTER_MANDATORY_CUTOVER_ENABLED, self::DEFAULT_MANDATORY_CUTOVER_ENABLED );
 	}
@@ -553,7 +553,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && $this->is_woopayments_network_active() && in_array( WooPaymentsCutoverReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE, (array) ( $record['deferred_codes'] ?? array() ), true ) ) {
 					$this->output_sitewide_refusal_notice();
 				}
-				// The job cannot update the plugin itself where the site blocks file changes, so retries alone never finish.
+				// The job cannot update the extension itself where the site blocks file changes, so retries alone never finish.
 				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && in_array( WooPaymentsCutoverPreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, (array) ( $record['deferred_codes'] ?? array() ), true ) && ! wp_is_file_mod_allowed( 'automatic_updater' ) ) {
 					echo '<div class="notice notice-warning"><p>' . esc_html__( 'The switch needs a newer version of the WooPayments extension, but this site does not allow automatic plugin updates. Update WooPayments to continue the switch.', 'woocommerce' ) . '</p></div>';
 				}

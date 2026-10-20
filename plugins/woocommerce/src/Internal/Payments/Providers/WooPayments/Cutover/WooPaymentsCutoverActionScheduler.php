@@ -10,10 +10,10 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Owns the canonical Action Scheduler identity for WooPayments cutover jobs.
+ * Owns the Action Scheduler identity of the cutover job: hook, group, arguments, and scheduling, finding, cancelling and dispatching its actions.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native payments runtime.
+ * @internal
  */
 class WooPaymentsCutoverActionScheduler {
 

@@ -50,12 +50,12 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	);
 
 	/**
-	 * Shared settings keys normalization may remove or reshape, with the WooPayments plugin version that stopped reading each.
+	 * Shared settings keys the migration may remove or reshape, with the WooPayments extension version that stopped reading each.
 	 *
-	 * Re-activating the plugin is the rollback lever, so native never removes or reshapes a shared setting that the cutover
-	 * floor (WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION) still reads; raising the floor is the only way
-	 * to widen this list. Each version is the first plugin release tag with no read outside its own migrations. The split
-	 * per-method options have no retired keys.
+	 * Re-activating the extension is the rollback lever, so the migration never removes or reshapes a shared setting that the
+	 * cutover floor (WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION) still reads; raising the floor is the
+	 * only way to widen this list. Each version is the first extension release tag with no read outside its own migrations.
+	 * The split per-method options have no retired keys.
 	 *
 	 * @var array<string,string>
 	 */
@@ -68,9 +68,9 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	);
 
 	/**
-	 * Options normalization deletes, with the plugin version that stopped reading each (same floor rule as RETIRED_SETTINGS_KEYS).
+	 * Options the migration deletes, with the extension version that stopped reading each (same floor rule as RETIRED_SETTINGS_KEYS).
 	 *
-	 * The plugin's own Erase_Deprecated_Flags_And_Options migration deletes the same list for installs older than 9.8.0.
+	 * The extension's own Erase_Deprecated_Flags_And_Options migration deletes the same list for installs older than 9.8.0.
 	 *
 	 * @var array<string,string>
 	 */
@@ -96,7 +96,7 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 		'_wcpay_feature_mc_order_meta_helper'          => '6.4.0',
 		'_wcpay_feature_pay_for_order_flow'            => '7.6.0',
 		'_wcpay_feature_simplify_deposits_ui'          => '5.9.0',
-		// No release ever read it; the plugin's erase migration has deleted it since 8.1.0.
+		// No release ever read it; the extension's erase migration has deleted it since 8.1.0.
 		'_wcpay_fraud_protection_settings_enabled'     => '8.1.0',
 		'_wcpay_feature_platform_checkout_subscriptions_enabled' => '4.8.0',
 		// 4.0.3 is the first tagged 4.0 release.
@@ -108,7 +108,7 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	);
 
 	/**
-	 * Transients normalization deletes, with the plugin version that stopped reading each (same floor rule).
+	 * Transients the migration deletes, with the extension version that stopped reading each (same floor rule).
 	 *
 	 * The BNPL announcement user meta `_wcpay_bnpl_april15_viewed` retired with it.
 	 *
@@ -119,9 +119,9 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	);
 
 	/**
-	 * UPE appearance caches normalization deletes.
+	 * UPE appearance caches the migration deletes.
 	 *
-	 * Plugin 10.5.x still reads them, but only as day-long caches it rebuilds and clears itself (10.5.0
+	 * Extension 10.5.x still reads them, but only as day-long caches it rebuilds and clears itself (10.5.0
 	 * class-wc-payment-gateway-wcpay.php:4281-4282, :4303-4312), so deleting them loses no merchant setting.
 	 *
 	 * @var string[]
@@ -160,7 +160,7 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register the one-shot normalization hook.
+	 * Register the one-shot data migration hook.
 	 *
 	 * The setup tier lists this class only on the active tier, which exists only while the built-in WooPayments owns the store.
 	 */
@@ -169,14 +169,14 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Run normalization when it has not yet completed.
+	 * Run the data migration unless it has already completed.
 	 */
 	public function maybe_run(): void {
 		$this->run();
 	}
 
 	/**
-	 * Run cutover normalization.
+	 * Run the data migration.
 	 *
 	 * @return array{ran:bool,changes:string[]}
 	 */
@@ -293,10 +293,10 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Clear the plugin's daily WP-Cron WooPay compatibility event.
+	 * Clear the extension's daily WP-Cron WooPay compatibility event.
 	 *
-	 * Client 11.1.0 woopay/class-woopay-scheduler.php:51, :57-59 clears it only from its own deactivation hook; native runs
-	 * the same check through Action Scheduler.
+	 * Client 11.1.0 woopay/class-woopay-scheduler.php:51, :57-59 clears it only from its own deactivation hook; the built-in
+	 * WooPayments runs the same check through Action Scheduler.
 	 *
 	 * @return bool Whether an event was cleared.
 	 */
@@ -332,7 +332,7 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the last WooPayments plugin version that wrote the shared version option.
+	 * Get the last WooPayments extension version that wrote the shared version option.
 	 *
 	 * @return string
 	 */
@@ -374,10 +374,10 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the shared settings synchronizer should consume the legacy payment-request setting.
+	 * Tell whether the shared settings synchronizer should consume the retired payment-request setting.
 	 *
 	 * @param array<string,mixed> $settings         Gateway settings.
-	 * @param string              $previous_version Previous WooPayments plugin version.
+	 * @param string              $previous_version Previous WooPayments extension version.
 	 * @return bool
 	 */
 	private function should_migrate_payment_request_split_settings( array $settings, string $previous_version ): bool {
@@ -388,7 +388,7 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	 * Convert method-centric express-checkout location settings into location-centric settings.
 	 *
 	 * @param array<string,mixed> $settings         Gateway settings.
-	 * @param string              $previous_version Previous WooPayments plugin version.
+	 * @param string              $previous_version Previous WooPayments extension version.
 	 * @return bool
 	 */
 	private function migrate_express_checkout_locations( array &$settings, string $previous_version ): bool {
@@ -428,7 +428,7 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	 * Add Amazon Pay to current express-checkout location settings for older installs.
 	 *
 	 * @param array<string,mixed> $settings         Gateway settings.
-	 * @param string              $previous_version Previous WooPayments plugin version.
+	 * @param string              $previous_version Previous WooPayments extension version.
 	 * @return bool
 	 */
 	private function add_amazon_pay_to_express_checkout_locations( array &$settings, string $previous_version ): bool {
@@ -456,7 +456,7 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	 * Normalize payment request button size.
 	 *
 	 * @param array<string,mixed> $settings         Gateway settings.
-	 * @param string              $previous_version Previous WooPayments plugin version.
+	 * @param string              $previous_version Previous WooPayments extension version.
 	 * @return bool
 	 */
 	private function normalize_payment_request_button_size( array &$settings, string $previous_version ): bool {
@@ -473,7 +473,7 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	 * Normalize payment request button type and remove stale branded-type helper state.
 	 *
 	 * @param array<string,mixed> $settings         Gateway settings.
-	 * @param string              $previous_version Previous WooPayments plugin version.
+	 * @param string              $previous_version Previous WooPayments extension version.
 	 * @return bool
 	 */
 	private function normalize_payment_request_button_type( array &$settings, string $previous_version ): bool {
@@ -497,7 +497,7 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Keep only native manual-capture-safe payment methods when manual capture is enabled.
+	 * Keep only the payment methods that are safe with manual capture when manual capture is enabled.
 	 *
 	 * @param array<string,mixed> $settings Gateway settings.
 	 * @return bool
@@ -638,7 +638,7 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 		$deleted_meta = $wpdb->delete(
 			$wpdb->usermeta,
 			array(
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Intentional cleanup of a known legacy WooPayments user meta key.
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Intentional cleanup of a known retired WooPayments user meta key.
 				'meta_key' => '_wcpay_bnpl_april15_viewed',
 			),
 			array(
@@ -652,7 +652,7 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	/**
 	 * Preserve existing install multi-currency cache rendering behavior.
 	 *
-	 * @param string $previous_version Previous WooPayments plugin version.
+	 * @param string $previous_version Previous WooPayments extension version.
 	 * @return bool
 	 */
 	private function mark_multi_currency_cache_autodetect_done( string $previous_version ): bool {
@@ -664,9 +664,9 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the stored plugin version predates a migration version.
+	 * Tell whether the stored extension version predates a migration version.
 	 *
-	 * @param string $previous_version Stored WooPayments plugin version.
+	 * @param string $previous_version Stored WooPayments extension version.
 	 * @param string $migration_version Migration version.
 	 * @return bool
 	 */
@@ -741,7 +741,7 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Log a concise normalization summary.
+	 * Log a concise data migration summary.
 	 *
 	 * @param string[] $changes Change IDs.
 	 */
