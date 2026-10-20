@@ -20,7 +20,7 @@ class WooPaymentsExpressPaymentMethodTypes {
 	/**
 	 * WooPayments Express Checkout method ID for Apple Pay / Google Pay.
 	 *
-	 * `payment_request` is the stored gateway setting, and settings key, that turns on the Apple Pay and Google Pay
+	 * `payment_request` is the method ID the express checkout location settings list for the Apple Pay and Google Pay
 	 * buttons, so the methods that read it keep the word.
 	 */
 	public const EXPRESS_METHOD_PAYMENT_REQUEST = 'payment_request';
@@ -174,7 +174,7 @@ class WooPaymentsExpressPaymentMethodTypes {
 	/**
 	 * Get the express checkout methods configured for a context.
 	 *
-	 * The location setting, or Apple Pay / Google Pay alone while the older `payment_request` setting is on and no location setting exists.
+	 * The location setting, or Apple Pay / Google Pay alone while one of them is enabled in its own gateway settings and no location setting exists.
 	 *
 	 * @param WooPaymentsAccountService $account_service WooPayments account service.
 	 * @param string                    $context         Express checkout context.

@@ -66,6 +66,8 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 		remove_all_filters( 'wp_doing_cron' );
 		WC()->countries->locale = array();
 		$this->unregister_refresh_ui_callback();
+		delete_option( 'woocommerce_woocommerce_payments_apple_pay_settings' );
+		delete_option( 'woocommerce_woocommerce_payments_google_pay_settings' );
 		delete_option( 'woocommerce_currency' );
 		// Dispatching here may build the REST server, and the hooks rest_api_init added go when this test's hooks are
 		// restored. Drop the server so a later test builds a fresh one with its hooks.
@@ -123,9 +125,11 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	 * @testdox Should never expose WooPay or cart-location gating in the Store API express checkout methods.
 	 */
 	public function test_get_cart_extension_data_excludes_woopay_and_ignores_locations(): void {
+		foreach ( array( 'apple_pay', 'google_pay' ) as $wallet_method_id ) {
+			update_option( 'woocommerce_woocommerce_payments_' . $wallet_method_id . '_settings', array( 'enabled' => 'yes' ) );
+		}
 		$service   = $this->create_real_service(
 			array(
-				'payment_request'                   => 'yes',
 				'express_checkout_product_methods'  => array( 'woopay' ),
 				'express_checkout_cart_methods'     => array( 'woopay' ),
 				'express_checkout_checkout_methods' => array( 'woopay' ),
@@ -169,7 +173,6 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 		$service      = $this->create_real_service(
 			array(
 				'enabled'                           => 'yes',
-				'payment_request'                   => 'no',
 				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
 				'express_checkout_product_methods'  => array( 'amazon_pay' ),
 				'express_checkout_cart_methods'     => array( 'amazon_pay' ),
@@ -193,7 +196,6 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 		$service = $this->create_real_service(
 			array(
 				'enabled'                           => 'yes',
-				'payment_request'                   => 'no',
 				'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
 				'express_checkout_product_methods'  => array( 'payment_request' ),
 				'express_checkout_cart_methods'     => array( 'payment_request' ),
@@ -544,11 +546,10 @@ class WooPaymentsExpressCheckoutStoreApiExtensionTest extends WC_Unit_Test_Case 
 	private function create_real_service( array $settings, array $account_data = array( 'country' => 'US' ) ): WooPaymentsExpressCheckoutService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_cached_account_data', 'get_gateway_setting', 'is_payment_request_enabled', 'is_test_mode_enabled' ) )
+			->onlyMethods( array( 'get_cached_account_data', 'get_gateway_setting', 'is_test_mode_enabled' ) )
 			->getMock();
 		$account_service->method( 'get_cached_account_data' )->willReturn( $account_data );
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
-		$account_service->method( 'is_payment_request_enabled' )->willReturn( 'yes' === ( $settings['payment_request'] ?? 'no' ) );
 		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
 			static fn( string $key, $fallback = null ) => array_key_exists( $key, $settings ) ? $settings[ $key ] : $fallback
 		);

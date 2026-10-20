@@ -262,6 +262,8 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$this->reset_frontend_surface_state();
 		unset( $_GET['change_payment_method'], $_GET['pay_for_order'], $_GET['key'], $_POST['email'], $GLOBALS[ WooCommerceSubscriptionsDoubles::SUBSCRIPTION_IDS ], $GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ] );
 		delete_option( '_wcpay_feature_woopay_express_checkout' );
+		delete_option( 'woocommerce_woocommerce_payments_apple_pay_settings' );
+		delete_option( 'woocommerce_woocommerce_payments_google_pay_settings' );
 		remove_all_filters( 'wcpay_woopay_enabled' );
 		delete_option( '_wcpay_feature_dynamic_checkout_place_order_button' );
 		remove_all_filters( 'wcpay_payment_fields_js_config' );
@@ -1583,6 +1585,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * client/checkout/blocks/index.js:123-134).
 	 */
 	public function test_get_blocks_payment_method_data_exposes_woopay_express_gate_flags(): void {
+		$this->set_wallet_gateway_settings( true );
 		$account_service = $this->create_account_service( true, self::EXPRESS_ACCOUNT_DATA, self::EXPRESS_GATEWAY_SETTINGS );
 
 		$assets = new WooPaymentsCheckoutAssets();
@@ -1741,6 +1744,7 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 		$woopay_service->method( 'get_woopay_frontend_config' )->willReturn( $woopay_config );
 		$woopay_service->method( 'get_save_user_checkout_data' )->willReturn( array( 'PRE_CHECK_SAVE_MY_INFO' => true ) );
 
+		$this->set_wallet_gateway_settings( true );
 		$account_service = $this->create_account_service( true, self::EXPRESS_ACCOUNT_DATA, self::EXPRESS_GATEWAY_SETTINGS );
 		$assets          = new WooPaymentsCheckoutAssets();
 		$assets->init( $account_service, $woopay_service, $this->create_woopay_eligibility( true ), $this->create_frontend_styles_service(), $this->create_frontend_tracking_controller(), new WooPaymentsPaymentMethodRegistry() );
@@ -1812,11 +1816,12 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	);
 
 	/**
-	 * Gateway settings with the gateway enabled, Apple Pay/Google Pay on and Amazon Pay switched on and listed at checkout.
+	 * Gateway settings with the gateway enabled and Amazon Pay switched on, with Apple Pay/Google Pay and Amazon Pay listed at checkout.
+	 *
+	 * Apple Pay and Google Pay are on in their own gateway settings, which `set_wallet_gateway_settings()` writes.
 	 */
 	private const EXPRESS_GATEWAY_SETTINGS = array(
 		'enabled'                           => 'yes',
-		'payment_request'                   => 'yes',
 		'upe_enabled_payment_method_ids'    => array( 'card', 'amazon_pay' ),
 		'express_checkout_product_methods'  => array( 'payment_request' ),
 		'express_checkout_cart_methods'     => array( 'payment_request' ),
@@ -1890,14 +1895,15 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $settings     Gateway setting overrides.
 	 * @param array<string,mixed> $account_data Account data overrides.
 	 * @param bool                $change_page  Whether the request is a change payment method page.
+	 * @param bool                $wallets_on   Whether Apple Pay and Google Pay are enabled in their own settings.
 	 */
-	public function test_blocks_data_omits_express_switches_while_express_checkout_is_off( array $settings, array $account_data, bool $change_page ): void {
+	public function test_blocks_data_omits_express_switches_while_express_checkout_is_off( array $settings, array $account_data, bool $change_page, bool $wallets_on = true ): void {
 		add_filter( 'woocommerce_is_checkout', '__return_true' );
 		if ( $change_page ) {
 			$_GET['change_payment_method'] = '123';
 		}
 
-		$data = $this->create_assets_for_express_handlers( $settings, $account_data )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
+		$data = $this->create_assets_for_express_handlers( $settings, $account_data, false, $wallets_on )->get_blocks_payment_method_data( self::CARD_SUPPORTS );
 
 		$this->assertArrayNotHasKey( 'isPaymentRequestEnabled', $data );
 		$this->assertArrayNotHasKey( 'isAmazonPayEnabled', $data );
@@ -1906,18 +1912,16 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	/**
 	 * Cases where the client's express checkout button handler does not add its config.
 	 *
-	 * @return array<string,array{0:array<string,mixed>,1:array<string,mixed>,2:bool}>
+	 * @return array<string,array{0:array<string,mixed>,1:array<string,mixed>,2:bool,3?:bool}>
 	 */
 	public function provider_express_handler_off(): array {
 		return array(
 			'gateway disabled'                  => array( array( 'enabled' => 'no' ), array(), false ),
 			'payments not enabled on account'   => array( array(), array( 'payments_enabled' => false ), false ),
 			'no express checkout method usable' => array(
-				array(
-					'payment_request'                => 'no',
-					'upe_enabled_payment_method_ids' => array( 'card' ),
-				),
+				array( 'upe_enabled_payment_method_ids' => array( 'card' ) ),
 				array(),
+				false,
 				false,
 			),
 			'change payment method page'        => array( array(), array(), true ),
@@ -2316,6 +2320,17 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Turn Apple Pay and Google Pay on or off in their own gateway settings.
+	 *
+	 * @param bool $enabled Whether both wallets are enabled.
+	 */
+	private function set_wallet_gateway_settings( bool $enabled ): void {
+		foreach ( array( 'apple_pay', 'google_pay' ) as $wallet_method_id ) {
+			update_option( 'woocommerce_woocommerce_payments_' . $wallet_method_id . '_settings', array( 'enabled' => $enabled ? 'yes' : 'no' ) );
+		}
+	}
+
+	/**
 	 * Create an account service mock for checkout assets tests.
 	 *
 	 * @param bool  $can_process_payments Whether the account can process payments.
@@ -2328,12 +2343,8 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	private function create_account_service( bool $can_process_payments, array $account_data = array( 'country' => 'RO' ), array $gateway_settings = array() ) {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_publishable_key', 'get_account_id', 'get_cached_account_data', 'get_gateway_setting', 'is_payment_request_method_enabled', 'is_payment_request_enabled', 'can_process_payments', 'is_test_mode_enabled' ) )
+			->onlyMethods( array( 'get_publishable_key', 'get_account_id', 'get_cached_account_data', 'get_gateway_setting', 'is_payment_request_method_enabled', 'can_process_payments', 'is_test_mode_enabled' ) )
 			->getMock();
-		$account_service
-			->method( 'is_payment_request_enabled' )
-			->willReturn( 'yes' === ( $gateway_settings['payment_request'] ?? 'no' ) );
-
 		$account_service
 			->method( 'get_publishable_key' )
 			->willReturn( 'pk_test_123' );
@@ -2396,9 +2407,11 @@ class WooPaymentsCheckoutAssetsTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $settings     Gateway setting overrides.
 	 * @param array<string,mixed> $account_data Account data overrides.
 	 * @param bool                $woopay       Whether the WooPay session service reports WooPay enabled.
+	 * @param bool                $wallets_on   Whether Apple Pay and Google Pay are enabled in their own gateway settings.
 	 * @return WooPaymentsCheckoutAssets
 	 */
-	private function create_assets_for_express_handlers( array $settings = array(), array $account_data = array(), bool $woopay = false ): WooPaymentsCheckoutAssets {
+	private function create_assets_for_express_handlers( array $settings = array(), array $account_data = array(), bool $woopay = false, bool $wallets_on = true ): WooPaymentsCheckoutAssets {
+		$this->set_wallet_gateway_settings( $wallets_on );
 		$account_service = $this->create_account_service(
 			true,
 			array_merge( self::EXPRESS_ACCOUNT_DATA, $account_data ),

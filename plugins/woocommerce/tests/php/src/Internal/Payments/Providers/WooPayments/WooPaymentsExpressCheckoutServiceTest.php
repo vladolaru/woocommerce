@@ -38,6 +38,8 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_registration_generate_password' );
 		wp_set_current_user( 0 );
 		unset( $_GET['pay_for_order'], $_GET['key'], $_GET['attribute_size'] );
+		delete_option( 'woocommerce_woocommerce_payments_apple_pay_settings' );
+		delete_option( 'woocommerce_woocommerce_payments_google_pay_settings' );
 		remove_all_filters( 'wcpay_payment_request_supported_types' );
 		remove_all_filters( 'wcpay_payment_request_is_cart_supported' );
 		remove_all_filters( 'wcpay_payment_request_hide_itemization' );
@@ -1254,9 +1256,9 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should use location-centric payment-request settings when the migrated payment_request switch is absent.
+	 * @testdox Should use location-centric payment-request settings while neither Apple Pay nor Google Pay is enabled in its own settings.
 	 */
-	public function test_payment_request_uses_location_settings_without_the_payment_request_switch(): void {
+	public function test_payment_request_uses_location_settings_without_the_wallet_gateway_settings(): void {
 		$this->set_up_virtual_product_context( 'checkout' );
 		$sut = $this->create_service(
 			array(
@@ -1273,18 +1275,12 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should fall back to the payment_request switch when per-context settings are absent.
+	 * @testdox Should fall back to Apple Pay and Google Pay when per-context settings are absent and one is enabled in its own settings.
 	 */
-	public function test_payment_request_uses_the_payment_request_switch_when_context_settings_are_absent(): void {
+	public function test_payment_request_uses_the_wallet_gateway_settings_when_context_settings_are_absent(): void {
 		$this->set_up_virtual_product_context( 'checkout' );
-		$sut = $this->create_service(
-			array(
-				'payment_request' => 'yes',
-			),
-			true,
-			array(),
-			false
-		);
+		$sut = $this->create_service( array(), true, array(), false );
+		$this->set_wallet_gateway_settings( true );
 
 		$this->assertTrue( $sut->should_show_payment_request_button( 'checkout' ) );
 	}
@@ -1786,9 +1782,11 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $settings     Gateway settings.
 	 * @param array<string,mixed> $account_data Account data.
 	 * @param bool                $expected     Expected availability.
+	 * @param bool                $wallets_on   Whether Apple Pay and Google Pay are enabled in their own settings.
 	 */
-	public function test_is_express_checkout_available( array $settings, array $account_data, bool $expected ): void {
+	public function test_is_express_checkout_available( array $settings, array $account_data, bool $expected, bool $wallets_on = true ): void {
 		$sut = $this->create_service( $settings, true, array_merge( array( 'ece_confirmation_tokens_disabled' => false ), $account_data ) );
+		$this->set_wallet_gateway_settings( $wallets_on );
 
 		$this->assertSame( $expected, $sut->is_express_checkout_available() );
 	}
@@ -1796,33 +1794,32 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Data provider for express checkout availability.
 	 *
-	 * @return array<string,array{0:array<string,mixed>,1:array<string,mixed>,2:bool}>
+	 * @return array<string,array{0:array<string,mixed>,1:array<string,mixed>,2:bool,3?:bool}>
 	 */
 	public function provider_express_checkout_availability(): array {
 		$amazon_only = array(
 			'enabled'                           => 'yes',
-			'payment_request'                   => 'no',
 			'express_checkout_checkout_methods' => array( 'amazon_pay' ),
 		);
 
 		return array(
 			'payment request enabled'          => array( array( 'enabled' => 'yes' ), array(), true ),
-			'amazon pay usable'                => array( $amazon_only, array(), true ),
+			'amazon pay usable'                => array( $amazon_only, array(), true, false ),
 			'gateway disabled'                 => array( array( 'enabled' => 'no' ), array(), false ),
 			'payments disabled on the account' => array( array( 'enabled' => 'yes' ), array( 'payments_enabled' => false ), false ),
 			'no usable express method'         => array(
 				array(
 					'enabled'                        => 'yes',
-					'payment_request'                => 'no',
 					'upe_enabled_payment_method_ids' => array( 'card' ),
 				),
 				array(),
 				false,
+				false,
 			),
-			'amazon pay not eligible'          => array( $amazon_only, array( 'capabilities' => array() ), false ),
-			'amazon pay switched off'          => array( array_merge( $amazon_only, array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) ), array(), false ),
+			'amazon pay not eligible'          => array( $amazon_only, array( 'capabilities' => array() ), false, false ),
+			'amazon pay switched off'          => array( array_merge( $amazon_only, array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) ), array(), false, false ),
 			// Client 11.1.0 class-wc-payments-express-checkout-button-handler.php:79 ignores checkout locations.
-			'amazon pay usable with no location listing it' => array( array_diff_key( $amazon_only, array( 'express_checkout_checkout_methods' => true ) ), array(), true ),
+			'amazon pay usable with no location listing it' => array( array_diff_key( $amazon_only, array( 'express_checkout_checkout_methods' => true ) ), array(), true, false ),
 		);
 	}
 
@@ -2239,7 +2236,6 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 			'enabled'                              => 'yes',
 			'upe_enabled_payment_method_ids'       => array( 'card', 'amazon_pay' ),
 			'manual_capture'                       => 'no',
-			'payment_request'                      => 'yes',
 			'payment_request_button_type'          => 'default',
 			'payment_request_button_theme'         => 'dark',
 			'payment_request_button_size'          => 'medium',
@@ -2250,6 +2246,9 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		);
 		$settings         = $merge_defaults ? array_merge( $default_settings, $settings ) : $settings;
 		$account_service  = $this->create_account_service( $settings, $account_data, $test_mode );
+		if ( $merge_defaults ) {
+			$this->set_wallet_gateway_settings( true );
+		}
 
 		$provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
@@ -2268,6 +2267,17 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		$sut->init( $account_service, $provider, $tracking_controller );
 
 		return $sut;
+	}
+
+	/**
+	 * Turn Apple Pay and Google Pay on or off in their own gateway settings.
+	 *
+	 * @param bool $enabled Whether both wallets are enabled.
+	 */
+	private function set_wallet_gateway_settings( bool $enabled ): void {
+		foreach ( array( 'apple_pay', 'google_pay' ) as $wallet_method_id ) {
+			update_option( 'woocommerce_woocommerce_payments_' . $wallet_method_id . '_settings', array( 'enabled' => $enabled ? 'yes' : 'no' ) );
+		}
 	}
 
 	/**
@@ -2304,14 +2314,13 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_account_id', 'get_publishable_key', 'get_cached_account_data', 'is_test_mode_enabled', 'get_gateway_setting', 'is_payment_request_enabled' ) )
+			->onlyMethods( array( 'get_account_id', 'get_publishable_key', 'get_cached_account_data', 'is_test_mode_enabled', 'get_gateway_setting' ) )
 			->getMock();
 
 		$account_service->method( 'get_account_id' )->willReturn( 'acct_123' );
 		$account_service->method( 'get_publishable_key' )->willReturn( 'pk_test_123' );
 		$account_service->method( 'get_cached_account_data' )->willReturn( $account_data );
 		$account_service->method( 'is_test_mode_enabled' )->willReturn( $test_mode );
-		$account_service->method( 'is_payment_request_enabled' )->willReturn( 'yes' === ( $settings['payment_request'] ?? 'no' ) );
 		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
 			static fn( string $key, $fallback = null ) => array_key_exists( $key, $settings ) ? $settings[ $key ] : $fallback
 		);

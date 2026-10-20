@@ -1241,42 +1241,16 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	/**
 	 * Tell whether Apple Pay or Google Pay is enabled in their own gateway settings.
 	 *
-	 * The card gateway's removed `payment_request` switch answers only while neither of those settings exists.
-	 *
 	 * @return bool
 	 */
 	public function is_payment_request_enabled(): bool {
-		$stored_settings = $this->get_stored_gateway_settings();
-		$split_state     = $this->get_payment_request_split_state();
-		if ( null !== $split_state ) {
-			return $split_state;
-		}
-
-		return 'yes' === (string) ( $stored_settings['payment_request'] ?? 'no' );
-	}
-
-	/**
-	 * Get whether Apple Pay or Google Pay is enabled in their own gateway settings, or null before either setting exists.
-	 *
-	 * @return bool|null
-	 */
-	public function get_payment_request_split_state(): ?bool {
-		$missing_marker   = new \stdClass();
-		$has_split_option = false;
-
 		foreach ( WooPaymentsGatewaySettingsSynchronizer::PAYMENT_REQUEST_METHOD_IDS as $method_id ) {
-			$settings = get_option( WooPaymentsGatewaySettingsSynchronizer::get_split_option_name( $method_id ), $missing_marker );
-			if ( $missing_marker === $settings ) {
-				continue;
-			}
-
-			$has_split_option = true;
-			if ( is_array( $settings ) && 'yes' === (string) ( $settings['enabled'] ?? 'no' ) ) {
+			if ( $this->is_payment_request_method_enabled( $method_id ) ) {
 				return true;
 			}
 		}
 
-		return $has_split_option ? false : null;
+		return false;
 	}
 
 	/**

@@ -1041,12 +1041,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should expose Apple Pay and Google Pay duplicate clusters when payment request is enabled.
 	 */
 	public function test_get_settings_exposes_apple_pay_google_pay_duplicate_cluster_when_payment_request_is_enabled(): void {
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array(
-				'payment_request' => 'yes',
-			)
-		);
+		$this->set_wallet_gateway_settings( true );
 		$this->mock_payment_gateways(
 			array(
 				$this->create_gateway( 'woocommerce_payments', 'yes' ),
@@ -1083,17 +1078,15 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should omit the Apple Pay and Google Pay duplicate cluster ($scenario).
 	 * @dataProvider provide_omitted_wallet_clusters
 	 *
-	 * @param string                                                      $scenario        Case.
-	 * @param array<string,string>|null                                   $stored_settings Stored WooPayments settings, or null when absent.
-	 * @param array<int,array{0:string,1:string,2?:array<string,string>}> $gateway_specs   Gateway ID, enabled flag and options.
-	 * @param string                                                      $message         Assertion message.
+	 * @param string                                                      $scenario      Case.
+	 * @param bool|null                                                   $wallets_on    Whether Apple Pay and Google Pay are enabled in their own settings, or null when neither settings row exists.
+	 * @param array<int,array{0:string,1:string,2?:array<string,string>}> $gateway_specs Gateway ID, enabled flag and options.
+	 * @param string                                                      $message       Assertion message.
 	 */
-	public function test_get_settings_omits_apple_pay_google_pay_duplicate_cluster( string $scenario, ?array $stored_settings, array $gateway_specs, string $message ): void {
+	public function test_get_settings_omits_apple_pay_google_pay_duplicate_cluster( string $scenario, ?bool $wallets_on, array $gateway_specs, string $message ): void {
 		unset( $scenario );
-		if ( null === $stored_settings ) {
-			delete_option( 'woocommerce_woocommerce_payments_settings' );
-		} else {
-			update_option( 'woocommerce_woocommerce_payments_settings', $stored_settings );
+		if ( null !== $wallets_on ) {
+			$this->set_wallet_gateway_settings( $wallets_on );
 		}
 		$this->mock_payment_gateways(
 			array_map(
@@ -1108,9 +1101,9 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Provide gateway lists without a wallet duplicate: case, stored settings, gateways, assertion message.
+	 * Provide gateway lists without a wallet duplicate: case, wallet state, gateways, assertion message.
 	 *
-	 * @return array<string,array{0:string,1:array<string,string>|null,2:array<int,array{0:string,1:string,2?:array<string,string>}>,3:string}>
+	 * @return array<string,array{0:string,1:bool|null,2:array<int,array{0:string,1:string,2?:array<string,string>}>,3:string}>
 	 */
 	public function provide_omitted_wallet_clusters(): array {
 		return array(
@@ -1125,7 +1118,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			),
 			'payment request off'      => array(
 				'payment request off',
-				array( 'payment_request' => 'no' ),
+				false,
 				array(
 					array( 'woocommerce_payments', 'yes' ),
 					array( 'legacy_google_pay_gateway', 'yes' ),
@@ -1134,7 +1127,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			),
 			'option-gated wallets off' => array(
 				'option-gated wallets off',
-				array( 'payment_request' => 'yes' ),
+				true,
 				array(
 					array( 'woocommerce_payments', 'yes' ),
 					array( 'stripe', 'yes', array( 'payment_request' => 'no' ) ),
@@ -1219,16 +1212,11 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * @testWith ["yes", true]
 	 *           ["no", false]
 	 *
-	 * @param string $payment_request_setting WooPayments payment request setting.
-	 * @param bool   $expect_cluster          Whether the Apple Pay and Google Pay cluster is expected.
+	 * @param string $wallet_setting  Enabled setting of the Apple Pay and Google Pay gateways.
+	 * @param bool   $expect_cluster  Whether the Apple Pay and Google Pay cluster is expected.
 	 */
-	public function test_get_settings_clusters_stripe_express_checkout_option_with_the_payment_request_setting( string $payment_request_setting, bool $expect_cluster ): void {
-		update_option(
-			'woocommerce_woocommerce_payments_settings',
-			array(
-				'payment_request' => $payment_request_setting,
-			)
-		);
+	public function test_get_settings_clusters_stripe_express_checkout_option_with_the_wallet_gateway_settings( string $wallet_setting, bool $expect_cluster ): void {
+		$this->set_wallet_gateway_settings( 'yes' === $wallet_setting );
 		// WooCommerce Stripe Gateway 11 stores its Apple Pay / Google Pay switch as `express_checkout`, not `payment_request`.
 		$this->mock_payment_gateways(
 			array(
@@ -1549,7 +1537,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'yes', $stored['test_mode'] );
 		$this->assertSame( 'yes', $stored['enable_logging'] );
 		$this->assertSame( 'yes', $stored['saved_cards'] );
-		$this->assertArrayNotHasKey( 'payment_request', $stored );
 		$this->assertSame( 'no', get_option( 'woocommerce_woocommerce_payments_apple_pay_settings' )['enabled'] );
 		$this->assertSame( 'no', get_option( 'woocommerce_woocommerce_payments_google_pay_settings' )['enabled'] );
 		$this->assertSame( 'yes', $stored['express_checkout_in_payment_methods'] );
@@ -3573,6 +3560,17 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$duplicate_gateway_methods_service->init( $account_service, wc_get_container()->get( WooPaymentsLogger::class ) );
 
 		return $duplicate_gateway_methods_service;
+	}
+
+	/**
+	 * Turn Apple Pay and Google Pay on or off in their own gateway settings.
+	 *
+	 * @param bool $enabled Whether both wallets are enabled.
+	 */
+	private function set_wallet_gateway_settings( bool $enabled ): void {
+		foreach ( WooPaymentsGatewaySettingsSynchronizer::PAYMENT_REQUEST_METHOD_IDS as $wallet_method_id ) {
+			update_option( WooPaymentsGatewaySettingsSynchronizer::get_split_option_name( $wallet_method_id ), array( 'enabled' => $enabled ? 'yes' : 'no' ) );
+		}
 	}
 
 	/**

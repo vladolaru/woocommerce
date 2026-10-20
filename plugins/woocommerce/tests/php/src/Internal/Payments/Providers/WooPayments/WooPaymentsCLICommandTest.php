@@ -157,7 +157,6 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 				'test_mode'                      => 'yes',
 				'upe_enabled_payment_method_ids' => array( 'card', 'link' ),
 				'platform_checkout'              => 'yes',
-				'payment_request'                => 'yes',
 			)
 		);
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );

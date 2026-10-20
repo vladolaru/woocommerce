@@ -735,7 +735,6 @@ class WooPaymentsExpressCheckoutControllerTest extends WC_Unit_Test_Case {
 			static function ( string $key, $fallback = null ) {
 				$settings = array(
 					'manual_capture'                   => 'no',
-					'payment_request'                  => 'yes',
 					'payment_request_button_type'      => 'default',
 					'payment_request_button_theme'     => 'dark',
 					'payment_request_button_size'      => 'medium',

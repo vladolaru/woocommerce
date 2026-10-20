@@ -253,54 +253,6 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Existing split wallet settings take precedence over the stale payment request setting.
-	 */
-	public function test_run_preserves_existing_asymmetric_split_wallet_settings(): void {
-		update_option( self::VERSION_OPTION, '10.3.0' );
-		update_option(
-			self::SETTINGS_OPTION,
-			array(
-				'payment_request'                => 'yes',
-				'upe_enabled_payment_method_ids' => array( 'card' ),
-			)
-		);
-		update_option(
-			'woocommerce_woocommerce_payments_apple_pay_settings',
-			array(
-				'enabled'     => 'no',
-				'button_type' => 'plain',
-			)
-		);
-		update_option(
-			'woocommerce_woocommerce_payments_google_pay_settings',
-			array(
-				'enabled'     => 'yes',
-				'button_type' => 'buy',
-			)
-		);
-
-		$this->create_runner()->run();
-		$stored = get_option( self::SETTINGS_OPTION );
-
-		$this->assertIsArray( $stored );
-		$this->assertArrayNotHasKey( 'payment_request', $stored );
-		$this->assertSame(
-			array(
-				'enabled'     => 'no',
-				'button_type' => 'plain',
-			),
-			get_option( 'woocommerce_woocommerce_payments_apple_pay_settings' )
-		);
-		$this->assertSame(
-			array(
-				'enabled'     => 'yes',
-				'button_type' => 'buy',
-			),
-			get_option( 'woocommerce_woocommerce_payments_google_pay_settings' )
-		);
-	}
-
-	/**
 	 * @testdox Cleans stale local state that is safe to remove during the cutover.
 	 */
 	public function test_run_deletes_stale_transients_options_and_user_meta(): void {
@@ -486,9 +438,8 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	 */
 	public function test_retired_allowlists_stay_at_or_below_the_cutover_plugin_floor(): void {
 		$allowlists = array(
-			'RETIRED_SETTINGS_KEYS' => WooPaymentsCutoverDataMigration::RETIRED_SETTINGS_KEYS,
-			'RETIRED_OPTIONS'       => WooPaymentsCutoverDataMigration::RETIRED_OPTIONS,
-			'RETIRED_TRANSIENTS'    => WooPaymentsCutoverDataMigration::RETIRED_TRANSIENTS,
+			'RETIRED_OPTIONS'    => WooPaymentsCutoverDataMigration::RETIRED_OPTIONS,
+			'RETIRED_TRANSIENTS' => WooPaymentsCutoverDataMigration::RETIRED_TRANSIENTS,
 		);
 		$floors     = array(
 			WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION,

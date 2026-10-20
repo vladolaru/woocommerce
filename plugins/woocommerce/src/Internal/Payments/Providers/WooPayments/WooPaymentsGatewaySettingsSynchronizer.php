@@ -96,14 +96,7 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 			$has_pending_payment_request
 		) {
 			$payment_request_enabled = 'yes' === $pending_payment_request_setting;
-		} elseif (
-			null === $payment_request_enabled &&
-			array_key_exists( 'payment_request', $settings ) &&
-			null === $this->account_service->get_payment_request_split_state()
-		) {
-			$payment_request_enabled = 'yes' === (string) $settings['payment_request'];
 		}
-		unset( $settings['payment_request'] );
 
 		$normalization             = $this->normalize_settings( $settings );
 		$settings                  = $normalization['settings'];

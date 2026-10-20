@@ -885,17 +885,17 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should read Apple Pay and Google Pay as on from their own gateway settings, and from the card settings only before either exists ($description).
+	 * @testdox Should read Apple Pay and Google Pay as on only from their own gateway settings ($description).
 	 * @dataProvider payment_request_enabled_provider
 	 *
 	 * @param string              $description Case.
 	 * @param array<string,mixed> $wallet_rows Stored wallet gateway settings by payment method ID.
-	 * @param string              $card_switch Stored payment_request value in the card gateway settings.
 	 * @param bool                $expected    Whether Apple Pay or Google Pay reads as on.
 	 */
-	public function test_is_payment_request_enabled( string $description, array $wallet_rows, string $card_switch, bool $expected ): void {
+	public function test_is_payment_request_enabled( string $description, array $wallet_rows, bool $expected ): void {
 		unset( $description );
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'payment_request' => $card_switch ) );
+		// The card gateway's old switch, moved into the wallet rows by the extension's 10.4.0 migration (includes/migrations/class-migrate-payment-request-to-express-checkout-enabled.php), is never read.
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'payment_request' => 'yes' ) );
 		foreach ( $wallet_rows as $method_id => $row ) {
 			update_option( 'woocommerce_woocommerce_payments_' . $method_id . '_settings', $row );
 		}
@@ -904,36 +904,33 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Provide wallet rows: case, wallet gateway settings, card switch, expected.
+	 * Provide wallet rows: case, wallet gateway settings, expected.
 	 *
-	 * Client 11.1.0 reads the Google Pay and Apple Pay gateways' enabled setting (includes/class-wc-payment-gateway-wcpay.php:996-1009).
+	 * Client 11.1.0 reads the Google Pay and Apple Pay gateways' enabled setting, off when neither is stored (includes/class-wc-payment-gateway-wcpay.php:996-1009).
 	 *
-	 * @return array<string,array{0:string,1:array<string,mixed>,2:string,3:bool}>
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:bool}>
 	 */
 	public function payment_request_enabled_provider(): array {
 		return array(
-			'no wallet rows, card switch on'  => array( 'no wallet rows, card switch on', array(), 'yes', true ),
-			'no wallet rows, card switch off' => array( 'no wallet rows, card switch off', array(), 'no', false ),
-			'Apple Pay on'                    => array( 'Apple Pay on', array( 'apple_pay' => array( 'enabled' => 'yes' ) ), 'no', true ),
-			'Google Pay on'                   => array(
+			'neither wallet row exists' => array( 'neither wallet row exists', array(), false ),
+			'Apple Pay on'              => array( 'Apple Pay on', array( 'apple_pay' => array( 'enabled' => 'yes' ) ), true ),
+			'Google Pay on'             => array(
 				'Google Pay on',
 				array(
 					'apple_pay'  => array( 'enabled' => 'no' ),
 					'google_pay' => array( 'enabled' => 'yes' ),
 				),
-				'no',
 				true,
 			),
-			'both off, card switch on'        => array(
-				'both off, card switch on',
+			'both off'                  => array(
+				'both off',
 				array(
 					'apple_pay'  => array( 'enabled' => 'no' ),
 					'google_pay' => array( 'enabled' => 'no' ),
 				),
-				'yes',
 				false,
 			),
-			'a row not an array'              => array( 'a row not an array', array( 'google_pay' => 'corrupt' ), 'yes', false ),
+			'a row not an array'        => array( 'a row not an array', array( 'google_pay' => 'corrupt' ), false ),
 		);
 	}
 

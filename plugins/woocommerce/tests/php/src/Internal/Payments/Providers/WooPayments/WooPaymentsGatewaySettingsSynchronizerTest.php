@@ -212,13 +212,10 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 	public function test_persist_projects_payment_request_to_wallet_split_gateways(): void {
 		$synchronizer = $this->create_synchronizer();
 		$enabled      = $synchronizer->persist(
-			array(
-				'payment_request'                => 'yes',
-				'upe_enabled_payment_method_ids' => array( 'card' ),
-			)
+			array( 'upe_enabled_payment_method_ids' => array( 'card' ) ),
+			true
 		);
 
-		$this->assertArrayNotHasKey( 'payment_request', $enabled['settings'] );
 		$this->assertSame( array( 'card' ), $enabled['settings']['upe_enabled_payment_method_ids'] );
 		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_apple_pay_settings' )['enabled'] );
 		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_google_pay_settings' )['enabled'] );
@@ -248,10 +245,8 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 
 		try {
 			$first = $this->create_synchronizer()->persist(
-				array(
-					'payment_request'                => 'yes',
-					'upe_enabled_payment_method_ids' => array( 'card' ),
-				)
+				array( 'upe_enabled_payment_method_ids' => array( 'card' ) ),
+				true
 			);
 		} finally {
 			remove_filter( 'pre_update_option_' . $google_option, $reject_update, 10 );
@@ -260,7 +255,6 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $first['persisted'] );
 		$this->assertSame( array( $google_option ), $first['failed_option_names'] );
 		$stored_settings = get_option( self::SETTINGS_OPTION );
-		$this->assertArrayNotHasKey( 'payment_request', $stored_settings );
 		$this->assertSame( 'yes', get_option( self::PAYMENT_REQUEST_PENDING_OPTION ) );
 		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_apple_pay_settings' )['enabled'] );
 		$this->assertFalse( get_option( $google_option, false ) );
@@ -271,7 +265,6 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $second['persisted'] );
 		$this->assertSame( 'yes', get_option( $google_option )['enabled'] );
-		$this->assertArrayNotHasKey( 'payment_request', get_option( self::SETTINGS_OPTION ) );
 		$this->assertFalse( get_option( self::PAYMENT_REQUEST_PENDING_OPTION, false ) );
 	}
 
@@ -287,10 +280,8 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 
 		try {
 			$first = $this->create_synchronizer()->persist(
-				array(
-					'payment_request'                => 'yes',
-					'upe_enabled_payment_method_ids' => array( 'card' ),
-				)
+				array( 'upe_enabled_payment_method_ids' => array( 'card' ) ),
+				true
 			);
 		} finally {
 			remove_filter( 'pre_update_option_' . $giropay_option, $reject_update, 10 );
@@ -310,25 +301,6 @@ class WooPaymentsGatewaySettingsSynchronizerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'no', get_option( 'woocommerce_woocommerce_payments_apple_pay_settings' )['enabled'] );
 		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_google_pay_settings' )['enabled'] );
 		$this->assertFalse( get_option( self::PAYMENT_REQUEST_PENDING_OPTION, false ) );
-	}
-
-	/**
-	 * @testdox Persisting stale combined wallet state preserves authoritative split gateway choices.
-	 */
-	public function test_persist_ignores_the_combined_payment_request_setting_when_split_options_exist(): void {
-		update_option( 'woocommerce_woocommerce_payments_google_pay_settings', array( 'enabled' => 'yes' ) );
-		update_option( 'woocommerce_woocommerce_payments_apple_pay_settings', array( 'enabled' => 'no' ) );
-
-		$result = $this->create_synchronizer()->persist(
-			array(
-				'payment_request'                => 'yes',
-				'upe_enabled_payment_method_ids' => array( 'card' ),
-			)
-		);
-
-		$this->assertArrayNotHasKey( 'payment_request', $result['settings'] );
-		$this->assertSame( 'yes', get_option( 'woocommerce_woocommerce_payments_google_pay_settings' )['enabled'] );
-		$this->assertSame( 'no', get_option( 'woocommerce_woocommerce_payments_apple_pay_settings' )['enabled'] );
 	}
 
 	/**

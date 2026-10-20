@@ -57,6 +57,8 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		}
 
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
+		delete_option( 'woocommerce_woocommerce_payments_apple_pay_settings' );
+		delete_option( 'woocommerce_woocommerce_payments_google_pay_settings' );
 		delete_option( 'wcpay_account_data' );
 		delete_option( '_wcpay_feature_customer_multi_currency' );
 		delete_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION );
@@ -971,12 +973,14 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 				'test_mode'                         => 'yes',
 				'upe_enabled_payment_method_ids'    => array( 'card', 'link' ),
 				'platform_checkout'                 => 'yes',
-				'payment_request'                   => 'yes',
 				'express_checkout_product_methods'  => array( 'payment_request' ),
 				'express_checkout_cart_methods'     => array( 'woopay' ),
 				'express_checkout_checkout_methods' => array( 'payment_request', 'woopay' ),
 			)
 		);
+		foreach ( array( 'apple_pay', 'google_pay' ) as $wallet_method_id ) {
+			update_option( 'woocommerce_woocommerce_payments_' . $wallet_method_id . '_settings', array( 'enabled' => 'yes' ) );
+		}
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( self::EXPECTED_LAST_FETCH_OPTION, 1700000000 );
 	}
