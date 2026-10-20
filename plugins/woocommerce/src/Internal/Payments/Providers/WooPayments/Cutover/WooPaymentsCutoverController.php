@@ -404,8 +404,8 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 
 	/**
 	 * Tell whether this request may start the switch: it may manage it, the WooPayments extension is not active for every
-	 * site (a switch deactivates it on its own site only), and a store waiting for its switch last ran an extension version
-	 * the switch supports.
+	 * site (a switch deactivates it on its own site only), and the extension version the store last ran either supports the
+	 * switch or can be updated by the switch for this user.
 	 *
 	 * @return bool
 	 */
@@ -414,15 +414,24 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether a store waiting for its switch last ran a WooPayments extension too old to switch from.
+	 * Tell whether the store last ran a WooPayments extension too old to switch from, and the switch cannot update it for
+	 * this user.
 	 *
-	 * Only an active extension can be updated (the job updates it while it owns payments), and its version is recorded only
-	 * when it runs, so such a store never gets through the switch's version check until the merchant updates it.
+	 * While the extension owns payments the switch updates it, which changes the plugin files every site of a network
+	 * shares, so the user must be allowed to update plugins. A store waiting for its switch cannot be updated by the switch:
+	 * the extension's version is recorded only when it runs, so the switch's version check fails until the merchant
+	 * activates and updates it.
 	 *
 	 * @return bool
 	 */
 	private function needs_extension_update_first(): bool {
-		return ! $this->arbiter->is_extension_owner() && $this->arbiter->is_awaiting_switch() && ! $this->preflight_service->is_woopayments_plugin_version_supported();
+		if ( $this->preflight_service->is_woopayments_plugin_version_supported() ) {
+			return false;
+		}
+
+		return $this->arbiter->is_extension_owner()
+			? ! $this->legacy_proxy->call_function( 'current_user_can', 'update_plugins' )
+			: $this->arbiter->is_awaiting_switch();
 	}
 
 	/**
@@ -504,8 +513,8 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Offer the switch, or say what stands in the way: the WooPayments extension is active for every site, or a store
-	 * waiting for its switch last ran an extension too old to switch from.
+	 * Offer the switch, or say what stands in the way: the WooPayments extension is active for every site, or the store last
+	 * ran an extension too old to switch from that the switch cannot update for this user.
 	 */
 	private function output_start_notice(): void {
 		if ( $this->preflight_service->is_woopayments_network_active() ) {
@@ -521,8 +530,23 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			return;
 		}
 		if ( $this->can_manage_switch() && $this->needs_extension_update_first() ) {
-			echo '<div class="notice notice-warning"><p>' . esc_html__( 'WooPayments is now part of WooCommerce. To switch, first activate the WooPayments extension in Plugins and update it to the latest version.', 'woocommerce' ) . '</p></div>';
+			$this->output_update_first_warning();
 		}
+	}
+
+	/**
+	 * Output the warning telling a store manager to update the WooPayments extension before the switch: activate and update
+	 * it on a store waiting for its switch, or have it updated while it runs, by a super admin on a multisite.
+	 */
+	private function output_update_first_warning(): void {
+		if ( ! $this->arbiter->is_extension_owner() ) {
+			$message = __( 'WooPayments is now part of WooCommerce. To switch, first activate the WooPayments extension in Plugins and update it to the latest version.', 'woocommerce' );
+		} elseif ( is_multisite() ) {
+			$message = __( 'WooPayments is now part of WooCommerce. To switch, a super admin first needs to update the WooPayments extension to the latest version.', 'woocommerce' );
+		} else {
+			$message = __( 'WooPayments is now part of WooCommerce. To switch, first update the WooPayments extension to the latest version.', 'woocommerce' );
+		}
+		echo '<div class="notice notice-warning"><p>' . esc_html( $message ) . '</p></div>';
 	}
 
 	/**

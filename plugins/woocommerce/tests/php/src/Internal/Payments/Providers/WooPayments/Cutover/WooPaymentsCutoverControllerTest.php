@@ -926,6 +926,71 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Below the minimum, the switch's job updates the extension files, which every site of a network shares.
+	 *
+	 * @testdox Below the switch's minimum extension version, only a user who may update plugins starts the switch, and others are told to have the extension updated first ($_dataName).
+	 * @dataProvider provide_update_rights_around_the_minimum_version
+	 *
+	 * @param string   $version      The extension version the store last ran.
+	 * @param string[] $capabilities The user's capabilities among manage_woocommerce, activate_plugins and update_plugins.
+	 * @param bool     $starts       Whether the user starts the switch.
+	 */
+	public function test_starting_the_switch_below_the_minimum_version_needs_update_rights( string $version, array $capabilities, bool $starts ): void {
+		update_option( 'woocommerce_woocommerce_payments_version', $version );
+		$this->fake_current_user_capabilities( $capabilities );
+
+		$this->assert_start_offered_to_the_current_user( $starts );
+	}
+
+	/**
+	 * @return array<string,array{0:string,1:string[],2:bool}>
+	 */
+	public function provide_update_rights_around_the_minimum_version(): array {
+		return array(
+			'below the minimum, without update_plugins' => array( '10.4.9', array( 'manage_woocommerce', 'activate_plugins' ), false ),
+			'below the minimum, with update_plugins'    => array( '10.4.9', array( 'manage_woocommerce', 'activate_plugins', 'update_plugins' ), true ),
+			'at the minimum, without update_plugins'    => array( '10.5.0', array( 'manage_woocommerce', 'activate_plugins' ), true ),
+			'above the minimum, without update_plugins' => array( '11.1.0', array( 'manage_woocommerce', 'activate_plugins' ), true ),
+		);
+	}
+
+	/**
+	 * On a multisite whose Network Settings give site admins the Plugins menu, a site administrator may activate plugins but
+	 * not update them; only a super admin may (WordPress 7.1.3 wp-includes/capabilities.php:619-635 and 654-666).
+	 *
+	 * @testdox On a network that gives site admins the Plugins menu, below the switch's minimum extension version a $who sees whether they may start the switch.
+	 * @group multisite
+	 * @testWith ["site administrator", false]
+	 *           ["super admin", true]
+	 *
+	 * @param string $who    The current user: a site administrator or a super admin.
+	 * @param bool   $starts Whether the user starts the switch.
+	 */
+	public function test_on_a_network_a_super_admin_updates_the_extension_before_the_switch( string $who, bool $starts ): void {
+		if ( ! is_multisite() ) {
+			$this->markTestSkipped( 'Test only runs on Multisite.' );
+		}
+		update_site_option( 'menu_items', array( 'plugins' => '1' ) );
+		$user_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		if ( 'super admin' === $who ) {
+			grant_super_admin( $user_id );
+		}
+		wp_set_current_user( $user_id );
+		update_option( 'woocommerce_woocommerce_payments_version', '10.4.9' );
+		$capabilities = array_values( array_filter( array( 'manage_woocommerce', 'activate_plugins', 'update_plugins' ), 'current_user_can' ) );
+		$this->assertContains( 'activate_plugins', $capabilities, 'The Plugins menu lets the user activate plugins.' );
+		$this->fake_current_user_capabilities( $capabilities );
+
+		try {
+			$this->assert_start_offered_to_the_current_user( $starts );
+		} finally {
+			revoke_super_admin( $user_id );
+			wp_set_current_user( 0 );
+			delete_site_option( 'menu_items' );
+		}
+	}
+
+	/**
 	 * The old-version rule guards the start action only; the bundled-exclusion notice is information.
 	 *
 	 * @testdox A store waiting for its switch with an old extension that is excluded for bundled Stripe Billing subscriptions is still told why, with no start button.
@@ -1563,6 +1628,57 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Render the notices of a store whose WooPayments extension is active with the feature on, then click the start, and
+	 * assert whether the current user is offered and starts the switch or is told to have the extension updated first.
+	 *
+	 * @param bool $starts Whether the current user starts the switch.
+	 */
+	private function assert_start_offered_to_the_current_user( bool $starts ): void {
+		$this->fake_plugin_active();
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @var string[] */
+			public array $sources = array();
+
+			/** Return no record, as on a store that never started the switch. */
+			public function refresh_notice_record(): ?array {
+				return null;
+			}
+
+			/** Offer a new generation. */
+			public function can_offer_start(): bool {
+				return true;
+			}
+
+			/**
+			 * @param string $source Trigger source.
+			 */
+			public function enqueue( string $source ): bool {
+				$this->sources[] = $source;
+				return true;
+			}
+		};
+		$controller = $this->create_cutover_controller( $job );
+
+		$notices = $this->render_admin_notices( $controller );
+		$controller->enqueue_merchant_start();
+
+		$warning = is_multisite()
+			? 'WooPayments is now part of WooCommerce. To switch, a super admin first needs to update the WooPayments extension to the latest version.'
+			: 'WooPayments is now part of WooCommerce. To switch, first update the WooPayments extension to the latest version.';
+		if ( $starts ) {
+			$this->assertStringContainsString( 'Start the switch', $notices );
+			$this->assertStringNotContainsString( 'to the latest version', $notices );
+			$this->assertSame( array( 'merchant' ), $job->sources );
+		} else {
+			$this->assertStringContainsString( $warning, $notices );
+			$this->assertStringNotContainsString( 'Start the switch', $notices );
+			$this->assertSame( array(), $job->sources, 'The click queues nothing.' );
+		}
+	}
+
+	/**
 	 * Render admin notices for a cutover controller.
 	 *
 	 * @param WooPaymentsCutoverController $controller Cutover controller.
@@ -1673,7 +1789,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 						$this->plugin_active = false;
 					}
 				},
-				'current_user_can'   => fn( $capability ) => in_array( $capability, array( 'manage_woocommerce', 'activate_plugins', 'manage_network_plugins' ), true )
+				'current_user_can'   => fn( $capability ) => in_array( $capability, array( 'manage_woocommerce', 'activate_plugins', 'update_plugins', 'manage_network_plugins' ), true )
 					? in_array( $capability, $this->granted_cutover_capabilities, true )
 					: current_user_can( $capability ),
 			)
@@ -1700,7 +1816,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Grant exactly these cutover-relevant capabilities to the current user.
 	 *
-	 * @param string[] $capabilities Granted among manage_woocommerce and activate_plugins.
+	 * @param string[] $capabilities Granted among manage_woocommerce, activate_plugins, update_plugins and manage_network_plugins.
 	 */
 	private function fake_current_user_capabilities( array $capabilities ): void {
 		$this->granted_cutover_capabilities = $capabilities;
