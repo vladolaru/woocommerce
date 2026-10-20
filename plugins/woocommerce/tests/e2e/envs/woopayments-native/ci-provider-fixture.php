@@ -391,175 +391,13 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 
 		$state = $this->state();
 		switch ( "$method $route" ) {
-			case 'GET public/payment_methods/recommended':
-				// Recorded from a real US account's GET public/payment_methods/recommended response, 2026-10-18.
-				// The platform answers a bare list, and the store adds the enabled flag when it reads the cache.
-				return $this->response(
-					array(
-						array(
-							'id'          => 'card',
-							'type'        => 'enabled',
-							'category'    => 'primary',
-							'title'       => 'Credit/debit card',
-							'description' => 'Accepts all major credit and debit cards',
-							'priority'    => 1,
-							'required'    => true,
-							'icon'        => 'https://s0.wp.com/i/payment-methods/card.svg',
-						),
-						array(
-							'id'          => 'apple_pay',
-							'type'        => 'enabled',
-							'category'    => 'primary',
-							'title'       => 'Apple Pay',
-							'description' => 'Give your shoppers an easy and secure way to pay, with Apple Pay.',
-							'priority'    => 2,
-							'required'    => false,
-							'icon'        => 'https://s0.wp.com/i/payment-methods/apple_pay.svg',
-						),
-						array(
-							'id'          => 'google_pay',
-							'type'        => 'enabled',
-							'category'    => 'primary',
-							'title'       => 'Google Pay',
-							'description' => 'Offer customers a fast and secure checkout experience with Google Pay.',
-							'priority'    => 3,
-							'required'    => false,
-							'icon'        => 'https://s0.wp.com/i/payment-methods/google_pay.svg',
-						),
-						array(
-							'id'          => 'woopay',
-							'type'        => 'enabled',
-							'category'    => 'primary',
-							'title'       => 'WooPay',
-							'description' => 'Boost conversions and customer loyalty by offering a secure way to pay with a single click.',
-							'priority'    => 4,
-							'required'    => false,
-							'icon'        => 'https://s0.wp.com/i/payment-methods/woopay.svg',
-						),
-						array(
-							'id'          => 'affirm',
-							'type'        => 'enabled',
-							'category'    => 'primary',
-							'title'       => 'Affirm',
-							'description' => 'Allow your shoppers to pay over time with Affirm.',
-							'priority'    => 5,
-							'required'    => false,
-							'icon'        => 'https://s0.wp.com/i/payment-methods/affirm.svg',
-						),
-						array(
-							'id'          => 'afterpay_clearpay',
-							'type'        => 'enabled',
-							'category'    => 'primary',
-							'title'       => 'Cash App Afterpay',
-							'description' => 'Allow your shoppers to pay over time with Cash App Afterpay.',
-							'priority'    => 6,
-							'required'    => false,
-							'icon'        => 'https://s0.wp.com/i/payment-methods/afterpay_clearpay.svg',
-						),
-						array(
-							'id'          => 'klarna',
-							'type'        => 'enabled',
-							'category'    => 'primary',
-							'title'       => 'Klarna',
-							'description' => 'Allow your shoppers to pay over time with Klarna.',
-							'priority'    => 7,
-							'required'    => false,
-							'icon'        => 'https://s0.wp.com/i/payment-methods/klarna.svg',
-						),
-						array(
-							'id'          => 'bancontact',
-							'type'        => 'available',
-							'category'    => 'secondary',
-							'title'       => 'Bancontact',
-							'description' => 'Bancontact is a bank redirect payment method offered by more than 80% of online businesses in Belgium.',
-							'priority'    => 8,
-							'required'    => false,
-							'icon'        => 'https://s0.wp.com/i/payment-methods/bancontact.svg',
-						),
-						array(
-							'id'          => 'eps',
-							'type'        => 'available',
-							'category'    => 'secondary',
-							'title'       => 'EPS',
-							'description' => "Accept your payment with EPS \u{2014} a common payment method in Austria.",
-							'priority'    => 9,
-							'required'    => false,
-							'icon'        => 'https://s0.wp.com/i/payment-methods/eps.svg',
-						),
-						array(
-							'id'          => 'ideal',
-							'type'        => 'available',
-							'category'    => 'secondary',
-							'title'       => 'iDEAL',
-							'description' => 'iDEAL is a Netherlands-based payment method that allows customers to complete transactions online using their bank credentials.',
-							'priority'    => 10,
-							'required'    => false,
-							'icon'        => 'https://s0.wp.com/i/payment-methods/ideal.svg',
-						),
-						array(
-							'id'          => 'multibanco',
-							'type'        => 'available',
-							'category'    => 'secondary',
-							'title'       => 'Multibanco',
-							'description' => 'A voucher based payment method for your customers in Portugal.',
-							'priority'    => 14,
-							'required'    => false,
-							'icon'        => 'https://s0.wp.com/i/payment-methods/multibanco.svg',
-						),
-						array(
-							'id'          => 'amazon_pay',
-							'type'        => 'enabled',
-							'category'    => 'primary',
-							'title'       => 'Amazon Pay',
-							'description' => 'Offer customers a fast, secure checkout experience with Amazon Pay.',
-							'priority'    => 15,
-							'required'    => false,
-							'icon'        => 'https://s0.wp.com/i/payment-methods/amazon_pay.svg',
-						),
-						array(
-							'id'          => 'alipay',
-							'type'        => 'available',
-							'category'    => 'secondary',
-							'title'       => 'Alipay',
-							'description' => 'A digital wallet for customers with mainland China Alipay accounts. Regional versions like AlipayHK are not supported.',
-							'priority'    => 15,
-							'required'    => false,
-							'icon'        => 'https://s0.wp.com/i/payment-methods/alipay.svg',
-						),
-						array(
-							'id'          => 'wechat_pay',
-							'type'        => 'available',
-							'category'    => 'secondary',
-							'title'       => 'WeChat Pay',
-							'description' => 'A digital wallet for customers with mainland China WeChat Pay wallets. Regional versions like WeChat Pay HK are not supported.',
-							'priority'    => 16,
-							'required'    => false,
-							'icon'        => 'https://s0.wp.com/i/payment-methods/wechat_pay.svg',
-						),
-					)
-				);
 			case 'GET public/incentives':
-			case 'GET public/onboarding/fields_data':
+				// The platform answers 204 with no body when no incentive applies to a store that already has WooPayments.
+				return $this->no_content_response( array( 'cache-for' => '86400' ) );
 			case 'GET payment_method_promotions':
 				return $this->response( array() );
-			case 'GET public/accounts/fraud_services':
-				return $this->response(
-					array(
-						'version'  => 1,
-						'enabled'  => false,
-						'services' => array(),
-					)
-				);
 			case 'GET accounts':
 				return $this->response( $state['account'] );
-			case 'GET woopay/compatibility':
-				return $this->response(
-					array(
-						'incompatible_extensions' => array(),
-						'adapted_extensions'      => array(),
-						'available_countries'     => array( 'US' ),
-					)
-				);
 			case 'POST accounts':
 				$state['settings'] = array_replace_recursive( $state['settings'], $payload );
 				$state['account']  = $this->apply_account_write( $state['account'], $payload );
@@ -589,9 +427,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				update_option( self::STATE_OPTION, $state );
 				return $this->response( array( 'result' => 'success' ) );
 			case 'GET transactions':
-				return $this->response( array( 'data' => $state['transactions'] ) );
-			case 'GET transactions/summary':
-				return $this->response( $this->summary( $state['transactions'] ) );
+				return $this->response( $this->recorded_list( 'GET transactions', $state['transactions'] ) );
 			case 'GET authorizations/summary':
 				return $this->response(
 					array(
@@ -608,13 +444,11 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			case 'GET deposits/overview-all':
 				return $this->response( $state['overview'] );
 			case 'GET deposits':
-				return $this->response( array( 'data' => $this->filter_status( $state['deposits'], $query ) ) );
+				return $this->response( $this->recorded_list( 'GET deposits', $this->filter_status( $state['deposits'], $query ) ) );
 			case 'GET deposits/summary':
-				return $this->response( $this->summary( $this->filter_status( $state['deposits'], $query ) ) );
+				return $this->response( $this->deposits_summary( $this->filter_status( $state['deposits'], $query ) ) );
 			case 'GET disputes':
-				return $this->response( array( 'data' => $state['disputes'] ) );
-			case 'GET disputes/summary':
-				return $this->response( $this->summary( $state['disputes'] ) );
+				return $this->response( $this->recorded_list( 'GET disputes', $state['disputes'] ) );
 			case 'GET transact/currency/rates':
 				return $this->response(
 					array(
@@ -826,6 +660,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 
 	/** @return array<string,mixed> */
 	private function default_state(): array {
+		$recorded_account                         = $this->recorded_required( 'GET accounts (excerpt)' );
 		$account                                  = array(
 			'account_id'                 => 'acct_native_ci',
 			'country'                    => 'US',
@@ -855,32 +690,19 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			'communications_email'       => 'owner@example.test',
 			'store_currencies'           => array( 'default' => 'usd' ),
 			'customer_currencies'        => array( 'supported' => array( 'usd', 'eur', 'aud', 'cad', 'chf', 'gbp', 'jpy', 'nzd', 'sek' ) ),
-			'account_details'            => array(
-				'account_status' => array( 'text' => 'Enabled' ),
-				'payout_status'  => array( 'text' => 'Enabled' ),
-				'banner'         => null,
-			),
-			'deposits'                   => array(
-				'interval'                 => 'daily',
-				'weekly_anchor'            => 'monday',
-				'monthly_anchor'           => 1,
-				'delay_days'               => 2,
-				'status'                   => 'enabled',
-				'restrictions'             => '',
-				'completed_waiting_period' => true,
-			),
+			'account_details'            => $recorded_account['account_details'],
+			'deposits'                   => $recorded_account['deposits'],
 			'platform_checkout_eligible' => true,
-			'is_documents_enabled'       => true,
+			'is_documents_enabled'       => $recorded_account['is_documents_enabled'],
+			'card_present_eligible'      => $recorded_account['card_present_eligible'],
+			'has_card_readers_available' => $recorded_account['has_card_readers_available'],
 			'capabilities'               => array(
 				'card_payments'   => 'active',
 				'klarna_payments' => 'active',
 			),
 			'supported_payment_methods'  => array( 'card', 'klarna' ),
 			'fraud_services'             => array(),
-			'fees'                       => array(
-				'card'   => array(),
-				'klarna' => array(),
-			),
+			'fees'                       => $recorded_account['fees'],
 		);
 		$settings                                 = array(
 			'test_mode'                       => true,
@@ -897,9 +719,9 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			'branding_primary_color'          => '#000000',
 			'branding_secondary_color'        => '#ffffff',
 			'communications_email'            => 'owner@example.test',
-			'deposit_schedule_interval'       => 'daily',
-			'deposit_schedule_monthly_anchor' => 1,
-			'deposit_schedule_weekly_anchor'  => 'monday',
+			'deposit_schedule_interval'       => $recorded_account['deposits']['interval'],
+			'deposit_schedule_monthly_anchor' => $recorded_account['deposits']['monthly_anchor'],
+			'deposit_schedule_weekly_anchor'  => $recorded_account['deposits']['weekly_anchor'],
 		);
 		$fraud_ruleset                            = array(
 			'ruleset_config' => array(),
@@ -911,73 +733,10 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			'settings'                     => $settings,
 			'woopay_webhook_secret_hash'   => null,
 			'expected_retained_state'      => array( 'webhook_secret_hash' => null ),
-			'transactions'                 => array(
-				array(
-					'id'             => 'ch_ci_1',
-					'transaction_id' => 'ch_ci_1',
-					'type'           => 'charge',
-					'amount'         => 10000,
-					'net'            => 9700,
-					'fee'            => 300,
-					'currency'       => 'usd',
-					'created'        => 1704067200,
-					'date'           => 1704067200,
-					'status'         => 'succeeded',
-				),
-			),
-			'deposits'                     => array(
-				array(
-					'id'           => 'po_ci_paid',
-					'status'       => 'paid',
-					'amount'       => 9700,
-					'currency'     => 'usd',
-					'date'         => 1704153600,
-					'arrival_date' => 1704240000,
-				),
-				array(
-					'id'           => 'po_ci_pending',
-					'status'       => 'pending',
-					'amount'       => 2500,
-					'currency'     => 'usd',
-					'date'         => 1704326400,
-					'arrival_date' => 1704412800,
-				),
-				array(
-					'id'           => 'po_ci_pending_2',
-					'status'       => 'pending',
-					'amount'       => 1500,
-					'currency'     => 'usd',
-					'date'         => 1704499200,
-					'arrival_date' => 1704585600,
-				),
-			),
-			'disputes'                     => array(),
-			'overview'                     => array(
-				'balance' => array(
-					'available' => array(
-						array(
-							'amount'   => 9700,
-							'currency' => 'usd',
-						),
-					),
-					'pending'   => array(
-						array(
-							'amount'   => 2500,
-							'currency' => 'usd',
-						),
-					),
-					'instant'   => array(),
-				),
-				'deposit' => array(
-					'last_paid' => array(
-						array(
-							'amount'   => 9700,
-							'currency' => 'usd',
-						),
-					),
-				),
-				'account' => array( 'default_currency' => 'usd' ),
-			),
+			'transactions'                 => $this->recorded_required( 'GET transactions' )['data'],
+			'deposits'                     => $this->recorded_required( 'GET deposits' )['data'],
+			'disputes'                     => $this->recorded_required( 'GET disputes' )['data'],
+			'overview'                     => $this->recorded_required( 'GET deposits/overview-all' ),
 			'fraud_ruleset'                => $fraud_ruleset,
 		);
 		$state['audit_baseline']                  = $this->canonicalize(
@@ -1060,17 +819,35 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	}
 
 	/**
-	 * Summarizes fixture rows.
+	 * Answers the recorded payouts summary for the given payout rows: the recorded count and total are replaced by the rows' own,
+	 * so a status filter changes them the way the platform's filters do.
 	 *
-	 * @param array<int,array<string,mixed>> $rows Fixture rows.
+	 * @param array<int,array<string,mixed>> $rows Payout rows.
 	 * @return array<string,mixed>
 	 */
-	private function summary( array $rows ): array {
-		return array(
-			'count'    => count( $rows ),
-			'total'    => array_sum( array_map( static fn( array $row ): int => (int) ( $row['amount'] ?? 0 ), $rows ) ),
-			'currency' => 'usd',
-		);
+	private function deposits_summary( array $rows ): array {
+		$summary          = $this->recorded_required( 'GET deposits/summary' );
+		$summary['count'] = count( $rows );
+		$summary['total'] = array_sum( array_map( static fn( array $row ): int => (int) ( $row['amount'] ?? 0 ), $rows ) );
+		return $summary;
+	}
+
+	/**
+	 * Answers a recorded list response with the given rows in place of the recorded ones.
+	 *
+	 * Envelope keys the platform sends beside the rows (a payout list's total count) are kept, with the count following the rows.
+	 *
+	 * @param string                         $key  "METHOD route" key of the recorded list.
+	 * @param array<int,array<string,mixed>> $rows Rows to answer.
+	 * @return array<string,mixed>
+	 */
+	private function recorded_list( string $key, array $rows ): array {
+		$list         = $this->recorded_required( $key );
+		$list['data'] = $rows;
+		if ( array_key_exists( 'total_count', $list ) ) {
+			$list['total_count'] = count( $rows );
+		}
+		return $list;
 	}
 
 	/**
@@ -1086,7 +863,6 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 		$known = array(
 			'GET accounts',
 			'GET transactions',
-			'GET transactions/summary',
 			'GET authorizations/summary',
 			'GET authorizations',
 			'GET fraud_outcomes/status/block',
@@ -1094,17 +870,12 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 			'GET deposits',
 			'GET deposits/summary',
 			'GET disputes',
-			'GET disputes/summary',
 			'GET disputes/status_counts',
 			'GET fraud_ruleset',
 			'GET tracking/info',
-			'GET woopay/compatibility',
 			'GET payment_method_promotions',
 			'GET transact/currency/rates',
-			'GET public/payment_methods/recommended',
-			'GET public/accounts/fraud_services',
 			'GET public/incentives',
-			'GET public/onboarding/fields_data',
 			'POST accounts',
 			'POST accounts/store_setup',
 			'POST accounts/embedded/session',
@@ -1740,6 +1511,22 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 	}
 
 	/**
+	 * Returns the recorded platform response for a route the fixture cannot run without.
+	 *
+	 * @param string $key "METHOD route" key.
+	 * @return array<int|string,mixed>
+	 * @throws RuntimeException When the recorded responses file has no such response.
+	 */
+	private function recorded_required( string $key ): array {
+		$recorded = $this->recorded_response( $key );
+		if ( null === $recorded ) {
+			throw new RuntimeException( esc_html( "The WooPayments fixture has no recorded response for $key." ) );
+		}
+
+		return $recorded;
+	}
+
+	/**
 	 * Creates a WordPress HTTP API response.
 	 *
 	 * @param array<int|string,mixed> $body   Response body.
@@ -1754,12 +1541,26 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 				'code'    => $status,
 				'message' => array(
 					200 => 'OK',
+					204 => 'No Content',
 					500 => 'Internal Server Error',
 				)[ $status ] ?? 'Bad Request',
 			),
 			'cookies'  => array(),
 			'filename' => null,
 		);
+	}
+
+	/**
+	 * Creates a WordPress HTTP API response with status 204 and no body.
+	 *
+	 * @param array<string,string> $headers Response headers.
+	 * @return array<string,mixed>
+	 */
+	private function no_content_response( array $headers = array() ): array {
+		$response            = $this->response( array(), 204 );
+		$response['body']    = '';
+		$response['headers'] = array_merge( $response['headers'], $headers );
+		return $response;
 	}
 
 	/**

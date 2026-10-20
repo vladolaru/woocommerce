@@ -132,16 +132,18 @@ test(
 		test.skip( ! FIXTURE, RECORDED_ONLY );
 		const health = trackPageHealth( page, baseURL );
 
-		// The fixture account has Documents enabled, so a REST request carries the
-		// Documents routes. Native registers REST controllers while plugins load,
-		// before Jetpack can confirm the connection, so this guards that early
-		// account read. The namespace index lists the route without calling it.
+		// The recorded account is a US account, for which the platform answers
+		// `is_documents_enabled` false, so a REST request carries no Documents
+		// routes, as on the client (class-wc-payments.php:2407). The namespace
+		// index lists the routes without calling them. The early account read that
+		// once dropped them for an account with Documents is covered by
+		// WooPaymentsAccountServiceTest and WooPaymentsDocumentsRestControllerTest.
 		const documentsRoute = '/wc/v3/payments/documents';
 		const namespaceIndex = await restApi.get< { routes?: unknown } >(
 			'wc/v3',
 			{ _fields: `routes.${ documentsRoute }` }
 		);
-		expect( namespaceIndex.data.routes ).toHaveProperty( [
+		expect( namespaceIndex.data.routes ).not.toHaveProperty( [
 			documentsRoute,
 		] );
 

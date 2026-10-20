@@ -41,15 +41,33 @@ const PAYOUT_COLUMNS = [
 
 const PAYOUTS_TERMINAL = /^(Payout history loaded\.|No payouts found\.)$/;
 
-// The payouts the secretless CI fixture serves (`deposits` in
-// `envs/woopayments-native/ci-provider-fixture.php`), in minor units. The
-// loaded status alone also passes on an empty list, so under the fixture the
-// case asserts these rows, which only a completed list fetch can render.
+// The payouts the secretless CI fixture serves: the recorded platform payouts
+// in `envs/woopayments-native/ci-provider-fixture-recorded.json`
+// (`GET deposits`), in minor units. The loaded status alone also passes on an
+// empty list, so under the fixture the case asserts these rows, which only a
+// completed list fetch can render. The platform reports all of them paid.
 // Status labels are the client's (11.1.0 deposits/strings.ts:24-32).
 const FIXTURE_PAYOUTS = [
-	{ id: 'po_ci_paid', status: 'Completed (paid)', amount: 9700 },
-	{ id: 'po_ci_pending', status: 'Pending', amount: 2500 },
-	{ id: 'po_ci_pending_2', status: 'Pending', amount: 1500 },
+	{
+		id: 'po_1TrY3vBzWlxcwgpPT8FxySqm',
+		status: 'Completed (paid)',
+		amount: 100,
+	},
+	{
+		id: 'po_1TrYAOBzWlxcwgpPcuNfxmhz',
+		status: 'Completed (paid)',
+		amount: 4825,
+	},
+	{
+		id: 'po_1TrYnABzWlxcwgpPhhdCrkEZ',
+		status: 'Completed (paid)',
+		amount: 4825,
+	},
+	{
+		id: 'po_1Tra17BzWlxcwgpP5ZUOsgHB',
+		status: 'Completed (paid)',
+		amount: 4825,
+	},
 ] as const;
 
 // The failure shapes these release smokes exist to catch, matching the frozen
@@ -265,18 +283,14 @@ function columnHeaders( names: readonly string[] ): RegExp[] {
 }
 
 /**
- * Assert the payout history shows the client's columns and, on a store with its
- * own payouts (the secretless CI fixture's payouts carry no type or bank
- * details), that the latest payout fills its type and bank columns.
+ * Assert the payout history shows the client's columns and that the latest
+ * payout fills its type and bank columns, as the recorded payouts of the
+ * secretless CI fixture do.
  */
 async function expectPayoutColumns( page: Page ): Promise< void > {
 	await expect( page.getByRole( 'columnheader' ) ).toHaveText(
 		columnHeaders( PAYOUT_COLUMNS )
 	);
-	if ( process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE === 'true' ) {
-		return;
-	}
-
 	const firstRow = page
 		.getByRole( 'row' )
 		.filter( { has: page.getByRole( 'cell' ) } )

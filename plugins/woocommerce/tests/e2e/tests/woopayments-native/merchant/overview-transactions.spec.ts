@@ -33,14 +33,16 @@ const TRANSACTIONS_TEST_TITLE =
 const TRANSACTIONS_TERMINAL =
 	/^(Transactions loaded\.|No transactions found\.)$/;
 
-// The one transaction the secretless CI fixture serves (`transactions` in
-// `envs/woopayments-native/ci-provider-fixture.php`), in minor units. The
-// loaded status alone also passes on an empty list, so under the fixture the
-// case asserts this row, which only a completed list fetch can render.
+// The one transaction the secretless CI fixture serves: the recorded platform
+// row for the charge in `envs/woopayments-native/ci-provider-fixture-recorded.json`
+// (`GET transactions`), in minor units. The loaded status alone also passes on
+// an empty list, so under the fixture the case asserts this row, which only a
+// completed list fetch can render.
 const FIXTURE_TRANSACTION = {
 	type: 'Charge',
-	amount: 10000,
-	net: 9700,
+	amount: 2468,
+	net: 2366,
+	fees: 102,
 } as const;
 
 // Client 11.1.0 `transactions/list/index.tsx:136-291`: the columns without
@@ -261,6 +263,12 @@ async function expectFixtureTransactionRow( page: Page ): Promise< void > {
 		formatUsd( FIXTURE_TRANSACTION.amount )
 	);
 	await expect( rows ).toContainText( formatUsd( FIXTURE_TRANSACTION.net ) );
+	// The recorded row carries its fees, so the Fees column is filled and the
+	// footer summary agrees with the row.
+	await expect( rows ).toContainText( formatUsd( FIXTURE_TRANSACTION.fees ) );
+	await expect(
+		page.getByRole( 'listitem' ).filter( { hasText: 'fees' } )
+	).toContainText( formatUsd( FIXTURE_TRANSACTION.fees ) );
 }
 
 // DataViews appends the sort direction arrow to the sorted column's header.

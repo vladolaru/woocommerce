@@ -283,18 +283,19 @@ $options['wcpay_account_data'] = $cache;
 assert_true( 'acct_native_ci' === $cache['data']['account_id'], 'fixture account cache must establish a connected account' );
 assert_true( true === $cache['data']['payments_enabled'], 'fixture account cache must establish payment readiness' );
 assert_true( '+10000000000' === $cache['data']['business_profile']['support_phone'], 'fixture account must use Core\'s explicitly valid test-account support phone' );
-assert_true( array( 'card', 'klarna' ) === array_keys( $cache['data']['fees'] ), 'fixture account fees must make card and Klarna available through the real settings computation' );
+// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Local fixture data file.
+$recorded_responses = json_decode( (string) file_get_contents( __DIR__ . '/ci-provider-fixture-recorded.json' ), true, 512, JSON_THROW_ON_ERROR );
+$recorded_account   = $recorded_responses['GET accounts (excerpt)'];
+foreach ( array( 'fees', 'account_details', 'deposits', 'is_documents_enabled', 'card_present_eligible', 'has_card_readers_available' ) as $recorded_field ) {
+	assert_same( $recorded_account[ $recorded_field ], $cache['data'][ $recorded_field ], "fixture account $recorded_field must be the recorded platform value" );
+}
+assert_true(
+	isset( $cache['data']['fees']['card']['base'], $cache['data']['fees']['klarna']['base'] ),
+	'fixture account fees must carry a base fee for card and Klarna, which the settings list reads for its fee text'
+);
 assert_true(
 	array( 'usd', 'eur', 'aud', 'cad', 'chf', 'gbp', 'jpy', 'nzd', 'sek' ) === $cache['data']['customer_currencies']['supported'],
 	'fixture account must advertise every currency exercised by the readonly catalog contracts'
-);
-assert_true(
-	array(
-		'account_status' => array( 'text' => 'Enabled' ),
-		'payout_status'  => array( 'text' => 'Enabled' ),
-		'banner'         => null,
-	) === $cache['data']['account_details'],
-	'fixture account must carry the exact account-details structure projected by the real overview service'
 );
 
 $baseline_provider_state                                 = get_option( 'e2e_woopayments_provider_fixture_state' );
@@ -507,10 +508,17 @@ foreach ( $recommendations as $recommendation ) {
 		'public payment recommendations must carry every field the platform sends, with the platform icon: ' . $recommendation['id']
 	);
 }
+$fields_data = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/wcpay/onboarding/fields_data?body-hash=&nonce=nonce&signature=signature&timestamp=1&token=dummyuser%3A1%3A1&locale=en_US' ) );
+assert_same( array( 'business_types', 'mccs_display_tree', 'industry_to_mcc' ), array_keys( $fields_data ), 'onboarding fields data must carry the platform sections the business verification step reads' );
+$us_business_types = array_values( array_filter( $fields_data['business_types'], static fn( array $country ): bool => 'US' === $country['key'] ) );
+assert_true( 1 === count( $us_business_types ) && count( $us_business_types[0]['types'] ) > 0, 'onboarding fields data must offer business types for the fixture account country' );
 $fraud_services = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/wcpay/accounts/fraud_services' ) );
-assert_true( array() !== $fraud_services, 'public fraud-service configuration must be deterministic and non-empty' );
-$incentives = body( $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/wcpay/incentives?future_business_key=ignored' ) );
-assert_true( array() === $incentives, 'known public routes must return deterministic responses without policing producer-owned query shapes' );
+assert_same( array( 'stripe' => array() ), $fraud_services, 'public fraud-service configuration must be the platform answer: a service map without Sift for an account that does not use it' );
+$incentives = $fixture->intercept( false, array( 'method' => 'GET' ), 'https://public-api.wordpress.com/wpcom/v2/wcpay/incentives?future_business_key=ignored' );
+assert_true(
+	204 === $incentives['response']['code'] && '' === $incentives['body'] && '86400' === $incentives['headers']['cache-for'],
+	'the incentives route must answer the platform\'s 204 with no body and its cache-for header, without policing producer-owned query shapes'
+);
 
 $pm_promotions = body(
 	$fixture->intercept(
@@ -551,15 +559,24 @@ $account = body(
 assert_true( 'acct_native_ci' === $account['account_id'], 'account fixture must be deterministic' );
 assert_true( true === $fixture->audit()['state_restored'], 'untouched fixture state must satisfy the audit baseline' );
 
-$woopay_compatibility_url = 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/woopay/compatibility?body-hash=&nonce=nonce&signature=signature&test_mode=1&timestamp=1&token=dummyblog%3A1%3A0';
+// The platform serves WooPay compatibility for every site, so the request path carries no site ID.
+$woopay_compatibility_url = 'https://public-api.wordpress.com/wpcom/v2/wcpay/woopay/compatibility?body-hash=&nonce=nonce&signature=signature&test_mode=1&timestamp=1&token=dummyblog%3A1%3A0';
 $woopay_compatibility     = body( $fixture->intercept( false, array( 'method' => 'GET' ), $woopay_compatibility_url ) );
 assert_true(
 	array(
 		'incompatible_extensions' => array(),
 		'adapted_extensions'      => array(),
-		'available_countries'     => array( 'US' ),
+		'available_countries'     => array(),
 	) === $woopay_compatibility,
-	'WooPay compatibility must use the exact response vocabulary consumed by Core'
+	'WooPay compatibility must use the exact response vocabulary consumed by Core, with the platform\'s recorded answer'
+);
+assert_true(
+	$fixture->intercept( false, array( 'method' => 'GET' ), str_replace( '/wpcom/v2/wcpay/', '/wpcom/v2/sites/777/wcpay/', $woopay_compatibility_url ) ) instanceof WP_Error,
+	'WooPay compatibility is not a site-scoped route, so the site-prefixed path must fail closed'
+);
+assert_true(
+	$fixture->intercept( false, array( 'method' => 'GET' ), str_replace( 'signature=signature&', '', $woopay_compatibility_url ) ) instanceof WP_Error,
+	'WooPay compatibility is signed, so a request without the Jetpack signing envelope must fail closed'
 );
 
 $compatibility_url  = 'https://public-api.wordpress.com/wpcom/v2/sites/777/wcpay/compatibility?body-hash=hash&nonce=nonce&signature=signature&timestamp=1&token=dummyblog%3A1%3A0';
@@ -615,8 +632,8 @@ $transactions = body(
 		)
 	)
 );
-assert_true( 1 === count( $transactions['data'] ), 'transaction list must be non-empty' );
-body(
+assert_same( $recorded_responses['GET transactions'], $transactions, 'the transactions list must be the recorded platform list' );
+$transactions_summary = body(
 	$fixture->intercept(
 		false,
 		array( 'method' => 'GET' ),
@@ -633,6 +650,7 @@ body(
 		)
 	)
 );
+assert_same( $recorded_responses['GET transactions/summary'], $transactions_summary, 'the transactions summary must be the recorded platform summary, which matches the recorded list' );
 $authorizations_summary = body(
 	$fixture->intercept(
 		false,
@@ -659,7 +677,10 @@ assert_true(
 );
 $overview = body( $fixture->intercept( false, array( 'method' => 'GET' ), signed_provider_url( 'deposits/overview-all', array( 'test_mode' => '1' ) ) ) );
 assert_true( isset( $overview['balance']['available'], $overview['balance']['pending'], $overview['balance']['instant'], $overview['deposit']['last_paid'], $overview['account']['default_currency'] ), 'deposits overview must expose every production balance section consumed by Core' );
-$deposits = body(
+assert_same( $recorded_responses['GET deposits/overview-all'], $overview, 'the payouts overview must be the recorded platform overview' );
+assert_true( isset( $recorded_responses[ 'GET deposits/' . $overview['deposit']['last_paid'][0]['id'] ] ), 'the overview\'s last payout must be one whose details the fixture knows, so its details page resolves' );
+$recorded_payout_ids = array_column( $recorded_responses['GET deposits']['data'], 'id' );
+$deposits            = body(
 	$fixture->intercept(
 		false,
 		array( 'method' => 'GET' ),
@@ -676,7 +697,8 @@ $deposits = body(
 		)
 	)
 );
-assert_true( 3 === count( $deposits['data'] ), 'the observed production payout-list query must return the deterministic deposits' );
+assert_same( $recorded_payout_ids, array_column( $deposits['data'], 'id' ), 'the observed production payout-list query must return the recorded payouts' );
+assert_same( count( $recorded_payout_ids ), $deposits['total_count'], 'the payout list must keep the platform total count beside its rows' );
 $currency_deposits = body(
 	$fixture->intercept(
 		false,
@@ -695,7 +717,7 @@ $currency_deposits = body(
 		)
 	)
 );
-assert_true( 3 === count( $currency_deposits['data'] ), 'the observed production balance query must accept the exact lowercase store currency' );
+assert_same( $recorded_payout_ids, array_column( $currency_deposits['data'], 'id' ), 'the observed production balance query must accept the exact lowercase store currency' );
 $paid    = body(
 	$fixture->intercept(
 		false,
@@ -732,8 +754,9 @@ $pending = body(
 		)
 	)
 );
-assert_true( array( 'po_ci_paid' ) === array_column( $paid['data'], 'id' ), 'full paid production scope must contain only the paid fixture' );
-assert_true( array( 'po_ci_pending', 'po_ci_pending_2' ) === array_column( $pending['data'], 'id' ), 'full pending production scope must contain both pending fixtures' );
+assert_same( $recorded_payout_ids, array_column( $paid['data'], 'id' ), 'full paid production scope must contain every recorded payout, which the platform reports paid' );
+assert_same( array(), $pending['data'], 'full pending production scope must be empty, as the platform answered for an account without pending payouts' );
+assert_same( 0, $pending['total_count'], 'an empty status scope must report a zero total count' );
 $paid_summary    = body(
 	$fixture->intercept(
 		false,
@@ -760,8 +783,18 @@ $pending_summary = body(
 		)
 	)
 );
-assert_true( array( 1, 9700, 'usd' ) === array( $paid_summary['count'], $paid_summary['total'], $paid_summary['currency'] ), 'paid summary must match only the paid fixture' );
-assert_true( array( 2, 4000, 'usd' ) === array( $pending_summary['count'], $pending_summary['total'], $pending_summary['currency'] ), 'pending summary must match both pending fixtures' );
+assert_same( $recorded_responses['GET deposits/summary'], $paid_summary, 'paid summary must be the recorded summary, since every recorded payout is paid' );
+assert_same(
+	array_replace(
+		$recorded_responses['GET deposits/summary'],
+		array(
+			'count' => 0,
+			'total' => 0,
+		)
+	),
+	$pending_summary,
+	'pending summary must keep the recorded envelope with a zero count and total'
+);
 $deposits_summary = body( $fixture->intercept( false, array( 'method' => 'GET' ), signed_provider_url( 'deposits/summary', array( 'test_mode' => '1' ) ) ) );
 assert_true( isset( $deposits_summary['count'], $deposits_summary['total'], $deposits_summary['currency'] ), 'deposits summary must expose the exact count, total, and currency fields consumed by Core' );
 body(
@@ -781,7 +814,7 @@ body(
 		)
 	)
 );
-body(
+$disputes = body(
 	$fixture->intercept(
 		false,
 		array( 'method' => 'GET' ),
@@ -798,6 +831,7 @@ body(
 		)
 	)
 );
+assert_same( $recorded_responses['GET disputes'], $disputes, 'the disputes list must be the recorded platform list' );
 $disputes_summary = body(
 	$fixture->intercept(
 		false,
@@ -815,14 +849,7 @@ $disputes_summary = body(
 		)
 	)
 );
-assert_true(
-	array(
-		'count'    => 0,
-		'total'    => 0,
-		'currency' => 'usd',
-	) === $disputes_summary,
-	'disputes summary must expose the exact count, total, and currency fields consumed by Core'
-);
+assert_same( $recorded_responses['GET disputes/summary'], $disputes_summary, 'disputes summary must be the recorded platform summary: count, currencies, amount by currency and earliest due date' );
 $fraud_ruleset = body( $fixture->intercept( false, array( 'method' => 'GET' ), signed_provider_url( 'fraud_ruleset', array( 'test_mode' => '1' ) ) ) );
 assert_true( array( 'ruleset_config' => array() ) === $fraud_ruleset, 'fraud settings fixture must match the real provider response envelope' );
 

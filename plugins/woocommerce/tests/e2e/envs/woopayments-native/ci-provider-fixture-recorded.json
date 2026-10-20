@@ -35,7 +35,7 @@
 						"balance_type": "payments",
 						"created": 1790773435,
 						"currency": "usd",
-						"description": "Online Payment for Order #5618 for store8889.localhost:8889 blog_id 4",
+						"description": "Online Payment for Order #5618 for example.test blog_id 777",
 						"exchange_rate": null,
 						"fee": 102,
 						"fee_details": [
@@ -72,7 +72,7 @@
 					"created": 1790773435,
 					"currency": "usd",
 					"customer": "cus_VLniUXy2K2R9QA",
-					"description": "Online Payment for Order #5618 for store8889.localhost:8889 blog_id 4",
+					"description": "Online Payment for Order #5618 for example.test blog_id 777",
 					"destination": null,
 					"dispute": null,
 					"disputed": false,
@@ -113,7 +113,7 @@
 						"order_key": "wc_order_scrubbed",
 						"order_number": "5618",
 						"payment_type": "single",
-						"site_url": "http://store8889.localhost:8889",
+						"site_url": "https://example.test",
 						"subscription_payment": "no"
 					},
 					"on_behalf_of": null,
@@ -261,7 +261,7 @@
 		"currency": "usd",
 		"customer": "cus_VLniUXy2K2R9QA",
 		"customer_account": null,
-		"description": "Online Payment for Order #5618 for store8889.localhost:8889 blog_id 4",
+		"description": "Online Payment for Order #5618 for example.test blog_id 777",
 		"excluded_payment_method_types": null,
 		"invoice": null,
 		"last_payment_error": null,
@@ -301,7 +301,7 @@
 			"order_key": "wc_order_scrubbed",
 			"order_number": "5618",
 			"payment_type": "single",
-			"site_url": "http://store8889.localhost:8889",
+			"site_url": "https://example.test",
 			"subscription_payment": "no"
 		},
 		"next_action": null,
@@ -472,7 +472,7 @@
 			"balance_type": "payments",
 			"created": 1790773435,
 			"currency": "usd",
-			"description": "Online Payment for Order #5618 for store8889.localhost:8889 blog_id 4",
+			"description": "Online Payment for Order #5618 for example.test blog_id 777",
 			"exchange_rate": null,
 			"fee": 102,
 			"fee_details": [
@@ -509,7 +509,7 @@
 		"created": 1790773435,
 		"currency": "usd",
 		"customer": "cus_VLniUXy2K2R9QA",
-		"description": "Online Payment for Order #5618 for store8889.localhost:8889 blog_id 4",
+		"description": "Online Payment for Order #5618 for example.test blog_id 777",
 		"destination": null,
 		"dispute": null,
 		"disputed": false,
@@ -550,7 +550,7 @@
 			"order_key": "wc_order_scrubbed",
 			"order_number": "5618",
 			"payment_type": "single",
-			"site_url": "http://store8889.localhost:8889",
+			"site_url": "https://example.test",
 			"subscription_payment": "no"
 		},
 		"on_behalf_of": null,
@@ -765,7 +765,7 @@
 			"created": 1790690052,
 			"currency": "usd",
 			"customer": "cus_VLivPrka1rmeC8",
-			"description": "Online Payment for Order #5506 for store8889.localhost:8889 blog_id 4",
+			"description": "Online Payment for Order #5506 for example.test blog_id 777",
 			"destination": null,
 			"dispute": "du_1UL1U2BzWlxcwgpPk8EypRUa",
 			"disputed": true,
@@ -807,7 +807,7 @@
 				"order_key": "wc_order_scrubbed",
 				"order_number": "5506",
 				"payment_type": "single",
-				"site_url": "http://store8889.localhost:8889",
+				"site_url": "https://example.test",
 				"subscription_payment": "no"
 			},
 			"on_behalf_of": null,
@@ -914,7 +914,7 @@
 			"duplicate_charge_explanation": null,
 			"duplicate_charge_id": null,
 			"enhanced_evidence": [],
-			"product_description": "Online Payment for Order #5506 for store8889.localhost:8889 blog_id 4",
+			"product_description": "Online Payment for Order #5506 for example.test blog_id 777",
 			"receipt": null,
 			"refund_policy": null,
 			"refund_policy_disclosure": null,
@@ -968,5 +968,6135 @@
 	},
 	"GET documents/summary": {
 		"count": 0
+	},
+	"GET public/payment_methods/recommended": [
+		{
+			"id": "card",
+			"type": "enabled",
+			"category": "primary",
+			"title": "Credit/debit card",
+			"description": "Accepts all major credit and debit cards",
+			"priority": 1,
+			"required": true,
+			"icon": "https://s0.wp.com/i/payment-methods/card.svg"
+		},
+		{
+			"id": "apple_pay",
+			"type": "enabled",
+			"category": "primary",
+			"title": "Apple Pay",
+			"description": "Give your shoppers an easy and secure way to pay, with Apple Pay.",
+			"priority": 2,
+			"required": false,
+			"icon": "https://s0.wp.com/i/payment-methods/apple_pay.svg"
+		},
+		{
+			"id": "google_pay",
+			"type": "enabled",
+			"category": "primary",
+			"title": "Google Pay",
+			"description": "Offer customers a fast and secure checkout experience with Google Pay.",
+			"priority": 3,
+			"required": false,
+			"icon": "https://s0.wp.com/i/payment-methods/google_pay.svg"
+		},
+		{
+			"id": "woopay",
+			"type": "enabled",
+			"category": "primary",
+			"title": "WooPay",
+			"description": "Boost conversions and customer loyalty by offering a secure way to pay with a single click.",
+			"priority": 4,
+			"required": false,
+			"icon": "https://s0.wp.com/i/payment-methods/woopay.svg"
+		},
+		{
+			"id": "affirm",
+			"type": "enabled",
+			"category": "primary",
+			"title": "Affirm",
+			"description": "Allow your shoppers to pay over time with Affirm.",
+			"priority": 5,
+			"required": false,
+			"icon": "https://s0.wp.com/i/payment-methods/affirm.svg"
+		},
+		{
+			"id": "afterpay_clearpay",
+			"type": "enabled",
+			"category": "primary",
+			"title": "Cash App Afterpay",
+			"description": "Allow your shoppers to pay over time with Cash App Afterpay.",
+			"priority": 6,
+			"required": false,
+			"icon": "https://s0.wp.com/i/payment-methods/afterpay_clearpay.svg"
+		},
+		{
+			"id": "klarna",
+			"type": "enabled",
+			"category": "primary",
+			"title": "Klarna",
+			"description": "Allow your shoppers to pay over time with Klarna.",
+			"priority": 7,
+			"required": false,
+			"icon": "https://s0.wp.com/i/payment-methods/klarna.svg"
+		},
+		{
+			"id": "bancontact",
+			"type": "available",
+			"category": "secondary",
+			"title": "Bancontact",
+			"description": "Bancontact is a bank redirect payment method offered by more than 80% of online businesses in Belgium.",
+			"priority": 8,
+			"required": false,
+			"icon": "https://s0.wp.com/i/payment-methods/bancontact.svg"
+		},
+		{
+			"id": "eps",
+			"type": "available",
+			"category": "secondary",
+			"title": "EPS",
+			"description": "Accept your payment with EPS — a common payment method in Austria.",
+			"priority": 9,
+			"required": false,
+			"icon": "https://s0.wp.com/i/payment-methods/eps.svg"
+		},
+		{
+			"id": "ideal",
+			"type": "available",
+			"category": "secondary",
+			"title": "iDEAL",
+			"description": "iDEAL is a Netherlands-based payment method that allows customers to complete transactions online using their bank credentials.",
+			"priority": 10,
+			"required": false,
+			"icon": "https://s0.wp.com/i/payment-methods/ideal.svg"
+		},
+		{
+			"id": "multibanco",
+			"type": "available",
+			"category": "secondary",
+			"title": "Multibanco",
+			"description": "A voucher based payment method for your customers in Portugal.",
+			"priority": 14,
+			"required": false,
+			"icon": "https://s0.wp.com/i/payment-methods/multibanco.svg"
+		},
+		{
+			"id": "amazon_pay",
+			"type": "enabled",
+			"category": "primary",
+			"title": "Amazon Pay",
+			"description": "Offer customers a fast, secure checkout experience with Amazon Pay.",
+			"priority": 15,
+			"required": false,
+			"icon": "https://s0.wp.com/i/payment-methods/amazon_pay.svg"
+		},
+		{
+			"id": "alipay",
+			"type": "available",
+			"category": "secondary",
+			"title": "Alipay",
+			"description": "A digital wallet for customers with mainland China Alipay accounts. Regional versions like AlipayHK are not supported.",
+			"priority": 15,
+			"required": false,
+			"icon": "https://s0.wp.com/i/payment-methods/alipay.svg"
+		},
+		{
+			"id": "wechat_pay",
+			"type": "available",
+			"category": "secondary",
+			"title": "WeChat Pay",
+			"description": "A digital wallet for customers with mainland China WeChat Pay wallets. Regional versions like WeChat Pay HK are not supported.",
+			"priority": 16,
+			"required": false,
+			"icon": "https://s0.wp.com/i/payment-methods/wechat_pay.svg"
+		}
+	],
+	"GET public/onboarding/fields_data": {
+		"business_types": [
+			{
+				"key": "AE",
+				"name": "United Arab Emirates",
+				"types": [
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "llc",
+								"name": "LLC"
+							},
+							{
+								"key": "sole_establishment",
+								"name": "Sole establishment"
+							},
+							{
+								"key": "free_zone_llc",
+								"name": "Free zone LLC"
+							},
+							{
+								"key": "free_zone_establishment",
+								"name": "Free zone establishment"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "AT",
+				"name": "Austria",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "AU",
+				"name": "Australia",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "public_corporation",
+								"name": "Public company"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Proprietary company"
+							},
+							{
+								"key": "sole_proprietorship",
+								"name": "Sole trader"
+							},
+							{
+								"key": "private_partnership",
+								"name": "Partnership"
+							},
+							{
+								"key": "trust",
+								"name": "Trust"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "unincorporated_association",
+								"name": "Unincorporated association"
+							},
+							{
+								"key": "nil",
+								"name": "Not-for-profit (NFP)"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "BE",
+				"name": "Belgium",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "BG",
+				"name": "Bulgaria",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "CA",
+				"name": "Canada",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": [
+							{
+								"key": "nil",
+								"name": "Individual / Particulier"
+							}
+						]
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "private_corporation",
+								"name": "Corporation / Société"
+							},
+							{
+								"key": "private_partnership",
+								"name": "Partnership / Société de personnes"
+							},
+							{
+								"key": "sole_proprietorship",
+								"name": "Sole proprietorship / Entreprise individuelle"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "registered_charity",
+								"name": "Registered charity / Organisme de bienfaisance enregistré"
+							},
+							{
+								"key": "nil",
+								"name": "Non-profit organization / Organisation à but non lucratif"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "CH",
+				"name": "Switzerland",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "CY",
+				"name": "Cyprus",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "CZ",
+				"name": "Czech Republic",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "DE",
+				"name": "Germany",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": [
+							{
+								"key": "nil",
+								"name": "Privatperson (Einzelunternehmen) / eingetragener Kaufmann/-frau (e.K.) / Kleingewerbetreibender / Freiberufler / o.ä."
+							}
+						]
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "DK",
+				"name": "Denmark",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "EE",
+				"name": "Estonia",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "ES",
+				"name": "Spain",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "FI",
+				"name": "Finland",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "FR",
+				"name": "France",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "GB",
+				"name": "United Kingdom",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "GR",
+				"name": "Greece",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "HK",
+				"name": "Hong Kong",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "sole_proprietorship",
+								"name": "Sole proprietorship"
+							},
+							{
+								"key": "private_company",
+								"name": "Private company"
+							},
+							{
+								"key": "private_partnership",
+								"name": "Private partnership"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "HR",
+				"name": "Croatia",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "HU",
+				"name": "Hungary",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "IE",
+				"name": "Ireland",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "IT",
+				"name": "Italy",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "JP",
+				"name": "Japan",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"requires_structure": false,
+						"structures": [
+							{
+								"key": "sole_proprietorship",
+								"name": "Sole proprietorship"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": []
+					}
+				]
+			},
+			{
+				"key": "LT",
+				"name": "Lithuania",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "LU",
+				"name": "Luxembourg",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "LV",
+				"name": "Latvia",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "MT",
+				"name": "Malta",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "NL",
+				"name": "Netherlands",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							},
+							{
+								"key": "sole_proprietorship",
+								"name": "Sole proprietorship"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "NO",
+				"name": "Norway",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "NZ",
+				"name": "New Zealand",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Corporation"
+							},
+							{
+								"key": "sole_proprietorship",
+								"name": "Sole trader"
+							},
+							{
+								"key": "private_partnership",
+								"name": "Partnership"
+							},
+							{
+								"key": "trust",
+								"name": "Trust"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							},
+							{
+								"key": "nil",
+								"name": "Club, society, or other not-for-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "PL",
+				"name": "Poland",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "PT",
+				"name": "Portugal",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "RO",
+				"name": "Romania",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "SE",
+				"name": "Sweden",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "SG",
+				"name": "Singapore",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": [
+							{
+								"key": "nil",
+								"name": "Individual"
+							}
+						]
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "sole_proprietorship",
+								"name": "Sole proprietorship"
+							},
+							{
+								"key": "private_company",
+								"name": "Company"
+							},
+							{
+								"key": "public_company",
+								"name": "Public company"
+							},
+							{
+								"key": "private_partnership",
+								"name": "Partnership"
+							},
+							{
+								"key": "nil",
+								"name": "Company"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "nil",
+								"name": "Charity, non-profit, club, society or other unincorporated entity"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "SI",
+				"name": "Slovenia",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "SK",
+				"name": "Slovakia",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "incorporated_partnership",
+								"name": "Incorporated partnership"
+							},
+							{
+								"key": "unincorporated_partnership",
+								"name": "Unincorporated partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					}
+				]
+			},
+			{
+				"key": "US",
+				"name": "United States",
+				"types": [
+					{
+						"key": "individual",
+						"name": "Individual",
+						"structures": []
+					},
+					{
+						"key": "company",
+						"name": "Company",
+						"structures": [
+							{
+								"key": "sole_proprietorship",
+								"name": "Sole proprietorship"
+							},
+							{
+								"key": "single_member_llc",
+								"name": "Single-member LLC"
+							},
+							{
+								"key": "multi_member_llc",
+								"name": "Multi-member LLC"
+							},
+							{
+								"key": "private_partnership",
+								"name": "Private partnership"
+							},
+							{
+								"key": "private_corporation",
+								"name": "Private corporation"
+							},
+							{
+								"key": "unincorporated_association",
+								"name": "Unincorporated association"
+							},
+							{
+								"key": "public_partnership",
+								"name": "Public partnership"
+							},
+							{
+								"key": "public_corporation",
+								"name": "Public corporation"
+							}
+						]
+					},
+					{
+						"key": "non_profit",
+						"name": "Non-profit",
+						"structures": [
+							{
+								"key": "incorporated_non_profit",
+								"name": "Incorporated non-profit"
+							},
+							{
+								"key": "unincorporated_non_profit",
+								"name": "Unincorporated non-profit"
+							}
+						]
+					},
+					{
+						"key": "government_entity",
+						"name": "Government entity",
+						"structures": [
+							{
+								"key": "governmental_unit",
+								"name": "Governmental unit"
+							},
+							{
+								"key": "government_instrumentality",
+								"name": "Government instrumentality"
+							},
+							{
+								"key": "tax_exempt_government_instrumentality",
+								"name": "Tax exempt government instrumentality"
+							}
+						]
+					}
+				]
+			}
+		],
+		"mccs_display_tree": [
+			{
+				"id": "most_popular",
+				"type": "group",
+				"title": "Most popular",
+				"items": [
+					{
+						"id": "most_popular__software_services",
+						"type": "mcc",
+						"title": "Software",
+						"mcc": 7372,
+						"keywords": [
+							"programming",
+							"web",
+							"website",
+							"design",
+							"data",
+							"entry",
+							"processing",
+							"integrated",
+							"systems"
+						]
+					},
+					{
+						"id": "most_popular__clothing_and_apparel",
+						"type": "mcc",
+						"title": "Clothing and accessories",
+						"mcc": 5699,
+						"keywords": []
+					},
+					{
+						"id": "most_popular__consulting_services",
+						"type": "mcc",
+						"title": "Consulting",
+						"mcc": 8999,
+						"keywords": []
+					}
+				]
+			},
+			{
+				"id": "retail",
+				"type": "group",
+				"title": "Retail",
+				"items": [
+					{
+						"id": "retail__software",
+						"type": "mcc",
+						"title": "Software",
+						"mcc": 5734,
+						"keywords": [
+							"app",
+							"business",
+							"computer",
+							"digital",
+							"electronic",
+							"hardware",
+							"lease",
+							"maintenance",
+							"personal",
+							"processing",
+							"product",
+							"program",
+							"programming",
+							"repair",
+							"saas",
+							"sell",
+							"software",
+							"retail"
+						]
+					},
+					{
+						"id": "retail__clothing_and_apparel",
+						"type": "mcc",
+						"title": "Clothing and accessories",
+						"mcc": 5699,
+						"keywords": [
+							"accessories",
+							"apparel",
+							"baby",
+							"children",
+							"clothes",
+							"clothing",
+							"dress",
+							"family",
+							"infant",
+							"men",
+							"pant",
+							"shirt",
+							"short",
+							"skirt",
+							"t-shirt",
+							"tee",
+							"undergarment",
+							"women",
+							"retail"
+						]
+					},
+					{
+						"id": "retail__convenience_stores",
+						"type": "mcc",
+						"title": "Convenience stores",
+						"mcc": 5499,
+						"keywords": [
+							"candy",
+							"convenience",
+							"dairy",
+							"deli",
+							"delicatessen",
+							"drink",
+							"fast",
+							"food",
+							"fruit",
+							"gourmet",
+							"grocery",
+							"health",
+							"market",
+							"meal",
+							"poultry",
+							"preparation",
+							"produce",
+							"retail",
+							"specialty",
+							"supermarket",
+							"vegetable",
+							"vitamin",
+							"retail"
+						]
+					},
+					{
+						"id": "retail__beauty_products",
+						"type": "mcc",
+						"title": "Beauty products",
+						"mcc": 5999,
+						"keywords": [
+							"barber",
+							"beauty",
+							"cosmetic",
+							"make",
+							"make-up",
+							"makeup",
+							"moisture",
+							"moisturizer",
+							"retail",
+							"serum",
+							"skin",
+							"skincare",
+							"treatment",
+							"up",
+							"retail"
+						]
+					},
+					{
+						"id": "retail__home_furnishings_and_furniture",
+						"type": "mcc",
+						"title": "Home goods and furniture",
+						"mcc": 5712,
+						"keywords": [
+							"accessories",
+							"appliance",
+							"bedding",
+							"covering",
+							"custom",
+							"drapery",
+							"electronic",
+							"equipment",
+							"floor",
+							"furnishing",
+							"furniture",
+							"home",
+							"household",
+							"made",
+							"mattress",
+							"order",
+							"outdoor",
+							"patio",
+							"porch",
+							"upholstery",
+							"window",
+							"retail"
+						]
+					},
+					{
+						"id": "retail__home_electronics",
+						"type": "mcc",
+						"title": "Home electronics",
+						"mcc": 5732,
+						"keywords": [
+							"appliance",
+							"assembly",
+							"camcorder",
+							"camera",
+							"computer",
+							"construction",
+							"dslr",
+							"electronic",
+							"furnishing",
+							"hardware",
+							"home",
+							"household",
+							"laptop",
+							"part",
+							"pc",
+							"radio",
+							"repair",
+							"stereo",
+							"tablet",
+							"television",
+							"tv",
+							"vcr",
+							"video",
+							"retail"
+						]
+					},
+					{
+						"id": "retail__auto_parts_and_accessories",
+						"type": "mcc",
+						"title": "Auto parts and accessories",
+						"mcc": 5533,
+						"keywords": [
+							"accessories",
+							"automotive",
+							"car",
+							"electronic",
+							"equipment",
+							"motor",
+							"part",
+							"supplies",
+							"tire",
+							"vehicle",
+							"retail"
+						]
+					},
+					{
+						"id": "retail__jewelry_stores_watches_clocks_and_silverware_stores",
+						"type": "mcc",
+						"title": "Jewelry Stores, Watches, Clocks, and Silverware Stores",
+						"mcc": 5944,
+						"keywords": [
+							"accessories",
+							"antique",
+							"clock",
+							"diamond",
+							"fine",
+							"flatware",
+							"gem",
+							"jewelry",
+							"metal",
+							"pawn",
+							"precious",
+							"repair",
+							"retail",
+							"silver",
+							"silver-plate",
+							"silversmith",
+							"stamp",
+							"sterling",
+							"watch",
+							"retail"
+						]
+					},
+					{
+						"id": "retail__precious_stones_and_metals_watches_and_jewelry",
+						"type": "mcc",
+						"title": "Precious Stones and Metals, Watches and Jewelry",
+						"mcc": 5094,
+						"keywords": [
+							"b2b",
+							"business",
+							"clock",
+							"costume",
+							"diamond",
+							"distributor",
+							"durable",
+							"gemstone",
+							"goods",
+							"jewelry",
+							"metal",
+							"part",
+							"pearl",
+							"precious",
+							"repaid",
+							"silverware",
+							"stone",
+							"trophies",
+							"watch",
+							"wholesale",
+							"retail"
+						]
+					},
+					{
+						"id": "retail__other_merchandise",
+						"type": "mcc",
+						"title": "Other merchandise",
+						"mcc": 5999,
+						"keywords": [
+							"ammunition",
+							"atlas",
+							"beauty",
+							"bottled",
+							"collectible",
+							"distilled",
+							"firearm",
+							"firework",
+							"frame",
+							"gravestone",
+							"headstone",
+							"hobby",
+							"ice",
+							"magic",
+							"map",
+							"memorabilia",
+							"monument",
+							"party",
+							"photograph",
+							"picture",
+							"poster",
+							"retail",
+							"specialty",
+							"sports",
+							"sunglass",
+							"supply",
+							"trophy",
+							"water",
+							"retail"
+						]
+					}
+				]
+			},
+			{
+				"id": "digital_products",
+				"type": "group",
+				"title": "Digital products",
+				"items": [
+					{
+						"id": "digital_products__software_as_a_service",
+						"type": "mcc",
+						"title": "Software as a service",
+						"mcc": 5817,
+						"keywords": [
+							"app",
+							"business",
+							"computer",
+							"digital",
+							"electronic",
+							"hardware",
+							"lease",
+							"maintenance",
+							"personal",
+							"processing",
+							"product",
+							"program",
+							"programming",
+							"repair",
+							"saas",
+							"sell",
+							"software",
+							"digital products"
+						]
+					},
+					{
+						"id": "digital_products__apps",
+						"type": "mcc",
+						"title": "Apps",
+						"mcc": 5817,
+						"keywords": [
+							"app",
+							"application",
+							"computer",
+							"digital",
+							"electronic",
+							"equipment",
+							"game",
+							"product",
+							"software",
+							"digital products"
+						]
+					},
+					{
+						"id": "digital_products__books",
+						"type": "mcc",
+						"title": "Books",
+						"mcc": 5815,
+						"keywords": [
+							"book",
+							"digital",
+							"electronic",
+							"good",
+							"media",
+							"movie",
+							"music",
+							"product",
+							"record",
+							"theater",
+							"digital products"
+						]
+					},
+					{
+						"id": "digital_products__music_and_media",
+						"type": "mcc",
+						"title": "Music or other media",
+						"mcc": 5815,
+						"keywords": [
+							"book",
+							"digital",
+							"electronic",
+							"good",
+							"media",
+							"movie",
+							"music",
+							"product",
+							"record",
+							"theater",
+							"digital products"
+						]
+					},
+					{
+						"id": "digital_products__games",
+						"type": "mcc",
+						"title": "Games",
+						"mcc": 5816,
+						"keywords": [
+							"amusement",
+							"arcade",
+							"casino",
+							"digital",
+							"electronic",
+							"establishment",
+							"gambling",
+							"game",
+							"lottery",
+							"product",
+							"race",
+							"video",
+							"digital products"
+						]
+					},
+					{
+						"id": "digital_products__content_blogs_articles",
+						"type": "mcc",
+						"title": "Blogs and written content",
+						"mcc": 5815,
+						"keywords": [
+							"article",
+							"blog",
+							"content",
+							"digital",
+							"media",
+							"online",
+							"plugin",
+							"substack",
+							"template",
+							"tumblr",
+							"wordpress",
+							"write",
+							"digital products"
+						]
+					},
+					{
+						"id": "digital_products__other_digital_goods",
+						"type": "mcc",
+						"title": "Other digital goods",
+						"mcc": 5815,
+						"keywords": [
+							"app",
+							"content",
+							"digital",
+							"download",
+							"ebook",
+							"good",
+							"intangible",
+							"internet",
+							"music",
+							"online",
+							"radio",
+							"stream",
+							"subscribe",
+							"television",
+							"tv",
+							"virtual",
+							"digital products"
+						]
+					}
+				]
+			},
+			{
+				"id": "food_and_drink",
+				"type": "group",
+				"title": "Food and drink",
+				"items": [
+					{
+						"id": "food_and_drink__restaurants",
+						"type": "mcc",
+						"mcc": 5812,
+						"title": "Restaurants and nightlife",
+						"keywords": [
+							"bar",
+							"cafe",
+							"cafeteria",
+							"cake",
+							"cocktail",
+							"delivery",
+							"dessert",
+							"diner",
+							"drink",
+							"eating",
+							"establishment",
+							"fast",
+							"food",
+							"lounge",
+							"nightclub",
+							"restaurant",
+							"service",
+							"soda",
+							"table",
+							"takeout",
+							"tavern",
+							"food and drink"
+						]
+					},
+					{
+						"id": "food_and_drink__grocery_stores",
+						"type": "mcc",
+						"mcc": 5411,
+						"title": "Grocery stores",
+						"keywords": [
+							"baked",
+							"bakery",
+							"book",
+							"bread",
+							"canned",
+							"card",
+							"cleaning",
+							"consumption",
+							"cosmetic",
+							"counter",
+							"dairy",
+							"deli",
+							"deliver",
+							"department",
+							"drink",
+							"dry",
+							"fish",
+							"floral",
+							"food",
+							"frozen",
+							"good",
+							"greeting",
+							"grocery",
+							"home",
+							"household",
+							"houseware",
+							"hygiene",
+							"item",
+							"magazine",
+							"market",
+							"meal",
+							"meat",
+							"perishable",
+							"personal",
+							"pharmacy",
+							"polishing",
+							"poultry",
+							"prepackaged",
+							"produce",
+							"shop",
+							"shopper",
+							"super",
+							"supermarket",
+							"food and drink"
+						]
+					},
+					{
+						"id": "food_and_drink__caterers",
+						"type": "mcc",
+						"mcc": 5811,
+						"title": "Caterers",
+						"keywords": [
+							"cake",
+							"caterer",
+							"clean",
+							"consumption",
+							"decoration",
+							"deliver",
+							"dessert",
+							"drink",
+							"eating",
+							"equipment",
+							"food",
+							"immediate",
+							"personnel",
+							"prep",
+							"prepare",
+							"restaurant",
+							"serve",
+							"serving",
+							"table",
+							"food and drink"
+						]
+					},
+					{
+						"id": "food_and_drink__packaged_beverages",
+						"type": "mcc",
+						"mcc": 5499,
+						"title": "Packaged beverages",
+						"keywords": [
+							"ready to drink",
+							"rtd",
+							"fruit juice",
+							"soft drinks",
+							"iced tea",
+							"matcha",
+							"tea",
+							"coffee",
+							"caffeinated beverages",
+							"bottled water",
+							"still water",
+							"sparkling water",
+							"energy drinks",
+							"hydration",
+							"hydrating drinks",
+							"vitamin drinks",
+							"nutritional drinks",
+							"retail",
+							"specialty",
+							"food and drink"
+						]
+					},
+					{
+						"id": "food_and_drink__other_food_and_dining",
+						"type": "mcc",
+						"mcc": 5499,
+						"title": "Other food and dining",
+						"keywords": [
+							"candy",
+							"convenience",
+							"dairy",
+							"deli",
+							"delicatessen",
+							"drink",
+							"fast",
+							"food",
+							"fruit",
+							"gourmet",
+							"grocery",
+							"health",
+							"market",
+							"meal",
+							"poultry",
+							"preparation",
+							"produce",
+							"retail",
+							"specialty",
+							"supermarket",
+							"vegetable",
+							"vitamin",
+							"food and drink"
+						]
+					}
+				]
+			},
+			{
+				"id": "professional_services",
+				"type": "group",
+				"title": "Professional services",
+				"items": [
+					{
+						"id": "professional_services__printing_and_publishing_services",
+						"type": "mcc",
+						"title": "Printing and publishing",
+						"mcc": 2741,
+						"keywords": [
+							"atlas",
+							"b2b",
+							"blueprinting",
+							"book",
+							"bookbinding",
+							"business",
+							"copy",
+							"directory",
+							"manual",
+							"map",
+							"music",
+							"newsletter",
+							"newspaper",
+							"paper",
+							"pattern",
+							"periodical",
+							"print",
+							"printing",
+							"publish",
+							"publishing",
+							"reproduction",
+							"sheet",
+							"technical",
+							"telephone",
+							"trade",
+							"wholesale",
+							"yearbook",
+							"professional services"
+						]
+					},
+					{
+						"id": "professional_services__attorneys_and_lawyers",
+						"type": "mcc",
+						"title": "Attorneys and lawyers",
+						"mcc": 8111,
+						"keywords": [
+							"advice",
+							"attorney",
+							"bar",
+							"counseling",
+							"law",
+							"lawyer",
+							"legal",
+							"office",
+							"professional",
+							"service",
+							"professional services"
+						]
+					},
+					{
+						"id": "professional_services__bankruptcy_services",
+						"type": "mcc",
+						"title": "Bankruptcy services",
+						"mcc": 8999,
+						"keywords": [
+							"bankruptcy",
+							"lawyer",
+							"legal",
+							"professional",
+							"service",
+							"professional services"
+						]
+					},
+					{
+						"id": "professional_services__bail_bonds",
+						"type": "mcc",
+						"title": "Bail Bonds",
+						"mcc": 8999,
+						"keywords": [
+							"bail",
+							"bond",
+							"court",
+							"jail",
+							"professional",
+							"service",
+							"professional services"
+						]
+					},
+					{
+						"id": "professional_services__accounting_auditing_bookkeeping_and_tax_prep_services",
+						"type": "mcc",
+						"title": "Accounting, auditing, or tax prep",
+						"mcc": 8931,
+						"keywords": [
+							"accounting",
+							"audit",
+							"billing",
+							"bookkeeping",
+							"finance",
+							"income",
+							"legal",
+							"payroll",
+							"preparation",
+							"professional",
+							"service",
+							"tax",
+							"professional services"
+						]
+					},
+					{
+						"id": "professional_services__computer_maintenance_and_repair_services",
+						"type": "mcc",
+						"title": "Computer repair",
+						"mcc": 7379,
+						"keywords": [
+							"analysis",
+							"computer",
+							"consulting",
+							"conversion",
+							"database",
+							"development",
+							"maintenance",
+							"repair",
+							"requirements",
+							"professional services"
+						]
+					},
+					{
+						"id": "professional_services__testing_laboratories",
+						"type": "mcc",
+						"title": "Testing laboratories",
+						"mcc": 8734,
+						"keywords": [
+							"automobile",
+							"calibration",
+							"certification",
+							"food",
+							"forensic",
+							"industrial",
+							"inspection",
+							"lab",
+							"pollution",
+							"product",
+							"professional",
+							"service",
+							"testing",
+							"x-ray",
+							"xray",
+							"professional services"
+						]
+					},
+					{
+						"id": "professional_services__auto_services",
+						"type": "mcc",
+						"title": "Auto services",
+						"mcc": 7538,
+						"keywords": [
+							"alignment",
+							"auto",
+							"balancing",
+							"car",
+							"change",
+							"glass",
+							"lube",
+							"muffler",
+							"oil",
+							"repair",
+							"replacement",
+							"service",
+							"tire",
+							"towing",
+							"tune-up",
+							"wheel",
+							"professional services"
+						]
+					},
+					{
+						"id": "professional_services__car_rentals",
+						"type": "mcc",
+						"title": "Car rentals",
+						"mcc": 7512,
+						"keywords": [
+							"automotive",
+							"car",
+							"marketplace",
+							"rental",
+							"share",
+							"truck",
+							"vehicle",
+							"professional services"
+						]
+					},
+					{
+						"id": "professional_services__car_sales",
+						"type": "mcc",
+						"title": "Car sales",
+						"mcc": 5511,
+						"keywords": [
+							"accessories",
+							"auto",
+							"automobile",
+							"buy",
+							"camper",
+							"dealer",
+							"lease",
+							"new",
+							"part",
+							"pickup",
+							"repair",
+							"replacement",
+							"rv",
+							"sale",
+							"service",
+							"truck",
+							"used",
+							"van",
+							"professional services"
+						]
+					},
+					{
+						"id": "professional_services__lead_generation",
+						"type": "mcc",
+						"title": "Lead generation",
+						"mcc": 7311,
+						"keywords": [
+							"action",
+							"ad",
+							"call",
+							"close",
+							"contact",
+							"convert",
+							"customer",
+							"demographic",
+							"engine",
+							"form",
+							"generation",
+							"information",
+							"interest",
+							"lead",
+							"optimization",
+							"sale",
+							"search",
+							"seo",
+							"web",
+							"professional services"
+						]
+					},
+					{
+						"id": "professional_services__direct_marketing_services",
+						"type": "mcc",
+						"title": "Direct marketing",
+						"mcc": 5969,
+						"keywords": [
+							"address",
+							"classified",
+							"direct",
+							"fax",
+							"form",
+							"marketing",
+							"number",
+							"order",
+							"product",
+							"response",
+							"service",
+							"telephone",
+							"ticket",
+							"professional services"
+						]
+					},
+					{
+						"id": "professional_services__electric_gas_sanitary_and_water_utilities",
+						"type": "mcc",
+						"title": "Utilities",
+						"mcc": 4900,
+						"keywords": [
+							"collection",
+							"collector",
+							"disposal",
+							"distribution",
+							"electric",
+							"garbage",
+							"gas",
+							"generation",
+							"management",
+							"ongoing",
+							"power",
+							"refuse",
+							"sanitary",
+							"service",
+							"supply",
+							"system",
+							"telecommunication",
+							"transmission",
+							"utility",
+							"waste",
+							"water",
+							"professional services"
+						]
+					},
+					{
+						"id": "professional_services__general_government_services",
+						"type": "mcc",
+						"title": "Government services",
+						"mcc": 9399,
+						"keywords": [
+							"agency",
+							"community",
+							"government",
+							"service",
+							"professional services"
+						]
+					},
+					{
+						"id": "professional_services__telemarketing_services",
+						"type": "mcc",
+						"title": "Telemarketing",
+						"mcc": 5966,
+						"keywords": [
+							"catalog",
+							"direct",
+							"mailing",
+							"marketing",
+							"outbound",
+							"telemarketing",
+							"telephone",
+							"professional services"
+						]
+					},
+					{
+						"id": "professional_services__credit_counseling_or_repair_services",
+						"type": "mcc",
+						"title": "Credit counseling or credit repair",
+						"mcc": 7277,
+						"keywords": [
+							"counseling",
+							"credit",
+							"guarantee",
+							"professional",
+							"repair",
+							"score",
+							"service",
+							"professional services"
+						]
+					},
+					{
+						"id": "professional_services__mortgage_consulting_services",
+						"type": "mcc",
+						"title": "Mortgage consulting services",
+						"mcc": 7277,
+						"keywords": [
+							"consulting",
+							"foreclosure",
+							"guarantee",
+							"loan",
+							"modification",
+							"mortgage",
+							"professional",
+							"relief",
+							"service",
+							"professional services"
+						]
+					},
+					{
+						"id": "professional_services__debt_reduction_services",
+						"type": "mcc",
+						"title": "Debt reduction services",
+						"mcc": 7277,
+						"keywords": [
+							"adjusting",
+							"consolidation",
+							"credit",
+							"debt",
+							"financial",
+							"foreclosure",
+							"levy",
+							"professional",
+							"reduction",
+							"relief",
+							"renegotiate",
+							"repossess",
+							"service",
+							"settlement",
+							"tax",
+							"wipe",
+							"professional services"
+						]
+					},
+					{
+						"id": "professional_services__warranties",
+						"type": "mcc",
+						"title": "Warranty Services",
+						"mcc": 7699,
+						"keywords": [
+							"agreement",
+							"contract",
+							"device",
+							"extended",
+							"maintenance",
+							"plan",
+							"professional",
+							"protection",
+							"refund",
+							"repair",
+							"return",
+							"service",
+							"subscription",
+							"warranty",
+							"professional services"
+						]
+					},
+					{
+						"id": "professional_services__other_marketing_services",
+						"type": "mcc",
+						"title": "Other Marketing Services",
+						"mcc": 7399,
+						"keywords": [
+							"advisor",
+							"answering",
+							"arrangement",
+							"bureau",
+							"business",
+							"conference",
+							"convention",
+							"financial",
+							"information",
+							"key",
+							"locksmith",
+							"mail",
+							"management",
+							"meeting",
+							"message",
+							"packing",
+							"paging",
+							"planner",
+							"planning",
+							"postal",
+							"publishing",
+							"seminar",
+							"service",
+							"show",
+							"telephone",
+							"tourist",
+							"trade",
+							"translation",
+							"video-conferencing",
+							"professional services"
+						]
+					},
+					{
+						"id": "professional_services__other_business_services",
+						"type": "mcc",
+						"title": "Other business services",
+						"mcc": 7399,
+						"keywords": [
+							"advisor",
+							"answering",
+							"arrangement",
+							"bureau",
+							"business",
+							"conference",
+							"convention",
+							"financial",
+							"information",
+							"key",
+							"locksmith",
+							"mail",
+							"management",
+							"meeting",
+							"message",
+							"packing",
+							"paging",
+							"planner",
+							"planning",
+							"postal",
+							"publishing",
+							"seminar",
+							"service",
+							"show",
+							"telephone",
+							"tourist",
+							"trade",
+							"translation",
+							"video-conferencing",
+							"professional services"
+						]
+					}
+				]
+			},
+			{
+				"id": "membership_organizations",
+				"type": "group",
+				"title": "Membership organizations",
+				"items": [
+					{
+						"id": "membership_organizations__civic_fraternal_and_social_associations",
+						"type": "mcc",
+						"title": "Civic, fraternal, or social associations",
+						"mcc": 8641,
+						"keywords": [
+							"alumnae",
+							"alumni",
+							"association",
+							"athletic",
+							"chamber",
+							"civic",
+							"commerce",
+							"fraternal",
+							"fundraising",
+							"membership",
+							"police",
+							"political",
+							"social",
+							"veteran",
+							"membership organizations"
+						]
+					},
+					{
+						"id": "membership_organizations__charities_and_social_service_organizations",
+						"type": "mcc",
+						"title": "Charities or social service organizations",
+						"mcc": 8398,
+						"keywords": [
+							"charitable",
+							"charity",
+							"contribution",
+							"donation",
+							"fundraise",
+							"fundraising",
+							"membership",
+							"non",
+							"nonprofit",
+							"organization",
+							"political",
+							"service",
+							"social",
+							"solicit",
+							"welfare",
+							"membership organizations"
+						]
+					},
+					{
+						"id": "membership_organizations__religious_organizations",
+						"type": "mcc",
+						"title": "Religious organizations",
+						"mcc": 8661,
+						"keywords": [
+							"activity",
+							"chapel",
+							"charity",
+							"church",
+							"membership",
+							"mosque",
+							"organization",
+							"religion",
+							"religious",
+							"service",
+							"study",
+							"synagogue",
+							"temple",
+							"training",
+							"worship",
+							"membership organizations"
+						]
+					},
+					{
+						"id": "membership_organizations__country_clubs",
+						"type": "mcc",
+						"title": "Country clubs",
+						"mcc": 7997,
+						"keywords": [
+							"athletic",
+							"boat",
+							"bowling",
+							"club",
+							"country",
+							"course",
+							"entertainment",
+							"exercise",
+							"facility",
+							"golf",
+							"gun",
+							"health",
+							"league",
+							"massage",
+							"membership",
+							"physical",
+							"private",
+							"racquetball",
+							"recreation",
+							"riding",
+							"service",
+							"shooting",
+							"spa",
+							"sports",
+							"swim",
+							"tennis",
+							"yacht",
+							"membership organizations"
+						]
+					},
+					{
+						"id": "membership_organizations__political_organizations",
+						"type": "mcc",
+						"title": "Political organizations",
+						"mcc": 8651,
+						"keywords": [
+							"candidate",
+							"charity",
+							"civic",
+							"fund",
+							"membership",
+							"national",
+							"organization",
+							"party",
+							"political",
+							"politician",
+							"raise",
+							"social",
+							"state",
+							"membership organizations"
+						]
+					},
+					{
+						"id": "membership_organizations__other_membership_organizations",
+						"type": "mcc",
+						"title": "Other membership organizations",
+						"mcc": 8699,
+						"keywords": [
+							"art",
+							"association",
+							"club",
+							"condo",
+							"historical",
+							"hoa",
+							"home",
+							"labor",
+							"membership",
+							"organization",
+							"owner",
+							"poetry",
+							"professional",
+							"tenant",
+							"union",
+							"membership organizations"
+						]
+					}
+				]
+			},
+			{
+				"id": "personal_services",
+				"type": "group",
+				"title": "Personal services",
+				"items": [
+					{
+						"id": "personal_services__photography_studios",
+						"type": "mcc",
+						"title": "Photography studios",
+						"mcc": 7221,
+						"keywords": [
+							"develop",
+							"personal",
+							"photo",
+							"photofinish",
+							"photography",
+							"portrait",
+							"still",
+							"video",
+							"wedding",
+							"personal services"
+						]
+					},
+					{
+						"id": "personal_services__health_and_beauty_spas",
+						"type": "mcc",
+						"title": "Health and beauty spas",
+						"mcc": 7298,
+						"keywords": [
+							"bath",
+							"beauty",
+							"bed",
+							"facial",
+							"hair",
+							"health",
+							"herbal",
+							"instructional",
+							"makeup",
+							"massage",
+							"mud",
+							"personal",
+							"service",
+							"steam",
+							"styling",
+							"tan",
+							"therapeutic",
+							"treatment",
+							"whirlpool",
+							"wrap",
+							"personal services"
+						]
+					},
+					{
+						"id": "personal_services__barbers_and_salons",
+						"type": "mcc",
+						"title": "Salons or barbers",
+						"mcc": 7230,
+						"keywords": [
+							"barber",
+							"beauty",
+							"care",
+							"coloring",
+							"cutting",
+							"fingernail",
+							"hair",
+							"hairdresser",
+							"health",
+							"make",
+							"make-up",
+							"makeup",
+							"manicure",
+							"nail",
+							"pedicure",
+							"personal",
+							"salon",
+							"styling",
+							"personal services"
+						]
+					},
+					{
+						"id": "personal_services__landscaping_services",
+						"type": "mcc",
+						"title": "Landscaping services",
+						"mcc": 780,
+						"keywords": [
+							"care",
+							"design",
+							"fertilize",
+							"florist",
+							"garden",
+							"horticulture",
+							"landscape",
+							"lawn",
+							"mow",
+							"mulch",
+							"nursery",
+							"plan",
+							"plant",
+							"seed",
+							"sod",
+							"spray",
+							"stock",
+							"supply",
+							"trade",
+							"personal services"
+						]
+					},
+					{
+						"id": "personal_services__massage_parlors",
+						"type": "mcc",
+						"title": "Massage parlors",
+						"mcc": 7297,
+						"keywords": [
+							"beauty",
+							"health",
+							"hot",
+							"massage",
+							"parlor",
+							"personal",
+							"sauna",
+							"spa",
+							"therapeutic",
+							"tub",
+							"personal services"
+						]
+					},
+					{
+						"id": "personal_services__counseling_services",
+						"type": "mcc",
+						"title": "Counseling services",
+						"mcc": 7277,
+						"keywords": [
+							"abuse",
+							"alcohol",
+							"counseling",
+							"debt",
+							"drug",
+							"family",
+							"financial",
+							"marriage",
+							"personal",
+							"therapy",
+							"personal services"
+						]
+					},
+					{
+						"id": "personal_services__health_and_wellness_coaching",
+						"type": "mcc",
+						"title": "Health and wellness coaching",
+						"mcc": 7277,
+						"keywords": [
+							"behavior",
+							"being",
+							"change",
+							"coach",
+							"habit",
+							"health",
+							"individual",
+							"life",
+							"obstacle",
+							"psychology",
+							"well",
+							"well-being",
+							"wellness",
+							"personal services"
+						]
+					},
+					{
+						"id": "personal_services__laundry_and_cleaning_services",
+						"type": "mcc",
+						"title": "Laundry or cleaning services",
+						"mcc": 7210,
+						"keywords": [
+							"clean",
+							"cleaning",
+							"diaper",
+							"dry",
+							"fold",
+							"garment",
+							"laundry",
+							"personal",
+							"steam",
+							"wash",
+							"personal services"
+						]
+					},
+					{
+						"id": "personal_services__dating_services",
+						"type": "mcc",
+						"title": "Dating services",
+						"mcc": 7273,
+						"keywords": [
+							"adult",
+							"dating",
+							"escort",
+							"love",
+							"marriage",
+							"matchmaker",
+							"online",
+							"personal",
+							"personal services"
+						]
+					},
+					{
+						"id": "personal_services__other_personal_services",
+						"type": "mcc",
+						"title": "Other personal services",
+						"mcc": 7299,
+						"keywords": [
+							"advisor",
+							"animal",
+							"boarding",
+							"body",
+							"breed",
+							"cash",
+							"chapel",
+							"crowdfunding",
+							"filtration",
+							"financial",
+							"gift",
+							"groom",
+							"horse",
+							"hotel",
+							"housing",
+							"kennel",
+							"knot",
+							"personal",
+							"pet",
+							"piercing",
+							"plan",
+							"planner",
+							"purification",
+							"registry",
+							"rental",
+							"rsvp",
+							"service",
+							"softening",
+							"stable",
+							"tattoo",
+							"taxidermist",
+							"train",
+							"treatment",
+							"water",
+							"wedding",
+							"personal services"
+						]
+					}
+				]
+			},
+			{
+				"id": "transportation",
+				"type": "group",
+				"title": "Transportation",
+				"items": [
+					{
+						"id": "transportation__ride_sharing_services",
+						"type": "mcc",
+						"title": "Ridesharing",
+						"mcc": 4121,
+						"keywords": [
+							"auto",
+							"automobile",
+							"cab",
+							"car",
+							"commuter",
+							"driver",
+							"hail",
+							"limo",
+							"limousine",
+							"local",
+							"lyft",
+							"passenger",
+							"ride",
+							"rideshare",
+							"suburban",
+							"taxi",
+							"taxicab",
+							"transportation",
+							"travel",
+							"uber",
+							"transportation"
+						]
+					},
+					{
+						"id": "transportation__taxis_and_limos",
+						"type": "mcc",
+						"title": "Taxis and limos",
+						"mcc": 4121,
+						"keywords": [
+							"auto",
+							"automobile",
+							"cab",
+							"car",
+							"commuter",
+							"driver",
+							"hail",
+							"limo",
+							"limousine",
+							"local",
+							"lyft",
+							"passenger",
+							"ride",
+							"rideshare",
+							"suburban",
+							"taxi",
+							"taxicab",
+							"transportation",
+							"travel",
+							"uber",
+							"transportation"
+						]
+					},
+					{
+						"id": "transportation__courier_services_including_local_delivery",
+						"type": "mcc",
+						"title": "Courier services",
+						"mcc": 4215,
+						"keywords": [
+							"air",
+							"courier",
+							"deliver",
+							"delivery",
+							"forward",
+							"freight",
+							"ground",
+							"letter",
+							"motor",
+							"office",
+							"package",
+							"parcel",
+							"post",
+							"postal",
+							"transport",
+							"transportation",
+							"trucking",
+							"transportation"
+						]
+					},
+					{
+						"id": "transportation__parking_lots",
+						"type": "mcc",
+						"title": "Parking lots",
+						"mcc": 7523,
+						"keywords": [
+							"automobile",
+							"basis",
+							"contract",
+							"daily",
+							"fee",
+							"garage",
+							"hourly",
+							"monthly",
+							"park",
+							"parking",
+							"service",
+							"temporary",
+							"transportation"
+						]
+					},
+					{
+						"id": "transportation__travel_agencies_and_tour_operators",
+						"type": "mcc",
+						"title": "Travel agencies",
+						"mcc": 4722,
+						"keywords": [
+							"accommodation",
+							"agency",
+							"agent",
+							"air",
+							"behalf",
+							"booking",
+							"bus",
+							"cab",
+							"charter",
+							"cruise",
+							"information",
+							"land",
+							"limo",
+							"limousine",
+							"lodging",
+							"operator",
+							"package",
+							"passenger",
+							"plan",
+							"railway",
+							"rental",
+							"sea",
+							"steamship",
+							"taxi",
+							"taxicab",
+							"ticketing",
+							"tour",
+							"transportation",
+							"travel",
+							"traveler",
+							"transportation"
+						]
+					},
+					{
+						"id": "transportation__freight_forwarders",
+						"type": "mcc",
+						"title": "Freight forwarders",
+						"mcc": 4215,
+						"keywords": [
+							"air",
+							"carrier",
+							"company",
+							"courier",
+							"delivery",
+							"distance",
+							"farm",
+							"forwarder",
+							"freight",
+							"goods",
+							"ground",
+							"household",
+							"local",
+							"long",
+							"moving",
+							"refrigerated",
+							"service",
+							"storage",
+							"transport",
+							"transportation",
+							"trucking",
+							"warehousing",
+							"transportation"
+						]
+					},
+					{
+						"id": "transportation__shipping_forwarding_and_drop_shipping",
+						"type": "mcc",
+						"title": "Shipping or forwarding",
+						"mcc": 4215,
+						"keywords": [
+							"air",
+							"cargo",
+							"consultant",
+							"consumer",
+							"courier",
+							"customer",
+							"deliver",
+							"direct",
+							"forward",
+							"freight",
+							"local",
+							"parcel",
+							"supplier",
+							"ups",
+							"usps",
+							"transportation"
+						]
+					},
+					{
+						"id": "transportation__commuter_transportation",
+						"type": "mcc",
+						"title": "Commuter transportation",
+						"mcc": 4111,
+						"keywords": [
+							"bus",
+							"cab",
+							"carpool",
+							"commute",
+							"commuter",
+							"driver",
+							"ferry",
+							"limo",
+							"limousine",
+							"local",
+							"mass",
+							"passenger",
+							"railway",
+							"ride",
+							"route",
+							"schedule",
+							"share",
+							"suburban",
+							"taxi",
+							"transportation",
+							"travel",
+							"transportation"
+						]
+					},
+					{
+						"id": "transportation__cruise_lines",
+						"type": "mcc",
+						"title": "Cruise lines",
+						"mcc": 4411,
+						"keywords": [
+							"all",
+							"cabin",
+							"commuter",
+							"cruise",
+							"entertainment",
+							"ferry",
+							"food",
+							"inclusive",
+							"inland",
+							"line",
+							"local",
+							"luxury",
+							"open",
+							"passenger",
+							"pleasure",
+							"route",
+							"sea",
+							"ship",
+							"suburban",
+							"transportation",
+							"travel",
+							"vacation",
+							"water",
+							"transportation"
+						]
+					},
+					{
+						"id": "transportation__airlines_and_air_carriers",
+						"type": "mcc",
+						"title": "Airlines and air carriers",
+						"mcc": 4511,
+						"keywords": [
+							"air",
+							"airline",
+							"carrier",
+							"travel",
+							"transportation"
+						]
+					},
+					{
+						"id": "transportation__other_transportation_services",
+						"type": "mcc",
+						"title": "Other transportation services",
+						"mcc": 4789,
+						"keywords": [
+							"aerial",
+							"airport",
+							"bicycle",
+							"bus",
+							"cab",
+							"cable",
+							"car",
+							"carriage",
+							"drawn",
+							"ferry",
+							"horse",
+							"passenger",
+							"pedicab",
+							"shuttle",
+							"taxi",
+							"tramway",
+							"transportation",
+							"travel",
+							"transportation"
+						]
+					}
+				]
+			},
+			{
+				"id": "travel_and_lodging",
+				"type": "group",
+				"title": "Travel and lodging",
+				"items": [
+					{
+						"id": "travel_and_lodging__property_rentals",
+						"type": "mcc",
+						"title": "Property rentals",
+						"mcc": 6513,
+						"keywords": [
+							"agent",
+							"apartment",
+							"association",
+							"broker",
+							"commercial",
+							"commission",
+							"condo",
+							"estate",
+							"fee",
+							"financial",
+							"homeowner",
+							"hotel",
+							"housing",
+							"lodging",
+							"management",
+							"manager",
+							"mortgage",
+							"motel",
+							"payment",
+							"real",
+							"rental",
+							"residential",
+							"service",
+							"travel and lodging"
+						]
+					},
+					{
+						"id": "travel_and_lodging__hotels",
+						"type": "mcc",
+						"title": "Hotels, inns, or motels",
+						"mcc": 7011,
+						"keywords": [
+							"airbnb",
+							"bed",
+							"breakfast",
+							"cabin",
+							"central",
+							"cottage",
+							"couch",
+							"homeshare",
+							"hotel",
+							"inn",
+							"lodging",
+							"motel",
+							"property",
+							"reservation",
+							"resort",
+							"share",
+							"short",
+							"surf",
+							"term",
+							"travel",
+							"travel and lodging"
+						]
+					},
+					{
+						"id": "travel_and_lodging__timeshares",
+						"type": "mcc",
+						"title": "Timeshares",
+						"mcc": 7012,
+						"keywords": [
+							"arrange",
+							"condo",
+							"condominium",
+							"exchange",
+							"lease",
+							"rent",
+							"sell",
+							"timeshare",
+							"travel",
+							"travel and lodging"
+						]
+					},
+					{
+						"id": "travel_and_lodging__other_travel_and_lodging",
+						"type": "mcc",
+						"title": "Other travel and lodging",
+						"mcc": 4789,
+						"keywords": [
+							"aerial",
+							"airport",
+							"bicycle",
+							"bus",
+							"cab",
+							"cable",
+							"car",
+							"carriage",
+							"drawn",
+							"ferry",
+							"horse",
+							"passenger",
+							"pedicab",
+							"shuttle",
+							"taxi",
+							"tramway",
+							"transportation",
+							"travel",
+							"travel and lodging"
+						]
+					}
+				]
+			},
+			{
+				"id": "medical_services",
+				"type": "group",
+				"title": "Medical services",
+				"items": [
+					{
+						"id": "medical_services__medical_devices",
+						"type": "mcc",
+						"title": "Medical devices",
+						"mcc": 5047,
+						"keywords": [
+							"aid",
+							"aids",
+							"als",
+							"alzheimer",
+							"arthritis",
+							"bipap",
+							"cancer",
+							"contact",
+							"covid",
+							"cpap",
+							"defibrillator",
+							"dental",
+							"dermal",
+							"device",
+							"diabetes",
+							"disposable",
+							"electrical",
+							"eyeglass",
+							"filler",
+							"hearing",
+							"hiv",
+							"hypodermic",
+							"implant",
+							"inhaler",
+							"insulin",
+							"kit",
+							"lense",
+							"medical",
+							"muscle",
+							"nebulizer",
+							"need",
+							"needle",
+							"prescription",
+							"rheumatoid",
+							"serology",
+							"std",
+							"sti",
+							"stimulation",
+							"syringe",
+							"testing",
+							"medical services"
+						]
+					},
+					{
+						"id": "medical_services__doctors_and_physicians",
+						"type": "mcc",
+						"title": "Doctors and physicians",
+						"mcc": 8011,
+						"keywords": [
+							"cosmetic",
+							"dermatologist",
+							"doctor",
+							"general",
+							"gynecologist",
+							"medical",
+							"medicine",
+							"neurologist",
+							"obstetrician",
+							"orthopedist",
+							"pediatrician",
+							"physician",
+							"plastic",
+							"psychiatrist",
+							"radiologist",
+							"specialized",
+							"surgeon",
+							"surgery",
+							"medical services"
+						]
+					},
+					{
+						"id": "medical_services__opticians_opticians_goods_and_eyeglasses",
+						"type": "mcc",
+						"title": "Opticians and eyeglasses",
+						"mcc": 8043,
+						"keywords": [
+							"exam",
+							"eye",
+							"eyeglass",
+							"glasses",
+							"goods",
+							"medical",
+							"optical",
+							"optician",
+							"prescription",
+							"medical services"
+						]
+					},
+					{
+						"id": "medical_services__dentists_and_orthodontists",
+						"type": "mcc",
+						"title": "Dentists and orthodontists",
+						"mcc": 8021,
+						"keywords": [
+							"dental",
+							"dentist",
+							"doctor",
+							"general",
+							"medical",
+							"orthodontist",
+							"physician",
+							"specialized",
+							"surgery",
+							"medical services"
+						]
+					},
+					{
+						"id": "medical_services__chiropractors",
+						"type": "mcc",
+						"title": "Chiropractors",
+						"mcc": 8041,
+						"keywords": [
+							"adjusted",
+							"chiropractor",
+							"column",
+							"doctor",
+							"limbs",
+							"manipulated",
+							"medical",
+							"physician",
+							"spinal",
+							"therapy",
+							"medical services"
+						]
+					},
+					{
+						"id": "medical_services__nursing_and_personal_care_facilities",
+						"type": "mcc",
+						"title": "Nursing or personal care facilities",
+						"mcc": 8050,
+						"keywords": [
+							"care",
+							"convalescent",
+							"elder",
+							"facility",
+							"heal",
+							"home",
+							"hospice",
+							"housing",
+							"inpatient",
+							"long",
+							"medical",
+							"nursing",
+							"personal",
+							"rest",
+							"surgery",
+							"term",
+							"medical services"
+						]
+					},
+					{
+						"id": "medical_services__hospitals",
+						"type": "mcc",
+						"title": "Hospitals",
+						"mcc": 8062,
+						"keywords": [
+							"care",
+							"continuous",
+							"diagnostic",
+							"elder",
+							"extensive",
+							"home",
+							"hospital",
+							"medical",
+							"mental",
+							"nursing",
+							"psychiatric",
+							"service",
+							"services",
+							"surgery",
+							"treatment",
+							"veterinary",
+							"medical services"
+						]
+					},
+					{
+						"id": "medical_services__personal_fundraising_or_crowdfunding",
+						"type": "mcc",
+						"title": "Personal fundraising or crowdfunding",
+						"mcc": 8398,
+						"keywords": [
+							"awareness",
+							"crowdfunding",
+							"expense",
+							"financial",
+							"fundraising",
+							"invention",
+							"money",
+							"personal",
+							"raise",
+							"service",
+							"support",
+							"medical services"
+						]
+					},
+					{
+						"id": "medical_services__mental_health_services",
+						"type": "mcc",
+						"title": "Mental health services",
+						"mcc": 8099,
+						"keywords": [
+							"counsel",
+							"health",
+							"inpatient",
+							"medication",
+							"meditation",
+							"mental",
+							"psychotherapy",
+							"residential",
+							"service",
+							"supervision",
+							"therapy",
+							"yoga",
+							"medical services"
+						]
+					},
+					{
+						"id": "medical_services__assisted_living",
+						"type": "mcc",
+						"title": "Assisted living",
+						"mcc": 8050,
+						"keywords": [
+							"assisted",
+							"elder",
+							"home",
+							"living",
+							"medical",
+							"nurse",
+							"nursing",
+							"senior",
+							"medical services"
+						]
+					},
+					{
+						"id": "medical_services__veterinary_services",
+						"type": "mcc",
+						"title": "Veterinary services",
+						"mcc": 742,
+						"keywords": [
+							"animal",
+							"cat",
+							"clinic",
+							"dentist",
+							"dog",
+							"food",
+							"hospital",
+							"livestock",
+							"medical",
+							"medicine",
+							"pet",
+							"supply",
+							"surgery",
+							"vet",
+							"veterinary",
+							"medical services"
+						]
+					},
+					{
+						"id": "medical_services__medical_organizations_and_membership",
+						"type": "mcc",
+						"title": "Medical organizations",
+						"mcc": 8699,
+						"keywords": [
+							"art",
+							"association",
+							"club",
+							"condo",
+							"historical",
+							"hoa",
+							"home",
+							"labor",
+							"membership",
+							"organization",
+							"owner",
+							"poetry",
+							"professional",
+							"tenant",
+							"union",
+							"medical services"
+						]
+					},
+					{
+						"id": "medical_services__telemed_telehealth",
+						"type": "mcc",
+						"title": "Telemedicine and Telehealth",
+						"mcc": 8011,
+						"keywords": [
+							"care",
+							"consultation",
+							"deliver",
+							"dispense",
+							"medical",
+							"mill",
+							"pharmacy",
+							"pill",
+							"prescription",
+							"service",
+							"telehealth",
+							"telemed",
+							"virtual",
+							"medical services"
+						]
+					},
+					{
+						"id": "medical_services__other_medical_services",
+						"type": "mcc",
+						"title": "Other medical services",
+						"mcc": 8099,
+						"keywords": [
+							"bank",
+							"blood",
+							"chemical",
+							"clinic",
+							"dependency",
+							"fertility",
+							"hair",
+							"health",
+							"hearing",
+							"massage",
+							"medical",
+							"medicine",
+							"mental",
+							"physical",
+							"practitioner",
+							"professional",
+							"psychiatrist",
+							"psychologist",
+							"replacement",
+							"service",
+							"sports",
+							"surgical",
+							"testing",
+							"therapeutic",
+							"therapist",
+							"treatment",
+							"medical services"
+						]
+					}
+				]
+			},
+			{
+				"id": "education",
+				"type": "group",
+				"title": "Education",
+				"items": [
+					{
+						"id": "education__child_care_services",
+						"type": "mcc",
+						"title": "Child care services",
+						"mcc": 8351,
+						"keywords": [
+							"babysitting",
+							"care",
+							"child",
+							"children",
+							"day",
+							"infant",
+							"kid",
+							"nannies",
+							"nanny",
+							"nursery",
+							"personal",
+							"preschool",
+							"service",
+							"education"
+						]
+					},
+					{
+						"id": "education__colleges_junior_colleges_universities_and_professional_schools",
+						"type": "mcc",
+						"title": "Colleges or universities",
+						"mcc": 8220,
+						"keywords": [
+							"academic",
+							"college",
+							"community",
+							"course",
+							"degree",
+							"dental",
+							"education",
+							"engineering",
+							"graduate",
+							"junior",
+							"law",
+							"medical",
+							"professional",
+							"school",
+							"seminary",
+							"theological",
+							"university",
+							"education"
+						]
+					},
+					{
+						"id": "education__vocational_schools_and_trade_schools",
+						"type": "mcc",
+						"title": "Vocational schools or trade schools",
+						"mcc": 8249,
+						"keywords": [
+							"carpentry",
+							"driving",
+							"education",
+							"estate",
+							"institute",
+							"instruction",
+							"mechanics",
+							"real",
+							"special",
+							"technical",
+							"trade",
+							"training",
+							"truck",
+							"vocational",
+							"weld",
+							"education"
+						]
+					},
+					{
+						"id": "education__elementary_and_secondary_schools",
+						"type": "mcc",
+						"title": "Elementary or secondary schools",
+						"mcc": 8211,
+						"keywords": [
+							"academic",
+							"care",
+							"child",
+							"education",
+							"elementary",
+							"grade",
+							"grammar",
+							"high",
+							"instruction",
+							"kindergarten",
+							"middle",
+							"school",
+							"secondary",
+							"education"
+						]
+					},
+					{
+						"id": "education__other_educational_services",
+						"type": "mcc",
+						"title": "Other educational services",
+						"mcc": 8299,
+						"keywords": [
+							"art",
+							"auto",
+							"aviation",
+							"cook",
+							"course",
+							"culinary",
+							"driver",
+							"driving",
+							"education",
+							"flying",
+							"instruction",
+							"job",
+							"karate",
+							"model",
+							"school",
+							"service",
+							"traffic",
+							"train",
+							"education"
+						]
+					}
+				]
+			},
+			{
+				"id": "entertainment_and_recreation",
+				"type": "group",
+				"title": "Entertainment and recreation",
+				"items": [
+					{
+						"id": "entertainment_and_recreation__ticket_agencies",
+						"type": "mcc",
+						"title": "Event ticketing",
+						"mcc": 7922,
+						"keywords": [
+							"agency",
+							"art",
+							"booking",
+							"casting",
+							"company",
+							"concert",
+							"entertainment",
+							"equipment",
+							"event",
+							"group",
+							"lighting",
+							"live",
+							"performing",
+							"production",
+							"road",
+							"scalp",
+							"scenery",
+							"summer",
+							"swap",
+							"theater",
+							"theatrical",
+							"ticketing",
+							"trade",
+							"entertainment and recreation"
+						]
+					},
+					{
+						"id": "entertainment_and_recreation__tourist_attractions",
+						"type": "mcc",
+						"title": "Tourist attractions",
+						"mcc": 7991,
+						"keywords": [
+							"aquarium",
+							"arboretum",
+							"art",
+							"attraction",
+							"botanical",
+							"craft",
+							"entertainment",
+							"exhibit",
+							"exposition",
+							"garden",
+							"museum",
+							"show",
+							"tourist",
+							"winery",
+							"entertainment and recreation"
+						]
+					},
+					{
+						"id": "entertainment_and_recreation__recreational_camps",
+						"type": "mcc",
+						"title": "Recreational camps",
+						"mcc": 7032,
+						"keywords": [
+							"boy",
+							"camp",
+							"campground",
+							"children",
+							"dude",
+							"entertainment",
+							"girl",
+							"kid",
+							"nudist",
+							"ranch",
+							"recreation",
+							"recreational",
+							"sport",
+							"sporting",
+							"trailer",
+							"entertainment and recreation"
+						]
+					},
+					{
+						"id": "entertainment_and_recreation__musicians_bands_and_orchestras",
+						"type": "mcc",
+						"title": "Musicians, bands, or orchestras",
+						"mcc": 7929,
+						"keywords": [
+							"band",
+							"comedian",
+							"dance",
+							"dj",
+							"entertain",
+							"entertainment",
+							"magician",
+							"music",
+							"musician",
+							"orchestra",
+							"theatrical",
+							"entertainment and recreation"
+						]
+					},
+					{
+						"id": "entertainment_and_recreation__amusement_parks_carnivals_and_circuses",
+						"type": "mcc",
+						"title": "Amusement parks, carnivals, or circuses",
+						"mcc": 7996,
+						"keywords": [
+							"amusement",
+							"animal",
+							"astrology",
+							"card",
+							"carnival",
+							"circus",
+							"county",
+							"entertainment",
+							"exhibit",
+							"fair",
+							"food",
+							"fortune",
+							"game",
+							"mechanical",
+							"mystic",
+							"park",
+							"psychic",
+							"read",
+							"ride",
+							"snack",
+							"stand",
+							"state",
+							"tarot",
+							"telling",
+							"theme",
+							"tourist",
+							"entertainment and recreation"
+						]
+					},
+					{
+						"id": "entertainment_and_recreation__fortune_tellers",
+						"type": "mcc",
+						"title": "Fortune tellers",
+						"mcc": 7996,
+						"keywords": [
+							"entertainment",
+							"fortune",
+							"psychic",
+							"recreation",
+							"tarot",
+							"teller",
+							"entertainment and recreation"
+						]
+					},
+					{
+						"id": "entertainment_and_recreation__movie_theaters",
+						"type": "mcc",
+						"title": "Movie theaters",
+						"mcc": 7832,
+						"keywords": [
+							"cinema",
+							"entertainment",
+							"film",
+							"motion",
+							"movie",
+							"online",
+							"picture",
+							"refreshment",
+							"theater",
+							"ticket",
+							"entertainment and recreation"
+						]
+					},
+					{
+						"id": "entertainment_and_recreation__betting_and_fantasy_sports",
+						"type": "mcc",
+						"title": "Betting or fantasy sports",
+						"mcc": 7995,
+						"keywords": [
+							"betting",
+							"casino",
+							"draft",
+							"entertainment",
+							"fantasy",
+							"gambling",
+							"recreation",
+							"sport",
+							"entertainment and recreation"
+						]
+					},
+					{
+						"id": "entertainment_and_recreation__lotteries",
+						"type": "mcc",
+						"title": "Lotteries",
+						"mcc": 7995,
+						"keywords": [
+							"entertainment",
+							"gambling",
+							"government",
+							"licensed",
+							"lottery",
+							"owned",
+							"entertainment and recreation"
+						]
+					},
+					{
+						"id": "entertainment_and_recreation__sports_forecasting_or_prediction_services",
+						"type": "mcc",
+						"title": "Sports forecasting or prediction services",
+						"mcc": 7999,
+						"keywords": [
+							"advice",
+							"athletic",
+							"bet",
+							"calculation",
+							"data",
+							"estimation",
+							"fantasy",
+							"football",
+							"forecasting",
+							"gambling",
+							"information",
+							"outcome",
+							"prediction",
+							"research",
+							"sports",
+							"entertainment and recreation"
+						]
+					},
+					{
+						"id": "entertainment_and_recreation__online_gambling",
+						"type": "mcc",
+						"title": "Online gambling",
+						"mcc": 7801,
+						"keywords": [
+							"bet",
+							"blackjack",
+							"card",
+							"draft",
+							"entertainment",
+							"gambling",
+							"online",
+							"poker",
+							"recreation",
+							"sports",
+							"entertainment and recreation"
+						]
+					},
+					{
+						"id": "entertainment_and_recreation__other_types_of_entertainment",
+						"type": "mcc",
+						"title": "Other entertainment and recreation",
+						"mcc": 7999,
+						"keywords": [
+							"active",
+							"aircraft",
+							"balloon",
+							"batting",
+							"bicycle",
+							"cage",
+							"diving",
+							"driving",
+							"electric",
+							"entertainment",
+							"fishing",
+							"game",
+							"golf",
+							"horseback",
+							"hunting",
+							"instruction",
+							"license",
+							"mini-golf",
+							"miniature",
+							"minigolf",
+							"motorcycle",
+							"parachuting",
+							"participation",
+							"physical",
+							"pool",
+							"public",
+							"range",
+							"recreation",
+							"rental",
+							"riding",
+							"roller",
+							"scooter",
+							"shooting",
+							"skating",
+							"ski",
+							"sky",
+							"slope",
+							"entertainment and recreation"
+						]
+					}
+				]
+			},
+			{
+				"id": "building_services",
+				"type": "group",
+				"title": "Building services",
+				"items": [
+					{
+						"id": "building_services__general_contractors",
+						"type": "mcc",
+						"title": "General contractors",
+						"mcc": 1520,
+						"keywords": [
+							"addition",
+							"air",
+							"alter",
+							"building",
+							"carpentry",
+							"commercial",
+							"concrete",
+							"conditioning",
+							"construction",
+							"contractor",
+							"electrical",
+							"general",
+							"heating",
+							"insulation",
+							"masonry",
+							"metal",
+							"plastering",
+							"plumbing",
+							"remodel",
+							"repair",
+							"residential",
+							"roofing",
+							"setting",
+							"sheet",
+							"siding",
+							"special",
+							"stonework",
+							"subcontractor",
+							"tile",
+							"trade",
+							"building services"
+						]
+					},
+					{
+						"id": "building_services__electrical_contractors",
+						"type": "mcc",
+						"title": "Electrical contractors",
+						"mcc": 1731,
+						"keywords": [
+							"alarm",
+							"cable",
+							"commercial",
+							"contractor",
+							"electric",
+							"electrical",
+							"equipment",
+							"fire",
+							"general",
+							"install",
+							"internet",
+							"phone",
+							"residential",
+							"sound",
+							"special",
+							"telecom",
+							"telephone",
+							"trade",
+							"building services"
+						]
+					},
+					{
+						"id": "building_services__carpentry_contractors",
+						"type": "mcc",
+						"title": "Carpentry contractors",
+						"mcc": 1750,
+						"keywords": [
+							"cabinet",
+							"carpentry",
+							"commercial",
+							"contractor",
+							"door",
+							"finish",
+							"framing",
+							"general",
+							"install",
+							"residential",
+							"special",
+							"trade",
+							"trim",
+							"window",
+							"building services"
+						]
+					},
+					{
+						"id": "building_services__special_trade_contractors",
+						"type": "mcc",
+						"title": "Special trade contractors",
+						"mcc": 1799,
+						"keywords": [
+							"awning",
+							"bath",
+							"building",
+							"commercial",
+							"construction",
+							"contractor",
+							"decorating",
+							"demolition",
+							"door",
+							"escape",
+							"fence",
+							"fire",
+							"garage",
+							"general",
+							"glass",
+							"glasswork",
+							"home",
+							"house",
+							"install",
+							"interior",
+							"metal",
+							"moving",
+							"paint",
+							"pool",
+							"refinish",
+							"replacement",
+							"residential",
+							"swimming",
+							"trade",
+							"tub",
+							"wallpaper",
+							"waterproof",
+							"weld",
+							"well",
+							"window",
+							"building services"
+						]
+					},
+					{
+						"id": "building_services__telecom_services",
+						"type": "mcc",
+						"title": "Telecom services",
+						"mcc": 4814,
+						"keywords": [
+							"billing",
+							"call",
+							"calling",
+							"card",
+							"cell",
+							"cellular",
+							"distance",
+							"fax",
+							"local",
+							"long",
+							"periodic",
+							"prepaid",
+							"service",
+							"telecommunication",
+							"telephone",
+							"building services"
+						]
+					},
+					{
+						"id": "building_services__telecom_equipment",
+						"type": "mcc",
+						"title": "Telecom equipment",
+						"mcc": 4812,
+						"keywords": [
+							"call",
+							"cell",
+							"electronic",
+							"equipment",
+							"fax",
+							"machine",
+							"mobile",
+							"pager",
+							"phone",
+							"prepaid",
+							"service",
+							"telecommunication",
+							"telephone",
+							"building services"
+						]
+					},
+					{
+						"id": "building_services__a_c_and_heating_contractors",
+						"type": "mcc",
+						"title": "A/C and heating contractors",
+						"mcc": 1711,
+						"keywords": [
+							"ac",
+							"air",
+							"balancing",
+							"commercial",
+							"condition",
+							"contractor",
+							"drain",
+							"equipment",
+							"freezer",
+							"furnace",
+							"general",
+							"heating",
+							"install",
+							"irrigation",
+							"plumbing",
+							"pump",
+							"refrigerator",
+							"repair",
+							"residential",
+							"sewer",
+							"solar",
+							"special",
+							"sprinkler",
+							"supply",
+							"system",
+							"testing",
+							"trade",
+							"water",
+							"building services"
+						]
+					},
+					{
+						"id": "building_services__other_building_services",
+						"type": "mcc",
+						"title": "Other building services",
+						"mcc": 1799,
+						"keywords": [
+							"awning",
+							"bath",
+							"building",
+							"commercial",
+							"construction",
+							"contractor",
+							"decorating",
+							"demolition",
+							"door",
+							"escape",
+							"fence",
+							"fire",
+							"garage",
+							"general",
+							"glass",
+							"glasswork",
+							"home",
+							"house",
+							"install",
+							"interior",
+							"metal",
+							"moving",
+							"paint",
+							"pool",
+							"refinish",
+							"replacement",
+							"residential",
+							"swimming",
+							"trade",
+							"tub",
+							"wallpaper",
+							"waterproof",
+							"weld",
+							"well",
+							"window",
+							"building services"
+						]
+					}
+				]
+			},
+			{
+				"id": "financial_services",
+				"type": "group",
+				"title": "Financial services",
+				"items": [
+					{
+						"id": "financial_services__insurance",
+						"type": "mcc",
+						"title": "Insurance",
+						"mcc": 6300,
+						"keywords": [
+							"tv",
+							"ad",
+							"automobile",
+							"billing",
+							"direct",
+							"insurance",
+							"magazine",
+							"mail",
+							"marketing",
+							"statement",
+							"stuffer",
+							"telephone",
+							"television",
+							"toll-free",
+							"financial services"
+						]
+					},
+					{
+						"id": "financial_services__security_brokers_and_dealers",
+						"type": "mcc",
+						"title": "Security brokers or dealers",
+						"mcc": 6211,
+						"keywords": [
+							"advisor",
+							"binary",
+							"bond",
+							"broker",
+							"commodities",
+							"exchange",
+							"financial",
+							"foreign",
+							"forex",
+							"fund",
+							"investment",
+							"licensed",
+							"manage",
+							"mutual",
+							"option",
+							"planner",
+							"security",
+							"service",
+							"stock",
+							"financial services"
+						]
+					},
+					{
+						"id": "financial_services__money_orders",
+						"type": "mcc",
+						"title": "Money orders",
+						"mcc": 6051,
+						"keywords": [
+							"atm",
+							"cash",
+							"check",
+							"financial",
+							"money",
+							"order",
+							"service",
+							"financial services"
+						]
+					},
+					{
+						"id": "financial_services__currency_exchanges",
+						"type": "mcc",
+						"title": "Currency exchanges",
+						"mcc": 6051,
+						"keywords": [
+							"cash",
+							"credit",
+							"currency",
+							"exchange",
+							"financial",
+							"foreign",
+							"international",
+							"money",
+							"service",
+							"travel",
+							"financial services"
+						]
+					},
+					{
+						"id": "financial_services__wire_transfers",
+						"type": "mcc",
+						"title": "Wire transfers",
+						"mcc": 4829,
+						"keywords": [
+							"digital",
+							"eft",
+							"electronic",
+							"financial",
+							"funds",
+							"money",
+							"order",
+							"remittance",
+							"service",
+							"stored",
+							"telegraph",
+							"transfer",
+							"value",
+							"wallet",
+							"wire",
+							"financial services"
+						]
+					},
+					{
+						"id": "financial_services__check_cashing",
+						"type": "mcc",
+						"title": "Check Cashing",
+						"mcc": 4829,
+						"keywords": [
+							"atm",
+							"cash",
+							"check",
+							"financial",
+							"money",
+							"order",
+							"service",
+							"financial services"
+						]
+					},
+					{
+						"id": "financial_services__loans_and_other_lending_instruments",
+						"type": "mcc",
+						"title": "Loans or lending",
+						"mcc": 6012,
+						"keywords": [
+							"back",
+							"credit",
+							"debt",
+							"financial",
+							"lend",
+							"loan",
+							"owe",
+							"pay",
+							"repayment",
+							"service",
+							"financial services"
+						]
+					},
+					{
+						"id": "financial_services__collections_agencies",
+						"type": "mcc",
+						"title": "Collections agencies",
+						"mcc": 7299,
+						"keywords": [
+							"agency",
+							"call",
+							"collection",
+							"debt",
+							"financial",
+							"invoice",
+							"repayment",
+							"service",
+							"financial services"
+						]
+					},
+					{
+						"id": "financial_services__money_service_businesses_and_money_transmitters",
+						"type": "mcc",
+						"title": "Money services or transmission",
+						"mcc": 4829,
+						"keywords": [
+							"app",
+							"cash",
+							"financial",
+							"money",
+							"peer",
+							"receive",
+							"remittance",
+							"send",
+							"service",
+							"financial services"
+						]
+					},
+					{
+						"id": "financial_services__investment_services",
+						"type": "mcc",
+						"title": "Investment services",
+						"mcc": 6211,
+						"keywords": [
+							"bond",
+							"broker",
+							"financial",
+							"fund",
+							"index",
+							"investment",
+							"mutual",
+							"retirement",
+							"saving",
+							"security",
+							"service",
+							"stock",
+							"financial services"
+						]
+					},
+					{
+						"id": "financial_services__virtual_currencies",
+						"type": "mcc",
+						"title": "Virtual currencies",
+						"mcc": 6051,
+						"keywords": [
+							"crypto",
+							"currency",
+							"digital",
+							"online",
+							"product",
+							"virtual",
+							"wallet",
+							"financial services"
+						]
+					},
+					{
+						"id": "financial_services__digital_wallets",
+						"type": "mcc",
+						"title": "Digital Wallets",
+						"mcc": 6540,
+						"keywords": [
+							"digital",
+							"financial",
+							"prepaid",
+							"service",
+							"stored",
+							"value",
+							"wallet",
+							"financial services"
+						]
+					},
+					{
+						"id": "financial_services__cryptocurrencies_and_stored_value",
+						"type": "mcc",
+						"title": "Cryptocurrencies",
+						"mcc": 6051,
+						"keywords": [
+							"bitcoin",
+							"coin",
+							"crypto",
+							"currency",
+							"digital",
+							"nft",
+							"product",
+							"stored",
+							"value",
+							"financial services"
+						]
+					},
+					{
+						"id": "financial_services__other_financial_institutions",
+						"type": "mcc",
+						"title": "Other financial institutions",
+						"mcc": 6012,
+						"keywords": [
+							"association",
+							"bank",
+							"borrow",
+							"broker",
+							"central",
+							"commercial",
+							"credit",
+							"financial",
+							"institution",
+							"invest",
+							"lend",
+							"loan",
+							"money",
+							"mortgage",
+							"retail",
+							"save",
+							"union",
+							"financial services"
+						]
+					},
+					{
+						"id": "financial_services__financial_information_and_research",
+						"type": "mcc",
+						"title": "Financial information and research",
+						"mcc": 7277,
+						"keywords": [
+							"class",
+							"education",
+							"finance",
+							"financial",
+							"information",
+							"markets",
+							"personal",
+							"research",
+							"service",
+							"financial services"
+						]
+					}
+				]
+			},
+			{
+				"id": "regulated_and_age_restricted_products",
+				"type": "group",
+				"title": "Regulated and age-restricted products",
+				"items": [
+					{
+						"id": "regulated_and_age_restricted_products__pharmacies_and_pharmaceuticals",
+						"type": "mcc",
+						"title": "Pharmacies or pharmaceuticals",
+						"mcc": 5912,
+						"keywords": [
+							"back",
+							"card",
+							"convenience",
+							"cosmetic",
+							"counter",
+							"drug",
+							"food",
+							"greeting",
+							"heating",
+							"medicine",
+							"merchandise",
+							"nonprescription",
+							"novelty",
+							"over",
+							"pad",
+							"pharmacy",
+							"prescription",
+							"proprietary",
+							"retail",
+							"support",
+							"tobacco",
+							"toiletries",
+							"regulated and age-restricted products"
+						]
+					},
+					{
+						"id": "regulated_and_age_restricted_products__tobacco_and_cigars",
+						"type": "mcc",
+						"title": "Tobacco or cigars",
+						"mcc": 5993,
+						"keywords": [
+							"cigar",
+							"cigarette",
+							"e-cig",
+							"ecig",
+							"electronic",
+							"nicotine",
+							"pipe",
+							"product",
+							"retail",
+							"smoke",
+							"smoker",
+							"supply",
+							"tobacco",
+							"regulated and age-restricted products"
+						]
+					},
+					{
+						"id": "regulated_and_age_restricted_products__adult_content_and_services",
+						"type": "mcc",
+						"title": "Adult content or services",
+						"mcc": 7273,
+						"keywords": [
+							"adult",
+							"bride",
+							"content",
+							"erotic",
+							"escort",
+							"fetish",
+							"film",
+							"gentlemen",
+							"mail",
+							"order",
+							"porn",
+							"retail",
+							"sex",
+							"strip",
+							"swinger",
+							"topless",
+							"regulated and age-restricted products"
+						]
+					},
+					{
+						"id": "regulated_and_age_restricted_products__vapes_e_cigarettes_e_juice_or_related_products",
+						"type": "mcc",
+						"title": "Vapes, e-cigarettes, e-juice or related products",
+						"mcc": 5993,
+						"keywords": [
+							"cigarette",
+							"e",
+							"ejuice",
+							"electronic",
+							"eliquid",
+							"vape",
+							"regulated and age-restricted products"
+						]
+					},
+					{
+						"id": "regulated_and_age_restricted_products__weapons_and_munitions",
+						"type": "mcc",
+						"title": "Weapons or munitions",
+						"mcc": 5941,
+						"keywords": [
+							"ammunition",
+							"antique",
+							"archery",
+							"barrel",
+							"bullet",
+							"bump",
+							"casing",
+							"ejector",
+							"fencing",
+							"firearm",
+							"firing",
+							"flick",
+							"frame",
+							"gravity",
+							"grenade",
+							"gun",
+							"gunpowder",
+							"handgun",
+							"katana",
+							"knives",
+							"mace",
+							"machete",
+							"munition",
+							"pepper",
+							"pistol",
+							"receiver",
+							"reload",
+							"replica",
+							"rifle",
+							"silencer",
+							"spray",
+							"stock",
+							"stun",
+							"suppressor",
+							"sword",
+							"taser",
+							"weapon",
+							"regulated and age-restricted products"
+						]
+					},
+					{
+						"id": "regulated_and_age_restricted_products__supplements_and_nutraceuticals",
+						"type": "mcc",
+						"title": "Supplements or nutraceuticals",
+						"mcc": 5912,
+						"keywords": [
+							"cure",
+							"healthcare",
+							"medical",
+							"natural",
+							"needs",
+							"nutraceutical",
+							"prescription",
+							"prevent",
+							"strength",
+							"supplement",
+							"treat",
+							"regulated and age-restricted products"
+						]
+					},
+					{
+						"id": "regulated_and_age_restricted_products__marijuana_dispensaries",
+						"type": "mcc",
+						"title": "Marijuana dispensaries",
+						"mcc": 5912,
+						"keywords": [
+							"cake",
+							"cannabis",
+							"cbd",
+							"dispensary",
+							"edible",
+							"ganja",
+							"hashish",
+							"hemp",
+							"kush",
+							"marijuana",
+							"oil",
+							"retail",
+							"space",
+							"strain",
+							"terpenes",
+							"thc",
+							"tinctures",
+							"weed",
+							"regulated and age-restricted products"
+						]
+					},
+					{
+						"id": "regulated_and_age_restricted_products__marijuana_related_products",
+						"type": "mcc",
+						"title": "Marijuana-related products",
+						"mcc": 5912,
+						"keywords": [
+							"cake",
+							"cannabis",
+							"cbd",
+							"dispensary",
+							"edible",
+							"ganja",
+							"hashish",
+							"hemp",
+							"kush",
+							"marijuana",
+							"oil",
+							"retail",
+							"space",
+							"strain",
+							"terpenes",
+							"thc",
+							"tinctures",
+							"weed",
+							"regulated and age-restricted products"
+						]
+					},
+					{
+						"id": "regulated_and_age_restricted_products__tobacco_marijuana_accessories",
+						"type": "mcc",
+						"title": "Accessories for tobacco and marijuana",
+						"mcc": 5993,
+						"keywords": [
+							"attachment",
+							"banger",
+							"bong",
+							"bowl",
+							"carb",
+							"cleaning",
+							"digital",
+							"extraction",
+							"grinder",
+							"lighter",
+							"machine",
+							"nail",
+							"novelty",
+							"pipe",
+							"rolling",
+							"scale",
+							"tool",
+							"torch",
+							"tray",
+							"regulated and age-restricted products"
+						]
+					},
+					{
+						"id": "regulated_and_age_restricted_products__alcohol",
+						"type": "mcc",
+						"title": "Alcohol",
+						"mcc": 5921,
+						"keywords": [
+							"alcohol",
+							"beer",
+							"cocktail",
+							"drink",
+							"food",
+							"mixed",
+							"wine",
+							"regulated and age-restricted products"
+						]
+					}
+				]
+			}
+		],
+		"industry_to_mcc": {
+			"clothing_and_accessories": "retail__clothing_and_apparel",
+			"health_and_beauty": "retail__beauty_products",
+			"food_and_drink": "food_and_drink__other_food_and_dining",
+			"home_furniture_and_garden": "retail__home_furnishings_and_furniture",
+			"education_and_learning": "education__other_educational_services",
+			"electronics_and_computers": "digital_products__other_digital_goods"
+		}
+	},
+	"GET public/accounts/fraud_services": {
+		"stripe": []
+	},
+	"GET public/woopay/compatibility": {
+		"incompatible_extensions": [],
+		"adapted_extensions": [],
+		"available_countries": []
+	},
+	"GET transactions": {
+		"data": [
+			{
+				"transaction_id": "txn_3ULNAtBzWlxcwgpP1cwWz1KT",
+				"type": "charge",
+				"date": "2026-09-30 13:03:55",
+				"source": "visa",
+				"customer_name": "Test Shopper",
+				"customer_email": "customer@example.com",
+				"customer_country": "US",
+				"amount": 2468,
+				"net": 2366,
+				"fees": 102,
+				"currency": "usd",
+				"risk_level": 0,
+				"charge_id": "ch_3ULNAtBzWlxcwgpP1mD5qOrD",
+				"deposit_id": null,
+				"available_on": "2026-10-02 00:00:00",
+				"exchange_rate": 1,
+				"customer_amount": 2468,
+				"customer_currency": "usd",
+				"order_id": 5618,
+				"source_identifier": "4242",
+				"amount_in_usd": 2468,
+				"source_device": null,
+				"channel": null
+			}
+		]
+	},
+	"GET transactions/summary": {
+		"count": 1,
+		"currency": "usd",
+		"total": 2468,
+		"fees": 102,
+		"net": 2366,
+		"store_currencies": [
+			"usd"
+		],
+		"customer_currencies": [
+			"usd",
+			"eur",
+			"gbp",
+			"jpy"
+		],
+		"sources": [
+			"visa",
+			"ideal",
+			"bancontact",
+			"affirm",
+			"afterpay_clearpay",
+			"eps",
+			"alipay",
+			"multibanco",
+			"mastercard",
+			"amazon_pay",
+			null,
+			"amex"
+		]
+	},
+	"GET deposits": {
+		"data": [
+			{
+				"id": "po_1TrY3vBzWlxcwgpPT8FxySqm",
+				"date": 1783641600000,
+				"type": "deposit",
+				"amount": 100,
+				"status": "paid",
+				"bankAccount": "STRIPE TEST BANK •••• 6789 (USD)",
+				"currency": "usd",
+				"automatic": false,
+				"fee": 0,
+				"fee_percentage": 0,
+				"created": 1783641600,
+				"bank_reference_key": "7UF6L35cg5wJ7sI8997Ds6ch6t65Lg3kM81R5YX1l",
+				"failure_code": null,
+				"failure_message": null
+			},
+			{
+				"id": "po_1TrYAOBzWlxcwgpPcuNfxmhz",
+				"date": 1783641600000,
+				"type": "deposit",
+				"amount": 4825,
+				"status": "paid",
+				"bankAccount": "STRIPE TEST BANK •••• 6789 (USD)",
+				"currency": "usd",
+				"automatic": false,
+				"fee": 0,
+				"fee_percentage": 0,
+				"created": 1783641600,
+				"bank_reference_key": "7UF6L35cg5wX5HG8997Ds6ch6t65Lv7oM6p67Hk1y",
+				"failure_code": null,
+				"failure_message": null
+			},
+			{
+				"id": "po_1TrYnABzWlxcwgpPhhdCrkEZ",
+				"date": 1783641600000,
+				"type": "deposit",
+				"amount": 4825,
+				"status": "paid",
+				"bankAccount": "STRIPE TEST BANK •••• 6789 (USD)",
+				"currency": "usd",
+				"automatic": false,
+				"fee": 0,
+				"fee_percentage": 0,
+				"created": 1783641600,
+				"bank_reference_key": "7UF6L35cg5xG4LS8997Ds6ch6t65M06x24UU78v1S",
+				"failure_code": null,
+				"failure_message": null
+			},
+			{
+				"id": "po_1Tra17BzWlxcwgpP5ZUOsgHB",
+				"date": 1783641600000,
+				"type": "deposit",
+				"amount": 4825,
+				"status": "paid",
+				"bankAccount": "STRIPE TEST BANK •••• 6789 (USD)",
+				"currency": "usd",
+				"automatic": false,
+				"fee": 0,
+				"fee_percentage": 0,
+				"created": 1783641600,
+				"bank_reference_key": "7UF6L35cg6TJ3gA8997Ds6ch6t65LB60z5I36sS14",
+				"failure_code": null,
+				"failure_message": null
+			}
+		],
+		"total_count": 4
+	},
+	"GET deposits/summary": {
+		"count": 4,
+		"store_currencies": [
+			"usd"
+		],
+		"total": 14575,
+		"currency": "usd"
+	},
+	"GET deposits/overview-all": {
+		"deposit": {
+			"last_paid": [
+				{
+					"id": "po_1TrYnABzWlxcwgpPhhdCrkEZ",
+					"date": 1783641600000,
+					"type": "deposit",
+					"amount": 4825,
+					"status": "paid",
+					"bankAccount": "STRIPE TEST BANK •••• 6789 (USD)",
+					"currency": "usd",
+					"automatic": false,
+					"fee": 0,
+					"fee_percentage": 0,
+					"created": 1783668252,
+					"bank_reference_key": "7UF6L35cg5xG4LS8997Ds6ch6t65M06x24UU78v1S",
+					"failure_code": null,
+					"failure_message": null
+				}
+			],
+			"last_manual_deposits": []
+		},
+		"balance": {
+			"pending": [
+				{
+					"amount": 73609,
+					"currency": "usd",
+					"source_types": {
+						"card": 73609,
+						"financing": 0
+					}
+				}
+			],
+			"available": [
+				{
+					"amount": -954291,
+					"currency": "usd",
+					"source_types": {
+						"card": -954291,
+						"financing": 0
+					}
+				}
+			],
+			"instant": []
+		},
+		"account": {
+			"deposits_enabled": true,
+			"deposits_blocked": false,
+			"deposits_schedule": {
+				"delay_days": 2,
+				"interval": "weekly",
+				"weekly_anchor": "monday",
+				"weekly_payout_days": [
+					"monday"
+				]
+			},
+			"default_currency": "usd",
+			"default_external_accounts": [
+				{
+					"currency": "usd",
+					"status": "new"
+				}
+			]
+		}
+	},
+	"GET disputes": {
+		"data": [
+			{
+				"wcpay_disputes_cache_id": 871,
+				"stripe_account_id": "acct_native_ci",
+				"dispute_id": "du_1URpwBBzWlxcwgpPfEsuvYVv",
+				"charge_id": "ch_3URpw8BzWlxcwgpP1WeHKIqo",
+				"amount": 1099,
+				"currency": "usd",
+				"reason": "fraudulent",
+				"source": "visa",
+				"order_number": 5884,
+				"customer_name": "Test Shopper",
+				"customer_email": "customer@example.com",
+				"customer_country": "US",
+				"status": "needs_response",
+				"created": "2026-10-18 08:59:27",
+				"due_by": "2026-10-26 23:59:59"
+			},
+			{
+				"wcpay_disputes_cache_id": 869,
+				"stripe_account_id": "acct_native_ci",
+				"dispute_id": "du_1URpeSBzWlxcwgpPXCLuwKXr",
+				"charge_id": "ch_3URpePBzWlxcwgpP0BzEomXm",
+				"amount": 5000,
+				"currency": "usd",
+				"reason": "fraudulent",
+				"source": "visa",
+				"order_number": 5861,
+				"customer_name": "Test Shopper",
+				"customer_email": "customer@example.com",
+				"customer_country": "US",
+				"status": "needs_response",
+				"created": "2026-10-18 08:41:08",
+				"due_by": "2026-10-26 23:59:59"
+			}
+		]
+	},
+	"GET disputes/summary": {
+		"count": 2,
+		"currencies": [
+			"usd"
+		],
+		"amount_by_currency": {
+			"usd": 6099
+		},
+		"earliest_due_by": "2026-10-26 23:59:59"
+	},
+	"GET accounts (excerpt)": {
+		"fees": {
+			"base": {
+				"percentage_rate": 0.029,
+				"fixed_rate": 30,
+				"currency": "usd"
+			},
+			"discount": [],
+			"card": {
+				"base": {
+					"percentage_rate": 0.029,
+					"fixed_rate": 30,
+					"currency": "usd"
+				},
+				"additional": {
+					"percentage_rate": 0.015,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"fx": {
+					"percentage_rate": 0.01,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"discount": []
+			},
+			"card_present": {
+				"base": {
+					"percentage_rate": 0.027,
+					"fixed_rate": 10,
+					"currency": "usd"
+				},
+				"additional": {
+					"percentage_rate": 0.01,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"fx": {
+					"percentage_rate": 0.01,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"discount": []
+			},
+			"link": {
+				"base": {
+					"percentage_rate": 0.029,
+					"fixed_rate": 30,
+					"currency": "usd"
+				},
+				"additional": {
+					"percentage_rate": 0,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"fx": {
+					"percentage_rate": 0.01,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"discount": []
+			},
+			"bancontact": {
+				"base": {
+					"percentage_rate": 0.014,
+					"fixed_rate": 30,
+					"currency": "usd"
+				},
+				"additional": {
+					"percentage_rate": 0.015,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"fx": {
+					"percentage_rate": 0.01,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"discount": []
+			},
+			"eps": {
+				"base": {
+					"percentage_rate": 0.018,
+					"fixed_rate": 30,
+					"currency": "usd"
+				},
+				"additional": {
+					"percentage_rate": 0.015,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"fx": {
+					"percentage_rate": 0.01,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"discount": []
+			},
+			"ideal": {
+				"base": {
+					"percentage_rate": 0,
+					"fixed_rate": 80,
+					"currency": "usd"
+				},
+				"additional": {
+					"percentage_rate": 0.015,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"fx": {
+					"percentage_rate": 0.01,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"discount": []
+			},
+			"klarna": {
+				"base": {
+					"percentage_rate": 0.0599,
+					"fixed_rate": 30,
+					"currency": "usd"
+				},
+				"additional": {
+					"percentage_rate": 0,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"fx": {
+					"percentage_rate": 0,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"discount": []
+			},
+			"affirm": {
+				"base": {
+					"percentage_rate": 0.06,
+					"fixed_rate": 30,
+					"currency": "usd"
+				},
+				"additional": {
+					"percentage_rate": 0,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"fx": {
+					"percentage_rate": 0,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"discount": []
+			},
+			"afterpay_clearpay": {
+				"base": {
+					"percentage_rate": 0.06,
+					"fixed_rate": 30,
+					"currency": "usd"
+				},
+				"additional": {
+					"percentage_rate": 0,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"fx": {
+					"percentage_rate": 0,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"discount": []
+			},
+			"multibanco": {
+				"base": {
+					"percentage_rate": 0.0295,
+					"fixed_rate": 30,
+					"currency": "usd"
+				},
+				"additional": {
+					"percentage_rate": 0.015,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"fx": {
+					"percentage_rate": 0.01,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"discount": []
+			},
+			"alipay": {
+				"base": {
+					"percentage_rate": 0.029,
+					"fixed_rate": 30,
+					"currency": "usd"
+				},
+				"additional": {
+					"percentage_rate": 0,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"fx": {
+					"percentage_rate": 0.01,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"discount": []
+			},
+			"wechat_pay": {
+				"base": {
+					"percentage_rate": 0.029,
+					"fixed_rate": 30,
+					"currency": "usd"
+				},
+				"additional": {
+					"percentage_rate": 0,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"fx": {
+					"percentage_rate": 0.01,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"discount": []
+			},
+			"amazon_pay": {
+				"base": {
+					"percentage_rate": 0.029,
+					"fixed_rate": 30,
+					"currency": "usd"
+				},
+				"additional": {
+					"percentage_rate": 0.015,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"fx": {
+					"percentage_rate": 0.01,
+					"fixed_rate": 0,
+					"currency": "usd"
+				},
+				"discount": []
+			}
+		},
+		"account_details": {
+			"account_status": {
+				"text": "Connected",
+				"background_color": "green"
+			},
+			"payout_status": {
+				"text": "Active",
+				"background_color": "green",
+				"popover": {
+					"text": "Your next payout will be sent in 2 days based on your weekly schedule. Arrival time depends on your bank's processing speed.",
+					"cta_text": "Learn more about payouts",
+					"cta_link": "https://woocommerce.com/document/woopayments/payouts/payout-schedule/#new-accounts"
+				}
+			},
+			"banner": null
+		},
+		"deposits": {
+			"status": "enabled",
+			"restrictions": "deposits_unrestricted",
+			"interval": "weekly",
+			"weekly_anchor": "monday",
+			"monthly_anchor": null,
+			"delay_days": 2,
+			"completed_waiting_period": true,
+			"minimum_manual_deposit_amounts": {
+				"aud": 500,
+				"bgn": 100,
+				"cad": 500,
+				"chf": 500,
+				"czk": 3000,
+				"dkk": 5000,
+				"eur": 500,
+				"gbp": 500,
+				"hkd": 5000,
+				"huf": 36000,
+				"nok": 5000,
+				"nzd": 500,
+				"jpy": 50,
+				"sek": 5000,
+				"sgd": 500,
+				"usd": 500,
+				"ron": 500,
+				"pln": 500,
+				"aed": 200
+			},
+			"minimum_scheduled_deposit_amounts": {
+				"aed": 200,
+				"aud": 0,
+				"bgn": 100,
+				"cad": 0,
+				"chf": 500,
+				"czk": 3000,
+				"dkk": 2000,
+				"eur": 100,
+				"gbp": 100,
+				"hkd": 0,
+				"huf": 36000,
+				"jpy": 1,
+				"nok": 2000,
+				"nzd": 0,
+				"pln": 500,
+				"ron": 500,
+				"sek": 2000,
+				"sgd": 100,
+				"usd": 0
+			},
+			"default_external_accounts": [
+				{
+					"object": "bank_account",
+					"bank_name": "STRIPE TEST BANK",
+					"brand": null,
+					"last4": "6789",
+					"routing_number": "110000000",
+					"account_holder_type": null,
+					"currency": "usd",
+					"country": "US",
+					"status": "new"
+				}
+			]
+		},
+		"is_documents_enabled": false,
+		"card_present_eligible": true,
+		"has_card_readers_available": true
 	}
 }

@@ -207,8 +207,8 @@ function columnHeaders( names: readonly string[] ): RegExp[] {
 
 /**
  * Assert the disputes list shows the client's default columns and, on a store
- * with its own disputes (the secretless CI fixture serves none), that the
- * newest dispute fills them and that a dispute still awaiting a response
+ * with its own disputes (the secretless CI fixture's rows are asserted by
+ * `expectFixtureDisputeRows`), that the newest dispute fills them and that a dispute still awaiting a response
  * before its due date shows when to respond by.
  */
 async function expectDisputeColumns(
@@ -284,24 +284,44 @@ async function expectDisputeColumns(
 	} );
 }
 
+// The disputes the secretless CI fixture serves: the recorded platform rows in
+// `envs/woopayments-native/ci-provider-fixture-recorded.json` (`GET disputes`),
+// in minor units. Both await a response.
+const FIXTURE_DISPUTES = [
+	{ id: 'du_1URpwBBzWlxcwgpPfEsuvYVv', amount: 1099 },
+	{ id: 'du_1URpeSBzWlxcwgpPXCLuwKXr', amount: 5000 },
+] as const;
+
 /**
  * Under the secretless CI fixture, assert the disputes list shows the fixture's
- * disputes: it serves none (`disputes` in
- * `envs/woopayments-native/ci-provider-fixture.php`), so the list must settle on
- * its empty state with no dispute rows, which only a completed list fetch
- * reports. Other stores hold their own disputes, so the check applies only to
- * the fixture.
+ * recorded disputes, each with its amount and the response-needed status. The
+ * loaded status alone also passes on an empty list, so this asserts rows, which
+ * only a completed list fetch can render. Other stores hold their own
+ * disputes, so the check applies only to the fixture.
  */
-async function expectFixtureDisputesEmpty( page: Page ): Promise< void > {
+async function expectFixtureDisputeRows( page: Page ): Promise< void > {
 	if ( process.env.E2E_WOOPAYMENTS_NATIVE_FIXTURE !== 'true' ) {
 		return;
 	}
-	await expect( page.getByRole( 'status' ) ).toHaveText(
-		'No disputes found.'
-	);
+	await expect( page.getByRole( 'status' ) ).toHaveText( 'Disputes loaded.' );
 	await expect(
 		page.getByRole( 'row' ).filter( { has: page.getByRole( 'cell' ) } )
-	).toHaveCount( 0 );
+	).toHaveCount( FIXTURE_DISPUTES.length );
+	for ( const dispute of FIXTURE_DISPUTES ) {
+		const row = page.getByRole( 'row' ).filter( {
+			has: page.getByRole( 'link', {
+				name: new RegExp( `dispute ${ dispute.id } ` ),
+			} ),
+		} );
+		await expect( row ).toHaveCount( 1 );
+		await expect( row ).toContainText( 'Response needed' );
+		await expect( row ).toContainText(
+			new Intl.NumberFormat( 'en-US', {
+				style: 'currency',
+				currency: 'USD',
+			} ).format( dispute.amount / 100 )
+		);
+	}
 }
 
 test(
@@ -357,7 +377,7 @@ test(
 		await page.goto( DISPUTES_PATH );
 		await expectSurfaceLoaded( page, 'Disputes' );
 		await expectDataLoaded( page, DISPUTES_TERMINAL, 'Reason' );
-		await expectFixtureDisputesEmpty( page );
+		await expectFixtureDisputeRows( page );
 		// The terminal state above accepts the empty list, because the
 		// contract asks for a terminal state and not a seeded store — which
 		// means it alone cannot tell an empty list from a malformed payload

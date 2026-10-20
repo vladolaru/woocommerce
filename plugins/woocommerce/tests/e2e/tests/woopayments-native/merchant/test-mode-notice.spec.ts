@@ -46,11 +46,12 @@ const TEST_ACCOUNTS_URL =
 const ORDER_TEST_MODE_URL =
 	'https://woocommerce.com/document/woopayments/testing-and-troubleshooting/testing/';
 
-// No page's data is read, so no id has to exist. The payout id is the
-// secretless CI fixture's (`envs/woopayments-native/ci-provider-fixture.php`);
-// the payment id only has to look like one (`pi_`), since native shows the
-// details notice for a payment id before, or without, the payment loading.
-const FIXTURE_PAYOUT_ID = 'po_ci_paid';
+// No page's data is read, so no id has to exist. The payout id is one of the
+// secretless CI fixture's recorded payouts
+// (`envs/woopayments-native/ci-provider-fixture-recorded.json`); the payment id
+// only has to look like one (`pi_`), since native shows the details notice for a
+// payment id before, or without, the payment loading.
+const FIXTURE_PAYOUT_ID = 'po_1TrYnABzWlxcwgpPhhdCrkEZ';
 const ABSENT_DISPUTE_ID = 'dp_e2e_test_mode_notice';
 const ABSENT_PAYMENT_ID = 'pi_e2e_test_mode_notice';
 
