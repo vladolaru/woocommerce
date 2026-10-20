@@ -135,19 +135,28 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 */
 	private function has_support_diagnostics(): bool {
 		return in_array( $this->setup_tier->get_stored_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true )
-			|| ( $this->arbiter->is_extension_owner() && $this->arbiter->is_builtin_enabled() )
-			|| $this->arbiter->is_awaiting_switch()
+			|| $this->can_offer_switch()
 			|| null !== $this->get_cutover_state_store()->get_record();
 	}
 
 	/**
-	 * Add the cutover check to Site Health.
+	 * Tell whether the store can be offered the switch to the built-in WooPayments: the extension owns payments with the feature
+	 * on, or the store waits for its switch.
+	 *
+	 * @return bool
+	 */
+	private function can_offer_switch(): bool {
+		return ( $this->arbiter->is_extension_owner() && $this->arbiter->is_builtin_enabled() ) || $this->arbiter->is_awaiting_switch();
+	}
+
+	/**
+	 * Add the cutover check to Site Health while the store can be offered the switch.
 	 *
 	 * @param mixed $tests Site Health tests.
 	 * @return mixed
 	 */
 	public function add_site_status_tests( $tests ) {
-		if ( ! is_array( $tests ) ) {
+		if ( ! is_array( $tests ) || ! $this->can_offer_switch() ) {
 			return $tests;
 		}
 
@@ -206,7 +215,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 				: __( 'The switch to the built-in WooPayments is not ready', 'woocommerce' ),
 			'status'      => $is_ready ? 'good' : 'recommended',
 			'badge'       => array(
-				'label' => __( 'Performance', 'woocommerce' ),
+				'label' => __( 'Payments', 'woocommerce' ),
 				'color' => 'blue',
 			),
 			'description' => '<p>' . esc_html( $description ) . '</p>',
@@ -334,7 +343,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Render the WooPayments extension's status section, then the built-in WooPayments diagnostics as a separate table.
+	 * Render the WooPayments extension's status section while the built-in WooPayments owns payments, then the built-in WooPayments diagnostics as a separate table.
 	 */
 	public function render_status_report_section(): void {
 		$fields       = $this->get_status_fields();
@@ -343,8 +352,8 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			$runtime_rows[] = $this->status_row( $export_label, $fields[ $field_id ]['label'], '', $fields[ $field_id ]['value'] );
 		}
 
-		// While the WooPayments extension owns payments it renders this section itself (client 11.1.0 `includes/class-wc-payments-status.php:55-56`).
-		if ( ! $this->arbiter->is_extension_owner() ) {
+		// The extension renders this section itself while it owns payments (client 11.1.0 `includes/class-wc-payments-status.php:55-56`), and no gateway is registered while the store waits for its switch or the feature is off.
+		if ( $this->arbiter->is_builtin_owner() ) {
 			$this->render_status_table( 'WooPayments', $this->get_woopayments_extension_status_rows() );
 		}
 		$this->render_status_table( 'Built-in WooPayments', $runtime_rows );

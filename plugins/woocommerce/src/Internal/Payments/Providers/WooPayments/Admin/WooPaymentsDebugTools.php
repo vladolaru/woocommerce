@@ -71,24 +71,27 @@ class WooPaymentsDebugTools {
 	}
 
 	/**
-	 * Add the WooPayments debug tools, with a `builtin-` ID prefix while the WooPayments extension owns payments.
+	 * Add the WooPayments debug tools, none while the WooPayments extension owns payments (it lists its own).
+	 *
+	 * The two canceled-authorization tools schedule actions whose handlers load only while the built-in WooPayments owns
+	 * payments, so they are listed only then.
 	 *
 	 * @param mixed $tools Debug tools.
 	 * @return mixed
 	 */
 	public function add_debug_tools( $tools ) {
-		if ( ! is_array( $tools ) ) {
+		if ( ! is_array( $tools ) || $this->arbiter->is_extension_owner() ) {
 			return $tools;
 		}
 
 		$woopayments_tools = array(
-			'clear_wcpay_account_cache'            => array(
+			'clear_wcpay_account_cache' => array(
 				'name'     => __( 'Clear WooPayments account cache', 'woocommerce' ),
 				'button'   => __( 'Clear', 'woocommerce' ),
 				'desc'     => __( 'This tool clears the cached account values used by WooPayments.', 'woocommerce' ),
 				'callback' => array( $this, 'clear_account_cache' ),
 			),
-			'delete_wcpay_test_orders'             => array(
+			'delete_wcpay_test_orders'  => array(
 				'name'     => __( 'Delete WooPayments test orders', 'woocommerce' ),
 				'button'   => __( 'Delete', 'woocommerce' ),
 				'desc'     => sprintf(
@@ -98,35 +101,30 @@ class WooPaymentsDebugTools {
 				),
 				'callback' => array( $this, 'delete_test_orders' ),
 			),
-			'clear_wcpay_styles_cache'             => array(
+			'clear_wcpay_styles_cache'  => array(
 				'name'     => __( 'Clear WooPayments calculated styles', 'woocommerce' ),
 				'button'   => __( 'Clear', 'woocommerce' ),
 				'desc'     => __( 'This tool will clear the styles cached for the WooPayments gateway UI elements at checkout', 'woocommerce' ),
 				'callback' => array( $this, 'clear_styles_cache' ),
 			),
-			'remediate_canceled_auth_fees_dry_run' => array(
+		);
+
+		if ( $this->arbiter->is_builtin_owner() ) {
+			$woopayments_tools['remediate_canceled_auth_fees_dry_run'] = array(
 				'name'     => __( 'Preview canceled authorization fix (Dry Run)', 'woocommerce' ),
 				'button'   => $this->get_dry_run_button_text(),
 				'desc'     => __( 'Preview what orders would be affected by the canceled authorization fix without making any changes. Results are logged to WooCommerce > Status > Logs.', 'woocommerce' ),
 				'callback' => array( $this, 'schedule_canceled_auth_dry_run' ),
 				'disabled' => $this->is_remediation_running_or_complete(),
-			),
-			'remediate_canceled_auth_fees'         => array(
+			);
+			$woopayments_tools['remediate_canceled_auth_fees']         = array(
 				'name'     => __( 'Fix canceled authorization analytics', 'woocommerce' ),
 				'button'   => $this->get_remediation_button_text(),
 				'desc'     => $this->get_remediation_description(),
 				'confirm'  => __( 'This will update order metadata and delete incorrect refund records for affected orders. This fixes negative values in WooCommerce Analytics. Make sure you have a recent backup before proceeding. Continue?', 'woocommerce' ),
 				'callback' => array( $this, 'schedule_canceled_auth_remediation' ),
 				'disabled' => $this->is_remediation_running_or_complete(),
-			),
-		);
-
-		if ( $this->arbiter->is_extension_owner() ) {
-			$namespaced_tools = array();
-			foreach ( $woopayments_tools as $tool_id => $tool ) {
-				$namespaced_tools[ 'builtin-' . $tool_id ] = $tool;
-			}
-			$woopayments_tools = $namespaced_tools;
+			);
 		}
 
 		return array_merge( $tools, $woopayments_tools );

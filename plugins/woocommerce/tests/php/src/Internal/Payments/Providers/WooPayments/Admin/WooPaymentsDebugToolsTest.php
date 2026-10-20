@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\A
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsDebugTools;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
 
@@ -15,67 +16,81 @@ use WC_Unit_Test_Case;
 class WooPaymentsDebugToolsTest extends WC_Unit_Test_Case {
 
 	/**
+	 * The option the WooPayments extension stores its version in; its presence says the store ran the extension.
+	 */
+	private const EXTENSION_VERSION_OPTION = 'woocommerce_woocommerce_payments_version';
+
+	/**
+	 * The tools the built-in WooPayments lists on every store it serves with support diagnostics.
+	 */
+	private const ACCOUNT_AND_ORDER_TOOLS = array( 'clear_wcpay_account_cache', 'delete_wcpay_test_orders', 'clear_wcpay_styles_cache' );
+
+	/**
+	 * The two canceled-authorization tools, whose Action Scheduler handlers register only while the built-in WooPayments owns payments.
+	 */
+	private const REMEDIATION_TOOLS = array( 'remediate_canceled_auth_fees_dry_run', 'remediate_canceled_auth_fees' );
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
 		wc_get_container()->reset_replacement( WooPaymentsCanceledAuthorizationFeeRemediationService::class );
 		$this->reset_legacy_proxy_mocks();
+		delete_option( self::EXTENSION_VERSION_OPTION );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
 		parent::tearDown();
 	}
 
 	/**
-	 * @testdox WooCommerce debug tools include account, order, styles, and fee-remediation actions.
+	 * @testdox The debug tools follow who runs WooPayments: all five for the built-in, three while it waits or is off, none beside the extension ($_dataName).
+	 * @dataProvider provide_debug_tool_stores
+	 *
+	 * @param string   $feature      The WooPayments feature option.
+	 * @param bool     $plugin       Whether the WooPayments extension is active.
+	 * @param bool     $ran_before   Whether the store ran the extension before (its version option is stored).
+	 * @param string[] $input_ids    Tools already listed, as the extension lists its own.
+	 * @param string[] $expected_ids Tool IDs expected after the filter, in order.
 	 */
-	public function test_debug_tools_include_support_callbacks(): void {
-		$this->fake_plugin( false );
-		$tools = $this->get_sut()->add_debug_tools( array() );
-
-		foreach (
-			array(
-				'clear_wcpay_account_cache',
-				'delete_wcpay_test_orders',
-				'clear_wcpay_styles_cache',
-				'remediate_canceled_auth_fees_dry_run',
-				'remediate_canceled_auth_fees',
-			) as $tool_id
-		) {
-			$this->assertArrayHasKey( $tool_id, $tools );
-			$this->assertArrayNotHasKey( 'builtin-' . $tool_id, $tools );
-			$this->assertArrayHasKey( 'callback', $tools[ $tool_id ] );
-			$this->assertIsCallable( $tools[ $tool_id ]['callback'] );
+	public function test_debug_tools_follow_who_runs_woopayments( string $feature, bool $plugin, bool $ran_before, array $input_ids, array $expected_ids ): void {
+		$this->fake_plugin( $plugin );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $feature );
+		if ( $ran_before ) {
+			update_option( self::EXTENSION_VERSION_OPTION, '10.5.0' );
 		}
-	}
-
-	/**
-	 * @testdox The built-in debug tools use distinct keys while the WooPayments extension is active.
-	 */
-	public function test_debug_tools_use_the_builtin_prefix_without_overwriting_extension_tools_during_coexistence(): void {
-		$this->fake_plugin( true );
-		$tool_ids        = array(
-			'clear_wcpay_account_cache',
-			'delete_wcpay_test_orders',
-			'clear_wcpay_styles_cache',
-			'remediate_canceled_auth_fees_dry_run',
-			'remediate_canceled_auth_fees',
-		);
-		$extension_tools = array();
-
-		foreach ( $tool_ids as $tool_id ) {
-			$extension_tools[ $tool_id ] = array(
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		$input = array();
+		foreach ( $input_ids as $tool_id ) {
+			$input[ $tool_id ] = array(
 				'name'     => 'Plugin tool',
 				'callback' => '__return_null',
 			);
 		}
 
-		$tools = $this->get_sut()->add_debug_tools( $extension_tools );
+		$tools = $this->get_sut()->add_debug_tools( $input );
 
-		foreach ( $tool_ids as $tool_id ) {
-			$this->assertSame( $extension_tools[ $tool_id ], $tools[ $tool_id ] );
-			$this->assertArrayHasKey( 'builtin-' . $tool_id, $tools );
-			$this->assertIsCallable( $tools[ 'builtin-' . $tool_id ]['callback'] );
+		$this->assertSame( $expected_ids, array_keys( $tools ) );
+		foreach ( array_diff( $expected_ids, $input_ids ) as $tool_id ) {
+			$this->assertIsCallable( $tools[ $tool_id ]['callback'], $tool_id );
 		}
+		foreach ( $input_ids as $tool_id ) {
+			$this->assertSame( $input[ $tool_id ], $tools[ $tool_id ], 'The extension\'s own tool must come through untouched.' );
+		}
+	}
+
+	/**
+	 * @return array<string,array{string,bool,bool,string[],string[]}>
+	 */
+	public function provide_debug_tool_stores(): array {
+		$all = array_merge( self::ACCOUNT_AND_ORDER_TOOLS, self::REMEDIATION_TOOLS );
+
+		return array(
+			'built-in owns payments'                  => array( 'yes', false, false, array(), $all ),
+			'waiting for the switch'                  => array( 'yes', false, true, array(), self::ACCOUNT_AND_ORDER_TOOLS ),
+			'feature off, extension not running'      => array( 'no', false, true, array(), self::ACCOUNT_AND_ORDER_TOOLS ),
+			'extension owns payments, feature on'     => array( 'yes', true, true, $all, $all ),
+			'extension owns payments, no extra tools' => array( 'yes', true, true, array(), array() ),
+		);
 	}
 
 	/**
@@ -86,6 +101,8 @@ class WooPaymentsDebugToolsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_pending_dry_run_alone_leaves_remediation_tools_enabled(): void {
 		$this->fake_plugin( false );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		delete_option( WooPaymentsCanceledAuthorizationFeeRemediationService::STATUS_OPTION_KEY );
 		as_schedule_single_action( time() + HOUR_IN_SECONDS, WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK, array(), WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID );
 

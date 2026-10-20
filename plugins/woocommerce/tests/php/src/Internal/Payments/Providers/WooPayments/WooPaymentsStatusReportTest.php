@@ -228,14 +228,48 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_filter( 'site_status_tests', array( $sut, 'add_site_status_tests' ) ) );
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $sut->get_status_data()['runtime_owner'] );
 		$this->assertSame( 'none (awaiting the switch)', $sut->get_status_fields()['runtime_owner']['value'] );
+		$this->assertArrayHasKey( 'woocommerce_woopayments_cutover', $sut->add_site_status_tests( array() )['async'], 'The waiting store is offered the switch, so Site Health checks it.' );
+		$this->assertSame( array( 'clear_wcpay_account_cache', 'delete_wcpay_test_orders', 'clear_wcpay_styles_cache' ), array_keys( $sut->add_debug_tools( array() ) ), 'The canceled-authorization tools need handlers that load only while the built-in WooPayments owns payments.' );
+
+		ob_start();
+		$sut->render_status_report_section();
+
+		$this->assertSame( array( 'Built-in WooPayments' ), array_keys( $this->get_status_tables( (string) ob_get_clean() ) ), 'No gateway is registered while the store waits, so the WooPayments gateway table has nothing true to say.' );
+	}
+
+	/**
+	 * @testdox The status report leaves the WooPayments gateway table out unless the built-in WooPayments owns payments ($_dataName).
+	 * @dataProvider provide_stores_without_a_running_built_in
+	 *
+	 * @param string $feature    The WooPayments feature option.
+	 * @param bool   $ran_before Whether the store ran the extension before.
+	 * @param string $tier       The stored setup tier.
+	 */
+	public function test_status_report_leaves_the_gateway_table_out_unless_the_built_in_owns_payments( string $feature, bool $ran_before, string $tier ): void {
+		$this->set_store_shape( $feature, false, $ran_before, $tier );
+
+		ob_start();
+		$this->get_sut()->render_status_report_section();
+
+		$this->assertSame( array( 'Built-in WooPayments' ), array_keys( $this->get_status_tables( (string) ob_get_clean() ) ) );
+	}
+
+	/**
+	 * @return array<string,array{string,bool,string}>
+	 */
+	public function provide_stores_without_a_running_built_in(): array {
+		return array(
+			'waiting for the switch'                       => array( 'yes', true, WooPaymentsSetupTier::DISABLED ),
+			'connected store, feature off, extension gone' => array( 'no', true, WooPaymentsSetupTier::CONNECTED ),
+		);
 	}
 
 	/**
 	 * @testdox Site Health registers an asynchronous cutover check that reports runtime ownership and preflight state.
 	 */
 	public function test_site_health_registers_async_cutover_check_with_runtime_and_preflight_state(): void {
-		// The failed switch checks below include the feature being off.
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+		// The extension owns payments with the feature on, so the switch can be offered; no extension version is stored, which fails the version check.
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$this->fake_plugin( true );
 
 		$tests = $this->get_sut()->add_site_status_tests(
@@ -259,7 +293,40 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'recommended', $result['status'] );
 		$this->assertSame( 'woocommerce_woopayments_cutover', $result['test'] );
 		$this->assertStringContainsString( 'WooPayments runs as the WooPayments extension.', $result['description'] );
-		$this->assertStringContainsString( 'Failed switch checks: builtin_runtime_disabled', $result['description'] );
+		$this->assertStringContainsString( 'Failed switch checks: ', $result['description'] );
+		$this->assertStringContainsString( 'woopayments_plugin_version_unsupported', $result['description'] );
+		$this->assertSame( 'Payments', $result['badge']['label'], 'The check is about payments, not speed or security.' );
+	}
+
+	/**
+	 * @testdox Site Health lists the switch check only while the switch can be offered: the extension owns payments with the feature on, or the store waits for it ($_dataName).
+	 * @dataProvider provide_site_health_stores
+	 *
+	 * @param string $feature    The WooPayments feature option.
+	 * @param bool   $plugin     Whether the WooPayments extension is active.
+	 * @param bool   $ran_before Whether the store ran the extension before.
+	 * @param string $tier       The stored setup tier.
+	 * @param bool   $expected   Whether the check is listed.
+	 */
+	public function test_site_health_lists_the_switch_check_only_while_the_switch_can_be_offered( string $feature, bool $plugin, bool $ran_before, string $tier, bool $expected ): void {
+		$this->set_store_shape( $feature, $plugin, $ran_before, $tier );
+
+		$tests = $this->get_sut()->add_site_status_tests( array( 'async' => array() ) );
+
+		$this->assertSame( $expected, isset( $tests['async']['woocommerce_woopayments_cutover'] ) );
+	}
+
+	/**
+	 * @return array<string,array{string,bool,bool,string,bool}>
+	 */
+	public function provide_site_health_stores(): array {
+		return array(
+			'extension owns payments, feature on'          => array( 'yes', true, true, WooPaymentsSetupTier::AVAILABLE, true ),
+			'waiting for the switch'                       => array( 'yes', false, true, WooPaymentsSetupTier::DISABLED, true ),
+			'extension owns payments, feature off'         => array( 'no', true, true, WooPaymentsSetupTier::AVAILABLE, false ),
+			'connected store the built-in runs, never switched' => array( 'yes', false, false, WooPaymentsSetupTier::CONNECTED, false ),
+			'connected store, feature off, extension gone' => array( 'no', false, true, WooPaymentsSetupTier::CONNECTED, false ),
+		);
 	}
 
 	/**
@@ -983,6 +1050,24 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		}
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( self::EXPECTED_LAST_FETCH_OPTION, 1700000000 );
+	}
+
+	/**
+	 * Put the store in one ownership shape and drop the request-local memos.
+	 *
+	 * @param string $feature    The WooPayments feature option.
+	 * @param bool   $plugin     Whether the WooPayments extension is active.
+	 * @param bool   $ran_before Whether the store ran the extension before (its version option is stored).
+	 * @param string $tier       The stored setup tier.
+	 */
+	private function set_store_shape( string $feature, bool $plugin, bool $ran_before, string $tier ): void {
+		$this->fake_plugin( $plugin );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $feature, true );
+		if ( $ran_before ) {
+			update_option( 'woocommerce_woocommerce_payments_version', '10.5.0', true );
+		}
+		update_option( WooPaymentsCutoverStateStore::OPTION_NAME, WooPaymentsCutoverStateStore::ABSENT_RECORD, true );
+		$this->set_setup_tier( $tier );
 	}
 
 	/**
