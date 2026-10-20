@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Cutover;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverActionScheduler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPluginLifecycleListener;
@@ -577,6 +578,12 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 			update_blog_status( $site, 'deleted', '1' );
 		} elseif ( 'merged feature development' === $store ) {
 			Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
+		} elseif ( 'payment providers off' === $store ) {
+			// A host that turns the payment providers off for one site: the site's own guard never loads there.
+			add_filter(
+				PaymentsBootstrap::FILTER_LOAD_PAYMENT_PROVIDERS,
+				static fn( $load ) => get_current_blog_id() === $site ? false : $load
+			);
 		}
 		$this->mock_plugin_functions();
 		$this->fake_wp_die();
@@ -588,7 +595,8 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Allowed activations: the other site ran the extension, has the feature off, was never set up, has no WooCommerce
-	 * (a bare sub-site), or is deleted; merged feature development; and an activation for the main site alone.
+	 * (a bare sub-site), is deleted, or loads no payment providers; merged feature development; and an activation for the
+	 * main site alone.
 	 *
 	 * @return array<string,array{string}>
 	 */
@@ -600,6 +608,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 			'WooCommerce is not active at the other site' => array( 'without WooCommerce' ),
 			'the other site is deleted'                   => array( 'deleted' ),
 			'merged feature development'                  => array( 'merged feature development' ),
+			'the payment providers are off at the other site' => array( 'payment providers off' ),
 			'an activation for the main site only'        => array( 'site activation' ),
 		);
 	}
@@ -634,7 +643,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 			$_GET[ WooPaymentsPerSiteActivationController::QUERY_ACTION ] = WooPaymentsPerSiteActivationController::ACTION_CONVERT;
 			$_GET[ WooPaymentsPerSiteActivationController::NONCE_NAME ]   = wp_create_nonce( WooPaymentsPerSiteActivationController::NONCE_ACTION );
 			try {
-				$this->create_sut()->handle_admin_init();
+				WooPaymentsPerSiteActivationController::handle_conversion_request();
 			} catch ( \LengthException $exited ) {
 				unset( $exited );
 			}
