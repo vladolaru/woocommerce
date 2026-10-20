@@ -55,36 +55,33 @@ class WooPaymentsCutoverPluginLifecycleListenerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A WooPayments deactivation in any request reaches the controller.
+	 * @testdox $hook reaches the controller's $method ($_dataName).
+	 * @dataProvider lifecycle_hook_provider
+	 *
+	 * @param string           $hook      Plugin lifecycle hook.
+	 * @param array<int,mixed> $arguments Arguments the hook fires with.
+	 * @param string           $method    Controller method that must be called.
+	 * @param array<int,mixed> $expected  Arguments the controller method must receive.
 	 */
-	public function test_deactivation_reaches_the_controller(): void {
+	public function test_plugin_lifecycle_hook_reaches_the_controller( string $hook, array $arguments, string $method, array $expected ): void {
 		$this->controller->expects( $this->once() )
-			->method( 'handle_plugin_deactivated' )
-			->with( WooPaymentsRuntimeArbiter::PLUGIN_FILE );
+			->method( $method )
+			->with( ...$expected );
 
-		do_action( 'deactivated_plugin', WooPaymentsRuntimeArbiter::PLUGIN_FILE, false );
+		do_action( $hook, ...$arguments ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fires core's plugin lifecycle hooks, one with a single argument as some callers do.
 	}
 
 	/**
-	 * @testdox A caller firing the activation hook with only the plugin path reaches the controller as a site-only change.
+	 * Plugin lifecycle hooks and what the controller receives.
+	 *
+	 * @return array<string,array{string,array<int,mixed>,string,array<int,mixed>}>
 	 */
-	public function test_one_argument_activation_hook_reaches_the_controller_as_site_only(): void {
-		$this->controller->expects( $this->once() )
-			->method( 'handle_plugin_activated' )
-			->with( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false );
-
-		do_action( 'activated_plugin', WooPaymentsRuntimeArbiter::PLUGIN_FILE ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Fires the core hook with one argument, as some callers do.
-	}
-
-	/**
-	 * @testdox A network-wide WooPayments activation in any request reaches the controller.
-	 */
-	public function test_activation_reaches_the_controller(): void {
-		$this->controller->expects( $this->once() )
-			->method( 'handle_plugin_activated' )
-			->with( WooPaymentsRuntimeArbiter::PLUGIN_FILE, true );
-
-		do_action( 'activated_plugin', WooPaymentsRuntimeArbiter::PLUGIN_FILE, true );
+	public function lifecycle_hook_provider(): array {
+		return array(
+			'a WooPayments deactivation in any request' => array( 'deactivated_plugin', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false ), 'handle_plugin_deactivated', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ),
+			'an activation hook fired with only the plugin path' => array( 'activated_plugin', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), 'handle_plugin_activated', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false ) ),
+			'a network-wide WooPayments activation in any request' => array( 'activated_plugin', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, true ), 'handle_plugin_activated', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, true ) ),
+		);
 	}
 
 	/**

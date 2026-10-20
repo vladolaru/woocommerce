@@ -132,21 +132,11 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'payment_request', 'amazon_pay' ), $stored['express_checkout_checkout_methods'] );
 		$this->assertSame( 'small', $stored['payment_request_button_size'] );
 		$this->assertSame( 'buy', $stored['payment_request_button_type'] );
-		$this->assertSame( '4', get_option( self::MIGRATION_VERSION_OPTION ) );
+		$this->assertSame( '4', wp_load_alloptions( true )[ self::MIGRATION_VERSION_OPTION ] ?? null, 'Completed cutover normalization must not leave its marker as a request-level option read.' );
 
 		$second_summary = $this->create_runner()->run();
 
 		$this->assertSame( array( 'already_normalized' ), $second_summary['changes'] );
-	}
-
-	/**
-	 * @testdox Stores the completed cutover marker in the autoloaded option set.
-	 */
-	public function test_run_stores_completed_marker_as_an_autoloaded_option(): void {
-		$this->create_runner()->run();
-		$alloptions = wp_load_alloptions( true );
-
-		$this->assertSame( '4', $alloptions[ self::MIGRATION_VERSION_OPTION ] ?? null, 'Completed cutover normalization must not leave its marker as a request-level option read.' );
 	}
 
 	/**
@@ -424,61 +414,62 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Unversioned settings normalizers are intrinsically idempotent.
-	 * @dataProvider unversioned_settings_migration_provider
-	 *
-	 * @param string              $method_name Migration method name.
-	 * @param array<string,mixed> $initial     Pre-migration settings.
-	 * @param array<string,mixed> $expected    Expected migrated settings.
+	 * @testdox The manual-capture method filter changes the settings once; a rerun with the marker cleared changes nothing more.
 	 */
-	public function test_unversioned_settings_migrations_are_idempotent( string $method_name, array $initial, array $expected ): void {
-		$runner = $this->create_runner();
-		$method = new \ReflectionMethod( $runner, $method_name );
-		$method->setAccessible( true );
-		$settings = $initial;
-
-		$this->assertTrue( $method->invokeArgs( $runner, array( &$settings ) ) );
-		$this->assertSame( $expected, $settings );
-		$this->assertFalse( $method->invokeArgs( $runner, array( &$settings ) ) );
-		$this->assertSame( $expected, $settings );
-	}
-
-	/**
-	 * Unversioned settings migration fixtures.
-	 *
-	 * @return array<string,array{string,array<string,mixed>,array<string,mixed>}>
-	 */
-	public function unversioned_settings_migration_provider(): array {
-		return array(
-			'manual capture methods' => array(
-				'normalize_manual_capture_payment_methods',
-				array(
-					'manual_capture'                 => 'yes',
-					'upe_enabled_payment_method_ids' => array( 'card', 'ideal', 'amazon_pay' ),
-				),
-				array(
-					'manual_capture'                 => 'yes',
-					'upe_enabled_payment_method_ids' => array( 'card', 'amazon_pay' ),
-				),
-			),
+	public function test_manual_capture_method_filter_is_idempotent_across_reruns(): void {
+		update_option(
+			self::SETTINGS_OPTION,
+			array(
+				'manual_capture'                 => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card', 'ideal', 'amazon_pay' ),
+			)
 		);
+
+		$first = $this->create_runner()->run();
+
+		$this->assertContains( 'manual_capture_payment_methods', $first['changes'] );
+		$this->assertSame( array( 'card', 'amazon_pay' ), get_option( self::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
+
+		delete_option( self::MIGRATION_VERSION_OPTION );
+		$second = $this->create_runner()->run();
+
+		$this->assertNotContains( 'manual_capture_payment_methods', $second['changes'] );
+		$this->assertSame( array( 'card', 'amazon_pay' ), get_option( self::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
 	}
 
 	/**
-	 * @testdox Multi-currency cache autodetection honors its version boundary and rerun contract.
+	 * @testdox Multi-currency cache autodetection is marked done only when the stored extension version predates 11.0.0, and a rerun does not mark it again ($_dataName).
+	 * @dataProvider multi_currency_cache_autodetect_provider
+	 *
+	 * @param string $previous_version Stored extension version.
+	 * @param bool   $marked           Whether the run marks the autodetection done.
 	 */
-	public function test_multi_currency_cache_autodetect_version_boundary(): void {
-		$runner = $this->create_runner();
-		$method = new \ReflectionMethod( $runner, 'mark_multi_currency_cache_autodetect_done' );
-		$method->setAccessible( true );
+	public function test_multi_currency_cache_autodetect_version_boundary( string $previous_version, bool $marked ): void {
+		update_option( self::VERSION_OPTION, $previous_version );
 
-		$this->assertTrue( $method->invoke( $runner, '10.9.9' ) );
-		$this->assertSame( 'yes', get_option( 'wcpay_multi_currency_cache_autodetect_done' ) );
-		$this->assertFalse( $method->invoke( $runner, '10.9.9' ) );
+		$first = $this->create_runner()->run();
 
-		delete_option( 'wcpay_multi_currency_cache_autodetect_done' );
-		$this->assertFalse( $method->invoke( $runner, '11.0.0' ) );
-		$this->assertFalse( $method->invoke( $runner, '11.0.1' ) );
+		$this->assertSame( $marked, in_array( 'multi_currency_cache_autodetect', $first['changes'], true ) );
+		$this->assertSame( $marked ? 'yes' : false, get_option( 'wcpay_multi_currency_cache_autodetect_done' ) );
+
+		delete_option( self::MIGRATION_VERSION_OPTION );
+		$second = $this->create_runner()->run();
+
+		$this->assertNotContains( 'multi_currency_cache_autodetect', $second['changes'] );
+		$this->assertSame( $marked ? 'yes' : false, get_option( 'wcpay_multi_currency_cache_autodetect_done' ) );
+	}
+
+	/**
+	 * Stored extension versions around the 11.0.0 boundary.
+	 *
+	 * @return array<string,array{string,bool}>
+	 */
+	public function multi_currency_cache_autodetect_provider(): array {
+		return array(
+			'just below the boundary' => array( '10.9.9', true ),
+			'at the boundary'         => array( '11.0.0', false ),
+			'above the boundary'      => array( '11.0.1', false ),
+		);
 	}
 
 	/**

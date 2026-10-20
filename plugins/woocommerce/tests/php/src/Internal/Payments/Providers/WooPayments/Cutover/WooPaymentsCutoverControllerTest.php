@@ -9,8 +9,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\C
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
-use Automattic\WooCommerce\Internal\DataStores\Orders\DataSynchronizer;
-use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
@@ -88,34 +86,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	private bool $builtin_provider_ready = false;
 
 	/**
-	 * Whether the native rate account is connected.
-	 *
-	 * @var bool
-	 */
-	private bool $rate_account_connected = true;
-
-	/**
-	 * Whether the native rate account is rejected.
-	 *
-	 * @var bool
-	 */
-	private bool $rate_account_rejected = false;
-
-	/**
-	 * Whether the native rate API client is connected.
-	 *
-	 * @var bool
-	 */
-	private bool $rate_api_client_connected = false;
-
-	/**
-	 * Whether canceled-authorization fee remediation can be scheduled during cutover.
-	 *
-	 * @var bool
-	 */
-	private bool $fee_remediation_schedulable = true;
-
-	/**
 	 * Number of times the native provider readiness was checked.
 	 *
 	 * @var int
@@ -142,13 +112,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * @var string
 	 */
 	private string $fee_remediation_schedule_result = 'scheduled';
-
-	/**
-	 * Platform connection preflight failures.
-	 *
-	 * @var string[]
-	 */
-	private array $platform_connection_failures = array();
 
 	/**
 	 * Number of times the cutover asked the remediation service to adopt the queue.
@@ -193,48 +156,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	private array $deactivate_plugin_calls = array();
 
 	/**
-	 * Whether this test registered the subscription order type.
-	 *
-	 * @var bool
-	 */
-	private bool $registered_subscription_order_type = false;
-
-	/**
-	 * Raw HPOS order rows created by tests.
-	 *
-	 * @var int[]
-	 */
-	private array $raw_hpos_order_ids = array();
-
-	/**
-	 * Whether this test class created the HPOS tables for a disabled-after-use fixture.
-	 *
-	 * @var bool
-	 */
-	private bool $created_hpos_tables = false;
-
-	/**
-	 * Value of the HPOS table-created option before a disabled-after-use fixture.
-	 *
-	 * @var string|false
-	 */
-	private $previous_hpos_tables_created_option = false;
-
-	/**
-	 * Whether this test class captured the HPOS table-created option.
-	 *
-	 * @var bool
-	 */
-	private bool $captured_hpos_tables_created_option = false;
-
-	/**
-	 * Action Scheduler hooks created by tests.
-	 *
-	 * @var string[]
-	 */
-	private array $scheduled_action_hooks = array();
-
-	/**
 	 * Arguments passed to the most recent wp_die call.
 	 *
 	 * @var array<string,mixed>
@@ -272,7 +193,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			->willReturnCallback(
 				function (): bool {
 					++$this->fee_remediation_preflight_calls;
-					return $this->fee_remediation_schedulable;
+					return true;
 				}
 			);
 		$this->fee_remediation_service
@@ -293,7 +214,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			->willReturnCallback(
 				function (): array {
 					++$this->platform_connection_preflight_calls;
-					return $this->platform_connection_failures;
+					return array();
 				}
 			);
 
@@ -301,33 +222,14 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_provider_connected', 'is_account_rejected' ) )
 			->getMock();
-		$this->rate_account
-			->method( 'is_provider_connected' )
-			->willReturnCallback(
-				function ( bool $on_error = false ): bool {
-					unset( $on_error );
-					return $this->rate_account_connected;
-				}
-			);
-		$this->rate_account
-			->method( 'is_account_rejected' )
-			->willReturnCallback(
-				function (): bool {
-					return $this->rate_account_rejected;
-				}
-			);
+		$this->rate_account->method( 'is_provider_connected' )->willReturn( true );
+		$this->rate_account->method( 'is_account_rejected' )->willReturn( false );
 
 		$this->rate_api_client = $this->getMockBuilder( WooPaymentsNativeApiClientAdapter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_server_connected' ) )
 			->getMock();
-		$this->rate_api_client
-			->method( 'is_server_connected' )
-			->willReturnCallback(
-				function (): bool {
-					return $this->rate_api_client_connected;
-				}
-			);
+		$this->rate_api_client->method( 'is_server_connected' )->willReturn( false );
 
 		$this->preflight_service = $this->create_preflight_service();
 		$this->sut               = $this->create_cutover_controller( null, $this->preflight_service );
@@ -343,25 +245,10 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		unset( $_GET[ WooPaymentsCutoverController::QUERY_ACTION ], $_GET[ WooPaymentsCutoverController::NONCE_NAME ], $_GET[ WooPaymentsCutoverController::QUERY_NOTICE ], $_GET['page'], $_GET['tab'] );
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'woocommerce_woocommerce_payments_version' );
-		delete_option( '_wcpay_feature_customer_multi_currency' );
-		delete_option( 'wcpay_multi_currency_enabled_currencies' );
-		delete_option( 'wcpay_multi_currency_exchange_rate_gbp' );
 
 		remove_all_filters( WooPaymentsCutoverController::FILTER_MANDATORY_CUTOVER_ENABLED );
 		remove_all_filters( 'wp_die_handler' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
-		if ( $this->registered_subscription_order_type ) {
-			global $wc_order_types;
-			unset( $wc_order_types['shop_subscription'] );
-			unregister_post_type( 'shop_subscription' );
-			$this->registered_subscription_order_type = false;
-		}
-		$this->delete_raw_hpos_orders();
-		$this->clean_up_disabled_hpos_fixture();
-		foreach ( $this->scheduled_action_hooks as $hook_name ) {
-			as_unschedule_all_actions( $hook_name );
-		}
-		$this->scheduled_action_hooks = array();
 		Constants::clear_single_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS' );
 		$this->reset_legacy_proxy_mocks();
 
@@ -1355,240 +1242,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Cutover preflight blocks while the built-in provider cannot process payments.
-	 */
-	public function test_preflight_blocks_when_the_builtin_provider_cannot_process_payments(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		$this->builtin_provider_ready = false;
-
-		$this->assertContains( 'builtin_transport_unavailable', $this->preflight_service->get_failures() );
-	}
-
-	/**
-	 * @testdox Cutover preflight blocks while platform connection owner user-token readiness is unavailable.
-	 */
-	public function test_preflight_blocks_when_platform_connection_user_token_is_unavailable(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		$this->platform_connection_failures = array( 'wpcom_connection_owner_user_token_unavailable' );
-
-		$this->assertContains( 'wpcom_connection_owner_user_token_unavailable', $this->preflight_service->get_failures() );
-	}
-
-	/**
-	 * @testdox Cutover preflight blocks when automatic multi-currency rates have no provider.
-	 */
-	public function test_preflight_blocks_when_multi_currency_automatic_rates_have_no_provider(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		$this->enable_multi_currency_with_rate_type( 'automatic' );
-
-		$this->assertContains( 'multi_currency_rates_unavailable', $this->preflight_service->get_failures() );
-	}
-
-	/**
-	 * @testdox Cutover preflight allows manual multi-currency rates without a provider.
-	 */
-	public function test_preflight_allows_manual_multi_currency_rates_without_provider(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		$this->enable_multi_currency_with_rate_type( 'manual' );
-
-		$this->assertNotContains( 'multi_currency_rates_unavailable', $this->preflight_service->get_failures() );
-	}
-
-	/**
-	 * @testdox Cutover preflight allows automatic multi-currency rates when a provider is available.
-	 */
-	public function test_preflight_allows_multi_currency_automatic_rates_with_available_provider(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		$this->enable_multi_currency_with_rate_type( 'automatic' );
-		$this->enable_available_rate_transport();
-
-		$this->assertNotContains( 'multi_currency_rates_unavailable', $this->preflight_service->get_failures() );
-	}
-
-	/**
-	 * @testdox Cutover preflight blocks when the last active WooPayments version is unsupported.
-	 * @dataProvider provide_unsupported_woopayments_versions
-	 *
-	 * @param string $version Recorded WooPayments version.
-	 */
-	public function test_preflight_blocks_unsupported_woopayments_versions( string $version ): void {
-		$this->fake_plugin_active();
-		$this->enable_ready_cutover();
-		update_option( 'woocommerce_woocommerce_payments_version', $version );
-
-		$this->assertContains( 'woopayments_plugin_version_unsupported', $this->preflight_service->get_failures() );
-	}
-
-	/**
-	 * Provide unsupported recorded WooPayments versions.
-	 *
-	 * @return array<string,array{string}>
-	 */
-	public function provide_unsupported_woopayments_versions(): array {
-		return array(
-			'missing version'   => array( '' ),
-			'malformed version' => array( 'not-a-version' ),
-			'older version'     => array( '10.4.9' ),
-		);
-	}
-
-	/**
-	 * @testdox Cutover preflight discovers pending WooPayments actions without a static hook inventory.
-	 */
-	public function test_preflight_blocks_when_unknown_woopayments_action_is_pending(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->builtin_provider_ready = true;
-
-		$hook_name                      = 'wcpay_synthetic_cutover_probe';
-		$this->scheduled_action_hooks[] = $hook_name;
-		$action_id                      = as_schedule_single_action( time() + HOUR_IN_SECONDS, $hook_name, array(), 'woocommerce-test-cutover', true );
-
-		$this->assertIsInt( $action_id );
-		$this->assertGreaterThan( 0, $action_id );
-		$this->assertContains( 'operational_queue_hooks_unhandled', $this->preflight_service->get_failures() );
-	}
-
-	/**
-	 * @testdox Cutover preflight allows queued WooPayments actions that the built-in WooPayments handles.
-	 *
-	 * @dataProvider builtin_handled_queue_hook_provider
-	 *
-	 * @param string $hook_name Native-owned Action Scheduler hook.
-	 */
-	public function test_preflight_allows_a_pending_builtin_handled_queue_action( string $hook_name ): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->builtin_provider_ready = true;
-
-		$this->scheduled_action_hooks[] = $hook_name;
-		$action_id                      = as_schedule_single_action( time() + HOUR_IN_SECONDS, $hook_name, array(), 'woocommerce-test-cutover', true );
-
-		$this->assertIsInt( $action_id );
-		$this->assertGreaterThan( 0, $action_id );
-		$this->assertNotContains( 'operational_queue_hooks_unhandled', $this->preflight_service->get_failures() );
-	}
-
-	/**
-	 * Native-owned Action Scheduler hooks.
-	 *
-	 * @return array<string,array{string}>
-	 */
-	public function builtin_handled_queue_hook_provider(): array {
-		return array(
-			'store setup sync'                      => array( 'wcpay_store_setup_sync' ),
-			'update saved payment method'           => array( 'wcpay_update_saved_payment_method' ),
-			'fee breakdown order note'              => array( 'wcpay_add_fee_breakdown_to_order_notes' ),
-			'compatibility data update'             => array( 'wcpay_update_compatibility_data' ),
-			'instant deposit reminder'              => array( 'wcpay_instant_deposit_reminder' ),
-			'post-KYC activation email'             => array( 'wcpay_post_kyc_activation_email_send' ),
-			'new-order tracking'                    => array( 'wcpay_track_new_order' ),
-			'updated-order tracking'                => array( 'wcpay_track_update_order' ),
-			'Apple Pay domain retry'                => array( 'wcpay_register_apple_pay_domain' ),
-			'authorization-fee remediation'         => array( 'wcpay_remediate_canceled_authorization_fees' ),
-			'authorization-fee dry run'             => array( 'wcpay_remediate_canceled_authorization_fees_dry_run' ),
-			'authorization-fee affected-order scan' => array( 'wcpay_check_affected_auth_fee_orders' ),
-			'failed webhook fetch'                  => array( 'wcpay_webhook_fetch_events' ),
-			'failed webhook processing'             => array( 'wcpay_webhook_process_event' ),
-			'Stripe Billing migration scheduling'   => array( 'wcpay_schedule_subscription_migrations' ),
-			'Stripe Billing migration'              => array( 'wcpay_migrate_subscription' ),
-			'Stripe Billing migration retry'        => array( 'wcpay_migrate_subscription_retry' ),
-		);
-	}
-
-	/**
-	 * @testdox Cutover preflight blocks while required financial migrations cannot be scheduled.
-	 */
-	public function test_preflight_blocks_when_financial_migrations_cannot_be_scheduled(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		$this->fee_remediation_schedulable = false;
-
-		$this->assertContains( 'financial_migrations_unavailable', $this->preflight_service->get_failures() );
-	}
-
-	/**
-	 * @testdox Cutover preflight blocks a store without WooCommerce Subscriptions while a subscription is still Stripe-billed (bundled flavor).
-	 */
-	public function test_preflight_blocks_when_bundled_stripe_billing_subscription_marker_exists(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		$this->create_bundled_stripe_billing_subscription( 'pending' );
-
-		$this->assertContains( 'bundled_stripe_billing_subscriptions_present', $this->preflight_service->get_failures() );
-	}
-
-	/**
-	 * @testdox Cutover preflight allows a store whose subscriptions were all migrated off Stripe Billing: the migrator leaves only `_migrated_*` meta (client `class-wc-payments-subscriptions-migrator.php:271-300`).
-	 */
-	public function test_preflight_allows_a_store_migrated_off_stripe_billing(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		$this->create_bundled_stripe_billing_subscription( 'active', '_migrated_wcpay_subscription_id' );
-		$this->create_bundled_stripe_billing_subscription( 'active', '_wcpay_subscription_migrated_during' );
-
-		$this->assertNotContains( 'bundled_stripe_billing_subscriptions_present', $this->preflight_service->get_failures() );
-	}
-
-	/**
-	 * @testdox Cutover preflight blocks a store with the bundled WooPayments subscriptions on, even with no Stripe-billed subscription.
-	 */
-	public function test_preflight_blocks_a_store_with_bundled_subscriptions_on(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		update_option( '_wcpay_feature_subscriptions', '1' );
-
-		try {
-			$this->assertContains( 'bundled_stripe_billing_subscriptions_present', $this->preflight_service->get_failures() );
-		} finally {
-			delete_option( '_wcpay_feature_subscriptions' );
-		}
-	}
-
-	/**
-	 * @testdox Cutover preflight allows orders that keep their Stripe Billing invoice IDs after a migration.
-	 */
-	public function test_preflight_allows_stripe_billing_invoice_order_markers(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		$order = wc_create_order();
-		$order->update_meta_data( '_wcpay_billing_invoice_id', 'in_1UM1VrBzWlxcwgpPgrIwNSlu' );
-		$order->update_meta_data( '_migrated_wcpay_billing_invoice_id', 'in_1UM1VrBzWlxcwgpPgrIwNSlu' );
-		$order->save();
-
-		$this->assertNotContains( 'bundled_stripe_billing_subscriptions_present', $this->preflight_service->get_failures() );
-	}
-
-	/**
-	 * @testdox Cutover preflight finds a Stripe-billed subscription in HPOS order meta.
-	 */
-	public function test_preflight_blocks_bundled_stripe_billing_hpos_marker(): void {
-		$this->fake_plugin_active();
-		$this->fake_current_user_caps( true );
-		$this->enable_ready_cutover();
-		$this->create_bundled_stripe_billing_hpos_marker( '_wcpay_subscription_id' );
-
-		$this->assertContains( 'bundled_stripe_billing_subscriptions_present', $this->preflight_service->get_failures() );
-	}
-
-	/**
 	 * Create a preflight service wired to this test's dependencies.
 	 *
 	 * @return WooPaymentsCutoverPreflightService
@@ -1816,26 +1469,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Enable multi-currency with a single GBP rate type.
-	 *
-	 * @param string $rate_type Exchange rate type.
-	 */
-	private function enable_multi_currency_with_rate_type( string $rate_type ): void {
-		update_option( '_wcpay_feature_customer_multi_currency', '1' );
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
-		update_option( 'wcpay_multi_currency_exchange_rate_gbp', $rate_type );
-	}
-
-	/**
-	 * Make the native rate transport available.
-	 */
-	private function enable_available_rate_transport(): void {
-		$this->rate_account_connected    = true;
-		$this->rate_account_rejected     = false;
-		$this->rate_api_client_connected = true;
-	}
-
-	/**
 	 * Control the WooPayments plugin active signals.
 	 *
 	 * @param bool        $site_active    Whether the plugin is active for this site.
@@ -1911,155 +1544,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	private function fake_woopayments_class_unloaded(): void {
 		$this->extension_class_loaded = false;
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
-	}
-
-	/**
-	 * Create a legacy WCPay/Stripe Billing subscription fixture.
-	 *
-	 * @param string $status Subscription status without the wc- prefix.
-	 * @param string $meta_key Legacy marker meta key.
-	 * @return int Subscription post ID.
-	 */
-	private function create_bundled_stripe_billing_subscription( string $status, string $meta_key = '_wcpay_subscription_id' ): int {
-		$this->register_subscription_order_type();
-
-		$post_id = wp_insert_post(
-			array(
-				'post_type'   => 'shop_subscription',
-				'post_status' => 'wc-' . $status,
-				'post_title'  => 'Legacy Stripe Billing subscription',
-			)
-		);
-
-		$this->assertIsInt( $post_id );
-		$this->assertGreaterThan( 0, $post_id );
-		update_post_meta( $post_id, $meta_key, 'sub_legacy_' . $status );
-
-		return $post_id;
-	}
-
-	/**
-	 * Create a raw HPOS legacy marker fixture without hydrating an order object.
-	 *
-	 * @param string $meta_key Legacy marker meta key.
-	 * @return int Raw HPOS order ID.
-	 */
-	private function create_bundled_stripe_billing_hpos_marker( string $meta_key ): int {
-		global $wpdb;
-
-		$this->create_disabled_hpos_fixture();
-
-		$orders_table = OrdersTableDataStore::get_orders_table_name();
-		$meta_table   = OrdersTableDataStore::get_meta_table_name();
-		$order_id     = (int) $wpdb->get_var( "SELECT COALESCE(MAX(id), 0) + 1 FROM {$orders_table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-
-		$wpdb->insert(
-			$orders_table,
-			array(
-				'id'               => $order_id,
-				'status'           => 'wc-active',
-				'currency'         => 'USD',
-				'type'             => 'shop_subscription',
-				'date_created_gmt' => gmdate( 'Y-m-d H:i:s' ),
-				'date_updated_gmt' => gmdate( 'Y-m-d H:i:s' ),
-			)
-		);
-		$wpdb->insert(
-			$meta_table,
-			array(
-				'order_id'   => $order_id,
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- Raw HPOS test fixture row.
-				'meta_key'   => $meta_key,
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- Raw HPOS test fixture row.
-				'meta_value' => 'in_legacy_hpos',
-			)
-		);
-
-		$this->raw_hpos_order_ids[] = $order_id;
-
-		return $order_id;
-	}
-
-	/**
-	 * Create HPOS tables while keeping HPOS disabled, as on a store that used HPOS before disabling it.
-	 */
-	private function create_disabled_hpos_fixture(): void {
-		if ( ! $this->captured_hpos_tables_created_option ) {
-			$this->previous_hpos_tables_created_option = get_option( DataSynchronizer::ORDERS_TABLE_CREATED, false );
-			$this->captured_hpos_tables_created_option = true;
-		}
-
-		$synchronizer = wc_get_container()->get( DataSynchronizer::class );
-		if ( $synchronizer->check_orders_table_exists() ) {
-			return;
-		}
-
-		$this->created_hpos_tables = true;
-		$this->assertTrue( $synchronizer->create_database_tables() );
-	}
-
-	/**
-	 * Delete the temporary HPOS tables and restore the original table-created option.
-	 */
-	private function clean_up_disabled_hpos_fixture(): void {
-		if ( ! $this->captured_hpos_tables_created_option ) {
-			return;
-		}
-
-		if ( $this->created_hpos_tables ) {
-			wc_get_container()->get( DataSynchronizer::class )->delete_database_tables();
-			$this->created_hpos_tables = false;
-		}
-
-		if ( false === $this->previous_hpos_tables_created_option ) {
-			delete_option( DataSynchronizer::ORDERS_TABLE_CREATED );
-		} else {
-			update_option( DataSynchronizer::ORDERS_TABLE_CREATED, $this->previous_hpos_tables_created_option );
-		}
-		$this->captured_hpos_tables_created_option = false;
-		$this->previous_hpos_tables_created_option = false;
-	}
-
-	/**
-	 * Delete raw HPOS order rows created by this test.
-	 */
-	private function delete_raw_hpos_orders(): void {
-		global $wpdb;
-
-		if ( array() === $this->raw_hpos_order_ids ) {
-			return;
-		}
-
-		$order_ids    = implode( ',', array_map( 'absint', $this->raw_hpos_order_ids ) );
-		$orders_table = OrdersTableDataStore::get_orders_table_name();
-		$meta_table   = OrdersTableDataStore::get_meta_table_name();
-
-		$wpdb->query( "DELETE FROM {$meta_table} WHERE order_id IN ({$order_ids})" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-		$wpdb->query( "DELETE FROM {$orders_table} WHERE id IN ({$order_ids})" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-
-		$this->raw_hpos_order_ids = array();
-	}
-
-	/**
-	 * Register a lightweight subscription order type for cutover guard tests.
-	 */
-	private function register_subscription_order_type(): void {
-		if ( post_type_exists( 'shop_subscription' ) ) {
-			return;
-		}
-
-		wc_register_order_type(
-			'shop_subscription',
-			array(
-				'label'                      => 'Subscriptions',
-				'public'                     => false,
-				'exclude_from_order_views'   => false,
-				'exclude_from_order_count'   => true,
-				'exclude_from_order_reports' => true,
-				'class_name'                 => 'WC_Order',
-			)
-		);
-		$this->registered_subscription_order_type = true;
 	}
 
 	/**

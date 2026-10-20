@@ -325,47 +325,46 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Activating an unrelated plugin does not hide the compatibility facades.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 */
-	public function test_unrelated_plugin_activation_keeps_the_facades(): void {
-		$_REQUEST['action'] = 'activate'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing WordPress's already-authorized plugin activation request.
-		$_REQUEST['plugin'] = 'another-plugin/another-plugin.php'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing WordPress's already-authorized plugin activation request.
-
-		$this->register_extension_facades();
-
-		$this->assertTrue( class_exists( 'WC_Payments' ), 'Unrelated activation requests should retain native WooPayments compatibility.' );
-		$this->assertTrue( class_exists( 'WC_Payments_Features' ), 'Unrelated activation requests should retain native WooPayments feature compatibility.' );
-	}
-
-	/**
-	 * @testdox WooCommerce's plugin job status routes are not activations and keep the facades.
-	 * @dataProvider plugin_status_route_provider
+	 * @testdox A request that is not a WooPayments activation keeps the compatibility facades ($_dataName).
+	 * @dataProvider non_activation_request_provider
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 *
-	 * @param string $route Status route.
+	 * @param array<string,mixed>  $request Request parameters.
+	 * @param array<string,string> $server  Server parameters.
 	 */
-	public function test_plugin_status_routes_keep_the_facades( string $route ): void {
-		$_REQUEST = array( 'rest_route' => $route ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing a REST request.
-		$_SERVER  = array_merge( $_SERVER, array( 'REQUEST_METHOD' => 'POST' ) );
+	public function test_non_activation_requests_keep_the_facades( array $request, array $server ): void {
+		$_REQUEST = $request; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Reproducing a plugin or REST request.
+		$_SERVER  = array_merge( $_SERVER, $server );
 
 		$this->register_extension_facades();
 
-		$this->assertTrue( class_exists( 'WC_Payments' ) );
-		$this->assertTrue( class_exists( 'WC_Payments_Features' ) );
+		$this->assertTrue( class_exists( 'WC_Payments' ), 'Requests that do not activate WooPayments should retain native WooPayments compatibility.' );
+		$this->assertTrue( class_exists( 'WC_Payments_Features' ), 'Requests that do not activate WooPayments should retain native WooPayments feature compatibility.' );
 	}
 
 	/**
-	 * WooCommerce plugin job status routes.
+	 * Requests that cannot activate WooPayments: another plugin's activation and WooCommerce's plugin job status routes.
 	 *
-	 * @return array<string,array{string}>
+	 * @return array<string,array{0:array<string,mixed>,1:array<string,string>}>
 	 */
-	public function plugin_status_route_provider(): array {
+	public function non_activation_request_provider(): array {
 		return array(
-			'activation status' => array( '/wc-admin/plugins/activate/status' ),
-			'install status'    => array( '/wc-admin/plugins/install/status/job_1' ),
+			'activating an unrelated plugin' => array(
+				array(
+					'action' => 'activate',
+					'plugin' => 'another-plugin/another-plugin.php',
+				),
+				array(),
+			),
+			'activation status route'        => array(
+				array( 'rest_route' => '/wc-admin/plugins/activate/status' ),
+				array( 'REQUEST_METHOD' => 'POST' ),
+			),
+			'install status route'           => array(
+				array( 'rest_route' => '/wc-admin/plugins/install/status/job_1' ),
+				array( 'REQUEST_METHOD' => 'POST' ),
+			),
 		);
 	}
 

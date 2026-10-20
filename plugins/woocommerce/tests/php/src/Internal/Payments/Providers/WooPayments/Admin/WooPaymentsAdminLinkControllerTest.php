@@ -118,13 +118,31 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The platform link and the Overview "Edit details" link are handled at admin_init; the setup tier decides on which stores the handler loads.
+	 * @testdox The handler registers $callback at admin_init with priority $priority; the setup tier decides on which stores the handler loads.
+	 * @dataProvider provider_admin_init_registrations
+	 *
+	 * @param string $callback Handler method.
+	 * @param int    $priority Expected admin_init priority.
 	 */
-	public function test_registers_the_link_and_login_handlers_at_admin_init(): void {
+	public function test_registers_the_handlers_at_admin_init( string $callback, int $priority ): void {
 		$this->sut->register();
 
-		$this->assertNotFalse( has_action( 'admin_init', array( $this->sut, 'handle_account_link_request' ) ) );
-		$this->assertNotFalse( has_action( 'admin_init', array( $this->sut, 'handle_login_request' ) ) );
+		$this->assertSame( $priority, has_action( 'admin_init', array( $this->sut, $callback ) ) );
+	}
+
+	/**
+	 * The platform link and the Overview "Edit details" link run at the default priority. The KYC reminder and the hosted
+	 * KYC return run at priority 9, before the payments path redirect at priority 10.
+	 *
+	 * @return array<string,array{string,int}>
+	 */
+	public function provider_admin_init_registrations(): array {
+		return array(
+			'platform link'     => array( 'handle_account_link_request', 10 ),
+			'login link'        => array( 'handle_login_request', 10 ),
+			'KYC reminder'      => array( 'handle_kyc_reminder_return', 9 ),
+			'hosted KYC return' => array( 'handle_hosted_kyc_return', 9 ),
+		);
 	}
 
 	/**
@@ -434,35 +452,26 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A KYC reminder link is ignored off the extension's connect page or without the capability.
+	 * @testdox A KYC reminder link is ignored ($_dataName).
+	 * @dataProvider provider_ignored_kyc_reminder_requests
+	 *
+	 * @param string $path       Request path.
+	 * @param bool   $has_access Whether the current user has admin access.
+	 * @param bool   $ajax       Whether the request is an AJAX request.
 	 */
-	public function test_kyc_reminder_link_ignores_ineligible_requests(): void {
+	public function test_kyc_reminder_link_ignores_ineligible_requests( string $path, bool $has_access, bool $ajax ): void {
 		$recorded = $this->record_tracks_events();
 		$_GET     = array(
 			'page'                   => 'wc-admin',
-			'path'                   => '/payments/overview',
+			'path'                   => $path,
 			'wcpay-connect-redirect' => 'initial',
 		);
-		$this->sut->handle_kyc_reminder_return();
-
-		$_GET['path'] = '/payments/connect';
-		wp_set_current_user( 0 );
-		$this->sut->handle_kyc_reminder_return();
-
-		$this->assertSame( array(), $recorded->events );
-	}
-
-	/**
-	 * @testdox A KYC reminder link is ignored during an AJAX request, as in plugin 11.1.0 `maybe_redirect_by_get_param()` line 769.
-	 */
-	public function test_kyc_reminder_link_ignores_ajax_requests(): void {
-		$recorded = $this->record_tracks_events();
-		$_GET     = array(
-			'page'                   => 'wc-admin',
-			'path'                   => '/payments/connect',
-			'wcpay-connect-redirect' => 'initial',
-		);
-		add_filter( 'wp_doing_ajax', '__return_true' );
+		if ( ! $has_access ) {
+			wp_set_current_user( 0 );
+		}
+		if ( $ajax ) {
+			add_filter( 'wp_doing_ajax', '__return_true' );
+		}
 		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
 
 		$this->sut->handle_kyc_reminder_return();
@@ -471,21 +480,17 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The KYC reminder hook runs before the payments path redirect at the default priority.
+	 * Ineligible KYC reminder requests: off the extension's connect page, without the capability, and during AJAX (plugin
+	 * 11.1.0 `maybe_redirect_by_get_param()` line 769).
+	 *
+	 * @return array<string,array{string,bool,bool}>
 	 */
-	public function test_registers_kyc_reminder_hook_before_payments_path_redirects(): void {
-		$this->sut->register();
-
-		$this->assertSame( 9, has_action( 'admin_init', array( $this->sut, 'handle_kyc_reminder_return' ) ) );
-	}
-
-	/**
-	 * @testdox The hosted KYC return handler runs before the payments path redirect.
-	 */
-	public function test_registers_hosted_kyc_return_hook_before_payments_path_redirects(): void {
-		$this->sut->register();
-
-		$this->assertSame( 9, has_action( 'admin_init', array( $this->sut, 'handle_hosted_kyc_return' ) ) );
+	public function provider_ignored_kyc_reminder_requests(): array {
+		return array(
+			'off the extension\'s connect page' => array( '/payments/overview', true, false ),
+			'without the capability'            => array( '/payments/connect', false, false ),
+			'during an AJAX request'            => array( '/payments/connect', true, true ),
+		);
 	}
 
 	/**
@@ -587,39 +592,11 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Plugin 11.1.0 `finalize_connection()` (class-wc-payments-account.php:2355-2368) rejects a state it did not store.
-	 *
-	 * @testdox A hosted KYC return with an unknown state changes nothing and sends the merchant back to onboarding, like plugin 11.1.0.
-	 */
-	public function test_hosted_kyc_return_with_unknown_state_redirects_to_onboarding(): void {
-		$this->account_service->expects( $this->never() )->method( 'clear_cache' );
-		set_transient( 'wcpay_stripe_onboarding_state', 'state_kyc', DAY_IN_SECONDS );
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'no' ) );
-		$_GET = $this->get_hosted_kyc_return_query( 'state_forged', 'live' );
-		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
-
-		$location = $this->run_and_get_redirect( fn() => $this->sut->handle_hosted_kyc_return() );
-
-		$this->assertSame(
-			Utils::wc_payments_settings_url(
-				'/woopayments/onboarding',
-				array(
-					'from'   => '',
-					'source' => 'unknown',
-				)
-			),
-			$location
-		);
-		$this->assertSame( array( 'enabled' => 'no' ), get_option( 'woocommerce_woocommerce_payments_settings' ) );
-		$this->assertSame( 'state_kyc', get_transient( 'wcpay_stripe_onboarding_state' ) );
-	}
-
-	/**
 	 * Referers for a hosted KYC return, with the `from` plugin 11.1.0 `WC_Payments_Onboarding_Service::get_from()` derives.
 	 *
 	 * The referer rows are the client's own (tests/unit/test-class-wc-payments-onboarding-service.php:671-680).
 	 *
-	 * @return array<string,array{0:string,1:string,2:array<string,string>}>
+	 * @return array<string,array{0:string,1:string|null,2:array<string,string>}>
 	 */
 	public function provide_hosted_kyc_return_referers(): array {
 		return array(
@@ -627,6 +604,7 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 			'WordPress.com referer'   => array( 'WPCOM', 'http://public-api.wordpress.com/something', array() ),
 			'from param wins over it' => array( 'WCPAY_OVERVIEW', 'http://something.stripe.com/something', array( 'from' => 'WCPAY_OVERVIEW' ) ),
 			'unrecognized referer'    => array( '', 'https://example.org/elsewhere', array() ),
+			'no referer'              => array( '', null, array() ),
 		);
 	}
 
@@ -635,17 +613,23 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 	 * back to the referer (class-wc-payments-onboarding-service.php:1203-1240), and `finalize_connection()` carries it to the
 	 * connect page when the state is unknown (:2358-2366).
 	 *
-	 * @testdox A hosted KYC return with an unknown state carries the referer-derived from to onboarding, like plugin 11.1.0.
+	 * `finalize_connection()` (:2355-2368) also rejects a state it did not store: nothing changes and the stored state stays.
+	 *
+	 * @testdox A hosted KYC return with an unknown state changes nothing and carries the referer-derived from to onboarding, like plugin 11.1.0 ($_dataName).
 	 * @dataProvider provide_hosted_kyc_return_referers
 	 *
 	 * @param string               $expected_from Expected `from` on the landing.
-	 * @param string               $referer       Request referer.
+	 * @param string|null          $referer       Request referer, or null for a request without one.
 	 * @param array<string,string> $extra_query   Extra query arguments.
 	 */
-	public function test_hosted_kyc_return_with_unknown_state_derives_from_like_the_extension( string $expected_from, string $referer, array $extra_query ): void {
+	public function test_hosted_kyc_return_with_unknown_state_derives_from_like_the_extension( string $expected_from, ?string $referer, array $extra_query ): void {
+		$this->account_service->expects( $this->never() )->method( 'clear_cache' );
 		set_transient( 'wcpay_stripe_onboarding_state', 'state_kyc', DAY_IN_SECONDS );
-		$_GET                    = $extra_query + $this->get_hosted_kyc_return_query( 'state_forged', 'live' );
-		$_SERVER['HTTP_REFERER'] = $referer;
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'no' ) );
+		$_GET = $extra_query + $this->get_hosted_kyc_return_query( 'state_forged', 'live' );
+		if ( null !== $referer ) {
+			$_SERVER['HTTP_REFERER'] = $referer;
+		}
 		$this->sut->register();
 		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
 
@@ -661,24 +645,44 @@ class WooPaymentsAdminLinkControllerTest extends WC_Unit_Test_Case {
 			),
 			$location
 		);
+		$this->assertSame( array( 'enabled' => 'no' ), get_option( 'woocommerce_woocommerce_payments_settings' ) );
+		$this->assertSame( 'state_kyc', get_transient( 'wcpay_stripe_onboarding_state' ) );
 	}
 
 	/**
-	 * @testdox A hosted KYC return is ignored during an AJAX request or without the capability.
+	 * @testdox A hosted KYC return is ignored ($_dataName).
+	 * @dataProvider provider_ignored_hosted_kyc_returns
+	 *
+	 * @param bool $ajax       Whether the request is an AJAX request.
+	 * @param bool $has_access Whether the current user has admin access.
 	 */
-	public function test_hosted_kyc_return_ignores_ineligible_requests(): void {
+	public function test_hosted_kyc_return_ignores_ineligible_requests( bool $ajax, bool $has_access ): void {
 		$this->account_service->expects( $this->never() )->method( 'clear_cache' );
 		set_transient( 'wcpay_stripe_onboarding_state', 'state_kyc', DAY_IN_SECONDS );
 		$_GET = $this->get_hosted_kyc_return_query( 'state_kyc', 'live' );
 		add_filter( 'wp_redirect', array( $this, 'intercept_redirect' ) );
+		if ( $ajax ) {
+			add_filter( 'wp_doing_ajax', '__return_true' );
+		}
+		if ( ! $has_access ) {
+			wp_set_current_user( 0 );
+		}
 
-		add_filter( 'wp_doing_ajax', '__return_true' );
-		$this->sut->handle_hosted_kyc_return();
-		remove_all_filters( 'wp_doing_ajax' );
-		wp_set_current_user( 0 );
 		$this->sut->handle_hosted_kyc_return();
 
 		$this->assertSame( 'state_kyc', get_transient( 'wcpay_stripe_onboarding_state' ) );
+	}
+
+	/**
+	 * Ineligible hosted KYC returns: during AJAX and without the capability.
+	 *
+	 * @return array<string,array{bool,bool}>
+	 */
+	public function provider_ignored_hosted_kyc_returns(): array {
+		return array(
+			'during an AJAX request' => array( true, true ),
+			'without the capability' => array( false, false ),
+		);
 	}
 
 	/**

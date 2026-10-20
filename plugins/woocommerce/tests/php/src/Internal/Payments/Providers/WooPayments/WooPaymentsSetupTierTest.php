@@ -72,28 +72,18 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox State persistence accepts exact tiers, rejects unknown values, and verifies readback.
+	 * @testdox State persistence accepts exact tiers, rejects unknown values, and verifies readback; a write that does not read back logs one error with the requested and stored values.
 	 */
 	public function test_write_tier_validates_and_verifies_persistence(): void {
+		$logger = RecordingWcLogger::install();
 		$this->assertTrue( $this->state->write_tier( WooPaymentsSetupTier::CONNECTED ) );
 		$this->assertSame( WooPaymentsSetupTier::CONNECTED, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
 		$this->assertFalse( $this->state->write_tier( 'CONNECTED' ) );
 
-		add_filter( 'pre_update_option_' . WooPaymentsSetupTier::OPTION_NAME, '__return_false' );
-		$this->assertFalse( $this->state->write_tier( WooPaymentsSetupTier::ACTIVE ) );
-		$this->assertSame( WooPaymentsSetupTier::CONNECTED, $this->state->get_effective_tier() );
-	}
-
-	/**
-	 * @testdox A state write that does not read back logs one error with the requested and stored values.
-	 */
-	public function test_write_tier_logs_a_failed_write(): void {
-		$logger = RecordingWcLogger::install();
-		$this->assertTrue( $this->state->write_tier( WooPaymentsSetupTier::CONNECTED ) );
-
 		// The filter turns the written value into false, so false is what reads back.
 		add_filter( 'pre_update_option_' . WooPaymentsSetupTier::OPTION_NAME, '__return_false' );
 		$this->assertFalse( $this->state->write_tier( WooPaymentsSetupTier::ACTIVE ) );
+		$this->assertSame( WooPaymentsSetupTier::CONNECTED, $this->state->get_effective_tier() );
 
 		$this->assertSame(
 			array( array( 'error', 'WooPayments setup tier write failed: requested active, stored false, autoloaded yes.', 'woopayments' ) ),
@@ -129,14 +119,45 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A disabled tier on a store the built-in WooPayments owns lists no class for any request type.
+	 * @testdox The effective tier reads disabled and lists no class for any request type, leaving the stored tier as it was ($_dataName).
+	 * @dataProvider provide_disabled_tier_states
+	 *
+	 * @param string $stored_state     Stored tier.
+	 * @param string $feature          The WooPayments feature option.
+	 * @param bool   $extension_active Whether the WooPayments extension is active.
 	 */
-	public function test_disabled_tier_lists_no_class_for_any_request_type(): void {
-		$this->state->write_tier( WooPaymentsSetupTier::DISABLED );
+	public function test_the_effective_tier_reads_disabled_and_lists_no_class( string $stored_state, string $feature, bool $extension_active ): void {
+		update_option( WooPaymentsSetupTier::OPTION_NAME, $stored_state );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $feature );
+		if ( $extension_active ) {
+			$this->make_extension_own_the_runtime();
+		}
+		$this->state->invalidate();
 
+		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_effective_tier() );
 		foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request_type ) {
 			$this->assertSame( array(), $this->state->get_classes_for_request( $request_type ), $request_type );
 		}
+		$this->assertSame( $stored_state, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
+	}
+
+	/**
+	 * Every state in which the tier reads disabled: the feature off with any stored tier, whoever owns payments, and the
+	 * feature on with a stored disabled tier on a store the extension never ran on.
+	 *
+	 * @return array<string,array{string,string,bool}>
+	 */
+	public function provide_disabled_tier_states(): array {
+		$rows = array(
+			'the feature on, stored disabled, no extension' => array( WooPaymentsSetupTier::DISABLED, 'yes', false ),
+		);
+		foreach ( array( WooPaymentsSetupTier::DISABLED, WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $stored_state ) {
+			foreach ( array( false, true ) as $extension_active ) {
+				$rows[ sprintf( 'the feature off, stored %s, the extension %s', $stored_state, $extension_active ? 'active' : 'inactive' ) ] = array( $stored_state, 'no', $extension_active );
+			}
+		}
+
+		return $rows;
 	}
 
 	/**
@@ -156,42 +177,6 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, $this->state->get_effective_tier() );
 		$this->assertSame( $stored_state ?? false, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'Reading the effective tier writes nothing.' );
-	}
-
-	/**
-	 * @testdox With the WooPayments feature off, a stored active tier reads disabled and lists no class for any request type, whoever owns payments ($_dataName).
-	 * @dataProvider provide_extension_states
-	 *
-	 * @param bool $extension_active Whether the WooPayments extension is active.
-	 */
-	public function test_feature_off_reads_disabled_and_lists_no_class( bool $extension_active ): void {
-		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
-		if ( $extension_active ) {
-			$this->make_extension_own_the_runtime();
-		}
-		$this->state->invalidate();
-
-		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_effective_tier() );
-		foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request_type ) {
-			$this->assertSame( array(), $this->state->get_classes_for_request( $request_type ), $request_type );
-		}
-		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
-	}
-
-	/**
-	 * @testdox Owner-less sites return disabled without overwriting their stored state.
-	 * @dataProvider provide_setup_tier_states
-	 *
-	 * @param string $stored_state Stored native payments tier.
-	 */
-	public function test_get_effective_tier_returns_disabled_without_overwriting_the_stored_state_when_no_runtime_owns_the_site( string $stored_state ): void {
-		update_option( WooPaymentsSetupTier::OPTION_NAME, $stored_state );
-		$this->state->invalidate();
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
-
-		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_effective_tier() );
-		$this->assertSame( $stored_state, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
 	}
 
 	/**
@@ -235,32 +220,6 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 			'available'    => array( WooPaymentsSetupTier::AVAILABLE ),
 			'connected'    => array( WooPaymentsSetupTier::CONNECTED ),
 			'active'       => array( WooPaymentsSetupTier::ACTIVE ),
-		);
-	}
-
-	/**
-	 * Provide the WooPayments extension's states.
-	 *
-	 * @return array<string,array{bool}>
-	 */
-	public function provide_extension_states(): array {
-		return array(
-			'the extension active'   => array( true ),
-			'the extension inactive' => array( false ),
-		);
-	}
-
-	/**
-	 * Provide every stored native payments tier.
-	 *
-	 * @return array<string,array{string}>
-	 */
-	public function provide_setup_tier_states(): array {
-		return array(
-			'disabled'  => array( WooPaymentsSetupTier::DISABLED ),
-			'available' => array( WooPaymentsSetupTier::AVAILABLE ),
-			'connected' => array( WooPaymentsSetupTier::CONNECTED ),
-			'active'    => array( WooPaymentsSetupTier::ACTIVE ),
 		);
 	}
 

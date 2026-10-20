@@ -105,11 +105,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 
 		$sut->register();
 
-		$this->assertSame( $expected ? 1 : false, has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
-		$this->assertSame( $expected ? 10 : false, has_filter( 'woocommerce_debug_tools', array( $sut, 'add_debug_tools' ) ) );
-		$this->assertSame( $expected ? 10 : false, has_filter( 'debug_information', array( $sut, 'add_site_health_debug_info' ) ) );
-		$this->assertSame( $expected ? 10 : false, has_filter( 'site_status_tests', array( $sut, 'add_site_status_tests' ) ) );
-		$this->assertSame( $expected ? 10 : false, has_action( 'wp_ajax_health-check-woocommerce-woopayments-cutover', array( $sut, 'run_cutover_site_health_ajax_test' ) ) );
+		$this->assert_supportability_hooks( $sut, $expected );
 	}
 
 	/**
@@ -152,72 +148,62 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A connected store registers the supportability hooks.
+	 * @testdox A store with something for support to read registers all five supportability hooks ($_dataName).
+	 * @dataProvider provide_stores_with_supportability_data
+	 *
+	 * @param string $feature        The WooPayments feature option.
+	 * @param string $stored_tier    The stored setup tier.
+	 * @param string $effective_tier The tier the store reads as.
+	 * @param bool   $cutover_record Whether the store holds a cutover record.
 	 */
-	public function test_registers_supportability_hooks_for_a_connected_store(): void {
+	public function test_registers_supportability_hooks_for_a_store_with_something_to_read( string $feature, string $stored_tier, string $effective_tier, bool $cutover_record ): void {
 		$this->fake_plugin( false );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->set_setup_tier( WooPaymentsSetupTier::CONNECTED );
-		$sut = $this->get_sut();
-		$this->remove_status_hooks( $sut );
-
-		$sut->register();
-
-		$this->assertSame( 1, has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
-	}
-
-	/**
-	 * @testdox A connected store whose WooPayments feature is off keeps the supportability hooks, although its effective tier reads disabled.
-	 */
-	public function test_registers_supportability_hooks_for_a_connected_store_with_the_feature_off(): void {
-		$this->fake_plugin( false );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
-		$this->set_setup_tier( WooPaymentsSetupTier::CONNECTED );
-		$this->assertSame( WooPaymentsSetupTier::DISABLED, wc_get_container()->get( WooPaymentsSetupTier::class )->get_effective_tier(), 'A store with the feature off reads as disabled.' );
-		$sut = $this->get_sut();
-		$this->remove_status_hooks( $sut );
-
-		$sut->register();
-
-		$this->assertSame( 1, has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
-		$this->assertSame( 10, has_filter( 'woocommerce_debug_tools', array( $sut, 'add_debug_tools' ) ) );
-		$this->assertSame( 10, has_filter( 'debug_information', array( $sut, 'add_site_health_debug_info' ) ) );
-	}
-
-	/**
-	 * @testdox A store with a cutover record registers the supportability hooks even when its state is not connected.
-	 */
-	public function test_registers_supportability_hooks_when_a_cutover_record_exists(): void {
-		$this->fake_plugin( false );
-		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->set_setup_tier( WooPaymentsSetupTier::AVAILABLE );
-		$this->assertTrue(
-			( new WooPaymentsCutoverStateStore() )->create_record(
-				array(
-					'schema_version'         => 1,
-					'generation'             => 1,
-					'revision'               => 1,
-					'state'                  => WooPaymentsCutoverStateStore::STATE_DEFERRED,
-					'started_at'             => 1_700_000_000,
-					'updated_at'             => 1_700_000_100,
-					'attempt'                => 1,
-					'action_id'              => 0,
-					'current_step'           => 'deferred',
-					'step_log'               => array(),
-					'deferred_codes'         => array( 'builtin_transport_unavailable' ),
-					'informational_outcomes' => array(),
-					'next_attempt_at'        => 1_700_001_000,
-					'lease_token'            => null,
-					'lease_expires_at'       => null,
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $feature );
+		$this->set_setup_tier( $stored_tier );
+		if ( $cutover_record ) {
+			$this->assertTrue(
+				( new WooPaymentsCutoverStateStore() )->create_record(
+					array(
+						'schema_version'         => 1,
+						'generation'             => 1,
+						'revision'               => 1,
+						'state'                  => WooPaymentsCutoverStateStore::STATE_DEFERRED,
+						'started_at'             => 1_700_000_000,
+						'updated_at'             => 1_700_000_100,
+						'attempt'                => 1,
+						'action_id'              => 0,
+						'current_step'           => 'deferred',
+						'step_log'               => array(),
+						'deferred_codes'         => array( 'builtin_transport_unavailable' ),
+						'informational_outcomes' => array(),
+						'next_attempt_at'        => 1_700_001_000,
+						'lease_token'            => null,
+						'lease_expires_at'       => null,
+					)
 				)
-			)
-		);
+			);
+		}
+		$this->assertSame( $effective_tier, wc_get_container()->get( WooPaymentsSetupTier::class )->get_effective_tier() );
 		$sut = $this->get_sut();
 		$this->remove_status_hooks( $sut );
 
 		$sut->register();
 
-		$this->assertSame( 1, has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
+		$this->assert_supportability_hooks( $sut, true );
+	}
+
+	/**
+	 * Stores the extension does not own that still have something for support to read: a connected account, a connected
+	 * account whose feature is off (its effective tier reads disabled), and a cutover record on a store that is not connected.
+	 *
+	 * @return array<string,array{string,string,string,bool}>
+	 */
+	public function provide_stores_with_supportability_data(): array {
+		return array(
+			'a connected store'                            => array( 'yes', WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::CONNECTED, false ),
+			'a connected store with the feature off'       => array( 'no', WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::DISABLED, false ),
+			'a store with a cutover record, not connected' => array( 'yes', WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::AVAILABLE, true ),
+		);
 	}
 
 	/**
@@ -683,20 +669,38 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The status report marks the account as not connected when WPCOM is connected but there is no account.
+	 * @testdox The status report lists the extension's connection rows and flags the missing connection or account ($_dataName).
+	 * @dataProvider provide_extension_connection_states
+	 *
+	 * @param bool          $wpcom_connected Whether the store has a WPCOM connection.
+	 * @param array<string> $expected_labels Expected export labels of the rows.
+	 * @param int           $warning_row     Index of the row that carries the warning.
+	 * @param string        $expected_value  Expected value of that row.
 	 */
-	public function test_status_report_marks_a_missing_account_as_not_connected(): void {
+	public function test_status_report_flags_a_missing_wpcom_connection_or_account( bool $wpcom_connected, array $expected_labels, int $warning_row, string $expected_value ): void {
 		$http_client = $this->createMock( WooPaymentsHttpClient::class );
-		$http_client->method( 'is_connected' )->willReturn( true );
+		$http_client->method( 'is_connected' )->willReturn( $wpcom_connected );
 		$http_client->method( 'get_blog_id' )->willReturn( 12345 );
 		wc_get_container()->replace( WooPaymentsHttpClient::class, $http_client );
 		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
 
 		$rows = $this->get_sut()->get_woopayments_extension_status_rows();
 
-		$this->assertSame( array( 'Version', 'Connected to WPCOM', 'WPCOM Blog ID', 'Account ID', 'Logging' ), array_column( $rows, 'export_label' ) );
-		$this->assertSame( 'Not connected', $rows[3]['value'] );
-		$this->assertTrue( $rows[3]['warning'] );
+		$this->assertSame( $expected_labels, array_column( $rows, 'export_label' ) );
+		$this->assertSame( $expected_value, $rows[ $warning_row ]['value'] );
+		$this->assertTrue( $rows[ $warning_row ]['warning'] );
+	}
+
+	/**
+	 * A store connected to WPCOM without an account, and a store without a WPCOM connection.
+	 *
+	 * @return array<string,array{bool,array<string>,int,string}>
+	 */
+	public function provide_extension_connection_states(): array {
+		return array(
+			'WPCOM connected, no account' => array( true, array( 'Version', 'Connected to WPCOM', 'WPCOM Blog ID', 'Account ID', 'Logging' ), 3, 'Not connected' ),
+			'no WPCOM connection'         => array( false, array( 'Version', 'Connected to WPCOM', 'Logging' ), 1, 'No' ),
+		);
 	}
 
 	/**
@@ -735,21 +739,6 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		foreach ( $triggers as $trigger ) {
 			$this->assertMatchesRegularExpression( '/^(WCPAY_DEV_MODE|WP_ENVIRONMENT_TYPE=\\w+|WP_DEVELOPMENT_MODE=\\w+|wcpay_dev_mode filter)$/', $trigger );
 		}
-	}
-
-	/**
-	 * @testdox The status report shows only the extension's connection rows when the store has no WPCOM connection.
-	 */
-	public function test_status_report_without_a_wpcom_connection_shows_the_extension_connection_rows(): void {
-		$http_client = $this->createMock( WooPaymentsHttpClient::class );
-		$http_client->method( 'is_connected' )->willReturn( false );
-		wc_get_container()->replace( WooPaymentsHttpClient::class, $http_client );
-
-		$rows = $this->get_sut()->get_woopayments_extension_status_rows();
-
-		$this->assertSame( array( 'Version', 'Connected to WPCOM', 'Logging' ), array_column( $rows, 'export_label' ) );
-		$this->assertSame( 'No', $rows[1]['value'] );
-		$this->assertTrue( $rows[1]['warning'] );
 	}
 
 	/**
@@ -1001,6 +990,20 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		update_option( WooPaymentsSetupTier::OPTION_NAME, $state, true );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+	}
+
+	/**
+	 * Assert the five supportability hooks of the given SUT are registered, or none is.
+	 *
+	 * @param WooPaymentsStatusReport $sut        Status report instance.
+	 * @param bool                    $registered Whether the hooks are expected to be registered.
+	 */
+	private function assert_supportability_hooks( WooPaymentsStatusReport $sut, bool $registered ): void {
+		$this->assertSame( $registered ? 1 : false, has_action( 'woocommerce_system_status_report', array( $sut, 'render_status_report_section' ) ) );
+		$this->assertSame( $registered ? 10 : false, has_filter( 'woocommerce_debug_tools', array( $sut, 'add_debug_tools' ) ) );
+		$this->assertSame( $registered ? 10 : false, has_filter( 'debug_information', array( $sut, 'add_site_health_debug_info' ) ) );
+		$this->assertSame( $registered ? 10 : false, has_filter( 'site_status_tests', array( $sut, 'add_site_status_tests' ) ) );
+		$this->assertSame( $registered ? 10 : false, has_action( 'wp_ajax_health-check-woocommerce-woopayments-cutover', array( $sut, 'run_cutover_site_health_ajax_test' ) ) );
 	}
 
 	/**

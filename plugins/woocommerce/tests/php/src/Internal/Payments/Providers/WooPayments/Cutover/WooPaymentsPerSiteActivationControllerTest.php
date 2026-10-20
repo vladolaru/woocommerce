@@ -404,39 +404,42 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The conversion button with a missing or wrong nonce stops before any plugin change.
+	 * @testdox The conversion button stops before any plugin change ($_dataName).
 	 * @group multisite
-	 * @testWith [""]
-	 *           ["not-a-nonce"]
+	 * @dataProvider provider_conversion_requests_that_change_no_plugin
 	 *
-	 * @param string $nonce The nonce the request carries, or none.
+	 * @param string $nonce                      The nonce the request carries: none, a wrong one, or 'valid' for a valid one.
+	 * @param bool   $can_manage_network_plugins Whether the user may manage network plugins.
 	 */
-	public function test_handler_without_a_valid_nonce_changes_no_plugin( string $nonce ): void {
+	public function test_handler_with_a_refused_request_changes_no_plugin( string $nonce, bool $can_manage_network_plugins ): void {
 		$this->skip_unless_multisite();
 		$this->arrange_site( get_current_blog_id(), true, true );
 		$this->activate_for_every_site();
 		$_GET[ WooPaymentsPerSiteActivationController::QUERY_ACTION ] = WooPaymentsPerSiteActivationController::ACTION_CONVERT;
-		if ( '' !== $nonce ) {
+		if ( 'valid' === $nonce ) {
+			wp_set_current_user( 1 );
+			$_GET[ WooPaymentsPerSiteActivationController::NONCE_NAME ] = wp_create_nonce( WooPaymentsPerSiteActivationController::NONCE_ACTION );
+		} elseif ( '' !== $nonce ) {
 			$_GET[ WooPaymentsPerSiteActivationController::NONCE_NAME ] = $nonce;
+		}
+		if ( ! $can_manage_network_plugins ) {
+			$this->mock_plugin_functions( false );
 		}
 
 		$this->assert_handler_stops_without_changes( $this->create_sut() );
 	}
 
 	/**
-	 * @testdox The conversion button with a valid nonce but no manage_network_plugins capability stops before any plugin change.
-	 * @group multisite
+	 * Requests the handler refuses: no nonce, a wrong nonce, and a valid nonce without the manage_network_plugins capability.
+	 *
+	 * @return array<string,array{string,bool}>
 	 */
-	public function test_handler_without_the_network_plugins_capability_changes_no_plugin(): void {
-		$this->skip_unless_multisite();
-		$this->arrange_site( get_current_blog_id(), true, true );
-		$this->activate_for_every_site();
-		wp_set_current_user( 1 );
-		$_GET[ WooPaymentsPerSiteActivationController::QUERY_ACTION ] = WooPaymentsPerSiteActivationController::ACTION_CONVERT;
-		$_GET[ WooPaymentsPerSiteActivationController::NONCE_NAME ]   = wp_create_nonce( WooPaymentsPerSiteActivationController::NONCE_ACTION );
-		$this->mock_plugin_functions( false );
-
-		$this->assert_handler_stops_without_changes( $this->create_sut() );
+	public function provider_conversion_requests_that_change_no_plugin(): array {
+		return array(
+			'no nonce'                                     => array( '', true ),
+			'a wrong nonce'                                => array( 'not-a-nonce', true ),
+			'a valid nonce without manage_network_plugins' => array( 'valid', false ),
+		);
 	}
 
 	/**
