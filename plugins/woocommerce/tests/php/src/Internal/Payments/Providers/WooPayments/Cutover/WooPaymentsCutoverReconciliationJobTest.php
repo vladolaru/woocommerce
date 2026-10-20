@@ -2620,6 +2620,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		return array(
 			'still failing on the owner token'            => array( WooPaymentsCutoverStateStore::STATE_DEFERRED, array( $token ), true ),
+			'still failing on the owner token and the version' => array( WooPaymentsCutoverStateStore::STATE_DEFERRED, array( 'woopayments_plugin_version_unsupported', $token ), true ),
 			'deferred for another failure only'           => array( WooPaymentsCutoverStateStore::STATE_DEFERRED, array( 'woopayments_plugin_version_unsupported' ), false ),
 			'pending ownership verification, no failures' => array( WooPaymentsCutoverStateStore::STATE_PENDING, array(), false ),
 		);
