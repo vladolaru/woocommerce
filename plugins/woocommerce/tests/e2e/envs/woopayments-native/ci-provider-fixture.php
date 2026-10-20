@@ -393,6 +393,7 @@ final class WooCommerce_WooPayments_Native_CI_Provider_Fixture {
 		switch ( "$method $route" ) {
 			case 'GET public/incentives':
 				// The platform answers 204 with no body when no incentive applies to a store that already has WooPayments.
+				// Recorded with a plain GET of the route on the connected test store; the README lists the source.
 				return $this->no_content_response( array( 'cache-for' => '86400' ) );
 			case 'GET payment_method_promotions':
 				return $this->response( array() );
