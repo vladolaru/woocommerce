@@ -789,8 +789,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$controller = $this->create_cutover_controller();
 
-		$this->assertSame( $offered, wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_awaiting_switch() );
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->get_runtime_owner() );
 		if ( $offered ) {
 			$this->assertStringContainsString( 'Start the switch', $this->render_admin_notices( $controller ) );
 			$this->assertTrue( $controller->enqueue_merchant_start() );

@@ -108,37 +108,66 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Owner is none when the plugin is absent and native is disabled.
+	 * The extension owns payments wherever it is found, whatever the feature says; without it, the feature decides between
+	 * the built-in WooPayments and nothing. Each row keeps the feature setup of the case it came from.
+	 *
+	 * @testdox The runtime owner follows the extension's signals and the feature: $_dataName.
+	 * @dataProvider provide_owner_states
+	 *
+	 * @param bool   $in_list          Whether the plugin is in the per-site active-plugins list.
+	 * @param bool   $network          Whether the plugin is in the network active-sitewide-plugins list.
+	 * @param bool   $class_loaded     Whether the WC_Payments bootstrap class is loaded.
+	 * @param bool   $constant_defined Whether the WooPayments include-time constant is defined.
+	 * @param string $entry            The plugin's active-plugins entry.
+	 * @param string $feature          How the feature option is set: untouched, filtered off, enabled, stored on, stored off or absent.
+	 * @param string $owner            Expected owner.
 	 */
-	public function test_owner_is_none_when_plugin_absent_and_native_disabled(): void {
-		$this->fake_plugin();
-		$this->answer_feature_reads( static fn() => 'no' );
+	public function test_runtime_owner_follows_the_extension_and_the_feature( bool $in_list, bool $network, bool $class_loaded, bool $constant_defined, string $entry, string $feature, string $owner ): void {
+		$this->fake_plugin( $in_list, $network, $class_loaded, $constant_defined, $entry );
+		if ( 'filtered off' === $feature ) {
+			$this->answer_feature_reads( static fn() => 'no' );
+		} elseif ( 'enabled' === $feature ) {
+			$this->enable_native_runtime();
+		} elseif ( 'stored on' === $feature || 'stored off' === $feature ) {
+			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'stored on' === $feature ? 'yes' : 'no' );
+			$this->sut->invalidate();
+		} elseif ( 'absent' === $feature ) {
+			delete_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION );
+			$this->sut->invalidate();
+		}
 
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'With no plugin and native off, nobody owns the runtime.' );
-		$this->assertFalse( $this->sut->is_builtin_owner(), 'Native must not register when it does not own the runtime.' );
-		$this->assertFalse( $this->sut->is_extension_owner(), 'The plugin does not own the runtime when it is absent.' );
+		$this->assertSame( $owner, $this->sut->get_runtime_owner(), 'The owner of payments.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN === $owner, $this->sut->is_builtin_owner(), 'The built-in registers only while it owns payments.' );
+		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_EXTENSION === $owner, $this->sut->is_extension_owner(), 'The extension owns payments only while it is found.' );
 	}
 
 	/**
-	 * @testdox Owner is the plugin when the plugin is active in the per-site list.
+	 * Extension signals and feature setups, with the owner each gives.
+	 *
+	 * @return array<string,array{0:bool,1:bool,2:bool,3:bool,4:string,5:string,6:string}>
 	 */
-	public function test_owner_is_plugin_when_plugin_active(): void {
-		$this->fake_plugin( true );
+	public function provide_owner_states(): array {
+		$file      = WooPaymentsRuntimeArbiter::PLUGIN_FILE;
+		$renamed   = 'woopayments/woocommerce-payments.php';
+		$none      = WooPaymentsRuntimeArbiter::OWNER_NONE;
+		$builtin   = WooPaymentsRuntimeArbiter::OWNER_BUILTIN;
+		$extension = WooPaymentsRuntimeArbiter::OWNER_EXTENSION;
 
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'An active plugin owns the runtime.' );
-		$this->assertTrue( $this->sut->is_extension_owner(), 'The plugin owns the runtime when active.' );
-		$this->assertFalse( $this->sut->is_builtin_owner(), 'Native must register nothing while the plugin owns the runtime.' );
-	}
-
-	/**
-	 * @testdox Owner is the plugin when the plugin is network-activated.
-	 */
-	public function test_owner_is_plugin_when_network_active(): void {
-		$this->fake_plugin( false, true );
-
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'A network-activated plugin owns the runtime.' );
-		$this->assertTrue( $this->sut->is_extension_owner(), 'A network-activated plugin owns the runtime.' );
-		$this->assertFalse( $this->sut->is_builtin_owner(), 'Native must not register while a network-activated plugin owns the runtime.' );
+		return array(
+			'no extension, feature off'                   => array( false, false, false, false, $file, 'filtered off', $none ),
+			'extension in the site list'                  => array( true, false, false, false, $file, 'untouched', $extension ),
+			'extension network-active'                    => array( false, true, false, false, $file, 'untouched', $extension ),
+			'extension found by its include-time constant, feature on' => array( false, false, false, true, $file, 'enabled', $extension ),
+			'only the bootstrap class loaded, feature on' => array( false, false, true, false, $file, 'enabled', $builtin ),
+			'extension active, feature stored on'         => array( true, false, false, false, $file, 'stored on', $extension ),
+			'extension active, feature stored off'        => array( true, false, false, false, $file, 'stored off', $extension ),
+			'extension active, feature option absent'     => array( true, false, false, false, $file, 'absent', $extension ),
+			'extension network-active, feature on'        => array( false, true, false, false, $file, 'enabled', $extension ),
+			'no extension, feature on'                    => array( false, false, false, false, $file, 'enabled', $builtin ),
+			'extension in a renamed folder, feature on'   => array( true, false, false, false, $renamed, 'enabled', $extension ),
+			'extension network-active from a renamed folder, feature on' => array( false, true, false, false, $renamed, 'enabled', $extension ),
+			'another plugin with a similar main file, feature on' => array( true, false, false, false, 'woocommerce-payments-dev-tools/woocommerce-payments-dev-tools.php', 'enabled', $builtin ),
+		);
 	}
 
 	/**
@@ -168,72 +197,6 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner() );
 		$this->assertSame( 0, $network_reads );
-	}
-
-	/**
-	 * @testdox The plugin is detected via its include-time constant for a non-standard install.
-	 */
-	public function test_plugin_detected_via_include_time_constant_for_non_standard_install(): void {
-		$this->fake_plugin( false, false, false, true );
-		$this->enable_native_runtime();
-
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'The include-time constant detects a plugin outside the standard active-plugins entry.' );
-		$this->assertFalse( $this->sut->is_builtin_owner(), 'Native must not register when the plugin is detected by the fallback signal.' );
-	}
-
-	/**
-	 * @testdox A loaded bootstrap class alone does not establish plugin ownership.
-	 */
-	public function test_loaded_bootstrap_class_alone_does_not_establish_plugin_ownership(): void {
-		$this->fake_plugin( false, false, true, false );
-		$this->enable_native_runtime();
-
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner(), 'The legacy bootstrap class is not an ownership fallback.' );
-		$this->assertTrue( $this->sut->is_builtin_owner(), 'Native should register when only the removed fallback signal is present.' );
-	}
-
-	/**
-	 * @testdox The active plugin wins whatever the WooPayments feature says ($_dataName).
-	 * @testWith ["yes"]
-	 *           ["no"]
-	 *           [null]
-	 *
-	 * @param string|null $stored Stored feature option, or null when absent.
-	 */
-	public function test_plugin_wins_whatever_the_feature_says( ?string $stored ): void {
-		$this->fake_plugin( true );
-		if ( null === $stored ) {
-			delete_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION );
-		} else {
-			update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $stored );
-		}
-		$this->sut->invalidate();
-
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'Plugin-wins is the only allowed state while the plugin is active.' );
-		$this->assertFalse( $this->sut->is_builtin_owner(), 'Native must not register even when enabled, as long as the plugin is active.' );
-	}
-
-	/**
-	 * @testdox A network-activated plugin wins even when native is enabled.
-	 */
-	public function test_network_active_plugin_wins_with_the_feature_on(): void {
-		$this->fake_plugin( false, true );
-		$this->enable_native_runtime();
-
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'Network-active detection must keep plugin-wins even when native is enabled.' );
-		$this->assertFalse( $this->sut->is_builtin_owner(), 'Native must not register on a network-activated-plugin site.' );
-	}
-
-	/**
-	 * @testdox Owner is native when the plugin is absent and native is enabled.
-	 */
-	public function test_owner_is_builtin_when_plugin_absent_and_the_feature_on(): void {
-		$this->fake_plugin();
-		$this->enable_native_runtime();
-
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner(), 'Native owns the runtime when the plugin is gone and native is enabled.' );
-		$this->assertTrue( $this->sut->is_builtin_owner(), 'Native must register when it owns the runtime.' );
-		$this->assertFalse( $this->sut->is_extension_owner(), 'The plugin does not own the runtime when absent.' );
 	}
 
 	/**
@@ -309,36 +272,6 @@ class WooPaymentsRuntimeArbiterTest extends WC_Unit_Test_Case {
 			$this->sut->invalidate( $blog_id );
 			wpmu_delete_blog( $blog_id, true );
 		}
-	}
-
-	/**
-	 * @testdox The plugin in a renamed folder owns the runtime.
-	 */
-	public function test_plugin_in_renamed_folder_owns_the_runtime(): void {
-		$this->fake_plugin( true, false, false, false, 'woopayments/woocommerce-payments.php' );
-		$this->enable_native_runtime();
-
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'A copy in a renamed folder loads after WooCommerce, so only its list entry can keep native from registering too.' );
-	}
-
-	/**
-	 * @testdox The plugin network-activated from a renamed folder owns the runtime.
-	 */
-	public function test_network_plugin_in_renamed_folder_owns_the_runtime(): void {
-		$this->fake_plugin( false, true, false, false, 'woopayments/woocommerce-payments.php' );
-		$this->enable_native_runtime();
-
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'The network list is matched by main file name as well.' );
-	}
-
-	/**
-	 * @testdox An active plugin with another main file name is not WooPayments.
-	 */
-	public function test_other_plugin_main_file_is_not_woopayments(): void {
-		$this->fake_plugin( true, false, false, false, 'woocommerce-payments-dev-tools/woocommerce-payments-dev-tools.php' );
-		$this->enable_native_runtime();
-
-		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner(), 'Only the WooPayments main file name marks the plugin as active.' );
 	}
 
 	/**
