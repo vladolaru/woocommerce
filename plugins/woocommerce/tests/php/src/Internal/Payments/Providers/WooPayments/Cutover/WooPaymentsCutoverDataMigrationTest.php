@@ -53,7 +53,7 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	/**
 	 * Options WooPayments 10.5.0 and 11.1.0 both read, which normalization must never delete.
 	 */
-	private const PLUGIN_READ_OPTIONS = array(
+	private const EXTENSION_READ_OPTIONS = array(
 		'wcpay_multi_currency_enabled_currencies'         => array( 'USD', 'EUR' ),
 		'wcpay_multi_currency_stored_customer_currencies' => array( 'EUR' ),
 		'_wcpay_feature_woopay_express_checkout'          => '1',
@@ -116,10 +116,10 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Normalizes pre-cutover gateway option shapes on the first native-owned request.
+	 * @testdox Normalizes pre-cutover gateway option shapes on the first request the built-in WooPayments owns.
 	 */
-	public function test_run_normalizes_legacy_gateway_option_shapes_once(): void {
-		$this->seed_legacy_options();
+	public function test_run_normalizes_pre_cutover_gateway_option_shapes_once(): void {
+		$this->seed_extension_options();
 
 		$summary = $this->create_runner()->run();
 		$stored  = get_option( self::SETTINGS_OPTION );
@@ -328,10 +328,10 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A partial gateway projection leaves cutover incomplete and preserves later cleanup state.
+	 * @testdox A partial gateway settings write leaves cutover incomplete and preserves later cleanup state.
 	 */
-	public function test_run_does_not_complete_when_gateway_settings_projection_fails(): void {
-		$this->seed_legacy_options();
+	public function test_run_does_not_complete_when_gateway_settings_persistence_fails(): void {
+		$this->seed_extension_options();
 		set_transient( 'wcpay_upe_appearance', array( 'theme' => 'stale' ) );
 		$option_name = 'woocommerce_woocommerce_payments_giropay_settings';
 		update_option( $option_name, array( 'enabled' => 'yes' ) );
@@ -400,10 +400,10 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Cleans stale local state that is safe to remove during native cutover.
+	 * @testdox Cleans stale local state that is safe to remove during the cutover.
 	 */
 	public function test_run_deletes_stale_transients_options_and_user_meta(): void {
-		$this->seed_legacy_options();
+		$this->seed_extension_options();
 		update_option( '_wcpay_feature_auth_and_capture', '1' );
 		update_option( '_wcpay_feature_sofort', '1' );
 		update_option( 'wcpay_onboarding_eligibility_modal_dismissed', true );
@@ -440,7 +440,7 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	 * @param bool     $handled     Whether a handler is registered for the hooks, as a Sync that still runs registers one.
 	 */
 	public function test_run_clears_only_the_extension_cron_events_nothing_handles( array $hooks, string $schedule, string $change_name, bool $handled ): void {
-		$this->seed_legacy_options();
+		$this->seed_extension_options();
 		// The extension registered its schedule while it was active; after deactivation nothing registers it.
 		$add_schedule = static function ( array $schedules ) use ( $schedule ): array {
 			$schedules[ $schedule ] = $schedules[ $schedule ] ?? array(
@@ -773,8 +773,8 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	 */
 	public function shared_settings_contract_provider(): array {
 		return array(
-			'legacy plugin 2.5.0 shapes'  => array(
-				'legacy plugin 2.5.0 shapes',
+			'extension 2.5.0 shapes'      => array(
+				'extension 2.5.0 shapes',
 				'2.5.0',
 				array(
 					'enabled'                             => 'yes',
@@ -812,14 +812,14 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Normalization deletes only allowlisted options and transients and keeps every other plugin option.
+	 * @testdox Normalization deletes only allowlisted options and transients and keeps every other WooPayments option.
 	 */
 	public function test_run_deletes_only_allowlisted_options_and_transients(): void {
-		$this->seed_legacy_options();
+		$this->seed_extension_options();
 		foreach ( array_keys( WooPaymentsCutoverDataMigration::RETIRED_OPTIONS ) as $option_name ) {
 			update_option( $option_name, '1' );
 		}
-		foreach ( self::PLUGIN_READ_OPTIONS as $option_name => $value ) {
+		foreach ( self::EXTENSION_READ_OPTIONS as $option_name => $value ) {
 			update_option( $option_name, $value );
 		}
 		$transients = array_merge( WooPaymentsCutoverDataMigration::APPEARANCE_TRANSIENTS, array_keys( WooPaymentsCutoverDataMigration::RETIRED_TRANSIENTS ) );
@@ -832,14 +832,14 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 			$deletable[] = '_transient_' . $transient;
 			$deletable[] = '_transient_timeout_' . $transient;
 		}
-		$before = $this->get_plugin_option_names();
+		$before = $this->get_woopayments_option_names();
 
 		$this->create_runner()->run();
-		$deleted = array_values( array_diff( $before, $this->get_plugin_option_names() ) );
+		$deleted = array_values( array_diff( $before, $this->get_woopayments_option_names() ) );
 
 		$this->assertNotEmpty( $deleted, 'The fixture must exercise option deletion.' );
 		$this->assertSame( array(), array_values( array_diff( $deleted, $deletable ) ), 'Normalization deleted plugin options that are not on an allowlist.' );
-		foreach ( self::PLUGIN_READ_OPTIONS as $option_name => $value ) {
+		foreach ( self::EXTENSION_READ_OPTIONS as $option_name => $value ) {
 			$this->assertSame( $value, get_option( $option_name ), "Plugin-read option {$option_name} must survive normalization unchanged." );
 		}
 		$this->assertSame( array( 'kept' => true ), get_transient( 'wcpay_fraud_protection_settings' ) );
@@ -882,7 +882,7 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	 *
 	 * @return string[]
 	 */
-	private function get_plugin_option_names(): array {
+	private function get_woopayments_option_names(): array {
 		global $wpdb;
 
 		return $wpdb->get_col( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE '%wcpay%' OR option_name LIKE '%woocommerce_payments%' OR option_name LIKE '%woopayments%'" );
@@ -905,7 +905,7 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	/**
 	 * Seed legacy WooPayments option shapes.
 	 */
-	private function seed_legacy_options(): void {
+	private function seed_extension_options(): void {
 		update_option( self::VERSION_OPTION, '2.5.0' );
 		update_option(
 			self::SETTINGS_OPTION,

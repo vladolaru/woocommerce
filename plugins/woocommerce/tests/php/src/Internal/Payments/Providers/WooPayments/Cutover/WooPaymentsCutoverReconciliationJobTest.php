@@ -221,7 +221,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Task 3.1 one-click cutover dispatches accepted merchant work after releasing its state lease.
+	 * @testdox One-click cutover dispatches accepted merchant work after releasing its state lease.
 	 */
 	public function test_enqueue_dispatches_accepted_merchant_work_after_releasing_its_state_lease(): void {
 		$scheduler = $this->require_scheduler();
@@ -258,9 +258,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Disabled native runtime refuses work without persisting state or scheduling an action.
+	 * @testdox Disabled built-in runtime refuses work without persisting state or scheduling an action.
 	 */
-	public function test_enqueue_does_nothing_when_native_runtime_is_disabled(): void {
+	public function test_enqueue_does_nothing_when_the_builtin_runtime_is_disabled(): void {
 		$this->require_sut();
 		$sut = $this->create_job( false );
 
@@ -406,12 +406,12 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Finalization moves a plugin-era store to the active tier so the next shopper request registers the native gateway.
+	 * @testdox Finalization moves an extension-era store to the active tier so the next shopper request registers the built-in gateway.
 	 *
 	 * With an account cached and the gateway enabled, the tier the switch writes is `active`.
 	 */
-	public function test_finalization_activates_native_payments_for_the_next_request(): void {
-		$this->arrange_plugin_era_store();
+	public function test_finalization_activates_the_builtin_woopayments_for_the_next_request(): void {
+		$this->arrange_extension_era_store();
 		$preflight = $this->create_plugin_deactivating_preflight();
 		$origin    = $this->create_state_writing_job( true, $preflight );
 
@@ -425,19 +425,19 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $verification );
 		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
 		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The deactivating request must leave the tier the next request bootstraps from.' );
-		$this->assert_next_front_request_registers_native_gateway();
+		$this->assert_next_front_request_registers_the_gateway();
 
 		$this->run_ownership_verification_in_a_fresh_request( $verification, $preflight );
 
 		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
-		$this->assert_next_front_request_registers_native_gateway();
+		$this->assert_next_front_request_registers_the_gateway();
 	}
 
 	/**
 	 * @testdox A finalize whose ownership check cannot be stored, because another request holds the write lock, leaves the built-in WooPayments taking payments: its token was stored before the deactivation, and the tier right after it.
 	 */
 	public function test_finalize_moves_the_tier_when_the_ownership_check_loses_the_write_lock(): void {
-		$this->arrange_plugin_era_store();
+		$this->arrange_extension_era_store();
 		$busy      = null;
 		$preflight = new class( $busy, $this->require_state_store() ) extends WooPaymentsCutoverPreflightService {
 			/** @var string|null */
@@ -508,7 +508,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The tier follows the built-in WooPayments that now owns payments.' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->get_runtime_owner(), 'The next request is owned by the built-in WooPayments.' );
-		$this->assert_next_front_request_registers_native_gateway();
+		$this->assert_next_front_request_registers_the_gateway();
 	}
 
 	/**
@@ -517,7 +517,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox A finalize whose token write is refused, because another request holds the write lock, deactivates nothing and leaves the WooPayments extension owning payments.
 	 */
 	public function test_finalize_whose_token_write_is_refused_leaves_the_extension_owning_payments(): void {
-		$this->arrange_plugin_era_store();
+		$this->arrange_extension_era_store();
 		$busy          = null;
 		$deactivations = 0;
 		$preflight     = new class( $deactivations ) extends WooPaymentsCutoverPreflightService {
@@ -621,7 +621,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox A deactivation whose hook throws after WordPress wrote the active plugins counts as done: the tier follows and the built-in WooPayments takes payments, even from a stored disabled tier.
 	 */
 	public function test_deactivation_that_throws_after_the_write_still_finalizes(): void {
-		$this->arrange_plugin_era_store();
+		$this->arrange_extension_era_store();
 		// The tier an extension store keeps from its install: nothing would register the job again.
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::DISABLED );
 		$throwing_listener = static function (): void {
@@ -676,14 +676,14 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $record );
 		$this->assertSame( 'verify_builtin_ownership', $record['current_step'], 'The ownership check is scheduled, not a rollback.' );
 		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
-		$this->assert_next_front_request_registers_native_gateway();
+		$this->assert_next_front_request_registers_the_gateway();
 	}
 
 	/**
 	 * @testdox An activation recorded while finalize deactivates the extension keeps its rollback: no ownership check is scheduled, and the tier finalize writes is capped at available.
 	 */
 	public function test_activation_during_the_finalize_deactivation_keeps_the_rollback(): void {
-		$this->arrange_plugin_era_store();
+		$this->arrange_extension_era_store();
 		$after_deactivation = null;
 		$preflight          = new class( $after_deactivation ) extends WooPaymentsCutoverPreflightService {
 			/** @var callable|null */
@@ -763,7 +763,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @param bool   $supersedes Whether the activation supersedes the generation.
 	 */
 	public function test_extension_activation_on_an_open_cutover_is_the_rollback( string $shape, bool $supersedes ): void {
-		$this->arrange_plugin_era_store();
+		$this->arrange_extension_era_store();
 		$failures           = array();
 		$schedulable        = true;
 		$deactivations      = 0;
@@ -967,7 +967,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @param int    $expected_deactivations Deactivations the switch made before the extension came back.
 	 */
 	public function test_switch_rolls_back_when_the_extension_came_back( string $shape, int $expected_deactivations ): void {
-		$this->arrange_plugin_era_store();
+		$this->arrange_extension_era_store();
 		$deactivations     = 0;
 		$schedulable       = true;
 		$migration_runs    = 0;
@@ -1194,7 +1194,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	public function test_finalize_fence_reads_the_database_not_the_option_cache(): void {
 		global $wpdb;
-		$this->arrange_plugin_era_store();
+		$this->arrange_extension_era_store();
 		$deactivations = 0;
 		$preflight     = $this->create_deactivation_counting_preflight( $deactivations );
 		$during_run    = null;
@@ -1299,7 +1299,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox A claim that expired while it ran never deactivates the extension: the finalize fence refuses it.
 	 */
 	public function test_an_expired_claim_never_deactivates(): void {
-		$this->arrange_plugin_era_store();
+		$this->arrange_extension_era_store();
 		$deactivations = 0;
 		$preflight     = new class( $deactivations ) extends WooPaymentsCutoverPreflightService {
 			/** @var int */
@@ -1366,7 +1366,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox A first attempt that runs on time logs no delay warning.
 	 */
 	public function test_on_time_first_attempt_logs_no_delay_warning(): void {
-		$this->arrange_plugin_era_store();
+		$this->arrange_extension_era_store();
 		$job    = new class() extends WooPaymentsCutoverReconciliationJob {
 			/** @var array<int,array<string,mixed>> */
 			public array $logged_warnings = array();
@@ -1397,7 +1397,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox A first attempt that runs a day after the merchant's click still finishes the switch, and logs a warning for the delay.
 	 */
 	public function test_switch_first_attempted_after_the_retry_window_still_finishes(): void {
-		$this->arrange_plugin_era_store();
+		$this->arrange_extension_era_store();
 		$preflight     = $this->create_plugin_deactivating_preflight();
 		$normalization = new class() extends WooPaymentsCutoverDataMigration {
 			/** @return array{ran:bool,changes:string[]} */
@@ -1474,7 +1474,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox Ownership verification rewrites the tier when the finalization write did not land.
 	 */
 	public function test_ownership_verification_repairs_the_tier_before_completion(): void {
-		$this->arrange_plugin_era_store();
+		$this->arrange_extension_era_store();
 		$preflight = $this->create_plugin_deactivating_preflight();
 		$origin    = $this->create_state_writing_job( true, $preflight );
 		$this->assertTrue( $origin->enqueue( 'merchant' ) );
@@ -1489,14 +1489,14 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->run_ownership_verification_in_a_fresh_request( $verification, $preflight );
 
 		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
-		$this->assert_next_front_request_registers_native_gateway();
+		$this->assert_next_front_request_registers_the_gateway();
 	}
 
 	/**
-	 * @testdox A store with Amazon Pay enabled in the plugin's settings keeps it enabled after the switch.
+	 * @testdox A store with Amazon Pay enabled in the extension's settings keeps it enabled after the switch.
 	 */
 	public function test_switch_keeps_amazon_pay_enabled(): void {
-		$this->arrange_plugin_era_store();
+		$this->arrange_extension_era_store();
 		$enabled_payment_method_ids = array( 'card', 'amazon_pay' );
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
@@ -1524,12 +1524,12 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Reconciliation preserves plugin-origin USD and EUR order money records.
+	 * @testdox Reconciliation preserves extension-origin USD and EUR order money records.
 	 */
-	public function test_reconciliation_preserves_plugin_origin_multi_currency_orders(): void {
+	public function test_reconciliation_preserves_extension_origin_multi_currency_orders(): void {
 		$customer_id = $this->factory->user->create( array( 'role' => 'customer' ) );
-		$usd_order   = $this->create_plugin_shaped_order( $customer_id, 'USD', '10.00', 'pi_plugin_usd' );
-		$eur_order   = $this->create_plugin_shaped_order( $customer_id, 'EUR', '12.34', 'pi_plugin_eur' );
+		$usd_order   = $this->create_extension_shaped_order( $customer_id, 'USD', '10.00', 'pi_plugin_usd' );
+		$eur_order   = $this->create_extension_shaped_order( $customer_id, 'EUR', '12.34', 'pi_plugin_eur' );
 
 		// Oracle: WooPayments 11.1.0 includes/multi-currency/FrontendPrices.php::add_order_meta() omits default-currency metadata and :8082 order 2210 recorded these exact EUR values.
 		$eur_order->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', '0.88' );
@@ -1599,9 +1599,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Reconciliation preserves a plugin-origin saved card and test customer relationship byte-for-byte.
+	 * @testdox Reconciliation preserves an extension-origin saved card and test customer relationship byte-for-byte.
 	 */
-	public function test_reconciliation_preserves_plugin_origin_saved_card(): void {
+	public function test_reconciliation_preserves_extension_origin_saved_card(): void {
 		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		update_user_option( $user_id, '_wcpay_customer_id_test', 'cus_plugin_history' );
 
@@ -1655,9 +1655,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Reconciliation preserves the selected persisted fields of a plugin-origin subscription-shaped order graph exactly.
+	 * @testdox Reconciliation preserves the selected persisted fields of an extension-origin subscription-shaped order graph exactly.
 	 */
-	public function test_reconciliation_preserves_plugin_origin_subscription_persistence_shape(): void {
+	public function test_reconciliation_preserves_extension_origin_subscription_persistence_shape(): void {
 		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		update_user_option( $user_id, '_wcpay_customer_id_test', 'cus_plugin_subscription' );
 
@@ -1675,7 +1675,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$token_data_store = \WC_Data_Store::load( 'payment-token' );
 		$token_data_store->set_default_status( $token->get_id(), true );
 
-		$parent_order = $this->create_plugin_shaped_order( $user_id, 'USD', '11.98', 'pi_plugin_subscription_parent' );
+		$parent_order = $this->create_extension_shaped_order( $user_id, 'USD', '11.98', 'pi_plugin_subscription_parent' );
 		$parent_order->add_payment_token( $token );
 		$parent_order->update_meta_data( '_payment_method_id', 'pm_plugin_subscription' );
 		$parent_order->update_meta_data( '_stripe_customer_id', 'cus_plugin_subscription' );
@@ -1789,9 +1789,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Ownership verification cannot complete in its originating request and completes only after a fresh native-owned request.
+	 * @testdox Ownership verification cannot complete in its originating request and completes only after a fresh request the built-in WooPayments owns.
 	 */
-	public function test_ownership_verification_requires_a_fresh_native_owned_request(): void {
+	public function test_ownership_verification_requires_a_fresh_builtin_owned_request(): void {
 		// A store that ran the extension, which finalize deactivated.
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( 'woocommerce_woocommerce_payments_version', '11.1.0' );
@@ -1989,9 +1989,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Ownership verification schedules the canceled-authorization fee remediation once native owns the site.
+	 * @testdox Ownership verification schedules the canceled-authorization fee remediation once the built-in WooPayments owns the site.
 	 */
-	public function test_ownership_verification_schedules_fee_remediation_once_native_owns_the_site(): void {
+	public function test_ownership_verification_schedules_fee_remediation_once_the_builtin_owns_the_site(): void {
 		$scheduling_calls = 0;
 		$schedulable      = true;
 		$throws           = false;
@@ -2065,9 +2065,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Ownership verification from a fresh request defers while the plugin still owns the runtime, without finishing or scheduling the fee remediation.
+	 * @testdox Ownership verification from a fresh request defers while the extension still owns the runtime, without finishing or scheduling the fee remediation.
 	 */
-	public function test_ownership_verification_defers_while_the_plugin_still_runs(): void {
+	public function test_ownership_verification_defers_while_the_extension_still_runs(): void {
 		$scheduling_calls = 0;
 		$schedulable      = true;
 		$throws           = false;
@@ -2097,7 +2097,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A merchant-started claim whose plugin deactivation fails (throws: $throws) defers without moving to ownership verification or syncing native state.
+	 * @testdox A merchant-started claim whose plugin deactivation fails (throws: $throws) defers without moving to ownership verification or syncing the setup tier.
 	 * @testWith [false]
 	 *           [true]
 	 *
@@ -2169,10 +2169,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/**
 			 * Count native state synchronizations.
 			 *
-			 * @param bool $plugin_runtime_active Whether the plugin owns the runtime.
+			 * @param bool $extension_runtime_active Whether the plugin owns the runtime.
 			 */
-			public function sync_setup_tier_from_options( bool $plugin_runtime_active ): void {
-				unset( $plugin_runtime_active );
+			public function sync_setup_tier_from_options( bool $extension_runtime_active ): void {
+				unset( $extension_runtime_active );
 				++$this->sync_calls;
 			}
 		};
@@ -2400,7 +2400,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Admin-notice classification on a plugin store awaiting the start click scans once per record revision, not on every admin page.
+	 * @testdox Admin-notice classification on an extension store awaiting the start click scans once per record revision, not on every admin page.
 	 */
 	public function test_admin_notice_classification_reuses_the_scan_for_one_record_revision(): void {
 		$preflight = new class() extends WooPaymentsCutoverPreflightService {
@@ -2429,9 +2429,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Admin-notice classification runs no preflight scan on a native store that has no cutover record and no plugin.
+	 * @testdox Admin-notice classification runs no preflight scan on a store the built-in WooPayments owns that has no cutover record and no extension.
 	 */
-	public function test_admin_notice_classification_skips_preflight_without_record_or_plugin(): void {
+	public function test_admin_notice_classification_skips_preflight_without_record_or_extension(): void {
 		$preflight = new class() extends WooPaymentsCutoverPreflightService {
 			/** @var int Number of preflight scans. */
 			public int $scans = 0;
@@ -2697,11 +2697,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	public function reconciliation_disposition_provider(): array {
 		return array(
-			'native runtime disabled'                    => array( 'builtin_runtime_disabled', 'none' ),
+			'built-in runtime disabled'                  => array( 'builtin_runtime_disabled', 'none' ),
 			'unsupported WooPayments version'            => array( 'woopayments_plugin_version_unsupported', WooPaymentsCutoverStateStore::STATE_DEFERRED ),
 			'operational queue hooks'                    => array( 'operational_queue_hooks_unhandled', WooPaymentsCutoverStateStore::STATE_DEFERRED ),
-			'legacy Stripe Billing subscriptions'        => array( 'bundled_stripe_billing_subscriptions_present', WooPaymentsCutoverStateStore::STATE_EXCLUDED ),
-			'native transport unavailable'               => array( 'builtin_transport_unavailable', WooPaymentsCutoverStateStore::STATE_DEFERRED ),
+			'bundled Stripe Billing subscriptions'       => array( 'bundled_stripe_billing_subscriptions_present', WooPaymentsCutoverStateStore::STATE_EXCLUDED ),
+			'built-in transport unavailable'             => array( 'builtin_transport_unavailable', WooPaymentsCutoverStateStore::STATE_DEFERRED ),
 			'multi-currency rates unavailable'           => array( 'multi_currency_rates_unavailable', WooPaymentsCutoverStateStore::STATE_DEFERRED ),
 			'financial migrations unavailable'           => array( 'financial_migrations_unavailable', WooPaymentsCutoverStateStore::STATE_DEFERRED ),
 			'WordPress.com blog ID unavailable'          => array( 'wpcom_blog_id_unavailable', WooPaymentsCutoverStateStore::STATE_DEFERRED ),
@@ -2797,10 +2797,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Reconciliation adopts native queue callbacks, Stripe Billing migrations included: a pending migration stays queued for native's migrator.
+	 * @testdox Reconciliation adopts the built-in WooPayments' queue callbacks, Stripe Billing migrations included: a pending migration stays queued for the built-in migrator.
 	 */
-	public function test_reconciliation_adopts_native_queue_callbacks_and_stripe_billing_migrations(): void {
-		$native_action_id   = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_store_setup_sync', array(), 'cutover-test', false );
+	public function test_reconciliation_adopts_builtin_handled_queue_callbacks_and_stripe_billing_migrations(): void {
+		$builtin_action_id  = as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_store_setup_sync', array(), 'cutover-test', false );
 		$migrator_action_id = as_schedule_single_action(
 			time() - MINUTE_IN_SECONDS,
 			'wcpay_migrate_subscription_retry',
@@ -2811,7 +2811,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			'cutover-test',
 			false
 		);
-		$this->assertIsInt( $native_action_id );
+		$this->assertIsInt( $builtin_action_id );
 		$this->assertIsInt( $migrator_action_id );
 		$preflight = $this->create_preflight_with_failures(
 			array( 'operational_queue_hooks_unhandled' ),
@@ -2819,7 +2819,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			false,
 			array(
 				array(
-					'action_id' => $native_action_id,
+					'action_id' => $builtin_action_id,
 					'hook'      => 'wcpay_store_setup_sync',
 					'group'     => 'cutover-test',
 				),
@@ -2841,7 +2841,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$deferred = $this->require_state_store()->get_record();
 		$this->assertIsArray( $deferred );
-		$this->assertSame( ActionScheduler_Store::STATUS_PENDING, ActionScheduler::store()->get_status( $native_action_id ) );
+		$this->assertSame( ActionScheduler_Store::STATUS_PENDING, ActionScheduler::store()->get_status( $builtin_action_id ) );
 		$this->assertSame( ActionScheduler_Store::STATUS_PENDING, ActionScheduler::store()->get_status( $migrator_action_id ) );
 		$this->assertSame(
 			array(
@@ -2862,9 +2862,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A lone native-owned fee-remediation action is adopted even after preflight removes its blocker.
+	 * @testdox A lone built-in-owned fee-remediation action is adopted even after preflight removes its blocker.
 	 */
-	public function test_reconciliation_adopts_a_lone_native_owned_fee_remediation_action(): void {
+	public function test_reconciliation_adopts_a_lone_builtin_owned_fee_remediation_action(): void {
 		$hook      = WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK;
 		$action_id = as_schedule_single_action( time() + HOUR_IN_SECONDS, $hook, array(), 'cutover-test', false );
 		$this->assertIsInt( $action_id );
@@ -3239,7 +3239,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox A switch whose extension became active for every site after the start defers at finalize before its data migration and deactivates nothing, so no other site loses WooPayments.
 	 */
 	public function test_finalize_defers_while_the_extension_is_active_for_every_site(): void {
-		$this->arrange_plugin_era_store();
+		$this->arrange_extension_era_store();
 		$deactivations = 0;
 		$sitewide      = false;
 		$preflight     = new class( $deactivations, $sitewide ) extends WooPaymentsCutoverPreflightService {
@@ -3882,8 +3882,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	public function plugin_update_request_context_provider(): array {
 		return array(
-			'the async admin-ajax runner native dispatches (not WP-Cron)' => array( false ),
-			'a WP-Cron run, where core already protects the plugin'       => array( true ),
+			'the async admin-ajax runner (not WP-Cron)' => array( false ),
+			'a WP-Cron run, where core already protects the plugin' => array( true ),
 		);
 	}
 
@@ -4648,7 +4648,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	/**
 	 * Arrange a store that upgraded WooCommerce with WooPayments active and a connected, enabled account.
 	 */
-	private function arrange_plugin_era_store(): void {
+	private function arrange_extension_era_store(): void {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
@@ -4766,11 +4766,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a job that finalizes cleanly and writes state through the container's account service.
 	 *
-	 * @param bool                               $plugin_active Whether the job's arbiter reports plugin ownership.
+	 * @param bool                               $extension_owns Whether the job's arbiter reports plugin ownership.
 	 * @param WooPaymentsCutoverPreflightService $preflight     Controlled preflight facts.
 	 * @return WooPaymentsCutoverReconciliationJob
 	 */
-	private function create_state_writing_job( bool $plugin_active, WooPaymentsCutoverPreflightService $preflight ): WooPaymentsCutoverReconciliationJob {
+	private function create_state_writing_job( bool $extension_owns, WooPaymentsCutoverPreflightService $preflight ): WooPaymentsCutoverReconciliationJob {
 		$normalization = new class() extends WooPaymentsCutoverDataMigration {
 			/** @return array{ran:bool,changes:string[]} */
 			public function run(): array {
@@ -4781,7 +4781,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 		};
 
-		return $this->create_job( true, $preflight, null, $plugin_active, $normalization, wc_get_container()->get( WooPaymentsAccountService::class ) );
+		return $this->create_job( true, $preflight, null, $extension_owns, $normalization, wc_get_container()->get( WooPaymentsAccountService::class ) );
 	}
 
 	/**
@@ -4808,7 +4808,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	/**
 	 * Assert that a new shopper request resolves the active tier and bootstraps the native gateway registry.
 	 */
-	private function assert_next_front_request_registers_native_gateway(): void {
+	private function assert_next_front_request_registers_the_gateway(): void {
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		$state = wc_get_container()->get( WooPaymentsSetupTier::class );
 		$state->invalidate();
@@ -4824,28 +4824,28 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @param bool                                     $feature_on        Whether the WooPayments feature is on.
 	 * @param WooPaymentsCutoverPreflightService|null  $preflight_service Controlled preflight facts, when needed.
 	 * @param WooPaymentsCutoverReconciliationJob|null $job               Job instance, when a test needs a narrow override.
-	 * @param bool                                     $plugin_active     Whether the plugin owns the runtime.
+	 * @param bool                                     $extension_owns     Whether the plugin owns the runtime.
 	 * @param WooPaymentsCutoverDataMigration|null     $data_migration Controlled normalization runner.
 	 * @param WooPaymentsAccountService|null           $account_service  Account service, when a test needs the real state writer.
 	 * @return WooPaymentsCutoverReconciliationJob
 	 */
-	private function create_job( bool $feature_on, ?WooPaymentsCutoverPreflightService $preflight_service = null, ?WooPaymentsCutoverReconciliationJob $job = null, bool $plugin_active = true, ?WooPaymentsCutoverDataMigration $data_migration = null, ?WooPaymentsAccountService $account_service = null ): WooPaymentsCutoverReconciliationJob {
-		$arbiter = new class( $feature_on, $plugin_active ) extends WooPaymentsRuntimeArbiter {
+	private function create_job( bool $feature_on, ?WooPaymentsCutoverPreflightService $preflight_service = null, ?WooPaymentsCutoverReconciliationJob $job = null, bool $extension_owns = true, ?WooPaymentsCutoverDataMigration $data_migration = null, ?WooPaymentsAccountService $account_service = null ): WooPaymentsCutoverReconciliationJob {
+		$arbiter = new class( $feature_on, $extension_owns ) extends WooPaymentsRuntimeArbiter {
 			/** @var bool */
 			private bool $feature_on;
 
 			/** @var bool */
-			private bool $plugin_active;
+			private bool $extension_owns;
 
 			/**
 			 * Initialize the static runtime answer.
 			 *
 			 * @param bool $feature_on Whether the WooPayments feature is on.
-			 * @param bool $plugin_active Whether the plugin owns the runtime.
+			 * @param bool $extension_owns Whether the plugin owns the runtime.
 			 */
-			public function __construct( bool $feature_on, bool $plugin_active ) {
-				$this->feature_on    = $feature_on;
-				$this->plugin_active = $plugin_active;
+			public function __construct( bool $feature_on, bool $extension_owns ) {
+				$this->feature_on     = $feature_on;
+				$this->extension_owns = $extension_owns;
 			}
 
 			/** Return the configured native feature state. */
@@ -4855,12 +4855,12 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 			/** Return the configured plugin ownership state. */
 			public function is_extension_owner(): bool {
-				return $this->plugin_active;
+				return $this->extension_owns;
 			}
 
 			/** Return the owner the two configured answers give. */
 			public function get_runtime_owner(): string {
-				if ( $this->plugin_active ) {
+				if ( $this->extension_owns ) {
 					return self::OWNER_EXTENSION;
 				}
 
@@ -5163,7 +5163,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @param string $transaction_id WooPayments transaction ID.
 	 * @return \WC_Order
 	 */
-	private function create_plugin_shaped_order( int $customer_id, string $currency, string $total, string $transaction_id ): \WC_Order {
+	private function create_extension_shaped_order( int $customer_id, string $currency, string $total, string $transaction_id ): \WC_Order {
 		$order = wc_create_order( array( 'customer_id' => $customer_id ) );
 		if ( ! $order instanceof \WC_Order ) {
 			throw new \RuntimeException( 'Could not create a plugin-shaped historical order.' );

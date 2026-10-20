@@ -16,7 +16,7 @@ use WC_Unit_Test_Case;
 class WooPaymentsBundledSubscriptionsGuardTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Legacy subscription markers block cutover when identifier placeholders are unavailable.
+	 * @testdox Bundled subscription markers block cutover when identifier placeholders are unavailable.
 	 */
 	public function test_blocks_cutover_without_querying_when_identifier_placeholders_are_unavailable(): void {
 		$wpdb = $this->getMockBuilder( \wpdb::class )
@@ -34,7 +34,7 @@ class WooPaymentsBundledSubscriptionsGuardTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Legacy subscription markers use identifier placeholders when the database supports them.
+	 * @testdox Bundled subscription markers use identifier placeholders when the database supports them.
 	 */
 	public function test_queries_with_identifier_placeholders_when_supported(): void {
 		$wpdb           = $this->getMockBuilder( \wpdb::class )

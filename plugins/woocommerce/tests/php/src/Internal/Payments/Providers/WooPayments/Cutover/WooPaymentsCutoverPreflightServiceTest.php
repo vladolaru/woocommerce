@@ -54,7 +54,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	private string $fee_remediation_status = 'scheduled';
 
 	/** @var bool */
-	private bool $rate_client_connected = true;
+	private bool $rate_api_client_connected = true;
 
 	/**
 	 * Set up test fixtures.
@@ -105,13 +105,13 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		$codes = array_merge( $codes, $this->create_sut()->get_failures() );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->provider_ready        = false;
-		$this->platform_failures     = array( 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable', 'wpcom_connection_owner_user_token_unavailable' );
-		$this->fee_remediation_ready = false;
-		$this->rate_client_connected = false;
+		$this->provider_ready            = false;
+		$this->platform_failures         = array( 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable', 'wpcom_connection_owner_user_token_unavailable' );
+		$this->fee_remediation_ready     = false;
+		$this->rate_api_client_connected = false;
 		update_option( 'woocommerce_woocommerce_payments_version', '10.4.9' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
-		$this->create_legacy_stripe_billing_subscription_marker();
+		$this->create_bundled_stripe_billing_subscription_marker();
 		as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_preflight_service_test', array(), 'test', true );
 		$codes = array_merge( $codes, $this->create_sut()->get_failures() );
 
@@ -353,10 +353,10 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 		$rate_account = $this->getMockBuilder( WooPaymentsNativeAccountAdapter::class )->disableOriginalConstructor()->onlyMethods( array( 'is_provider_connected', 'is_account_rejected' ) )->getMock();
 		$rate_account->method( 'is_provider_connected' )->willReturn( true );
 		$rate_account->method( 'is_account_rejected' )->willReturn( false );
-		$rate_client = $this->getMockBuilder( WooPaymentsNativeApiClientAdapter::class )->disableOriginalConstructor()->onlyMethods( array( 'is_server_connected' ) )->getMock();
-		$rate_client->method( 'is_server_connected' )->willReturnCallback(
+		$rate_api_client = $this->getMockBuilder( WooPaymentsNativeApiClientAdapter::class )->disableOriginalConstructor()->onlyMethods( array( 'is_server_connected' ) )->getMock();
+		$rate_api_client->method( 'is_server_connected' )->willReturnCallback(
 			function (): bool {
-				return $this->rate_client_connected;
+				return $this->rate_api_client_connected;
 			}
 		);
 		$sut = null === $database ? new WooPaymentsCutoverPreflightService() : new class( $database ) extends WooPaymentsCutoverPreflightService {
@@ -385,14 +385,14 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 				return $this->database;
 			}
 		};
-		$this->init_preflight_service( $sut, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), $provider, new WooPaymentsBundledSubscriptionsGuard(), $fee_remediation, $platform_connection, $rate_account, $rate_client );
+		$this->init_preflight_service( $sut, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( LegacyProxy::class ), $provider, new WooPaymentsBundledSubscriptionsGuard(), $fee_remediation, $platform_connection, $rate_account, $rate_api_client );
 		return $sut;
 	}
 
 	/**
 	 * Create a subscription still billed by Stripe Billing, which makes a store without WooCommerce Subscriptions bundled.
 	 */
-	private function create_legacy_stripe_billing_subscription_marker(): void {
+	private function create_bundled_stripe_billing_subscription_marker(): void {
 		$post_id = wp_insert_post(
 			array(
 				'post_type'   => 'shop_subscription',

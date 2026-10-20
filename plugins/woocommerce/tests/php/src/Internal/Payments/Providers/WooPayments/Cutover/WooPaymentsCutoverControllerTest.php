@@ -71,42 +71,42 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @var WooPaymentsNativeAccountAdapter&\PHPUnit\Framework\MockObject\MockObject
 	 */
-	private WooPaymentsNativeAccountAdapter $native_rate_account;
+	private WooPaymentsNativeAccountAdapter $rate_account;
 
 	/**
 	 * Native rate API client boundary mock.
 	 *
 	 * @var WooPaymentsNativeApiClientAdapter&\PHPUnit\Framework\MockObject\MockObject
 	 */
-	private WooPaymentsNativeApiClientAdapter $native_rate_api_client;
+	private WooPaymentsNativeApiClientAdapter $rate_api_client;
 
 	/**
 	 * Whether the native provider can process payments.
 	 *
 	 * @var bool
 	 */
-	private bool $native_provider_ready = false;
+	private bool $builtin_provider_ready = false;
 
 	/**
 	 * Whether the native rate account is connected.
 	 *
 	 * @var bool
 	 */
-	private bool $native_rate_account_connected = true;
+	private bool $rate_account_connected = true;
 
 	/**
 	 * Whether the native rate account is rejected.
 	 *
 	 * @var bool
 	 */
-	private bool $native_rate_account_rejected = false;
+	private bool $rate_account_rejected = false;
 
 	/**
 	 * Whether the native rate API client is connected.
 	 *
 	 * @var bool
 	 */
-	private bool $native_rate_api_client_connected = false;
+	private bool $rate_api_client_connected = false;
 
 	/**
 	 * Whether canceled-authorization fee remediation can be scheduled during cutover.
@@ -120,7 +120,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @var int
 	 */
-	private int $native_provider_readiness_calls = 0;
+	private int $builtin_provider_readiness_calls = 0;
 
 	/**
 	 * Number of times the fee remediation preflight was checked.
@@ -176,7 +176,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @var bool
 	 */
-	private bool $plugin_class_loaded = false;
+	private bool $extension_class_loaded = false;
 
 	/**
 	 * Whether the current user can perform cutover actions.
@@ -258,8 +258,8 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			->method( 'can_process_payments' )
 			->willReturnCallback(
 				function (): bool {
-					++$this->native_provider_readiness_calls;
-					return $this->native_provider_ready;
+					++$this->builtin_provider_readiness_calls;
+					return $this->builtin_provider_ready;
 				}
 			);
 
@@ -297,35 +297,35 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 				}
 			);
 
-		$this->native_rate_account = $this->getMockBuilder( WooPaymentsNativeAccountAdapter::class )
+		$this->rate_account = $this->getMockBuilder( WooPaymentsNativeAccountAdapter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_provider_connected', 'is_account_rejected' ) )
 			->getMock();
-		$this->native_rate_account
+		$this->rate_account
 			->method( 'is_provider_connected' )
 			->willReturnCallback(
 				function ( bool $on_error = false ): bool {
 					unset( $on_error );
-					return $this->native_rate_account_connected;
+					return $this->rate_account_connected;
 				}
 			);
-		$this->native_rate_account
+		$this->rate_account
 			->method( 'is_account_rejected' )
 			->willReturnCallback(
 				function (): bool {
-					return $this->native_rate_account_rejected;
+					return $this->rate_account_rejected;
 				}
 			);
 
-		$this->native_rate_api_client = $this->getMockBuilder( WooPaymentsNativeApiClientAdapter::class )
+		$this->rate_api_client = $this->getMockBuilder( WooPaymentsNativeApiClientAdapter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_server_connected' ) )
 			->getMock();
-		$this->native_rate_api_client
+		$this->rate_api_client
 			->method( 'is_server_connected' )
 			->willReturnCallback(
 				function (): bool {
-					return $this->native_rate_api_client_connected;
+					return $this->rate_api_client_connected;
 				}
 			);
 
@@ -387,9 +387,9 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Soft cutover notice is shown when plugin runtime owns the site and preflight is ready.
+	 * @testdox Start notice is shown when the extension owns the site and preflight is ready.
 	 */
-	public function test_soft_notice_is_shown_when_preflight_is_ready(): void {
+	public function test_start_notice_is_shown_when_preflight_is_ready(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		$this->enable_ready_cutover();
@@ -969,11 +969,11 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Native WooPayments should block a first-time standalone plugin activation.
+	 * @testdox The activation guard should block a first-time activation of the WooPayments extension.
 	 */
-	public function test_native_activation_guard_blocks_a_store_that_never_ran_the_extension(): void {
+	public function test_activation_guard_blocks_a_store_that_never_ran_the_extension(): void {
 		delete_option( 'woocommerce_woocommerce_payments_version' );
-		$this->enable_native_runtime_owner();
+		$this->enable_builtin_runtime_owner();
 		$this->fake_wp_die_handler();
 
 		try {
@@ -988,9 +988,9 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->assertStringNotContainsString( 'plugins.php', $this->wp_die_arguments['link_url'] );
 	}
 
-	/** @testdox Native WooPayments should allow plugin reactivation after a recorded version. */
-	public function test_native_activation_guard_allows_a_store_with_a_woopayments_plugin_version(): void {
-		$this->enable_native_runtime_owner();
+	/** @testdox The activation guard should allow reactivating the WooPayments extension after a recorded version. */
+	public function test_activation_guard_allows_a_store_with_a_woopayments_plugin_version(): void {
+		$this->enable_builtin_runtime_owner();
 
 		$this->sut->guard_woopayments_activation();
 
@@ -1000,13 +1000,13 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * The built-in WooPayments writes the extension's gateway ids, so its orders and tokens are not evidence that the extension ran.
 	 *
-	 * @testdox Native WooPayments should block a first-time plugin activation on a store with built-in WooPayments $_dataName.
+	 * @testdox The activation guard should block a first-time activation of the WooPayments extension on a store with built-in WooPayments $_dataName.
 	 * @dataProvider data_provider_builtin_payment_records
 	 *
 	 * @param string $record     The built-in WooPayments record the store holds: order or token.
 	 * @param string $gateway_id WooPayments gateway identity.
 	 */
-	public function test_native_activation_guard_blocks_a_store_with_only_builtin_payment_records( string $record, string $gateway_id ): void {
+	public function test_activation_guard_blocks_a_store_with_only_builtin_payment_records( string $record, string $gateway_id ): void {
 		delete_option( 'woocommerce_woocommerce_payments_version' );
 		if ( 'order' === $record ) {
 			$order = wc_create_order();
@@ -1015,15 +1015,15 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		} else {
 			$this->create_woopayments_token( $gateway_id );
 		}
-		$this->enable_native_runtime_owner();
+		$this->enable_builtin_runtime_owner();
 		$this->fake_wp_die_handler();
 
 		$this->expectException( WooPaymentsCutoverBlockedException::class );
 		$this->sut->guard_woopayments_activation();
 	}
 
-	/** @testdox Plugin activation remains available while native WooPayments does not own the runtime. */
-	public function test_native_activation_guard_allows_plugin_activation_when_native_does_not_own_the_runtime(): void {
+	/** @testdox Activating the WooPayments extension remains available while the built-in WooPayments does not own the runtime. */
+	public function test_activation_guard_allows_plugin_activation_when_the_builtin_does_not_own_the_runtime(): void {
 		delete_option( 'woocommerce_woocommerce_payments_version' );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
@@ -1033,10 +1033,10 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->assertTrue( true );
 	}
 
-	/** @testdox Internal lifecycle changes bypass the native activation guard. */
-	public function test_native_activation_guard_allows_internal_plugin_lifecycle_changes(): void {
+	/** @testdox Internal lifecycle changes bypass the activation guard. */
+	public function test_activation_guard_allows_internal_plugin_lifecycle_changes(): void {
 		delete_option( 'woocommerce_woocommerce_payments_version' );
-		$this->enable_native_runtime_owner();
+		$this->enable_builtin_runtime_owner();
 		$job = new class() extends WooPaymentsCutoverReconciliationJob {
 			/**
 			 * Return whether lifecycle work is job-owned.
@@ -1053,10 +1053,10 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->assertTrue( true );
 	}
 
-	/** @testdox Merged feature development bypasses the native activation guard. */
-	public function test_native_activation_guard_allows_merged_feature_development(): void {
+	/** @testdox Merged feature development bypasses the activation guard. */
+	public function test_activation_guard_allows_merged_feature_development(): void {
 		delete_option( 'woocommerce_woocommerce_payments_version' );
-		$this->enable_native_runtime_owner();
+		$this->enable_builtin_runtime_owner();
 		Constants::set_constant( 'WC_ALLOW_MERGED_FEATURE_PLUGINS', true );
 
 		$this->sut->guard_woopayments_activation();
@@ -1124,7 +1124,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox With mandatory cutover $label, an admin page on a store still running the plugin queues $expected.
+	 * @testdox With mandatory cutover $label, an admin page on a store still running the extension queues $expected.
 	 * @testWith ["on", true, ["mandatory"]]
 	 *           ["off by default", false, []]
 	 *
@@ -1229,7 +1229,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A Start the switch click that queues nothing with native payments $label is $outcome.
+	 * @testdox A Start the switch click that queues nothing with the built-in WooPayments $label is $outcome.
 	 * @testWith ["enabled", true, "logged once and reported for a retry"]
 	 *           ["disabled", false, "sent to the plugins screen without an error"]
 	 *
@@ -1355,16 +1355,16 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Cutover preflight short-circuits expensive checks while native runtime is disabled.
+	 * @testdox Cutover preflight short-circuits expensive checks while the built-in runtime is disabled.
 	 */
-	public function test_preflight_short_circuits_when_native_runtime_is_disabled(): void {
+	public function test_preflight_short_circuits_when_the_builtin_runtime_is_disabled(): void {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 
 		$failures = $this->preflight_service->get_failures();
 
 		$this->assertSame( array( 'builtin_runtime_disabled' ), $failures, 'Disabled native runtime should be the only preflight result.' );
-		$this->assertSame( 0, $this->native_provider_readiness_calls, 'Native transport readiness should not be checked while native runtime is disabled.' );
+		$this->assertSame( 0, $this->builtin_provider_readiness_calls, 'Native transport readiness should not be checked while native runtime is disabled.' );
 		$this->assertSame( 0, $this->platform_connection_preflight_calls, 'Platform connection preflight should not run while native runtime is disabled.' );
 		$this->assertSame( 0, $this->fee_remediation_preflight_calls, 'Financial migration preflight should not run while native runtime is disabled.' );
 	}
@@ -1374,25 +1374,25 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_preflight_memoizes_expensive_checks_within_request(): void {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->native_provider_ready = true;
+		$this->builtin_provider_ready = true;
 
 		$first_failures  = $this->preflight_service->get_failures();
 		$second_failures = $this->preflight_service->get_failures();
 
 		$this->assertSame( $first_failures, $second_failures, 'Repeated preflight checks in one request should reuse the first result.' );
-		$this->assertSame( 1, $this->native_provider_readiness_calls, 'Native transport readiness should be checked once per request.' );
+		$this->assertSame( 1, $this->builtin_provider_readiness_calls, 'Native transport readiness should be checked once per request.' );
 		$this->assertSame( 1, $this->platform_connection_preflight_calls, 'Platform connection preflight should be checked once per request.' );
 		$this->assertSame( 1, $this->fee_remediation_preflight_calls, 'Financial migration preflight should run once per request.' );
 	}
 
 	/**
-	 * @testdox Cutover preflight blocks while the native provider cannot process payments.
+	 * @testdox Cutover preflight blocks while the built-in provider cannot process payments.
 	 */
-	public function test_preflight_blocks_when_native_provider_cannot_process_payments(): void {
+	public function test_preflight_blocks_when_the_builtin_provider_cannot_process_payments(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		$this->enable_ready_cutover();
-		$this->native_provider_ready = false;
+		$this->builtin_provider_ready = false;
 
 		$this->assertContains( 'builtin_transport_unavailable', $this->preflight_service->get_failures() );
 	}
@@ -1441,7 +1441,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_current_user_caps( true );
 		$this->enable_ready_cutover();
 		$this->enable_multi_currency_with_rate_type( 'automatic' );
-		$this->enable_available_native_rate_transport();
+		$this->enable_available_rate_transport();
 
 		$this->assertNotContains( 'multi_currency_rates_unavailable', $this->preflight_service->get_failures() );
 	}
@@ -1480,7 +1480,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->native_provider_ready = true;
+		$this->builtin_provider_ready = true;
 
 		$hook_name                      = 'wcpay_synthetic_cutover_probe';
 		$this->scheduled_action_hooks[] = $hook_name;
@@ -1492,17 +1492,17 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Cutover preflight allows queued WooPayments actions that have native consumers.
+	 * @testdox Cutover preflight allows queued WooPayments actions that the built-in WooPayments handles.
 	 *
-	 * @dataProvider native_owned_operational_action_provider
+	 * @dataProvider builtin_handled_queue_hook_provider
 	 *
 	 * @param string $hook_name Native-owned Action Scheduler hook.
 	 */
-	public function test_preflight_allows_pending_native_owned_operational_action( string $hook_name ): void {
+	public function test_preflight_allows_a_pending_builtin_handled_queue_action( string $hook_name ): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->native_provider_ready = true;
+		$this->builtin_provider_ready = true;
 
 		$this->scheduled_action_hooks[] = $hook_name;
 		$action_id                      = as_schedule_single_action( time() + HOUR_IN_SECONDS, $hook_name, array(), 'woocommerce-test-cutover', true );
@@ -1517,7 +1517,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @return array<string,array{string}>
 	 */
-	public function native_owned_operational_action_provider(): array {
+	public function builtin_handled_queue_hook_provider(): array {
 		return array(
 			'store setup sync'                      => array( 'wcpay_store_setup_sync' ),
 			'update saved payment method'           => array( 'wcpay_update_saved_payment_method' ),
@@ -1558,7 +1558,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->native_provider_ready = true;
+		$this->builtin_provider_ready = true;
 
 		$failures = $this->preflight_service->get_failures();
 
@@ -1568,11 +1568,11 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Cutover preflight blocks a store without WooCommerce Subscriptions while a subscription is still Stripe-billed (bundled flavor).
 	 */
-	public function test_preflight_blocks_when_legacy_stripe_billing_subscription_marker_exists(): void {
+	public function test_preflight_blocks_when_bundled_stripe_billing_subscription_marker_exists(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		$this->enable_ready_cutover();
-		$this->create_legacy_stripe_billing_subscription( 'pending' );
+		$this->create_bundled_stripe_billing_subscription( 'pending' );
 
 		$this->assertContains( 'bundled_stripe_billing_subscriptions_present', $this->preflight_service->get_failures() );
 	}
@@ -1580,11 +1580,11 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Cutover preflight blocks a bundled-flavor store whatever the status of its Stripe-billed subscription.
 	 */
-	public function test_preflight_blocks_cancelled_legacy_stripe_billing_subscription_marker(): void {
+	public function test_preflight_blocks_cancelled_bundled_stripe_billing_subscription_marker(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		$this->enable_ready_cutover();
-		$this->create_legacy_stripe_billing_subscription( 'cancelled' );
+		$this->create_bundled_stripe_billing_subscription( 'cancelled' );
 
 		$this->assertContains( 'bundled_stripe_billing_subscriptions_present', $this->preflight_service->get_failures() );
 	}
@@ -1596,8 +1596,8 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		$this->enable_ready_cutover();
-		$this->create_legacy_stripe_billing_subscription( 'active', '_migrated_wcpay_subscription_id' );
-		$this->create_legacy_stripe_billing_subscription( 'active', '_wcpay_subscription_migrated_during' );
+		$this->create_bundled_stripe_billing_subscription( 'active', '_migrated_wcpay_subscription_id' );
+		$this->create_bundled_stripe_billing_subscription( 'active', '_wcpay_subscription_migrated_during' );
 
 		$this->assertNotContains( 'bundled_stripe_billing_subscriptions_present', $this->preflight_service->get_failures() );
 	}
@@ -1636,19 +1636,19 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Cutover preflight finds a Stripe-billed subscription in HPOS order meta.
 	 */
-	public function test_preflight_blocks_legacy_stripe_billing_hpos_marker(): void {
+	public function test_preflight_blocks_bundled_stripe_billing_hpos_marker(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		$this->enable_ready_cutover();
-		$this->create_legacy_stripe_billing_hpos_marker( '_wcpay_subscription_id' );
+		$this->create_bundled_stripe_billing_hpos_marker( '_wcpay_subscription_id' );
 
 		$this->assertContains( 'bundled_stripe_billing_subscriptions_present', $this->preflight_service->get_failures() );
 	}
 
 	/**
-	 * @testdox Cutover preflight allows clean stores without legacy Stripe Billing markers.
+	 * @testdox Cutover preflight allows clean stores without bundled Stripe Billing markers.
 	 */
-	public function test_preflight_allows_clean_store_without_legacy_stripe_billing_markers(): void {
+	public function test_preflight_allows_clean_store_without_bundled_stripe_billing_markers(): void {
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		$this->enable_ready_cutover();
@@ -1671,8 +1671,8 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			new WooPaymentsBundledSubscriptionsGuard(),
 			$this->fee_remediation_service,
 			$this->platform_connection_service,
-			$this->native_rate_account,
-			$this->native_rate_api_client
+			$this->rate_account,
+			$this->rate_api_client
 		);
 
 		return $preflight_service;
@@ -1852,13 +1852,13 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function enable_ready_cutover(): void {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
-		$this->native_provider_ready = true;
+		$this->builtin_provider_ready = true;
 	}
 
 	/**
 	 * Make the native runtime own the current site.
 	 */
-	private function enable_native_runtime_owner(): void {
+	private function enable_builtin_runtime_owner(): void {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 	}
@@ -1897,10 +1897,10 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Make the native rate transport available.
 	 */
-	private function enable_available_native_rate_transport(): void {
-		$this->native_rate_account_connected    = true;
-		$this->native_rate_account_rejected     = false;
-		$this->native_rate_api_client_connected = true;
+	private function enable_available_rate_transport(): void {
+		$this->rate_account_connected    = true;
+		$this->rate_account_rejected     = false;
+		$this->rate_api_client_connected = true;
 	}
 
 	/**
@@ -1913,7 +1913,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	private function fake_plugin_active( bool $site_active = true, bool $sitewide_active = false, ?string $plugin_file = null ): void {
 		$this->plugin_active          = $site_active;
 		$this->plugin_sitewide_active = $sitewide_active;
-		$this->plugin_class_loaded    = $site_active || $sitewide_active;
+		$this->extension_class_loaded = $site_active || $sitewide_active;
 		$entry                        = $plugin_file ?? WooPaymentsRuntimeArbiter::PLUGIN_FILE;
 
 		$this->register_legacy_proxy_function_mocks(
@@ -1942,13 +1942,13 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 				},
 				'class_exists'       => function ( $class_name, $autoload = true ) {
 					if ( 'WC_Payments' === ltrim( (string) $class_name, '\\' ) ) {
-						return $this->plugin_class_loaded;
+						return $this->extension_class_loaded;
 					}
 					return class_exists( $class_name, $autoload );
 				},
 				'defined'            => function ( $constant_name ) {
 					if ( 'WCPAY_PLUGIN_FILE' === $constant_name ) {
-						return $this->plugin_class_loaded;
+						return $this->extension_class_loaded;
 					}
 					return defined( $constant_name );
 				},
@@ -1977,7 +1977,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * Simulate the next request after the WooPayments plugin was deactivated.
 	 */
 	private function fake_woopayments_class_unloaded(): void {
-		$this->plugin_class_loaded = false;
+		$this->extension_class_loaded = false;
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 	}
 
@@ -1988,7 +1988,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * @param string $meta_key Legacy marker meta key.
 	 * @return int Subscription post ID.
 	 */
-	private function create_legacy_stripe_billing_subscription( string $status, string $meta_key = '_wcpay_subscription_id' ): int {
+	private function create_bundled_stripe_billing_subscription( string $status, string $meta_key = '_wcpay_subscription_id' ): int {
 		$this->register_subscription_order_type();
 
 		$post_id = wp_insert_post(
@@ -2012,7 +2012,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * @param string $meta_key Legacy marker meta key.
 	 * @return int Raw HPOS order ID.
 	 */
-	private function create_legacy_stripe_billing_hpos_marker( string $meta_key ): int {
+	private function create_bundled_stripe_billing_hpos_marker( string $meta_key ): int {
 		global $wpdb;
 
 		$this->create_disabled_hpos_fixture();
