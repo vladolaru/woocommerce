@@ -108,32 +108,28 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A first save after a missed read fails and keeps a record another request created since.
+	 * Only the writer that created the row may claim the first save, like compare_and_set_record(), even when the row holds the
+	 * same record.
+	 *
+	 * @testdox A first save after a missed read fails and keeps the row another request created since: $_dataName.
+	 * @dataProvider provide_rows_created_behind_a_missed_read
+	 *
+	 * @param bool $same_record Whether the row created behind the missed read holds the record this request saves.
 	 */
-	public function test_first_save_after_a_missed_read_keeps_a_record_created_behind_it(): void {
-		$this->assert_first_save_after_a_missed_read_keeps_the_winner();
+	public function test_first_save_after_a_missed_read_keeps_the_row_created_behind_it( bool $same_record ): void {
+		$this->assert_first_save_after_a_missed_read_keeps_the_winner( $same_record );
 	}
 
 	/**
-	 * @testdox A first save that inserts no row reports a conflict even when the existing row holds the same record.
+	 * Rows another request created behind the missed read: another record, and the same record.
+	 *
+	 * @return array<string,array{0:bool}>
 	 */
-	public function test_first_save_that_inserts_no_row_reports_a_conflict(): void {
-		global $wpdb;
-		$sut    = $this->require_sut();
-		$record = $this->valid_record();
-
-		$this->assertNull( $sut->get_record() );
-		$wpdb->insert(
-			$wpdb->options,
-			array(
-				'option_name'  => WooPaymentsCutoverStateStore::OPTION_NAME,
-				'option_value' => maybe_serialize( $record ),
-				'autoload'     => 'on',
-			)
+	public function provide_rows_created_behind_a_missed_read(): array {
+		return array(
+			'another record'  => array( false ),
+			'the same record' => array( true ),
 		);
-
-		$this->assertFalse( $sut->create_record( $record ), 'Only the writer that created the row may claim the first save, like compare_and_set_record().' );
-		$this->assertSame( $record, $sut->get_record() );
 	}
 
 	/**
@@ -162,14 +158,18 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Prime notoptions with a missed read, create the winner's row behind it, then attempt a first save.
+	 *
+	 * @param bool $same_record Whether the first save carries the winner's own record.
 	 */
-	private function assert_first_save_after_a_missed_read_keeps_the_winner(): void {
+	private function assert_first_save_after_a_missed_read_keeps_the_winner( bool $same_record = false ): void {
 		global $wpdb;
-		$sut                 = $this->require_sut();
-		$name                = WooPaymentsCutoverStateStore::OPTION_NAME;
-		$winner              = $this->valid_record();
-		$loser               = $winner;
-		$loser['generation'] = $winner['generation'] + 1;
+		$sut    = $this->require_sut();
+		$name   = WooPaymentsCutoverStateStore::OPTION_NAME;
+		$winner = $this->valid_record();
+		$loser  = $winner;
+		if ( ! $same_record ) {
+			$loser['generation'] = $winner['generation'] + 1;
+		}
 
 		$this->assertNull( $sut->get_record() );
 		$this->assertArrayHasKey( $name, (array) wp_cache_get( 'notoptions', 'options' ), 'The missed read should be cached in notoptions.' );
