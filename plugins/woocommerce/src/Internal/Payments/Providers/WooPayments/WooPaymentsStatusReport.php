@@ -343,7 +343,8 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Render the WooPayments extension's status section while the built-in WooPayments owns payments, then the built-in WooPayments diagnostics as a separate table.
+	 * Render the WooPayments status section while the built-in WooPayments owns payments, then the built-in WooPayments
+	 * diagnostics as a separate table.
 	 */
 	public function render_status_report_section(): void {
 		$fields       = $this->get_status_fields();
@@ -360,7 +361,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the rows of the WooPayments extension's status section, with its labels and values.
+	 * Get the rows of the WooPayments status section, with the extension's labels, read from the built-in WooPayments services.
 	 *
 	 * Client 11.1.0 `includes/class-wc-payments-status.php:427-641`: the account rows show only with a WPCOM
 	 * connection, and the settings rows only with a connected account.

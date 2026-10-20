@@ -143,8 +143,8 @@ class WooPaymentsDebugTools {
 	/**
 	 * Refetch the WooPayments account so the cache holds fresh data, as the WooPayments extension's tool does.
 	 *
-	 * Returns the account data, or false when the fetch failed with no account to keep, so WooCommerce
-	 * shows "Tool ran." or its error message.
+	 * Returns the account data, an empty array when the store has no WordPress.com connection (WooCommerce then shows
+	 * "Tool ran."), or false when the fetch failed with no account to keep.
 	 *
 	 * @return array<string,mixed>|false|string Account data, false on failure, or a permission message.
 	 */

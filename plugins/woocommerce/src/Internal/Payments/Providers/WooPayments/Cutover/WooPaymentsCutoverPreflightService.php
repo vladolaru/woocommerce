@@ -26,8 +26,8 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Evaluates the conditions that block the cutover on a site.
  *
- * It also finds, deactivates and version-checks the active WooPayments extension and schedules the fee remediation, because
- * those share its active-plugins scan.
+ * It also finds and deactivates the active WooPayments extension, reads the extension version the store last ran, and
+ * schedules the fee remediation after the switch.
  *
  * @since 11.2.0
  * @internal
@@ -489,6 +489,9 @@ class WooPaymentsCutoverPreflightService {
 
 	/**
 	 * Determine whether a plugin file belongs to WooPayments.
+	 *
+	 * Stricter than WooPaymentsRuntimeArbiter::is_woopayments_plugin_file(): a file outside the canonical folder also needs the
+	 * WooPayments header, because the switch deactivates and updates the file this finds.
 	 *
 	 * @param string $plugin_file Plugin file identifier.
 	 * @return bool

@@ -14,6 +14,9 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Reads and validates the cutover record, provides atomic writes, and manages its write lock.
  *
+ * WooPaymentsRuntimeArbiter reads the record's `state` and `request_origin_token` from this option directly for the ownership
+ * rule; finalize sets the token before it deactivates the extension.
+ *
  * @since 11.2.0
  * @internal
  */
@@ -228,7 +231,8 @@ class WooPaymentsCutoverStateStore {
 	}
 
 	/**
-	 * Validate the complete persisted record shape.
+	 * Validate the record's required keys and their types; `request_origin_token` is not checked here, and
+	 * WooPaymentsRuntimeArbiter reads it from the option directly.
 	 *
 	 * @param array<string,mixed> $record Candidate record.
 	 * @return bool

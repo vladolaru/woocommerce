@@ -162,7 +162,8 @@ class WooPaymentsRuntimeArbiter {
 	/**
 	 * Tell whether the built-in WooPayments owns payments on this site.
 	 *
-	 * The setup tier registers built-in WooPayments classes only while it owns the store.
+	 * The setup tier registers the built-in WooPayments gateway and services only while it owns the store; the switch's
+	 * classes also load while the extension owns payments with the feature on, or while the store waits for its switch.
 	 *
 	 * @since 11.0.0
 	 *

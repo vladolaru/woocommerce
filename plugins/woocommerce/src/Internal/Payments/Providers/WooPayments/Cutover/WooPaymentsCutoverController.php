@@ -117,7 +117,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	private LegacyProxy $legacy_proxy;
 
 	/**
-	 * Headless cutover preflight facts.
+	 * Cutover preflight service.
 	 *
 	 * @var WooPaymentsCutoverPreflightService
 	 */
@@ -137,7 +137,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 *
 	 * @param WooPaymentsRuntimeArbiter           $arbiter          Runtime owner arbiter.
 	 * @param LegacyProxy                         $legacy_proxy     Legacy proxy.
-	 * @param WooPaymentsCutoverPreflightService  $preflight_service Headless cutover facts.
+	 * @param WooPaymentsCutoverPreflightService  $preflight_service Cutover preflight service.
 	 * @param WooPaymentsCutoverReconciliationJob $reconciliation_job Durable reconciliation workflow.
 	 */
 	final public function init(

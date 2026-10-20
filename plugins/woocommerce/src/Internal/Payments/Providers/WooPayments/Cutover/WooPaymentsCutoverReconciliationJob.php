@@ -28,7 +28,10 @@ defined( 'ABSPATH' ) || exit;
  */
 class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
-	/** Autoloaded admin-notice bundled subscriptions classification, keyed by record revision. */
+	/**
+	 * Autoloaded cache of whether the bundled subscriptions exclusion applies, keyed by the record's generation and revision
+	 * (or `none`) and kept for an hour.
+	 */
 	public const ADMIN_CLASSIFICATION_OPTION = 'woocommerce_woopayments_cutover_admin_classification';
 
 	/** Completion notice: the switch finished. */
@@ -148,7 +151,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	private WooPaymentsCutoverActionScheduler $scheduler;
 
 	/**
-	 * Headless cutover preflight facts.
+	 * Cutover preflight service.
 	 *
 	 * @var WooPaymentsCutoverPreflightService
 	 */
@@ -190,7 +193,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @param WooPaymentsRuntimeArbiter          $arbiter          Runtime owner arbiter.
 	 * @param WooPaymentsCutoverStateStore       $state_store      Persisted state store.
 	 * @param WooPaymentsCutoverActionScheduler  $scheduler        Action Scheduler adapter.
-	 * @param WooPaymentsCutoverPreflightService $preflight_service   Headless cutover facts.
+	 * @param WooPaymentsCutoverPreflightService $preflight_service   Cutover preflight service.
 	 * @param WooPaymentsCutoverDataMigration    $data_migration Cutover data migration.
 	 * @param WooPaymentsAccountService          $account_service     WooPayments account state.
 	 */
@@ -228,7 +231,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @since 11.2.0
 	 *
 	 * @param string $source Trigger source recorded for diagnostics.
-	 * @return bool True when durable work already exists or was scheduled.
+	 * @return bool True when durable work exists or was scheduled, and when the record is terminal and stays so (a completed
+	 *              switch, or an exclusion whose marker is still present).
 	 */
 	public function enqueue( string $source ): bool {
 		$accepted = $this->start_generation( $source );
@@ -252,7 +256,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * Run a callback that activates or deactivates plugins, marked as a change this job initiated.
 	 *
 	 * The plugin lifecycle observers ignore the changes made inside the callback, as they do the job's own deactivation of
-	 * the extension. The previous mark is restored when the callback returns or throws.
+	 * the extension. The previous mark is restored when the callback returns or throws. Finalize and
+	 * WooPaymentsPerSiteActivationController set the mark; the controller's activation guard and activation handler read it
+	 * through is_internal_plugin_lifecycle_change().
 	 *
 	 * @param callable $callback Callback that changes plugins.
 	 * @return mixed What the callback returns.
@@ -274,7 +280,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * only, so a super admin first activates WooPayments per site.
 	 *
 	 * @param string $source Trigger source.
-	 * @return bool True when durable work already exists or was scheduled.
+	 * @return bool True when durable work exists or was scheduled, and when the record is terminal and stays so (a completed
+	 *              switch, or an exclusion whose marker is still present).
 	 */
 	private function start_generation( string $source ): bool {
 		if ( ! $this->arbiter->is_builtin_enabled() || $this->preflight_service->is_woopayments_network_active() ) {
@@ -354,9 +361,10 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Refresh the cutover record the admin notices render, and return it.
 	 *
-	 * Not read-only. It writes in three cases: an awaiting record on a store with the bundled subscriptions marker becomes
-	 * excluded, a reopenable terminal record is superseded by a new awaiting generation, and a store with no record that has
-	 * the marker gets an excluded one.
+	 * Not read-only. It refreshes the cached bundled subscriptions classification (at most hourly per record revision), and
+	 * writes the record in three cases: an awaiting record on a store with the bundled subscriptions marker becomes excluded,
+	 * a reopenable terminal record is superseded by a new awaiting generation, and a store with no record that has the marker
+	 * gets an excluded one.
 	 *
 	 * @return array<string,mixed>|null Current durable record.
 	 */
@@ -420,7 +428,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/**
 	 * Tell whether the stored record lets an extension-owned store start a cutover generation.
 	 *
-	 * For an awaiting record it refreshes the cached admin classification.
+	 * For an awaiting or excluded record it refreshes the cached bundled subscriptions classification.
 	 *
 	 * @return bool
 	 */
@@ -717,7 +725,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Normalize one clear site and schedule ownership verification for a later request.
+	 * Migrate the data, deactivate the extension and schedule the ownership check for one site.
 	 *
 	 * @param array<string,mixed> $claimed  Exact running state owned by this worker.
 	 * @param array<int,mixed>    $outcomes Informational outcomes accumulated during reconciliation.
@@ -1058,10 +1066,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		}
 
 		try {
-			// The same two files core's own background updater loads before upgrading
-			// (`wp_maybe_auto_update()`, `wp-includes/update.php`). `wp_update_plugins()` living in
-			// `wp-includes/update.php` made the old `function_exists( 'wp_update_plugins' )` guard always
-			// true, so a WP-Cron retry never loaded `file.php`/`plugin.php` and every such attempt threw.
+			// The same two files core's own background updater loads before upgrading (`wp_maybe_auto_update()`).
 			require_once ABSPATH . 'wp-admin/includes/admin.php';
 			require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
 
@@ -1165,7 +1170,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Switch to the current network's main site for unique-option lock operations.
+	 * Switch to the current network's main site, where the shared plugin update lock lives; the update check and the upgrade
+	 * then run there too.
 	 *
 	 * @return bool|null Whether the current blog must be restored afterward, or null when no main site is available.
 	 */
@@ -1211,7 +1217,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Restore a calling blog after a main-site plugin-lock operation.
+	 * Restore the calling blog after the main-site plugin update.
 	 *
 	 * @param bool $switched Whether this worker switched to the main site.
 	 */

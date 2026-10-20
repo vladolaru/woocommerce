@@ -70,7 +70,7 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
-	 * WooPayments extension activity facts.
+	 * Cutover preflight service.
 	 *
 	 * @var WooPaymentsCutoverPreflightService
 	 */
@@ -110,7 +110,7 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	 * @internal
 	 *
 	 * @param WooPaymentsRuntimeArbiter           $arbiter            Runtime owner arbiter.
-	 * @param WooPaymentsCutoverPreflightService  $preflight_service  WooPayments extension activity facts.
+	 * @param WooPaymentsCutoverPreflightService  $preflight_service  Cutover preflight service.
 	 * @param WooPaymentsCutoverReconciliationJob $reconciliation_job The switch's job.
 	 * @param LegacyProxy                         $legacy_proxy       Legacy proxy.
 	 * @param WooPaymentsSetupTier                $setup_tier         Setup tier.

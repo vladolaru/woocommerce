@@ -22,8 +22,18 @@ defined( 'ABSPATH' ) || exit;
  * clears retired cron events.
  *
  * Each retired option and transient it removes carries the extension version that stopped reading it, so re-activating the
- * extension at the floor version still finds what it reads. It also deletes obsolete appearance transients removed by the
- * extension in 10.6.0 (`includes/migrations/class-delete-appearance-transients.php`).
+ * extension at the floor version still finds what it reads. It also clears the UPE appearance caches in APPEARANCE_TRANSIENTS,
+ * which the floor version rebuilds itself (10.5.x reads them as day-long caches; the extension deletes them in its 10.6.0
+ * migration).
+ *
+ * In the shared gateway settings option it removes no key and changes no value's type. It adds missing form defaults, and
+ * drops from the enabled payment method list the methods that cannot be captured manually while manual capture is on, which
+ * the extension has filtered since 8.3.0, and the discontinued giropay and sofort, which the platform no longer processes and
+ * which the extension removes itself from 11.0.0 and 11.1.0; a rollback to the floor version reads a list without two
+ * methods it could not charge.
+ *
+ * It also runs once on every store where the built-in WooPayments is active, which is how a store that never had the
+ * extension gets its missing form defaults stored.
  *
  * @since 11.2.0
  * @internal
@@ -43,9 +53,9 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	/**
 	 * Options the migration deletes, with the extension version that stopped reading each.
 	 *
-	 * Re-activating the extension is the rollback lever, so the cutover never removes or reshapes a shared option that the
-	 * cutover floor (WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION) still reads; raising the floor is the
-	 * only way to widen this list. Each version is the first extension release tag with no read outside its own migrations.
+	 * Re-activating the extension is the rollback lever, so the cutover deletes only options that the cutover floor
+	 * (WooPaymentsCutoverPreflightService::MINIMUM_CUTOVER_PLUGIN_VERSION) no longer reads; raising the floor is the only way
+	 * to widen this list. Each version is the first extension release tag with no read outside its own migrations.
 	 *
 	 * The extension's own Erase_Deprecated_Flags_And_Options migration deletes the same list for installs older than 9.8.0.
 	 *

@@ -1,6 +1,6 @@
 # WooPayments extension compatibility
 
-This folder holds what Woo extensions still expect from the WooPayments extension while the built-in WooPayments owns payments: its `WC_Payments` and `WC_Payments_Features` classes, its `WCPAY_VERSION_NUMBER` constant and two of its class names. It is removed in WooCommerce 12.0.0.
+This folder holds what Woo extensions still expect from the WooPayments extension while the built-in WooPayments owns payments: its `WC_Payments` and `WC_Payments_Features` classes (their files live in `includes/legacy/woopayments-compat/`), its `WCPAY_VERSION_NUMBER` constant and two of its class names. It is removed in WooCommerce 12.0.0.
 
 ## What it holds
 

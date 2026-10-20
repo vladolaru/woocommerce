@@ -26,7 +26,7 @@ final class WooPaymentsSetupTier {
 	/** The option that stores the setup tier. */
 	public const OPTION_NAME = 'woocommerce_woopayments_setup_tier';
 
-	/** The built-in WooPayments is unavailable: the feature is off, nothing owns payments, or it was never set up. */
+	/** The built-in WooPayments is unavailable: the feature is off, or the built-in WooPayments owns payments and was never set up. */
 	public const DISABLED = 'disabled';
 
 	/** The built-in WooPayments can be offered, or a store on the WooPayments extension can switch to it. */
