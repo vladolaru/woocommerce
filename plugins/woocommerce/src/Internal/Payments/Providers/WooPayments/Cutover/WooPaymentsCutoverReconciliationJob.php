@@ -37,6 +37,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	/** Notice telling a bundled-flavor store why it cannot switch yet. */
 	public const NOTICE_BUNDLED_EXCLUSION = 'bundled_exclusion';
 
+	/** Notice telling a store that the connection owner is gone, so the switch needs a reconnect. */
+	public const NOTICE_RECONNECT = 'reconnect';
+
 	/** Option holding the time until which the switch notice outside Payments settings stays hidden ("Not now"). */
 	public const START_NOTICE_SNOOZED_UNTIL_OPTION = 'woocommerce_woopayments_cutover_notice_snoozed_until';
 
@@ -437,15 +440,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Atomically consume the one reconnect notice while leaving silent retries active.
-	 *
-	 * @return bool True only for the request that claimed the notice.
-	 */
-	public function consume_reconnect_notice(): bool {
-		return $this->consume_notice( fn( ?array $record ): bool => $this->is_reconnect_notice_due( $record ), 'reconnect_notice_shown' );
-	}
-
-	/**
 	 * Tell whether a completed record still shows a completion notice, which stays until a manager dismisses it.
 	 *
 	 * @param array<string,mixed>|null $record Cutover record.
@@ -461,7 +455,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Record a manager's dismissal of a cutover notice (completion or bundled exclusion) on the durable record.
+	 * Record a manager's dismissal of a cutover notice (completion, bundled exclusion or reconnect) on the durable record.
 	 *
 	 * @param string $notice One of the NOTICE_* constants.
 	 * @return bool True only for the request that recorded the dismissal.
@@ -469,6 +463,9 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	public function dismiss_notice( string $notice ): bool {
 		if ( self::NOTICE_BUNDLED_EXCLUSION === $notice ) {
 			return $this->consume_notice( fn( ?array $record ): bool => $this->is_bundled_exclusion_notice_due( $record ), $notice . '_notice_dismissed' );
+		}
+		if ( self::NOTICE_RECONNECT === $notice ) {
+			return $this->consume_notice( fn( ?array $record ): bool => $this->is_reconnect_notice_due( $record ), $notice . '_notice_dismissed' );
 		}
 
 		return $this->consume_notice( fn( ?array $record ): bool => $this->is_completion_notice_due( $record, $notice ), $notice . '_notice_dismissed' );
@@ -498,10 +495,10 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Record a shown or dismissed notice on the current record.
+	 * Record a dismissed notice on the current record.
 	 *
 	 * @param callable $is_due Tells whether a record still owes the notice.
-	 * @param string   $code   Informational outcome and step recorded once shown or dismissed.
+	 * @param string   $code   Informational outcome and step recorded once dismissed.
 	 * @return bool True only for the request that recorded it.
 	 */
 	private function consume_notice( callable $is_due, string $code ): bool {
@@ -530,16 +527,17 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether a record carries a reconnect notice that has not been shown yet.
+	 * Tell whether a waiting switch still shows its reconnect notice, which stays until a manager dismisses it.
 	 *
 	 * @param array<string,mixed>|null $record Cutover record.
 	 * @return bool
 	 */
-	private function is_reconnect_notice_due( ?array $record ): bool {
+	public function is_reconnect_notice_due( ?array $record ): bool {
 		return is_array( $record )
-			&& in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true )
+			&& in_array( $record['state'] ?? null, array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true )
+			&& is_array( $record['informational_outcomes'] ?? null )
 			&& in_array( array( 'code' => 'reconnect_required' ), $record['informational_outcomes'], true )
-			&& ! in_array( array( 'code' => 'reconnect_notice_shown' ), $record['informational_outcomes'], true );
+			&& ! in_array( array( 'code' => self::NOTICE_RECONNECT . '_notice_dismissed' ), $record['informational_outcomes'], true );
 	}
 
 	/**

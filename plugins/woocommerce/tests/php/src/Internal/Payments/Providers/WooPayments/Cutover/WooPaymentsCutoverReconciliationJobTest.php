@@ -2549,7 +2549,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A missing connection owner records the sanctioned reconnect information once while retrying.
+	 * @testdox A missing connection owner records the sanctioned reconnect information once while retrying, and its notice stays until a manager dismisses it.
 	 */
 	public function test_missing_connection_owner_records_reconnect_information_once(): void {
 		$preflight = $this->create_preflight_with_failures( array( 'wpcom_connection_owner_user_token_unavailable' ), true );
@@ -2575,28 +2575,37 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		);
 		$this->assertCount( 1, $reconnect_outcomes );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
-		$this->assertTrue( $sut->consume_reconnect_notice(), 'The first admin request must atomically claim the sanctioned notice.' );
-		$this->assertFalse( $sut->consume_reconnect_notice(), 'A concurrent or later admin request must not show the notice again.' );
-		$after_notice = $this->require_state_store()->get_record();
-		$this->assertIsArray( $after_notice );
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $after_notice['state'], 'Consuming information must not stop silent retries.' );
+		$reconnect = WooPaymentsCutoverReconciliationJob::NOTICE_RECONNECT;
+		for ( $page = 0; $page < 2; $page++ ) {
+			$this->assertTrue( $sut->is_reconnect_notice_due( $this->require_state_store()->get_record() ), 'Every admin page shows the notice, since some screens hide it.' );
+		}
+		$this->assertSame( $replayed, $this->require_state_store()->get_record(), 'Showing the notice must not change the record.' );
+
+		$this->assertTrue( $sut->dismiss_notice( $reconnect ) );
+		$this->assertFalse( $sut->dismiss_notice( $reconnect ), 'A dismissed notice stays dismissed.' );
+		wp_cache_flush();
+		$dismissed = $this->require_state_store()->get_record();
+		$this->assertIsArray( $dismissed );
+		$this->assertContains( array( 'code' => 'reconnect_notice_dismissed' ), $dismissed['informational_outcomes'] );
+		$this->assertFalse( $sut->is_reconnect_notice_due( $dismissed ) );
+		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $dismissed['state'], 'Dismissing information must not stop silent retries.' );
 	}
 
-	/** @testdox An admin page with no reconnect notice due takes no cutover lease. */
-	public function test_reconnect_notice_check_takes_no_lease_when_nothing_is_due(): void {
+	/** @testdox Dismissing a reconnect notice that is not due takes no cutover lease. */
+	public function test_reconnect_notice_dismissal_takes_no_lease_when_nothing_is_due(): void {
 		$sut = $this->create_job( true );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$lease_events = $this->capture_lease_write_events(
 			function () use ( $sut ): void {
-				$this->assertFalse( $sut->consume_reconnect_notice() );
+				$this->assertFalse( $sut->dismiss_notice( WooPaymentsCutoverReconciliationJob::NOTICE_RECONNECT ) );
 			}
 		);
 
-		$this->assertSame( array(), $lease_events, 'Every admin page renders this check while a switch is pending.' );
+		$this->assertSame( array(), $lease_events, 'A stale dismissal link writes nothing.' );
 	}
 
-	/** @testdox Consuming reconnect information cannot revise or fence a live worker claim. */
-	public function test_reconnect_notice_consumption_does_not_revise_a_running_claim(): void {
+	/** @testdox Dismissing reconnect information cannot revise or fence a live worker claim. */
+	public function test_reconnect_notice_dismissal_does_not_revise_a_running_claim(): void {
 		$preflight = $this->create_preflight_with_failures( array( 'wpcom_connection_owner_user_token_unavailable' ), true );
 		$sut       = $this->create_job_with_preflight( true, $preflight );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
@@ -2609,7 +2618,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->require_scheduler()->cancel( $deferred['generation'], $deferred['attempt'] + 1 );
 		$running = $this->create_running_record( $deferred );
 
-		$this->assertFalse( $sut->consume_reconnect_notice() );
+		$this->assertFalse( $sut->dismiss_notice( WooPaymentsCutoverReconciliationJob::NOTICE_RECONNECT ) );
 		$this->assertSame( $running, $this->require_state_store()->get_record() );
 	}
 

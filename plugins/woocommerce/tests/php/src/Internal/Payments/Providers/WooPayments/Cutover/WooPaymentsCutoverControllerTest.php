@@ -371,11 +371,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 					'deferred_codes' => array( WooPaymentsCutoverReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE ),
 				);
 			}
-
-			/** Do not emit reconnect information. */
-			public function consume_reconnect_notice(): bool {
-				return false;
-			}
 		};
 
 		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job ) );
@@ -466,12 +461,16 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The completion notice stays on every admin page for a store manager until the manager dismisses it.
+	 * @testdox The $_dataName stays on every admin page for a store manager until the manager dismisses it.
+	 * @dataProvider provide_dismissable_notices
+	 *
+	 * @param string $notice Notice key.
+	 * @param string $text   A sentence the notice shows.
 	 */
-	public function test_completion_notice_stays_until_a_manager_dismisses_it(): void {
+	public function test_notice_stays_until_a_manager_dismisses_it( string $notice, string $text ): void {
 		$this->fake_plugin_active( false );
 		$this->fake_current_user_caps( true );
-		$job        = $this->create_completed_notice_job();
+		$job        = $this->create_dismissable_notice_job( $notice );
 		$controller = $this->create_cutover_controller( $job );
 		$redirects  = array();
 		$capture    = static function ( string $location ) use ( &$redirects ): string {
@@ -485,12 +484,12 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		try {
 			for ( $page = 0; $page < 2; $page++ ) {
 				$notices = $this->render_admin_notices( $controller );
-				$this->assertStringContainsString( 'WooPayments is now built into WooCommerce. Everything works as before.', $notices );
+				$this->assertStringContainsString( $text, $notices );
 			}
 			$this->assertSame( array(), $job->dismissed, 'Rendering must not use up a notice, since the screen may not show it.' );
 
 			$_SERVER['REQUEST_URI'] = '/wp-admin/admin.php?page=wc-settings';
-			$this->follow_dismiss_link( $controller, $notices, WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS );
+			$this->follow_dismiss_link( $controller, $notices, $notice );
 			$notices = $this->render_admin_notices( $controller );
 		} finally {
 			remove_filter( 'wp_redirect', $capture );
@@ -501,9 +500,22 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			}
 		}
 
-		$this->assertSame( array( WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS ), $job->dismissed );
+		$this->assertSame( array( $notice ), $job->dismissed );
 		$this->assertSame( array( '/wp-admin/admin.php?page=wc-settings' ), $redirects, 'The dismissal returns to the same page without the action.' );
-		$this->assertStringNotContainsString( 'WooPayments is now built into WooCommerce.', $notices );
+		$this->assertStringNotContainsString( $text, $notices );
+	}
+
+	/**
+	 * The notices a manager dismisses from the record: the completion notice, and the one reconnect notice of a switch that
+	 * cannot heal by itself.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public function provide_dismissable_notices(): array {
+		return array(
+			'completion notice' => array( WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS, 'WooPayments is now built into WooCommerce. Everything works as before.' ),
+			'reconnect notice'  => array( WooPaymentsCutoverReconciliationJob::NOTICE_RECONNECT, 'The connection owner is no longer available. Reconnect this site to continue the switch.' ),
+		);
 	}
 
 	/**
@@ -530,6 +542,38 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		} finally {
 			remove_filter( 'wp_redirect', '__return_empty_string' );
 		}
+	}
+
+	/**
+	 * @testdox The bundled-store notice ends with what keeps payments running on a store with the extension active, and with how to keep taking payments on a store waiting for its switch ($_dataName).
+	 * @dataProvider provide_bundled_notice_endings
+	 *
+	 * @param string $store    "extension active" or "waiting for the switch".
+	 * @param string $sentence The notice's last sentence.
+	 * @param string $other    The sentence the other store gets, which this one must not.
+	 */
+	public function test_bundled_store_notice_ends_with_what_keeps_payments_running( string $store, string $sentence, string $other ): void {
+		$this->arrange_switch_offer( $store );
+
+		$notices = $this->render_admin_notices( $this->create_cutover_controller( $this->create_excluded_notice_job( 'bundled_stripe_billing_subscriptions_present' ) ) );
+
+		$this->assertStringContainsString( $sentence, $notices );
+		$this->assertStringNotContainsString( $other, $notices );
+	}
+
+	/**
+	 * With the extension active it keeps running; waiting for the switch, nothing owns payments until the extension is active again.
+	 *
+	 * @return array<string,array{string,string,string}>
+	 */
+	public function provide_bundled_notice_endings(): array {
+		$running = 'Until then nothing changes and WooPayments keeps running from the WooPayments extension.';
+		$waiting = 'Until then, activate the WooPayments extension again to keep taking payments.';
+
+		return array(
+			'the extension owns payments'         => array( 'extension active', $running, $waiting ),
+			'the store is waiting for its switch' => array( 'waiting for the switch', $waiting, $running ),
+		);
 	}
 
 	/**
@@ -577,12 +621,15 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A user who cannot manage WooCommerce never sees the completion notices and cannot dismiss them.
+	 * @testdox A user who cannot manage WooCommerce never sees the $_dataName and cannot dismiss it.
+	 * @dataProvider provide_dismissable_notices
+	 *
+	 * @param string $notice Notice key.
 	 */
-	public function test_completion_notices_are_for_store_managers_only(): void {
+	public function test_dismissable_notices_are_for_store_managers_only( string $notice ): void {
 		$this->fake_plugin_active( false );
 		$this->fake_current_user_caps( true );
-		$job        = $this->create_completed_notice_job();
+		$job        = $this->create_dismissable_notice_job( $notice );
 		$controller = $this->create_cutover_controller( $job );
 		$notices    = $this->render_admin_notices( $controller );
 		$this->fake_current_user_caps( false );
@@ -592,22 +639,25 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		$this->fake_wp_die_handler();
 		$this->expectException( WooPaymentsCutoverBlockedException::class );
 		try {
-			$this->follow_dismiss_link( $controller, $notices, WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS );
+			$this->follow_dismiss_link( $controller, $notices, $notice );
 		} finally {
 			$this->assertSame( array(), $job->dismissed );
 		}
 	}
 
 	/**
-	 * @testdox A completion notice dismissal with an invalid nonce dies before it changes the record.
+	 * @testdox A $_dataName dismissal with an invalid nonce dies before it changes the record.
+	 * @dataProvider provide_dismissable_notices
+	 *
+	 * @param string $notice Notice key.
 	 */
-	public function test_completion_notice_dismissal_requires_a_valid_nonce(): void {
+	public function test_notice_dismissal_requires_a_valid_nonce( string $notice ): void {
 		$this->fake_plugin_active( false );
 		$this->fake_current_user_caps( true );
-		$job        = $this->create_completed_notice_job();
+		$job        = $this->create_dismissable_notice_job( $notice );
 		$controller = $this->create_cutover_controller( $job );
 		$_GET[ WooPaymentsCutoverController::QUERY_ACTION ] = WooPaymentsCutoverController::ACTION_DISMISS_NOTICE;
-		$_GET[ WooPaymentsCutoverController::QUERY_NOTICE ] = WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS;
+		$_GET[ WooPaymentsCutoverController::QUERY_NOTICE ] = $notice;
 		$_GET[ WooPaymentsCutoverController::NONCE_NAME ]   = wp_create_nonce( WooPaymentsCutoverController::NONCE_ACTION );
 		$this->fake_wp_die_handler();
 
@@ -646,11 +696,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 					'deferred_codes'         => array( 'woopayments_plugin_version_unsupported' ),
 					'informational_outcomes' => array(),
 				);
-			}
-
-			/** Do not emit reconnect information. */
-			public function consume_reconnect_notice(): bool {
-				return false;
 			}
 		};
 
@@ -694,11 +739,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 					'informational_outcomes' => array(),
 				);
 			}
-
-			/** Do not emit reconnect information. */
-			public function consume_reconnect_notice(): bool {
-				return false;
-			}
 		};
 
 		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job ) );
@@ -729,43 +769,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertStringNotContainsString( 'Start the switch', $notice );
 		$this->assertStringNotContainsString( 'Switch in progress', $notice );
-	}
-
-	/**
-	 * @testdox The reconnect exception is rendered only for the request that atomically consumes it.
-	 */
-	public function test_reconnect_notice_is_rendered_only_when_atomically_consumed(): void {
-		$this->fake_plugin_active();
-		$job        = new class() extends WooPaymentsCutoverReconciliationJob {
-			/** @var bool */
-			private bool $available = true;
-
-			/** @return array<string,mixed>|null */
-			public function refresh_notice_record(): ?array {
-				return array(
-					'state'        => WooPaymentsCutoverStateStore::STATE_DEFERRED,
-					'current_step' => 'deferred',
-				);
-			}
-
-			/** Consume once. */
-			public function consume_reconnect_notice(): bool {
-				$available       = $this->available;
-				$this->available = false;
-				return $available;
-			}
-		};
-		$controller = $this->create_cutover_controller( $job );
-
-		$this->fake_current_user_caps( false );
-		$non_manager = $this->render_admin_notices( $controller );
-		$this->fake_current_user_caps( true );
-		$first  = $this->render_admin_notices( $controller );
-		$second = $this->render_admin_notices( $controller );
-
-		$this->assertSame( '', trim( $non_manager ), 'A user who cannot manage the store sees no switch notice and leaves the reconnect information for one who can.' );
-		$this->assertStringContainsString( 'The connection owner is no longer available. Reconnect this site to continue the switch.', $first );
-		$this->assertStringNotContainsString( 'Reconnect this site', $second );
 	}
 
 	/**
@@ -803,11 +806,6 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function is_internal_plugin_lifecycle_change(): bool {
-				return false;
-			}
-
-			/** Do not emit reconnect information. */
-			public function consume_reconnect_notice(): bool {
 				return false;
 			}
 		};
@@ -1379,6 +1377,49 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			 */
 			public function dismiss_notice( string $notice ): bool {
 				if ( ! $this->is_completion_notice_due( $this->record, $notice ) ) {
+					return false;
+				}
+				$this->dismissed[]                        = $notice;
+				$this->record['informational_outcomes'][] = array( 'code' => $notice . '_notice_dismissed' );
+				return true;
+			}
+		};
+	}
+
+	/**
+	 * Create the job double for a dismissable notice: a completed cutover, or a switch whose connection owner is gone.
+	 *
+	 * @param string $notice One of the WooPaymentsCutoverReconciliationJob::NOTICE_* constants.
+	 * @return WooPaymentsCutoverReconciliationJob&object{dismissed: string[]}
+	 */
+	private function create_dismissable_notice_job( string $notice ): WooPaymentsCutoverReconciliationJob {
+		if ( WooPaymentsCutoverReconciliationJob::NOTICE_SUCCESS === $notice ) {
+			return $this->create_completed_notice_job();
+		}
+
+		return new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @var string[] Dismissed notices, in order. */
+			public array $dismissed = array();
+
+			/** @var array<string,mixed> Deferred record that needs a reconnect. */
+			private array $record = array(
+				'state'                  => WooPaymentsCutoverStateStore::STATE_DEFERRED,
+				'current_step'           => 'deferred',
+				'informational_outcomes' => array( array( 'code' => 'reconnect_required' ) ),
+			);
+
+			/** @return array<string,mixed>|null */
+			public function refresh_notice_record(): ?array {
+				return $this->record;
+			}
+
+			/**
+			 * Record the dismissal the way the durable record does.
+			 *
+			 * @param string $notice Notice to dismiss.
+			 */
+			public function dismiss_notice( string $notice ): bool {
+				if ( self::NOTICE_RECONNECT !== $notice || ! $this->is_reconnect_notice_due( $this->record ) ) {
 					return false;
 				}
 				$this->dismissed[]                        = $notice;

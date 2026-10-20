@@ -68,7 +68,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	public const QUERY_ACTION = 'wc_woopayments_cutover_action';
 
 	/**
-	 * Admin action that dismisses a cutover notice (completion or bundled exclusion).
+	 * Admin action that dismisses a cutover notice (completion, bundled exclusion or reconnect).
 	 *
 	 * @var string
 	 */
@@ -191,8 +191,8 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Persist a store manager's dismissal of a cutover notice, then return to the same page: the completion or bundled
-	 * exclusion notice on the durable record, or "Not now" on the switch notice for 30 days.
+	 * Persist a store manager's dismissal of a cutover notice, then return to the same page: the completion, bundled
+	 * exclusion or reconnect notice on the durable record, or "Not now" on the switch notice for 30 days.
 	 */
 	private function dismiss_notice(): void {
 		$nonce = isset( $_GET[ self::NONCE_NAME ] ) ? sanitize_text_field( wp_unslash( $_GET[ self::NONCE_NAME ] ) ) : '';
@@ -544,12 +544,11 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && in_array( WooPaymentsCutoverPreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, (array) ( $record['deferred_codes'] ?? array() ), true ) && ! wp_is_file_mod_allowed( 'automatic_updater' ) ) {
 					echo '<div class="notice notice-warning"><p>' . esc_html__( 'The switch needs a newer version of the WooPayments extension, but this site does not allow automatic plugin updates. Update WooPayments to continue the switch.', 'woocommerce' ) . '</p></div>';
 				}
-				if ( $this->reconciliation_job->consume_reconnect_notice() ) {
-					?>
-						<div class="notice notice-info is-dismissible"><p><?php esc_html_e( 'The connection owner is no longer available. Reconnect this site to continue the switch.', 'woocommerce' ); ?></p></div>
-						<?php
+				// Shown until dismissed; rendering claims nothing, since some screens hide notices.
+				if ( $this->reconciliation_job->is_reconnect_notice_due( $record ) ) {
+					$this->output_reconnect_notice();
 				}
-					return;
+				return;
 			}
 			if ( WooPaymentsCutoverStateStore::STATE_EXCLUDED === $record['state'] ) {
 				if ( $this->reconciliation_job->is_bundled_exclusion_notice_due( $record ) ) {
@@ -584,13 +583,31 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Output the notice telling a store whose connection owner is gone that the switch needs a reconnect.
+	 */
+	private function output_reconnect_notice(): void {
+		?>
+		<div class="notice notice-info" style="position:relative;">
+			<?php echo $this->get_dismiss_notice_link( WooPaymentsCutoverReconciliationJob::NOTICE_RECONNECT ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?>
+			<p><?php esc_html_e( 'The connection owner is no longer available. Reconnect this site to continue the switch.', 'woocommerce' ); ?></p>
+		</div>
+		<?php
+	}
+
+	/**
 	 * Output the notice telling a store on the bundled WooPayments subscriptions why it cannot switch yet.
+	 *
+	 * Its last sentence says what keeps payments running: the extension while it is active, or the extension again on a store
+	 * that deactivated it and waits for its switch, where nothing owns payments.
 	 */
 	private function output_bundled_exclusion_notice(): void {
+		$last_sentence = $this->arbiter->is_awaiting_switch()
+			? __( 'Until then, activate the WooPayments extension again to keep taking payments.', 'woocommerce' )
+			: __( 'Until then nothing changes and WooPayments keeps running from the WooPayments extension.', 'woocommerce' );
 		?>
 		<div class="notice notice-info" style="position:relative;">
 			<?php echo $this->get_dismiss_notice_link( WooPaymentsCutoverReconciliationJob::NOTICE_BUNDLED_EXCLUSION ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped when built. ?>
-			<p><?php esc_html_e( "WooPayments is now part of WooCommerce, but this store can't switch yet. Its subscriptions are billed through Stripe Billing, which needs the Woo Subscriptions extension. Install and activate Woo Subscriptions to make the switch available. Until then nothing changes and WooPayments keeps running from the WooPayments extension.", 'woocommerce' ); ?></p>
+			<p><?php esc_html_e( "WooPayments is now part of WooCommerce, but this store can't switch yet. Its subscriptions are billed through Stripe Billing, which needs the Woo Subscriptions extension. Install and activate Woo Subscriptions to make the switch available.", 'woocommerce' ); ?> <?php echo esc_html( $last_sentence ); ?></p>
 		</div>
 		<?php
 	}
