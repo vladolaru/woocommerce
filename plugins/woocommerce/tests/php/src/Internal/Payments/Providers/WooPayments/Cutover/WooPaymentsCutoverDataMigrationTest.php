@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\C
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverDataMigration;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsDefaults;
 use WC_Unit_Test_Case;
 
 /**
@@ -417,31 +418,32 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	 * @testdox The manual-capture method filter changes only the method list, once; a rerun with the marker cleared changes nothing more.
 	 */
 	public function test_manual_capture_method_filter_is_idempotent_across_reruns(): void {
-		$settings = array(
+		update_option(
+			self::SETTINGS_OPTION,
+			array(
+				'enabled'                        => 'yes',
+				'manual_capture'                 => 'yes',
+				'upe_enabled_payment_method_ids' => array( 'card', 'ideal', 'amazon_pay' ),
+			)
+		);
+		$filtered = array(
 			'enabled'                        => 'yes',
 			'manual_capture'                 => 'yes',
 			'upe_enabled_payment_method_ids' => array( 'card', 'amazon_pay' ),
-		);
-		update_option( self::SETTINGS_OPTION, $settings );
-		$this->create_runner()->run();
-		$already_filtered = get_option( self::SETTINGS_OPTION );
-
-		delete_option( self::MIGRATION_VERSION_OPTION );
-		$settings['upe_enabled_payment_method_ids'] = array( 'card', 'ideal', 'amazon_pay' );
-		update_option( self::SETTINGS_OPTION, $settings );
+		) + WooPaymentsSettingsDefaults::all();
 
 		$first = $this->create_runner()->run();
 
 		$this->assertContains( 'manual_capture_payment_methods', $first['changes'] );
 		$this->assertSame( array( 'card', 'amazon_pay' ), get_option( self::SETTINGS_OPTION )['upe_enabled_payment_method_ids'] );
 		$this->assertSame( 'yes', get_option( self::SETTINGS_OPTION )['manual_capture'], 'The merchant keeps manual capture.' );
-		$this->assertSame( $already_filtered, get_option( self::SETTINGS_OPTION ), 'The filter writes no other setting.' );
+		$this->assertSame( $filtered, get_option( self::SETTINGS_OPTION ), 'The filter writes no other setting.' );
 
 		delete_option( self::MIGRATION_VERSION_OPTION );
 		$second = $this->create_runner()->run();
 
 		$this->assertNotContains( 'manual_capture_payment_methods', $second['changes'] );
-		$this->assertSame( $already_filtered, get_option( self::SETTINGS_OPTION ) );
+		$this->assertSame( $filtered, get_option( self::SETTINGS_OPTION ) );
 	}
 
 	/**
