@@ -585,7 +585,7 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	private function remove_retired_settings( array &$settings, string ...$keys ): void {
 		foreach ( $keys as $key ) {
 			if ( ! array_key_exists( $key, self::RETIRED_SETTINGS_KEYS ) ) {
-				wc_doing_it_wrong( __METHOD__, sprintf( 'Cutover normalization must not remove the shared WooPayments setting "%s": the cutover plugin floor may still read it.', $key ), '11.2.0' );
+				wc_doing_it_wrong( __METHOD__, sprintf( 'Cutover normalization must not remove the shared WooPayments setting "%s": an extension at the minimum cutover version may still read it.', $key ), '11.2.0' );
 				continue;
 			}
 

@@ -3194,7 +3194,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 			$this->assertSame( $subsite_id, get_current_blog_id() );
 			$this->assertCount( 2, $job->get_errors() );
-			$this->assertSame( 'WooPayments cutover plugin update failed.', $job->get_errors()[1]['message'] );
+			$this->assertSame( 'WooPayments cutover extension update failed.', $job->get_errors()[1]['message'] );
 		} finally {
 			remove_action( $delete_hook, $thrower );
 			if ( get_current_blog_id() !== $main_site_id ) {
@@ -3871,7 +3871,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'woopayments_plugin_version_unsupported' ), $deferred['deferred_codes'] );
 		$this->assertCount( $expected_errors, $job->get_errors() );
 		if ( $expected_errors > 0 ) {
-			$this->assertSame( 'WooPayments cutover plugin update completed without installing a supported version.', $job->get_errors()[0]['message'] );
+			$this->assertSame( 'WooPayments cutover extension update completed without installing a supported version.', $job->get_errors()[0]['message'] );
 		}
 	}
 
@@ -4074,15 +4074,15 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @return array<string,array{mixed,bool,string}>
 	 */
 	public function plugin_update_result_provider(): array {
-		$did_not_complete = 'WooPayments cutover plugin update did not complete.';
+		$did_not_complete = 'WooPayments cutover extension update did not complete.';
 
 		return array(
 			'false result'                   => array( false, false, $did_not_complete ),
 			'null result'                    => array( null, false, $did_not_complete ),
 			'WordPress error result'         => array( new \WP_Error( 'upgrade_failed' ), false, $did_not_complete ),
 			'up to date result'              => array( true, false, $did_not_complete ),
-			'completed but still old result' => array( array( 'destination_name' => 'woocommerce-payments' ), false, 'WooPayments cutover plugin update completed without installing a supported version.' ),
-			'thrown result'                  => array( null, true, 'WooPayments cutover plugin update failed.' ),
+			'completed but still old result' => array( array( 'destination_name' => 'woocommerce-payments' ), false, 'WooPayments cutover extension update completed without installing a supported version.' ),
+			'thrown result'                  => array( null, true, 'WooPayments cutover extension update failed.' ),
 		);
 	}
 

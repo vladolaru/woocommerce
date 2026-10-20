@@ -144,6 +144,9 @@ class WooPaymentsPerSiteActivationController implements RegisterHooksInterface {
 	/**
 	 * Run the conversion when a super admin clicks the button, then return to the network Plugins page with its result.
 	 *
+	 * A second click at nearly the same time changes nothing: the sites the first run activated are skipped, and recording the
+	 * rollback writes nothing on a record already awaiting the merchant's start.
+	 *
 	 * @internal
 	 */
 	public function handle_admin_init(): void {

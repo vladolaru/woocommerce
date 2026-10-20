@@ -709,7 +709,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			}
 			// The extension records its new version only on its next request, so check the installed files instead.
 			if ( $plugin_update_succeeded && in_array( WooPaymentsCutoverPreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, $remaining_failures, true ) && ! $this->is_installed_woopayments_plugin_version_supported() ) {
-				$this->log_error( 'WooPayments cutover plugin update completed without installing a supported version.' );
+				$this->log_error( 'WooPayments cutover extension update completed without installing a supported version.' );
 			}
 
 			if ( array() !== $remaining_failures ) {
@@ -755,7 +755,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				$deactivated                            = $this->preflight_service->deactivate_woopayments_plugin();
 			}
 		} catch ( \Throwable $error ) {
-			$this->log_error( 'WooPayments cutover plugin deactivation failed.', array( 'error' => $error->getMessage() ) );
+			$this->log_error( 'WooPayments cutover extension deactivation failed.', array( 'error' => $error->getMessage() ) );
 			$deactivated = false;
 		} finally {
 			$this->internal_plugin_lifecycle_change = false;
@@ -1072,7 +1072,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 */
 	private function update_woopayments_plugin(): bool {
 		if ( ! wp_is_file_mod_allowed( 'automatic_updater' ) ) {
-			$this->log_error( 'WooPayments cutover cannot update the WooPayments plugin because this site does not allow file changes.' );
+			$this->log_error( 'WooPayments cutover cannot update the WooPayments extension because this site does not allow file changes.' );
 			return false;
 		}
 
@@ -1100,14 +1100,14 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			try {
 				$lock_created = \WP_Upgrader::create_lock( self::PLUGIN_UPDATE_LOCK_NAME, self::PLUGIN_UPDATE_LOCK_TTL );
 				if ( ! $lock_created ) {
-					$this->log_error( 'WooPayments cutover deferred because another site is updating the shared plugin files.' );
+					$this->log_error( 'WooPayments cutover deferred because another site is updating the shared WooPayments extension files.' );
 					return false;
 				}
 
 				$this->refresh_plugin_update_metadata();
 				$result = $this->upgrade_woopayments_plugin_file( $plugin_file );
 				if ( ! is_array( $result ) ) {
-					$this->log_error( 'WooPayments cutover plugin update did not complete.', array( 'plugin_file' => $plugin_file ) );
+					$this->log_error( 'WooPayments cutover extension update did not complete.', array( 'plugin_file' => $plugin_file ) );
 					return false;
 				}
 				return true;
@@ -1122,7 +1122,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			}
 		} catch ( \Throwable $error ) {
 			$this->log_error(
-				'WooPayments cutover plugin update failed.',
+				'WooPayments cutover extension update failed.',
 				array(
 					'plugin_file' => $plugin_file,
 					'error'       => $error->getMessage(),
