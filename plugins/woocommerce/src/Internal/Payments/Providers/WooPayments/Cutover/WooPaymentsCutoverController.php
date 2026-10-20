@@ -409,7 +409,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function can_start_cutover(): bool {
-		return $this->can_manage_switch() && ! $this->is_woopayments_network_active() && ! $this->needs_extension_update_first();
+		return $this->can_manage_switch() && ! $this->preflight_service->is_woopayments_network_active() && ! $this->needs_extension_update_first();
 	}
 
 	/**
@@ -436,17 +436,6 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		}
 
 		return (bool) $this->legacy_proxy->call_function( 'current_user_can', 'activate_plugins' );
-	}
-
-	/**
-	 * Tell whether the WooPayments extension is active for every site of a multisite.
-	 *
-	 * A single site has no such list, so it is not read there.
-	 *
-	 * @return bool
-	 */
-	private function is_woopayments_network_active(): bool {
-		return $this->legacy_proxy->call_function( 'is_multisite' ) && $this->preflight_service->is_woopayments_network_active();
 	}
 
 	/**
@@ -518,7 +507,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	 * waiting for its switch last ran an extension too old to switch from.
 	 */
 	private function output_start_notice(): void {
-		if ( $this->is_woopayments_network_active() ) {
+		if ( $this->preflight_service->is_woopayments_network_active() ) {
 			$this->output_sitewide_refusal_notice();
 			return;
 		}
@@ -548,7 +537,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			if ( in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_RUNNING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
 				echo '<div class="notice notice-info"><p>' . esc_html__( 'Switch in progress', 'woocommerce' ) . '</p></div>';
 				// A switch whose extension became active for every site after its start waits for the per-site activation, and stops saying so once it no longer is.
-				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && $this->is_woopayments_network_active() && in_array( WooPaymentsCutoverReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE, (array) ( $record['deferred_codes'] ?? array() ), true ) ) {
+				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && $this->preflight_service->is_woopayments_network_active() && in_array( WooPaymentsCutoverReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE, (array) ( $record['deferred_codes'] ?? array() ), true ) ) {
 					$this->output_sitewide_refusal_notice();
 				}
 				// The job cannot update the extension itself where the site blocks file changes, so retries alone never finish.

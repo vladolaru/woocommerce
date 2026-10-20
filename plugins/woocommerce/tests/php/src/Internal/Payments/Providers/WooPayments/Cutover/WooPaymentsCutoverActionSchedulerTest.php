@@ -59,7 +59,7 @@ class WooPaymentsCutoverActionSchedulerTest extends WC_Unit_Test_Case {
 		$action    = ActionScheduler::store()->fetch_action( $first_id );
 
 		$this->assertGreaterThan( 0, $first_id, 'Scheduling should return the persisted Action Scheduler ID.' );
-		$this->assertSame( $first_id, $second_id, 'Duplicate scheduling should return the existing action ID.' );
+		$this->assertSame( 0, $second_id, 'Action Scheduler refuses a duplicate of a pending attempt.' );
 		$this->assertSame( 'woocommerce_woopayments_cutover_reconcile', $action->get_hook() );
 		$this->assertSame( 'woocommerce_woopayments_cutover', $action->get_group() );
 		$this->assertSame(

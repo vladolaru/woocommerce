@@ -40,21 +40,16 @@ class WooPaymentsCutoverActionScheduler {
 	}
 
 	/**
-	 * Schedule one unique action or return the matching scheduled action ID.
+	 * Schedule one unique action; Action Scheduler refuses a duplicate of a pending or running attempt.
 	 *
 	 * @since 11.2.0
 	 *
 	 * @param int $timestamp  Due timestamp.
 	 * @param int $generation Job generation.
 	 * @param int $attempt    Monotonic attempt number.
-	 * @return int Positive action ID, or zero when scheduling failed.
+	 * @return int Positive action ID, or zero when scheduling failed or the attempt is already scheduled.
 	 */
 	public function schedule( int $timestamp, int $generation, int $attempt ): int {
-		$existing_id = $this->get_scheduled_action_id( $generation, $attempt );
-		if ( $existing_id > 0 ) {
-			return $existing_id;
-		}
-
 		if ( ! function_exists( 'as_schedule_single_action' ) ) {
 			return 0;
 		}
@@ -94,19 +89,14 @@ class WooPaymentsCutoverActionScheduler {
 	 * @return int Positive action ID, or zero when absent.
 	 */
 	public function get_scheduled_action_id( int $generation, int $attempt ): int {
-		if ( ! function_exists( 'as_has_scheduled_action' ) || ! function_exists( 'as_get_scheduled_actions' ) ) {
-			return 0;
-		}
-
-		$args = self::get_action_args( $generation, $attempt );
-		if ( ! as_has_scheduled_action( self::ACTION_HOOK, $args, self::ACTION_GROUP ) ) {
+		if ( ! function_exists( 'as_get_scheduled_actions' ) ) {
 			return 0;
 		}
 
 		$action_ids = as_get_scheduled_actions(
 			array(
 				'hook'     => self::ACTION_HOOK,
-				'args'     => $args,
+				'args'     => self::get_action_args( $generation, $attempt ),
 				'group'    => self::ACTION_GROUP,
 				'status'   => array( \ActionScheduler_Store::STATUS_PENDING, \ActionScheduler_Store::STATUS_RUNNING ),
 				'per_page' => 1,

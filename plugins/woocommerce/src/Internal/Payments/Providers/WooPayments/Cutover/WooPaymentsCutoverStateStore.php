@@ -111,8 +111,6 @@ class WooPaymentsCutoverStateStore {
 			$this->invalidate_record_cache();
 		} elseif ( $current !== $record ) {
 			return false;
-		} elseif ( ! array_key_exists( self::OPTION_NAME, wp_load_alloptions() ) ) {
-			wp_set_option_autoload( self::OPTION_NAME, true );
 		}
 
 		return get_option( self::OPTION_NAME, null ) === $record;

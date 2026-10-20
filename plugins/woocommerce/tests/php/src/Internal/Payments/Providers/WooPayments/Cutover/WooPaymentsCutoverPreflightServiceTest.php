@@ -290,6 +290,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 			array(
 				'get_option'         => fn( $name, $default_value = false ) => 'active_plugins' === $name ? array() : get_option( $name, $default_value ),
 				'get_site_option'    => fn( $name, $default_value = false ) => 'active_sitewide_plugins' === $name ? array( WooPaymentsRuntimeArbiter::PLUGIN_FILE => 1 ) : get_site_option( $name, $default_value ),
+				'is_multisite'       => fn() => true,
 				// WordPress 7.1.3 wp-admin/includes/plugin.php:764 deactivate_plugins( $plugins, $silent = false, $network_wide = null ).
 				'deactivate_plugins' => function ( $plugin, $silent = false, $for_every_site = null ) use ( &$calls ): void {
 					$calls[] = array( $plugin, $silent, $for_every_site );
@@ -299,6 +300,28 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( $this->create_sut()->deactivate_woopayments_plugin(), 'The extension is still active for every site.' );
 		$this->assertSame( array( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false, false ) ), $calls );
+	}
+
+	/**
+	 * @testdox A single site never reports the extension as active for every site, whatever its network plugin list holds.
+	 */
+	public function test_network_activity_is_only_reported_on_a_multisite(): void {
+		$is_multisite = false;
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'get_site_option' => fn( $name, $default_value = false ) => 'active_sitewide_plugins' === $name ? array( WooPaymentsRuntimeArbiter::PLUGIN_FILE => 1 ) : get_site_option( $name, $default_value ),
+				'is_multisite'    => function () use ( &$is_multisite ) {
+					return $is_multisite;
+				},
+			)
+		);
+		$sut = $this->create_sut();
+
+		$this->assertFalse( $sut->is_woopayments_network_active(), 'A single site has no network plugin list.' );
+
+		$is_multisite = true;
+
+		$this->assertTrue( $sut->is_woopayments_network_active(), 'On a multisite the network plugin list counts.' );
 	}
 
 	/**

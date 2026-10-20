@@ -345,8 +345,13 @@ class WooPaymentsCutoverPreflightService {
 
 	/**
 	 * Tell whether WooPayments is active network-wide.
+	 *
+	 * A single site has no network plugin list, so it is not read there.
 	 */
 	public function is_woopayments_network_active(): bool {
+		if ( ! $this->legacy_proxy->call_function( 'is_multisite' ) ) {
+			return false;
+		}
 		foreach ( array_keys( (array) $this->legacy_proxy->call_function( 'get_site_option', 'active_sitewide_plugins', array() ) ) as $plugin_file ) {
 			if ( is_string( $plugin_file ) && $this->is_woopayments_plugin_file( $plugin_file ) ) {
 				return true;

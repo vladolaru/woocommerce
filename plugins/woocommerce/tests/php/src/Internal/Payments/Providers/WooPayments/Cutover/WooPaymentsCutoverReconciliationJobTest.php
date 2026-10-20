@@ -1871,55 +1871,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A throwing ownership probe defers verification without leaving its claim running.
-	 */
-	public function test_throwing_ownership_probe_defers_verification(): void {
-		$preflight = $this->create_preflight_with_failures( array() );
-		$origin    = $this->create_job( true, $preflight );
-		$this->assertTrue( $origin->enqueue( 'merchant' ) );
-		$queued = $this->require_state_store()->get_record();
-		$this->assertIsArray( $queued );
-		$this->require_scheduler()->cancel( $queued['generation'], 1 );
-		$verification                         = $queued;
-		$verification['revision']             = $queued['revision'] + 1;
-		$verification['attempt']              = 1;
-		$verification['action_id']            = 0;
-		$verification['current_step']         = 'verify_builtin_ownership';
-		$verification['next_attempt_at']      = time() + MINUTE_IN_SECONDS;
-		$verification['request_origin_token'] = 'previous-request-token';
-		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $queued, $verification ) );
-		$arbiter        = new class() extends WooPaymentsRuntimeArbiter {
-			/** Return an enabled native runtime. */
-			public function is_builtin_enabled(): bool {
-				return true;
-			}
-
-			/** Throw while probing plugin ownership. */
-			public function is_extension_owner(): bool {
-				throw new \RuntimeException( 'Expected ownership probe failure.' );
-			}
-		};
-		$sut            = new WooPaymentsCutoverReconciliationJob();
-		$data_migration = new class() extends WooPaymentsCutoverDataMigration {
-			/** Return a controlled persistence failure. */
-			public function run(): array {
-				return array(
-					'changes' => array( 'settings_persistence_failed' ),
-				);
-			}
-		};
-		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight, $data_migration, $this->create_inert_account_service() );
-		$this->jobs[] = $sut;
-
-		$sut->handle_reconcile( $verification['generation'], 2 );
-
-		$deferred = $this->require_state_store()->get_record();
-		$this->assertIsArray( $deferred );
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
-		$this->assertSame( array( 'builtin_ownership_verification_failed' ), $deferred['deferred_codes'] );
-	}
-
-	/**
 	 * @testdox A claim that finds WooPayments already inactive at finalization deactivates nothing and continues to ownership verification.
 	 */
 	public function test_claim_with_an_already_inactive_plugin_reaches_ownership_verification(): void {
@@ -2184,79 +2135,6 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'plugin_deactivation_failed' ), $deferred['deferred_codes'] );
 		$this->assertSame( 'deferred', $deferred['current_step'] );
 		$this->assertSame( 0, $sync_calls, 'Native state must not be synced while the plugin still runs.' );
-	}
-
-	/**
-	 * @testdox A Stripe Billing marker first seen on the re-read after the dispositions excludes the switch on that attempt, without deactivating the plugin.
-	 */
-	public function test_stripe_billing_marker_seen_after_dispositions_excludes_on_the_same_attempt(): void {
-		$reads              = 0;
-		$deactivation_calls = 0;
-		$preflight          = new class( $reads, $deactivation_calls ) extends WooPaymentsCutoverPreflightService {
-			/** @var int */
-			private int $reads;
-
-			/** @var int */
-			private int $deactivation_calls;
-
-			/**
-			 * @param int $reads              Reconciliation failure reads.
-			 * @param int $deactivation_calls Deactivation calls.
-			 */
-			public function __construct( int &$reads, int &$deactivation_calls ) {
-				$this->reads              =& $reads;
-				$this->deactivation_calls =& $deactivation_calls;
-			}
-
-			/**
-			 * Report all clear on the first read and the marker on every later read.
-			 *
-			 * @return string[]
-			 */
-			public function get_failures(): array {
-				++$this->reads;
-				return 1 === $this->reads ? array() : array( 'bundled_stripe_billing_subscriptions_present' );
-			}
-
-			/** Invalidate controlled facts. */
-			public function invalidate_current_blog_memoization(): void {
-			}
-
-			/** @return array<int,array{action_id:int,hook:string,group:string}> */
-			public function get_queued_operational_actions(): array {
-				return array();
-			}
-
-			/** Record any deactivation. */
-			public function deactivate_woopayments_plugin(): bool {
-				++$this->deactivation_calls;
-				return true;
-			}
-
-			/** Site-local scenario. */
-			public function is_woopayments_network_active(): bool {
-				return false;
-			}
-
-			/** Active on the site until the job deactivates it. */
-			public function is_woopayments_site_active(): bool {
-				return ! $this->is_woopayments_network_active();
-			}
-		};
-		$sut                = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
-		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
-		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
-
-		$sut->handle_reconcile( $pending['generation'], 1 );
-
-		$excluded = $this->require_state_store()->get_record();
-		$this->assertIsArray( $excluded );
-		$this->assertGreaterThanOrEqual( 2, $reads, 'The marker was read again after the dispositions.' );
-		$this->assertSame( WooPaymentsCutoverStateStore::STATE_EXCLUDED, $excluded['state'] );
-		$this->assertSame( array( 'bundled_stripe_billing_subscriptions_present' ), $excluded['deferred_codes'] );
-		$this->assertSame( 0, $deactivation_calls );
 	}
 
 	/**

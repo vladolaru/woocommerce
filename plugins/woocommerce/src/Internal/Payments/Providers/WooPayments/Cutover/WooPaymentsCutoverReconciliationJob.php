@@ -277,7 +277,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool True when durable work already exists or was scheduled.
 	 */
 	private function start_generation( string $source ): bool {
-		if ( ! $this->arbiter->is_builtin_enabled() || ( is_multisite() && $this->preflight_service->is_woopayments_network_active() ) ) {
+		if ( ! $this->arbiter->is_builtin_enabled() || $this->preflight_service->is_woopayments_network_active() ) {
 			return false;
 		}
 
@@ -457,7 +457,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			&& WooPaymentsCutoverStateStore::STATE_DONE === ( $record['state'] ?? null )
 			&& self::NOTICE_SUCCESS === $notice
 			&& is_array( $record['informational_outcomes'] ?? null )
-			&& ! $this->has_information_outcome( $record['informational_outcomes'], array( 'code' => $notice . '_notice_dismissed' ) );
+			&& ! in_array( array( 'code' => $notice . '_notice_dismissed' ), $record['informational_outcomes'], true );
 	}
 
 	/**
@@ -487,7 +487,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			&& WooPaymentsCutoverStateStore::STATE_EXCLUDED === ( $record['state'] ?? null )
 			&& in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, (array) ( $record[ self::BLOCKING_CODES_KEY ] ?? array() ), true )
 			&& is_array( $record['informational_outcomes'] ?? null )
-			&& ! $this->has_information_outcome( $record['informational_outcomes'], array( 'code' => self::NOTICE_BUNDLED_EXCLUSION . '_notice_dismissed' ) );
+			&& ! in_array( array( 'code' => self::NOTICE_BUNDLED_EXCLUSION . '_notice_dismissed' ), $record['informational_outcomes'], true );
 	}
 
 	/**
@@ -538,8 +538,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	private function is_reconnect_notice_due( ?array $record ): bool {
 		return is_array( $record )
 			&& in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true )
-			&& $this->has_information_outcome( $record['informational_outcomes'], array( 'code' => 'reconnect_required' ) )
-			&& ! $this->has_information_outcome( $record['informational_outcomes'], array( 'code' => 'reconnect_notice_shown' ) );
+			&& in_array( array( 'code' => 'reconnect_required' ), $record['informational_outcomes'], true )
+			&& ! in_array( array( 'code' => 'reconnect_notice_shown' ), $record['informational_outcomes'], true );
 	}
 
 	/**
@@ -647,7 +647,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				$deferred['action_id']                  = 0;
 				$deferred['current_step']               = self::STEP_DEFERRED;
 				$deferred['updated_at']                 = $now;
-				$deferred[ self::BLOCKING_CODES_KEY ]   = $this->normalize_codes( $codes );
+				$deferred[ self::BLOCKING_CODES_KEY ]   = $codes;
 				$deferred['informational_outcomes']     = $this->merge_information_outcomes( $record['informational_outcomes'], $outcomes );
 				$deferred['next_attempt_at']            = $now + $this->get_retry_delay( $record, $now );
 				$deferred[ self::CLAIM_TOKEN_KEY ]      = null;
@@ -683,7 +683,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			// Past finalize the extension is already off and the built-in WooPayments owns payments, so an exclusion would
 			// protect nothing and leave the store with no owner: the bundled failure defers the claim instead.
 			$past_finalize = null !== ( $claimed['request_origin_token'] ?? null ) && ! $this->arbiter->is_extension_owner();
-			$failures      = $this->normalize_codes( $this->preflight_service->get_failures() );
+			$this->preflight_service->invalidate_current_blog_memoization();
+			$failures = $this->preflight_service->get_failures();
 			if ( ! $past_finalize && in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $failures, true ) ) {
 				$this->exclude( $claimed, WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
 				return;
@@ -701,19 +702,13 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
 			$outcomes = array_merge( $outcomes, $this->get_adopted_queue_action_outcomes() );
 
-			$this->preflight_service->invalidate_current_blog_memoization();
-			$remaining_failures = $this->normalize_codes( $this->preflight_service->get_failures() );
-			if ( ! $past_finalize && in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $remaining_failures, true ) ) {
-				$this->exclude( $claimed, WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
-				return;
-			}
 			// The extension records its new version only on its next request, so check the installed files instead.
-			if ( $plugin_update_succeeded && in_array( WooPaymentsCutoverPreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, $remaining_failures, true ) && ! $this->is_installed_woopayments_plugin_version_supported() ) {
+			if ( $plugin_update_succeeded && in_array( WooPaymentsCutoverPreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, $failures, true ) && ! $this->is_installed_woopayments_plugin_version_supported() ) {
 				$this->log_error( 'WooPayments cutover extension update completed without installing a supported version.' );
 			}
 
-			if ( array() !== $remaining_failures ) {
-				$this->defer( $claimed, $remaining_failures, $outcomes );
+			if ( array() !== $failures ) {
+				$this->defer( $claimed, $failures, $outcomes );
 				return;
 			}
 
@@ -751,22 +746,15 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		try {
 			// An extension the merchant already deactivated, or a retry whose earlier finalize did, has nothing to deactivate.
 			if ( $this->preflight_service->is_woopayments_site_active() ) {
-				$this->internal_plugin_lifecycle_change = true;
-				$deactivated                            = $this->preflight_service->deactivate_woopayments_plugin();
+				$deactivated = $this->run_while_changing_plugins( fn() => $this->preflight_service->deactivate_woopayments_plugin() );
 			}
 		} catch ( \Throwable $error ) {
 			$this->log_error( 'WooPayments cutover extension deactivation failed.', array( 'error' => $error->getMessage() ) );
 			$deactivated = false;
-		} finally {
-			$this->internal_plugin_lifecycle_change = false;
 		}
 		if ( ! $deactivated ) {
 			// A hook that threw after WordPress wrote the active plugins still left the extension inactive.
-			try {
-				$deactivated = ! $this->preflight_service->is_woopayments_site_active();
-			} catch ( \Throwable $error ) {
-				$deactivated = false;
-			}
+			$deactivated = ! $this->preflight_service->is_woopayments_site_active();
 		}
 		if ( ! $deactivated ) {
 			// The token stays, so the next attempt finds the extension active and rolls the switch back to it.
@@ -881,14 +869,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @param array<string,mixed> $claimed Exact running state owned by this worker.
 	 */
 	private function complete_verified_claim( array $claimed ): void {
-		try {
-			$extension_owns = $this->arbiter->is_extension_owner();
-		} catch ( \Throwable $error ) {
-			$this->log_error( 'WooPayments cutover could not verify that the built-in WooPayments owns payments.', array( 'error' => $error->getMessage() ) );
-			$this->defer( $claimed, array( 'builtin_ownership_verification_failed' ) );
-			return;
-		}
-		if ( $extension_owns ) {
+		if ( $this->arbiter->is_extension_owner() ) {
 			$this->defer( $claimed, array( 'builtin_ownership_unverified' ) );
 			return;
 		}
@@ -1048,9 +1029,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	private function get_adopted_queue_action_outcomes(): array {
 		$outcomes = array();
 		foreach ( $this->preflight_service->get_queued_operational_actions() as $action ) {
-			if ( WooPaymentsCutoverActionScheduler::ACTION_HOOK === $action['hook'] && WooPaymentsCutoverActionScheduler::ACTION_GROUP === $action['group'] ) {
-				continue;
-			}
 			if ( in_array( $action['hook'], self::ADOPTED_QUEUE_HOOKS, true ) ) {
 				$outcomes[] = array(
 					'code' => 'operational_action_adopted',
@@ -1445,11 +1423,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 */
 	private function can_reopen_terminal_record( array $record, bool $for_admin_notice = false ): bool {
 		if ( WooPaymentsCutoverStateStore::STATE_DONE === $record['state'] ) {
-			try {
-				return $this->arbiter->is_extension_owner();
-			} catch ( \Throwable $error ) {
-				return false;
-			}
+			return $this->arbiter->is_extension_owner();
 		}
 		if ( WooPaymentsCutoverStateStore::STATE_EXCLUDED !== $record['state'] ) {
 			return false;
@@ -1460,7 +1434,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		}
 
 		try {
-			$failures = $this->normalize_codes( $this->preflight_service->get_failures() );
+			$failures = $this->preflight_service->get_failures();
 		} catch ( \Throwable $error ) {
 			return false;
 		}
@@ -1497,7 +1471,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		}
 
 		try {
-			$present = in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $this->normalize_codes( $this->preflight_service->get_failures() ), true );
+			$present = in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $this->preflight_service->get_failures(), true );
 		} catch ( \Throwable $error ) {
 			$this->log_error( 'WooPayments cutover could not classify the admin notice.', array( 'error' => $error->getMessage() ) );
 			return null;
@@ -1663,16 +1637,6 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Normalize condition codes before persistence.
-	 *
-	 * @param array<int,string> $codes Condition codes.
-	 * @return array<int,string>
-	 */
-	private function normalize_codes( array $codes ): array {
-		return array_values( array_unique( array_filter( $codes, 'is_string' ) ) );
-	}
-
-	/**
 	 * Merge informational outcomes without duplicating a persisted observation.
 	 *
 	 * @param array<int,mixed> $existing Existing informational outcomes.
@@ -1681,29 +1645,12 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 */
 	private function merge_information_outcomes( array $existing, array $additional ): array {
 		foreach ( $additional as $outcome ) {
-			if ( ! $this->has_information_outcome( $existing, $outcome ) ) {
+			if ( ! in_array( $outcome, $existing, true ) ) {
 				$existing[] = $outcome;
 			}
 		}
 
 		return $existing;
-	}
-
-	/**
-	 * Tell whether an informational outcome has already been persisted.
-	 *
-	 * @param array<int,mixed> $outcomes Existing informational outcomes.
-	 * @param mixed            $candidate Candidate outcome.
-	 * @return bool
-	 */
-	private function has_information_outcome( array $outcomes, $candidate ): bool {
-		foreach ( $outcomes as $outcome ) {
-			if ( $outcome === $candidate ) {
-				return true;
-			}
-		}
-
-		return false;
 	}
 
 	/**
