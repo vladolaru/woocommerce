@@ -419,10 +419,13 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A network-wide activation of the extension sends every switched site back to awaiting the merchant's start with a new generation, so once the network activation goes nothing owns payments there until the merchant starts the switch.
+	 * @testdox A network-wide activation of the extension sends every switched site back to awaiting the merchant's start with a new generation, so once the network activation goes nothing owns payments there until the merchant starts the switch ($_dataName).
 	 * @group multisite
+	 * @dataProvider provider_extension_plugin_files
+	 *
+	 * @param string $plugin_file The extension's main file as WordPress activates it.
 	 */
-	public function test_network_activation_records_the_rollback_of_each_switched_site(): void {
+	public function test_network_activation_records_the_rollback_of_each_switched_site( string $plugin_file ): void {
 		$this->skip_unless_multisite();
 		$main = get_current_blog_id();
 		$done = $this->create_site( 'done', true, true );
@@ -430,9 +433,9 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		$this->arrange_site( $main, false, true );
 		$this->create_record( $done, WooPaymentsCutoverStateStore::STATE_DONE, 'done', array() );
 		$this->create_record( $past, WooPaymentsCutoverStateStore::STATE_DEFERRED, 'deferred', array( 'builtin_ownership_unverified' ), array( 'request_origin_token' => 'finalize-token' ) );
-		$this->activate_for_every_site();
+		$this->activate_for_every_site( $plugin_file );
 
-		$this->fire_activated_plugin( true );
+		$this->fire_activated_plugin( true, $plugin_file );
 
 		$this->assertSame( $main, get_current_blog_id(), 'The scan returns to the main site.' );
 		foreach ( array( $done, $past ) as $site_id ) {
@@ -446,6 +449,16 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 		foreach ( array( $done, $past ) as $site_id ) {
 			$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_NONE, $this->read_owner( $site_id ), 'Nothing owns payments until the merchant starts the switch.' );
 		}
+	}
+
+	/**
+	 * @return array<string,array{0:string}>
+	 */
+	public function provider_extension_plugin_files(): array {
+		return array(
+			'the extension in its own folder'   => array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ),
+			'the extension in a renamed folder' => array( 'woocommerce-payments-10.5.0/woocommerce-payments.php' ),
+		);
 	}
 
 	/**
@@ -886,10 +899,11 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * WordPress 7.1.3 wp-admin/includes/plugin.php:736 fires it with the plugin file and whether the activation is network-wide.
 	 *
-	 * @param bool $network_wide Whether the activation is for every site.
+	 * @param bool   $network_wide Whether the activation is for every site.
+	 * @param string $plugin_file  The extension's main file.
 	 */
-	private function fire_activated_plugin( bool $network_wide ): void {
-		do_action( 'activated_plugin', WooPaymentsRuntimeArbiter::PLUGIN_FILE, $network_wide ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WordPress's own hook, fired as the core function does.
+	private function fire_activated_plugin( bool $network_wide, string $plugin_file = WooPaymentsRuntimeArbiter::PLUGIN_FILE ): void {
+		do_action( 'activated_plugin', $plugin_file, $network_wide ); // phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WordPress's own hook, fired as the core function does.
 	}
 
 	/**
@@ -1135,9 +1149,11 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Make the extension active for every site and stand in for WordPress's plugin activation functions.
+	 *
+	 * @param string $plugin_file The extension's main file.
 	 */
-	private function activate_for_every_site(): void {
-		update_site_option( 'active_sitewide_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE => time() ) );
+	private function activate_for_every_site( string $plugin_file = WooPaymentsRuntimeArbiter::PLUGIN_FILE ): void {
+		update_site_option( 'active_sitewide_plugins', array( $plugin_file => time() ) );
 		$this->mock_plugin_functions();
 	}
 

@@ -565,8 +565,10 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && $this->preflight_service->is_woopayments_network_active() && in_array( WooPaymentsCutoverReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE, (array) ( $record[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ] ?? array() ), true ) ) {
 					$this->output_sitewide_refusal_notice();
 				}
-				// The job could not bring the extension files up to the supported version, so retries alone never finish.
-				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && in_array( WooPaymentsCutoverPreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, (array) ( $record[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ] ?? array() ), true ) && ! $this->reconciliation_job->is_installed_woopayments_plugin_version_supported() ) {
+				// The job could not bring the extension files up to the supported version, so retries alone never finish. An
+				// extension updated by hand clears it: its files carry the new version at once, and the version it records once
+				// it runs stays recorded after a deactivation, which leaves no active file to read.
+				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && in_array( WooPaymentsCutoverPreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, (array) ( $record[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ] ?? array() ), true ) && ! $this->preflight_service->is_woopayments_plugin_version_supported() && ! $this->reconciliation_job->is_installed_woopayments_plugin_version_supported() ) {
 					$this->output_extension_update_warning();
 				}
 				// Shown until dismissed; rendering claims nothing, since some screens hide notices.

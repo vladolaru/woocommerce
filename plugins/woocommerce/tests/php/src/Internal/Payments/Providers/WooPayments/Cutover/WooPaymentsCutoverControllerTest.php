@@ -9,8 +9,11 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\C
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverDataMigration;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverActionScheduler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsPerSiteActivationController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
@@ -706,6 +709,8 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * @param string|null $warning           The reason the warning gives, or null when none shows.
 	 */
 	public function test_deferred_extension_update_explains_the_waiting_switch( bool $file_mods_blocked, bool $installed_current, ?string $warning ): void {
+		// The active extension last recorded a version below the floor; an update by hand records the new one only once it runs.
+		update_option( WooPaymentsRuntimeArbiter::EXTENSION_VERSION_OPTION, '10.4.9' );
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
@@ -763,6 +768,38 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			'file changes allowed, extension at the floor' => array( false, true, null ),
 			'file changes disallowed, extension updated by hand' => array( true, true, null ),
 		);
+	}
+
+	/**
+	 * The extension records its version when it runs (client 11.1.0 includes/class-wc-payments.php:1564-1580), and a
+	 * deactivation keeps it, while the installed files can only be read from an active extension.
+	 *
+	 * @testdox A switch deferred on the WooPayments version asks for no update once the merchant updated the extension by hand, ran it and deactivated it again.
+	 */
+	public function test_deferred_extension_update_is_not_asked_for_after_an_update_by_hand_and_a_deactivation(): void {
+		update_option( WooPaymentsRuntimeArbiter::EXTENSION_VERSION_OPTION, '11.1.0' );
+		$this->fake_plugin_active( false );
+		$this->fake_current_user_caps( true );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		$job               = new class() extends WooPaymentsCutoverReconciliationJob {
+			/** @return array<string,mixed>|null */
+			public function refresh_notice_record(): ?array {
+				return array(
+					'state'                  => WooPaymentsCutoverStateStore::STATE_DEFERRED,
+					'deferred_codes'         => array( 'woopayments_plugin_version_unsupported' ),
+					'informational_outcomes' => array(),
+				);
+			}
+		};
+		$preflight_service = $this->create_preflight_service();
+		$job->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsCutoverStateStore::class ), wc_get_container()->get( WooPaymentsCutoverActionScheduler::class ), $preflight_service, wc_get_container()->get( WooPaymentsCutoverDataMigration::class ), wc_get_container()->get( WooPaymentsAccountService::class ) );
+		$this->assertFalse( $job->is_installed_woopayments_plugin_version_supported(), 'With the extension inactive, no installed version can be read.' );
+
+		$notice = $this->render_admin_notices( $this->create_cutover_controller( $job, $preflight_service ) );
+
+		$this->assertStringContainsString( 'Switch in progress', $notice );
+		$this->assertStringNotContainsString( 'Update WooPayments', $notice );
 	}
 
 	/**

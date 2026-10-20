@@ -120,10 +120,14 @@ class WooPaymentsPlatformConnectionServiceTest extends WC_Unit_Test_Case {
 	 */
 	private function connect_site_with_owner(): JetpackConnectionManager {
 		$owner_id = self::factory()->user->create( array( 'role' => 'administrator' ) );
+		// automattic/jetpack-connection 6.19.12: is_connected() needs the blog ID and a blog token (src/class-manager.php:662-674),
+		// and get_access_token() takes the stored blog token as is (src/class-tokens.php:403-407).
 		Jetpack_Options::update_option( 'id', 123 );
 		Jetpack_Options::update_option( 'blog_token', 'blogkey.blogsecret' );
 
 		$manager = new JetpackConnectionManager( 'woocommerce' );
+		// A user token is "<key>.<secret>.<user ID>" (src/class-tokens.php:393-402); update_user_token() with true also stores
+		// the owner as master_user (src/class-tokens.php:273-286).
 		$manager->get_tokens()->update_user_token( $owner_id, 'usersecret.userkey.' . $owner_id, true );
 		$manager->reset_connection_status();
 
@@ -147,12 +151,17 @@ class WooPaymentsPlatformConnectionServiceTest extends WC_Unit_Test_Case {
 			require_once ABSPATH . 'wp-admin/includes/user.php';
 			wp_delete_user( $owner_id );
 		}
+		// automattic/jetpack-connection 6.19.12: the deleted_user handler (src/class-manager.php:164) removes the user token
+		// locally (src/class-tokens.php:494-509) and then the master_user option (src/class-manager.php:1052-1079), here
+		// without its request to WordPress.com.
 		if ( 'token_removed' === $removal || 'deleted_and_disconnected' === $removal ) {
 			$manager->get_tokens()->disconnect_user( $owner_id );
 		}
 		if ( 'deleted_and_disconnected' === $removal ) {
 			Jetpack_Options::delete_option( 'master_user' );
 		}
+		// get_connection_owner_id() returns an ID only when the owner has a user token and a WordPress user
+		// (src/class-manager.php:830-839, 887-922); reset_connection_status() drops its memo (src/class-manager.php:685-688).
 		$manager->reset_connection_status();
 	}
 
