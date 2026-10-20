@@ -168,12 +168,30 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 			$command           = $arguments[ $index + 1 ];
 			$command_arguments = array_slice( $arguments, $index + 2 );
 			if ( 'activate' === $command || 'toggle' === $command ) {
-				return in_array( '--all', $command_arguments, true ) || $this->request_targets_woopayments( array( 'plugins' => $command_arguments ) );
+				// WP-CLI also resolves a plugin file named without its `.php` extension.
+				$plugin_files = array_map(
+					static function ( string $argument ): string {
+						return $argument . '.php';
+					},
+					$command_arguments
+				);
+				return in_array( '--all', $command_arguments, true ) || $this->request_targets_woopayments( array( 'plugins' => array_merge( $command_arguments, $plugin_files ) ) );
 			}
 
 			if ( 'install' === $command ) {
 				$activates_plugin = in_array( '--activate', $command_arguments, true ) || in_array( '--activate-network', $command_arguments, true );
-				return $activates_plugin && $this->request_targets_woopayments( array( 'plugins' => $command_arguments ) );
+				if ( ! $activates_plugin ) {
+					return false;
+				}
+
+				// A zip path or URL names no plugin folder until WP-CLI unpacks it, so any such install counts.
+				foreach ( $command_arguments as $argument ) {
+					if ( str_contains( $argument, '://' ) || str_ends_with( $argument, '.zip' ) ) {
+						return true;
+					}
+				}
+
+				return $this->request_targets_woopayments( array( 'plugins' => $command_arguments ) );
 			}
 		}
 
@@ -217,7 +235,7 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 	 * @return bool True when the folder holds the WooPayments main file.
 	 */
 	private function is_woopayments_plugin_folder( string $plugin ): bool {
-		if ( str_contains( $plugin, '..' ) || str_contains( $plugin, '/' ) || '' === $plugin ) {
+		if ( str_contains( $plugin, "\0" ) || str_contains( $plugin, '..' ) || str_contains( $plugin, '/' ) || '' === $plugin ) {
 			return false;
 		}
 

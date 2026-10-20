@@ -220,6 +220,7 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 				),
 				array(),
 			),
+			// WordPress 7.1.3 wp-admin/plugins.php: `activate` reads `plugin`, `activate-selected` reads `checked[]`.
 			'renamed folder activate link'          => array(
 				array(
 					'action' => 'activate',
@@ -234,12 +235,20 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 				),
 				array(),
 			),
-			// WordPress's plugins REST item route rejects dots, so this renamed folder has none.
+			// WordPress 7.1.3 WP_REST_Plugins_Controller: the item pattern `[^.\/]+(?:\/[^.\/]+)?` rejects dots, so this renamed
+			// folder has none, and sanitize_plugin_param() appends `.php` to the matched `<folder>/<file>`.
 			'renamed folder plugins REST item'      => array(
 				array(),
 				array(
 					'REQUEST_METHOD' => 'PUT',
 					'REQUEST_URI'    => '/wp-json/wp/v2/plugins/woocommerce-payments-copy%2Fwoocommerce-payments',
+				),
+			),
+			'renamed folder REST item with query'   => array(
+				array(),
+				array(
+					'REQUEST_METHOD' => 'PUT',
+					'REQUEST_URI'    => '/wp-json/wp/v2/plugins/woocommerce-payments-copy%2Fwoocommerce-payments?context=edit',
 				),
 			),
 		);
@@ -284,14 +293,19 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	 */
 	public function wp_cli_activation_request_provider(): array {
 		return array(
-			'activate slug'                => array( array( 'wp', 'plugin', 'activate', 'woocommerce-payments' ) ),
-			'activate plugin file'         => array( array( 'wp', 'plugin', 'activate', WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ),
-			'activate all'                 => array( array( 'wp', 'plugin', 'activate', '--all' ) ),
-			'install and activate'         => array( array( 'wp', 'plugin', 'install', 'woocommerce-payments', '--activate' ) ),
-			'install network activated'    => array( array( 'wp', 'plugin', 'install', 'woocommerce-payments', '--activate-network' ) ),
-			'toggle'                       => array( array( 'wp', 'plugin', 'toggle', 'woocommerce-payments' ) ),
-			'activate renamed folder'      => array( array( 'wp', 'plugin', 'activate', 'woocommerce-payments-10.5.0/woocommerce-payments.php' ) ),
-			'activate renamed folder name' => array( array( 'wp', 'plugin', 'activate', 'woocommerce-payments-10.5.0' ) ),
+			'activate slug'                  => array( array( 'wp', 'plugin', 'activate', 'woocommerce-payments' ) ),
+			'activate plugin file'           => array( array( 'wp', 'plugin', 'activate', WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ),
+			'activate all'                   => array( array( 'wp', 'plugin', 'activate', '--all' ) ),
+			'install and activate'           => array( array( 'wp', 'plugin', 'install', 'woocommerce-payments', '--activate' ) ),
+			'install network activated'      => array( array( 'wp', 'plugin', 'install', 'woocommerce-payments', '--activate-network' ) ),
+			'toggle'                         => array( array( 'wp', 'plugin', 'toggle', 'woocommerce-payments' ) ),
+			// WP-CLI 2.12.0 (extension-command 2.1.24) Fetchers\Plugin::get() resolves `<name>.php`, the plugin file, or its folder.
+			'activate renamed folder'        => array( array( 'wp', 'plugin', 'activate', 'woocommerce-payments-10.5.0/woocommerce-payments.php' ) ),
+			'activate renamed folder name'   => array( array( 'wp', 'plugin', 'activate', 'woocommerce-payments-10.5.0' ) ),
+			'activate file without .php'     => array( array( 'wp', 'plugin', 'activate', 'woocommerce-payments-10.5.0/woocommerce-payments' ) ),
+			// WP-CLI 2.12.0 CommandWithUpgrade::install() takes a URL (`://`) or a local `.zip`, then activates the unpacked folder.
+			'install local zip and activate' => array( array( 'wp', 'plugin', 'install', './woocommerce-payments.11.1.0.zip', '--activate' ) ),
+			'install URL and activate'       => array( array( 'wp', 'plugin', 'install', 'https://api.github.com/repos/Automattic/woocommerce-payments/zipball/11.1.0', '--activate' ) ),
 		);
 	}
 
