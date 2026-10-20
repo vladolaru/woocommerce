@@ -202,12 +202,26 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 			}
 
 			$plugin = ltrim( str_replace( '\\', '/', sanitize_text_field( (string) $candidate ) ), '/' );
-			if ( WooPaymentsRuntimeArbiter::PLUGIN_FILE === $plugin || 'woocommerce-payments' === $plugin || str_ends_with( $plugin, '/' . WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ) {
+			if ( 'woocommerce-payments' === $plugin || WooPaymentsRuntimeArbiter::is_woopayments_plugin_file( $plugin ) || $this->is_woopayments_plugin_folder( $plugin ) ) {
 				return true;
 			}
 		}
 
 		return false;
+	}
+
+	/**
+	 * Tell whether a bare plugin folder name, which WP-CLI accepts, holds the WooPayments main file.
+	 *
+	 * @param string $plugin Requested plugin, without its main file.
+	 * @return bool True when the folder holds the WooPayments main file.
+	 */
+	private function is_woopayments_plugin_folder( string $plugin ): bool {
+		if ( str_contains( $plugin, '..' ) || str_contains( $plugin, '/' ) || '' === $plugin ) {
+			return false;
+		}
+
+		return is_file( Constants::get_constant( 'WP_PLUGIN_DIR' ) . '/' . $plugin . '/' . wp_basename( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
 	}
 
 	/**
@@ -247,6 +261,8 @@ class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 			return true;
 		}
 
-		return str_starts_with( $tail, '/woocommerce-payments/woocommerce-payments' );
+		// The item route names the plugin file without its `.php` extension.
+		$plugin = strtok( ltrim( $tail, '/' ), '?&' );
+		return false !== $plugin && WooPaymentsRuntimeArbiter::is_woopayments_plugin_file( rtrim( $plugin, '/' ) . '.php' );
 	}
 }

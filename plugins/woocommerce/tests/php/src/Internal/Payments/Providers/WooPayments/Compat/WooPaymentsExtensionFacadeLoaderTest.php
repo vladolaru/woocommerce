@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Compat;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsExtensionFacadeLoader;
@@ -219,6 +220,28 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 				),
 				array(),
 			),
+			'renamed folder activate link'          => array(
+				array(
+					'action' => 'activate',
+					'plugin' => 'woocommerce-payments-10.5.0/woocommerce-payments.php',
+				),
+				array(),
+			),
+			'renamed folder bulk plugins screen'    => array(
+				array(
+					'action'  => 'activate-selected',
+					'checked' => array( 'another-plugin/another-plugin.php', 'woocommerce-payments-10.5.0/woocommerce-payments.php' ),
+				),
+				array(),
+			),
+			// WordPress's plugins REST item route rejects dots, so this renamed folder has none.
+			'renamed folder plugins REST item'      => array(
+				array(),
+				array(
+					'REQUEST_METHOD' => 'PUT',
+					'REQUEST_URI'    => '/wp-json/wp/v2/plugins/woocommerce-payments-copy%2Fwoocommerce-payments',
+				),
+			),
 		);
 	}
 
@@ -234,11 +257,24 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 		define( 'WP_CLI', true );
 		$_SERVER['argv'] = $arguments;
 
-		$this->register_extension_facades();
+		// A plugins directory holding WooPayments in a renamed folder, which WP-CLI also activates by its folder name.
+		$plugins_dir = sys_get_temp_dir() . '/wc-facade-loader-' . wp_generate_uuid4();
+		$main_file   = $plugins_dir . '/woocommerce-payments-10.5.0/woocommerce-payments.php';
+		wp_mkdir_p( dirname( $main_file ) );
+		file_put_contents( $main_file, "<?php\n" ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- Test fixture file.
+		Constants::set_constant( 'WP_PLUGIN_DIR', $plugins_dir );
 
-		// Probing with autoload: a recognized activation registers no autoloader, so even a probe declares nothing.
-		$this->assertFalse( class_exists( 'WC_Payments' ), 'WP-CLI must be able to activate the standalone plugin without a class collision. ' . $this->describe_facade_state() );
-		$this->assertFalse( class_exists( 'WC_Payments_Features' ), 'WP-CLI must retain the plugin feature-class name for an activation sandbox. ' . $this->describe_facade_state() );
+		try {
+			$this->register_extension_facades();
+
+			// Probing with autoload: a recognized activation registers no autoloader, so even a probe declares nothing.
+			$this->assertFalse( class_exists( 'WC_Payments' ), 'WP-CLI must be able to activate the standalone plugin without a class collision. ' . $this->describe_facade_state() );
+			$this->assertFalse( class_exists( 'WC_Payments_Features' ), 'WP-CLI must retain the plugin feature-class name for an activation sandbox. ' . $this->describe_facade_state() );
+		} finally {
+			wp_delete_file( $main_file );
+			rmdir( dirname( $main_file ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Test fixture cleanup.
+			rmdir( $plugins_dir ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir -- Test fixture cleanup.
+		}
 	}
 
 	/**
@@ -248,12 +284,14 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	 */
 	public function wp_cli_activation_request_provider(): array {
 		return array(
-			'activate slug'             => array( array( 'wp', 'plugin', 'activate', 'woocommerce-payments' ) ),
-			'activate plugin file'      => array( array( 'wp', 'plugin', 'activate', WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ),
-			'activate all'              => array( array( 'wp', 'plugin', 'activate', '--all' ) ),
-			'install and activate'      => array( array( 'wp', 'plugin', 'install', 'woocommerce-payments', '--activate' ) ),
-			'install network activated' => array( array( 'wp', 'plugin', 'install', 'woocommerce-payments', '--activate-network' ) ),
-			'toggle'                    => array( array( 'wp', 'plugin', 'toggle', 'woocommerce-payments' ) ),
+			'activate slug'                => array( array( 'wp', 'plugin', 'activate', 'woocommerce-payments' ) ),
+			'activate plugin file'         => array( array( 'wp', 'plugin', 'activate', WooPaymentsRuntimeArbiter::PLUGIN_FILE ) ),
+			'activate all'                 => array( array( 'wp', 'plugin', 'activate', '--all' ) ),
+			'install and activate'         => array( array( 'wp', 'plugin', 'install', 'woocommerce-payments', '--activate' ) ),
+			'install network activated'    => array( array( 'wp', 'plugin', 'install', 'woocommerce-payments', '--activate-network' ) ),
+			'toggle'                       => array( array( 'wp', 'plugin', 'toggle', 'woocommerce-payments' ) ),
+			'activate renamed folder'      => array( array( 'wp', 'plugin', 'activate', 'woocommerce-payments-10.5.0/woocommerce-payments.php' ) ),
+			'activate renamed folder name' => array( array( 'wp', 'plugin', 'activate', 'woocommerce-payments-10.5.0' ) ),
 		);
 	}
 
