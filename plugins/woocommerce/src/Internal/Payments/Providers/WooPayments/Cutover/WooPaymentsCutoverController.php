@@ -279,7 +279,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 		if ( ! $this->arbiter->is_builtin_enabled() || ! $this->can_start_cutover() ) {
 			return false;
 		}
-		if ( $this->reconciliation_job->enqueue( 'merchant' ) ) {
+		if ( $this->reconciliation_job->enqueue( WooPaymentsCutoverReconciliationJob::SOURCE_MERCHANT ) ) {
 			return true;
 		}
 
@@ -290,7 +290,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Forget the cached admin classification when WooCommerce Subscriptions is deactivated.
+	 * Forget the cached bundled subscriptions classification when WooCommerce Subscriptions is deactivated.
 	 *
 	 * A deactivation of the WooPayments extension records nothing: it is never a request to switch.
 	 *
@@ -332,7 +332,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Forget the cached admin classification when WooCommerce Subscriptions changes, since it decides the bundled-flavor exclusion.
+	 * Forget the cached bundled subscriptions classification when WooCommerce Subscriptions changes, since it decides the exclusion.
 	 *
 	 * Current site only: other sites catch up when their cached classification expires.
 	 *
@@ -382,7 +382,7 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			return;
 		}
 
-		$this->reconciliation_job->enqueue( 'mandatory' );
+		$this->reconciliation_job->enqueue( WooPaymentsCutoverReconciliationJob::SOURCE_MANDATORY );
 	}
 
 	/**
@@ -537,11 +537,11 @@ class WooPaymentsCutoverController implements RegisterHooksInterface {
 			if ( in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_RUNNING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true ) ) {
 				echo '<div class="notice notice-info"><p>' . esc_html__( 'Switch in progress', 'woocommerce' ) . '</p></div>';
 				// A switch whose extension became active for every site after its start waits for the per-site activation, and stops saying so once it no longer is.
-				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && $this->preflight_service->is_woopayments_network_active() && in_array( WooPaymentsCutoverReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE, (array) ( $record['deferred_codes'] ?? array() ), true ) ) {
+				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && $this->preflight_service->is_woopayments_network_active() && in_array( WooPaymentsCutoverReconciliationJob::CODE_PLUGIN_ACTIVE_SITEWIDE, (array) ( $record[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ] ?? array() ), true ) ) {
 					$this->output_sitewide_refusal_notice();
 				}
 				// The job cannot update the extension itself where the site blocks file changes, so retries alone never finish.
-				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && in_array( WooPaymentsCutoverPreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, (array) ( $record['deferred_codes'] ?? array() ), true ) && ! wp_is_file_mod_allowed( 'automatic_updater' ) ) {
+				if ( WooPaymentsCutoverStateStore::STATE_DEFERRED === $record['state'] && in_array( WooPaymentsCutoverPreflightService::FAILURE_PLUGIN_VERSION_UNSUPPORTED, (array) ( $record[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ] ?? array() ), true ) && ! wp_is_file_mod_allowed( 'automatic_updater' ) ) {
 					echo '<div class="notice notice-warning"><p>' . esc_html__( 'The switch needs a newer version of the WooPayments extension, but this site does not allow automatic plugin updates. Update WooPayments to continue the switch.', 'woocommerce' ) . '</p></div>';
 				}
 				// Shown until dismissed; rendering claims nothing, since some screens hide notices.

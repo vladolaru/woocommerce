@@ -70,7 +70,7 @@ class WooPaymentsRuntimeArbiter {
 	 *
 	 * @var string
 	 */
-	private const EXTENSION_VERSION_OPTION = 'woocommerce_woocommerce_payments_version';
+	public const EXTENSION_VERSION_OPTION = 'woocommerce_woocommerce_payments_version';
 
 	/**
 	 * The legacy proxy, used for mockable calls to global functions.

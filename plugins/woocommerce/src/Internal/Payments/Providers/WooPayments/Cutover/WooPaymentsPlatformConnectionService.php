@@ -55,7 +55,7 @@ class WooPaymentsPlatformConnectionService {
 	 *
 	 * @return array<int,string> Failure codes.
 	 */
-	public function get_cutover_preflight_failures(): array {
+	public function get_preflight_failures(): array {
 		$failures = array();
 		$manager  = $this->get_connection_manager();
 
@@ -75,7 +75,7 @@ class WooPaymentsPlatformConnectionService {
 			$failures[] = self::FAILURE_BLOG_ID_UNAVAILABLE;
 		}
 
-		$connection_owner = $this->get_cutover_connection_owner_user_token_status();
+		$connection_owner = $this->get_connection_owner_user_token_status();
 		if ( $connection_owner['owner_id'] <= 0 ) {
 			$failures[] = self::FAILURE_CONNECTION_OWNER_UNAVAILABLE;
 		} elseif ( ! $connection_owner['owner_exists'] || ! $connection_owner['user_token_available'] ) {
@@ -92,7 +92,7 @@ class WooPaymentsPlatformConnectionService {
 	 *
 	 * @return array{owner_id:int,owner_exists:bool,user_token_available:bool} Connection owner details.
 	 */
-	public function get_cutover_connection_owner_user_token_status(): array {
+	public function get_connection_owner_user_token_status(): array {
 		$manager  = $this->get_connection_manager();
 		$owner_id = null === $manager ? 0 : $this->get_connection_owner_id( $manager );
 		if ( $owner_id <= 0 ) {

@@ -28,7 +28,7 @@ class WC_Payments {
 	 * @return Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway
 	 */
 	public static function get_gateway() {
-		_deprecated_function( 'WC_Payments::get_gateway', '11.2.0', 'the native WooPayments gateway via WC()->payment_gateways()' );
+		_deprecated_function( 'WC_Payments::get_gateway', '11.2.0', 'the built-in WooPayments gateway via WC()->payment_gateways()' );
 
 		return wc_get_container()->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway::class );
 	}
@@ -44,6 +44,6 @@ class WC_Payments {
 	 * @return void
 	 */
 	public static function hide_gateways_on_settings_page() {
-		_deprecated_function( 'WC_Payments::hide_gateways_on_settings_page', '11.2.0', 'the native WooPayments gateway collection via WC()->payment_gateways()' );
+		_deprecated_function( 'WC_Payments::hide_gateways_on_settings_page', '11.2.0', 'the built-in WooPayments gateway collection via WC()->payment_gateways()' );
 	}
 }

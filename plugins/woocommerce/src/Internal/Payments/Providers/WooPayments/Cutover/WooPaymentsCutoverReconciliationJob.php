@@ -28,13 +28,13 @@ defined( 'ABSPATH' ) || exit;
  */
 class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 
-	/** Autoloaded admin-notice Stripe Billing classification, keyed by record revision. */
+	/** Autoloaded admin-notice bundled subscriptions classification, keyed by record revision. */
 	public const ADMIN_CLASSIFICATION_OPTION = 'woocommerce_woopayments_cutover_admin_classification';
 
 	/** Completion notice: the switch finished. */
 	public const NOTICE_SUCCESS = 'success';
 
-	/** Notice telling a bundled-flavor store why it cannot switch yet. */
+	/** Notice telling a store on the bundled subscriptions why it cannot switch yet. */
 	public const NOTICE_BUNDLED_EXCLUSION = 'bundled_exclusion';
 
 	/** Notice telling a store that the connection owner is gone, so the switch needs a reconnect. */
@@ -68,22 +68,19 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	private const STEP_RECOVERED_STALE_RUNNING = 'recovered_stale_running';
 
 	/** Source of the merchant's start. */
-	private const SOURCE_MERCHANT = 'merchant';
+	public const SOURCE_MERCHANT = 'merchant';
+
+	/** Source of the start the mandatory switch makes for a store the WooPayments extension owns. */
+	public const SOURCE_MANDATORY = 'mandatory';
+
+	/** Source of a generation that replaces a finished or excluded one. */
+	private const SOURCE_SUPERSEDED = 'terminal_superseded';
 
 	/** Source of a generation opened by the WooPayments extension being activated again. */
 	private const SOURCE_ROLLBACK = 'rollback';
 
 	/** Source of a site excluded on its own. */
 	private const SOURCE_LOCAL_EXCLUSION = 'local_exclusion';
-
-	/** Record key of the claiming worker's token; the stored name keeps "lease". */
-	private const CLAIM_TOKEN_KEY = 'lease_token';
-
-	/** Record key of the time a claim may be recovered; the stored name keeps "lease". */
-	private const CLAIM_EXPIRES_AT_KEY = 'lease_expires_at';
-
-	/** Record key of the codes that block or closed the generation; the stored name keeps "deferred". */
-	private const BLOCKING_CODES_KEY = 'deferred_codes';
 
 	/** Condition code of a data migration that failed; the stored code keeps its first name. */
 	private const CODE_DATA_MIGRATION_FAILED = 'normalization_failed';
@@ -340,7 +337,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					return true;
 				}
 				if ( WooPaymentsCutoverStateStore::STATE_DONE === $record['state'] ) {
-					return $this->replace_terminal_with_awaiting_start( $record, self::SOURCE_ROLLBACK, $now );
+					return $this->replace_with_awaiting_start( $record, self::SOURCE_ROLLBACK, $now );
 				}
 				// An activation starts from an inactive extension, so an open generation here is one the merchant now reverses:
 				// its finalize deactivated the extension, or the merchant had deactivated it before starting.
@@ -377,7 +374,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					function () use ( $record, $now ): void {
 						$current = $this->state_store->get_record();
 						if ( is_array( $current ) && $current === $record ) {
-							$this->replace_terminal_with_awaiting_start( $current, 'terminal_superseded', $now );
+							$this->replace_with_awaiting_start( $current, self::SOURCE_SUPERSEDED, $now );
 						}
 					}
 				);
@@ -402,12 +399,12 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				if ( is_array( $this->state_store->get_record() ) ) {
 					return $this->state_store->get_record();
 				}
-				$excluded                             = $this->create_pending_record( self::SOURCE_LOCAL_EXCLUSION, $now );
-				$excluded['state']                    = WooPaymentsCutoverStateStore::STATE_EXCLUDED;
-				$excluded['current_step']             = self::STEP_EXCLUDED;
-				$excluded[ self::BLOCKING_CODES_KEY ] = array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
-				$excluded['next_attempt_at']          = null;
-				$excluded['step_log'][]               = array(
+				$excluded                 = $this->create_pending_record( self::SOURCE_LOCAL_EXCLUSION, $now );
+				$excluded['state']        = WooPaymentsCutoverStateStore::STATE_EXCLUDED;
+				$excluded['current_step'] = self::STEP_EXCLUDED;
+				$excluded[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ] = array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS );
+				$excluded['next_attempt_at']                                  = null;
+				$excluded['step_log'][]                                       = array(
 					'step'    => self::STEP_EXCLUDED,
 					'at'      => $now,
 					'context' => array( 'code' => WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS ),
@@ -482,13 +479,13 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	public function is_bundled_exclusion_notice_due( ?array $record ): bool {
 		return is_array( $record )
 			&& WooPaymentsCutoverStateStore::STATE_EXCLUDED === ( $record['state'] ?? null )
-			&& in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, (array) ( $record[ self::BLOCKING_CODES_KEY ] ?? array() ), true )
+			&& in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, (array) ( $record[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ] ?? array() ), true )
 			&& is_array( $record['informational_outcomes'] ?? null )
 			&& ! in_array( array( 'code' => self::NOTICE_BUNDLED_EXCLUSION . '_notice_dismissed' ), $record['informational_outcomes'], true );
 	}
 
 	/**
-	 * Forget the cached admin classification, so the next admin page checks the bundled-flavor rule again.
+	 * Forget the cached admin classification, so the next admin page checks the bundled subscriptions rule again.
 	 */
 	public function forget_admin_classification(): void {
 		delete_option( self::ADMIN_CLASSIFICATION_OPTION );
@@ -538,7 +535,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			&& in_array( $record['state'] ?? null, array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true )
 			&& is_array( $record['informational_outcomes'] ?? null )
 			&& in_array( array( 'code' => 'reconnect_required' ), $record['informational_outcomes'], true )
-			&& in_array( WooPaymentsPlatformConnectionService::FAILURE_CONNECTION_OWNER_USER_TOKEN_UNAVAILABLE, (array) ( $record[ self::BLOCKING_CODES_KEY ] ?? array() ), true )
+			&& in_array( WooPaymentsPlatformConnectionService::FAILURE_CONNECTION_OWNER_USER_TOKEN_UNAVAILABLE, (array) ( $record[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ] ?? array() ), true )
 			&& ! in_array( array( 'code' => self::NOTICE_RECONNECT . '_notice_dismissed' ), $record['informational_outcomes'], true );
 	}
 
@@ -589,18 +586,18 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					return;
 				}
 
-				$resume_step                           = $record['current_step'];
-				$claimed                               = $record;
-				$claimed['revision']                   = $record['revision'] + 1;
-				$claimed['state']                      = WooPaymentsCutoverStateStore::STATE_RUNNING;
-				$claimed['attempt']                    = $attempt;
-				$claimed['action_id']                  = 0;
-				$claimed['current_step']               = self::STEP_VERIFY_BUILTIN_OWNERSHIP === $resume_step ? $resume_step : self::STEP_RUNNING;
-				$claimed['updated_at']                 = $now;
-				$claimed['next_attempt_at']            = null;
-				$claimed[ self::CLAIM_TOKEN_KEY ]      = $token;
-				$claimed[ self::CLAIM_EXPIRES_AT_KEY ] = $now + self::RUNNING_TIMEOUT;
-				$claimed                               = $this->append_step( $claimed, self::STEP_RUNNING, $now );
+				$resume_step                = $record['current_step'];
+				$claimed                    = $record;
+				$claimed['revision']        = $record['revision'] + 1;
+				$claimed['state']           = WooPaymentsCutoverStateStore::STATE_RUNNING;
+				$claimed['attempt']         = $attempt;
+				$claimed['action_id']       = 0;
+				$claimed['current_step']    = self::STEP_VERIFY_BUILTIN_OWNERSHIP === $resume_step ? $resume_step : self::STEP_RUNNING;
+				$claimed['updated_at']      = $now;
+				$claimed['next_attempt_at'] = null;
+				$claimed[ WooPaymentsCutoverStateStore::CLAIM_TOKEN_KEY ]      = $token;
+				$claimed[ WooPaymentsCutoverStateStore::CLAIM_EXPIRES_AT_KEY ] = $now + self::RUNNING_TIMEOUT;
+				$claimed = $this->append_step( $claimed, self::STEP_RUNNING, $now );
 				if ( ! $this->state_store->compare_and_set_record( $record, $claimed ) ) {
 					$claimed = null;
 				}
@@ -636,23 +633,23 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					! is_array( $record )
 					|| $record !== $expected_claim
 					|| WooPaymentsCutoverStateStore::STATE_RUNNING !== $record['state']
-					|| $record[ self::CLAIM_EXPIRES_AT_KEY ] <= $now
+					|| $record[ WooPaymentsCutoverStateStore::CLAIM_EXPIRES_AT_KEY ] <= $now
 				) {
 					return false;
 				}
 
-				$deferred                               = $record;
-				$deferred['revision']                   = $record['revision'] + 1;
-				$deferred['state']                      = WooPaymentsCutoverStateStore::STATE_DEFERRED;
-				$deferred['action_id']                  = 0;
-				$deferred['current_step']               = self::STEP_DEFERRED;
-				$deferred['updated_at']                 = $now;
-				$deferred[ self::BLOCKING_CODES_KEY ]   = $codes;
-				$deferred['informational_outcomes']     = $this->merge_information_outcomes( $record['informational_outcomes'], $outcomes );
-				$deferred['next_attempt_at']            = $now + $this->get_retry_delay( $record, $now );
-				$deferred[ self::CLAIM_TOKEN_KEY ]      = null;
-				$deferred[ self::CLAIM_EXPIRES_AT_KEY ] = null;
-				$deferred                               = $this->append_step( $deferred, self::STEP_DEFERRED, $now, array( 'codes' => $deferred[ self::BLOCKING_CODES_KEY ] ) );
+				$deferred                 = $record;
+				$deferred['revision']     = $record['revision'] + 1;
+				$deferred['state']        = WooPaymentsCutoverStateStore::STATE_DEFERRED;
+				$deferred['action_id']    = 0;
+				$deferred['current_step'] = self::STEP_DEFERRED;
+				$deferred['updated_at']   = $now;
+				$deferred[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ]   = $codes;
+				$deferred['informational_outcomes']                             = $this->merge_information_outcomes( $record['informational_outcomes'], $outcomes );
+				$deferred['next_attempt_at']                                    = $now + $this->get_retry_delay( $record, $now );
+				$deferred[ WooPaymentsCutoverStateStore::CLAIM_TOKEN_KEY ]      = null;
+				$deferred[ WooPaymentsCutoverStateStore::CLAIM_EXPIRES_AT_KEY ] = null;
+				$deferred = $this->append_step( $deferred, self::STEP_DEFERRED, $now, array( 'codes' => $deferred[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ] ) );
 				if ( ! $this->state_store->compare_and_set_record( $record, $deferred ) ) {
 					return false;
 				}
@@ -784,7 +781,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		return $this->with_write_lock(
 			$now,
 			function () use ( $claimed, $now, $finalize_token ): ?array {
-				if ( $claimed[ self::CLAIM_EXPIRES_AT_KEY ] <= $now ) {
+				if ( $claimed[ WooPaymentsCutoverStateStore::CLAIM_EXPIRES_AT_KEY ] <= $now ) {
 					return null;
 				}
 				$fenced               = $claimed;
@@ -826,7 +823,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @return bool True when the rollback generation was stored.
 	 */
 	private function roll_back_open_generation( array $record, int $now ): bool {
-		if ( ! $this->replace_terminal_with_awaiting_start( $record, self::SOURCE_ROLLBACK, $now ) ) {
+		if ( ! $this->replace_with_awaiting_start( $record, self::SOURCE_ROLLBACK, $now ) ) {
 			return false;
 		}
 		$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
@@ -899,18 +896,18 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					return;
 				}
 
-				$done                               = $record;
-				$done['revision']                   = $record['revision'] + 1;
-				$done['state']                      = WooPaymentsCutoverStateStore::STATE_DONE;
-				$done['action_id']                  = 0;
-				$done['current_step']               = self::STEP_DONE;
-				$done['updated_at']                 = $now;
-				$done[ self::BLOCKING_CODES_KEY ]   = array();
-				$done['next_attempt_at']            = null;
-				$done[ self::CLAIM_TOKEN_KEY ]      = null;
-				$done[ self::CLAIM_EXPIRES_AT_KEY ] = null;
-				$done['request_origin_token']       = null;
-				$done                               = $this->append_step( $done, self::STEP_DONE, $now );
+				$done                 = $record;
+				$done['revision']     = $record['revision'] + 1;
+				$done['state']        = WooPaymentsCutoverStateStore::STATE_DONE;
+				$done['action_id']    = 0;
+				$done['current_step'] = self::STEP_DONE;
+				$done['updated_at']   = $now;
+				$done[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ]   = array();
+				$done['next_attempt_at']                                    = null;
+				$done[ WooPaymentsCutoverStateStore::CLAIM_TOKEN_KEY ]      = null;
+				$done[ WooPaymentsCutoverStateStore::CLAIM_EXPIRES_AT_KEY ] = null;
+				$done['request_origin_token']                               = null;
+				$done = $this->append_step( $done, self::STEP_DONE, $now );
 				if ( $this->state_store->compare_and_set_record( $record, $done ) ) {
 					delete_option( self::START_NOTICE_SNOOZED_UNTIL_OPTION );
 				}
@@ -964,19 +961,19 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					return false;
 				}
 
-				$verification                               = $record;
-				$verification['revision']                   = $record['revision'] + 1;
-				$verification['state']                      = WooPaymentsCutoverStateStore::STATE_PENDING;
-				$verification['action_id']                  = 0;
-				$verification['current_step']               = self::STEP_VERIFY_BUILTIN_OWNERSHIP;
-				$verification['updated_at']                 = $now;
-				$verification[ self::BLOCKING_CODES_KEY ]   = array();
-				$verification['informational_outcomes']     = $this->merge_information_outcomes( $record['informational_outcomes'], $outcomes );
-				$verification['next_attempt_at']            = $now + self::FAST_RETRY_DELAY;
-				$verification[ self::CLAIM_TOKEN_KEY ]      = null;
-				$verification[ self::CLAIM_EXPIRES_AT_KEY ] = null;
-				$verification['request_origin_token']       = self::$request_token;
-				$verification                               = $this->append_step( $verification, self::STEP_VERIFY_BUILTIN_OWNERSHIP, $now );
+				$verification                 = $record;
+				$verification['revision']     = $record['revision'] + 1;
+				$verification['state']        = WooPaymentsCutoverStateStore::STATE_PENDING;
+				$verification['action_id']    = 0;
+				$verification['current_step'] = self::STEP_VERIFY_BUILTIN_OWNERSHIP;
+				$verification['updated_at']   = $now;
+				$verification[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ]   = array();
+				$verification['informational_outcomes']                             = $this->merge_information_outcomes( $record['informational_outcomes'], $outcomes );
+				$verification['next_attempt_at']                                    = $now + self::FAST_RETRY_DELAY;
+				$verification[ WooPaymentsCutoverStateStore::CLAIM_TOKEN_KEY ]      = null;
+				$verification[ WooPaymentsCutoverStateStore::CLAIM_EXPIRES_AT_KEY ] = null;
+				$verification['request_origin_token']                               = self::$request_token;
+				$verification = $this->append_step( $verification, self::STEP_VERIFY_BUILTIN_OWNERSHIP, $now );
 				if ( ! $this->state_store->compare_and_set_record( $record, $verification ) ) {
 					return false;
 				}
@@ -1003,17 +1000,17 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 					return;
 				}
 
-				$excluded                               = $record;
-				$excluded['revision']                   = $record['revision'] + 1;
-				$excluded['state']                      = WooPaymentsCutoverStateStore::STATE_EXCLUDED;
-				$excluded['action_id']                  = 0;
-				$excluded['current_step']               = self::STEP_EXCLUDED;
-				$excluded['updated_at']                 = $now;
-				$excluded[ self::BLOCKING_CODES_KEY ]   = array( $code );
-				$excluded['next_attempt_at']            = null;
-				$excluded[ self::CLAIM_TOKEN_KEY ]      = null;
-				$excluded[ self::CLAIM_EXPIRES_AT_KEY ] = null;
-				$excluded                               = $this->append_step( $excluded, self::STEP_EXCLUDED, $now, array( 'code' => $code ) );
+				$excluded                 = $record;
+				$excluded['revision']     = $record['revision'] + 1;
+				$excluded['state']        = WooPaymentsCutoverStateStore::STATE_EXCLUDED;
+				$excluded['action_id']    = 0;
+				$excluded['current_step'] = self::STEP_EXCLUDED;
+				$excluded['updated_at']   = $now;
+				$excluded[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ]   = array( $code );
+				$excluded['next_attempt_at']                                    = null;
+				$excluded[ WooPaymentsCutoverStateStore::CLAIM_TOKEN_KEY ]      = null;
+				$excluded[ WooPaymentsCutoverStateStore::CLAIM_EXPIRES_AT_KEY ] = null;
+				$excluded = $this->append_step( $excluded, self::STEP_EXCLUDED, $now, array( 'code' => $code ) );
 				if ( $this->state_store->compare_and_set_record( $record, $excluded ) ) {
 					$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
 				}
@@ -1292,7 +1289,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			|| $this->is_awaiting_start( $record )
 			|| (
 				! in_array( $record['state'], array( WooPaymentsCutoverStateStore::STATE_PENDING, WooPaymentsCutoverStateStore::STATE_DEFERRED ), true )
-				&& ( WooPaymentsCutoverStateStore::STATE_RUNNING !== $record['state'] || $record[ self::CLAIM_EXPIRES_AT_KEY ] > $now )
+				&& ( WooPaymentsCutoverStateStore::STATE_RUNNING !== $record['state'] || $record[ WooPaymentsCutoverStateStore::CLAIM_EXPIRES_AT_KEY ] > $now )
 			)
 		) {
 			return;
@@ -1312,20 +1309,20 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				}
 
 				if ( WooPaymentsCutoverStateStore::STATE_RUNNING === $record['state'] ) {
-					if ( $record[ self::CLAIM_EXPIRES_AT_KEY ] > $now ) {
+					if ( $record[ WooPaymentsCutoverStateStore::CLAIM_EXPIRES_AT_KEY ] > $now ) {
 						return;
 					}
 
-					$recovered                               = $record;
-					$recovered['revision']                   = $record['revision'] + 1;
-					$recovered['state']                      = WooPaymentsCutoverStateStore::STATE_DEFERRED;
-					$recovered['action_id']                  = 0;
-					$recovered['current_step']               = self::STEP_RECOVERED_STALE_RUNNING;
-					$recovered['updated_at']                 = $now;
-					$recovered['next_attempt_at']            = $now;
-					$recovered[ self::CLAIM_TOKEN_KEY ]      = null;
-					$recovered[ self::CLAIM_EXPIRES_AT_KEY ] = null;
-					$recovered                               = $this->append_step( $recovered, self::STEP_RECOVERED_STALE_RUNNING, $now );
+					$recovered                    = $record;
+					$recovered['revision']        = $record['revision'] + 1;
+					$recovered['state']           = WooPaymentsCutoverStateStore::STATE_DEFERRED;
+					$recovered['action_id']       = 0;
+					$recovered['current_step']    = self::STEP_RECOVERED_STALE_RUNNING;
+					$recovered['updated_at']      = $now;
+					$recovered['next_attempt_at'] = $now;
+					$recovered[ WooPaymentsCutoverStateStore::CLAIM_TOKEN_KEY ]      = null;
+					$recovered[ WooPaymentsCutoverStateStore::CLAIM_EXPIRES_AT_KEY ] = null;
+					$recovered = $this->append_step( $recovered, self::STEP_RECOVERED_STALE_RUNNING, $now );
 					if ( ! $this->state_store->compare_and_set_record( $record, $recovered ) ) {
 						return;
 					}
@@ -1377,7 +1374,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 * @param int                 $now    Current UTC timestamp.
 	 * @return bool True when the awaiting generation was stored.
 	 */
-	private function replace_terminal_with_awaiting_start( array $record, string $source, int $now ): bool {
+	private function replace_with_awaiting_start( array $record, string $source, int $now ): bool {
 		$replacement             = $this->to_awaiting_merchant_start( $source, $now, $record['generation'] + 1 );
 		$replacement['revision'] = $record['revision'] + 1;
 		if ( ! $this->state_store->compare_and_set_record( $record, $replacement ) ) {
@@ -1504,16 +1501,16 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 				if ( ! is_array( $current ) || $current !== $record ) {
 					return;
 				}
-				$excluded                               = $current;
-				$excluded['revision']                   = $current['revision'] + 1;
-				$excluded['state']                      = WooPaymentsCutoverStateStore::STATE_EXCLUDED;
-				$excluded['current_step']               = self::STEP_EXCLUDED;
-				$excluded['updated_at']                 = $now;
-				$excluded[ self::BLOCKING_CODES_KEY ]   = array( $code );
-				$excluded['next_attempt_at']            = null;
-				$excluded[ self::CLAIM_TOKEN_KEY ]      = null;
-				$excluded[ self::CLAIM_EXPIRES_AT_KEY ] = null;
-				$excluded                               = $this->append_step( $excluded, self::STEP_EXCLUDED, $now, array( 'code' => $code ) );
+				$excluded                 = $current;
+				$excluded['revision']     = $current['revision'] + 1;
+				$excluded['state']        = WooPaymentsCutoverStateStore::STATE_EXCLUDED;
+				$excluded['current_step'] = self::STEP_EXCLUDED;
+				$excluded['updated_at']   = $now;
+				$excluded[ WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY ]   = array( $code );
+				$excluded['next_attempt_at']                                    = null;
+				$excluded[ WooPaymentsCutoverStateStore::CLAIM_TOKEN_KEY ]      = null;
+				$excluded[ WooPaymentsCutoverStateStore::CLAIM_EXPIRES_AT_KEY ] = null;
+				$excluded = $this->append_step( $excluded, self::STEP_EXCLUDED, $now, array( 'code' => $code ) );
 				$this->state_store->compare_and_set_record( $current, $excluded );
 			}
 		);
@@ -1528,28 +1525,28 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	 */
 	private function create_pending_record( string $source, int $now ): array {
 		return array(
-			'schema_version'           => WooPaymentsCutoverStateStore::SCHEMA_VERSION,
-			'generation'               => $this->state_store->get_next_generation(),
-			'revision'                 => 1,
-			'state'                    => WooPaymentsCutoverStateStore::STATE_PENDING,
-			'started_at'               => $now,
-			'updated_at'               => $now,
-			'attempt'                  => 0,
-			'action_id'                => 0,
-			'current_step'             => self::STEP_QUEUED,
-			'step_log'                 => array(
+			'schema_version'                              => WooPaymentsCutoverStateStore::SCHEMA_VERSION,
+			'generation'                                  => $this->state_store->get_next_generation(),
+			'revision'                                    => 1,
+			'state'                                       => WooPaymentsCutoverStateStore::STATE_PENDING,
+			'started_at'                                  => $now,
+			'updated_at'                                  => $now,
+			'attempt'                                     => 0,
+			'action_id'                                   => 0,
+			'current_step'                                => self::STEP_QUEUED,
+			'step_log'                                    => array(
 				array(
 					'step'    => self::STEP_QUEUED,
 					'at'      => $now,
 					'context' => array( 'source' => $source ),
 				),
 			),
-			self::BLOCKING_CODES_KEY   => array(),
-			'informational_outcomes'   => array(),
-			'next_attempt_at'          => null,
-			self::CLAIM_TOKEN_KEY      => null,
-			self::CLAIM_EXPIRES_AT_KEY => null,
-			'request_origin_token'     => null,
+			WooPaymentsCutoverStateStore::BLOCKING_CODES_KEY => array(),
+			'informational_outcomes'                      => array(),
+			'next_attempt_at'                             => null,
+			WooPaymentsCutoverStateStore::CLAIM_TOKEN_KEY => null,
+			WooPaymentsCutoverStateStore::CLAIM_EXPIRES_AT_KEY => null,
+			'request_origin_token'                        => null,
 		);
 	}
 

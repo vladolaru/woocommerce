@@ -34,7 +34,13 @@ class WooPaymentsSettingsService {
 
 	private const DYNAMIC_CHECKOUT_PLACE_ORDER_BUTTON_FLAG_OPTION = '_wcpay_feature_dynamic_checkout_place_order_button';
 
-	private const MANUAL_CAPTURE_PAYMENT_METHOD_IDS = array(
+	/**
+	 * Payment methods that stay enabled while manual capture is on.
+	 *
+	 * Link is kept because it follows the card's capture, as the extension's settings save keeps it (client 11.1.0
+	 * `includes/admin/class-wc-rest-payments-settings-controller.php:711-713`).
+	 */
+	public const MANUAL_CAPTURE_PAYMENT_METHOD_IDS = array(
 		'amazon_pay',
 		'apple_pay',
 		'card',

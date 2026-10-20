@@ -27,14 +27,14 @@ class WooPaymentsPlatformConnectionServiceTest extends WC_Unit_Test_Case {
 	 * @param int|null      $blog_id                    WPCOM blog ID, or null when unavailable.
 	 * @param array<string> $expected                   Expected failure codes.
 	 */
-	public function test_get_cutover_preflight_failures( bool $is_connected, int $connection_owner_id, bool $connection_owner_connected, ?int $blog_id, array $expected ): void {
+	public function test_get_preflight_failures( bool $is_connected, int $connection_owner_id, bool $connection_owner_connected, ?int $blog_id, array $expected ): void {
 		$sut          = new TestableWooPaymentsPlatformConnectionService();
 		$sut->manager = $this->create_connection_manager( $is_connected, $connection_owner_id, $connection_owner_connected );
 		$http_client  = $this->createMock( WooPaymentsHttpClient::class );
 		$http_client->method( 'get_blog_id' )->willReturn( $blog_id );
 		$sut->init( $http_client );
 
-		$this->assertSame( $expected, $sut->get_cutover_preflight_failures() );
+		$this->assertSame( $expected, $sut->get_preflight_failures() );
 	}
 
 	/**
@@ -79,7 +79,7 @@ class WooPaymentsPlatformConnectionServiceTest extends WC_Unit_Test_Case {
 				'owner_exists'         => false,
 				'user_token_available' => false,
 			),
-			$missing_owner->get_cutover_connection_owner_user_token_status()
+			$missing_owner->get_connection_owner_user_token_status()
 		);
 		$this->assertSame(
 			array(
@@ -87,7 +87,7 @@ class WooPaymentsPlatformConnectionServiceTest extends WC_Unit_Test_Case {
 				'owner_exists'         => true,
 				'user_token_available' => false,
 			),
-			$without_token->get_cutover_connection_owner_user_token_status()
+			$without_token->get_connection_owner_user_token_status()
 		);
 		$this->assertSame(
 			array(
@@ -95,7 +95,7 @@ class WooPaymentsPlatformConnectionServiceTest extends WC_Unit_Test_Case {
 				'owner_exists'         => false,
 				'user_token_available' => false,
 			),
-			$deleted_user->get_cutover_connection_owner_user_token_status()
+			$deleted_user->get_connection_owner_user_token_status()
 		);
 	}
 

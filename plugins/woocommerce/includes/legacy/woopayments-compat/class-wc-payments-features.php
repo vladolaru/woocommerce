@@ -28,7 +28,7 @@ class WC_Payments_Features {
 	 * @return bool
 	 */
 	public static function is_wcpay_subscriptions_enabled() {
-		_deprecated_function( 'WC_Payments_Features::is_wcpay_subscriptions_enabled', '11.2.0', 'the native WooPayments gateway supports() method' );
+		_deprecated_function( 'WC_Payments_Features::is_wcpay_subscriptions_enabled', '11.2.0', 'the built-in WooPayments gateway supports() method' );
 
 		return false;
 	}

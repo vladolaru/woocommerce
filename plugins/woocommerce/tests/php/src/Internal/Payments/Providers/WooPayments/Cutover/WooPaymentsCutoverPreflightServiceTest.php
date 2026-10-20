@@ -584,13 +584,13 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 				return $this->fee_remediation_status;
 			}
 		);
-		$platform_connection = $this->getMockBuilder( WooPaymentsPlatformConnectionService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_cutover_preflight_failures', 'get_cutover_connection_owner_user_token_status' ) )->getMock();
-		$platform_connection->method( 'get_cutover_preflight_failures' )->willReturnCallback(
+		$platform_connection = $this->getMockBuilder( WooPaymentsPlatformConnectionService::class )->disableOriginalConstructor()->onlyMethods( array( 'get_preflight_failures', 'get_connection_owner_user_token_status' ) )->getMock();
+		$platform_connection->method( 'get_preflight_failures' )->willReturnCallback(
 			function (): array {
 				return $this->platform_failures;
 			}
 		);
-		$platform_connection->method( 'get_cutover_connection_owner_user_token_status' )->willReturnCallback(
+		$platform_connection->method( 'get_connection_owner_user_token_status' )->willReturnCallback(
 			function (): array {
 				return $this->platform_owner_status;
 			}

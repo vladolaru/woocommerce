@@ -354,7 +354,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 
 		// The extension renders this section itself while it owns payments (client 11.1.0 `includes/class-wc-payments-status.php:55-56`), and no gateway is registered while the store waits for its switch or the feature is off.
 		if ( $this->arbiter->is_builtin_owner() ) {
-			$this->render_status_table( 'WooPayments', $this->get_woopayments_extension_status_rows() );
+			$this->render_status_table( 'WooPayments', $this->get_woopayments_status_rows() );
 		}
 		$this->render_status_table( 'Built-in WooPayments', $runtime_rows );
 	}
@@ -367,7 +367,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 *
 	 * @return array<int,array{export_label:string,label:string,help:string,value:string,warning:bool}>
 	 */
-	public function get_woopayments_extension_status_rows(): array {
+	public function get_woopayments_status_rows(): array {
 		$http_client = wc_get_container()->get( WooPaymentsHttpClient::class );
 		$rows        = array(
 			$this->status_row(
@@ -408,7 +408,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			);
 
 			if ( $account_connected ) {
-				$rows = array_merge( $rows, $this->get_woopayments_extension_account_status_rows( $gateway ) );
+				$rows = array_merge( $rows, $this->get_woopayments_account_status_rows( $gateway ) );
 			}
 		}
 
@@ -428,7 +428,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @param WooPaymentsGateway $gateway The WooPayments gateway.
 	 * @return array<int,array{export_label:string,label:string,help:string,value:string,warning:bool}>
 	 */
-	private function get_woopayments_extension_account_status_rows( WooPaymentsGateway $gateway ): array {
+	private function get_woopayments_account_status_rows( WooPaymentsGateway $gateway ): array {
 		$account_service       = $this->get_account_service();
 		$woopay_eligibility    = wc_get_container()->get( WooPaymentsWooPayEligibility::class );
 		$fraud_ruleset_service = wc_get_container()->get( WooPaymentsFraudRulesetService::class );
@@ -480,7 +480,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 				'WooPay',
 				__( 'WooPay Express Checkout', 'woocommerce' ),
 				__( 'Whether the new WooPay Express Checkout is enabled or not.', 'woocommerce' ),
-				$this->format_woopayments_extension_express_checkout_status( 'yes' === $account_service->get_gateway_setting( 'platform_checkout' ), $this->get_express_checkout_method_locations( 'woopay' ) )
+				$this->format_woopayments_express_checkout_status( 'yes' === $account_service->get_gateway_setting( 'platform_checkout' ), $this->get_express_checkout_method_locations( 'woopay' ) )
 			);
 			$rows[] = $this->status_row(
 				'WooPay Incompatible Extensions',
@@ -494,7 +494,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			'Apple Pay / Google Pay',
 			__( 'Apple Pay / Google Pay Express Checkout', 'woocommerce' ),
 			__( 'Whether the store has Payment Request enabled or not.', 'woocommerce' ),
-			$this->format_woopayments_extension_express_checkout_status( $account_service->is_payment_request_enabled(), $this->get_express_checkout_method_locations( 'payment_request' ) )
+			$this->format_woopayments_express_checkout_status( $account_service->is_payment_request_enabled(), $this->get_express_checkout_method_locations( 'payment_request' ) )
 		);
 		$rows[] = $this->status_row(
 			'Fraud Protection Level',
@@ -806,7 +806,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @param string[] $locations Enabled locations.
 	 * @return string
 	 */
-	private function format_woopayments_extension_express_checkout_status( bool $enabled, array $locations ): string {
+	private function format_woopayments_express_checkout_status( bool $enabled, array $locations ): string {
 		if ( ! $enabled ) {
 			return __( 'Disabled', 'woocommerce' );
 		}

@@ -2294,7 +2294,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A bundled-flavor store owes its notice once per exclusion: dismissed, it stays dismissed; reopened and excluded again, it is owed again.
+	 * @testdox A store on the bundled subscriptions owes its notice once per exclusion: dismissed, it stays dismissed; reopened and excluded again, it is owed again.
 	 */
 	public function test_bundled_exclusion_notice_is_owed_once_per_exclusion(): void {
 		$failures  = array( 'bundled_stripe_billing_subscriptions_present' );

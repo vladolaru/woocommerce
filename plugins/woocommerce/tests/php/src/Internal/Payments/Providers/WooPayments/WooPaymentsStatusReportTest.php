@@ -754,7 +754,7 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( WooPaymentsHttpClient::class, $http_client );
 		wc_get_container()->get( WooPaymentsAccountService::class )->clear_cache();
 
-		$rows = $this->get_sut()->get_woopayments_extension_status_rows();
+		$rows = $this->get_sut()->get_woopayments_status_rows();
 
 		$this->assertSame( $expected_labels, array_column( $rows, 'export_label' ) );
 		$this->assertSame( $expected_value, $rows[ $warning_row ]['value'] );

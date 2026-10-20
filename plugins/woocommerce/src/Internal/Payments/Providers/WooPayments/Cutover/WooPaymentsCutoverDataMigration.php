@@ -9,7 +9,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsDefaults;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSettingsService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 defined( 'ABSPATH' ) || exit;
@@ -28,8 +30,6 @@ defined( 'ABSPATH' ) || exit;
  */
 class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 
-	private const VERSION_OPTION = 'woocommerce_woocommerce_payments_version';
-
 	/**
 	 * Option holding the completed migration version. Its stored name keeps "normalization", so migrated stores do not migrate again.
 	 */
@@ -39,14 +39,6 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	 * Migration version stored in MIGRATION_VERSION_OPTION.
 	 */
 	private const MIGRATION_VERSION = '4';
-
-	private const MANUAL_CAPTURE_PAYMENT_METHOD_IDS = array(
-		'amazon_pay',
-		'apple_pay',
-		'card',
-		'google_pay',
-		'link',
-	);
 
 	/**
 	 * Options the migration deletes, with the extension version that stopped reading each.
@@ -275,7 +267,7 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private function get_previous_version(): string {
-		$version = get_option( self::VERSION_OPTION, '' );
+		$version = get_option( WooPaymentsRuntimeArbiter::EXTENSION_VERSION_OPTION, '' );
 
 		return is_scalar( $version ) ? (string) $version : '';
 	}
@@ -326,7 +318,7 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 		$filtered = array_values(
 			array_filter(
 				$previous,
-				static fn( string $payment_method_id ): bool => in_array( $payment_method_id, self::MANUAL_CAPTURE_PAYMENT_METHOD_IDS, true )
+				static fn( string $payment_method_id ): bool => in_array( $payment_method_id, WooPaymentsSettingsService::MANUAL_CAPTURE_PAYMENT_METHOD_IDS, true )
 			)
 		);
 

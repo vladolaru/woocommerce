@@ -63,8 +63,6 @@ class WooPaymentsCutoverPreflightService {
 	/** The store bills subscriptions through the WooPayments extension's bundled subscriptions; such a store is excluded. */
 	public const FAILURE_BUNDLED_SUBSCRIPTIONS = 'bundled_stripe_billing_subscriptions_present';
 
-	private const WOOPAYMENTS_VERSION_OPTION = 'woocommerce_woocommerce_payments_version';
-
 	private const IDENTIFIER_PLACEHOLDERS_UNAVAILABLE_HOOK = 'woocommerce_woopayments_identifier_placeholders_unavailable';
 
 	private const OPERATIONAL_QUEUE_QUERY_FAILED_HOOK = 'woocommerce_woopayments_operational_queue_query_failed';
@@ -205,7 +203,7 @@ class WooPaymentsCutoverPreflightService {
 	 * @return bool
 	 */
 	public function is_cutover_connection_owner_user_missing(): bool {
-		$status = $this->get_platform_connection_service()->get_cutover_connection_owner_user_token_status();
+		$status = $this->get_platform_connection_service()->get_connection_owner_user_token_status();
 
 		return $status['owner_id'] > 0 && ! $status['owner_exists'];
 	}
@@ -227,7 +225,7 @@ class WooPaymentsCutoverPreflightService {
 		if ( ! $this->is_builtin_transport_ready() ) {
 			$failures[] = self::FAILURE_BUILTIN_TRANSPORT_UNAVAILABLE;
 		}
-		$failures = array_merge( $failures, $this->get_platform_connection_service()->get_cutover_preflight_failures() );
+		$failures = array_merge( $failures, $this->get_platform_connection_service()->get_preflight_failures() );
 		if ( $this->has_unavailable_multi_currency_rate_provider() ) {
 			$failures[] = self::FAILURE_MULTI_CURRENCY_RATES_UNAVAILABLE;
 		}
@@ -403,7 +401,7 @@ class WooPaymentsCutoverPreflightService {
 	 * @return bool
 	 */
 	public function is_woopayments_plugin_version_supported(): bool {
-		$version = get_option( self::WOOPAYMENTS_VERSION_OPTION, '' );
+		$version = get_option( WooPaymentsRuntimeArbiter::EXTENSION_VERSION_OPTION, '' );
 		return is_string( $version ) && 1 === preg_match( '/^\\d+(?:\\.\\d+){1,3}(?:[-+][0-9A-Za-z.-]+)?$/D', trim( $version ) ) && version_compare( trim( $version ), self::MINIMUM_CUTOVER_PLUGIN_VERSION, '>=' );
 	}
 

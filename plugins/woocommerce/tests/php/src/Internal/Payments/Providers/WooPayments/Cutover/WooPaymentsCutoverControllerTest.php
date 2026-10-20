@@ -208,10 +208,10 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 
 		$this->platform_connection_service = $this->getMockBuilder( WooPaymentsPlatformConnectionService::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_cutover_preflight_failures' ) )
+			->onlyMethods( array( 'get_preflight_failures' ) )
 			->getMock();
 		$this->platform_connection_service
-			->method( 'get_cutover_preflight_failures' )
+			->method( 'get_preflight_failures' )
 			->willReturnCallback(
 				function (): array {
 					++$this->platform_connection_preflight_calls;

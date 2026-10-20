@@ -31,6 +31,15 @@ class WooPaymentsCutoverStateStore {
 	/** Current persisted record schema. */
 	public const SCHEMA_VERSION = 1;
 
+	/** Record key of the claiming worker's token. */
+	public const CLAIM_TOKEN_KEY = 'lease_token';
+
+	/** Record key of the time a claim may be recovered. */
+	public const CLAIM_EXPIRES_AT_KEY = 'lease_expires_at';
+
+	/** Record key of the codes that block or closed the generation. */
+	public const BLOCKING_CODES_KEY = 'deferred_codes';
+
 	/** Maximum age of the write lock before another request may take it over. */
 	public const WRITE_LOCK_TTL = 5 * MINUTE_IN_SECONDS;
 
@@ -236,11 +245,11 @@ class WooPaymentsCutoverStateStore {
 			'action_id',
 			'current_step',
 			'step_log',
-			'deferred_codes',
+			self::BLOCKING_CODES_KEY,
 			'informational_outcomes',
 			'next_attempt_at',
-			'lease_token',
-			'lease_expires_at',
+			self::CLAIM_TOKEN_KEY,
+			self::CLAIM_EXPIRES_AT_KEY,
 		);
 
 		if ( array_diff( $required_keys, array_keys( $record ) ) ) {
@@ -258,11 +267,11 @@ class WooPaymentsCutoverStateStore {
 			|| ! is_int( $record['action_id'] ) || $record['action_id'] < 0
 			|| ! is_string( $record['current_step'] )
 			|| ! is_array( $record['step_log'] ) || count( $record['step_log'] ) > self::MAX_STEP_LOG_ENTRIES
-			|| ! is_array( $record['deferred_codes'] )
+			|| ! is_array( $record[ self::BLOCKING_CODES_KEY ] )
 			|| ! is_array( $record['informational_outcomes'] )
 			|| ( null !== $record['next_attempt_at'] && ( ! is_int( $record['next_attempt_at'] ) || $record['next_attempt_at'] < 0 ) )
-			|| ( null !== $record['lease_token'] && ( ! is_string( $record['lease_token'] ) || '' === $record['lease_token'] ) )
-			|| ( null !== $record['lease_expires_at'] && ( ! is_int( $record['lease_expires_at'] ) || $record['lease_expires_at'] < 0 ) )
+			|| ( null !== $record[ self::CLAIM_TOKEN_KEY ] && ( ! is_string( $record[ self::CLAIM_TOKEN_KEY ] ) || '' === $record[ self::CLAIM_TOKEN_KEY ] ) )
+			|| ( null !== $record[ self::CLAIM_EXPIRES_AT_KEY ] && ( ! is_int( $record[ self::CLAIM_EXPIRES_AT_KEY ] ) || $record[ self::CLAIM_EXPIRES_AT_KEY ] < 0 ) )
 		) {
 			return false;
 		}
@@ -272,13 +281,13 @@ class WooPaymentsCutoverStateStore {
 		}
 
 		if (
-			( self::STATE_RUNNING === $record['state'] && ( ! is_string( $record['lease_token'] ) || ! is_int( $record['lease_expires_at'] ) ) )
-			|| ( self::STATE_RUNNING !== $record['state'] && ( null !== $record['lease_token'] || null !== $record['lease_expires_at'] ) )
+			( self::STATE_RUNNING === $record['state'] && ( ! is_string( $record[ self::CLAIM_TOKEN_KEY ] ) || ! is_int( $record[ self::CLAIM_EXPIRES_AT_KEY ] ) ) )
+			|| ( self::STATE_RUNNING !== $record['state'] && ( null !== $record[ self::CLAIM_TOKEN_KEY ] || null !== $record[ self::CLAIM_EXPIRES_AT_KEY ] ) )
 		) {
 			return false;
 		}
 
-		foreach ( $record['deferred_codes'] as $code ) {
+		foreach ( $record[ self::BLOCKING_CODES_KEY ] as $code ) {
 			if ( ! is_string( $code ) ) {
 				return false;
 			}
