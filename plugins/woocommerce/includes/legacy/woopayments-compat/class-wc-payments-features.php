@@ -1,25 +1,29 @@
 <?php
-// phpcs:disable Squiz.Classes.ClassFileName.NoMatch,SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName,Squiz.Classes.ValidClassName.NotCamelCaps -- The plugin-owned class name and file shape are the compatibility contract.
+// phpcs:disable Squiz.Classes.ClassFileName.NoMatch,SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName,Squiz.Classes.ValidClassName.NotCamelCaps -- The WooPayments extension's class name and file shape are the compatibility contract.
 /**
- * Legacy WC_Payments_Features facade.
+ * WC_Payments_Features facade.
  */
 
 declare( strict_types = 1 );
 
 /**
- * Compatibility facade for the retired standalone WooPayments feature flags.
+ * Stands in for the WooPayments extension's WC_Payments_Features class, so the feature check extensions make keeps working.
+ *
+ * Removed in WooCommerce 12.0.0.
  *
  * @since 11.2.0
- * @deprecated 11.2.0 Use native WooPayments gateway capabilities. Scheduled for removal in WooCommerce 12.0.0.
+ * @deprecated 11.2.0 Use the WooPayments gateway's capabilities. Scheduled for removal in WooCommerce 12.0.0.
  */
 class WC_Payments_Features {
 	// phpcs:enable Squiz.Classes.ClassFileName.NoMatch,SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName,Squiz.Classes.ValidClassName.NotCamelCaps
 
 	/**
-	 * Report that the retired WooPayments Subscriptions feature is disabled.
+	 * Report that the extension's bundled subscriptions feature is off, as it always is while the built-in WooPayments owns payments.
+	 *
+	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.2.0
-	 * @deprecated 11.2.0 Use the native WooPayments gateway supports() method.
+	 * @deprecated 11.2.0 Use the WooPayments gateway's supports() method.
 	 *
 	 * @return bool
 	 */

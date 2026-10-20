@@ -1,25 +1,29 @@
 <?php
-// phpcs:disable Squiz.Classes.ClassFileName.NoMatch,SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName,Squiz.Classes.ValidClassName.NotCamelCaps -- The plugin-owned class name and file shape are the compatibility contract.
+// phpcs:disable Squiz.Classes.ClassFileName.NoMatch,SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName,Squiz.Classes.ValidClassName.NotCamelCaps -- The WooPayments extension's class name and file shape are the compatibility contract.
 /**
- * Legacy WC_Payments facade.
+ * WC_Payments facade.
  */
 
 declare( strict_types = 1 );
 
 /**
- * Compatibility facade for extensions that detect WooPayments through its plugin bootstrap class.
+ * Stands in for the WooPayments extension's WC_Payments class, so extensions that detect WooPayments by it keep working.
+ *
+ * Removed in WooCommerce 12.0.0.
  *
  * @since 11.2.0
- * @deprecated 11.2.0 Use the native WooPayments gateway via WC()->payment_gateways(). Scheduled for removal in WooCommerce 12.0.0.
+ * @deprecated 11.2.0 Use the WooPayments gateway via WC()->payment_gateways(). Scheduled for removal in WooCommerce 12.0.0.
  */
 class WC_Payments {
 	// phpcs:enable Squiz.Classes.ClassFileName.NoMatch,SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName,Squiz.Classes.ValidClassName.NotCamelCaps
 
 	/**
-	 * Return the container-owned native WooPayments gateway.
+	 * Return the built-in WooPayments gateway from the container.
+	 *
+	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.2.0
-	 * @deprecated 11.2.0 Use the native WooPayments gateway via WC()->payment_gateways().
+	 * @deprecated 11.2.0 Use the WooPayments gateway via WC()->payment_gateways().
 	 *
 	 * @return Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway
 	 */
@@ -30,12 +34,12 @@ class WC_Payments {
 	}
 
 	/**
-	 * Keep the legacy settings-page gateway-hiding call safe.
+	 * Do nothing: the built-in WooPayments has no secondary gateway classes to hide on the settings page.
 	 *
-	 * The native runtime exposes no secondary plugin gateway classes to remove.
+	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.2.0
-	 * @deprecated 11.2.0 Use the native WooPayments gateway collection via WC()->payment_gateways().
+	 * @deprecated 11.2.0 Use the WooPayments gateway collection via WC()->payment_gateways().
 	 *
 	 * @return void
 	 */

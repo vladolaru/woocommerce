@@ -23,7 +23,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPa
 final class WooPaymentsCompatClassAliases {
 
 	/**
-	 * The extension class name each native class declares.
+	 * Each class, with the WooPayments extension class name declared as its alias.
 	 */
 	private const ALIASES = array(
 		WooPaymentsPaymentType::class                    => 'WCPay\Constants\Payment_Type',

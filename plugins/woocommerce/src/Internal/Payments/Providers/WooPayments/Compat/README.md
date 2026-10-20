@@ -1,31 +1,40 @@
-# WooPayments legacy facade compatibility
+# WooPayments extension compatibility
 
-This folder is the removable boundary for plugin-owned compatibility surfaces that existing WooPayments links and Woo extensions still depend on. `WooPaymentsExtensionFacadeLoader` loads global symbols only when the core-native runtime owns payments; the standalone WooPayments plugin retains every symbol while it owns the runtime. `WooPaymentsCompatClassAliases` declares two of the plugin's class names as aliases of the native classes where those classes first reach a hook or WooCommerce Subscriptions: `WCPay\Constants\Payment_Type`, the third argument of `wcpay_metadata_from_order`, and `WC_Payments_Email_Failed_Authentication_Retry`, the retry email class WooCommerce Subscriptions instantiates by name. An autoloader that can load the plugin's own class wins. The plugin's request and response classes (`WCPay\Core\Server\*`) are not declared: the request filters pass the provider's own request objects. The facade class files live in `includes/legacy/woopayments-compat/` (see the placement invariant). The plugin-shaped `WCPay\MultiCurrency` namespace lives in the separate [multi-currency compatibility boundary](../../../../MultiCurrency/Compat/README.md).
+This folder holds what Woo extensions still expect from the WooPayments extension while the built-in WooPayments owns payments: its `WC_Payments` and `WC_Payments_Features` classes, its `WCPAY_VERSION_NUMBER` constant and two of its class names. It is removed in WooCommerce 12.0.0.
+
+## What it holds
+
+- `WooPaymentsExtensionFacadeLoader` defines `WCPAY_VERSION_NUMBER` and declares the two facade classes on first use. It declares nothing in a request that is activating the WooPayments extension, and the extension's own classes win whenever it is active.
+- `WooPaymentsCompatClassAliases` declares two WooPayments extension class names as aliases of the classes that answer for them where those classes first reach a hook or WooCommerce Subscriptions: `WCPay\Constants\Payment_Type`, the third argument of `wcpay_metadata_from_order`, and `WC_Payments_Email_Failed_Authentication_Retry`, the retry email class WooCommerce Subscriptions instantiates by name. An autoloader that can load the extension's own class wins.
+- The facade classes live in `includes/legacy/woopayments-compat/`, outside every tree Composer scans (see the placement rule).
+- The extension's request and response classes (`WCPay\Core\Server\*`) and `WC_Payment_Gateway_WCPay` are not declared: the built-in WooPayments passes its own request objects to the request filters and keeps the `woocommerce_payments` gateway ID.
+- The `WCPay\MultiCurrency` namespace lives in the [Multi-Currency compatibility boundary](../../../../MultiCurrency/Compat/README.md).
 
 ## Contract
 
-| Symbol | Native behavior | Known Woo-owned consumers |
+| Symbol | Behavior | Known Woo-owned consumers |
 |---|---|---|
-| `WC_Payments` | Makes existence gates recognize the active native runtime. `get_gateway()` returns the dependency-injection container's `WooPaymentsGateway`; `hide_gateways_on_settings_page()` is a safe no-op because native does not expose secondary plugin gateway classes. Both methods emit deprecation notices. | WooCommerce Core Blueprint exporter, All Products for WooCommerce Subscriptions, AutomateWoo, WooCommerce PayPal Payments |
-| `WC_Payments_Features` | Makes the All Products for WooCommerce Subscriptions gate safe. `is_wcpay_subscriptions_enabled()` returns `false` because native subscription support is exposed by gateway capabilities, and emits a deprecation notice. | All Products for WooCommerce Subscriptions |
-| `WCPAY_VERSION_NUMBER` | Reports `WooPaymentsClientVersion::VERSION`, the plugin version whose platform contract the native runtime implements. | All Products for WooCommerce Subscriptions |
-
-The boundary intentionally does not declare, alias, or emulate `WC_Payment_Gateway_WCPay`. The native gateway preserves the `woocommerce_payments` gateway ID and WooCommerce capability contract, but it must not pretend to be the standalone plugin's concrete gateway class.
+| `WC_Payments` | Existence checks recognize the built-in WooPayments. `get_gateway()` returns the container's `WooPaymentsGateway`. `hide_gateways_on_settings_page()` does nothing, because there are no secondary gateway classes to hide. Both emit a deprecation notice. | WooCommerce Core Blueprint exporter, All Products for WooCommerce Subscriptions, AutomateWoo, WooCommerce PayPal Payments |
+| `WC_Payments_Features` | `is_wcpay_subscriptions_enabled()` returns `false` and emits a deprecation notice; the gateway's capabilities answer subscription support. | All Products for WooCommerce Subscriptions |
+| `WCPAY_VERSION_NUMBER` | Reports `WooPaymentsClientVersion::VERSION`, the extension version whose platform contract the built-in WooPayments implements. | All Products for WooCommerce Subscriptions |
 
 ## Activation safety
 
-WordPress sandbox-includes a plugin before adding it to the active-plugin list and provides no pre-sandbox activation hook, and the plugin's main file declares `WC_Payments_Features` as it loads. The loader therefore declares the two facade classes lazily, through an autoloader registered at `plugins_loaded` priority 0, so an activation that nothing in the request probed first leaves both names to the plugin, including activation paths with no recognizable request shape (an Action Scheduler activation callback, `activate_plugin()` from code). Because some extensions probe `WC_Payments_Features` early in every request, WooPayments activation requests the loader recognizes register no autoloader at all: the Plugins screen, bulk actions, installer AJAX, the core plugins REST controller, WooCommerce's `/wc-admin/plugins/activate` and `/wc-admin/plugins/install` routes, WooCommerce's `PluginsInstaller` URL, and WooPayments `activate`, `install --activate` and `toggle` commands in WP-CLI. Probing `WC_Payments` loads only that facade, which never references `WC_Payments_Features`. Ordinary and unrelated requests keep the facades available on use.
+WordPress includes a plugin in a sandbox before adding it to the active list and provides no hook before that, and the WooPayments extension declares `WC_Payments_Features` as it loads. The loader therefore declares the facades through an autoloader registered at `plugins_loaded` priority 0, so an activation that nothing probed first leaves both names to the extension, including activation paths with no recognizable request shape (an Action Scheduler callback, `activate_plugin()` from code).
 
-## Placement invariant
+Some extensions probe `WC_Payments_Features` early in every request, so the loader registers no autoloader at all in a request it recognizes as a WooPayments activation: the sandbox scrape, the Plugins screen, bulk actions, installer AJAX, the core plugins REST controller, WooCommerce's `/wc-admin/plugins/activate` and `/wc-admin/plugins/install` routes, WooCommerce's `PluginsInstaller` URL, and WooPayments `activate`, `install --activate` and `toggle` commands in WP-CLI. Probing `WC_Payments` loads only that facade, which never references `WC_Payments_Features`.
 
-`LegacyWooPaymentsCompatibilityPlacementTest` requires every global `WC_Payments*` or namespaced `WCPay\` type declaration to live in `includes/legacy/woopayments-compat/` or `includes/legacy/woopayments-multi-currency-compat/`, outside every tree Composer scans for its classmaps: `src/` and `includes/rest-api/`, and `tests/php/src/` for development installs. The Jetpack autoloader's optimized classmap, built on every `composer install` and for the release zip, maps each class it finds in those trees whatever its namespace, so a facade placed there would be declared on first use on every store, plugin-owned ones included; outside them, only the loaders can declare the facades. Test fixtures that declare plugin-shaped names use the `.fixture` extension, which Composer does not scan. The test also requires exactly one composition-root registration for each compatibility loader and a removal README for each boundary. When a boundary is removed, update its expected loader and README entries in the same removal commit; do not move the facades back into a scanned tree.
+## Placement rule
 
-## Removal
+`LegacyWooPaymentsCompatibilityPlacementTest` requires every global `WC_Payments*` or namespaced `WCPay\` type declaration to live in `includes/legacy/woopayments-compat/` or `includes/legacy/woopayments-multi-currency-compat/`. Composer's optimized classmaps map every class in a scanned tree whatever its namespace (`src/`, `includes/rest-api/`, and `tests/php/src/` for development installs), so a facade placed there would be declared on first use on every store, extension-owned ones included. Test fixtures that declare these names use the `.fixture` extension, which Composer does not scan. The test also requires exactly one registration of each loader in the composition root and a removal README for each boundary.
 
-These compatibility surfaces are scheduled for removal in WooCommerce 12.0.0 after supported extensions no longer depend on the plugin-owned symbols. Remove these pieces together:
+## Removed in WooCommerce 12.0.0
 
-- This production `Compat/` folder and the facade files in `includes/legacy/woopayments-compat/`.
-- The `WooPaymentsExtensionFacadeLoader` registration line in `includes/class-woocommerce.php`.
-- The matching `tests/php/src/Internal/Payments/Providers/WooPayments/Compat/` tests and fixtures.
-- This boundary's expected symbols, loader and README entries in `LegacyWooPaymentsCompatibilityPlacementTest`.
-- The two call sites of `WooPaymentsCompatClassAliases`, which declares `WCPay\Constants\Payment_Type` and `WC_Payments_Email_Failed_Authentication_Retry` as aliases of the native classes on first use. `git grep -n WooPaymentsCompatClassAliases -- src/Internal/Payments` lists them: `WooPaymentsIntentRequestBuilder::metadata_from_order()` and `Subscriptions/WooPaymentsFailedRenewalAuthenticationEmail::set_store_owner_custom_email()`.
+Remove these pieces together once supported extensions no longer depend on the WooPayments extension's symbols:
+
+- This `Compat/` folder.
+- The facade files in `includes/legacy/woopayments-compat/`.
+- The one registration line, `WooPaymentsExtensionFacadeLoader::register()` in `includes/class-woocommerce.php`.
+- The two alias first-use sites, which call `WooPaymentsCompatClassAliases::register_compat_class_alias()`: `WooPaymentsIntentRequestBuilder::metadata_from_order()` and `Subscriptions/WooPaymentsFailedRenewalAuthenticationEmail::set_store_owner_custom_email()`. `git grep -n WooPaymentsCompatClassAliases -- src/Internal/Payments` lists them.
+- The tests in `tests/php/src/Internal/Payments/Providers/WooPayments/Compat/`, with their `.fixture` files.
+- This boundary's expected symbols, loader and README entries in `LegacyWooPaymentsCompatibilityPlacementTest`, in the same removal commit.
