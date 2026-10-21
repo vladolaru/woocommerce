@@ -25,6 +25,18 @@ use WC_Unit_Test_Case;
 class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 
 	/**
+	 * Drop the container replacements and the services resolved with them.
+	 */
+	public function tearDown(): void {
+		try {
+			wc_get_container()->reset_all_replacements();
+			wc_get_container()->reset_all_resolved();
+		} finally {
+			parent::tearDown();
+		}
+	}
+
+	/**
 	 * @testdox Should configure legacy adapters when the WooPayments plugin owns runtime.
 	 */
 	public function test_configures_legacy_adapters_when_plugin_owns_runtime(): void {
@@ -91,6 +103,39 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should turn the Analytics report cache off only while the built-in WooPayments owns payments in dev mode.
+	 * @dataProvider provide_analytics_report_cache_cases
+	 *
+	 * @param bool $native_owner Whether the built-in WooPayments owns payments.
+	 * @param bool $dev_mode     Whether WooPayments reports dev mode.
+	 * @param bool $expected     Whether Analytics reports use the cache.
+	 */
+	public function test_analytics_report_cache_follows_dev_mode_while_the_builtin_owns_payments( bool $native_owner, bool $dev_mode, bool $expected ): void {
+		// The test environment's type is fixed for the run, so the dev-mode filter that ends the same reader sets the mode.
+		add_filter( 'wcpay_dev_mode', $dev_mode ? '__return_true' : '__return_false' );
+		wc_get_container()->replace( WooPaymentsRuntimeArbiter::class, $this->create_arbiter( $native_owner, false ) );
+		wc_get_container()->reset_all_resolved();
+
+		wc_get_container()->get( WooPaymentsMultiCurrencyProviderBootstrap::class )->register();
+
+		// Client 11.1.0 turns the cache off whenever its Multi-Currency runs in WooPayments dev mode (`includes/multi-currency/Analytics.php:75-77`).
+		$this->assertSame( $expected, apply_filters( 'woocommerce_analytics_report_should_use_cache', true, 'woocommerce_orders_stats_query' ) );
+	}
+
+	/**
+	 * Cases for the Analytics report cache.
+	 *
+	 * @return array<string,array{0:bool,1:bool,2:bool}>
+	 */
+	public function provide_analytics_report_cache_cases(): array {
+		return array(
+			'built-in owner in dev mode'          => array( true, true, false ),
+			'built-in owner outside dev mode'     => array( true, false, true ),
+			'no payments owner, staging dev mode' => array( false, true, true ),
+		);
+	}
+
+	/**
 	 * Create a bootstrap test context.
 	 *
 	 * @param bool $native_owner Whether native owns runtime.
@@ -99,7 +144,53 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 	 */
 	private function create_bootstrap_context( bool $native_owner, bool $plugin_owner ): array {
 		$account_resolver  = new MultiCurrencyProviderAccountResolver();
-		$arbiter           = new class( $native_owner, $plugin_owner ) extends WooPaymentsRuntimeArbiter {
+		$arbiter           = $this->create_arbiter( $native_owner, $plugin_owner );
+		$extension_runtime = new WooPaymentsExtensionRuntime();
+		$extension_runtime->init( new WooPaymentsExtensionRuntimeProxy( true, null, $this->create_legacy_account(), $this->create_legacy_api_client() ) );
+
+		$legacy_account_adapter = new WooPaymentsLegacyAccountAdapter();
+		$legacy_account_adapter->init( $extension_runtime );
+
+		$legacy_api_client_adapter = new WooPaymentsLegacyApiClientAdapter();
+		$legacy_api_client_adapter->init( $extension_runtime );
+
+		$native_account_adapter = new WooPaymentsNativeAccountAdapter();
+		$native_account_adapter->init( $this->create_native_account_service() );
+		wc_get_container()->replace( WooPaymentsNativeAccountAdapter::class, $native_account_adapter );
+
+		$native_api_client_adapter = new WooPaymentsNativeApiClientAdapter();
+		$native_api_client_adapter->init( $this->create_native_api_client() );
+		wc_get_container()->replace( WooPaymentsNativeApiClientAdapter::class, $native_api_client_adapter );
+
+		$provider_registry_factory = new CurrencyRateProviderRegistryFactory();
+		$provider_registrar        = new WooPaymentsCurrencyRateProviderRegistrar();
+
+		$bootstrap = new WooPaymentsMultiCurrencyProviderBootstrap();
+		$bootstrap->init(
+			$account_resolver,
+			$arbiter,
+			$legacy_account_adapter,
+			$legacy_api_client_adapter,
+			$provider_registry_factory,
+			$provider_registrar
+		);
+
+		return array(
+			'account_resolver'          => $account_resolver,
+			'bootstrap'                 => $bootstrap,
+			'provider_registry_factory' => $provider_registry_factory,
+		);
+	}
+
+	/**
+	 * Create a payments owner arbiter with fixed answers.
+	 *
+	 * @param bool $native_owner Whether native owns runtime.
+	 * @param bool $plugin_owner Whether the plugin owns runtime.
+	 * @return WooPaymentsRuntimeArbiter
+	 */
+	private function create_arbiter( bool $native_owner, bool $plugin_owner ): WooPaymentsRuntimeArbiter {
+		return new class( $native_owner, $plugin_owner ) extends WooPaymentsRuntimeArbiter {
 			/**
 			 * Whether native owns runtime.
 			 *
@@ -143,41 +234,6 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 				return $this->plugin_owner;
 			}
 		};
-		$extension_runtime = new WooPaymentsExtensionRuntime();
-		$extension_runtime->init( new WooPaymentsExtensionRuntimeProxy( true, null, $this->create_legacy_account(), $this->create_legacy_api_client() ) );
-
-		$legacy_account_adapter = new WooPaymentsLegacyAccountAdapter();
-		$legacy_account_adapter->init( $extension_runtime );
-
-		$legacy_api_client_adapter = new WooPaymentsLegacyApiClientAdapter();
-		$legacy_api_client_adapter->init( $extension_runtime );
-
-		$native_account_adapter = new WooPaymentsNativeAccountAdapter();
-		$native_account_adapter->init( $this->create_native_account_service() );
-
-		$native_api_client_adapter = new WooPaymentsNativeApiClientAdapter();
-		$native_api_client_adapter->init( $this->create_native_api_client() );
-
-		$provider_registry_factory = new CurrencyRateProviderRegistryFactory();
-		$provider_registrar        = new WooPaymentsCurrencyRateProviderRegistrar();
-
-		$bootstrap = new WooPaymentsMultiCurrencyProviderBootstrap();
-		$bootstrap->init(
-			$account_resolver,
-			$arbiter,
-			$legacy_account_adapter,
-			$legacy_api_client_adapter,
-			$native_account_adapter,
-			$native_api_client_adapter,
-			$provider_registry_factory,
-			$provider_registrar
-		);
-
-		return array(
-			'account_resolver'          => $account_resolver,
-			'bootstrap'                 => $bootstrap,
-			'provider_registry_factory' => $provider_registry_factory,
-		);
 	}
 
 	/**

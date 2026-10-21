@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyAccoun
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyApiClientInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\MultiCurrencyProviderAccountResolver;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
@@ -51,20 +52,6 @@ class WooPaymentsMultiCurrencyProviderBootstrap implements RegisterHooksInterfac
 	private WooPaymentsLegacyApiClientAdapter $legacy_api_client_adapter;
 
 	/**
-	 * Native WooPayments account adapter.
-	 *
-	 * @var WooPaymentsNativeAccountAdapter
-	 */
-	private WooPaymentsNativeAccountAdapter $native_account_adapter;
-
-	/**
-	 * Native WooPayments API client adapter.
-	 *
-	 * @var WooPaymentsNativeApiClientAdapter
-	 */
-	private WooPaymentsNativeApiClientAdapter $native_api_client_adapter;
-
-	/**
 	 * Rate provider registry factory.
 	 *
 	 * @var CurrencyRateProviderRegistryFactory
@@ -87,8 +74,6 @@ class WooPaymentsMultiCurrencyProviderBootstrap implements RegisterHooksInterfac
 	 * @param WooPaymentsRuntimeArbiter                $arbiter                   Runtime ownership arbiter.
 	 * @param WooPaymentsLegacyAccountAdapter          $legacy_account_adapter    Legacy WooPayments account adapter.
 	 * @param WooPaymentsLegacyApiClientAdapter        $legacy_api_client_adapter Legacy WooPayments API client adapter.
-	 * @param WooPaymentsNativeAccountAdapter          $native_account_adapter    Native WooPayments account adapter.
-	 * @param WooPaymentsNativeApiClientAdapter        $native_api_client_adapter Native WooPayments API client adapter.
 	 * @param CurrencyRateProviderRegistryFactory      $provider_registry_factory Rate provider registry factory.
 	 * @param WooPaymentsCurrencyRateProviderRegistrar $provider_registrar        WooPayments rate provider registrar.
 	 */
@@ -97,8 +82,6 @@ class WooPaymentsMultiCurrencyProviderBootstrap implements RegisterHooksInterfac
 		WooPaymentsRuntimeArbiter $arbiter,
 		WooPaymentsLegacyAccountAdapter $legacy_account_adapter,
 		WooPaymentsLegacyApiClientAdapter $legacy_api_client_adapter,
-		WooPaymentsNativeAccountAdapter $native_account_adapter,
-		WooPaymentsNativeApiClientAdapter $native_api_client_adapter,
 		CurrencyRateProviderRegistryFactory $provider_registry_factory,
 		WooPaymentsCurrencyRateProviderRegistrar $provider_registrar
 	): void {
@@ -106,8 +89,6 @@ class WooPaymentsMultiCurrencyProviderBootstrap implements RegisterHooksInterfac
 		$this->arbiter                   = $arbiter;
 		$this->legacy_account_adapter    = $legacy_account_adapter;
 		$this->legacy_api_client_adapter = $legacy_api_client_adapter;
-		$this->native_account_adapter    = $native_account_adapter;
-		$this->native_api_client_adapter = $native_api_client_adapter;
 		$this->provider_registry_factory = $provider_registry_factory;
 		$this->provider_registrar        = $provider_registrar;
 	}
@@ -124,7 +105,12 @@ class WooPaymentsMultiCurrencyProviderBootstrap implements RegisterHooksInterfac
 		}
 
 		if ( $this->arbiter->is_builtin_owner() ) {
-			$this->register_adapters( $this->native_account_adapter, $this->native_api_client_adapter );
+			// Resolved here, so a store that runs Multi-Currency without the built-in WooPayments loads no WooPayments account service or API client.
+			$container = wc_get_container();
+			$this->register_adapters( $container->get( WooPaymentsNativeAccountAdapter::class ), $container->get( WooPaymentsNativeApiClientAdapter::class ) );
+			if ( false === has_filter( 'woocommerce_analytics_report_should_use_cache', array( $this, 'skip_analytics_report_cache_in_dev_mode' ) ) ) {
+				add_filter( 'woocommerce_analytics_report_should_use_cache', array( $this, 'skip_analytics_report_cache_in_dev_mode' ) );
+			}
 			return;
 		}
 
@@ -151,6 +137,20 @@ class WooPaymentsMultiCurrencyProviderBootstrap implements RegisterHooksInterfac
 		$config['isMultiCurrencyEnabled'] = true;
 
 		return $config;
+	}
+
+	/**
+	 * Serve uncached Analytics reports in WooPayments dev mode (client 11.1.0 `includes/multi-currency/Analytics.php:75-77`, `:176-178`).
+	 *
+	 * Dev mode is read when a report runs, after every plugin has loaded, as the client reads it on `init`.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $use_cache Whether Analytics reports use the cache.
+	 * @return mixed
+	 */
+	public function skip_analytics_report_cache_in_dev_mode( $use_cache ) {
+		return wc_get_container()->get( WooPaymentsAccountService::class )->is_dev_mode_enabled() ? false : $use_cache;
 	}
 
 	/**

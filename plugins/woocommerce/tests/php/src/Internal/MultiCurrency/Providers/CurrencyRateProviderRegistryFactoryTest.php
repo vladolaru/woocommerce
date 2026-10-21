@@ -14,8 +14,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsLegacyAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsLegacyApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyProviderBootstrap;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use WC_Unit_Test_Case;
 
 /**
@@ -249,8 +247,6 @@ class CurrencyRateProviderRegistryFactoryTest extends WC_Unit_Test_Case {
 			$arbiter,
 			$account_adapter,
 			$api_client_adapter,
-			new WooPaymentsNativeAccountAdapter(),
-			new WooPaymentsNativeApiClientAdapter(),
 			$sut,
 			$registrar
 		);

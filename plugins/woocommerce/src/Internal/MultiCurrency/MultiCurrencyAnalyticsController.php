@@ -71,13 +71,6 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	private ?MultiCurrencyAnalyticsSqlProjectionService $sql_projection_service = null;
 
 	/**
-	 * Dev mode resolver.
-	 *
-	 * @var callable|null
-	 */
-	private $dev_mode_resolver = null;
-
-	/**
 	 * REST request resolver.
 	 *
 	 * @var callable|null
@@ -118,17 +111,6 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 		$this->arbiter                 = $arbiter;
 		$this->runtime_service_factory = $runtime_service_factory;
 		$this->usage_detector          = $usage_detector;
-	}
-
-	/**
-	 * Set the dev mode resolver.
-	 *
-	 * @internal Used by tests.
-	 *
-	 * @param callable $resolver Resolver returning whether dev mode is enabled.
-	 */
-	public function set_dev_mode_resolver( callable $resolver ): void {
-		$this->dev_mode_resolver = $resolver;
 	}
 
 	/**
@@ -210,10 +192,6 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			$this->add_filter_once( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) );
 		}
 
-		if ( $this->is_dev_mode() ) {
-			$this->add_filter_once( 'woocommerce_analytics_report_should_use_cache', array( $this, 'handle_woocommerce_analytics_report_should_use_cache' ) );
-		}
-
 		$this->add_filter_once( 'woocommerce_analytics_orders_query_args', array( $this, 'handle_woocommerce_analytics_orders_query_args' ) );
 		$this->add_filter_once( 'woocommerce_analytics_orders_stats_query_args', array( $this, 'handle_woocommerce_analytics_orders_query_args' ) );
 
@@ -288,18 +266,6 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 		}
 
 		$this->get_analytics_projection_service()->add_customer_currency( strtoupper( $order->get_currency() ) );
-	}
-
-	/**
-	 * Disable analytics report caching for multi-currency dev mode.
-	 *
-	 * @internal
-	 *
-	 * @param mixed $args Filter value.
-	 * @return bool
-	 */
-	public function handle_woocommerce_analytics_report_should_use_cache( $args ): bool {
-		return false;
 	}
 
 	/**
@@ -437,19 +403,6 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 		}
 
 		return $this->sql_projection_service;
-	}
-
-	/**
-	 * Tell whether multi-currency dev mode is enabled.
-	 *
-	 * @return bool
-	 */
-	private function is_dev_mode(): bool {
-		if ( null !== $this->dev_mode_resolver ) {
-			return (bool) call_user_func( $this->dev_mode_resolver );
-		}
-
-		return defined( 'WC_STRIPE_DEV_MODE' ) && (bool) WC_STRIPE_DEV_MODE;
 	}
 
 	/**

@@ -101,14 +101,12 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_register_analytics_hooks_when_plugin_owns_runtime(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
-		$sut->set_dev_mode_resolver( static fn(): bool => true );
 		$sut->set_rest_request_resolver( static fn(): bool => true );
 
 		$sut->register();
 
 		$this->assertFalse( has_filter( 'woocommerce_analytics_orders_query_args', array( $sut, 'handle_woocommerce_analytics_orders_query_args' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_analytics_clauses_select', array( $sut, 'handle_woocommerce_analytics_clauses_select' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_analytics_report_should_use_cache', array( $sut, 'handle_woocommerce_analytics_report_should_use_cache' ) ) );
 	}
 
 	/**
@@ -124,7 +122,6 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 10, has_filter( 'woocommerce_analytics_orders_query_args', array( $sut, 'handle_woocommerce_analytics_orders_query_args' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_analytics_orders_stats_query_args', array( $sut, 'handle_woocommerce_analytics_orders_query_args' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_analytics_clauses_select', array( $sut, 'handle_woocommerce_analytics_clauses_select' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_analytics_report_should_use_cache', array( $sut, 'handle_woocommerce_analytics_report_should_use_cache' ) ) );
 	}
 
 	/**
@@ -235,7 +232,6 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class ),
 			$detector
 		);
-		$sut->set_dev_mode_resolver( static fn(): bool => false );
 		$sut->set_rest_request_resolver( static fn(): bool => true );
 		$sut->set_hpos_resolver( static fn(): bool => false );
 		$sut->set_default_currency_resolver( static fn(): string => 'USD' );
@@ -308,22 +304,17 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should disable analytics cache in dev mode.
+	 * @testdox Should keep the Analytics report cache when the WooCommerce Stripe Gateway's dev mode constant is on.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
-	public function test_disables_analytics_cache_in_dev_mode(): void {
+	public function test_keeps_analytics_report_cache_with_the_stripe_gateway_dev_mode_constant(): void {
+		define( 'WC_STRIPE_DEV_MODE', true );
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		$sut->set_dev_mode_resolver( static fn(): bool => true );
 
 		$sut->register();
 
-		/**
-		 * Filters whether analytics report cache should be used.
-		 *
-		 * @param bool $should_use_cache Whether analytics report cache should be used.
-		 *
-		 * @since 11.0.0
-		 */
-		$this->assertFalse( apply_filters( 'woocommerce_analytics_report_should_use_cache', true ) );
+		$this->assertTrue( apply_filters( 'woocommerce_analytics_report_should_use_cache', true, 'woocommerce_orders_stats_query' ) );
 	}
 
 	/**
@@ -588,7 +579,6 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class ),
 			new MultiCurrencyUsageDetector()
 		);
-		$controller->set_dev_mode_resolver( static fn(): bool => false );
 		if ( $set_rest_request_resolver ) {
 			$controller->set_rest_request_resolver( static fn(): bool => false );
 		}
@@ -615,7 +605,6 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class ),
 			new MultiCurrencyUsageDetector()
 		);
-		$controller->set_dev_mode_resolver( static fn(): bool => false );
 		$controller->set_rest_request_resolver( static fn(): bool => true );
 		$controller->set_hpos_resolver( static fn(): bool => false );
 		$controller->set_default_currency_resolver( static fn(): string => 'USD' );

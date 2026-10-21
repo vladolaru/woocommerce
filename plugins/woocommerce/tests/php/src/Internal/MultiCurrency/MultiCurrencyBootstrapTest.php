@@ -277,9 +277,14 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( self::core_root_matrix()['configured front'][3], $container->registered );
 	}
 
-	/** @testdox Should resolve only the ownership arbiter when the runtime has no owner. */
-	public function test_owner_none_resolves_only_the_arbiter(): void {
-		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_NONE, false, false );
+	/**
+	 * @testdox Should resolve only the ownership arbiter when the runtime has no owner, whoever owns payments.
+	 * @dataProvider provide_payments_owners_without_multi_currency
+	 *
+	 * @param string $payments_owner Payments owner while Multi-Currency is off.
+	 */
+	public function test_owner_none_resolves_only_the_arbiter( string $payments_owner ): void {
+		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_NONE, false, false, false, null, $payments_owner );
 		$resolver_calls = 0;
 		$sut            = new MultiCurrencyBootstrap(
 			static function () use ( &$resolver_calls ): array {
@@ -298,6 +303,18 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( MultiCurrencyRuntimeArbiter::class ), $container->resolved );
 		$this->assertSame( 0, $resolver_calls );
 		$this->assertFalse( has_filter( 'woocommerce_cart_total' ) );
+	}
+
+	/**
+	 * Payments owners of a store with Multi-Currency off.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function provide_payments_owners_without_multi_currency(): array {
+		return array(
+			'no payments owner'          => array( WooPaymentsRuntimeArbiter::OWNER_NONE ),
+			'built-in WooPayments owner' => array( WooPaymentsRuntimeArbiter::OWNER_BUILTIN ),
+		);
 	}
 
 	/** @testdox Should order and de-duplicate provider roots before core roots. */
