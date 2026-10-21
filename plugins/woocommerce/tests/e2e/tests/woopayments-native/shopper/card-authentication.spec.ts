@@ -542,11 +542,8 @@ let customer: ReturnType< typeof getFakeUser >;
 let customerId: number;
 
 /**
- * Logs in as the run's customer and confirms the login actually took (the P3
- * `saved-token-lifecycle` precedent). `logInFromMyAccount( ..., false )` does
- * not assert success on its own; a silent failure would leave the browser a
- * guest, and `fillBlocksCheckoutDetails` fills a guest address without
- * complaint, so the case would still pass on the wrong journey.
+ * Logs in through My Account and confirms the run's customer by name (the P3
+ * `saved-token-lifecycle` precedent), so the checkout runs as that customer.
  */
 async function logInAsCustomer( page: Page ): Promise< void > {
 	// The customer logs in from My Account: a wp-login.php login lands
