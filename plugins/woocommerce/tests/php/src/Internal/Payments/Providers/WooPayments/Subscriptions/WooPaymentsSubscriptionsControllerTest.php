@@ -632,7 +632,6 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 			$this->assertCount( 0, $raw_notes );
 		} finally {
 			remove_action( 'woocommerce_order_status_changed', $status_change_callback, 10 );
-			delete_transient( 'wcpay_processed_event_' . md5( 'evt_unusable_method_replay' ) );
 			$this->reset_container_replacements();
 			wc_get_container()->reset_all_resolved();
 		}

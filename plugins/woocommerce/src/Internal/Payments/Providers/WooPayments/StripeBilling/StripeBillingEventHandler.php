@@ -27,8 +27,8 @@ defined( 'ABSPATH' ) || exit;
  * Handles the Stripe Billing invoice events: `invoice.upcoming`, `invoice.paid` and `invoice.payment_failed`.
  *
  * Follows client 11.1.0 `includes/subscriptions/class-wc-payments-subscriptions-event-handler.php`. The event ingestor
- * runs it inside its usual processing (the mode check and the processed-event marker); overlapping deliveries of one
- * invoice are kept apart here by a lock on the invoice, and a payment intent is recorded under the order payment lock.
+ * runs it inside its usual processing (the mode check); overlapping deliveries of one invoice are kept apart here by a
+ * lock on the invoice, and a payment intent is recorded under the order payment lock.
  *
  * @since 11.2.0
  * @internal

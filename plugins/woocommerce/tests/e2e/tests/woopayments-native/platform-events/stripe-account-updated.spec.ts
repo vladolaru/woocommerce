@@ -3,8 +3,7 @@
  *
  * The platform forwards Stripe's account.updated as `{id, type, livemode, account}` with no `data`. The case changes
  * one metadata key on the connected account through the Stripe CLI, which makes Stripe send the event, and removes the
- * key afterwards. The store marks the delivery processed, refreshes the account and clears its cached saved methods,
- * as client 11.1.0 does.
+ * key afterwards. The store refreshes the account and clears its cached saved methods, as client 11.1.0 does.
  */
 
 /**
@@ -22,7 +21,6 @@ import {
 	seedAccountRefreshProbe,
 	stripeTest,
 	waitForAccountRefresh,
-	waitForProcessedDelivery,
 	waitForStripeEvent,
 } from '../live-platform';
 
@@ -100,7 +98,6 @@ test.describe( 'Platform events: Stripe account change', () => {
 				DELIVERY_BUDGET_MS
 			);
 
-			await waitForProcessedDelivery( event.id, DELIVERY_BUDGET_MS );
 			await waitForAccountRefresh(
 				probe,
 				DELIVERY_BUDGET_MS,

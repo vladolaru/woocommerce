@@ -1,9 +1,8 @@
 /**
  * Platform events: the fee breakdown envelope on payment_intent.succeeded.
  *
- * The platform attaches `fee_breakdown_v1` to the payment_intent.succeeded it forwards. The case waits until the store
- * has processed that real delivery, then checks the order carries the platform's envelope net, read from the charge
- * the platform serves. Which path wrote the net, and when, is the PHPUnit rows' to prove with the recorded body: the
+ * The platform attaches `fee_breakdown_v1` to the payment_intent.succeeded it forwards. The case waits for that event,
+ * then until the order carries the platform's envelope net, read from the charge the platform serves. Which path wrote the net, and when, is the PHPUnit rows' to prove with the recorded body: the
  * delivery can land before the browser reads the order, and on a same-currency card payment the envelope and the
  * application-fee fallback give the same net.
  */
@@ -21,8 +20,8 @@ import {
 	hasLivePlatformTools,
 	LIVE_PLATFORM_SKIP_REASON,
 	payWithBlocksCheckout,
+	pollFor,
 	type Json,
-	waitForProcessedDelivery,
 	waitForStripeEvent,
 } from '../live-platform';
 
@@ -78,8 +77,6 @@ test.describe( 'Platform events: fee breakdown envelope', () => {
 				( object ) => object.id === paid.intentId,
 				DELIVERY_BUDGET_MS
 			);
-			await waitForProcessedDelivery( event.id, DELIVERY_BUDGET_MS );
-
 			const envelope = ( await getCharge( restApi, paid.chargeId ) )
 				.fee_breakdown_v1 as Json | undefined;
 			const net = ( envelope?.totals as Json | undefined )?.net as
@@ -91,13 +88,20 @@ test.describe( 'Platform events: fee breakdown envelope', () => {
 			).toBeDefined();
 			expect( String( net?.currency ).toUpperCase() ).toBe( 'USD' );
 
-			const order = (
-				await restApi.get( `wc/v3/orders/${ paid.orderId }` )
-			).data as Json;
-			expect(
-				Number( metaValue( order, '_wcpay_net' ) ),
-				"the order's net is the envelope's net total, in dollars"
-			).toBe( Number( net?.amount ) / 100 );
+			const expectedNet = Number( net?.amount ) / 100;
+			await pollFor(
+				async () => {
+					const order = (
+						await restApi.get( `wc/v3/orders/${ paid.orderId }` )
+					).data as Json;
+					return Number( metaValue( order, '_wcpay_net' ) ) ===
+						expectedNet
+						? order
+						: null;
+				},
+				DELIVERY_BUDGET_MS,
+				`Order ${ paid.orderId } does not carry the envelope's net ${ expectedNet } after ${ event.id }: no real delivery of it arrived (is wpcom-local transact listen running with --ensure-jobs?), or the store refused it (read the store's WooPayments log for "Failed processing event ${ event.id }").`
+			);
 		}
 	);
 } );

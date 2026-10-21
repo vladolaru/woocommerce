@@ -236,9 +236,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An event whose mode differs from the store's is skipped before any hook, with one error line naming it, as with the WooPayments extension; a redelivery is skipped whole.
-	 *
-	 * The skipped event is marked processed like a handled one, so a redelivery within the hour writes no second line.
+	 * @testdox An event whose mode differs from the store's is skipped before any hook, with one error line naming it, as with the WooPayments extension.
 	 */
 	public function test_webhook_mode_mismatch_logs_the_event(): void {
 		$order = $this->create_woopayments_order();
@@ -263,7 +261,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 				'livemode' => true,
 			)
 		);
-		$this->sut->process( $event );
 		$this->sut->process( $event );
 
 		$this->assertSame( 'pending', wc_get_order( $order->get_id() )->get_status() );
@@ -475,21 +472,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		}
 		$this->assertSame( (string) $order->get_id(), $intent['metadata']['order_id'], 'The order reference support needs stays.' );
 		$this->assertSame( 'mobile_pos', $intent['metadata']['ipp_channel'] );
-	}
-
-	/**
-	 * @testdox A delivery of an event already processed still writes its received line, so a replay is visible.
-	 */
-	public function test_received_line_is_written_for_an_already_processed_event(): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'yes' ) );
-		$logger = RecordingWcLogger::install();
-		$event  = $this->create_payment_intent_event( 'payment_intent.succeeded', $this->create_woopayments_order(), array(), array( 'id' => 'evt_received_twice' ) );
-
-		$this->sut->process( $event );
-		$this->sut->process( $event );
-
-		$received = array_filter( $logger->lines, static fn( array $line ): bool => 'WEBHOOK RECEIVED: payment_intent.succeeded evt_received_twice' === $line[1] );
-		$this->assertCount( 2, $received );
 	}
 
 	/**
@@ -2546,7 +2528,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox charge.dispute.created resolves the order by charge ID and places it on hold.
 	 *
-	 * T.3 Task 2 (`plan-task-t3.md`): fed the REC-DC `charge.dispute.created` webhook body
+	 * Fed the REC-DC `charge.dispute.created` webhook body
 	 * (`Fixtures/platform-dispute-created-events.json`, pair `accept_case_created`) forwarded from local
 	 * WPCOM, instead of the hand-built `create_dispute_event()` envelope. The order's `_charge_id`
 	 * meta is set to REC-DC's own recorded charge id so the event resolves to this order exactly as
@@ -2796,14 +2778,11 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	public function test_dispute_update_redelivery_invalidates_caches_without_duplicate_note(): void {
 		$order = $this->create_paid_woopayments_order( 'ch_123', 'pi_123' );
 
-		$first_event        = $this->create_dispute_event( 'charge.dispute.updated', 'needs_response', array( 'id' => 'dp_cache_replay' ) );
-		$replay_event       = $first_event;
-		$first_event['id']  = 'evt_row_38_cache_first';
-		$replay_event['id'] = 'evt_row_38_cache_replay';
+		$event = $this->create_dispute_event( 'charge.dispute.updated', 'needs_response', array( 'id' => 'dp_cache_replay' ) );
 
-		$this->sut->process( $first_event );
+		$this->sut->process( $event );
 		$this->seed_dispute_cache_options();
-		$this->sut->process( $replay_event );
+		$this->sut->process( $event );
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
@@ -2870,7 +2849,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox charge.dispute.closed creates a capped local refund for lost disputes.
+	 * @testdox charge.dispute.closed for a lost dispute, delivered twice, creates one capped local refund.
 	 */
 	public function test_dispute_closed_lost_creates_local_refund(): void {
 		$order = $this->create_woopayments_order();
@@ -2888,15 +2867,10 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		// Distinct event IDs so the ingestor-level dedup does not short-circuit the second delivery:
-		// this exercises the dispute handler's own replay safety, not the ingestor idempotency marker.
-		$first_event        = $this->create_dispute_event( 'charge.dispute.closed', 'lost' );
-		$second_event       = $this->create_dispute_event( 'charge.dispute.closed', 'lost' );
-		$first_event['id']  = 'evt_dispute_lost_1';
-		$second_event['id'] = 'evt_dispute_lost_2';
+		$event = $this->create_dispute_event( 'charge.dispute.closed', 'lost' );
 
-		$sut->process( $first_event );
-		$sut->process( $second_event );
+		$sut->process( $event );
+		$sut->process( $event );
 
 		$order   = wc_get_order( $order->get_id() );
 		$refunds = $order instanceof WC_Order ? $order->get_refunds() : array();
@@ -3636,9 +3610,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		// Distinct event IDs so the ingestor-level dedup does not short-circuit the redelivery:
-		// this exercises the refund handler's own reconciliation path, not the ingestor marker.
-		$event['id'] = 'evt_refund_updated_reconcile_1';
 		$this->sut->process( $event );
 
 		$order = wc_get_order( $order->get_id() );
@@ -3647,7 +3618,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$order->set_status( 'refunded' );
 		$order->save();
 
-		$event['id'] = 'evt_refund_updated_reconcile_2';
 		$this->sut->process( $event );
 
 		$order = wc_get_order( $order->get_id() );
@@ -3820,8 +3790,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 *
 	 * Fed by REC-5a R-c (`Fixtures/platform-refund-updated-events.json`, pair
 	 * `afterpay_clearpay_refund_updated_succeeded`), the primary redirect-method
-	 * `charge.refund.updated` event local WPCOM forwarded for this recording
-	 * (`data/rec-5a-refunds.md`, `data/t1-provider-family-audit.md` §4 Batch 5).
+	 * `charge.refund.updated` event local WPCOM forwarded for this recording.
 	 * The recording settles F9: the refund's `balance_transaction` is a bare
 	 * string id, not the expanded object some native sync fixtures use.
 	 */
@@ -4045,53 +4014,25 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An event with the same ID is not processed again within the marker TTL once its first delivery finished.
+	 * @testdox An event $_dataName is handled on every delivery, as client 11.1.0 handles it.
+	 * @testWith ["with an ID", "evt_delivered_twice"]
+	 *           ["without an ID", ""]
+	 *
+	 * Client 11.1.0 `class-wc-payments-webhook-processing-service.php:145-160` keeps no record of handled events.
+	 *
+	 * @param string $label    Case label.
+	 * @param string $event_id Event ID, or '' for none.
 	 */
-	public function test_process_deduplicates_events_with_the_same_id(): void {
+	public function test_every_delivery_of_an_event_is_handled( string $label, string $event_id ): void {
+		unset( $label );
 		$handler = $this->create_recording_notification_handler();
 		$sut     = $this->create_ingestor_with_notification_handler( $handler );
-		$event   = $this->create_notification_event( 'evt_dedup' );
+		$event   = $this->create_notification_event( $event_id );
 
 		$sut->process( $event );
 		$sut->process( $event );
 
-		$this->assertCount( 1, $handler->processed_events, 'The same event ID must be handled only once.' );
-	}
-
-	/**
-	 * @testdox An event without an ID is processed on every delivery.
-	 */
-	public function test_process_does_not_deduplicate_events_without_an_id(): void {
-		$handler = $this->create_recording_notification_handler();
-		$sut     = $this->create_ingestor_with_notification_handler( $handler );
-		$event   = $this->create_notification_event( '' );
-
-		$sut->process( $event );
-		$sut->process( $event );
-
-		$this->assertCount( 2, $handler->processed_events, 'Events without an ID must not be deduplicated.' );
-	}
-
-	/**
-	 * @testdox An event that throws is not marked processed and can be retried.
-	 */
-	public function test_process_does_not_mark_throwing_events_as_processed(): void {
-		$handler = $this->create_recording_notification_handler( true );
-		$sut     = $this->create_ingestor_with_notification_handler( $handler );
-		$event   = $this->create_notification_event( 'evt_retry' );
-
-		$first_threw = false;
-		try {
-			$sut->process( $event );
-		} catch ( RuntimeException $exception ) {
-			$first_threw = true;
-		}
-
-		$handler->should_throw = false;
-		$sut->process( $event );
-
-		$this->assertTrue( $first_threw, 'The first delivery should surface the handler failure.' );
-		$this->assertCount( 2, $handler->processed_events, 'A failed event must be re-dispatched on the next delivery.' );
+		$this->assertSame( array( $event, $event ), $handler->processed_events );
 	}
 
 	/**
@@ -4139,8 +4080,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$event  = $this->create_payment_intent_event( 'payment_intent.succeeded', $order, $this->get_card_charge_overrides() );
 
 		$this->sut->process( $event );
-		// A redelivery under another event ID must not add a second note.
-		$this->sut->process( array_replace( $event, array( 'id' => 'evt_123_redelivered' ) ) );
+		$this->sut->process( $event );
 
 		$order = wc_get_order( $order->get_id() );
 		$this->assertInstanceOf( WC_Order::class, $order );
@@ -4688,11 +4628,10 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	/**
 	 * Build a notification event handler that records each processed event.
 	 *
-	 * @param bool $should_throw Whether the handler should throw on process.
 	 * @return WooPaymentsNotificationEventHandler
 	 */
-	private function create_recording_notification_handler( bool $should_throw = false ): WooPaymentsNotificationEventHandler {
-		$handler = new class() extends WooPaymentsNotificationEventHandler {
+	private function create_recording_notification_handler(): WooPaymentsNotificationEventHandler {
+		return new class() extends WooPaymentsNotificationEventHandler {
 			/**
 			 * Recorded processed events.
 			 *
@@ -4701,30 +4640,15 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			public array $processed_events = array();
 
 			/**
-			 * Whether the handler should throw on process.
-			 *
-			 * @var bool
-			 */
-			public bool $should_throw = false;
-
-			/**
-			 * Record and optionally fail a notification event.
+			 * Record a notification event.
 			 *
 			 * @param array<string,mixed> $event Event payload.
 			 * @return void
-			 * @throws RuntimeException When configured to fail.
 			 */
 			public function process( array $event ): void {
 				$this->processed_events[] = $event;
-				if ( $this->should_throw ) {
-					throw new RuntimeException( 'Recorded handler failure.' );
-				}
 			}
 		};
-
-		$handler->should_throw = $should_throw;
-
-		return $handler;
 	}
 
 	/**

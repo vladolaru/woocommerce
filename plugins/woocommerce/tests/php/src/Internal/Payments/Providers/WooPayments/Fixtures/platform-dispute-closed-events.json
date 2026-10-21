@@ -3,10 +3,9 @@
 		"recording": "REC-5b R-e",
 		"captured_via": "Local WPCOM async job rows (wpj_jobs, Remote_Site_Client::handle_async_webhook_send) read-only while queued, before the worker ran them (same method as REC-5a R-c). The job data body is the exact array Remote_Site_Client::send_webhook() wp_json_encode()s and POSTs to the store at ?rest_route=/wc/v3/payments/webhook (Event::get_body_for_forwarding(true)). Every job ran; none reached wpj_job_failures. Events reached WPCOM through the running Stripe CLI listener",
 		"sanitized": "customer_email_address in data.object.evidence replaced with REDACTED; no secrets, signatures or receipt URLs in the bodies; job envelope (autoenv server vars, job options) omitted; bodies otherwise verbatim",
-		"store_observation": "The charges have no Woo order, so native threw on every dispute event: native-payments-webhook log \"Could not find WooPayments order via disputed charge ID: <charge>\" once per closed event, and no wcpay_processed_event_ marker was set. No order state, note or refund was exercised",
+		"store_observation": "The charges have no Woo order, so native threw on every dispute event: native-payments-webhook log \"Could not find WooPayments order via disputed charge ID: <charge>\" once per closed event. No order state, note or refund was exercised",
 		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (default currency USD), Stripe test mode",
-		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at 7e5110cb73, WooPayments plugin inactive, test mode)",
-		"notes": "data/rec-5b-disputes.md in the 2026-09-03-native-payments-program-orientation session folder"
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at 7e5110cb73, WooPayments plugin inactive, test mode)"
 	},
 	"entries": [
 		{

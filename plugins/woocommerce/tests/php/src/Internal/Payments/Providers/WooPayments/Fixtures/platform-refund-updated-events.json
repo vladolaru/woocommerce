@@ -4,8 +4,7 @@
 		"captured_via": "Local WPCOM async job rows (wpj_jobs, type wcpay Remote_Site_Client::handle_async_webhook_send) read-only while queued, before the worker ran them. The job data body is the exact array Remote_Site_Client::send_webhook() wp_json_encode()s and POSTs to the store at ?rest_route=/wc/v3/payments/webhook (built by Event::get_body_for_forwarding(true)). Each job ran and did not land in wpj_job_failures. Events arrived at WPCOM through the running Stripe CLI listener (wpcom/v2/wcpay/webhook/dev)",
 		"sanitized": "nothing to redact (no secrets, emails, receipt URLs or signatures in the bodies); the job envelope (autoenv server vars, job options) is omitted; bodies are otherwise verbatim",
 		"source": "Local WPCOM (wpcom-local) Transact platform, blog 4, account acct_1TrY2nBzWlxcwgpP (default currency USD), Stripe test mode",
-		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at fc8c8ee510, WooPayments plugin inactive, test mode)",
-		"notes": "data/rec-5a-refunds.md in the 2026-09-03-native-payments-program-orientation session folder"
+		"store": "native WooCommerce :8889 (woocommerce-develop-2, branch exp/core-native-payments at fc8c8ee510, WooPayments plugin inactive, test mode)"
 	},
 	"entries": [
 		{
@@ -19,7 +18,7 @@
 				"blog_id": 4,
 				"content_type": "application/json"
 			},
-			"store_observation": "processed: native processed-event marker wcpay_processed_event_md5(event id) set; order 4237 unchanged (no Woo refund exists for pyr_, no note)",
+			"store_observation": "processed without an error; order 4237 unchanged (no Woo refund exists for pyr_, no note)",
 			"body": {
 				"id": "evt_1UJZaJBzWlxcwgpP6gGz5BOj",
 				"type": "charge.refund.updated",
@@ -66,7 +65,7 @@
 				"blog_id": 4,
 				"content_type": "application/json"
 			},
-			"store_observation": "processing threw: native-payments-webhook log \"Could not find WooPayments order via charge ID\" (charge has no order); no marker",
+			"store_observation": "processing threw: native-payments-webhook log \"Could not find WooPayments order via charge ID\" (charge has no order)",
 			"body": {
 				"id": "evt_3UJZZBBzWlxcwgpP0AdmCN8f",
 				"type": "charge.refund.updated",
@@ -125,7 +124,7 @@
 				"blog_id": 4,
 				"content_type": "application/json"
 			},
-			"store_observation": "processing threw: same log line for ch_3UJWs2BzWlxcwgpP1y9vRrWr (charge has no order); no marker",
+			"store_observation": "processing threw: same log line for ch_3UJWs2BzWlxcwgpP1y9vRrWr (charge has no order)",
 			"body": {
 				"id": "evt_3UJWs2BzWlxcwgpP1yeFu7Q9",
 				"type": "charge.refund.updated",

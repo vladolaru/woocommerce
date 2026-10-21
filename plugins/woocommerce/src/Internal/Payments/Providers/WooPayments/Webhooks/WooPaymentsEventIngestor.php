@@ -18,26 +18,12 @@ use InvalidArgumentException;
 use Throwable;
 
 /**
- * Receives platform webhook events, skips repeats and other modes, and passes each to its handler.
+ * Receives platform webhook events, skips other modes, and passes each to its handler.
  *
  * @since 11.0.0
  * @internal
  */
 class WooPaymentsEventIngestor {
-
-	/**
-	 * Transient prefix for the per-event "already processed" idempotency marker.
-	 *
-	 * @var string
-	 */
-	private const PROCESSED_EVENT_TRANSIENT_PREFIX = 'wcpay_processed_event_';
-
-	/**
-	 * TTL for the per-event "already processed" idempotency marker, in seconds.
-	 *
-	 * @var int
-	 */
-	private const PROCESSED_EVENT_TRANSIENT_TTL = HOUR_IN_SECONDS;
 
 	/**
 	 * Stripe Billing invoice event types.
@@ -180,36 +166,24 @@ class WooPaymentsEventIngestor {
 	/**
 	 * Process a WooPayments webhook event.
 	 *
-	 * An event with an ID is skipped for the marker TTL once a delivery of it has finished: the store's retry job, a
-	 * platform redelivery and the missed-event fetch can deliver it again, and applying it twice would repeat status
-	 * changes, refund metadata and dispute updates. The marker is written only after the event is handled, so a delivery
-	 * that threw or died is processed again. Overlapping deliveries are not kept apart here: the handlers that change an
-	 * order take the order payment lock or the Stripe Billing invoice lock, and a redelivery after a failed attempt can
-	 * add its notes again. Client 11.1.0 keeps no marker at all.
+	 * Every delivery is handled, as client 11.1.0 handles it (class-wc-payments-webhook-processing-service.php:145-160),
+	 * including a second delivery of one event from the store's retry job, a platform redelivery or the missed-event fetch.
 	 *
 	 * @since 11.0.0
 	 *
 	 * @param array<string,mixed> $event Event payload.
-	 * @throws Throwable When dispatching the event fails (including an InvalidArgumentException for an invalid event shape); the event is left unmarked so it can be retried.
+	 * @throws Throwable When dispatching the event fails, including an InvalidArgumentException for an invalid event shape.
 	 */
 	public function process( array $event ): void {
 		$event_id = $this->get_event_id( $event );
-		// Client 11.1.0 logs the received line first (class-wc-payments-webhook-processing-service.php:155-160), so a skipped,
-		// repeated or refused event still leaves one.
+		// Client 11.1.0 logs the received line first (class-wc-payments-webhook-processing-service.php:155-160), so a skipped
+		// or refused event still leaves one.
 		$this->transport_log->debug_payload(
 			sprintf( 'WEBHOOK RECEIVED: %1$s %2$s', is_string( $event['type'] ?? null ) ? $event['type'] : '', $event_id ),
 			$event
 		);
 
-		if ( '' !== $event_id && $this->is_event_already_processed( $event_id ) ) {
-			return;
-		}
-
 		$this->dispatch( $event );
-
-		if ( '' !== $event_id ) {
-			$this->mark_event_processed( $event_id );
-		}
 	}
 
 	/**
@@ -346,35 +320,6 @@ class WooPaymentsEventIngestor {
 		$event_id = $event['id'] ?? null;
 
 		return is_scalar( $event_id ) ? (string) $event_id : '';
-	}
-
-	/**
-	 * Tell whether an event ID was already processed within the marker TTL.
-	 *
-	 * @param string $event_id Event ID.
-	 * @return bool
-	 */
-	private function is_event_already_processed( string $event_id ): bool {
-		return false !== get_transient( $this->get_processed_event_transient_name( $event_id ) );
-	}
-
-	/**
-	 * Record that an event ID was processed so later re-deliveries are skipped.
-	 *
-	 * @param string $event_id Event ID.
-	 */
-	private function mark_event_processed( string $event_id ): void {
-		set_transient( $this->get_processed_event_transient_name( $event_id ), 1, self::PROCESSED_EVENT_TRANSIENT_TTL );
-	}
-
-	/**
-	 * Get the idempotency-marker transient name for an event ID.
-	 *
-	 * @param string $event_id Event ID.
-	 * @return string
-	 */
-	private function get_processed_event_transient_name( string $event_id ): string {
-		return self::PROCESSED_EVENT_TRANSIENT_PREFIX . md5( $event_id );
 	}
 
 	/**

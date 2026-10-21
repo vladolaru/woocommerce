@@ -26,7 +26,6 @@ import {
 	payWithBlocksCheckout,
 	pollFor,
 	type Json,
-	waitForProcessedDelivery,
 	waitForStripeEvent,
 } from '../live-platform';
 
@@ -105,8 +104,12 @@ test.describe( 'Platform events: early fraud warning', () => {
 				( object ) => object.charge === paid.chargeId,
 				WARNING_BUDGET_MS
 			);
-			await waitForProcessedDelivery( created.id, DELIVERY_BUDGET_MS );
-			expect( await readWarning( restApi, paidOrderId ) ).toEqual(
+			const recorded = await pollFor(
+				() => readWarning( restApi, paidOrderId ),
+				DELIVERY_BUDGET_MS,
+				`Order ${ paidOrderId } has no early fraud warning after ${ created.id }: no real delivery of it arrived (is wpcom-local transact listen running with --ensure-jobs?), or the store refused it (read the store's WooPayments log for "Failed processing event ${ created.id }").`
+			);
+			expect( recorded ).toEqual(
 				expect.objectContaining( {
 					efw_id: created.object.id,
 					efw_actionable: true,
@@ -128,15 +131,13 @@ test.describe( 'Platform events: early fraud warning', () => {
 					object.actionable === false,
 				WARNING_BUDGET_MS
 			);
-			await waitForProcessedDelivery( updated.id, DELIVERY_BUDGET_MS );
-
 			await pollFor(
 				async () => {
 					const warning = await readWarning( restApi, paidOrderId );
 					return warning?.efw_actionable === false ? warning : null;
 				},
 				DELIVERY_BUDGET_MS,
-				`Order ${ paidOrderId } still records warning ${ created.object.id } as actionable after its update ${ updated.id } was processed.`
+				`Order ${ paidOrderId } still records warning ${ created.object.id } as actionable after its update ${ updated.id } was sent.`
 			);
 		}
 	);

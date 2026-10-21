@@ -315,26 +315,6 @@ export async function waitForStripeEvent(
 	);
 }
 
-/**
- * Waits until the store finished processing a delivered event: the ingestor writes its processed-event marker
- * (`wcpay_processed_event_` + md5 of the id, one hour) only after a handled delivery. Nothing is delivered here.
- */
-export async function waitForProcessedDelivery(
-	eventId: string,
-	budgetMs: number
-): Promise< void > {
-	await pollFor(
-		async () =>
-			( await wpEvalJson< boolean >(
-				`return false !== get_transient( 'wcpay_processed_event_' . md5( ${ JSON.stringify(
-					eventId
-				) } ) );`
-			) ) || null,
-		budgetMs,
-		`The store has not processed event ${ eventId } within ${ budgetMs } ms: no real delivery of it arrived (is wpcom-local transact listen running with --ensure-jobs?), or the store refused it (read the store's WooPayments log for "Failed processing event ${ eventId }"). Nothing is replayed.`
-	);
-}
-
 const PLATFORM_PRELUDE = `
 if ( ! class_exists( '\\\\WCPay\\\\DI_Config' ) ) {
 	require_once WP_CONTENT_DIR . '/rest-api-plugins/endpoints/wcpay/lib.php';
