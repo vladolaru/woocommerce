@@ -103,20 +103,34 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should turn the Analytics report cache off only while the built-in WooPayments owns payments in dev mode.
+	 * @testdox Should turn the Analytics report cache off only while the built-in WooPayments owns payments in dev mode, read when the report runs.
 	 * @dataProvider provide_analytics_report_cache_cases
 	 *
 	 * @param bool $native_owner Whether the built-in WooPayments owns payments.
-	 * @param bool $dev_mode     Whether WooPayments reports dev mode.
+	 * @param bool $dev_mode     Whether WooPayments reports dev mode once every plugin has loaded.
+	 * @param bool $earlier_veto Whether an earlier listener already turned the cache off.
 	 * @param bool $expected     Whether Analytics reports use the cache.
 	 */
-	public function test_analytics_report_cache_follows_dev_mode_while_the_builtin_owns_payments( bool $native_owner, bool $dev_mode, bool $expected ): void {
-		// The test environment's type is fixed for the run, so the dev-mode filter that ends the same reader sets the mode.
-		add_filter( 'wcpay_dev_mode', $dev_mode ? '__return_true' : '__return_false' );
+	public function test_analytics_report_cache_follows_dev_mode_while_the_builtin_owns_payments( bool $native_owner, bool $dev_mode, bool $earlier_veto, bool $expected ): void {
 		wc_get_container()->replace( WooPaymentsRuntimeArbiter::class, $this->create_arbiter( $native_owner, false ) );
 		wc_get_container()->reset_all_resolved();
+		$load_time_reads    = 0;
+		$load_time_listener = static function () use ( &$load_time_reads ): bool {
+			++$load_time_reads;
+			return false;
+		};
+		add_filter( 'wcpay_dev_mode', $load_time_listener );
 
 		wc_get_container()->get( WooPaymentsMultiCurrencyProviderBootstrap::class )->register();
+
+		// A plugin that loads after WooCommerce decides dev mode, so registration must not read it.
+		$this->assertSame( 0, $load_time_reads, 'Registration should not read WooPayments dev mode.' );
+		remove_filter( 'wcpay_dev_mode', $load_time_listener );
+		// The test environment's type is fixed for the run, so the dev-mode filter that ends the same reader sets the mode.
+		add_filter( 'wcpay_dev_mode', $dev_mode ? '__return_true' : '__return_false' );
+		if ( $earlier_veto ) {
+			add_filter( 'woocommerce_analytics_report_should_use_cache', '__return_false', 5 );
+		}
 
 		// Client 11.1.0 turns the cache off whenever its Multi-Currency runs in WooPayments dev mode (`includes/multi-currency/Analytics.php:75-77`).
 		$this->assertSame( $expected, apply_filters( 'woocommerce_analytics_report_should_use_cache', true, 'woocommerce_orders_stats_query' ) );
@@ -125,13 +139,14 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 	/**
 	 * Cases for the Analytics report cache.
 	 *
-	 * @return array<string,array{0:bool,1:bool,2:bool}>
+	 * @return array<string,array{0:bool,1:bool,2:bool,3:bool}>
 	 */
 	public function provide_analytics_report_cache_cases(): array {
 		return array(
-			'built-in owner in dev mode'          => array( true, true, false ),
-			'built-in owner outside dev mode'     => array( true, false, true ),
-			'no payments owner, staging dev mode' => array( false, true, true ),
+			'built-in owner in dev mode'          => array( true, true, false, false ),
+			'built-in owner outside dev mode'     => array( true, false, false, true ),
+			'built-in owner outside dev mode, earlier veto' => array( true, false, true, false ),
+			'no payments owner, staging dev mode' => array( false, true, false, true ),
 		);
 	}
 
