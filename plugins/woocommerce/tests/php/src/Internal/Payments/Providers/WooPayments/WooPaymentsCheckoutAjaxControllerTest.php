@@ -1720,7 +1720,115 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$webhook['data']['object']       = $intent;
 		$ingestor                        = wc_get_container()->get( WooPaymentsEventIngestor::class );
 
-		$api_client = new class( $intent, $webhook_first ? static fn() => $ingestor->process( $webhook ) : null ) extends WooPaymentsApiClient {
+		$api_client = $this->create_api_client_running_during_fetch( $intent, $webhook_first ? static fn() => $ingestor->process( $webhook ) : null );
+
+		$this->create_controller( $api_client, null, null, $this->create_account_service( true ) )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => $intent['id'],
+			)
+		);
+		if ( ! $webhook_first ) {
+			$ingestor->process( $webhook );
+		}
+
+		$reloaded     = wc_get_order( $order->get_id() );
+		$failed_notes = $this->get_failed_payment_notes( $order );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'failed', $reloaded->get_status() );
+		$this->assertCount( 1, $failed_notes, 'One failed note, whichever writer ran first.' );
+		$this->assertStringEndsWith( $note_suffix, $failed_notes[0] );
+		$this->assertStringContainsString( $intent['id'], $failed_notes[0] );
+	}
+
+	/**
+	 * Which writer of a post-authentication decline runs first, and the failed note the order keeps.
+	 *
+	 * @return array<string,array{bool,string}>
+	 */
+	public function post_authentication_decline_note_order_data(): array {
+		return array(
+			'status update first, the webhook later adds none' => array( false, '). Your card was declined.' ),
+			'webhook during the intent fetch, the update adds none' => array( true, '). With the following message: <code>Your card was declined.</code>' ),
+		);
+	}
+
+	/**
+	 * @testdox A post-authentication decline on an order already failed adds no failed note, as client 11.1.0's mark_payment_failed() (os:469-472).
+	 */
+	public function test_post_authentication_decline_on_a_failed_order_adds_no_failed_note(): void {
+		$intent = $this->load_recorded_manual_3ds_entry( 'blocks_post_authentication_decline' )['body'];
+		$order  = $this->create_woopayments_order( '10.99' );
+		$order->set_status( OrderStatus::FAILED );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->save();
+
+		$this->get_update_order_status_response_for_intent( $order, $intent );
+
+		$this->assertSame( array(), $this->get_failed_payment_notes( $order ) );
+	}
+
+	/**
+	 * @testdox A refused post-authentication decline saves no charge once the order names a newer intent.
+	 *
+	 * A second checkout of the order, in another tab, stores its own intent and its payment_intent.succeeded webhook holds
+	 * the lock while the first tab's status update fetches the declined intent (REC-3DS-3b). The refused update leaves
+	 * the newer intent's charge facts alone. Client 11.1.0 checks only the stored intent status (os:1353), so it can
+	 * write the declined charge over the newer one.
+	 */
+	public function test_refused_post_authentication_decline_saves_nothing_once_the_order_names_another_intent(): void {
+		$intent = $this->load_recorded_manual_3ds_entry( 'blocks_post_authentication_decline' )['body'];
+		$order  = $this->create_woopayments_order( '10.99' );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->update_meta_data( '_intention_status', 'requires_action' );
+		$order->save();
+
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$lock_token = null;
+		$api_client = $this->create_api_client_running_during_fetch(
+			$intent,
+			static function () use ( $order, $lock, $vocabulary, &$lock_token ): void {
+				$newer_checkout = wc_get_order( $order->get_id() );
+				$newer_checkout->update_meta_data( '_intent_id', 'pi_newer_checkout' );
+				$newer_checkout->save_meta_data();
+				$lock_token = $lock->claim( $newer_checkout, $vocabulary, 'pi_newer_checkout', 'payment status update' );
+			}
+		);
+
+		try {
+			$this->create_controller( $api_client )->confirm_order_payment(
+				array(
+					'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+					'order_id'    => $order->get_id(),
+					'intent_id'   => $intent['id'],
+				)
+			);
+		} finally {
+			if ( null !== $lock_token ) {
+				$lock->release( $order, $vocabulary, $lock_token );
+			}
+		}
+
+		$this->assertNotNull( $lock_token, 'The newer checkout holds the lock.' );
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'pi_newer_checkout', $reloaded->get_meta( '_intent_id', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_charge_id', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_charge_risk_level', true ) );
+		$this->assertSame( '', $reloaded->get_meta( '_wcpay_payment_method_details', true ) );
+	}
+
+	/**
+	 * Create an API client that returns a PaymentIntent, running a callback while it is fetched.
+	 *
+	 * @param array<string,mixed> $intent       PaymentIntent response.
+	 * @param callable|null       $during_fetch Runs while the intent is fetched.
+	 * @return WooPaymentsApiClient
+	 */
+	private function create_api_client_running_during_fetch( array $intent, ?callable $during_fetch ): WooPaymentsApiClient {
+		return new class( $intent, $during_fetch ) extends WooPaymentsApiClient {
 			/**
 			 * PaymentIntent response.
 			 *
@@ -1770,52 +1878,6 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 				return $this->intent;
 			}
 		};
-
-		$this->create_controller( $api_client, null, null, $this->create_account_service( true ) )->confirm_order_payment(
-			array(
-				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
-				'order_id'    => $order->get_id(),
-				'intent_id'   => $intent['id'],
-			)
-		);
-		if ( ! $webhook_first ) {
-			$ingestor->process( $webhook );
-		}
-
-		$reloaded     = wc_get_order( $order->get_id() );
-		$failed_notes = $this->get_failed_payment_notes( $order );
-		$this->assertInstanceOf( WC_Order::class, $reloaded );
-		$this->assertSame( 'failed', $reloaded->get_status() );
-		$this->assertCount( 1, $failed_notes, 'One failed note, whichever writer ran first.' );
-		$this->assertStringEndsWith( $note_suffix, $failed_notes[0] );
-		$this->assertStringContainsString( $intent['id'], $failed_notes[0] );
-	}
-
-	/**
-	 * Which writer of a post-authentication decline runs first, and the failed note the order keeps.
-	 *
-	 * @return array<string,array{bool,string}>
-	 */
-	public function post_authentication_decline_note_order_data(): array {
-		return array(
-			'status update first, the webhook later adds none' => array( false, '). Your card was declined.' ),
-			'webhook during the intent fetch, the update adds none' => array( true, '). With the following message: <code>Your card was declined.</code>' ),
-		);
-	}
-
-	/**
-	 * @testdox A post-authentication decline on an order already failed adds no failed note, as client 11.1.0's mark_payment_failed() (os:469-472).
-	 */
-	public function test_post_authentication_decline_on_a_failed_order_adds_no_failed_note(): void {
-		$intent = $this->load_recorded_manual_3ds_entry( 'blocks_post_authentication_decline' )['body'];
-		$order  = $this->create_woopayments_order( '10.99' );
-		$order->set_status( OrderStatus::FAILED );
-		$order->update_meta_data( '_intent_id', $intent['id'] );
-		$order->save();
-
-		$this->get_update_order_status_response_for_intent( $order, $intent );
-
-		$this->assertSame( array(), $this->get_failed_payment_notes( $order ) );
 	}
 
 	/**

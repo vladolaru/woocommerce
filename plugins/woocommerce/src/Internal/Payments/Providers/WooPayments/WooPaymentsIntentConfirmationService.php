@@ -207,14 +207,14 @@ class WooPaymentsIntentConfirmationService {
 	 * Client 11.1.0 stores the intent's charge before its order lock (class-wc-payments-order-service.php:1351-1418, called at
 	 * class-wc-payment-gateway-wcpay.php:4236), and no other writer stores a declined charge, so the charge ID, its risk level
 	 * and its payment method details are saved here. Only meta is saved; the holder of the lock writes the status and note.
-	 * Like the client (:1353), nothing is saved once the stored intent status is succeeded.
+	 * Like the client (:1353), nothing is saved once the stored intent status is succeeded; nor once the order names another intent.
 	 *
 	 * @param WC_Order              $order Order being confirmed.
 	 * @param PaymentLifecycleEvent $event Refused lifecycle event.
 	 */
 	private function attach_charge_details_after_refusal( WC_Order $order, PaymentLifecycleEvent $event ): void {
 		$stored_order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
-		if ( 'succeeded' === (string) $stored_order->get_meta( '_intention_status', true ) ) {
+		if ( 'succeeded' === (string) $stored_order->get_meta( '_intention_status', true ) || (string) $stored_order->get_meta( '_intent_id', true ) !== (string) $event->get_payment_reference() ) {
 			return;
 		}
 
