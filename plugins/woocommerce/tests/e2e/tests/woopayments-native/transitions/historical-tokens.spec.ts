@@ -5,7 +5,7 @@ import { expect, tags, test } from '../../../fixtures/fixtures';
 import { wpCLI, wpEvalJson } from '../../../utils/cli';
 import { admin } from '../../../test-data/data';
 import { getFakeUser } from '../../../utils/data';
-import { logIn } from '../../../utils/login';
+import { logIn, logInFromMyAccount } from '../../../utils/login';
 import { random } from '../../../utils/helpers';
 import {
 	expectSettledCardPayment,
@@ -438,8 +438,18 @@ test.describe( 'WooPayments transition: historical tokens', () => {
 			// Native era: the customer's classic checkout preselects the
 			// default card and pays with it.
 			await page.context().clearCookies();
-			await page.goto( 'wp-login.php' );
-			await logIn( page, customer.username, customer.password, false );
+			// The customer logs in from My Account: a wp-login.php login lands
+			// on wp-admin/profile.php, whose admin request starts Action
+			// Scheduler's async runner with the customer's cookies, and that
+			// runner writes an older copy of the session back, dropping the
+			// card-testing token the checkout page rendered.
+			await page.goto( 'my-account/' );
+			await logInFromMyAccount(
+				page,
+				customer.username,
+				customer.password,
+				false
+			);
 			const product = (
 				await restApi.post( PRODUCTS_ROUTE, {
 					name: `WooPayments historical-tokens ${ random() }`,

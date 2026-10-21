@@ -4,7 +4,7 @@ import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 import { expect, tags, test } from '../../../fixtures/fixtures';
 import { getFakeUser } from '../../../utils/data';
 import { random } from '../../../utils/helpers';
-import { logIn } from '../../../utils/login';
+import { logInFromMyAccount } from '../../../utils/login';
 import {
 	completeThreeDSChallenge,
 	expectSettledCardPayment,
@@ -543,14 +543,24 @@ let customerId: number;
 
 /**
  * Logs in as the run's customer and confirms the login actually took (the P3
- * `saved-token-lifecycle` precedent). `logIn( ..., false )` does not assert
- * success on its own; a silent failure would leave the browser a guest, and
- * `fillBlocksCheckoutDetails` fills a guest address without complaint, so the
- * case would still pass on the wrong journey.
+ * `saved-token-lifecycle` precedent). `logInFromMyAccount( ..., false )` does
+ * not assert success on its own; a silent failure would leave the browser a
+ * guest, and `fillBlocksCheckoutDetails` fills a guest address without
+ * complaint, so the case would still pass on the wrong journey.
  */
 async function logInAsCustomer( page: Page ): Promise< void > {
-	await page.goto( 'wp-login.php' );
-	await logIn( page, customer.username, customer.password, false );
+	// The customer logs in from My Account: a wp-login.php login lands
+	// on wp-admin/profile.php, whose admin request starts Action
+	// Scheduler's async runner with the customer's cookies, and that
+	// runner writes an older copy of the session back, dropping the
+	// card-testing token the checkout page rendered.
+	await page.goto( 'my-account/' );
+	await logInFromMyAccount(
+		page,
+		customer.username,
+		customer.password,
+		false
+	);
 	await page.goto( 'my-account/' );
 	await expect(
 		page.getByText( new RegExp( `Hello ${ customer.first_name }` ) )
