@@ -114,7 +114,7 @@ class MultiCurrencyAsyncPriceProjectionService {
 	): string {
 		return sprintf(
 			'<span class="woocommerce-Price-amount amount wcpay-async-price" data-wcpay-price="%s" data-wcpay-price-type="%s"><bdi class="wcpay-price-skeleton"></bdi><span class="screen-reader-text wcpay-price-placeholder">%s</span></span>',
-			esc_attr( (string) $unformatted_price ),
+			self::escape_price_attribute( $unformatted_price ),
 			esc_attr( $price_type ),
 			wp_kses_post( $price_html )
 		);
@@ -317,5 +317,15 @@ class MultiCurrencyAsyncPriceProjectionService {
 		$text = __( 'Price range: %1$s through %2$s', 'woocommerce' );
 
 		return $text;
+	}
+
+	/**
+	 * Escape a raw price for an HTML attribute, with a dot decimal separator.
+	 *
+	 * @param int|float|string $price Raw price.
+	 * @return string
+	 */
+	private static function escape_price_attribute( $price ): string {
+		return esc_attr( is_float( $price ) ? wc_float_to_string( $price ) : (string) $price );
 	}
 }

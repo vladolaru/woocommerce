@@ -48,6 +48,15 @@ class MultiCurrencyAsyncPriceProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should write a float placeholder price with a dot decimal separator.
+	 */
+	public function test_writes_float_placeholder_price_with_a_dot(): void {
+		$result = MultiCurrencyAsyncPriceProjectionService::wrap_price_with_skeleton( '<span>$12.50</span>', 12.5 );
+
+		$this->assertStringContainsString( 'data-wcpay-price="12.5"', $result );
+	}
+
+	/**
 	 * @testdox Should annotate sale price screen reader text without touching placeholders.
 	 */
 	public function test_annotates_sale_price_screen_reader_text_without_touching_placeholders(): void {
