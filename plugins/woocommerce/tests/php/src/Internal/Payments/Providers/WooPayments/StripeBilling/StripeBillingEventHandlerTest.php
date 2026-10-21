@@ -19,6 +19,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
@@ -169,7 +170,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( StripeBillingSubscriptionService::class, $this->subscription_service );
 
 		$this->sut = new StripeBillingEventHandler();
-		$this->sut->init( $invoice_service, $this->subscription_service, $api_client, wc_get_container()->get( WooPaymentsPaymentIntentEventHandler::class ), $account_service, $logger );
+		$this->sut->init( $invoice_service, $this->subscription_service, $api_client, wc_get_container()->get( WooPaymentsPaymentIntentEventHandler::class ), $account_service, $logger, wc_get_container()->get( OrderPaymentLifecycleService::class ) );
 
 		add_action( 'woocommerce_subscription_status_on-hold', array( $this->subscription_service, 'handle_subscription_status_on_hold' ) );
 		add_action( 'woocommerce_subscription_status_on-hold_to_active', array( $this->subscription_service, 'reactivate_subscription' ) );
@@ -223,8 +224,9 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	 * intent as the platform forwarded it, the same Stripe object `GET intentions/{id}` answers with.
 	 */
 	public function test_paid_renewal_invoice_records_the_renewal_order(): void {
-		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array( '_wcpay_pending_invoice_id' => self::FAILED_INVOICE_ID ) );
-		$transitions  = $this->record_subscription_transitions();
+		$subscription          = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID, array( '_wcpay_pending_invoice_id' => self::FAILED_INVOICE_ID ) );
+		$transitions           = $this->record_subscription_transitions();
+		$subscription_payments = did_action( 'woocommerce_subscription_payment_complete' );
 		$this->queue_response( 200, $this->get_renewal_intent() );
 		$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
 
@@ -258,6 +260,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'active', $subscription->get_status() );
 		$this->assertSame( '', $subscription->get_meta( '_wcpay_pending_invoice_id', true ) );
 		$this->assertSame( array( 'on-hold', 'on-hold_to_active' ), $transitions->list, 'The renewal goes through on hold, as a renewal WooCommerce Subscriptions charges does.' );
+		$this->assertSame( 1, did_action( 'woocommerce_subscription_payment_complete' ) - $subscription_payments, 'WooCommerce Subscriptions records the renewal payment on the subscription once.' );
 		$this->assertSame(
 			array(
 				array( 'GET', '/sites/4/wcpay/intentions/' . self::RENEWAL_INTENT_ID . '?test_mode=1', null ),
@@ -483,6 +486,55 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$this->assertCount( 1, $orders );
 		$this->assertSame( 'processing', $orders[0]->get_status() );
 		$this->assertSame( 1, did_action( 'woocommerce_payment_complete' ) - $payments_completed, 'The renewal is paid once, so its emails go once.' );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertSame( 'active', $subscription->get_status() );
+		$this->assertSame( 0, $subscription->get_suspension_count() );
+	}
+
+	/**
+	 * @testdox A delivery of a paid invoice refused by the order payment lock that another delivery of it holds, after that delivery paid the renewal, passes the refusal on and leaves the subscription active with no suspension counted.
+	 *
+	 * The other delivery pays the renewal, which activates the subscription, and is still holding the order lock when this
+	 * one puts the subscription on hold from its stale copy and is refused.
+	 */
+	public function test_paid_invoice_refused_after_another_delivery_paid_it_leaves_the_subscription_active(): void {
+		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID );
+		$order        = WooCommerceSubscriptionsDoubles::create_renewal_order( $subscription );
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->update_meta_data( '_wcpay_billing_invoice_id', self::RENEWAL_INVOICE_ID );
+		$order->save();
+		$payments_completed = did_action( 'woocommerce_payment_complete' );
+		for ( $delivery = 1; $delivery <= 2; $delivery++ ) {
+			$this->queue_response( 200, $this->get_renewal_intent() );
+			$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+		}
+		$event      = $this->get_event( 'invoice_paid_renewal' );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$lock_token = null;
+		$overlap    = function ( ...$args ) use ( $event, $order, $vocabulary, &$lock_token, &$overlap ) {
+			// The other delivery runs inside this one's intent read, and then still holds the order lock.
+			remove_filter( 'wcpay_api_request_params', $overlap );
+			$this->sut->handle_event( $event );
+			$lock_token = wc_get_container()->get( OrderPaymentLock::class )->claim( wc_get_order( $order->get_id() ), $vocabulary, self::RENEWAL_INTENT_ID, 'payment status update' );
+			return $args[0] ?? null;
+		};
+		add_filter( 'wcpay_api_request_params', $overlap );
+
+		$refusal = null;
+		try {
+			$this->sut->handle_event( $event );
+		} catch ( OrderPaymentLockRefusedException $exception ) {
+			$refusal = $exception;
+		} finally {
+			remove_filter( 'wcpay_api_request_params', $overlap );
+			if ( null !== $lock_token ) {
+				wc_get_container()->get( OrderPaymentLock::class )->release( $order, $vocabulary, $lock_token );
+			}
+		}
+
+		$this->assertNotNull( $lock_token, 'The other delivery holds the order lock when this one records the payment.' );
+		$this->assertInstanceOf( OrderPaymentLockRefusedException::class, $refusal, 'The refusal is passed on, so invoice.paid is retried.' );
+		$this->assertSame( 1, did_action( 'woocommerce_payment_complete' ) - $payments_completed );
 		$subscription = wc_get_order( $subscription->get_id() );
 		$this->assertSame( 'active', $subscription->get_status() );
 		$this->assertSame( 0, $subscription->get_suspension_count() );
@@ -718,6 +770,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertTrue( wc_get_order( $order->get_id() )->needs_payment() );
+		$this->assertSame( 'on-hold', wc_get_order( $subscription->get_id() )->get_status(), 'An unpaid renewal leaves the subscription on hold.' );
 		$this->assertCount( 1, $this->get_requests(), 'Nothing is reported to the platform for an unpaid renewal.' );
 	}
 

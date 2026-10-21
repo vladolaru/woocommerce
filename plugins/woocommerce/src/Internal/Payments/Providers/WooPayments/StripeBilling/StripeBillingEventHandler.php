@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
@@ -82,6 +83,13 @@ class StripeBillingEventHandler {
 	private WooPaymentsLogger $logger;
 
 	/**
+	 * Payment lifecycle service, for reading a renewal order past this request's caches.
+	 *
+	 * @var OrderPaymentLifecycleService
+	 */
+	private OrderPaymentLifecycleService $lifecycle_service;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -92,14 +100,16 @@ class StripeBillingEventHandler {
 	 * @param WooPaymentsPaymentIntentEventHandler $payment_intent_event_handler Payment intent event handler.
 	 * @param WooPaymentsAccountService            $account_service              Account service.
 	 * @param WooPaymentsLogger                    $logger                       Module logger.
+	 * @param OrderPaymentLifecycleService         $lifecycle_service            Payment lifecycle service.
 	 */
-	final public function init( StripeBillingInvoiceService $invoice_service, StripeBillingSubscriptionService $subscription_service, WooPaymentsApiClient $api_client, WooPaymentsPaymentIntentEventHandler $payment_intent_event_handler, WooPaymentsAccountService $account_service, WooPaymentsLogger $logger ): void {
+	final public function init( StripeBillingInvoiceService $invoice_service, StripeBillingSubscriptionService $subscription_service, WooPaymentsApiClient $api_client, WooPaymentsPaymentIntentEventHandler $payment_intent_event_handler, WooPaymentsAccountService $account_service, WooPaymentsLogger $logger, OrderPaymentLifecycleService $lifecycle_service ): void {
 		$this->invoice_service              = $invoice_service;
 		$this->subscription_service         = $subscription_service;
 		$this->api_client                   = $api_client;
 		$this->payment_intent_event_handler = $payment_intent_event_handler;
 		$this->account_service              = $account_service;
 		$this->logger                       = $logger;
+		$this->lifecycle_service            = $lifecycle_service;
 	}
 
 	/**
@@ -484,8 +494,9 @@ class StripeBillingEventHandler {
 	 * @param WC_Order $order        Renewal order.
 	 */
 	private function reactivate_subscription_of_paid_renewal( WC_Order $subscription, WC_Order $order ): void {
-		$fresh_order = wc_get_order( $order->get_id() );
-		if ( ! $fresh_order instanceof WC_Order || $fresh_order->needs_payment() || ! $subscription->has_status( 'on-hold' ) || ! is_callable( array( $subscription, 'payment_complete_for_order' ) ) ) {
+		// Another delivery may have paid the order after this request cached it, so the read goes past those caches.
+		$fresh_order = $this->lifecycle_service->get_fresh_order_from_data_store( $order );
+		if ( $fresh_order->needs_payment() || ! $subscription->has_status( 'on-hold' ) || ! is_callable( array( $subscription, 'payment_complete_for_order' ) ) ) {
 			return;
 		}
 
