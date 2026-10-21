@@ -297,6 +297,27 @@ export async function listStripeEvents(
 	} ) );
 }
 
+/**
+ * Waits until the store finished handling a delivery of the event: the E2E runtime mu-plugin
+ * (`test-plugins/woopayments-native-runtime`) records each event ID once `woocommerce_payments_after_webhook_delivery`
+ * fires, after the event's handler returned. A delivery that threw leaves no record. Nothing is delivered here.
+ */
+export async function waitForHandledDelivery(
+	eventId: string,
+	budgetMs: number
+): Promise< void > {
+	await pollFor(
+		async () =>
+			( await wpEvalJson< boolean >(
+				`return false !== get_transient( 'wc_native_e2e_webhook_handled_' . md5( ${ JSON.stringify(
+					eventId
+				) } ) );`
+			) ) || null,
+		budgetMs,
+		`The store has not finished handling event ${ eventId } within ${ budgetMs } ms: no real delivery of it arrived (is wpcom-local transact listen running with --ensure-jobs?), the store refused it (read the store's WooPayments log for "Failed processing event ${ eventId }"), or the store lacks the E2E runtime mu-plugin. Nothing is replayed.`
+	);
+}
+
 /** Waits for the Stripe event of `type` about the object `matches` picks. */
 export async function waitForStripeEvent(
 	accountId: string,

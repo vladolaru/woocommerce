@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: WooPayments native E2E runtime
- * Description: Authenticated diagnostics for the built-in WooPayments E2E environments.
+ * Description: Authenticated diagnostics for the built-in WooPayments E2E environments, and a record of the webhook deliveries they handled.
  *
  * @package woopayments-native-runtime
  */
@@ -11,7 +11,7 @@ declare( strict_types = 1 );
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Installs the read-only E2E diagnostics.
+ * Installs the read-only E2E diagnostics and the handled-delivery record the live platform specs wait on.
  */
 final class WooCommerce_WooPayments_Native_E2E_Runtime {
 
@@ -51,6 +51,13 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 	private const RENEWAL_ACTION_HOOK = 'woocommerce_scheduled_subscription_payment';
 
 	/**
+	 * Prefix of the transient recording that a webhook event's delivery was handled; the event ID's md5 follows it.
+	 *
+	 * @var string
+	 */
+	public const HANDLED_DELIVERY_TRANSIENT_PREFIX = 'wc_native_e2e_webhook_handled_';
+
+	/**
 	 * Register bootstrap hooks immediately at mu-plugin load.
 	 *
 	 * @since 11.0.0
@@ -78,6 +85,24 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 	 */
 	public function register(): void {
 		add_action( 'rest_api_init', array( $this, 'handle_rest_api_init' ) );
+		add_action( 'woocommerce_payments_after_webhook_delivery', array( $this, 'record_handled_delivery' ), 10, 2 );
+	}
+
+	/**
+	 * Record, for a day, that a webhook event's delivery was handled, so a live spec can wait for that exact event.
+	 *
+	 * The hook fires once the event's handler returned, and never for a delivery that threw. One transient per event,
+	 * so concurrent deliveries do not overwrite each other's record.
+	 *
+	 * @param mixed $event_type Event type.
+	 * @param mixed $event      Event payload.
+	 */
+	public function record_handled_delivery( $event_type, $event ): void {
+		unset( $event_type );
+		$event_id = is_array( $event ) && isset( $event['id'] ) && is_scalar( $event['id'] ) ? (string) $event['id'] : '';
+		if ( '' !== $event_id ) {
+			set_transient( self::HANDLED_DELIVERY_TRANSIENT_PREFIX . md5( $event_id ), 1, DAY_IN_SECONDS );
+		}
 	}
 
 	/**

@@ -29,6 +29,7 @@ import {
 	pollFor,
 	stripeTest,
 	type Json,
+	waitForHandledDelivery,
 	waitForStripeEvent,
 } from '../live-platform';
 
@@ -394,21 +395,10 @@ test.describe( 'In-person: simulated reader capture', () => {
 				( object ) => object.id === intentId,
 				DELIVERY_BUDGET_MS
 			);
-			// The delivery writes the intent currency as the event carries it, in lower case, over the capture's upper case,
-			// as client 11.1.0 does (class-wc-payments-webhook-processing-service.php:498,515; class-wc-payments-order-service.php:1414).
-			const afterWebhook = await pollFor(
-				async () => {
-					const order = (
-						await restApi.get( `${ ORDERS_ROUTE }/${ orderId }` )
-					).data as Json;
-					return metaValue( order, '_wcpay_intent_currency' ) ===
-						capturedIntent.currency
-						? order
-						: null;
-				},
-				DELIVERY_BUDGET_MS,
-				`Order ${ orderId } does not show payment_intent.succeeded ${ succeeded.id }: no real delivery of it arrived (is wpcom-local transact listen running with --ensure-jobs?), or the store refused it (read the store's WooPayments log for "Failed processing event ${ succeeded.id }").`
-			);
+			await waitForHandledDelivery( succeeded.id, DELIVERY_BUDGET_MS );
+			const afterWebhook = (
+				await restApi.get( `${ ORDERS_ROUTE }/${ orderId }` )
+			).data as Json;
 			expect(
 				{
 					payment_method: afterWebhook.payment_method,

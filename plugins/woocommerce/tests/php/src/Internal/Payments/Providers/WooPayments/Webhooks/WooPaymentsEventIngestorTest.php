@@ -168,7 +168,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A $event_type delivery refused by a held order payment lock fails, is not marked processed, and applies once the lock is free.
+	 * @testdox A $event_type delivery refused by a held order payment lock fails, and a later delivery applies it once the lock is free.
 	 * The events are the ones the platform forwarded for a card checkout and a card decline (Fixtures/platform-payment-intent-events.json).
 	 *
 	 * @dataProvider lock_refused_lifecycle_events
@@ -206,7 +206,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$this->sut->process( $event );
 
-		$this->assertSame( $expected_status, wc_get_order( $order->get_id() )->get_status(), 'The refused event must not be marked processed, so a later delivery applies it.' );
+		$this->assertSame( $expected_status, wc_get_order( $order->get_id() )->get_status(), 'A later delivery applies the refused event.' );
 	}
 
 	/** @return array<string,array{string,string}> */
@@ -2850,6 +2850,9 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox charge.dispute.closed for a lost dispute, delivered twice, creates one capped local refund.
+	 *
+	 * The summary is the recorded `accept_summary_after_close` response (`Fixtures/platform-disputes.json`) with a 5.00
+	 * disputed amount, so the dispute covers part of the order.
 	 */
 	public function test_dispute_closed_lost_creates_local_refund(): void {
 		$order = $this->create_woopayments_order();
@@ -2859,12 +2862,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_ingestor(
 			wc_get_container()->get( OrderPaymentLifecycleService::class ),
-			$this->create_dispute_summary_api_client(
-				array(
-					'disputed_amount' => 500,
-					'currency'        => 'usd',
-				)
-			)
+			$this->create_dispute_summary_api_client( array_replace( $this->load_recorded_dispute_summary( 'accept_summary_after_close' ), array( 'disputed_amount' => 500 ) ) )
 		);
 
 		$event = $this->create_dispute_event( 'charge.dispute.closed', 'lost' );
@@ -3178,7 +3176,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Without the Stripe Billing module, $event_type is refused with the WooPayments extension's reason, after the before-delivery hook only, is not marked processed and is not logged here.
+	 * @testdox Without the Stripe Billing module, $event_type is refused with the WooPayments extension's reason, after the before-delivery hook only, on every delivery, and is not logged here.
 	 *
 	 * Client 11.1.0 without WooCommerce Subscriptions: the event handler's subscription lookup finds nothing and throws
 	 * `Invalid_Webhook_Data_Exception` (`class-wc-payments-subscriptions-event-handler.php:79,138,233`), so the
@@ -3219,7 +3217,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 			}
 		}
 
-		$this->assertSame( array( $reason, $reason ), $refusals, 'Each delivery is refused: a refused event is not marked processed.' );
+		$this->assertSame( array( $reason, $reason ), $refusals, 'Each delivery is refused.' );
 		$this->assertSame( array( "before $event_type", "before $event_type" ), $hook_calls );
 		// As on the client, the webhook route or the failed-event job that catches the refusal writes its one log line.
 		$this->assertSame( array(), $logger->get_errors() );
@@ -4014,11 +4012,12 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An event $_dataName is handled on every delivery, as client 11.1.0 handles it.
+	 * @testdox An event $_dataName is logged as received and handled on every delivery, as client 11.1.0 does.
 	 * @testWith ["with an ID", "evt_delivered_twice"]
 	 *           ["without an ID", ""]
 	 *
-	 * Client 11.1.0 `class-wc-payments-webhook-processing-service.php:145-160` keeps no record of handled events.
+	 * Client 11.1.0 `class-wc-payments-webhook-processing-service.php:145-160` writes the received line for each delivery
+	 * and keeps no record of handled events.
 	 *
 	 * @param string $label    Case label.
 	 * @param string $event_id Event ID, or '' for none.
@@ -4028,11 +4027,21 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$handler = $this->create_recording_notification_handler();
 		$sut     = $this->create_ingestor_with_notification_handler( $handler );
 		$event   = $this->create_notification_event( $event_id );
+		update_option(
+			'woocommerce_woocommerce_payments_settings',
+			array(
+				'test_mode'      => 'yes',
+				'enable_logging' => 'yes',
+			)
+		);
+		$logger = RecordingWcLogger::install();
 
 		$sut->process( $event );
 		$sut->process( $event );
 
 		$this->assertSame( array( $event, $event ), $handler->processed_events );
+		$received = array_filter( $logger->lines, static fn( array $line ): bool => 'WEBHOOK RECEIVED: wcpay.notification ' . $event_id === $line[1] );
+		$this->assertCount( 2, $received );
 	}
 
 	/**
@@ -5233,7 +5242,12 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a dispute-shaped event.
+	 * Create a dispute event shaped as the platform forwards one.
+	 *
+	 * The object keeps the fields of the recorded `charge.dispute.closed` body `accept_closed_lost`
+	 * (`Fixtures/platform-dispute-closed-events.json`) that the dispute handler reads: id, charge, amount 5000, reason
+	 * `fraudulent` and `evidence_details.due_by`. Intentional overrides: short placeholder IDs, the status the caller
+	 * passes, a fixed due date, and no currency, livemode or account, so a lost close takes its amount from the summary.
 	 *
 	 * @param string              $type      Event type.
 	 * @param string              $status    Dispute status.
@@ -5416,7 +5430,10 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a dispute summary API client.
+	 * Create an API client whose dispute summary read answers with the given summary.
+	 *
+	 * Callers pass the recorded `accept_summary_after_close` response (`Fixtures/platform-disputes.json`), whole or with
+	 * the fields they change, or a summary cut to the fields the lost-dispute refund reads: disputed_amount and currency.
 	 *
 	 * @param array<string,mixed> $summary Dispute summary.
 	 * @return WooPaymentsApiClient
