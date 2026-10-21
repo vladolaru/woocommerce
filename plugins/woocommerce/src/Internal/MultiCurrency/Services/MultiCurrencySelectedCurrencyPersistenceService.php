@@ -81,7 +81,7 @@ class MultiCurrencySelectedCurrencyPersistenceService {
 	 * @since 11.0.0
 	 */
 	public function set_new_customer_currency_meta( int $customer_id ): bool {
-		if ( 0 >= $customer_id || ! function_exists( 'WC' ) || ! WC()->session ) {
+		if ( 0 >= $customer_id || ! WC()->session ) {
 			return false;
 		}
 
@@ -157,7 +157,7 @@ class MultiCurrencySelectedCurrencyPersistenceService {
 			return is_string( $currency_code ) && '' !== $currency_code;
 		}
 
-		if ( function_exists( 'WC' ) && WC()->session && method_exists( WC()->session, 'get' ) ) {
+		if ( WC()->session ) {
 			$currency_code = WC()->session->get( self::CURRENCY_STORAGE_KEY );
 
 			return is_string( $currency_code ) && '' !== $currency_code;
@@ -172,7 +172,7 @@ class MultiCurrencySelectedCurrencyPersistenceService {
 	 * @internal
 	 */
 	public function recalculate_cart(): void {
-		if ( function_exists( 'WC' ) && WC()->cart && method_exists( WC()->cart, 'calculate_totals' ) ) {
+		if ( WC()->cart instanceof \WC_Cart ) {
 			WC()->cart->calculate_totals();
 		}
 	}
@@ -185,11 +185,7 @@ class MultiCurrencySelectedCurrencyPersistenceService {
 	 * @return bool True when the session value was stored.
 	 */
 	private function set_session_currency( string $currency_code, bool $persist_change ): bool {
-		if ( ! function_exists( 'WC' ) ) {
-			return false;
-		}
-
-		if ( ! WC()->session && method_exists( WC(), 'initialize_session' ) ) {
+		if ( ! WC()->session ) {
 			WC()->initialize_session();
 		}
 

@@ -277,7 +277,7 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 		}
 
 		$country_code          = $this->get_geolocation_service()->get_country_by_customer_location();
-		$countries             = function_exists( 'WC' ) && is_object( WC()->countries ) && method_exists( WC()->countries, 'get_countries' )
+		$countries             = WC()->countries instanceof \WC_Countries
 			? WC()->countries->get_countries()
 			: array();
 		$currencies            = get_woocommerce_currencies();
@@ -339,7 +339,7 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 		}
 
 		$simulation_currency = 'USD' === strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) ) ? 'GBP' : 'USD';
-		$countries           = function_exists( 'WC' ) && is_object( WC()->countries ) ? WC()->countries->get_countries() : array();
+		$countries           = WC()->countries instanceof \WC_Countries ? WC()->countries->get_countries() : array();
 		$country_code        = 'GBP' === $simulation_currency ? 'GB' : 'US';
 		$country_name        = (string) ( $countries[ $country_code ] ?? $country_code );
 		$currency_name       = (string) ( get_woocommerce_currencies()[ $simulation_currency ] ?? $simulation_currency );
@@ -456,7 +456,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	 */
 	private function clear_url_price_params(): void {
 		if (
-			( function_exists( 'WC' ) && WC()->is_rest_api_request() )
+			WC()->is_rest_api_request()
 			|| ! empty( $_GET['rest_route'] ) // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		) {
 			return;
@@ -645,8 +645,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	 * @return bool
 	 */
 	private function has_active_session(): bool {
-		return function_exists( 'WC' )
-			&& is_object( WC()->session )
+		return is_object( WC()->session )
 			&& method_exists( WC()->session, 'has_session' )
 			&& WC()->session->has_session();
 	}
@@ -657,12 +656,12 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	 * @param bool $initialize_session Whether WooCommerce should initialize its session first.
 	 */
 	private function prepare_selected_currency_state_for_session( bool $initialize_session ): void {
-		if ( $this->selected_currency_state_is_session_ready || ! function_exists( 'WC' ) ) {
+		if ( $this->selected_currency_state_is_session_ready ) {
 			return;
 		}
 
 		$woocommerce = WC();
-		if ( $initialize_session && ! $woocommerce->session && method_exists( $woocommerce, 'initialize_session' ) ) {
+		if ( $initialize_session && ! $woocommerce->session ) {
 			$woocommerce->initialize_session();
 		}
 

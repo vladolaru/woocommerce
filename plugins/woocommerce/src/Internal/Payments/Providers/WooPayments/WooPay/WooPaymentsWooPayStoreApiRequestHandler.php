@@ -352,7 +352,7 @@ class WooPaymentsWooPayStoreApiRequestHandler {
 			return;
 		}
 
-		$session = function_exists( 'WC' ) && WC() ? WC()->session : null;
+		$session = WC()->session;
 		if ( ! $session instanceof SessionHandler ) {
 			return;
 		}

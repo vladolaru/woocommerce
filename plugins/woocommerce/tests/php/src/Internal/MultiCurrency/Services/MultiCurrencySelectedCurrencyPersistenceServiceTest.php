@@ -477,13 +477,18 @@ class MultiCurrencySelectedCurrencyPersistenceServiceTest extends WC_Unit_Test_C
 	 * @return object
 	 */
 	private function create_cart(): object {
-		return new class() {
+		return new class() extends \WC_Cart {
 			/**
 			 * Calculate totals call count.
 			 *
 			 * @var int
 			 */
 			public int $calculate_totals_calls = 0;
+
+			/**
+			 * Skip the parent constructor so the double registers no cart hooks.
+			 */
+			public function __construct() {}
 
 			/**
 			 * Calculate totals.

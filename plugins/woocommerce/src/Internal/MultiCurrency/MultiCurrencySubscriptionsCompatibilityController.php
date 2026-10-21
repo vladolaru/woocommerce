@@ -578,7 +578,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	 * @return array<string,mixed>|null
 	 */
 	protected function resolve_subscription_type_from_cart( string $type ): ?array {
-		if ( ! in_array( $type, self::SUBSCRIPTION_TYPES, true ) || ! function_exists( 'WC' ) ) {
+		if ( ! in_array( $type, self::SUBSCRIPTION_TYPES, true ) ) {
 			return null;
 		}
 

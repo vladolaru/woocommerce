@@ -333,7 +333,7 @@ class WooPaymentsAdminSharedSettings implements RegisterHooksInterface {
 	 * @return string The formatted address, or an empty string when WooCommerce's countries are not loaded.
 	 */
 	private function get_formatted_store_address(): string {
-		if ( ! function_exists( 'WC' ) || ! WC()->countries instanceof \WC_Countries ) {
+		if ( ! WC()->countries instanceof \WC_Countries ) {
 			return '';
 		}
 

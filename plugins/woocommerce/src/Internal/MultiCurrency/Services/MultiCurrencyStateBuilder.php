@@ -469,7 +469,7 @@ class MultiCurrencyStateBuilder {
 			return is_string( $currency_code ) && '' !== $currency_code ? strtoupper( $currency_code ) : null;
 		}
 
-		if ( function_exists( 'WC' ) && WC()->session ) {
+		if ( WC()->session ) {
 			$currency_code = WC()->session->get( self::CURRENCY_STORAGE_KEY );
 
 			return is_string( $currency_code ) && '' !== $currency_code ? strtoupper( $currency_code ) : null;
