@@ -1433,7 +1433,7 @@ class WooPaymentsCheckoutAssets {
 	 * @return array<string,array{required:bool}>
 	 */
 	private function get_enabled_billing_fields(): array {
-		if ( ! WC() || ! WC()->checkout() ) {
+		if ( ! WC()->checkout() ) {
 			return array();
 		}
 

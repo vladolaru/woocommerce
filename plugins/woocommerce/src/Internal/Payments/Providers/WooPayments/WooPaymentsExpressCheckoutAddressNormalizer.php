@@ -1533,7 +1533,7 @@ final class WooPaymentsExpressCheckoutAddressNormalizer {
 	 * @return bool
 	 */
 	private function is_normalized_state( string $state, string $country ): bool {
-		if ( ! WC() || ! WC()->countries ) {
+		if ( ! WC()->countries ) {
 			return false;
 		}
 
@@ -1571,7 +1571,7 @@ final class WooPaymentsExpressCheckoutAddressNormalizer {
 	 * @return string
 	 */
 	private function get_normalized_state_from_wc_states( string $state, string $country ): string {
-		if ( ! WC() || ! WC()->countries ) {
+		if ( ! WC()->countries ) {
 			return $state;
 		}
 
