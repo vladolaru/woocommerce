@@ -15,10 +15,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsPaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
-use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use InvalidArgumentException;
 use RuntimeException;
-use Throwable;
 use WC_Order;
 
 defined( 'ABSPATH' ) || exit;
@@ -27,8 +25,8 @@ defined( 'ABSPATH' ) || exit;
  * Handles the Stripe Billing invoice events: `invoice.upcoming`, `invoice.paid` and `invoice.payment_failed`.
  *
  * Follows client 11.1.0 `includes/subscriptions/class-wc-payments-subscriptions-event-handler.php`. The event ingestor
- * runs it inside its usual processing (the mode check); overlapping deliveries of one invoice are kept apart here by a
- * lock on the invoice, and a payment intent is recorded under the order payment lock.
+ * runs it inside its usual processing (the mode check), and a paid invoice's payment intent is recorded under the order
+ * payment lock.
  *
  * @since 11.2.0
  * @internal
@@ -84,13 +82,6 @@ class StripeBillingEventHandler {
 	private WooPaymentsLogger $logger;
 
 	/**
-	 * Lock held in the database rows of a transient, keeping two deliveries of one invoice from recording it at the same time.
-	 *
-	 * @var TransientRowLock
-	 */
-	private TransientRowLock $row_lock;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -101,16 +92,14 @@ class StripeBillingEventHandler {
 	 * @param WooPaymentsPaymentIntentEventHandler $payment_intent_event_handler Payment intent event handler.
 	 * @param WooPaymentsAccountService            $account_service              Account service.
 	 * @param WooPaymentsLogger                    $logger                       Module logger.
-	 * @param TransientRowLock                     $row_lock                     Lock held in the database rows of a transient.
 	 */
-	final public function init( StripeBillingInvoiceService $invoice_service, StripeBillingSubscriptionService $subscription_service, WooPaymentsApiClient $api_client, WooPaymentsPaymentIntentEventHandler $payment_intent_event_handler, WooPaymentsAccountService $account_service, WooPaymentsLogger $logger, TransientRowLock $row_lock ): void {
+	final public function init( StripeBillingInvoiceService $invoice_service, StripeBillingSubscriptionService $subscription_service, WooPaymentsApiClient $api_client, WooPaymentsPaymentIntentEventHandler $payment_intent_event_handler, WooPaymentsAccountService $account_service, WooPaymentsLogger $logger ): void {
 		$this->invoice_service              = $invoice_service;
 		$this->subscription_service         = $subscription_service;
 		$this->api_client                   = $api_client;
 		$this->payment_intent_event_handler = $payment_intent_event_handler;
 		$this->account_service              = $account_service;
 		$this->logger                       = $logger;
-		$this->row_lock                     = $row_lock;
 	}
 
 	/**
@@ -211,11 +200,10 @@ class StripeBillingEventHandler {
 	/**
 	 * Record the renewal a paid invoice billed: find or create the renewal order, mark it paid, and tell the platform about it.
 	 *
-	 * The invoice of the subscription's first order is ignored: checkout records that payment. Everything that changes
-	 * the order or the subscription runs under the invoice lock (see run_under_invoice_lock()); the platform updates
-	 * that follow it do not need it.
+	 * The invoice of the subscription's first order is ignored: checkout records that payment. A second delivery of the
+	 * invoice finds its renewal order by the invoice ID and, once the order is paid, does not record the payment again.
 	 *
-	 * A RuntimeException from the invoice lock or the recording fails the event, so it is retried.
+	 * A RuntimeException from the recording fails the event, so it is retried.
 	 *
 	 * @param array<string,mixed> $event Event payload.
 	 * @throws StripeBillingException When the event has missing data or names no subscription of this store.
@@ -237,12 +225,7 @@ class StripeBillingEventHandler {
 			throw new StripeBillingException( __( 'Cannot find subscription for the incoming "invoice.paid" event.', 'woocommerce' ), StripeBillingException::INVALID_EVENT_DATA );
 		}
 
-		$order = $this->run_under_invoice_lock(
-			$subscription,
-			$wcpay_invoice_id,
-			'',
-			fn() => $this->apply_paid_invoice( $this->get_fresh_subscription( $subscription ), $wcpay_invoice_id, $event_object )
-		);
+		$order = $this->apply_paid_invoice( $subscription, $wcpay_invoice_id, $event_object );
 		if ( null === $order ) {
 			return;
 		}
@@ -253,9 +236,9 @@ class StripeBillingEventHandler {
 	}
 
 	/**
-	 * Apply a paid invoice to its renewal order and the subscription, under the invoice lock.
+	 * Apply a paid invoice to its renewal order and the subscription.
 	 *
-	 * @param WC_Order            $subscription     Subscription, read after the lock was claimed.
+	 * @param WC_Order            $subscription     Subscription.
 	 * @param string              $wcpay_invoice_id Invoice ID.
 	 * @param array<string,mixed> $event_object     Invoice from the event.
 	 * @return WC_Order|null The renewal order, or null for the invoice of the subscription's first order.
@@ -324,10 +307,8 @@ class StripeBillingEventHandler {
 	/**
 	 * Record a failed renewal attempt: note the decline, put the subscription on hold, or cancel it after the last attempt.
 	 *
-	 * The notes and the status changes run under the invoice lock (see run_under_invoice_lock()). A failure for an invoice
-	 * whose renewal order no longer needs payment, such as one that arrives after the invoice was paid, changes nothing.
-	 *
-	 * A RuntimeException from the invoice lock fails the event.
+	 * A failure for an invoice whose renewal order no longer needs payment, such as one that arrives after the invoice
+	 * was paid, changes nothing.
 	 *
 	 * @param array<string,mixed> $event Event payload.
 	 * @throws StripeBillingException When the event has missing data or names no subscription of this store.
@@ -368,17 +349,7 @@ class StripeBillingEventHandler {
 			$error_code    = (string) ( $charge['failure_code'] ?? '' );
 		}
 
-		$order = $this->run_under_invoice_lock(
-			$subscription,
-			$wcpay_invoice_id,
-			sprintf(
-				/* translators: %1$s: Stripe Billing invoice ID, %2$d: renewal attempt number. */
-				__( 'A WooPayments failed-payment update for this subscription (invoice %1$s, attempt %2$d) could not be applied, because another update of the same invoice was running. Check the subscription in your WooPayments dashboard.', 'woocommerce' ),
-				$wcpay_invoice_id,
-				$attempts
-			),
-			fn() => $this->apply_failed_invoice( $this->get_fresh_subscription( $subscription ), $wcpay_invoice_id, $attempts, $error_details, $error_code )
-		);
+		$order = $this->apply_failed_invoice( $subscription, $wcpay_invoice_id, $attempts, $error_details, $error_code );
 		if ( null === $order ) {
 			return;
 		}
@@ -387,9 +358,9 @@ class StripeBillingEventHandler {
 	}
 
 	/**
-	 * Apply a failed renewal attempt to its renewal order and the subscription, under the invoice lock.
+	 * Apply a failed renewal attempt to its renewal order and the subscription.
 	 *
-	 * @param WC_Order $subscription     Subscription, read after the lock was claimed.
+	 * @param WC_Order $subscription     Subscription.
 	 * @param string   $wcpay_invoice_id Invoice ID.
 	 * @param int      $attempts         Renewal attempts Stripe made for the invoice.
 	 * @param string   $error_details    Decline message, empty when unknown.
@@ -511,48 +482,7 @@ class StripeBillingEventHandler {
 	}
 
 	/**
-	 * Run what an invoice event changes in this store under a lock on the invoice.
-	 *
-	 * Two deliveries of one invoice can overlap (a slow first delivery the platform counts as failed and lists again,
-	 * or a duplicate push). The renewal order lookup and creation, the payment recording, the notes and the subscription
-	 * status changes run under the lock, so a second delivery waits for none of it: it is refused. invoice.paid is
-	 * retried and finds the order paid; an invoice.payment_failed gets one attempt, so its refusal leaves a note on the
-	 * subscription. Like the order payment lock, this is a lease of WooPaymentsPersistenceVocabulary::LOCK_TTL_SECONDS: a
-	 * delivery that died cannot block the next one, and one that stalls past it can be overtaken (accepted, as for the
-	 * order payment lock). Client 11.1.0 takes no lock (class-wc-payments-subscriptions-event-handler.php:146-175, :254-307).
-	 *
-	 * @template T
-	 * @param WC_Order      $subscription Subscription, for the refusal note.
-	 * @param string        $invoice_id   Invoice ID.
-	 * @param string        $refusal_note Note left on the subscription when another delivery holds the lock, if any.
-	 * @param callable(): T $callback     What the event changes.
-	 * @return T
-	 * @throws RuntimeException When another delivery of the invoice holds the lock.
-	 */
-	private function run_under_invoice_lock( WC_Order $subscription, string $invoice_id, string $refusal_note, callable $callback ) {
-		$lock_key   = 'wcpay_stripe_billing_renewal_' . md5( $invoice_id );
-		$lock_token = wp_generate_uuid4();
-		if ( ! $this->row_lock->claim( $lock_key, $lock_token, WooPaymentsPersistenceVocabulary::LOCK_TTL_SECONDS ) ) {
-			if ( '' !== $refusal_note ) {
-				try {
-					$subscription->add_order_note( $refusal_note );
-				} catch ( Throwable $exception ) {
-					unset( $exception );
-				}
-			}
-			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
-			throw new RuntimeException( sprintf( 'Another delivery of invoice %s is being recorded.', $invoice_id ) );
-		}
-
-		try {
-			return $callback();
-		} finally {
-			$this->row_lock->release( $lock_key, $lock_token );
-		}
-	}
-
-	/**
-	 * Get the renewal order an invoice paid, or create it. Runs under the invoice lock.
+	 * Get the renewal order an invoice paid, or create it.
 	 *
 	 * @param WC_Order $subscription  Subscription.
 	 * @param string   $invoice_id    Invoice ID.

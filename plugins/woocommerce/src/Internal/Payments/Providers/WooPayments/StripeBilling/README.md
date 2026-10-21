@@ -32,7 +32,7 @@ Code outside this folder names only `WooPaymentsStripeBillingModule`, and only i
 
 The Stripe Billing fee context on payment intents is not a seam: the module sets `payment_context` through the existing `wcpay_metadata_from_order` filter.
 
-Code inside this folder may use provider services from the container, the payments runtime's `OrderPaymentLock` and `TransientRowLock`, and WooCommerce and WooCommerce Subscriptions functions. It never uses `Compat/`.
+Code inside this folder may use provider services from the container, the payments runtime's `OrderPaymentLock`, and WooCommerce and WooCommerce Subscriptions functions. It never uses `Compat/`.
 
 `StripeBillingPlacementTest` enforces both rules.
 
