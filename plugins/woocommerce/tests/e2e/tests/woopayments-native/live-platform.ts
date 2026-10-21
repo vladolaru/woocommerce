@@ -300,7 +300,8 @@ export async function listStripeEvents(
 /**
  * Waits until the store finished handling a delivery of the event: the E2E runtime mu-plugin
  * (`test-plugins/woopayments-native-runtime`) records each event ID once `woocommerce_payments_after_webhook_delivery`
- * fires, after the event's handler returned. A delivery that threw leaves no record. Nothing is delivered here.
+ * fires, after the event's handler returned, on a store whose wp-env config defines `E2E_WOOPAYMENTS_NATIVE` as true.
+ * A delivery that threw leaves no record. Nothing is delivered here.
  */
 export async function waitForHandledDelivery(
 	eventId: string,
@@ -314,7 +315,7 @@ export async function waitForHandledDelivery(
 				) } ) );`
 			) ) || null,
 		budgetMs,
-		`The store has not finished handling event ${ eventId } within ${ budgetMs } ms: no real delivery of it arrived (is wpcom-local transact listen running with --ensure-jobs?), the store refused it (read the store's WooPayments log for "Failed processing event ${ eventId }"), or the store lacks the E2E runtime mu-plugin. Nothing is replayed.`
+		`The store has not finished handling event ${ eventId } within ${ budgetMs } ms: no real delivery of it arrived (is wpcom-local transact listen running with --ensure-jobs?), the store refused it (read the store's WooPayments log for "Failed processing event ${ eventId }"), or the store lacks the E2E runtime mu-plugin or the E2E_WOOPAYMENTS_NATIVE constant. Nothing is replayed.`
 	);
 }
 

@@ -85,7 +85,26 @@ final class WooCommerce_WooPayments_Native_E2E_Runtime {
 	 */
 	public function register(): void {
 		add_action( 'rest_api_init', array( $this, 'handle_rest_api_init' ) );
-		add_action( 'woocommerce_payments_after_webhook_delivery', array( $this, 'record_handled_delivery' ), 10, 2 );
+		if ( self::records_handled_deliveries() ) {
+			add_action( 'woocommerce_payments_after_webhook_delivery', array( $this, 'record_handled_delivery' ), 10, 2 );
+		}
+	}
+
+	/**
+	 * Tell whether this store records handled webhook deliveries: only a store set up for the built-in WooPayments E2E
+	 * suites does, by defining E2E_WOOPAYMENTS_NATIVE (the live platform stores' wp-env config) or
+	 * E2E_WOOPAYMENTS_NATIVE_FIXTURE (the CI fixture store, set by install-ci-fixture.sh) as true.
+	 *
+	 * @return bool
+	 */
+	public static function records_handled_deliveries(): bool {
+		foreach ( array( 'E2E_WOOPAYMENTS_NATIVE', 'E2E_WOOPAYMENTS_NATIVE_FIXTURE' ) as $setting ) {
+			if ( defined( $setting ) && true === (bool) constant( $setting ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
