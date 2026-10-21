@@ -4,7 +4,7 @@ import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 import { expect, tags, test } from '../../../fixtures/fixtures';
 import { admin } from '../../../test-data/data';
 import { getFakeUser } from '../../../utils/data';
-import { logIn } from '../../../utils/login';
+import { logIn, logInFromMyAccount } from '../../../utils/login';
 import { createClassicCheckoutPage } from '../../../utils/pages';
 import {
 	expectSettledCardPayment,
@@ -362,8 +362,18 @@ test.describe( 'WooPayments native subscription provider lifecycle fidelity', ()
 			tag: FAMILY_TAGS,
 		},
 		async ( { page, restApi, baseURL, browser } ) => {
-			await page.goto( 'wp-login.php' );
-			await logIn( page, customer.username, customer.password, false );
+			// The customer logs in from My Account: a wp-login.php login lands
+			// on wp-admin/profile.php, whose admin request starts Action
+			// Scheduler's async runner with the customer's cookies, and that
+			// runner writes an older copy of the session back, dropping the
+			// card-testing token the checkout page rendered.
+			await page.goto( 'my-account/' );
+			await logInFromMyAccount(
+				page,
+				customer.username,
+				customer.password,
+				false
+			);
 			await page.goto( 'my-account/' );
 			await expect(
 				page.getByText( new RegExp( `Hello ${ customer.first_name }` ) )

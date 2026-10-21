@@ -4,7 +4,7 @@ import type { Locator, Page, Request } from '@playwright/test';
 import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 
 import { expect, tags, test } from '../../../fixtures/fixtures';
-import { logIn } from '../../../utils/login';
+import { logInFromMyAccount } from '../../../utils/login';
 import { customer } from '../../../test-data/data';
 
 const CONTRACT_ID =
@@ -112,10 +112,20 @@ async function deleteRunOwnedResource(
 // proof that the session belongs to the seeded customer.
 async function logInAsCustomer( page: Page ): Promise< void > {
 	await page.context().clearCookies();
-	await page.goto( 'wp-login.php' );
+	// The customer logs in from My Account: a wp-login.php login lands
+	// on wp-admin/profile.php, whose admin request starts Action
+	// Scheduler's async runner with the customer's cookies, and that
+	// runner writes an older copy of the session back, dropping the
+	// card-testing token the checkout page rendered.
+	await page.goto( 'my-account/' );
 	// Not an admin: no Dashboard to land on, so the standard success
 	// assertion is skipped in favor of the identity read below.
-	await logIn( page, customer.username, customer.password, false );
+	await logInFromMyAccount(
+		page,
+		customer.username,
+		customer.password,
+		false
+	);
 	await page.goto( 'my-account/edit-account/' );
 	await expect(
 		page.getByRole( 'textbox', { name: /Email address/i } )

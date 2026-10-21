@@ -5,7 +5,7 @@ import { expect, tags, test } from '../../../fixtures/fixtures';
 import { ADMIN_STATE_PATH } from '../../../playwright.config';
 import { customer } from '../../../test-data/data';
 import { random } from '../../../utils/helpers';
-import { logIn } from '../../../utils/login';
+import { logInFromMyAccount } from '../../../utils/login';
 
 test.use( { storageState: ADMIN_STATE_PATH } );
 
@@ -179,13 +179,23 @@ async function deleteHistoricalOrder(
 
 async function logInAsStandingCustomer( page: Page ): Promise< void > {
 	await page.context().clearCookies();
-	await page.goto( 'wp-login.php' );
+	// The customer logs in from My Account: a wp-login.php login lands
+	// on wp-admin/profile.php, whose admin request starts Action
+	// Scheduler's async runner with the customer's cookies, and that
+	// runner writes an older copy of the session back, dropping the
+	// card-testing token the checkout page rendered.
+	await page.goto( 'my-account/' );
 	await expect(
 		page.getByLabel( 'Username or Email Address' )
 	).toBeVisible();
 	// Not an admin: no Dashboard to land on, so the standard success assertion
 	// is skipped in favor of the my-account read below.
-	await logIn( page, customer.username, customer.password, false );
+	await logInFromMyAccount(
+		page,
+		customer.username,
+		customer.password,
+		false
+	);
 	await page.goto( 'my-account/edit-account/' );
 	await expect(
 		page.getByRole( 'textbox', { name: /Email address/i } )

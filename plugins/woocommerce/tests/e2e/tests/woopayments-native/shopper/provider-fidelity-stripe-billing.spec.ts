@@ -3,7 +3,7 @@ import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 import { expect, tags, test } from '../../../fixtures/fixtures';
 import { wpEvalJson } from '../../../utils/cli';
 import { getFakeUser } from '../../../utils/data';
-import { logIn } from '../../../utils/login';
+import { logInFromMyAccount } from '../../../utils/login';
 import { createClassicCheckoutPage } from '../../../utils/pages';
 import {
 	hasStripeTestKey,
@@ -269,8 +269,18 @@ test.describe( 'WooPayments native Stripe Billing subscription fidelity', () => 
 		'SB1 a subscription bought with Stripe Billing on is billed by a Stripe subscription tagged woo_subscriptions whose first invoice is paid out of band, and the parent order settles one 1947 usd charge',
 		{ tag: FAMILY_TAGS },
 		async ( { page, restApi } ) => {
-			await page.goto( 'wp-login.php' );
-			await logIn( page, customer.username, customer.password, false );
+			// The customer logs in from My Account: a wp-login.php login lands
+			// on wp-admin/profile.php, whose admin request starts Action
+			// Scheduler's async runner with the customer's cookies, and that
+			// runner writes an older copy of the session back, dropping the
+			// card-testing token the checkout page rendered.
+			await page.goto( 'my-account/' );
+			await logInFromMyAccount(
+				page,
+				customer.username,
+				customer.password,
+				false
+			);
 
 			await page.goto( `?post_type=product&p=${ productId }` );
 			await page

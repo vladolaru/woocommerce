@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import type { ApiClient } from '@woocommerce/e2e-utils-playwright';
 
 import { expect, tags, test } from '../../../fixtures/fixtures';
-import { logIn } from '../../../utils/login';
+import { logInFromMyAccount } from '../../../utils/login';
 
 const CONTRACT_ID =
 	'default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:117::Saved cards › When using a basic card added on checkout › should not allow guest user to save the card';
@@ -341,10 +341,15 @@ test(
 				trackStripeTransactionRequests( customerPage );
 			const customerSubmissions =
 				trackCheckoutSubmissions( customerPage );
-			await customerPage.goto( 'wp-login.php' );
+			// The customer logs in from My Account: a wp-login.php login lands
+			// on wp-admin/profile.php, whose admin request starts Action
+			// Scheduler's async runner with the customer's cookies, and that
+			// runner writes an older copy of the session back, dropping the
+			// card-testing token the checkout page rendered.
+			await customerPage.goto( 'my-account/' );
 			// Not an admin: no Dashboard to land on, so the standard success
 			// assertion is skipped in favor of the checkout journey below.
-			await logIn(
+			await logInFromMyAccount(
 				customerPage,
 				CUSTOMER_USERNAME,
 				CUSTOMER_PASSWORD,
