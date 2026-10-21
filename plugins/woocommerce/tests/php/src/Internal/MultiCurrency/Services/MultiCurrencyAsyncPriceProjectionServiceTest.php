@@ -78,6 +78,31 @@ class MultiCurrencyAsyncPriceProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should write float sale prices with a dot decimal separator.
+	 */
+	public function test_writes_float_sale_prices_with_a_dot(): void {
+		$html = '<span class="screen-reader-text">Original price was: $12.50.</span>'
+			. ' <span class="screen-reader-text">Current price is: $9.50.</span>';
+
+		$result = MultiCurrencyAsyncPriceProjectionService::annotate_sale_price_screen_reader_text( $html, 12.5, 9.5 );
+
+		$this->assertStringContainsString( 'data-wcpay-sr-price="12.5"', $result );
+		$this->assertStringContainsString( 'data-wcpay-sr-price="9.5"', $result );
+	}
+
+	/**
+	 * @testdox Should write float range prices with a dot decimal separator.
+	 */
+	public function test_writes_float_range_prices_with_a_dot(): void {
+		$html = '<span class="screen-reader-text">Price range: $10.50 through $30.25</span>';
+
+		$result = MultiCurrencyAsyncPriceProjectionService::annotate_price_range_screen_reader_text( $html, 10.5, 30.25 );
+
+		$this->assertStringContainsString( 'data-wcpay-sr-price-from="10.5"', $result );
+		$this->assertStringContainsString( 'data-wcpay-sr-price-to="30.25"', $result );
+	}
+
+	/**
 	 * @testdox Should annotate price range screen reader text and skip non-numeric prices.
 	 */
 	public function test_annotates_price_range_screen_reader_text_and_skips_non_numeric_prices(): void {

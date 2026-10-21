@@ -148,13 +148,13 @@ class MultiCurrencyAsyncPriceProjectionService {
 				if ( 1 === $count ) {
 					return sprintf(
 						'<span class="screen-reader-text" data-wcpay-sr-type="sale_original" data-wcpay-sr-price="%s">',
-						esc_attr( (string) $regular_price )
+						self::escape_price_attribute( $regular_price )
 					);
 				}
 
 				return sprintf(
 					'<span class="screen-reader-text" data-wcpay-sr-type="sale_current" data-wcpay-sr-price="%s">',
-					esc_attr( (string) $sale_price )
+					self::escape_price_attribute( $sale_price )
 				);
 			},
 			$price_html,
@@ -187,8 +187,8 @@ class MultiCurrencyAsyncPriceProjectionService {
 			'/<span class="screen-reader-text">/',
 			sprintf(
 				'<span class="screen-reader-text" data-wcpay-sr-type="range" data-wcpay-sr-price-from="%s" data-wcpay-sr-price-to="%s">',
-				esc_attr( (string) $from ),
-				esc_attr( (string) $to )
+				self::escape_price_attribute( $from ),
+				self::escape_price_attribute( $to )
 			),
 			$price_html,
 			1
