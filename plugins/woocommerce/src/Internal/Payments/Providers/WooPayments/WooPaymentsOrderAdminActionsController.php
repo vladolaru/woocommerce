@@ -312,11 +312,15 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 					$this->provider
 				);
 
-			if ( $on_status_change && ! empty( $outcome->get_data()[ PaymentOutcome::DATA_ORDER_PAYMENT_LOCK_REFUSED ] ) && $this->schedule_retry( $order, $operation, $retry ) ) {
-				if ( 0 === $retry ) {
-					$this->add_operation_pending_note( $order, $operation );
+			if ( $on_status_change && ! empty( $outcome->get_data()[ PaymentOutcome::DATA_ORDER_PAYMENT_LOCK_REFUSED ] ) ) {
+				// A status change refused again while its first retry is still queued adds no second pending note.
+				$adds_pending_note = 0 === $retry && ! $this->is_first_retry_pending( $order, $operation );
+				if ( $this->schedule_retry( $order, $operation, $retry ) ) {
+					if ( $adds_pending_note ) {
+						$this->add_operation_pending_note( $order, $operation );
+					}
+					return;
 				}
-				return;
 			}
 
 			if ( $this->operation_failed_without_note( $outcome, $operation ) ) {
@@ -349,17 +353,36 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 			return false;
 		}
 
-		$this->scheduler->schedule_job(
-			self::RETRY_STATUS_CHANGE_OPERATION_ACTION,
-			array(
-				'order_id'  => $order->get_id(),
-				'operation' => $operation,
-				'retry'     => $retry + 1,
-			),
-			time() + $delays[ $retry ]
-		);
+		$this->scheduler->schedule_job( self::RETRY_STATUS_CHANGE_OPERATION_ACTION, $this->get_retry_args( $order, $operation, $retry + 1 ), time() + $delays[ $retry ] );
 
 		return true;
+	}
+
+	/**
+	 * Tell whether the first retry of a status-change operation is already queued for the order.
+	 *
+	 * @param WC_Order $order     Order.
+	 * @param string   $operation Capture or cancel.
+	 * @return bool
+	 */
+	private function is_first_retry_pending( WC_Order $order, string $operation ): bool {
+		return did_action( 'action_scheduler_init' ) && as_has_scheduled_action( self::RETRY_STATUS_CHANGE_OPERATION_ACTION, $this->get_retry_args( $order, $operation, 1 ), WooPaymentsActionSchedulerService::GROUP_ID );
+	}
+
+	/**
+	 * Get the arguments of a status-change operation's retry job.
+	 *
+	 * @param WC_Order $order     Order.
+	 * @param string   $operation Capture or cancel.
+	 * @param int      $retry     Retry number, from 1.
+	 * @return array{order_id:int,operation:string,retry:int}
+	 */
+	private function get_retry_args( WC_Order $order, string $operation, int $retry ): array {
+		return array(
+			'order_id'  => $order->get_id(),
+			'operation' => $operation,
+			'retry'     => $retry,
+		);
 	}
 
 	/**

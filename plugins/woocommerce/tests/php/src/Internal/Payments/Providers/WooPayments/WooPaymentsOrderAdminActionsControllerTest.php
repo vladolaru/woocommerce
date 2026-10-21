@@ -744,6 +744,36 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A $operation status change refused again while its first retry is queued adds no second pending note or retry.
+	 *
+	 * The merchant sets the order back to On hold and then to $order_status again while the lock is still held.
+	 *
+	 * @dataProvider status_change_operation_data
+	 *
+	 * @param string $operation    Capture or cancel.
+	 * @param string $order_status Status the order changed to.
+	 */
+	public function test_repeated_refused_status_change_keeps_one_retry_and_one_pending_note( string $operation, string $order_status ): void {
+		$order = $this->create_authorized_order();
+		$calls = new \ArrayObject();
+		$this->register_controller_with_provider( $operation, $calls );
+
+		$this->while_lock_is_held(
+			$order,
+			static function () use ( $order, $order_status ): void {
+				$order->update_status( $order_status );
+				$order->update_status( OrderStatus::ON_HOLD );
+				$order->update_status( $order_status );
+			}
+		);
+
+		$this->assertCount( 0, $calls );
+		$this->assertSame( array( 1 ), $this->get_pending_retries( $order ) );
+		$this->assertSame( 1, $this->count_notes( $order, $this->pending_note( $operation ) ) );
+		$this->assertSame( 0, $this->count_notes( $order, $this->failure_note( $operation ) ) );
+	}
+
+	/**
 	 * @testdox A $operation retry refused again is retried at 10 and then 60 minutes, with no new pending note, and the failure note comes only after the last.
 	 *
 	 * @dataProvider status_change_operation_data
