@@ -53,9 +53,8 @@ class OrderPaymentLock {
 	/**
 	 * Claim the order payment lock and record which operation holds it.
 	 *
-	 * Any held lock blocks checkout, refund, capture and cancel from starting; callers log a refusal through
-	 * log_refusal(), except a refused checkout claim, which is not logged. Release the lock with release() and the
-	 * returned token.
+	 * Any held lock blocks checkout, refund, capture and cancel from starting; callers log every refusal through
+	 * log_refusal(). Release the lock with release() and the returned token.
 	 * Client 11.1.0 locks only intent-driven status updates (class-wc-payments-order-service.php:2756-2761).
 	 *
 	 * The lock value names what the claim processes, or the provider's sentinel when it names nothing; the runtime only

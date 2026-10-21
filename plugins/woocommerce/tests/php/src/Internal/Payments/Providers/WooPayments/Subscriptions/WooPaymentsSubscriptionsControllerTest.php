@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Subscriptions;
 
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
@@ -706,6 +707,41 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 				),
 			),
 		);
+	}
+
+	/**
+	 * @testdox A scheduled renewal the order payment lock refuses logs one warning line with the lock refusal prefix.
+	 *
+	 * Client 11.1.0 charges a renewal with no lock (trait-wc-payment-gateway-wcpay-subscriptions.php:402-430). Here the
+	 * renewal claims the order payment lock as a checkout does, so a refusal leaves the renewal pending and is logged.
+	 */
+	public function test_scheduled_renewal_refused_by_the_order_payment_lock_logs_one_warning(): void {
+		$user_id = self::factory()->user->create();
+		$renewal = $this->create_order();
+		$renewal->set_customer_id( $user_id );
+		$renewal->add_payment_token( $this->create_card_token( $user_id, 'pm_renewal' ) );
+		$renewal->save();
+		$this->ensure_wcs_renewal_subscriptions_double();
+		$sut = $this->create_sut( wc_get_container()->get( PaymentProcessingService::class ), new WooPaymentsProvider() );
+
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$token      = $lock->claim( $renewal, $vocabulary, 'pi_holder', 'payment status update' );
+		$this->assertNotNull( $token );
+		$logger = RecordingWcLogger::install();
+		try {
+			$sut->scheduled_subscription_payment( 12.0, wc_get_order( $renewal->get_id() ) );
+		} finally {
+			$lock->release( $renewal, $vocabulary, $token );
+		}
+
+		$refusals = array_values( array_filter( $logger->lines, static fn( array $line ): bool => 0 === strpos( $line[1], 'order payment lock refused:' ) ) );
+		$this->assertCount( 1, $refusals );
+		$this->assertSame( 'warning', $refusals[0][0] );
+		$this->assertMatchesRegularExpression( '/^order payment lock refused: order ' . $renewal->get_id() . ', refused checkout, held by payment status update for \\d+s$/', $refusals[0][1] );
+		$reloaded = wc_get_order( $renewal->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'pending', $reloaded->get_status() );
 	}
 
 	/**

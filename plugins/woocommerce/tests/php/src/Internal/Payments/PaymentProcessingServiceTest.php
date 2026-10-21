@@ -2619,6 +2619,36 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A checkout the order payment lock refuses logs one warning line with the lock refusal prefix.
+	 *
+	 * Client 11.1.0 takes no lock at checkout (class-wc-payment-gateway-wcpay.php:1251-1268), so every refusal here is one
+	 * the client would have allowed.
+	 */
+	public function test_checkout_refused_by_the_order_payment_lock_logs_one_warning(): void {
+		$order  = $this->create_woopayments_order( '10.00' );
+		$logger = $this->create_fake_logger();
+		add_filter(
+			'woocommerce_logging_class',
+			function () use ( $logger ) {
+				return $logger;
+			}
+		);
+		$lock  = wc_get_container()->get( OrderPaymentLock::class );
+		$token = $lock->claim( $order, $this->persistence_vocabulary, 'pi_holder', 'payment status update' );
+		$this->assertNotNull( $token );
+
+		try {
+			$this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_test' ), new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_test' ) ) );
+		} finally {
+			$lock->release( $order, $this->persistence_vocabulary, $token );
+		}
+
+		$this->assertCount( 1, $logger->entries );
+		$this->assertSame( 'warning', $logger->entries[0]['level'] );
+		$this->assertMatchesRegularExpression( '/^order payment lock refused: order ' . $order->get_id() . ', refused checkout, held by payment status update for \\d+s$/', $logger->entries[0]['message'] );
+	}
+
+	/**
 	 * @testdox Should not call the provider while any order operation is locked.
 	 */
 	public function test_process_checkout_returns_failure_when_any_order_operation_is_locked(): void {
