@@ -7,8 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use WC_Tracks;
-
 /**
  * Marks WooPayments Tracks events as sent by WooCommerce core, and records the server-side admin ones.
  *
@@ -54,11 +52,7 @@ final class WooPaymentsTracks {
 	public static function record_wcadmin_event( string $event_name, array $properties = array() ): void {
 		$properties = self::with_runtime( $properties );
 
-		if ( function_exists( 'wc_admin_record_tracks_event' ) ) {
-			wc_admin_record_tracks_event( $event_name, $properties );
-		} elseif ( class_exists( WC_Tracks::class ) ) {
-			WC_Tracks::record_event( $event_name, $properties );
-		}
+		wc_admin_record_tracks_event( $event_name, $properties );
 	}
 
 	/**

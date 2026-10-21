@@ -159,9 +159,7 @@ class WooPaymentsWooPayStoreApiRequestHandler {
 	 * @since 11.0.0
 	 */
 	public function has_valid_request_signature(): bool {
-		$signed = class_exists( Rest_Authentication::class )
-			? Rest_Authentication::is_signed_with_blog_token()
-			: false;
+		$signed = Rest_Authentication::is_signed_with_blog_token();
 
 		/**
 		 * Filters whether a WooPay session request is signed with the connected blog token.

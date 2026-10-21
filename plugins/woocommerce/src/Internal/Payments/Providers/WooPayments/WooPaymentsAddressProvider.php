@@ -153,7 +153,7 @@ class WooPaymentsAddressProvider extends AbstractAutomatticAddressProvider imple
 	 * @return bool
 	 */
 	public function can_telemetry() {
-		return class_exists( '\WC_Site_Tracking' ) && \WC_Site_Tracking::is_tracking_enabled();
+		return \WC_Site_Tracking::is_tracking_enabled();
 	}
 
 	/**

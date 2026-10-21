@@ -97,12 +97,10 @@ class WooPaymentsPostKycActivationEmail extends WC_Email {
 
 		$this->restore_locale();
 
-		if ( class_exists( '\WC_Tracks' ) ) {
-			if ( $sent ) {
-				WooPaymentsTracks::record_wcadmin_event( 'wcpay_post_kyc_activation_email_sent', array( 'stage' => $stage ) );
-			} elseif ( $this->is_enabled() && $this->get_recipient() ) {
-				WooPaymentsTracks::record_wcadmin_event( 'wcpay_post_kyc_activation_email_send_failed', array( 'stage' => $stage ) );
-			}
+		if ( $sent ) {
+			WooPaymentsTracks::record_wcadmin_event( 'wcpay_post_kyc_activation_email_sent', array( 'stage' => $stage ) );
+		} elseif ( $this->is_enabled() && $this->get_recipient() ) {
+			WooPaymentsTracks::record_wcadmin_event( 'wcpay_post_kyc_activation_email_send_failed', array( 'stage' => $stage ) );
 		}
 
 		return $sent;

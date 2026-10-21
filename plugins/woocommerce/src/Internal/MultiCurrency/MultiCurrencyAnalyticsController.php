@@ -446,7 +446,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			return (bool) call_user_func( $this->hpos_resolver );
 		}
 
-		return class_exists( OrderUtil::class ) && OrderUtil::custom_orders_table_usage_is_enabled();
+		return OrderUtil::custom_orders_table_usage_is_enabled();
 	}
 
 	/**

@@ -395,9 +395,9 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 			),
 			'wc_setup'                                    => array(
 				'version'                     => explode( '-', WC_VERSION, 2 )[0],
-				'store_id'                    => ( class_exists( '\WC_Install' ) && defined( '\WC_Install::STORE_ID_OPTION' ) ) ? get_option( \WC_Install::STORE_ID_OPTION, null ) : null,
+				'store_id'                    => get_option( \WC_Install::STORE_ID_OPTION, null ),
 				'currency'                    => get_woocommerce_currency(),
-				'tracking_enabled'            => class_exists( '\WC_Site_Tracking' ) ? \WC_Site_Tracking::is_tracking_enabled() : false,
+				'tracking_enabled'            => \WC_Site_Tracking::is_tracking_enabled(),
 				'registered_payment_gateways' => $this->get_store_registered_gateway_ids(),
 				'enabled_payment_gateways'    => $this->get_store_enabled_gateway_ids(),
 				'wc_subscriptions_active'     => WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active(),

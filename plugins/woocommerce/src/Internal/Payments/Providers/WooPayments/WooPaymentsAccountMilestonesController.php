@@ -501,9 +501,7 @@ class WooPaymentsAccountMilestonesController implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( class_exists( '\WC_Tracks' ) ) {
-			WooPaymentsTracks::record_wcadmin_event( 'wcpay_post_kyc_activation_email_cta_clicked', array( 'stage' => $stage ) );
-		}
+		WooPaymentsTracks::record_wcadmin_event( 'wcpay_post_kyc_activation_email_cta_clicked', array( 'stage' => $stage ) );
 
 		wp_safe_redirect( remove_query_arg( array( 'wcpay_referrer', 'wcpay_referrer_stage' ) ) );
 		exit;

@@ -141,6 +141,6 @@ final class MultiCurrencyUsageDetector {
 			return (bool) call_user_func( $this->hpos_enabled_resolver );
 		}
 
-		return class_exists( OrderUtil::class ) && OrderUtil::custom_orders_table_usage_is_enabled();
+		return OrderUtil::custom_orders_table_usage_is_enabled();
 	}
 }

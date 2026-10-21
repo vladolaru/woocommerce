@@ -785,10 +785,6 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	 * @param int $order_id Order ID.
 	 */
 	protected function sync_order_stats( int $order_id ): void {
-		if ( ! class_exists( 'Automattic\WooCommerce\Admin\API\Reports\Orders\Stats\DataStore' ) ) {
-			return;
-		}
-
 		try {
 			\Automattic\WooCommerce\Admin\API\Reports\Orders\Stats\DataStore::sync_order( $order_id );
 		} catch ( Exception $exception ) {
@@ -805,10 +801,6 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	 * @param int $refund_id Refund ID.
 	 */
 	protected function delete_refund_order_stats( int $refund_id ): void {
-		if ( ! class_exists( 'Automattic\WooCommerce\Admin\API\Reports\Orders\Stats\DataStore' ) ) {
-			return;
-		}
-
 		global $wpdb;
 
 		try {
@@ -824,9 +816,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 
 			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- WooCommerce's own hook, fired as the order stats data store fires it after deleting a stats row; the refund is already deleted, so the customer ID is 0.
 			do_action( 'woocommerce_analytics_delete_order_stats', $refund_id, 0 );
-			if ( class_exists( ReportsCache::class ) ) {
-				ReportsCache::invalidate();
-			}
+			ReportsCache::invalidate();
 			wc_get_logger()->info(
 				sprintf( 'Deleted stats row for refund %d', $refund_id ),
 				array( 'source' => 'wcpay-fee-remediation' )
