@@ -3,7 +3,10 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -1685,6 +1688,146 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $saves_charge ? 'normal' : '', $reloaded->get_meta( '_charge_risk_level', true ) );
 		$details = json_decode( (string) $reloaded->get_meta( '_wcpay_payment_method_details', true ), true );
 		$this->assertSame( $saves_charge ? $intent['charges']['data'][0]['payment_method_details'] : null, $details, "The charge's payment method details, as os:1373-1378 store them." );
+	}
+
+	/**
+	 * @testdox A post-authentication decline gets one failed note whichever of the status update and the webhook runs first: $_dataName.
+	 *
+	 * Client 11.1.0's status update fails the order with its own note and the raw platform message
+	 * (gw:4344 → os:418-422 → os:463-478, note text os:2106-2128); its payment_intent.payment_failed webhook adds nothing to
+	 * an order already failed (os:469-472). The status update's note shares the webhook note's identity (intent, failed,
+	 * payment_failed), so when the webhook runs inside the status update's intent fetch and fails the order first, the
+	 * status update adds none. The intent is REC-3DS-3b (`Fixtures/platform-3ds-challenge-results.json`, pair
+	 * `blocks_post_authentication_decline`). The webhook is the recorded card decline delivery
+	 * (`Fixtures/platform-payment-intent-events.json`, `card_declined_failed`) carrying that intent as its object: a
+	 * forwarded payment_intent event's object is the PaymentIntent the fetch returns, with the same keys.
+	 *
+	 * @dataProvider post_authentication_decline_note_order_data
+	 *
+	 * @param bool   $webhook_first Whether the webhook runs inside the status update's intent fetch.
+	 * @param string $note_suffix   End of the one failed note.
+	 */
+	public function test_post_authentication_decline_gets_one_failed_note( bool $webhook_first, string $note_suffix ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$intent = $this->load_recorded_manual_3ds_entry( 'blocks_post_authentication_decline' )['body'];
+		$order  = $this->create_woopayments_order( '10.99' );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->update_meta_data( '_payment_method_id', (string) $intent['last_payment_error']['payment_method']['id'] );
+		$order->save();
+		$intent['metadata']['order_id']  = (string) $order->get_id();
+		$intent['metadata']['order_key'] = $order->get_order_key();
+		$webhook                         = RecordedPlatformEvents::body( 'platform-payment-intent-events.json', 'card_declined_failed' );
+		$webhook['data']['object']       = $intent;
+		$ingestor                        = wc_get_container()->get( WooPaymentsEventIngestor::class );
+
+		$api_client = new class( $intent, $webhook_first ? static fn() => $ingestor->process( $webhook ) : null ) extends WooPaymentsApiClient {
+			/**
+			 * PaymentIntent response.
+			 *
+			 * @var array<string,mixed>
+			 */
+			private array $intent;
+
+			/**
+			 * Runs while the intent is fetched, when set.
+			 *
+			 * @var callable|null
+			 */
+			private $during_fetch;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param array<string,mixed> $intent       PaymentIntent response.
+			 * @param callable|null       $during_fetch Runs while the intent is fetched.
+			 */
+			public function __construct( array $intent, ?callable $during_fetch ) {
+				$this->intent       = $intent;
+				$this->during_fetch = $during_fetch;
+			}
+
+			/**
+			 * Tell whether the transport is available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
+
+			/**
+			 * Retrieve the PaymentIntent.
+			 *
+			 * @param string $intent_id PaymentIntent ID.
+			 * @return array<string,mixed>
+			 */
+			public function get_payment_intention( string $intent_id ): array {
+				unset( $intent_id );
+				if ( null !== $this->during_fetch ) {
+					( $this->during_fetch )();
+				}
+
+				return $this->intent;
+			}
+		};
+
+		$this->create_controller( $api_client, null, null, $this->create_account_service( true ) )->confirm_order_payment(
+			array(
+				'_ajax_nonce' => wp_create_nonce( 'wcpay_update_order_status_nonce' ),
+				'order_id'    => $order->get_id(),
+				'intent_id'   => $intent['id'],
+			)
+		);
+		if ( ! $webhook_first ) {
+			$ingestor->process( $webhook );
+		}
+
+		$reloaded     = wc_get_order( $order->get_id() );
+		$failed_notes = $this->get_failed_payment_notes( $order );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'failed', $reloaded->get_status() );
+		$this->assertCount( 1, $failed_notes, 'One failed note, whichever writer ran first.' );
+		$this->assertStringEndsWith( $note_suffix, $failed_notes[0] );
+		$this->assertStringContainsString( $intent['id'], $failed_notes[0] );
+	}
+
+	/**
+	 * Which writer of a post-authentication decline runs first, and the failed note the order keeps.
+	 *
+	 * @return array<string,array{bool,string}>
+	 */
+	public function post_authentication_decline_note_order_data(): array {
+		return array(
+			'status update first, the webhook later adds none' => array( false, '). Your card was declined.' ),
+			'webhook during the intent fetch, the update adds none' => array( true, '). With the following message: <code>Your card was declined.</code>' ),
+		);
+	}
+
+	/**
+	 * @testdox A post-authentication decline on an order already failed adds no failed note, as client 11.1.0's mark_payment_failed() (os:469-472).
+	 */
+	public function test_post_authentication_decline_on_a_failed_order_adds_no_failed_note(): void {
+		$intent = $this->load_recorded_manual_3ds_entry( 'blocks_post_authentication_decline' )['body'];
+		$order  = $this->create_woopayments_order( '10.99' );
+		$order->set_status( OrderStatus::FAILED );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->save();
+
+		$this->get_update_order_status_response_for_intent( $order, $intent );
+
+		$this->assertSame( array(), $this->get_failed_payment_notes( $order ) );
+	}
+
+	/**
+	 * Get the contents of an order's payment failure notes.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return string[]
+	 */
+	private function get_failed_payment_notes( WC_Order $order ): array {
+		$contents = wp_list_pluck( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'content' );
+
+		return array_values( array_filter( $contents, static fn( $content ): bool => false !== strpos( (string) $content, '<strong>failed</strong> using WooPayments' ) ) );
 	}
 
 	/**

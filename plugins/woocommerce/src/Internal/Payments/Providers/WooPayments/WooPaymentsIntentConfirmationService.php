@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
@@ -300,11 +301,24 @@ class WooPaymentsIntentConfirmationService {
 			$plan
 		);
 
-		$plain_note_equivalents = null;
+		$note_candidates = null;
+		$note_type       = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE;
 		if ( $zero_amount_plain_note && $is_setup && 0.0 >= (float) $order->get_total() && PaymentOutcome::STATUS_COMPLETED === $outcome->get_status() ) {
 			// Client update_order_status() completes a $0 order itself with a plain note; its order service then sees a paid order
 			// and writes no success note, so no fee job either (gw:4248-4275, os:2747-2764).
-			$plain_note_equivalents = $order->is_paid() ? array() : wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_zero_amount_setup_success_note_candidates( $order, $intent_id );
+			$note_candidates = $order->is_paid() ? array() : wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_zero_amount_setup_success_note_candidates( $order, $intent_id );
+		} elseif ( ! $is_setup && 'requires_payment_method' === (string) ( $intent['status'] ?? '' ) && ! $order->has_status( OrderStatus::FAILED ) ) {
+			// Client update_order_status_from_intent() fails the order with its own note (os:418-422 → mark_payment_failed(),
+			// which adds nothing to an order already failed, os:469-472). The note shares the payment_intent.payment_failed
+			// webhook note's identity, so whichever runs second adds none.
+			$charge          = WooPaymentsIntentCodec::latest_charge( $intent );
+			$note_candidates = wc_get_container()->get( WooPaymentsOrderNoteService::class )->format_order_status_update_payment_failed_note_candidates(
+				$order,
+				$intent_id,
+				isset( $charge['id'] ) ? (string) $charge['id'] : '',
+				isset( $intent['last_payment_error']['message'] ) && is_scalar( $intent['last_payment_error']['message'] ) ? (string) $intent['last_payment_error']['message'] : ''
+			);
+			$note_type       = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_FAILED;
 		}
 
 		$meta = ( new WooPaymentsOutcomeMetadataMapper() )->get_outcome_meta( $outcome );
@@ -312,7 +326,7 @@ class WooPaymentsIntentConfirmationService {
 			$meta['_intention_status'] = $provider_status;
 		}
 
-		return $this->lifecycle_event( $outcome, $meta, $plain_note_equivalents );
+		return $this->lifecycle_event( $outcome, $meta, $note_candidates, $note_type );
 	}
 
 	/**
@@ -337,26 +351,27 @@ class WooPaymentsIntentConfirmationService {
 	/**
 	 * Build the lifecycle event for an enriched provider outcome.
 	 *
-	 * @param PaymentOutcome        $outcome                Enriched provider outcome.
-	 * @param array<string,string>  $meta                   Order meta to update.
-	 * @param array<int,mixed>|null $plain_note_equivalents A $0 order's plain completion note and its other texts, replacing the outcome's note; null keeps the outcome's.
+	 * @param PaymentOutcome        $outcome         Enriched provider outcome.
+	 * @param array<string,string>  $meta            Order meta to update.
+	 * @param array<int,mixed>|null $note_candidates A note and its other texts, replacing the outcome's note; null keeps the outcome's.
+	 * @param string                $note_type       Note type of the replacing note.
 	 * @return PaymentLifecycleEvent
 	 */
-	private function lifecycle_event( PaymentOutcome $outcome, array $meta, ?array $plain_note_equivalents = null ): PaymentLifecycleEvent {
+	private function lifecycle_event( PaymentOutcome $outcome, array $meta, ?array $note_candidates = null, string $note_type = PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE ): PaymentLifecycleEvent {
 		$data             = $outcome->get_data();
 		$note             = isset( $data[ PaymentOutcome::DATA_NOTE ] ) && is_string( $data[ PaymentOutcome::DATA_NOTE ] ) && '' !== $data[ PaymentOutcome::DATA_NOTE ]
 			? $data[ PaymentOutcome::DATA_NOTE ]
 			: null;
-		$note_type        = isset( $data[ PaymentOutcome::DATA_NOTE_TYPE ] ) && is_string( $data[ PaymentOutcome::DATA_NOTE_TYPE ] ) && '' !== $data[ PaymentOutcome::DATA_NOTE_TYPE ]
+		$event_note_type  = isset( $data[ PaymentOutcome::DATA_NOTE_TYPE ] ) && is_string( $data[ PaymentOutcome::DATA_NOTE_TYPE ] ) && '' !== $data[ PaymentOutcome::DATA_NOTE_TYPE ]
 			? $data[ PaymentOutcome::DATA_NOTE_TYPE ]
 			: null;
 		$note_equivalents = isset( $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] ) && is_array( $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ] )
 			? $data[ PaymentOutcome::DATA_NOTE_EQUIVALENTS ]
 			: array();
-		if ( null !== $plain_note_equivalents ) {
-			$note_equivalents = $plain_note_equivalents;
+		if ( null !== $note_candidates ) {
+			$note_equivalents = $note_candidates;
 			$note             = $note_equivalents[0] ?? null;
-			$note_type        = null === $note ? null : PaymentLifecycleEvent::NOTE_TYPE_PAYMENT_COMPLETE;
+			$event_note_type  = null === $note ? null : $note_type;
 		}
 
 		return new PaymentLifecycleEvent(
@@ -365,7 +380,7 @@ class WooPaymentsIntentConfirmationService {
 			$meta,
 			array(),
 			$note,
-			$note_type,
+			$event_note_type,
 			$note_equivalents
 		);
 	}

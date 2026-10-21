@@ -336,6 +336,27 @@ class WooPaymentsOrderNoteService {
 	}
 
 	/**
+	 * Build the payment-failure note of the shopper page's order status update in each wording that counts as the same note.
+	 *
+	 * Client 11.1.0 appends the platform's raw error message, and nothing when it is empty (class-wc-payments-order-service.php:418-422,
+	 * 2106-2128). The WooCommerce wording escapes the message, as the webhook's failure note does.
+	 *
+	 * @param WC_Order $order     Order object.
+	 * @param string   $intent_id Payment intent ID.
+	 * @param string   $charge_id Charge ID.
+	 * @param string   $message   Platform error message.
+	 * @return string[] The note's wordings, WooCommerce's first.
+	 *
+	 * @since 11.2.0
+	 */
+	public function format_order_status_update_payment_failed_note_candidates( WC_Order $order, string $intent_id, string $charge_id, string $message ): array {
+		return $this->format_amount_note_candidates(
+			$order,
+			fn( string $text_domain, string $formatted_amount ): string => $this->format_payment_failed_note_for_domain( $order, $intent_id, $charge_id, array(), $text_domain, $formatted_amount, 'woocommerce-payments' === $text_domain ? $message : esc_html( $message ) )
+		);
+	}
+
+	/**
 	 * Build the redirect-return payment-failure note in each wording that counts as the same note.
 	 *
 	 * Client 11.1.0 gw:2376-2382, 2440-2441: "UPE payment failed: We're not able to process this payment. Please try again later.",
@@ -1096,7 +1117,7 @@ class WooPaymentsOrderNoteService {
 	 * @param array<string,mixed> $last_payment_error Provider error details.
 	 * @param string              $text_domain        Translation catalog to render.
 	 * @param ?string             $formatted_amount   Preformatted order amount, when supplied.
-	 * @param ?string             $message            Failure message to append instead of the provider error details.
+	 * @param ?string             $message            Failure message to append instead of the provider error details; nothing is appended when empty.
 	 * @return string
 	 */
 	private function format_payment_failed_note_for_domain( WC_Order $order, string $intent_id, string $charge_id, array $last_payment_error, string $text_domain, ?string $formatted_amount = null, ?string $message = null ): string {
@@ -1124,7 +1145,9 @@ class WooPaymentsOrderNoteService {
 			$transaction_url
 		);
 
-		return $note . ' ' . ( $message ?? $this->format_payment_failure_message_for_domain( $last_payment_error, $text_domain ) );
+		$message = $message ?? $this->format_payment_failure_message_for_domain( $last_payment_error, $text_domain );
+
+		return '' === $message ? $note : $note . ' ' . $message;
 	}
 
 	/**
