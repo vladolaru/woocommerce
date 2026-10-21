@@ -219,7 +219,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 */
 	public function handle_store_api_response( $response, $server = null, $request = null ) {
 		// The session class is swappable (woocommerce_session_handler), so only methods the handler has are called.
-		if ( ! $response instanceof WP_REST_Response || ! WC() || ! WC()->session || ! is_callable( array( WC()->session, 'get_customer_id' ) ) ) {
+		if ( ! $response instanceof WP_REST_Response || ! WC()->session || ! is_callable( array( WC()->session, 'get_customer_id' ) ) ) {
 			return $response;
 		}
 
@@ -239,7 +239,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 * Save the real cart data before WooCommerce empties the checkout cart on order-received.
 	 */
 	public function save_old_cart_data_for_restore(): void {
-		if ( ! WC() || ! WC()->cart ) {
+		if ( ! WC()->cart ) {
 			return;
 		}
 
@@ -258,7 +258,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 * Restore the real cart data after WooCommerce empties the checkout cart on order-received.
 	 */
 	public function restore_old_cart_data(): void {
-		if ( null === $this->saved_cart_data || ! WC() || ! WC()->cart ) {
+		if ( null === $this->saved_cart_data || ! WC()->cart ) {
 			return;
 		}
 
@@ -287,7 +287,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 * @return array<string,mixed>
 	 */
 	private function get_cart_session_snapshot(): array {
-		if ( ! WC() || ! WC()->session ) {
+		if ( ! WC()->session ) {
 			return array();
 		}
 
@@ -318,7 +318,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 * @param array<string,mixed> $snapshot Session values to restore.
 	 */
 	private function restore_cart_session_snapshot( array $snapshot ): void {
-		if ( ! WC() || ! WC()->session || ! is_callable( array( WC()->session, 'set' ) ) ) {
+		if ( ! WC()->session || ! is_callable( array( WC()->session, 'set' ) ) ) {
 			return;
 		}
 

@@ -562,7 +562,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 	 * @return array<int,array<string,mixed>>
 	 */
 	private function get_store_active_plugins(): array {
-		// WordPress loads wp-admin/includes/plugin.php on every request only since core ticket #62244.
+		// WordPress 6.8+ loads this file on every request (#62244); kept as WooCommerce's own pattern (see src/Admin/PluginsHelper.php).
 		if ( ! function_exists( 'get_plugins' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}

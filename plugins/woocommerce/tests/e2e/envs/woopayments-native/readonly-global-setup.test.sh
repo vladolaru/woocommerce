@@ -19,6 +19,8 @@ printf 'pnpm %s\n' "$*" >> "${E2E_FAKE_COMMAND_LOG:?}"
 grep -Fq 'update_option( "woocommerce_feature_multi_currency_enabled", "yes" );' <<< "$*"
 [[ "$*" == *'wcpay_multi_currency_enabled_currencies'* ]]
 [[ "$*" == *'express_checkout_checkout_methods'* ]]
+grep -Fq '$settings["platform_checkout"] = "no"' <<< "$*"
+grep -Fq 'if ( ! in_array( "card", $enabled_methods, true ) ) { $enabled_methods[] = "card"; }' <<< "$*"
 grep -Fq '$settings["manual_capture"] = "no"' <<< "$*"
 grep -Fq 'E2E_WOOPAYMENTS_NATIVE_FIXTURE ) { update_option( "woocommerce_coming_soon", "no" );' <<< "$*"
 grep -Fq '$currency_cache_time = time();' <<< "$*"

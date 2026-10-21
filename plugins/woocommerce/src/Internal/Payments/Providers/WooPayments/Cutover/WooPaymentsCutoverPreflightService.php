@@ -352,7 +352,7 @@ class WooPaymentsCutoverPreflightService {
 	 * finds nothing to deactivate. An extension active for every site stays active, and this reports false.
 	 */
 	public function deactivate_woopayments_plugin(): bool {
-		// WordPress loads wp-admin/includes/plugin.php on every request only since core ticket #62244.
+		// WordPress 6.8+ loads this file on every request (#62244); kept as WooCommerce's own pattern (see src/Admin/PluginsHelper.php).
 		if ( ! function_exists( 'deactivate_plugins' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
@@ -488,7 +488,7 @@ class WooPaymentsCutoverPreflightService {
 		if ( WooPaymentsRuntimeArbiter::PLUGIN_FILE === $plugin_file ) {
 			return true;
 		}
-		// WordPress loads wp-admin/includes/plugin.php on every request only since core ticket #62244.
+		// WordPress 6.8+ loads this file on every request (#62244); kept as WooCommerce's own pattern (see src/Admin/PluginsHelper.php).
 		if ( ! function_exists( 'get_plugins' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}

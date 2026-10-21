@@ -302,7 +302,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @param string $cookie New logged-in cookie value.
 	 */
 	public static function handle_set_logged_in_cookie( $cookie ): void {
-		// Core's Store API guards the same constant (StoreApi/Authentication.php).
+		// Always defined at runtime (wp_cookie_constants() runs before plugins load); kept because PHPStan does not know the
+		// constant, as core's Store API does (StoreApi/Authentication.php).
 		if ( defined( 'LOGGED_IN_COOKIE' ) && defined( 'WOOCOMMERCE_CHECKOUT' ) && WOOCOMMERCE_CHECKOUT && did_action( 'woocommerce_created_customer' ) > 0 ) {
 			$_COOKIE[ LOGGED_IN_COOKIE ] = $cookie;
 		}

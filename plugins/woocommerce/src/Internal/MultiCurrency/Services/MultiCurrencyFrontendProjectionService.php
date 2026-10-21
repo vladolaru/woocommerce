@@ -374,7 +374,7 @@ class MultiCurrencyFrontendProjectionService {
 	private function has_active_session(): bool {
 		$session = WC()->session;
 
-		// The session class is swappable (woocommerce_session_handler), and the Store API handler has no has_session().
+		// The session class is swappable (woocommerce_session_handler), and the WC_Session base class has no has_session().
 		return is_object( $session )
 			&& method_exists( $session, 'has_session' )
 			&& $session->has_session();
