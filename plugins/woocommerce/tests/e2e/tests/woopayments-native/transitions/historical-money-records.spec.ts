@@ -5,7 +5,7 @@ import { expect, tags, test } from '../../../fixtures/fixtures';
 import { wpCLI, wpEvalJson } from '../../../utils/cli';
 import { admin } from '../../../test-data/data';
 import { getFakeUser } from '../../../utils/data';
-import { logIn } from '../../../utils/login';
+import { logIn, logInFromMyAccount } from '../../../utils/login';
 import { random } from '../../../utils/helpers';
 import { createClassicCheckoutPage } from '../../../utils/pages';
 import {
@@ -141,8 +141,18 @@ async function runHistoricalMoneyRecords(
 	// the case's own error.
 	{
 		// Plugin era: a declined classic checkout creates exactly one failed order.
-		await page.goto( 'wp-login.php' );
-		await logIn( page, customer.username, customer.password, false );
+		// The customer logs in from My Account: a wp-login.php login lands
+		// on wp-admin/profile.php, whose admin request starts Action
+		// Scheduler's async runner with the customer's cookies, and that
+		// runner writes an older copy of the session back, dropping the
+		// card-testing token the checkout page rendered.
+		await page.goto( 'my-account/' );
+		await logInFromMyAccount(
+			page,
+			customer.username,
+			customer.password,
+			false
+		);
 		await page.goto( `?post_type=product&p=${ product.id }` );
 		await page
 			.getByRole( 'button', { name: 'Add to cart', exact: true } )
@@ -269,8 +279,13 @@ async function runHistoricalMoneyRecords(
 		// Native era: the same order's pay-for-order link, the fraud
 		// prevention field only when the seeded account is eligible, one
 		// successful payment landing back on the same order.
-		await page.goto( 'wp-login.php' );
-		await logIn( page, customer.username, customer.password, false );
+		await page.goto( 'my-account/' );
+		await logInFromMyAccount(
+			page,
+			customer.username,
+			customer.password,
+			false
+		);
 		await page.goto( paymentUrl );
 		await expect( page ).toHaveURL( paymentUrl );
 		await expect( page ).toHaveTitle( /Pay for order/i );
