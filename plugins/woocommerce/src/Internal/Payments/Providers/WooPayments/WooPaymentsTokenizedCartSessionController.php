@@ -333,7 +333,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	private function has_valid_session_nonce(): bool {
 		$nonce = self::get_server_header( self::SESSION_NONCE_HEADER );
 
-		return '' !== $nonce && function_exists( 'wp_verify_nonce' ) && (bool) \wp_verify_nonce( $nonce, self::SESSION_NONCE_ACTION );
+		return '' !== $nonce && (bool) \wp_verify_nonce( $nonce, self::SESSION_NONCE_ACTION );
 	}
 
 	/**

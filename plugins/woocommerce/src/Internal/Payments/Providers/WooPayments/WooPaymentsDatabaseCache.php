@@ -210,7 +210,7 @@ class WooPaymentsDatabaseCache {
 
 		if (
 			defined( 'DOING_CRON' )
-			|| ( function_exists( 'wp_doing_ajax' ) && wp_doing_ajax() )
+			|| wp_doing_ajax()
 			|| $this->refresh_disabled
 		) {
 			return false;

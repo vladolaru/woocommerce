@@ -1358,7 +1358,7 @@ final class WooPaymentsExpressCheckoutAddressNormalizer {
 
 		$nonce = (string) $request->get_header( self::TOKENIZED_CART_NONCE_HEADER );
 
-		return '' !== $nonce && function_exists( 'wp_verify_nonce' ) && (bool) \wp_verify_nonce( $nonce, self::TOKENIZED_CART_NONCE_ACTION );
+		return '' !== $nonce && (bool) \wp_verify_nonce( $nonce, self::TOKENIZED_CART_NONCE_ACTION );
 	}
 
 	/**
@@ -1634,7 +1634,7 @@ final class WooPaymentsExpressCheckoutAddressNormalizer {
 	 * @return string
 	 */
 	private function normalize_address_candidate( string $value ): string {
-		$value = function_exists( 'remove_accents' ) ? remove_accents( $value ) : $value;
+		$value = remove_accents( $value );
 		$value = strtolower( trim( $value ) );
 		$value = preg_replace( '/\s+/', ' ', $value );
 

@@ -416,7 +416,7 @@ class WooPaymentsCheckoutAssets {
 			'fraudServices'                            => $this->get_fraud_services_config(),
 			'features'                                 => array_values( $supports ),
 			'isCheckout'                               => is_checkout(),
-			'isPreview'                                => function_exists( 'is_preview' ) && is_preview(),
+			'isPreview'                                => is_preview(),
 			'isShortcodeCheckout'                      => $this->is_shortcode_checkout(),
 			'isCoreNativeCheckoutAvailable'            => $this->should_expose_checkout_surface(),
 			'isWooPayEnabled'                          => false,
@@ -1198,7 +1198,7 @@ class WooPaymentsCheckoutAssets {
 			return false;
 		}
 
-		$post_id = function_exists( 'get_queried_object_id' ) ? get_queried_object_id() : 0;
+		$post_id = get_queried_object_id();
 		$post    = $post_id ? get_post( $post_id ) : null;
 
 		if ( ! $post instanceof \WP_Post ) {

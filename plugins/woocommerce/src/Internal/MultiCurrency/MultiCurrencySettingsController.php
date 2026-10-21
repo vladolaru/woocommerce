@@ -251,9 +251,7 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( function_exists( 'print_emoji_detection_script' ) ) {
-			print_emoji_detection_script();
-		}
+		print_emoji_detection_script();
 	}
 
 	/**
@@ -306,7 +304,7 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 			return (bool) call_user_func( $this->admin_request_resolver );
 		}
 
-		return function_exists( 'is_admin' ) && is_admin();
+		return is_admin();
 	}
 
 	/**

@@ -643,7 +643,7 @@ class WooPaymentsExpressCheckoutService {
 			return $shortcode_product;
 		}
 
-		$post_id = function_exists( 'get_queried_object_id' ) ? get_queried_object_id() : 0;
+		$post_id = get_queried_object_id();
 		if ( $post_id <= 0 ) {
 			$post_id = get_the_ID();
 		}
