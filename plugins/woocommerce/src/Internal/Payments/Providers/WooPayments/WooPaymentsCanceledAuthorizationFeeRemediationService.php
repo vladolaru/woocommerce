@@ -576,7 +576,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	 * @return bool True when a live remediation batch is scheduled.
 	 */
 	public function is_remediation_running(): bool {
-		return function_exists( 'as_has_scheduled_action' ) && false !== as_has_scheduled_action( self::ACTION_HOOK );
+		return false !== as_has_scheduled_action( self::ACTION_HOOK );
 	}
 
 	/**
@@ -588,10 +588,6 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	 * @since 11.2.0
 	 */
 	public function schedule_affected_orders_check(): void {
-		if ( ! function_exists( 'as_schedule_single_action' ) ) {
-			return;
-		}
-
 		update_option( self::CHECK_STATE_OPTION_KEY, 'scheduled', true );
 		as_schedule_single_action( time() + 10, self::CHECK_AFFECTED_ORDERS_HOOK, array(), self::ACTION_SCHEDULER_GROUP_ID );
 	}
@@ -872,12 +868,12 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	}
 
 	/**
-	 * Tell whether Action Scheduler queue functions are available.
+	 * Tell whether Action Scheduler has initialized and accepts work.
 	 *
 	 * @return bool True when Action Scheduler can schedule and inspect remediation jobs.
 	 */
 	protected function is_action_scheduler_available(): bool {
-		return function_exists( 'as_schedule_single_action' ) && function_exists( 'as_has_scheduled_action' );
+		return did_action( 'action_scheduler_init' ) > 0;
 	}
 
 	/**
@@ -887,10 +883,6 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	 * @return bool True when an action is already scheduled.
 	 */
 	private function has_scheduled_job( string $hook ): bool {
-		if ( ! function_exists( 'as_has_scheduled_action' ) ) {
-			return false;
-		}
-
 		return false !== as_has_scheduled_action( $hook, array(), self::ACTION_SCHEDULER_GROUP_ID );
 	}
 
@@ -900,9 +892,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 	 * @param string $hook Hook name.
 	 */
 	private function cancel_scheduled_jobs( string $hook ): void {
-		if ( function_exists( 'as_unschedule_all_actions' ) ) {
-			as_unschedule_all_actions( $hook, array(), self::ACTION_SCHEDULER_GROUP_ID );
-		}
+		as_unschedule_all_actions( $hook, array(), self::ACTION_SCHEDULER_GROUP_ID );
 	}
 
 	/**

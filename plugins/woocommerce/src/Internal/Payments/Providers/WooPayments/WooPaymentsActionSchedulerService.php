@@ -63,8 +63,8 @@ class WooPaymentsActionSchedulerService {
 	 * Schedule a recurring Action Scheduler job, unless an action of its hook is already scheduled or running in the group,
 	 * whatever its arguments.
 	 *
-	 * The job is scheduled as unique. Unlike schedule_job(), nothing is deferred: without Action Scheduler loaded, the call
-	 * does nothing.
+	 * The job is scheduled as unique. Unlike schedule_job(), nothing is deferred: callers run on Action Scheduler's own
+	 * recurring-actions hook, after it initialized.
 	 *
 	 * @since 11.2.0
 	 *
@@ -75,10 +75,6 @@ class WooPaymentsActionSchedulerService {
 	 * @param string                  $group     Action Scheduler group. Defaults to the canonical group.
 	 */
 	public function schedule_recurring_job( string $hook, int $timestamp, int $interval, array $args = array(), string $group = self::GROUP_ID ): void {
-		if ( ! function_exists( 'as_schedule_recurring_action' ) || ! function_exists( 'as_has_scheduled_action' ) ) {
-			return;
-		}
-
 		if ( as_has_scheduled_action( $hook, null, $group ) ) {
 			return;
 		}

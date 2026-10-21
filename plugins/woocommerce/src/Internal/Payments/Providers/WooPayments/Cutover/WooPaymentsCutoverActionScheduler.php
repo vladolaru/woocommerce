@@ -50,10 +50,6 @@ class WooPaymentsCutoverActionScheduler {
 	 * @return int Positive action ID, or zero when scheduling failed or the attempt is already scheduled.
 	 */
 	public function schedule( int $timestamp, int $generation, int $attempt ): int {
-		if ( ! function_exists( 'as_schedule_single_action' ) ) {
-			return 0;
-		}
-
 		$action_id = as_schedule_single_action(
 			$timestamp,
 			self::ACTION_HOOK,
@@ -71,10 +67,6 @@ class WooPaymentsCutoverActionScheduler {
 	 * @since 11.2.0
 	 */
 	public function dispatch_async(): void {
-		if ( ! class_exists( 'ActionScheduler_AsyncRequest_QueueRunner' ) || ! class_exists( 'ActionScheduler_Store' ) ) {
-			return;
-		}
-
 		$async_request = new \ActionScheduler_AsyncRequest_QueueRunner( \ActionScheduler_Store::instance() );
 		$async_request->maybe_dispatch();
 	}
@@ -89,10 +81,6 @@ class WooPaymentsCutoverActionScheduler {
 	 * @return int Positive action ID, or zero when absent.
 	 */
 	public function get_scheduled_action_id( int $generation, int $attempt ): int {
-		if ( ! function_exists( 'as_get_scheduled_actions' ) ) {
-			return 0;
-		}
-
 		$action_ids = as_get_scheduled_actions(
 			array(
 				'hook'     => self::ACTION_HOOK,
@@ -118,8 +106,6 @@ class WooPaymentsCutoverActionScheduler {
 	 * @param int $attempt    Monotonic attempt number.
 	 */
 	public function cancel( int $generation, int $attempt ): void {
-		if ( function_exists( 'as_unschedule_all_actions' ) ) {
-			as_unschedule_all_actions( self::ACTION_HOOK, self::get_action_args( $generation, $attempt ), self::ACTION_GROUP );
-		}
+		as_unschedule_all_actions( self::ACTION_HOOK, self::get_action_args( $generation, $attempt ), self::ACTION_GROUP );
 	}
 }

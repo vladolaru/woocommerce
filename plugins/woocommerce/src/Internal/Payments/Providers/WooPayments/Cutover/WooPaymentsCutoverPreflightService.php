@@ -240,7 +240,7 @@ class WooPaymentsCutoverPreflightService {
 	 */
 	public function get_queued_woopayments_actions(): array {
 		$wpdb = $this->get_database();
-		if ( ! class_exists( '\\ActionScheduler_Store' ) || empty( $wpdb->actionscheduler_actions ) || empty( $wpdb->actionscheduler_groups ) ) {
+		if ( empty( $wpdb->actionscheduler_actions ) || empty( $wpdb->actionscheduler_groups ) ) {
 			return array();
 		}
 		if ( ! $wpdb->has_cap( 'identifier_placeholders' ) ) {

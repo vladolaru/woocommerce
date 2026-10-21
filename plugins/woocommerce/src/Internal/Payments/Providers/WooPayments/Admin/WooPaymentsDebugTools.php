@@ -394,10 +394,6 @@ class WooPaymentsDebugTools {
 	 * @return bool
 	 */
 	private function is_remediation_action_scheduled(): bool {
-		if ( ! function_exists( 'as_has_scheduled_action' ) ) {
-			return false;
-		}
-
 		return false !== as_has_scheduled_action( WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK, array(), WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID );
 	}
 
@@ -407,10 +403,6 @@ class WooPaymentsDebugTools {
 	 * @return bool
 	 */
 	private function is_any_remediation_action_scheduled(): bool {
-		if ( ! function_exists( 'as_has_scheduled_action' ) ) {
-			return false;
-		}
-
 		return $this->is_remediation_action_scheduled()
 			|| false !== as_has_scheduled_action( WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK, array(), WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_SCHEDULER_GROUP_ID );
 	}

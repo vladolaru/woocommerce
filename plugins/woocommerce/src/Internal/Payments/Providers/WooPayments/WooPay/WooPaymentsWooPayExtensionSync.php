@@ -136,9 +136,7 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 			wp_clear_scheduled_hook( self::RETIRED_INCOMPATIBLE_EXTENSIONS_ACTION );
 		}
 
-		if ( function_exists( 'as_unschedule_all_actions' ) ) {
-			as_unschedule_all_actions( self::RETIRED_INCOMPATIBLE_EXTENSIONS_ACTION, array(), WooPaymentsActionSchedulerService::GROUP_ID );
-		}
+		as_unschedule_all_actions( self::RETIRED_INCOMPATIBLE_EXTENSIONS_ACTION, array(), WooPaymentsActionSchedulerService::GROUP_ID );
 	}
 
 	/**
