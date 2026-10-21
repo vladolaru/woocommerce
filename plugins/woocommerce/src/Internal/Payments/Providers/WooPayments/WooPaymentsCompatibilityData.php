@@ -28,7 +28,7 @@ final class WooPaymentsCompatibilityData {
 	public static function get(): array {
 		return array(
 			'woopayments_version'    => WooPaymentsClientVersion::VERSION,
-			'woocommerce_version'    => defined( 'WC_VERSION' ) ? WC_VERSION : '',
+			'woocommerce_version'    => WC_VERSION,
 			'woocommerce_permalinks' => get_option( 'woocommerce_permalinks', array() ),
 			'woocommerce_shop'       => self::get_permalink_for_page_id( 'shop' ),
 			'woocommerce_cart'       => self::get_permalink_for_page_id( 'cart' ),

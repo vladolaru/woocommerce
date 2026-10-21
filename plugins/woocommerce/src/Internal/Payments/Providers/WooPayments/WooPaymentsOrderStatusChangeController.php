@@ -304,10 +304,6 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 			return (bool) call_user_func( $this->asset_available_resolver );
 		}
 
-		if ( ! defined( 'WC_ADMIN_ABSPATH' ) || ! defined( 'WC_ADMIN_DIST_JS_FOLDER' ) ) {
-			return false;
-		}
-
 		$asset_path = WC_ADMIN_ABSPATH . WC_ADMIN_DIST_JS_FOLDER . 'wp-admin-scripts/' . self::SCRIPT_ENTRY;
 
 		return is_readable( $asset_path . '.asset.php' ) || is_readable( $asset_path . '.min.asset.php' );

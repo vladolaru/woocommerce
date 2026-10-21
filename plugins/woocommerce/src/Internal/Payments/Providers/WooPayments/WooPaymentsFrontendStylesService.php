@@ -45,7 +45,7 @@ class WooPaymentsFrontendStylesService implements RegisterHooksInterface {
 			return sanitize_text_field( (string) $version );
 		}
 
-		$version = md5( wp_generate_uuid4() . '|' . (string) wp_get_theme()->get_stylesheet() . '|' . ( defined( 'WC_VERSION' ) ? WC_VERSION : '' ) );
+		$version = md5( wp_generate_uuid4() . '|' . (string) wp_get_theme()->get_stylesheet() . '|' . WC_VERSION );
 		update_option( self::STYLES_CACHE_VERSION_OPTION, $version, true );
 
 		return $version;

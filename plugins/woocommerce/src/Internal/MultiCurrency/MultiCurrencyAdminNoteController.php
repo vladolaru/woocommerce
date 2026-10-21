@@ -228,7 +228,7 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 			return (string) call_user_func( $this->wc_version_resolver );
 		}
 
-		return defined( 'WC_VERSION' ) ? (string) WC_VERSION : '';
+		return WC_VERSION;
 	}
 
 	/**

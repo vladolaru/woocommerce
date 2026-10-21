@@ -394,7 +394,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 				'locale'         => get_locale(),
 			),
 			'wc_setup'                                    => array(
-				'version'                     => defined( 'WC_VERSION' ) ? explode( '-', WC_VERSION, 2 )[0] : '',
+				'version'                     => explode( '-', WC_VERSION, 2 )[0],
 				'store_id'                    => ( class_exists( '\WC_Install' ) && defined( '\WC_Install::STORE_ID_OPTION' ) ) ? get_option( \WC_Install::STORE_ID_OPTION, null ) : null,
 				'currency'                    => get_woocommerce_currency(),
 				'tracking_enabled'            => class_exists( '\WC_Site_Tracking' ) ? \WC_Site_Tracking::is_tracking_enabled() : false,

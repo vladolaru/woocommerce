@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-if ( ! class_exists( '\WC_Settings_Page', false ) && defined( 'WC_ABSPATH' ) ) {
+if ( ! class_exists( '\WC_Settings_Page', false ) ) {
 	require_once WC_ABSPATH . 'includes/admin/settings/class-wc-settings-page.php';
 }
 
