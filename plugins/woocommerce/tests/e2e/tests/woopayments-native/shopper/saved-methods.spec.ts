@@ -274,6 +274,14 @@ async function openCheckoutWithProduct(
 ): Promise< void > {
 	await page.goto( `?add-to-cart=${ productId }` );
 	await page.goto( 'checkout/' );
+	// Another enabled method can come first in the gateway order, so select Card before reading its frame.
+	const card = page
+		.getByRole( 'group', { name: 'Payment options' } )
+		.getByRole( 'radio', { name: /Card/i } )
+		.first();
+	await expect( card ).toHaveValue( 'woocommerce_payments' );
+	await card.check();
+	await expect( card ).toBeChecked();
 	const runtime = cardFrameRuntime();
 	const cardFrame = page
 		.locator( blocksCardFrameSelector( runtime ) )
