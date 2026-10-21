@@ -74,14 +74,6 @@ class WooPaymentsWooPayBlocksDataExtractor {
 	 * @return string[]
 	 */
 	public function get_checkout_schema_namespaces(): array {
-		if (
-			! class_exists( StoreApi::class ) ||
-			! class_exists( ExtendSchema::class ) ||
-			! class_exists( CheckoutSchema::class )
-		) {
-			return array();
-		}
-
 		try {
 			$extend_schema = StoreApi::container()->get( ExtendSchema::class );
 			if ( ! $extend_schema instanceof ExtendSchema ) {

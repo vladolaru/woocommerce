@@ -68,7 +68,7 @@ class WooPaymentsExpressCheckoutStoreApiExtension implements RegisterHooksInterf
 	 */
 	public function register_refresh_ui_update_callback(): void {
 		// The callback answers Store API cart/extensions requests only, so page requests skip the availability read.
-		if ( ! function_exists( 'woocommerce_store_api_register_update_callback' ) || ! $this->is_express_checkout_hooks_request() || ! WC()->is_store_api_request() ) {
+		if ( ! $this->is_express_checkout_hooks_request() || ! WC()->is_store_api_request() ) {
 			return;
 		}
 
@@ -145,10 +145,6 @@ class WooPaymentsExpressCheckoutStoreApiExtension implements RegisterHooksInterf
 	 * Register WooPayments cart extension data with the Store API.
 	 */
 	public function register_store_api_extension(): void {
-		if ( ! function_exists( 'woocommerce_store_api_register_endpoint_data' ) || ! class_exists( CartSchema::class ) ) {
-			return;
-		}
-
 		woocommerce_store_api_register_endpoint_data(
 			array(
 				'endpoint'        => CartSchema::IDENTIFIER,
