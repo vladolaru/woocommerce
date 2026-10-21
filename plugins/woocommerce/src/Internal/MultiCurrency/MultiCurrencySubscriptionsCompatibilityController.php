@@ -55,14 +55,6 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 		'WCS_Cart_Early_Renewal->setup_cart',
 	);
 
-	private const RECURRING_ITEM_DATA_CALLS = array(
-		'WC_Payments_Subscription_Service->get_recurring_item_data_for_subscription',
-	);
-
-	private const PRODUCT_GET_PRICE_CALLS = array(
-		'WC_Product->get_price',
-	);
-
 	private const APPLY_COUPON_CALLS = array(
 		'WC_Discounts->apply_coupon',
 	);
@@ -344,8 +336,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 			null !== $this->get_subscription_type_from_cart( 'renewal' ),
 			null !== $this->get_subscription_type_from_cart( 'resubscribe' ),
 			$this->is_call_in_backtrace( self::RENEWAL_SETUP_CALLS ),
-			$this->is_call_in_backtrace( self::PRODUCT_PRICE_CALCULATION_CALLS ),
-			$this->is_recurring_item_data_price_context()
+			$this->is_call_in_backtrace( self::PRODUCT_PRICE_CALCULATION_CALLS )
 		);
 	}
 
@@ -521,12 +512,12 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	}
 
 	/**
-	 * Tell whether WooCommerce Subscriptions or WooPayments Subscriptions is available.
+	 * Tell whether WooCommerce Subscriptions is available.
 	 *
 	 * @return bool
 	 */
 	protected function is_subscriptions_runtime_available(): bool {
-		return class_exists( 'WC_Subscriptions' ) || class_exists( 'WC_Payments_Subscriptions' );
+		return class_exists( 'WC_Subscriptions' );
 	}
 
 	/**
@@ -686,16 +677,6 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 		}
 
 		return false;
-	}
-
-	/**
-	 * Tell whether recurring item data is reading the product price.
-	 *
-	 * @return bool
-	 */
-	private function is_recurring_item_data_price_context(): bool {
-		return $this->is_call_in_backtrace( self::RECURRING_ITEM_DATA_CALLS )
-			&& $this->is_call_in_backtrace( self::PRODUCT_GET_PRICE_CALLS );
 	}
 
 	/**

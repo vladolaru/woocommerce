@@ -105,12 +105,11 @@ class MultiCurrencySubscriptionsCompatibilityProjectionServiceTest extends WC_Un
 	 * @testdox Should skip product conversion for renewal and resubscribe calculation contexts.
 	 */
 	public function test_skips_product_conversion_for_subscription_calculation_contexts(): void {
-		$this->assertFalse( MultiCurrencySubscriptionsCompatibilityProjectionService::should_convert_product_price( true, true, false, false, true, false ) );
-		$this->assertFalse( MultiCurrencySubscriptionsCompatibilityProjectionService::should_convert_product_price( true, false, true, false, true, false ) );
-		$this->assertFalse( MultiCurrencySubscriptionsCompatibilityProjectionService::should_convert_product_price( true, false, false, false, false, true ) );
-		$this->assertTrue( MultiCurrencySubscriptionsCompatibilityProjectionService::should_convert_product_price( true, true, false, true, true, false ) );
-		$this->assertTrue( MultiCurrencySubscriptionsCompatibilityProjectionService::should_convert_product_price( true, true, false, false, false, false ) );
-		$this->assertFalse( MultiCurrencySubscriptionsCompatibilityProjectionService::should_convert_product_price( false, false, false, false, false, false ) );
+		$this->assertFalse( MultiCurrencySubscriptionsCompatibilityProjectionService::should_convert_product_price( true, true, false, false, true ) );
+		$this->assertFalse( MultiCurrencySubscriptionsCompatibilityProjectionService::should_convert_product_price( true, false, true, false, true ) );
+		$this->assertTrue( MultiCurrencySubscriptionsCompatibilityProjectionService::should_convert_product_price( true, true, false, true, true ) );
+		$this->assertTrue( MultiCurrencySubscriptionsCompatibilityProjectionService::should_convert_product_price( true, true, false, false, false ) );
+		$this->assertFalse( MultiCurrencySubscriptionsCompatibilityProjectionService::should_convert_product_price( false, false, false, false, false ) );
 	}
 
 	/**

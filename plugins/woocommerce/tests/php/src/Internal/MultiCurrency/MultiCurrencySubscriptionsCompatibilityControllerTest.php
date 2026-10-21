@@ -307,11 +307,6 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		$resubscribe->set_backtrace_calls( array( 'WC_Cart->get_product_subtotal' ) );
 
 		$this->assertFalse( $resubscribe->should_convert_product_price( true, $product ) );
-
-		$recurring_item = $this->create_controller();
-		$recurring_item->set_backtrace_calls( array( 'WC_Payments_Subscription_Service->get_recurring_item_data_for_subscription', 'WC_Product->get_price' ) );
-
-		$this->assertFalse( $recurring_item->should_convert_product_price( true, $product ) );
 	}
 
 	/**

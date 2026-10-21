@@ -138,7 +138,6 @@ class MultiCurrencySubscriptionsCompatibilityProjectionService {
 	 * @param bool $has_resubscribe_cart_item  Whether a resubscribe cart item is present.
 	 * @param bool $is_renewal_setup_context   Whether Subscriptions is setting up renewal cart prices.
 	 * @param bool $is_price_calculation_context Whether the call stack is calculating product totals.
-	 * @param bool $is_recurring_item_context  Whether recurring item data is being read from a subscription.
 	 * @return bool
 	 *
 	 * @since 11.0.0
@@ -148,14 +147,9 @@ class MultiCurrencySubscriptionsCompatibilityProjectionService {
 		bool $has_renewal_cart_item,
 		bool $has_resubscribe_cart_item,
 		bool $is_renewal_setup_context,
-		bool $is_price_calculation_context,
-		bool $is_recurring_item_context
+		bool $is_price_calculation_context
 	): bool {
 		if ( ! $should_convert ) {
-			return false;
-		}
-
-		if ( $is_recurring_item_context ) {
 			return false;
 		}
 
