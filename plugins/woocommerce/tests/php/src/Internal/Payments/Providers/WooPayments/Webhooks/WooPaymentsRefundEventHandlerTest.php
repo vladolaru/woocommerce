@@ -27,6 +27,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooP
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsOtherChargeRecorder;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockWithClaimHook;
 use Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLockTestTrait;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\UncachedOrderWriter;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingProvider;
@@ -510,7 +511,7 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	 * webhook body: REC-5a R-c (`Fixtures/platform-refund-updated-events.json`,
 	 * pair `afterpay_clearpay_refund_updated_succeeded`), the primary
 	 * redirect-method refund-updated event local WPCOM forwarded for this
-	 * recording (`data/rec-5a-refunds.md`).
+	 * recording.
 	 */
 	public function test_successful_synchronous_refund_followed_by_refund_updated_webhook_keeps_one_note(): void {
 		$refund_object = $this->load_recorded_refund_updated_event( 'afterpay_clearpay_refund_updated_succeeded' );
@@ -819,6 +820,47 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 				'ch_123',
 				$gateway_id,
 			),
+		);
+	}
+
+	/**
+	 * @testdox A charge.refunded event whose charge metadata names a deleted order is answered as handled with one info line, and nothing else is logged or written.
+	 *
+	 * The charge is the platform's recorded delivery (Fixtures/platform-charge-dispute-events.json, card_charge_refunded_in_full),
+	 * with its metadata pointed at an order that is then deleted. Client 11.1.0 answers a charge it finds no order for with 500
+	 * and the platform retries it (class-wc-payments-webhook-processing-service.php:317, :1111); no retry can find a deleted order.
+	 *
+	 * @dataProvider provider_deleted_order_metadata_keys
+	 *
+	 * @param string $order_key Order key in the charge's metadata.
+	 */
+	public function test_charge_refunded_naming_a_deleted_order_is_handled_with_one_info_line( string $order_key ): void {
+		$order    = wc_create_order();
+		$order_id = $order->get_id();
+		$order->delete( true );
+		$charge                          = RecordedPlatformEvents::body( 'platform-charge-dispute-events.json', 'card_charge_refunded_in_full' )['data']['object'];
+		$charge['metadata']['order_id']  = (string) $order_id;
+		$charge['metadata']['order_key'] = $order_key;
+		$logger                          = RecordingWcLogger::install();
+
+		$this->sut->process( 'charge.refunded', $charge );
+
+		$this->assertFalse( wc_get_order( $order_id ), 'The event should not bring the deleted order back.' );
+		$this->assertSame(
+			array( array( 'info', sprintf( 'charge.refunded event for charge %1$s names order %2$d, which no longer exists; nothing to record.', $charge['id'], $order_id ), 'woopayments' ) ),
+			$logger->lines
+		);
+	}
+
+	/**
+	 * Order keys the charge's metadata can carry for a deleted order.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public function provider_deleted_order_metadata_keys(): array {
+		return array(
+			'order key in the metadata' => array( 'wc_order_deleted' ),
+			'order key empty'           => array( '' ),
 		);
 	}
 

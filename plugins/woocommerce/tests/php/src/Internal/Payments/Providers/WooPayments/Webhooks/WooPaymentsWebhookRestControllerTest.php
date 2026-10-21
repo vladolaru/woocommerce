@@ -18,6 +18,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooP
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookRestController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Fixtures\RecordedPlatformEvents;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingActionSchedulerService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
@@ -25,6 +26,7 @@ use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaym
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsRefundEventHandler;
 use InvalidArgumentException;
 use RuntimeException;
+use WC_Order;
 use WC_REST_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -441,6 +443,80 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 				500,
 				true,
 				'Failed processing a WooPayments webhook event.',
+			),
+		);
+	}
+
+	/**
+	 * @testdox A charge.refunded push for a charge no order holds is answered with the outcome its metadata order decides: acknowledged without a retry ($acknowledged).
+	 *
+	 * The event is the platform's recorded delivery (Fixtures/platform-charge-dispute-events.json, card_charge_refunded_in_full)
+	 * with the charge's metadata changed. A charge whose metadata order was deleted is answered 200 with one info line and no
+	 * retry, since no retry can find that order; a charge naming no order, or an order with another key, keeps the 500 and one
+	 * scheduled retry (client 11.1.0 answers a charge it finds no order for with 500: class-wc-payments-webhook-processing-service.php:317, :1111).
+	 *
+	 * @dataProvider provider_refund_event_metadata_orders
+	 *
+	 * @param callable $change_metadata Builds the charge's order metadata from an existing order.
+	 * @param bool     $acknowledged    Whether the push is answered as handled.
+	 */
+	public function test_refund_event_for_a_charge_no_order_holds_through_the_webhook_route( callable $change_metadata, bool $acknowledged ): void {
+		// The recorded event is a test-mode delivery (livemode false), so the store runs in test mode, as the recording account did.
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
+		$event                               = RecordedPlatformEvents::body( 'platform-charge-dispute-events.json', 'card_charge_refunded_in_full' );
+		$event['data']['object']['metadata'] = array_merge( $event['data']['object']['metadata'], $change_metadata( wc_create_order() ) );
+		$logger                              = new RecordingWcLogger();
+		$controller                          = $this->create_controller_with_ingestor( wc_get_container()->get( WooPaymentsEventIngestor::class ), $logger );
+
+		$response = $controller->handle_webhook( $this->create_post_request( $event ) );
+
+		$this->assertSame( $acknowledged ? 200 : 500, $response->get_status() );
+		$this->assertSame( array( 'result' => $acknowledged ? 'success' : 'error' ), $response->get_data() );
+		$this->assertSame( $acknowledged ? null : $event, ( new FailedEventTransients() )->get_event( $event['id'] ) );
+		$this->assertSame(
+			$acknowledged ? array() : array(
+				array(
+					'hook' => WooPaymentsWebhookReliabilityService::WEBHOOK_PROCESS_EVENT_ACTION,
+					'args' => array( 'event_id' => $event['id'] ),
+				),
+			),
+			$this->scheduler->scheduled_jobs
+		);
+		$this->assertCount( $acknowledged ? 1 : 0, array_filter( $logger->lines, static fn( array $line ): bool => 'info' === $line[0] && 'woopayments' === $line[2] && str_contains( $line[1], 'no longer exists' ) ) );
+		$this->assertSame( $acknowledged ? array() : array( 'Failed processing a WooPayments webhook event.' ), array_column( $logger->get_errors(), 1 ) );
+	}
+
+	/**
+	 * Order metadata a refunded charge can carry when no order holds the charge.
+	 *
+	 * @return array<string,array{0:callable,1:bool}>
+	 */
+	public function provider_refund_event_metadata_orders(): array {
+		return array(
+			'order deleted'          => array(
+				static function ( WC_Order $order ): array {
+					$order_id = $order->get_id();
+					$order->delete( true );
+					return array(
+						'order_id'  => (string) $order_id,
+						'order_key' => 'wc_order_deleted',
+					);
+				},
+				true,
+			),
+			'no order ID'            => array(
+				static fn(): array => array(
+					'order_id'  => '',
+					'order_key' => '',
+				),
+				false,
+			),
+			'order with another key' => array(
+				static fn( WC_Order $order ): array => array(
+					'order_id'  => (string) $order->get_id(),
+					'order_key' => 'wc_order_another_site',
+				),
+				false,
 			),
 		);
 	}

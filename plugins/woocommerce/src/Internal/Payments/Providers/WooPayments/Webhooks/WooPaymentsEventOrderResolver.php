@@ -72,6 +72,21 @@ class WooPaymentsEventOrderResolver {
 	}
 
 	/**
+	 * Get the ID of the order a charge's metadata names when no order has that ID any more.
+	 *
+	 * The ID was written from an existing order when the payment was made, so one that loads nothing now is an order that
+	 * was deleted, and no later delivery of the event can find it. An order that exists, whatever its key, is not deleted.
+	 *
+	 * @param array<string,mixed> $charge Charge object.
+	 * @return int Deleted order's ID, or 0 when the metadata names no order ID or names an order that exists.
+	 */
+	public function find_deleted_order_id_from_charge_metadata( array $charge ): int {
+		$order_id = $this->get_metadata_order_id( $charge );
+
+		return $order_id > 0 && ! wc_get_order( $order_id ) ? $order_id : 0;
+	}
+
+	/**
 	 * Get the payment intent a charge, refund, dispute or early fraud warning event belongs to.
 	 *
 	 * The event's `payment_intent` field comes first, as an ID or an expanded object; without one, the order's
@@ -126,22 +141,14 @@ class WooPaymentsEventOrderResolver {
 	 * @return WC_Order|null
 	 */
 	private function find_order_from_metadata( array $event_object ): ?WC_Order {
-		$metadata = $event_object['metadata'] ?? null;
-		if ( ! is_array( $metadata ) ) {
-			return null;
-		}
-
-		$order_id  = isset( $metadata['order_id'] ) ? absint( $metadata['order_id'] ) : 0;
-		$order_key = isset( $metadata['order_key'] ) ? (string) $metadata['order_key'] : '';
-		if ( 0 === $order_id ) {
-			$order_id = absint( $event_object['charges']['data'][0]['metadata']['order_id'] ?? 0 );
-		}
+		$order_id = $this->get_metadata_order_id( $event_object );
 		if ( 0 === $order_id ) {
 			// This includes Stripe Billing intents, which carry an invoice: their invoice event records them (client 11.1.0 webhook processing service :990-993).
 			return null;
 		}
 
-		$order = wc_get_order( $order_id );
+		$order_key = isset( $event_object['metadata']['order_key'] ) ? (string) $event_object['metadata']['order_key'] : '';
+		$order     = wc_get_order( $order_id );
 		if ( ! $order instanceof WC_Order ) {
 			return null;
 		}
@@ -151,6 +158,26 @@ class WooPaymentsEventOrderResolver {
 		}
 
 		return $order;
+	}
+
+	/**
+	 * Get the ID of the order an event object's metadata names, or its first charge's metadata names.
+	 *
+	 * @param array<string,mixed> $event_object Event object.
+	 * @return int Order ID, or 0 when the metadata names none.
+	 */
+	private function get_metadata_order_id( array $event_object ): int {
+		$metadata = $event_object['metadata'] ?? null;
+		if ( ! is_array( $metadata ) ) {
+			return 0;
+		}
+
+		$order_id = isset( $metadata['order_id'] ) ? absint( $metadata['order_id'] ) : 0;
+		if ( 0 === $order_id ) {
+			$order_id = absint( $event_object['charges']['data'][0]['metadata']['order_id'] ?? 0 );
+		}
+
+		return $order_id;
 	}
 
 	/**

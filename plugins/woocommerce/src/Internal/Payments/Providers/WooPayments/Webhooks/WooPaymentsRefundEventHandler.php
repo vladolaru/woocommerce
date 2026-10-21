@@ -35,7 +35,8 @@ use Throwable;
  * retried. Client 11.1.0 refuses a field that is not set, a negative charge amount, a refund above the order total and an
  * unknown status that way (class-wc-payments-webhook-processing-service.php:361, :933, :1131). An empty field, a field of
  * the wrong type and a negative refund amount are refused here only, stricter than client 11.1.0. A charge no order
- * holds is a failure that is retried, as client 11.1.0 answers it with 500 (same file, :317, :1111).
+ * holds is a failure that is retried, as client 11.1.0 answers it with 500 (same file, :317, :1111); a charge whose metadata
+ * names an order that no longer exists is logged and answered as handled, since no retry can find that order.
  *
  * @since 11.0.0
  * @internal
@@ -171,6 +172,9 @@ class WooPaymentsRefundEventHandler {
 			// A second charge on an order already paid is held by no order; its metadata still names the order.
 			$order       = $this->get_order_for_charge_metadata( $charge_id, $charge );
 			$record_only = true;
+			if ( ! $order instanceof WC_Order ) {
+				return;
+			}
 		}
 
 		if ( $charge_amount < 0 || $refund_amount < 0 ) {
@@ -535,16 +539,22 @@ class WooPaymentsRefundEventHandler {
 	 *
 	 * @param string              $charge_id Charge ID.
 	 * @param array<string,mixed> $charge    Charge object.
-	 * @return WC_Order
-	 * @throws RuntimeException When the metadata names no order, or one whose key does not match.
+	 * @return WC_Order|null The order, or null when the metadata names an order that no longer exists; that is logged.
+	 * @throws RuntimeException When the metadata names no order ID, or an order whose key does not match.
 	 */
-	private function get_order_for_charge_metadata( string $charge_id, array $charge ): WC_Order {
+	private function get_order_for_charge_metadata( string $charge_id, array $charge ): ?WC_Order {
 		$order = $this->event_order_resolver->find_order_from_charge_metadata( $charge );
-		if ( ! $order instanceof WC_Order ) {
-			throw new RuntimeException( esc_html( sprintf( 'Could not find WooPayments order via charge ID: %s', $charge_id ) ) );
+		if ( $order instanceof WC_Order ) {
+			return $order;
 		}
 
-		return $order;
+		$deleted_order_id = $this->event_order_resolver->find_deleted_order_id_from_charge_metadata( $charge );
+		if ( $deleted_order_id > 0 ) {
+			$this->log_deleted_order( $charge_id, $deleted_order_id );
+			return null;
+		}
+
+		throw new RuntimeException( esc_html( sprintf( 'Could not find WooPayments order via charge ID: %s', $charge_id ) ) );
 	}
 
 	/**
@@ -838,6 +848,27 @@ class WooPaymentsRefundEventHandler {
 				array(
 					'source'   => WooPaymentsLogger::SOURCE,
 					'order_id' => $order->get_id(),
+				)
+			);
+		} catch ( Throwable $logger_exception ) {
+			unset( $logger_exception );
+		}
+	}
+
+	/**
+	 * Log a charge.refunded event whose charge metadata names an order that no longer exists.
+	 *
+	 * @param string $charge_id Charge ID.
+	 * @param int    $order_id  ID of the deleted order.
+	 */
+	private function log_deleted_order( string $charge_id, int $order_id ): void {
+		// Logging is best-effort: a logger that cannot be obtained or written must not fail the event.
+		try {
+			wc_get_logger()->info(
+				sprintf( 'charge.refunded event for charge %1$s names order %2$d, which no longer exists; nothing to record.', $charge_id, $order_id ),
+				array(
+					'source'   => WooPaymentsLogger::SOURCE,
+					'order_id' => $order_id,
 				)
 			);
 		} catch ( Throwable $logger_exception ) {
