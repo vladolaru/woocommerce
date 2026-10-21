@@ -828,7 +828,8 @@ class WooPaymentsRefundEventHandlerTest extends WC_Unit_Test_Case {
 	 *
 	 * The charge is the platform's recorded delivery (Fixtures/platform-charge-dispute-events.json, card_charge_refunded_in_full),
 	 * with its metadata pointed at an order that is then deleted. Client 11.1.0 answers a charge it finds no order for with 500
-	 * and the platform retries it (class-wc-payments-webhook-processing-service.php:317, :1111); no retry can find a deleted order.
+	 * (class-wc-payments-webhook-processing-service.php:317, :1111); here every other not-found is retried by the store on a
+	 * bounded schedule, and no retry can find a deleted order.
 	 *
 	 * @dataProvider provider_deleted_order_metadata_keys
 	 *

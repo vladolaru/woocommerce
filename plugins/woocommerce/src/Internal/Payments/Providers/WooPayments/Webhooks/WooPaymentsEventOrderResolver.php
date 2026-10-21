@@ -77,6 +77,8 @@ class WooPaymentsEventOrderResolver {
 	 * The ID was written from an existing order when the payment was made, so one that loads nothing now is an order that
 	 * was deleted, and no later delivery of the event can find it. An order that exists, whatever its key, is not deleted.
 	 *
+	 * @since 11.2.0
+	 *
 	 * @param array<string,mixed> $charge Charge object.
 	 * @return int Deleted order's ID, or 0 when the metadata names no order ID or names an order that exists.
 	 */
