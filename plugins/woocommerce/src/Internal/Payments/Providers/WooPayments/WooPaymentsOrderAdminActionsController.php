@@ -7,9 +7,11 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
 use WC_Order;
@@ -22,6 +24,14 @@ use WC_Order;
  * @internal
  */
 class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
+
+	/**
+	 * Action Scheduler hook that runs a status-change capture or cancel again after the order payment lock refused it.
+	 *
+	 * @since 11.2.0
+	 * @var string
+	 */
+	public const RETRY_STATUS_CHANGE_OPERATION_ACTION = 'woocommerce_woopayments_retry_status_change_operation';
 
 	/**
 	 * Shared payment processing service.
@@ -45,6 +55,13 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	private WooPaymentsFeeDetailsNoteController $fee_details_note_controller;
 
 	/**
+	 * Action Scheduler service.
+	 *
+	 * @var WooPaymentsActionSchedulerService
+	 */
+	private WooPaymentsActionSchedulerService $scheduler;
+
+	/**
 	 * Initialize the controller.
 	 *
 	 * @internal
@@ -52,11 +69,13 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	 * @param PaymentProcessingService            $processing_service          Shared payment processing service.
 	 * @param WooPaymentsProvider                 $provider                    WooPayments provider.
 	 * @param WooPaymentsFeeDetailsNoteController $fee_details_note_controller Fee details note controller.
+	 * @param WooPaymentsActionSchedulerService   $scheduler                   Action Scheduler service.
 	 */
-	final public function init( PaymentProcessingService $processing_service, WooPaymentsProvider $provider, WooPaymentsFeeDetailsNoteController $fee_details_note_controller ): void {
+	final public function init( PaymentProcessingService $processing_service, WooPaymentsProvider $provider, WooPaymentsFeeDetailsNoteController $fee_details_note_controller, WooPaymentsActionSchedulerService $scheduler ): void {
 		$this->processing_service          = $processing_service;
 		$this->provider                    = $provider;
 		$this->fee_details_note_controller = $fee_details_note_controller;
+		$this->scheduler                   = $scheduler;
 	}
 
 	/**
@@ -68,6 +87,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 		add_action( 'woocommerce_order_action_cancel_authorization', array( $this, 'handle_woocommerce_order_action_cancel_authorization' ) );
 		add_action( 'woocommerce_order_status_completed', array( $this, 'handle_woocommerce_order_status_completed' ), 10, 3 );
 		add_action( 'woocommerce_order_status_cancelled', array( $this, 'handle_woocommerce_order_status_cancelled' ), 10, 3 );
+		add_action( self::RETRY_STATUS_CHANGE_OPERATION_ACTION, array( $this, 'handle_retry_status_change_operation' ), 10, 3 );
 		if ( is_admin() ) {
 			add_filter( 'woocommerce_gateway_title', array( $this, 'handle_woocommerce_gateway_title' ), 10, 2 );
 		}
@@ -202,7 +222,31 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 		$order = $this->resolve_status_order( absint( $order_id ), $order instanceof WC_Order ? $order : null );
 
 		if ( $order instanceof WC_Order && $this->is_authorized_woopayments_order( $order, false ) ) {
-			$this->run_operation( $order, PaymentProcessingService::OPERATION_CANCEL );
+			$this->run_operation( $order, PaymentProcessingService::OPERATION_CANCEL, true );
+		}
+	}
+
+	/**
+	 * Run a status-change capture or cancel again, when its order is still completed or cancelled and still authorized.
+	 *
+	 * @internal
+	 *
+	 * @param mixed $order_id  Order ID.
+	 * @param mixed $operation Capture or cancel.
+	 * @param mixed $retry     Number of this retry, from 1.
+	 */
+	public function handle_retry_status_change_operation( $order_id, $operation, $retry ): void {
+		$statuses = array(
+			PaymentProcessingService::OPERATION_CAPTURE => OrderStatus::COMPLETED,
+			PaymentProcessingService::OPERATION_CANCEL  => OrderStatus::CANCELLED,
+		);
+		if ( ! is_string( $operation ) || ! isset( $statuses[ $operation ] ) ) {
+			return;
+		}
+
+		$order = wc_get_order( absint( $order_id ) );
+		if ( $order instanceof WC_Order && $order->has_status( $statuses[ $operation ] ) && $this->is_authorized_woopayments_order( $order, false ) ) {
+			$this->run_operation( $order, $operation, true, absint( $retry ) );
 		}
 	}
 
@@ -241,11 +285,17 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	/**
 	 * Delegate capture or cancel to the shared payment processing path.
 	 *
+	 * Client 11.1.0 captures or cancels on the status change with no lock (class-wc-payments-order-service.php:1793-1886).
+	 * When the order payment lock refuses it here, it runs again after the current request, on the webhook retry
+	 * cadence. The first refusal notes that the operation is pending, and the failure note is written only when the last
+	 * retry is refused too.
+	 *
 	 * @param WC_Order $order            Order.
 	 * @param string   $operation        Capture or cancel.
-	 * @param bool     $on_status_change Whether the order status change to completed triggered the capture.
+	 * @param bool     $on_status_change Whether the order status change to completed or cancelled triggered the operation.
+	 * @param int      $retry            Which retry of the status-change operation this run is, 0 for the status change itself.
 	 */
-	private function run_operation( WC_Order $order, string $operation, bool $on_status_change = false ): void {
+	private function run_operation( WC_Order $order, string $operation, bool $on_status_change = false, int $retry = 0 ): void {
 		try {
 			$outcome = PaymentProcessingService::OPERATION_CAPTURE === $operation
 				? $this->processing_service->capture(
@@ -261,6 +311,13 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 					PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ),
 					$this->provider
 				);
+
+			if ( $on_status_change && ! empty( $outcome->get_data()[ PaymentOutcome::DATA_ORDER_PAYMENT_LOCK_REFUSED ] ) && $this->schedule_retry( $order, $operation, $retry ) ) {
+				if ( 0 === $retry ) {
+					$this->add_operation_pending_note( $order, $operation );
+				}
+				return;
+			}
 
 			if ( $this->operation_failed_without_note( $outcome, $operation ) ) {
 				$this->add_operation_failure_note( $order, $operation );
@@ -279,6 +336,33 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Schedule the next retry of a status-change operation the order payment lock refused.
+	 *
+	 * @param WC_Order $order     Order.
+	 * @param string   $operation Capture or cancel.
+	 * @param int      $retry     Which retry the refused run was, 0 for the status change itself.
+	 * @return bool False when no retry is left.
+	 */
+	private function schedule_retry( WC_Order $order, string $operation, int $retry ): bool {
+		$delays = WooPaymentsWebhookReliabilityService::RETRY_DELAYS_SECONDS;
+		if ( ! isset( $delays[ $retry ] ) ) {
+			return false;
+		}
+
+		$this->scheduler->schedule_job(
+			self::RETRY_STATUS_CHANGE_OPERATION_ACTION,
+			array(
+				'order_id'  => $order->get_id(),
+				'operation' => $operation,
+				'retry'     => $retry + 1,
+			),
+			time() + $delays[ $retry ]
+		);
+
+		return true;
+	}
+
+	/**
 	 * Tell whether an operation failed and its outcome carries no note to add.
 	 *
 	 * @param PaymentOutcome $outcome   Operation outcome.
@@ -291,6 +375,20 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 
 		return $expected_status !== $outcome->get_status()
 			&& ( ! isset( $data[ PaymentOutcome::DATA_NOTE ] ) || '' === (string) $data[ PaymentOutcome::DATA_NOTE ] );
+	}
+
+	/**
+	 * Add the note that a refused status-change capture or cancel will be retried.
+	 *
+	 * @param WC_Order $order     Order.
+	 * @param string   $operation Capture or cancel.
+	 */
+	private function add_operation_pending_note( WC_Order $order, string $operation ): void {
+		$order->add_order_note(
+			PaymentProcessingService::OPERATION_CAPTURE === $operation
+				? __( 'The payment capture is pending and will be retried automatically.', 'woocommerce' )
+				: __( 'Canceling the payment authorization is pending and will be retried automatically.', 'woocommerce' )
+		);
 	}
 
 	/**

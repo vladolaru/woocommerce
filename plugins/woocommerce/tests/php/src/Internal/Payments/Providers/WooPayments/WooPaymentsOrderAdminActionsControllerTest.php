@@ -16,6 +16,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLo
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -59,6 +61,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			remove_action( 'woocommerce_order_action_cancel_authorization', array( $this->sut, 'handle_woocommerce_order_action_cancel_authorization' ) );
 			remove_action( 'woocommerce_order_status_completed', array( $this->sut, 'handle_woocommerce_order_status_completed' ) );
 			remove_action( 'woocommerce_order_status_cancelled', array( $this->sut, 'handle_woocommerce_order_status_cancelled' ) );
+			remove_action( WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION, array( $this->sut, 'handle_retry_status_change_operation' ) );
 			remove_filter( 'woocommerce_gateway_title', array( $this->sut, 'handle_woocommerce_gateway_title' ) );
 		}
 
@@ -607,15 +610,15 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox The capture-charge order action should send one capture request for the authorized total and mark the order processing.
 	 *
-	 * T.3 Task 3 (`plan-task-t3.md`): joins the request-shape half
+	 * Joins the request-shape half
 	 * ({@see \Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationServiceTest::test_capture_sends_context_amount_to_transport})
 	 * and the on-hold half ({@see \Automattic\WooCommerce\Tests\Internal\Payments\OrderPaymentLifecycleServiceTest::test_authorized_event_moves_order_on_hold})
 	 * by driving the real "Capture charge" order action through
 	 * {@see WooPaymentsOrderAdminActionsController}, {@see PaymentProcessingService::capture},
 	 * the real {@see WooPaymentsProvider}, {@see WooPaymentsPaymentOperationService} and
 	 * {@see WooPaymentsApiClient} over a fake transport queued with REC-CAP's recorded
-	 * `capture_full_amount` response (`Fixtures/platform-manual-capture.json`,
-	 * `data/rec-t3-api-recordings.md`): a 10.99 USD manual-capture authorization captured
+	 * `capture_full_amount` response (`Fixtures/platform-manual-capture.json`): a 10.99 USD
+	 * manual-capture authorization captured
 	 * for its full amount. Client parity: the capture note is the exact `was
 	 * <strong>successfully captured</strong> using WooPayments` wording plus the intent id
 	 * (`os:2226-2236`).
@@ -706,6 +709,281 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A $operation on the status change that the order payment lock refuses is retried after the request, with one pending note.
+	 *
+	 * Client 11.1.0 captures on Completed and cancels on Cancelled with no lock (class-wc-payments-order-service.php:1793-1886).
+	 * Here a refused operation runs again 1 minute later (the webhook retry cadence), the order says it is pending, and
+	 * no failure note is written yet.
+	 *
+	 * @dataProvider status_change_operation_data
+	 *
+	 * @param string $operation    Capture or cancel.
+	 * @param string $order_status Status the order changed to.
+	 * @param string $hook         Status hook.
+	 */
+	public function test_refused_status_change_operation_is_retried_with_one_pending_note( string $operation, string $order_status, string $hook ): void {
+		$order = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'requires_capture', $order_status );
+		$calls = new \ArrayObject( array( 0 ) );
+		$this->register_controller_with_provider( $operation, $calls );
+
+		$before = time();
+		$this->while_lock_is_held(
+			$order,
+			function () use ( $hook, $order ): void {
+				$this->fire_order_hook( $hook, $order );
+			}
+		);
+
+		$this->assertSame( 0, $calls[0], 'The provider is not called while the lock is held.' );
+		$this->assertSame( array( 1 ), $this->get_pending_retries( $order ) );
+		$next = as_next_scheduled_action( WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION, $this->retry_args( $order, $operation, 1 ), 'woocommerce_payments' );
+		$this->assertGreaterThanOrEqual( $before + MINUTE_IN_SECONDS, $next );
+		$this->assertLessThanOrEqual( time() + MINUTE_IN_SECONDS, $next );
+		$this->assertSame( 1, $this->count_notes( $order, $this->pending_note( $operation ) ) );
+		$this->assertSame( 0, $this->count_notes( $order, $this->failure_note( $operation ) ) );
+	}
+
+	/**
+	 * @testdox A $operation retry refused again is retried at 10 and then 60 minutes, with no new pending note, and the failure note comes only after the last.
+	 *
+	 * @dataProvider status_change_operation_data
+	 *
+	 * @param string $operation    Capture or cancel.
+	 * @param string $order_status Status the order changed to.
+	 */
+	public function test_refused_retries_write_the_failure_note_only_after_the_last( string $operation, string $order_status ): void {
+		$order = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'requires_capture', $order_status );
+		$order->add_order_note( $this->pending_note( $operation ) );
+		$calls = new \ArrayObject( array( 0 ) );
+		$this->register_controller_with_provider( $operation, $calls );
+
+		$delays_after_retry = array(
+			1 => 10 * MINUTE_IN_SECONDS,
+			2 => HOUR_IN_SECONDS,
+		);
+		foreach ( $delays_after_retry as $retry => $delay ) {
+			$before = time();
+			$this->run_retry_while_lock_is_held( $order, $operation, $retry );
+
+			$next = as_next_scheduled_action( WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION, $this->retry_args( $order, $operation, $retry + 1 ), 'woocommerce_payments' );
+			$this->assertGreaterThanOrEqual( $before + $delay, $next, "Retry $retry schedules the next one." );
+			$this->assertLessThanOrEqual( time() + $delay, $next );
+			$this->assertSame( 1, $this->count_notes( $order, $this->pending_note( $operation ) ), "Retry $retry adds no pending note." );
+			$this->assertSame( 0, $this->count_notes( $order, $this->failure_note( $operation ) ), "Retry $retry adds no failure note." );
+		}
+
+		$pending_before_last = $this->get_pending_retries( $order );
+		$this->run_retry_while_lock_is_held( $order, $operation, 3 );
+
+		$this->assertSame( 0, $calls[0] );
+		$this->assertSame( $pending_before_last, $this->get_pending_retries( $order ), 'The last retry schedules none.' );
+		$this->assertSame( 1, $this->count_notes( $order, $this->failure_note( $operation ) ) );
+		$this->assertSame( 1, $this->count_notes( $order, $this->pending_note( $operation ) ) );
+	}
+
+	/**
+	 * @testdox A $operation retry with the lock free runs the operation once and the order gets its success note.
+	 *
+	 * @dataProvider status_change_operation_data
+	 *
+	 * @param string $operation    Capture or cancel.
+	 * @param string $order_status Status the order changed to.
+	 */
+	public function test_retry_runs_the_operation_once_the_lock_is_free( string $operation, string $order_status ): void {
+		$order = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'requires_capture', $order_status );
+		$order->add_order_note( $this->pending_note( $operation ) );
+		$calls = new \ArrayObject( array( 0 ) );
+		$this->register_controller_with_provider( $operation, $calls );
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Runs the Action Scheduler job the controller scheduled.
+		do_action( WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION, $order->get_id(), $operation, 1 );
+
+		$this->assertSame( 1, $calls[0] );
+		$this->assertSame( 1, $this->count_notes( $order, 'Provider ' . $operation . ' success note.' ) );
+		$this->assertSame( 0, $this->count_notes( $order, $this->failure_note( $operation ) ) );
+		$this->assertSame( array(), $this->get_pending_retries( $order ) );
+	}
+
+	/**
+	 * @testdox A $operation retry does nothing once the order no longer matches its guard: $_dataName.
+	 *
+	 * @dataProvider stale_retry_data
+	 *
+	 * @param string $operation     Capture or cancel.
+	 * @param string $order_status  Order status when the retry runs.
+	 * @param string $intent_status `_intention_status` when the retry runs.
+	 */
+	public function test_retry_stops_when_the_order_no_longer_matches( string $operation, string $order_status, string $intent_status ): void {
+		$order = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $intent_status, $order_status );
+		$calls = new \ArrayObject( array( 0 ) );
+		$this->register_controller_with_provider( $operation, $calls );
+		$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Runs the Action Scheduler job the controller scheduled.
+		do_action( WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION, $order->get_id(), $operation, 1 );
+
+		$this->assertSame( 0, $calls[0] );
+		$this->assertCount( $notes_before, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->assertSame( array(), $this->get_pending_retries( $order ) );
+	}
+
+	/**
+	 * Status-change operations and the order status and hook that trigger each.
+	 *
+	 * @return array<string,array{string,string,string}>
+	 */
+	public function status_change_operation_data(): array {
+		return array(
+			'capture' => array( PaymentProcessingService::OPERATION_CAPTURE, OrderStatus::COMPLETED, 'woocommerce_order_status_completed' ),
+			'cancel'  => array( PaymentProcessingService::OPERATION_CANCEL, OrderStatus::CANCELLED, 'woocommerce_order_status_cancelled' ),
+		);
+	}
+
+	/**
+	 * Orders a retry finds changed since the refusal.
+	 *
+	 * @return array<string,array{string,string,string}>
+	 */
+	public function stale_retry_data(): array {
+		return array(
+			'capture, the order is no longer completed' => array( PaymentProcessingService::OPERATION_CAPTURE, OrderStatus::PROCESSING, 'requires_capture' ),
+			'capture, the authorization was captured'   => array( PaymentProcessingService::OPERATION_CAPTURE, OrderStatus::COMPLETED, 'succeeded' ),
+			'cancel, the order is no longer cancelled'  => array( PaymentProcessingService::OPERATION_CANCEL, OrderStatus::ON_HOLD, 'requires_capture' ),
+			'cancel, the authorization was canceled'    => array( PaymentProcessingService::OPERATION_CANCEL, OrderStatus::CANCELLED, 'canceled' ),
+		);
+	}
+
+	/**
+	 * Register the controller over the shared processing service and a provider whose operation succeeds with a note.
+	 *
+	 * @param string       $operation Capture or cancel.
+	 * @param \ArrayObject $calls     Counts capture and cancel calls.
+	 */
+	private function register_controller_with_provider( string $operation, \ArrayObject $calls ): void {
+		$outcome   = new PaymentOutcome(
+			PaymentProcessingService::OPERATION_CAPTURE === $operation ? PaymentOutcome::STATUS_COMPLETED : PaymentOutcome::STATUS_CANCELED,
+			'pi_authorized',
+			'',
+			'',
+			'',
+			array( PaymentOutcome::DATA_NOTE => 'Provider ' . $operation . ' success note.' )
+		);
+		$this->sut = $this->create_controller( wc_get_container()->get( PaymentProcessingService::class ), $this->create_fixed_outcome_provider( $outcome, $calls ) );
+		$this->sut->register();
+	}
+
+	/**
+	 * Run a callback while another operation holds the order payment lock.
+	 *
+	 * @param WC_Order $order    Order.
+	 * @param callable $callback Callback.
+	 */
+	private function while_lock_is_held( WC_Order $order, callable $callback ): void {
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$token      = $lock->claim( $order, $vocabulary, 'evt_holder', 'payment status update' );
+		$this->assertNotNull( $token );
+		try {
+			$callback();
+		} finally {
+			$lock->release( $order, $vocabulary, $token );
+		}
+	}
+
+	/**
+	 * Run one retry job while another operation holds the order payment lock.
+	 *
+	 * @param WC_Order $order     Order.
+	 * @param string   $operation Capture or cancel.
+	 * @param int      $retry     Retry number.
+	 */
+	private function run_retry_while_lock_is_held( WC_Order $order, string $operation, int $retry ): void {
+		$this->while_lock_is_held(
+			$order,
+			static function () use ( $order, $operation, $retry ): void {
+				// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Runs the Action Scheduler job the controller scheduled.
+				do_action( WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION, $order->get_id(), $operation, $retry );
+			}
+		);
+	}
+
+	/**
+	 * The retry job's arguments.
+	 *
+	 * @param WC_Order $order     Order.
+	 * @param string   $operation Capture or cancel.
+	 * @param int      $retry     Retry number.
+	 * @return array<string,int|string>
+	 */
+	private function retry_args( WC_Order $order, string $operation, int $retry ): array {
+		return array(
+			'order_id'  => $order->get_id(),
+			'operation' => $operation,
+			'retry'     => $retry,
+		);
+	}
+
+	/**
+	 * Retry numbers of the order's pending retry jobs.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return int[]
+	 */
+	private function get_pending_retries( WC_Order $order ): array {
+		$retries = array();
+		foreach ( as_get_scheduled_actions(
+			array(
+				'hook'     => WooPaymentsOrderAdminActionsController::RETRY_STATUS_CHANGE_OPERATION_ACTION,
+				'status'   => \ActionScheduler_Store::STATUS_PENDING,
+				'per_page' => -1,
+			)
+		) as $action ) {
+			$args = $action->get_args();
+			if ( $order->get_id() === ( $args['order_id'] ?? null ) ) {
+				$retries[] = (int) $args['retry'];
+			}
+		}
+		sort( $retries );
+
+		return $retries;
+	}
+
+	/**
+	 * Count the order's notes with exactly this content.
+	 *
+	 * @param WC_Order $order   Order.
+	 * @param string   $content Note content.
+	 * @return int
+	 */
+	private function count_notes( WC_Order $order, string $content ): int {
+		return count( array_filter( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), static fn( $note ): bool => $content === $note->content ) );
+	}
+
+	/**
+	 * The note a first refused status-change operation writes.
+	 *
+	 * @param string $operation Capture or cancel.
+	 * @return string
+	 */
+	private function pending_note( string $operation ): string {
+		return PaymentProcessingService::OPERATION_CAPTURE === $operation
+			? 'The payment capture is pending and will be retried automatically.'
+			: 'Canceling the payment authorization is pending and will be retried automatically.';
+	}
+
+	/**
+	 * The failure note client 11.1.0 writes for a capture or cancel that did not complete.
+	 *
+	 * @param string $operation Capture or cancel.
+	 * @return string
+	 */
+	private function failure_note( string $operation ): string {
+		return PaymentProcessingService::OPERATION_CAPTURE === $operation
+			? 'Capture authorization <strong>failed</strong> to complete.'
+			: 'Canceling authorization <strong>failed</strong> to complete.';
+	}
+
+	/**
 	 * Create the controller with explicit dependencies.
 	 *
 	 * @param PaymentProcessingService|null $processing_service Processing service override.
@@ -717,7 +995,8 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$controller->init(
 			$processing_service ?? $this->createMock( PaymentProcessingService::class ),
 			$provider ?? new WooPaymentsProvider(),
-			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class )
+			wc_get_container()->get( WooPaymentsFeeDetailsNoteController::class ),
+			wc_get_container()->get( WooPaymentsActionSchedulerService::class )
 		);
 
 		return $controller;
@@ -748,11 +1027,12 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a WooPayments provider that returns a fixed capture/cancel outcome.
 	 *
-	 * @param PaymentOutcome $fixed_outcome Fixed operation outcome.
+	 * @param PaymentOutcome             $fixed_outcome Fixed operation outcome.
+	 * @param \ArrayObject<int,int>|null $calls         Counts capture and cancel calls, when given.
 	 * @return WooPaymentsProvider
 	 */
-	private function create_fixed_outcome_provider( PaymentOutcome $fixed_outcome ): WooPaymentsProvider {
-		return new class( $fixed_outcome ) extends WooPaymentsProvider {
+	private function create_fixed_outcome_provider( PaymentOutcome $fixed_outcome, ?\ArrayObject $calls = null ): WooPaymentsProvider {
+		return new class( $fixed_outcome, $calls ) extends WooPaymentsProvider {
 			/**
 			 * Fixed operation outcome.
 			 *
@@ -761,12 +1041,21 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			private PaymentOutcome $fixed_outcome;
 
 			/**
+			 * Capture and cancel call counter.
+			 *
+			 * @var \ArrayObject<int,int>|null
+			 */
+			private ?\ArrayObject $calls;
+
+			/**
 			 * Constructor.
 			 *
-			 * @param PaymentOutcome $fixed_outcome Fixed operation outcome.
+			 * @param PaymentOutcome             $fixed_outcome Fixed operation outcome.
+			 * @param \ArrayObject<int,int>|null $calls         Capture and cancel call counter.
 			 */
-			public function __construct( PaymentOutcome $fixed_outcome ) {
+			public function __construct( PaymentOutcome $fixed_outcome, ?\ArrayObject $calls ) {
 				$this->fixed_outcome = $fixed_outcome;
+				$this->calls         = $calls;
 			}
 
 			/**
@@ -796,6 +1085,9 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			 */
 			public function capture( PaymentOperationContext $context, string $operation_key ): PaymentOutcome {
 				unset( $context, $operation_key );
+				if ( null !== $this->calls ) {
+					++$this->calls[0];
+				}
 
 				return $this->fixed_outcome;
 			}
@@ -809,6 +1101,9 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			 */
 			public function cancel( PaymentOperationContext $context, string $operation_key ): PaymentOutcome {
 				unset( $context, $operation_key );
+				if ( null !== $this->calls ) {
+					++$this->calls[0];
+				}
 
 				return $this->fixed_outcome;
 			}

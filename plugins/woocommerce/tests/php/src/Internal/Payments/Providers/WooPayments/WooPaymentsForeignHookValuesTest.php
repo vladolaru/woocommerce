@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
@@ -131,7 +132,7 @@ class WooPaymentsForeignHookValuesTest extends WC_Unit_Test_Case {
 				break;
 			case 'woocommerce_order_actions':
 				$controller = new WooPaymentsOrderAdminActionsController();
-				$controller->init( $container->get( PaymentProcessingService::class ), $container->get( WooPaymentsProvider::class ), $container->get( WooPaymentsFeeDetailsNoteController::class ) );
+				$controller->init( $container->get( PaymentProcessingService::class ), $container->get( WooPaymentsProvider::class ), $container->get( WooPaymentsFeeDetailsNoteController::class ), $container->get( WooPaymentsActionSchedulerService::class ) );
 				$controller->register();
 				break;
 			case 'wp_privacy_personal_data_erasers':

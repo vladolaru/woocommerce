@@ -99,7 +99,7 @@ class PaymentProcessingService {
 		// cancels and provider events are logged.
 		$lock_token = $this->order_payment_lock->claim( $order, $persistence_vocabulary, $idempotency_key, 'checkout' );
 		if ( null === $lock_token ) {
-			return $this->get_operation_in_progress_outcome();
+			return $this->get_operation_in_progress_outcome( true );
 		}
 
 		try {
@@ -141,19 +141,18 @@ class PaymentProcessingService {
 	 * Get the failed outcome for a checkout, capture or cancel refused because another operation holds the order payment lock,
 	 * or because the order changed before this request claimed it.
 	 *
+	 * @param bool $lock_refused Whether the order payment lock refused the operation, flagged on the outcome.
 	 * @return PaymentOutcome
 	 */
-	private function get_operation_in_progress_outcome(): PaymentOutcome {
-		return new PaymentOutcome(
-			PaymentOutcome::STATUS_FAILED,
-			'',
-			'',
-			'',
-			'',
-			array(
-				PaymentOutcome::DATA_ERROR_MESSAGE => __( 'A payment operation is already in progress for this order.', 'woocommerce' ),
-			)
+	private function get_operation_in_progress_outcome( bool $lock_refused = false ): PaymentOutcome {
+		$data = array(
+			PaymentOutcome::DATA_ERROR_MESSAGE => __( 'A payment operation is already in progress for this order.', 'woocommerce' ),
 		);
+		if ( $lock_refused ) {
+			$data[ PaymentOutcome::DATA_ORDER_PAYMENT_LOCK_REFUSED ] = true;
+		}
+
+		return new PaymentOutcome( PaymentOutcome::STATUS_FAILED, '', '', '', '', $data );
 	}
 
 	/**
@@ -768,7 +767,7 @@ class PaymentProcessingService {
 		$lock_token = $this->order_payment_lock->claim( $order, $persistence_vocabulary, $idempotency_key, $operation );
 		if ( null === $lock_token ) {
 			$this->order_payment_lock->log_refusal( $order, $persistence_vocabulary, $operation );
-			return $this->get_operation_in_progress_outcome();
+			return $this->get_operation_in_progress_outcome( true );
 		}
 
 		try {

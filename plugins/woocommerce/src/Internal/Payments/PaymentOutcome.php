@@ -198,6 +198,16 @@ class PaymentOutcome {
 	public const DATA_ORDER_PAID_BY_ANOTHER_REQUEST = 'order_paid_by_another_request';
 
 	/**
+	 * Failed outcomes: flags that the order payment lock refused the operation, so the provider was never called.
+	 *
+	 * Another operation held the order's lock; the same operation can be run again once that one releases it.
+	 *
+	 * @since 11.2.0
+	 * @var string
+	 */
+	public const DATA_ORDER_PAYMENT_LOCK_REFUSED = 'order_payment_lock_refused';
+
+	/**
 	 * Outcome status.
 	 *
 	 * @var string
