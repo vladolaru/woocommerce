@@ -265,20 +265,23 @@ class StripeBillingEventHandler {
 
 		if ( $order->needs_payment() ) {
 			// Put the subscription on hold first, as a renewal does, so WooCommerce Subscriptions records the payment on it. Stripe already billed it, so neither change reaches Stripe.
-			$this->subscription_service->run_without_stripe_sync(
-				function () use ( $subscription, $order, $intent, $intent_id, $event_object ): void {
-					$subscription->update_status( 'on-hold' );
+			try {
+				$this->subscription_service->run_without_stripe_sync(
+					function () use ( $subscription, $order, $intent, $intent_id, $event_object ): void {
+						$subscription->update_status( 'on-hold' );
 
-					if ( null !== $intent ) {
-						$this->payment_intent_event_handler->apply_succeeded_payment_intent( $order, $intent );
-					} else {
-						$this->complete_order_without_intent( $order, $intent_id, $event_object );
+						if ( null !== $intent ) {
+							$this->payment_intent_event_handler->apply_succeeded_payment_intent( $order, $intent );
+						} else {
+							$this->complete_order_without_intent( $order, $intent_id, $event_object );
+						}
 					}
-				}
-			);
-
-			// Completing the order activated another instance of the subscription; saving this one would undo that.
-			$subscription = $this->get_fresh_subscription( $subscription );
+				);
+			} finally {
+				// Completing the order activated another instance of the subscription; saving this one would undo that.
+				$subscription = $this->get_fresh_subscription( $subscription );
+				$this->reactivate_subscription_of_paid_renewal( $subscription, $order );
+			}
 
 			if ( $order->needs_payment() ) {
 				// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Exception message is internal application state, not HTML output.
@@ -467,6 +470,35 @@ class StripeBillingEventHandler {
 		}
 		/* translators: %d: renewal order ID. */
 		$subscription->add_order_note( sprintf( __( 'Related order #%d failed.', 'woocommerce' ), $order->get_id() ) );
+	}
+
+	/**
+	 * Record the renewal payment on a subscription left on hold although its renewal order, its last one, is paid.
+	 *
+	 * An overlapping delivery of the same invoice can pay the order first; this delivery's hold then comes after that
+	 * payment, and its own payment is skipped as already recorded. Client 11.1.0 pays the order again from its stale copy
+	 * (class-wc-payments-subscriptions-event-handler.php:159-184), and WooCommerce Subscriptions then runs this same call,
+	 * only for the subscription's last renewal (WC_Subscriptions_Renewal_Order::maybe_record_subscription_payment()).
+	 *
+	 * @param WC_Order $subscription Subscription, as stored.
+	 * @param WC_Order $order        Renewal order.
+	 */
+	private function reactivate_subscription_of_paid_renewal( WC_Order $subscription, WC_Order $order ): void {
+		$fresh_order = wc_get_order( $order->get_id() );
+		if ( ! $fresh_order instanceof WC_Order || $fresh_order->needs_payment() || ! $subscription->has_status( 'on-hold' ) || ! is_callable( array( $subscription, 'payment_complete_for_order' ) ) ) {
+			return;
+		}
+
+		if ( ! function_exists( 'wcs_is_order_last_renewal_of_subscription' ) || ! wcs_is_order_last_renewal_of_subscription( $fresh_order, $subscription ) ) {
+			return;
+		}
+
+		// Stripe billed the invoice and keeps the subscription active, so the reactivation does not reach Stripe.
+		$this->subscription_service->run_without_stripe_sync(
+			static function () use ( $subscription, $fresh_order ): void {
+				$subscription->payment_complete_for_order( $fresh_order );
+			}
+		);
 	}
 
 	/**

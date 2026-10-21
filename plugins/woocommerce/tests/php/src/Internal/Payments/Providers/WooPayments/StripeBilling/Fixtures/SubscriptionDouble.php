@@ -97,6 +97,11 @@ class SubscriptionDouble extends \WC_Order {
 		$new_status = $this->get_status();
 
 		if ( $old_status !== $new_status ) {
+			if ( 'on-hold' === $new_status ) {
+				// WooCommerce Subscriptions counts every suspension (includes/core/class-wc-subscription.php:581-584).
+				$this->set_suspension_count( $this->get_suspension_count() + 1 );
+				$this->save();
+			}
 			do_action( 'woocommerce_subscription_status_' . $new_status, $this );
 			do_action( 'woocommerce_subscription_status_' . $old_status . '_to_' . $new_status, $this );
 		}
@@ -134,7 +139,7 @@ class SubscriptionDouble extends \WC_Order {
 	 * otherwise the last parent, renewal or switch order that needs payment is paid and the subscription is marked paid.
 	 *
 	 * WooCommerce Subscriptions 9.0.1 `WC_Subscription::payment_complete()` and `payment_complete_for_order()`
-	 * (includes/core/class-wc-subscription.php:2025-2077); the suspension count, role update and renewal-only meta and hook are left out.
+	 * (includes/core/class-wc-subscription.php:2025-2077); the role update and renewal-only meta and hook are left out.
 	 *
 	 * @param string $transaction_id Transaction ID stored on the paid order.
 	 * @return bool
@@ -149,6 +154,22 @@ class SubscriptionDouble extends \WC_Order {
 			$last_order->payment_complete( $transaction_id );
 		}
 
+		$this->payment_complete_for_order( $last_order );
+
+		return true;
+	}
+
+	/**
+	 * Mark a related order's payment complete on the subscription: reset the suspension count, note it, make it active.
+	 *
+	 * WooCommerce Subscriptions 9.3.0 `WC_Subscription::payment_complete_for_order()` (includes/core/class-wc-subscription.php:2087-2117);
+	 * the role update and renewal-only meta and hook are left out.
+	 *
+	 * @param \WC_Order|false $last_order Related order that was paid.
+	 */
+	public function payment_complete_for_order( $last_order ): void {
+		unset( $last_order );
+		$this->set_suspension_count( 0 );
 		$this->add_order_note( 'Payment status marked complete.' );
 		if ( 'active' !== $this->get_status( 'edit' ) ) {
 			$this->update_status( 'active' );
@@ -156,8 +177,28 @@ class SubscriptionDouble extends \WC_Order {
 			$this->save();
 		}
 		do_action( 'woocommerce_subscription_payment_complete', $this );
+	}
 
-		return true;
+	/**
+	 * Get how many times the subscription was suspended since its last payment, from the meta key WooCommerce Subscriptions uses.
+	 *
+	 * WooCommerce Subscriptions keeps one value, so the last one written wins; a stale copy that saves the key adds a row here.
+	 *
+	 * @return int
+	 */
+	public function get_suspension_count(): int {
+		$values = $this->get_meta( '_suspension_count', false );
+
+		return array() === $values ? 0 : (int) end( $values )->value;
+	}
+
+	/**
+	 * Set the suspension count.
+	 *
+	 * @param int $count Suspension count.
+	 */
+	public function set_suspension_count( int $count ): void {
+		$this->update_meta_data( '_suspension_count', $count );
 	}
 
 	/**

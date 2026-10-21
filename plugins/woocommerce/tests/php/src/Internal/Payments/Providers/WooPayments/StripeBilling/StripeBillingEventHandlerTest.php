@@ -450,6 +450,82 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A second delivery of a paid invoice that runs while the first reads the intent leaves one paid renewal order, one payment and the subscription active with no suspension counted.
+	 *
+	 * The second delivery pays the renewal, which activates the subscription; the first then puts the subscription on hold
+	 * from its stale copy and finds the payment already recorded. Client 11.1.0 pays the order again from its stale copy
+	 * (event handler :159-184), so WooCommerce Subscriptions runs payment_complete_for_order(), which makes the subscription
+	 * active and resets its suspension count (includes/core/class-wc-subscription.php:2087-2117).
+	 */
+	public function test_paid_invoice_delivered_while_the_first_reads_the_intent_leaves_the_subscription_active(): void {
+		$subscription       = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID );
+		$payments_completed = did_action( 'woocommerce_payment_complete' );
+		for ( $delivery = 1; $delivery <= 2; $delivery++ ) {
+			$this->queue_response( 200, $this->get_renewal_intent() );
+			$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+		}
+		$event   = $this->get_event( 'invoice_paid_renewal' );
+		$overlap = function ( ...$args ) use ( $event, &$overlap ) {
+			// The second delivery runs once, inside the first one's intent read; the filter hands the request params back.
+			remove_filter( 'wcpay_api_request_params', $overlap );
+			$this->sut->handle_event( $event );
+			return $args[0] ?? null;
+		};
+		add_filter( 'wcpay_api_request_params', $overlap );
+
+		try {
+			$this->sut->handle_event( $event );
+		} finally {
+			remove_filter( 'wcpay_api_request_params', $overlap );
+		}
+
+		$orders = $this->get_renewal_orders( self::RENEWAL_INVOICE_ID );
+		$this->assertCount( 1, $orders );
+		$this->assertSame( 'processing', $orders[0]->get_status() );
+		$this->assertSame( 1, did_action( 'woocommerce_payment_complete' ) - $payments_completed, 'The renewal is paid once, so its emails go once.' );
+		$subscription = wc_get_order( $subscription->get_id() );
+		$this->assertSame( 'active', $subscription->get_status() );
+		$this->assertSame( 0, $subscription->get_suspension_count() );
+	}
+
+	/**
+	 * @testdox A second delivery of a paid invoice that runs while the first reads the intent leaves the subscription on hold when the invoice's renewal is not its last one.
+	 *
+	 * WooCommerce Subscriptions records a renewal payment on the subscription only for its last renewal
+	 * (includes/core/class-wc-subscriptions-renewal-order.php:111-119), so the client's repeated payment leaves the hold too.
+	 */
+	public function test_paid_invoice_overlap_on_an_older_renewal_leaves_the_subscription_on_hold(): void {
+		$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID );
+		$order        = WooCommerceSubscriptionsDoubles::create_renewal_order( $subscription );
+		$order->set_payment_method( 'woocommerce_payments' );
+		$order->update_meta_data( '_wcpay_billing_invoice_id', self::RENEWAL_INVOICE_ID );
+		$order->save();
+		WooCommerceSubscriptionsDoubles::create_renewal_order( $subscription );
+		$payments_completed = did_action( 'woocommerce_payment_complete' );
+		for ( $delivery = 1; $delivery <= 2; $delivery++ ) {
+			$this->queue_response( 200, $this->get_renewal_intent() );
+			$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+		}
+		$event   = $this->get_event( 'invoice_paid_renewal' );
+		$overlap = function ( ...$args ) use ( $event, &$overlap ) {
+			remove_filter( 'wcpay_api_request_params', $overlap );
+			$this->sut->handle_event( $event );
+			return $args[0] ?? null;
+		};
+		add_filter( 'wcpay_api_request_params', $overlap );
+
+		try {
+			$this->sut->handle_event( $event );
+		} finally {
+			remove_filter( 'wcpay_api_request_params', $overlap );
+		}
+
+		$this->assertSame( 'processing', wc_get_order( $order->get_id() )->get_status() );
+		$this->assertSame( 1, did_action( 'woocommerce_payment_complete' ) - $payments_completed );
+		$this->assertSame( 'on-hold', wc_get_order( $subscription->get_id() )->get_status() );
+	}
+
+	/**
 	 * @testdox A failed-payment update for an invoice whose renewal order is already paid changes nothing: the order stays paid and the subscription active.
 	 *
 	 * Client 11.1.0 calls `payment_failed()` here without a check (event handler :298-304), which fails the subscription's last order.

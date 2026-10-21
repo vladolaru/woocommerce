@@ -122,6 +122,11 @@ final class WooCommerceSubscriptionsDoubles {
 			eval( 'namespace { function wcs_get_subscriptions( $args ) { return \\' . self::class . '::get_subscriptions( $args ); } }' );
 		}
 
+		if ( ! function_exists( 'wcs_is_order_last_renewal_of_subscription' ) ) {
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its last-renewal check, read from the renewal relation (includes/core/wcs-renewal-functions.php:112-115).
+			eval( 'namespace { function wcs_is_order_last_renewal_of_subscription( $order, $subscription ) { $last = $subscription->get_last_order( "all", "renewal" ); return $last instanceof WC_Order && $last->get_id() === $order->get_id(); } }' );
+		}
+
 		if ( ! function_exists( 'wcs_create_renewal_order' ) ) {
 			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its renewal order creation.
 			eval( 'namespace { function wcs_create_renewal_order( $subscription ) { return \\' . self::class . '::create_renewal_order( $subscription ); } }' );
@@ -495,9 +500,10 @@ final class WooCommerceSubscriptionsDoubles {
 
 		foreach ( $GLOBALS[ self::RENEWAL_SUBSCRIPTIONS ][ absint( $order_id ) ] ?? array() as $subscription_id ) {
 			$subscription = wc_get_order( $subscription_id );
-			if ( $subscription instanceof SubscriptionDouble && ! $subscription->has_status( 'active' ) ) {
-				$subscription->add_order_note( 'Payment status marked complete.' );
-				$subscription->update_status( 'active' );
+			// WooCommerce Subscriptions activates only for the subscription's last renewal (includes/core/class-wc-subscriptions-renewal-order.php:111-119).
+			$order = wc_get_order( $order_id );
+			if ( $subscription instanceof SubscriptionDouble && ! $subscription->has_status( 'active' ) && $order instanceof \WC_Order && wcs_is_order_last_renewal_of_subscription( $order, $subscription ) ) {
+				$subscription->payment_complete_for_order( $order );
 			}
 		}
 	}
