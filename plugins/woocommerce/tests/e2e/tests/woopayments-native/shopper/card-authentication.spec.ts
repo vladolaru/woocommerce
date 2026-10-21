@@ -569,13 +569,18 @@ test.describe( 'WooPayments native card authentication', () => {
 
 	test.beforeAll( async ( { restApi } ) => {
 		await requireTestModeAccount( restApi );
+	} );
+
+	// Each case gets its own customer, so no case's background work can
+	// rewrite another case's session.
+	test.beforeEach( async ( { restApi } ) => {
 		customer = getFakeUser( 'customer' );
 		const created = ( await restApi.post( 'wc/v3/customers', customer ) )
 			.data as { id: number };
 		customerId = created.id;
 	} );
 
-	test.afterAll( async ( { restApi } ) => {
+	test.afterEach( async ( { restApi } ) => {
 		if ( customerId ) {
 			await restApi.delete( `wc/v3/customers/${ customerId }`, {
 				force: true,
