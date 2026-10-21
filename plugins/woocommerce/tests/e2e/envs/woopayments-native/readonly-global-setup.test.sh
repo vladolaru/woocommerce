@@ -19,14 +19,12 @@ printf 'pnpm %s\n' "$*" >> "${E2E_FAKE_COMMAND_LOG:?}"
 grep -Fq 'update_option( "woocommerce_feature_multi_currency_enabled", "yes" );' <<< "$*"
 [[ "$*" == *'wcpay_multi_currency_enabled_currencies'* ]]
 [[ "$*" == *'express_checkout_checkout_methods'* ]]
-grep -Fq '$settings["platform_checkout"] = "no"' <<< "$*"
 grep -Fq '$settings["manual_capture"] = "no"' <<< "$*"
 grep -Fq 'E2E_WOOPAYMENTS_NATIVE_FIXTURE ) { update_option( "woocommerce_coming_soon", "no" );' <<< "$*"
 grep -Fq '$currency_cache_time = time();' <<< "$*"
 grep -Fq 'update_option( "wcpay_multi_currency_cached_currencies", array( "data" => array( "currencies" => array(), "updated" => $currency_cache_time ), "fetched" => $currency_cache_time, "errored" => false, "consecutive_errors" => 0 ), false );' <<< "$*"
 grep -Fq 'wp_cache_delete( "wcpay_multi_currency_cached_currencies", "options" );' <<< "$*"
-[[ "$*" == *'upe_enabled_payment_method_ids'* ]]
-[[ "$*" == *'"card", "klarna"'* ]]
+grep -Fq 'delete_option( "wcpay_multi_currency_" . $dropped_jpy_option . "_jpy" );' <<< "$*"
 [[ "$*" == *'WooCommerce_WooPayments_Native_CI_Provider_Fixture'* ]]
 grep -Fq 'registered_instance()' <<< "$*"
 grep -Fq 'remove_filter( "pre_option_wcpay_account_data", $account_cache_callback )' <<< "$*"
