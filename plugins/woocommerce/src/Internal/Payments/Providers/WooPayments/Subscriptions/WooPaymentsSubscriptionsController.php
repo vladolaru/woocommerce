@@ -114,6 +114,7 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 			return $email_classes;
 		}
 
+		// Loads the class when the filter runs outside WC_Emails::init(), which includes every email class first.
 		if ( ! class_exists( 'WC_Email_Failed_Order' ) ) {
 			require_once WC_ABSPATH . 'includes/emails/class-wc-email-failed-order.php';
 		}

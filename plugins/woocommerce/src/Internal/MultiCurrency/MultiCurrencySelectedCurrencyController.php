@@ -645,6 +645,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	 * @return bool
 	 */
 	private function has_active_session(): bool {
+		// The session class is swappable (woocommerce_session_handler), and the Store API handler has no has_session().
 		return is_object( WC()->session )
 			&& method_exists( WC()->session, 'has_session' )
 			&& WC()->session->has_session();

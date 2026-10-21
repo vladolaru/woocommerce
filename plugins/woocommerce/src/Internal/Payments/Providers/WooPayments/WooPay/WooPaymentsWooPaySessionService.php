@@ -577,6 +577,7 @@ class WooPaymentsWooPaySessionService {
 			return;
 		}
 
+		// The session class is swappable (woocommerce_session_handler), and not every handler sets a customer cookie.
 		if ( method_exists( $session, 'set_customer_session_cookie' ) ) {
 			$session->set_customer_session_cookie( true );
 		}

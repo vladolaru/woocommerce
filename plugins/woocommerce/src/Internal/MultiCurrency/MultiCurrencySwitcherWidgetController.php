@@ -116,6 +116,8 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 	/**
 	 * Get the registered switcher widget markup.
 	 *
+	 * While the WooPayments extension owns Multi-Currency, the template tag wc_get_currency_switcher_markup() hands off here to the extension's WC_Payments_Multi_Currency(): the extension owns the store, and the template tag is the extension's contract.
+	 *
 	 * @since 11.2.0
 	 *
 	 * @param array $instance Widget instance settings.

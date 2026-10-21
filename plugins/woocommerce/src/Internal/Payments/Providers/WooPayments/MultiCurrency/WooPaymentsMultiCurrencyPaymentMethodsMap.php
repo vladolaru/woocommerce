@@ -87,6 +87,7 @@ class WooPaymentsMultiCurrencyPaymentMethodsMap implements RegisterHooksInterfac
 	public function handle_admin_head(): void {
 		global $current_tab;
 
+		// Admin requests only: get_current_screen() comes from wp-admin/includes/screen.php.
 		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
 		if ( ! MultiCurrencySettingsProjectionService::is_multi_currency_settings_page( is_admin(), is_string( $current_tab ) ? $current_tab : null, $screen ? $screen->base : null ) ) {
 			return;

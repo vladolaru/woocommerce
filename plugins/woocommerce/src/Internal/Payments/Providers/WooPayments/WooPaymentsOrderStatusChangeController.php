@@ -219,6 +219,7 @@ class WooPaymentsOrderStatusChangeController implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function handle_admin_enqueue_scripts(): void {
+		// Admin requests only: get_current_screen() comes from wp-admin/includes/screen.php.
 		$screen    = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
 		$screen_id = $screen ? $screen->id : '';
 		if ( ! in_array( $screen_id, $this->get_order_edit_screen_ids(), true ) ) {

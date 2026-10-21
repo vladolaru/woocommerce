@@ -195,6 +195,7 @@ class MultiCurrencySelectedCurrencyPersistenceService {
 
 		WC()->session->set( self::CURRENCY_STORAGE_KEY, $currency_code );
 
+		// The session class is swappable (woocommerce_session_handler), and not every handler sets a customer cookie.
 		if ( $persist_change && method_exists( WC()->session, 'set_customer_session_cookie' ) ) {
 			WC()->session->set_customer_session_cookie( true );
 		}

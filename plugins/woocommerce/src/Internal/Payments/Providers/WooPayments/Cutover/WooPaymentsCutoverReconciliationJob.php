@@ -1175,6 +1175,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		if ( ! is_readable( $plugin_path ) ) {
 			return '';
 		}
+		// WordPress loads wp-admin/includes/plugin.php on every request only since core ticket #62244.
 		if ( ! function_exists( 'get_plugin_data' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}

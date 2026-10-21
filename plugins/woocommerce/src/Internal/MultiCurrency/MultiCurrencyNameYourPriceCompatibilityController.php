@@ -257,6 +257,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 			$this->get_price_projection_service()->get_raw_conversion( (float) $values['nyp_original'], $selected_currency_code, (string) $values['nyp_currency'] );
 			return $remove;
 		} catch ( InvalidCurrencyException | InvalidCurrencyRateException $e ) {
+			// Notice functions load with the front-end includes or wc_load_cart(), not when code calls WC()->initialize_cart() directly.
 			if ( $product instanceof \WC_Product && function_exists( 'wc_add_notice' ) ) {
 				wc_add_notice(
 					sprintf(

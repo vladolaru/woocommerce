@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
+// WC_Settings_Page loads only through WC_Admin_Settings.
 if ( ! class_exists( '\WC_Settings_Page', false ) ) {
 	require_once WC_ABSPATH . 'includes/admin/settings/class-wc-settings-page.php';
 }

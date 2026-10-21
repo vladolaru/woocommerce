@@ -45,6 +45,7 @@ class StripeBillingPluginsScreenNotice {
 	 * @internal
 	 */
 	public function maybe_show_notice(): void {
+		// Admin requests only: get_current_screen() comes from wp-admin/includes/screen.php.
 		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
 		if ( ! $screen || 'plugins' !== $screen->id || ! current_user_can( 'deactivate_plugins' ) ) {
 			return;

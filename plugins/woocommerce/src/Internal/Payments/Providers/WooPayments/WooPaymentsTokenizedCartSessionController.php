@@ -218,6 +218,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 * @return mixed
 	 */
 	public function handle_store_api_response( $response, $server = null, $request = null ) {
+		// The session class is swappable (woocommerce_session_handler), so only methods the handler has are called.
 		if ( ! $response instanceof WP_REST_Response || ! WC() || ! WC()->session || ! is_callable( array( WC()->session, 'get_customer_id' ) ) ) {
 			return $response;
 		}
@@ -292,6 +293,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 
 		$session  = WC()->session;
 		$snapshot = array();
+		// The session class is swappable (woocommerce_session_handler), so only methods the handler has are called.
 		if ( is_callable( array( $session, 'get_session_data' ) ) ) {
 			foreach ( (array) $session->get_session_data() as $key => $value ) {
 				$snapshot[ (string) $key ] = maybe_unserialize( $value );
