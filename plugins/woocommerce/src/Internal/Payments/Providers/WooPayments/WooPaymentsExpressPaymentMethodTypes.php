@@ -213,7 +213,7 @@ class WooPaymentsExpressPaymentMethodTypes {
 	 * @return bool
 	 */
 	public static function is_tax_based_on_billing_address(): bool {
-		return function_exists( 'wc_tax_enabled' ) && wc_tax_enabled() && 'billing' === get_option( 'woocommerce_tax_based_on' );
+		return wc_tax_enabled() && 'billing' === get_option( 'woocommerce_tax_based_on' );
 	}
 
 	/**

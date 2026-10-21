@@ -137,7 +137,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			return;
 		}
 
-		$is_cart_block = function_exists( 'is_cart' ) && is_cart() && has_block( 'woocommerce/cart' );
+		$is_cart_block = is_cart() && has_block( 'woocommerce/cart' );
 		$this->register_site_messaging_assets( $is_cart_block );
 		wp_enqueue_style( $is_cart_block ? self::CART_BLOCK_STYLE_HANDLE : self::STYLE_HANDLE );
 	}
@@ -245,7 +245,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 		$country            = $this->get_customer_or_store_country();
 		$product_variations = array();
 		$product_price      = 0;
-		$is_product_surface = $product instanceof WC_Product || ( function_exists( 'is_product' ) && is_product() );
+		$is_product_surface = $product instanceof WC_Product || is_product();
 
 		if ( $product instanceof WC_Product ) {
 			$product_variations = $this->get_product_variations( $product, $currency_code );
@@ -263,7 +263,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			'publishableKey'       => $this->account_service->get_publishable_key(),
 			'paymentMethods'       => array_values( $payment_methods ),
 			'currencyCode'         => $currency_code,
-			'isCart'               => (bool) ( ! $is_product_surface && function_exists( 'is_cart' ) && is_cart() ),
+			'isCart'               => (bool) ( ! $is_product_surface && is_cart() ),
 			'isCartBlock'          => $is_cart_block,
 			'cartTotal'            => $this->get_cart_total(),
 			'nonce'                => array(
@@ -372,9 +372,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_supported_surface(): bool {
-		$is_surface = ( function_exists( 'is_product' ) && is_product() )
-			|| ( function_exists( 'is_cart' ) && is_cart() )
-			|| $this->is_cart_block_surface();
+		$is_surface = is_product() || is_cart() || $this->is_cart_block_surface();
 
 		return $is_surface && ! $this->is_subscription_surface();
 	}
@@ -388,7 +386,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 	 */
 	private function is_subscription_surface(): bool {
 		$product = $this->get_current_product();
-		if ( null === $product && function_exists( 'is_product' ) && is_product() ) {
+		if ( null === $product && is_product() ) {
 			// The global product is set only inside the loop; callers that run earlier read the queried product.
 			$product = wc_get_product( get_queried_object_id() );
 		}
@@ -396,7 +394,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			return true;
 		}
 
-		return function_exists( 'is_cart' ) && is_cart()
+		return is_cart()
 			&& class_exists( 'WC_Subscriptions_Cart' ) && \WC_Subscriptions_Cart::cart_contains_subscription();
 	}
 

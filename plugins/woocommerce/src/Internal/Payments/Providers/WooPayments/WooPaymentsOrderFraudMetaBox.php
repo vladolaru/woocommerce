@@ -543,10 +543,7 @@ class WooPaymentsOrderFraudMetaBox implements RegisterHooksInterface {
 	 * @return string[]
 	 */
 	private function get_order_edit_screen_ids(): array {
-		$screen_ids = array( 'shop_order' );
-		if ( function_exists( 'wc_get_page_screen_id' ) ) {
-			$screen_ids[] = wc_get_page_screen_id( 'shop-order' );
-		}
+		$screen_ids = array( 'shop_order', wc_get_page_screen_id( 'shop-order' ) );
 
 		return array_values( array_unique( array_filter( $screen_ids ) ) );
 	}

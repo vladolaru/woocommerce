@@ -161,7 +161,7 @@ class WooPaymentsCustomerService implements RegisterHooksInterface {
 			}
 		}
 
-		if ( ! function_exists( 'is_add_payment_method_page' ) || ! is_add_payment_method_page() ) {
+		if ( ! is_add_payment_method_page() ) {
 			return array();
 		}
 
