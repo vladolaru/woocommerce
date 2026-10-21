@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
@@ -186,7 +187,9 @@ class WooPaymentsIntentConfirmationService {
 		}
 
 		$event = $this->build_lifecycle_event_from_intent( $intent, $order, $zero_amount_plain_note );
-		$this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock( $order, $event );
+		if ( OrderPaymentLifecycleService::RESULT_REFUSED === $this->fee_details_note_controller->apply_and_schedule_fee_details_with_lock( $order, $event ) ) {
+			$this->attach_charge_details_after_refusal( $order, $event );
+		}
 		if ( WooPaymentsIntentCodec::holds_money( $status ) && ! $should_apply_display_details_before_lifecycle ) {
 			$this->apply_payment_method_display_details( $order, $intent );
 		}
@@ -196,6 +199,34 @@ class WooPaymentsIntentConfirmationService {
 		}
 	}
 	// phpcs:enable Squiz.Commenting.FunctionCommentThrowTag.WrongNumber
+
+	/**
+	 * Save the charge an intent names on its order when the order payment lock refused the intent's lifecycle event.
+	 *
+	 * Client 11.1.0 stores the intent's charge before its order lock (class-wc-payments-order-service.php:1351-1418, called at
+	 * class-wc-payment-gateway-wcpay.php:4236), and no other writer stores a declined charge, so the charge ID, its risk level
+	 * and its payment method details are saved here. Only meta is saved; the holder of the lock writes the status and note.
+	 * Like the client (:1353), nothing is saved once the stored intent status is succeeded.
+	 *
+	 * @param WC_Order              $order Order being confirmed.
+	 * @param PaymentLifecycleEvent $event Refused lifecycle event.
+	 */
+	private function attach_charge_details_after_refusal( WC_Order $order, PaymentLifecycleEvent $event ): void {
+		$stored_order = wc_get_container()->get( OrderPaymentLifecycleService::class )->get_fresh_order_from_data_store( $order );
+		if ( 'succeeded' === (string) $stored_order->get_meta( '_intention_status', true ) ) {
+			return;
+		}
+
+		$charge_meta = array_intersect_key( $event->get_meta_to_update(), array_flip( array( '_charge_id', '_charge_risk_level', '_wcpay_payment_method_details' ) ) );
+		if ( empty( $charge_meta ) ) {
+			return;
+		}
+
+		foreach ( $charge_meta as $key => $value ) {
+			$stored_order->update_meta_data( $key, $value );
+		}
+		$stored_order->save_meta_data();
+	}
 
 	/**
 	 * Apply the PaymentIntent an earlier checkout request attached to the order, once the duplicate-payment check found it holds the money.

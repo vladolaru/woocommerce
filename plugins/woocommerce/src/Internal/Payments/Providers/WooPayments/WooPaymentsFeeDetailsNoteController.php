@@ -216,9 +216,14 @@ class WooPaymentsFeeDetailsNoteController implements RegisterHooksInterface {
 	 *
 	 * @param WC_Order              $order Order object.
 	 * @param PaymentLifecycleEvent $event Lifecycle event.
+	 * @return string The payment lifecycle's result for the event, OrderPaymentLifecycleService::RESULT_REFUSED when the
+	 *                order payment lock refused it.
 	 */
-	public function apply_and_schedule_fee_details_with_lock( WC_Order $order, PaymentLifecycleEvent $event ): void {
-		$this->schedule_when_event_added_note( $order, $event, $this->lifecycle_service->apply( $order, $event, $this->vocabulary ) );
+	public function apply_and_schedule_fee_details_with_lock( WC_Order $order, PaymentLifecycleEvent $event ): string {
+		$result = $this->lifecycle_service->apply( $order, $event, $this->vocabulary );
+		$this->schedule_when_event_added_note( $order, $event, $result );
+
+		return $result;
 	}
 
 	/**

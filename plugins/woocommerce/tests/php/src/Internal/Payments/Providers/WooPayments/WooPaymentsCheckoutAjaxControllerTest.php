@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
@@ -95,7 +96,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Order-status callback should complete a zero-total order from the SetupIntent.
 	 *
-	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The intent is now REC-3DS-5's succeeded
+	 * The intent is REC-3DS-5's succeeded
 	 * challenge (`Fixtures/platform-3ds-challenge-results.json`, pair `my_account_setup_intent_challenge_completed`):
 	 * a real My Account add-payment-method SetupIntent that succeeded after a hosted 3DS challenge.
 	 */
@@ -1580,7 +1581,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Order-status callback should fail a post-authentication decline with the recorded intent identity.
 	 *
-	 * T.3 Task 4 (`plan-task-t3.md`): a hosted 3DS challenge that fails, or that completes and is
+	 * A hosted 3DS challenge that fails, or that completes and is
 	 * then declined, both leave the PaymentIntent `requires_payment_method`. REC-3DS-3a
 	 * (`Fixtures/platform-3ds-challenge-results.json`, pair `blocks_challenge_failed`) has 0 charges
 	 * (`payment_intent_authentication_failure`); REC-3DS-3b (pair
@@ -1643,6 +1644,62 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A post-authentication decline whose status update the order payment lock refuses still saves the declined charge: $_dataName.
+	 *
+	 * The payment_intent.payment_failed webhook holds the lock while the page's status update runs. Client 11.1.0 stores the intent's charge before its order lock (gw:4236 → os:1351-1418, os:1373-1378), so
+	 * its order keeps `_charge_id`, `_charge_risk_level` and the charge's `_wcpay_payment_method_details`; the webhook stores
+	 * none of them (wh:444-483). The refused update writes no status and no note, and nothing once the stored intent
+	 * status is succeeded (os:1353). Values from REC-3DS-3b (`Fixtures/platform-3ds-challenge-results.json`, pair
+	 * `blocks_post_authentication_decline`): charge `ch_3UJjIPBzWlxcwgpP0KWwmy3j`, `outcome.risk_level` `normal`, card last4 1629.
+	 *
+	 * @dataProvider refused_post_authentication_decline_data
+	 *
+	 * @param string $stored_intention_status `_intention_status` on the order before the update.
+	 * @param bool   $saves_charge            Whether the charge facts are saved.
+	 */
+	public function test_refused_post_authentication_decline_keeps_the_declined_charge( string $stored_intention_status, bool $saves_charge ): void {
+		$recorded = $this->load_recorded_manual_3ds_entry( 'blocks_post_authentication_decline' );
+		$intent   = $recorded['body'];
+		$order    = $this->create_woopayments_order( '10.99' );
+		$order->update_meta_data( '_intent_id', $intent['id'] );
+		$order->update_meta_data( '_intention_status', $stored_intention_status );
+		$order->save();
+		$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+
+		$lock       = wc_get_container()->get( OrderPaymentLock::class );
+		$vocabulary = new WooPaymentsPersistenceVocabulary();
+		$lock_token = $lock->claim( $order, $vocabulary, $intent['id'], 'payment status update' );
+		$this->assertNotNull( $lock_token );
+		try {
+			$this->get_update_order_status_response_for_intent( $order, $intent );
+		} finally {
+			$lock->release( $order, $vocabulary, $lock_token );
+		}
+
+		$reloaded = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $reloaded );
+		$this->assertSame( 'pending', $reloaded->get_status(), 'The refused update must not change the status.' );
+		$this->assertCount( $notes_before, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'The refused update must add no note.' );
+		$this->assertSame( $stored_intention_status, $reloaded->get_meta( '_intention_status', true ) );
+		$this->assertSame( $saves_charge ? 'ch_3UJjIPBzWlxcwgpP0KWwmy3j' : '', $reloaded->get_meta( '_charge_id', true ) );
+		$this->assertSame( $saves_charge ? 'normal' : '', $reloaded->get_meta( '_charge_risk_level', true ) );
+		$details = json_decode( (string) $reloaded->get_meta( '_wcpay_payment_method_details', true ), true );
+		$this->assertSame( $saves_charge ? $intent['charges']['data'][0]['payment_method_details'] : null, $details, "The charge's payment method details, as os:1373-1378 store them." );
+	}
+
+	/**
+	 * Stored intent statuses a refused post-authentication decline meets.
+	 *
+	 * @return array<string,array{string,bool}>
+	 */
+	public function refused_post_authentication_decline_data(): array {
+		return array(
+			'started payment: the charge is saved'     => array( 'requires_action', true ),
+			'succeeded intent: nothing is overwritten' => array( 'succeeded', false ),
+		);
+	}
+
+	/**
 	 * REC-3DS-3 post-authentication decline pairs, one with no attached charge and one with a
 	 * failed charge.
 	 *
@@ -1658,7 +1715,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Order-status callback should save requested cards before completing the order.
 	 *
-	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The intent is now REC-3DS-2's real completed
+	 * The intent is REC-3DS-2's real completed
 	 * challenge (`Fixtures/platform-3ds-challenge-results.json`, pair `classic_checkout_challenge_completed`),
 	 * a guest classic checkout in the recording; this test gives its customer a WordPress user (per
 	 * the plan's recording notes) so the token-count assertions below stay meaningful.
@@ -2995,7 +3052,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Setup-intent callback should return the SetupIntent response envelope.
 	 *
-	 * T.3 Task 4 (`plan-task-t3.md`): the `requires_action` row is REC-3DS-4's recorded envelope
+	 * The `requires_action` row is REC-3DS-4's recorded envelope
 	 * (`Fixtures/platform-setup-intent-requires-action.json`, pair `setup_intent_requires_action`): a
 	 * 3DS-required card add attempt through the same `create_setup_intent_for_request()` path REC-2
 	 * recorded its declines from. The controller only ever re-serializes `id`/`status`/`client_secret`
