@@ -156,7 +156,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox With no automatic-rate currency left without a provider ($label), the rates-unavailable notice is gone and the stored dismissal is cleared.
+	 * @testdox With no automatic-rate currency left without a provider ($label), the rates-unavailable notice is gone.
 	 * @testWith ["manual rate", "manual", false]
 	 *           ["provider available", "automatic", true]
 	 *
@@ -168,7 +168,6 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		unset( $label );
 		$this->set_current_user_can_manage_woocommerce();
 		$this->enable_multi_currency_with_rate_type( $rate_type );
-		update_option( self::RATE_NOTICE_DISMISSED_OPTION, 'yes' );
 		$provider_registry_factory = new CurrencyRateProviderRegistryFactory();
 		if ( $provider ) {
 			$this->register_available_rate_provider( $provider_registry_factory );
@@ -181,7 +180,6 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertIsString( $markup );
 		$this->assertStringNotContainsString( 'Automatic exchange rates are currently unavailable;', $markup );
-		$this->assertFalse( get_option( self::RATE_NOTICE_DISMISSED_OPTION ), 'The stored dismissal is cleared.' );
 	}
 
 	/**

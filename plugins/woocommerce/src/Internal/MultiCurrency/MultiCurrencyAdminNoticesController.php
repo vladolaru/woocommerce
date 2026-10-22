@@ -20,18 +20,17 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  */
 class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 
-	private const ADMIN_NOTICES_HOOK                         = 'admin_notices';
-	private const WP_LOADED_HOOK                             = 'wp_loaded';
-	private const NOTICE_OPTION                              = 'wcpay_multi_currency_show_store_currency_changed_notice';
-	private const CANONICAL_NOTICE_QUERY                     = 'wc-multi-currency-hide-notice';
-	private const LEGACY_NOTICE_QUERY                        = 'wcpay-multi-currency-hide-notice';
-	private const CANONICAL_NONCE_QUERY                      = 'wc-multi-currency-notice-nonce';
-	private const LEGACY_NONCE_QUERY                         = '_wcpay_multi_currency_notice_nonce';
-	private const NONCE_ACTION                               = 'wcpay_multi_currency_hide_notices_nonce';
-	private const ERROR_INVALID_NONCE                        = 'invalid_nonce';
-	private const ERROR_FORBIDDEN                            = 'forbidden';
-	private const RATE_PROVIDER_UNAVAILABLE_NOTICE_KEY       = 'rate_provider_unavailable';
-	private const RATE_PROVIDER_UNAVAILABLE_DISMISSED_OPTION = 'wcpay_multi_currency_rate_provider_unavailable_notice_dismissed';
+	private const ADMIN_NOTICES_HOOK                   = 'admin_notices';
+	private const WP_LOADED_HOOK                       = 'wp_loaded';
+	private const NOTICE_OPTION                        = 'wcpay_multi_currency_show_store_currency_changed_notice';
+	private const CANONICAL_NOTICE_QUERY               = 'wc-multi-currency-hide-notice';
+	private const LEGACY_NOTICE_QUERY                  = 'wcpay-multi-currency-hide-notice';
+	private const CANONICAL_NONCE_QUERY                = 'wc-multi-currency-notice-nonce';
+	private const LEGACY_NONCE_QUERY                   = '_wcpay_multi_currency_notice_nonce';
+	private const NONCE_ACTION                         = 'wcpay_multi_currency_hide_notices_nonce';
+	private const ERROR_INVALID_NONCE                  = 'invalid_nonce';
+	private const ERROR_FORBIDDEN                      = 'forbidden';
+	private const RATE_PROVIDER_UNAVAILABLE_NOTICE_KEY = 'rate_provider_unavailable';
 
 	/**
 	 * Runtime owner arbiter.
@@ -220,8 +219,7 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	/**
 	 * Build the automatic-rate-provider unavailable notice when it is currently actionable.
 	 *
-	 * The notice cannot be dismissed: it stays while an automatic-rate currency has no available provider. Once that clears,
-	 * the stored dismissal option is deleted.
+	 * The notice cannot be dismissed: it stays while an automatic-rate currency has no available provider.
 	 *
 	 * @param bool $can_manage_woocommerce Whether the user can manage WooCommerce.
 	 * @return array{key:string,class:string,message:string,dismissible:bool}|null
@@ -232,7 +230,6 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 		}
 
 		if ( ! $this->has_automatic_multi_currency_rate_currencies() || $this->has_available_rate_provider() ) {
-			delete_option( self::RATE_PROVIDER_UNAVAILABLE_DISMISSED_OPTION );
 			return null;
 		}
 
