@@ -127,11 +127,9 @@ class MultiCurrencyRuntimeServiceFactory {
 	 * @return MultiCurrencyStoreCurrencyLifecycleService
 	 */
 	public function create_store_currency_lifecycle_service(): MultiCurrencyStoreCurrencyLifecycleService {
-		$cache = new MultiCurrencyDatabaseCache();
-
 		return new MultiCurrencyStoreCurrencyLifecycleService(
-			$cache,
-			$this->state_builder_factory->create( null, $cache )
+			new MultiCurrencyDatabaseCache(),
+			$this->state_builder_factory->create()
 		);
 	}
 }

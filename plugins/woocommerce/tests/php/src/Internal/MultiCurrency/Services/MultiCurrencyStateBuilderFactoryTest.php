@@ -3,13 +3,14 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAsyncPriceRendererController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySelectedCurrencyController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistrarInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
@@ -147,23 +148,52 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should create state builders with supplied localization and cache boundaries.
+	 * @testdox Should build the currency state once on a storefront request that converts a product price and a coupon and writes the async price placeholder.
 	 */
-	public function test_create_uses_supplied_localization_and_cache_boundaries(): void {
+	public function test_builds_the_currency_state_once_per_storefront_request(): void {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
-		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
-		$this->register_unavailable_rate_provider();
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.80' );
+		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
+		update_option( 'wcpay_multi_currency_rendering_mode', 'cache' );
+		update_option( '_wcpay_feature_mc_cache_optimized', '1' );
+		$product = \WC_Helper_Product::create_simple_product();
+		\WC_Helper_Coupon::create_coupon( 'storefront-fixed', array( 'coupon_amount' => '5' ) );
+		wp_set_current_user( 0 );
+		set_current_screen( 'front' );
+		add_filter( 'wcpay_multi_currency_override_selected_currency', static fn() => 'GBP' );
 
-		$state = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )
-			->create(
-				$this->create_custom_localization(),
-				$this->create_cached_rates_cache()
-			)
-			->build();
+		// Each full build reads the selected currency's charm option once (MultiCurrencyStateBuilder::apply_currency_settings()).
+		$builds = 0;
+		add_filter(
+			'pre_option_wcpay_multi_currency_price_charm_gbp',
+			static function ( $pre_option ) use ( &$builds ) {
+				++$builds;
 
-		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $state->get_enabled_currencies() ) );
-		$this->assertSame( 0.82, $state->get_enabled_currencies()['GBP']->get_rate() );
-		$this->assertSame( 'right', $state->get_enabled_currencies()['GBP']->get_symbol_position() );
+				return $pre_option;
+			}
+		);
+
+		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		wc_get_container()->reset_all_resolved();
+		try {
+			wc_get_container()->get( MultiCurrencyFrontendPricesController::class )->register();
+			wc_get_container()->get( MultiCurrencyFrontendCurrenciesController::class )->register();
+			wc_get_container()->get( MultiCurrencyAsyncPriceRendererController::class )->maybe_register_async_hooks();
+
+			$price  = wc_get_product( $product->get_id() )->get_price();
+			$amount = ( new \WC_Coupon( 'storefront-fixed' ) )->get_amount();
+			$markup = wc_price( $price );
+		} finally {
+			wc_get_container()->reset_all_resolved();
+		}
+
+		// The client converts with one Multi-Currency instance per request (client 11.1.0 `includes/multi-currency/MultiCurrency.php:941-967`):
+		// 10 at 0.80 ceils to 8, and the coupon's 5 rounds to 4.
+		$this->assertSame( '8', $price, 'The product price should be converted to GBP.' );
+		$this->assertEquals( 4.0, $amount, 'The fixed coupon amount should be converted to GBP.' );
+		$this->assertStringContainsString( 'data-wcpay-price="8"', $markup, 'The price should be written as an async placeholder.' );
+		$this->assertSame( 1, $builds, 'The request should build its currency state once.' );
 	}
 
 	/**
@@ -536,68 +566,6 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Register a provider-neutral automatic-rate provider that is temporarily unavailable.
-	 */
-	private function register_unavailable_rate_provider(): void {
-		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars(
-			array(
-				new class() implements CurrencyRateProviderRegistrarInterface {
-					/**
-					 * Register an unavailable rate provider.
-					 *
-					 * @param CurrencyRateProviderRegistry $registry Rate provider registry.
-					 */
-					public function register( CurrencyRateProviderRegistry $registry ): void {
-						$registry->register(
-							new class() implements CurrencyRateProvider {
-								/**
-								 * Get the provider identifier.
-								 *
-								 * @return string
-								 */
-								public function get_id(): string {
-									return 'test-outage';
-								}
-
-								/**
-								 * Tell whether automatic rates are currently available.
-								 *
-								 * @return bool
-								 */
-								public function is_available(): bool {
-									return false;
-								}
-
-								/**
-								 * Get supported currencies.
-								 *
-								 * @return string[]
-								 */
-								public function get_supported_currencies(): array {
-									return array();
-								}
-
-								/**
-								 * Get currency rates.
-								 *
-								 * @param string        $currency_from Currency to convert from.
-								 * @param string[]|null $currencies_to Currencies to convert into, or null for all supported.
-								 * @return array<string,mixed>
-								 */
-								public function get_currency_rates( string $currency_from, ?array $currencies_to = null ): array {
-									unset( $currency_from, $currencies_to );
-
-									return array();
-								}
-							}
-						);
-					}
-				},
-			)
-		);
-	}
-
-	/**
 	 * Mock WooPayments account and API-client access.
 	 *
 	 * @param object $account    Account service.
@@ -713,100 +681,6 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 					'gbp' => 0.82,
 					'eur' => 0.91,
 				);
-			}
-		};
-	}
-
-	/**
-	 * Create a custom localization test double.
-	 *
-	 * @return MultiCurrencyLocalizationInterface
-	 */
-	private function create_custom_localization(): MultiCurrencyLocalizationInterface {
-		return new class() implements MultiCurrencyLocalizationInterface {
-			/**
-			 * Get a currency format.
-			 *
-			 * @param string $currency_code Currency code.
-			 * @return array<string,mixed>
-			 */
-			public function get_currency_format( $currency_code ): array {
-				unset( $currency_code );
-
-				return array(
-					'currency_pos' => 'right',
-					'thousand_sep' => ',',
-					'decimal_sep'  => '.',
-					'num_decimals' => 2,
-				);
-			}
-
-			/**
-			 * Get locale data for a country.
-			 *
-			 * @param string $country Country code.
-			 * @return array<string,mixed>
-			 */
-			public function get_country_locale_data( $country ): array {
-				unset( $country );
-
-				return array();
-			}
-		};
-	}
-
-	/**
-	 * Create a cached-rate cache test double.
-	 *
-	 * @return MultiCurrencyCacheInterface
-	 */
-	private function create_cached_rates_cache(): MultiCurrencyCacheInterface {
-		return new class() implements MultiCurrencyCacheInterface {
-			/**
-			 * Get a value from cache.
-			 *
-			 * @param string $key   Cache key.
-			 * @param bool   $force Whether to return cached data.
-			 * @return mixed
-			 */
-			public function get( string $key, bool $force = false ) {
-				unset( $force );
-
-				if ( MultiCurrencyCacheInterface::CURRENCIES_KEY !== $key ) {
-					return null;
-				}
-
-				return array(
-					'currencies' => array(
-						'gbp' => 0.82,
-					),
-					'updated'    => 123,
-				);
-			}
-
-			/**
-			 * Get a value from cache or regenerate and store it.
-			 *
-			 * @param string   $key           Cache key.
-			 * @param callable $generator     Regenerates missing data.
-			 * @param callable $validate_data Validates cached data.
-			 * @param bool     $force_refresh Whether to force regeneration.
-			 * @param bool     $refreshed     Set true when cache is refreshed successfully.
-			 * @return mixed|null
-			 */
-			public function get_or_add( string $key, callable $generator, callable $validate_data, bool $force_refresh = false, bool &$refreshed = false ) {
-				unset( $generator, $validate_data, $force_refresh, $refreshed );
-
-				return $this->get( $key );
-			}
-
-			/**
-			 * Delete a cache value.
-			 *
-			 * @param string $key Cache key.
-			 */
-			public function delete( string $key ): void {
-				unset( $key );
 			}
 		};
 	}

@@ -9,7 +9,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyRateException;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyNameYourPriceCompatibilityProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
@@ -472,7 +471,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	 */
 	private function get_state_builder(): MultiCurrencyStateBuilder {
 		if ( null === $this->state_builder ) {
-			$this->state_builder = $this->state_builder_factory->create( new MultiCurrencyLocalizationService() );
+			$this->state_builder = $this->state_builder_factory->create();
 		}
 
 		return $this->state_builder;

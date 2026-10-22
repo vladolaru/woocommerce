@@ -46,12 +46,9 @@ class MultiCurrencyProjectionServiceFactory {
 		?MultiCurrencyLocalizationInterface $localization_service = null,
 		?MultiCurrencyStateBuilder $state_builder = null
 	): MultiCurrencyPriceProjectionService {
-		$localization_service = $localization_service ?? new MultiCurrencyLocalizationService();
-		$state_builder        = $state_builder ?? $this->state_builder_factory->create( $localization_service );
-
 		return new MultiCurrencyPriceProjectionService(
-			$state_builder,
-			new MultiCurrencyPriceCalculator( $localization_service )
+			$state_builder ?? $this->state_builder_factory->create(),
+			new MultiCurrencyPriceCalculator( $localization_service ?? new MultiCurrencyLocalizationService() )
 		);
 	}
 
@@ -67,10 +64,9 @@ class MultiCurrencyProjectionServiceFactory {
 		?MultiCurrencyStateBuilder $state_builder = null
 	): MultiCurrencyFrontendProjectionService {
 		$localization_service = $localization_service ?? new MultiCurrencyLocalizationService();
-		$state_builder        = $state_builder ?? $this->state_builder_factory->create( $localization_service );
 
 		return new MultiCurrencyFrontendProjectionService(
-			$state_builder,
+			$state_builder ?? $this->state_builder_factory->create(),
 			$localization_service,
 			new MultiCurrencyGeolocationService( $localization_service )
 		);

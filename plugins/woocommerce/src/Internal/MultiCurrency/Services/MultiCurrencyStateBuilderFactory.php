@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 
@@ -34,7 +33,7 @@ class MultiCurrencyStateBuilderFactory {
 	private MultiCurrencyStateInvalidator $state_invalidator;
 
 	/**
-	 * Builder shared by every consumer that does not bring its own boundaries.
+	 * Builder shared by every consumer.
 	 *
 	 * @var MultiCurrencyStateBuilder|null
 	 */
@@ -61,48 +60,51 @@ class MultiCurrencyStateBuilderFactory {
 	}
 
 	/**
-	 * Get the request's shared state builder, or a separate one when boundaries are supplied.
+	 * Get the request's shared state builder.
 	 *
-	 * Consumers without boundaries of their own share one builder, so the state is built once per request as the client keeps
-	 * one Multi-Currency instance (client 11.1.0 `includes/compat/multi-currency/wc-payments-multi-currency.php:35-50`). It
-	 * rebuilds after reset() and when its stored inputs change: a Multi-Currency option, the store currency or the user.
+	 * Every consumer shares one builder, so the state is built once per request, with one Multi-Currency instance per
+	 * request in client 11.1.0 `includes/compat/multi-currency/wc-payments-multi-currency.php:35-50`. It rebuilds after
+	 * reset() and when its stored inputs change: a Multi-Currency option, the store currency or the user.
 	 *
-	 * @param MultiCurrencyLocalizationInterface|null $localization_service Optional localization boundary.
-	 * @param MultiCurrencyCacheInterface|null        $cache                Optional cache boundary.
 	 * @return MultiCurrencyStateBuilder
 	 */
-	public function create(
-		?MultiCurrencyLocalizationInterface $localization_service = null,
-		?MultiCurrencyCacheInterface $cache = null
-	): MultiCurrencyStateBuilder {
-		if ( null === $localization_service && null === $cache ) {
-			// The rate registry is taken from the registrars once, so a builder made before a provider registered is replaced.
-			$registrars = $this->provider_registry_factory->get_provider_registrars();
-			if ( null === $this->shared_builder || $registrars !== $this->shared_builder_registrars ) {
-				$this->shared_builder            = $this->build_state_builder( new MultiCurrencyLocalizationService(), new MultiCurrencyDatabaseCache() );
-				$this->shared_builder_registrars = $registrars;
-			}
-
-			// A listener that is missing (first call, or removed by a hook reset) may have missed a change, so rebuild too.
-			$missed_changes = false;
-			foreach ( array( 'added_option', 'updated_option', 'deleted_option' ) as $hook ) {
-				if ( false === has_action( $hook, array( $this, 'handle_option_change' ) ) ) {
-					add_action( $hook, array( $this, 'handle_option_change' ) );
-					$missed_changes = true;
-				}
-			}
-			if ( false === has_action( 'set_current_user', array( $this->state_invalidator, 'invalidate' ) ) ) {
-				add_action( 'set_current_user', array( $this->state_invalidator, 'invalidate' ) );
-				$missed_changes = true;
-			}
-			if ( $missed_changes ) {
-				$this->state_invalidator->invalidate();
-			}
-
-			return $this->shared_builder;
+	public function create(): MultiCurrencyStateBuilder {
+		// The rate registry is taken from the registrars once, so a builder made before a provider registered is replaced.
+		$registrars = $this->provider_registry_factory->get_provider_registrars();
+		if ( null === $this->shared_builder || $registrars !== $this->shared_builder_registrars ) {
+			$this->shared_builder            = $this->build_state_builder( new MultiCurrencyLocalizationService() );
+			$this->shared_builder_registrars = $registrars;
 		}
 
-		return $this->build_state_builder( $localization_service ?? new MultiCurrencyLocalizationService(), $cache ?? new MultiCurrencyDatabaseCache() );
+		// A listener that is missing (first call, or removed by a hook reset) may have missed a change, so rebuild too.
+		$missed_changes = false;
+		foreach ( array( 'added_option', 'updated_option', 'deleted_option' ) as $hook ) {
+			if ( false === has_action( $hook, array( $this, 'handle_option_change' ) ) ) {
+				add_action( $hook, array( $this, 'handle_option_change' ) );
+				$missed_changes = true;
+			}
+		}
+		if ( false === has_action( 'set_current_user', array( $this->state_invalidator, 'invalidate' ) ) ) {
+			add_action( 'set_current_user', array( $this->state_invalidator, 'invalidate' ) );
+			$missed_changes = true;
+		}
+		if ( $missed_changes ) {
+			$this->state_invalidator->invalidate();
+		}
+
+		return $this->shared_builder;
+	}
+
+	/**
+	 * Build a separate state builder over the given localization, outside the shared builder and its listeners.
+	 *
+	 * Only the Multi-Currency shadow comparison uses it, so that its reads write no locale transients.
+	 *
+	 * @param MultiCurrencyLocalizationInterface $localization_service Localization boundary.
+	 * @return MultiCurrencyStateBuilder
+	 */
+	public function create_separate( MultiCurrencyLocalizationInterface $localization_service ): MultiCurrencyStateBuilder {
+		return $this->build_state_builder( $localization_service );
 	}
 
 	/**
@@ -125,17 +127,16 @@ class MultiCurrencyStateBuilderFactory {
 	}
 
 	/**
-	 * Build a state builder over the given boundaries.
+	 * Build a state builder over the given localization.
 	 *
 	 * @param MultiCurrencyLocalizationInterface $localization_service Localization boundary.
-	 * @param MultiCurrencyCacheInterface        $cache                Cache boundary.
 	 * @return MultiCurrencyStateBuilder
 	 */
-	private function build_state_builder( MultiCurrencyLocalizationInterface $localization_service, MultiCurrencyCacheInterface $cache ): MultiCurrencyStateBuilder {
+	private function build_state_builder( MultiCurrencyLocalizationInterface $localization_service ): MultiCurrencyStateBuilder {
 		return new MultiCurrencyStateBuilder(
 			$localization_service,
 			new MultiCurrencyRateService( $this->provider_registry_factory->create() ),
-			$cache,
+			new MultiCurrencyDatabaseCache(),
 			$this->state_invalidator
 		);
 	}
