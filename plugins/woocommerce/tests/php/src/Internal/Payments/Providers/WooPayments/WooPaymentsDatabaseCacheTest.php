@@ -265,7 +265,8 @@ class WooPaymentsDatabaseCacheTest extends WC_Unit_Test_Case {
 	 * an option that already holds the same contents (client 11.1.0 includes/class-database-cache.php:387-393). Fails when
 	 * the retry is dropped (the retry row), when it runs more than once or falls back to add_option() (every row), when the
 	 * option is not read back after a second false (the double-false rows), or when the first failure, every failed write
-	 * or an option already holding the contents logs (the double-false rows).
+	 * or an option already holding the contents logs, or when only the data is compared and a row whose fetch time did not
+	 * change goes unlogged (the double-false rows).
 	 *
 	 * @testdox Should flush the object-cache entry and retry a failed write once, never adding the option: $_dataName.
 	 *
@@ -273,11 +274,12 @@ class WooPaymentsDatabaseCacheTest extends WC_Unit_Test_Case {
 	 *           ["the retry succeeds", [false, true], 1, "other", ["update_option", "wp_cache_delete", "update_option", "wp_cache_delete"], 0]
 	 *           ["both writes fail, twice in a request", [false, false, false, false], 2, "other", ["update_option", "wp_cache_delete", "update_option", "get_option", "update_option", "wp_cache_delete", "update_option", "get_option"], 1]
 	 *           ["both return false while the option holds these contents", [false, false], 1, "same", ["update_option", "wp_cache_delete", "update_option", "get_option"], 0]
+	 *           ["both return false while the option holds the same data fetched earlier", [false, false], 1, "older", ["update_option", "wp_cache_delete", "update_option", "get_option"], 1]
 	 *
 	 * @param string   $name           Case label.
 	 * @param bool[]   $results        update_option() results, in call order.
 	 * @param int      $writes         Calls to write().
-	 * @param string   $stored         What the option holds when read back: the same contents or other ones.
+	 * @param string   $stored         What the option holds when read back: the same contents, the same data fetched earlier, or other contents.
 	 * @param string[] $expected_calls Expected option and cache calls, in order.
 	 * @param int      $expected_logs  Expected warning lines.
 	 */
@@ -302,7 +304,11 @@ class WooPaymentsDatabaseCacheTest extends WC_Unit_Test_Case {
 				'get_option'      => static function ( $key ) use ( &$calls, $contents, $stored ) {
 					$calls[] = WooPaymentsDatabaseCache::ACCOUNT_KEY === $key ? 'get_option' : 'get_option of another key';
 
-					return 'same' === $stored ? $contents : array( 'data' => array( 'account_id' => 'acct_other' ) );
+					if ( 'same' === $stored ) {
+						return $contents;
+					}
+
+					return 'older' === $stored ? array_merge( $contents, array( 'fetched' => $contents['fetched'] - 60 ) ) : array( 'data' => array( 'account_id' => 'acct_other' ) );
 				},
 				'add_option'      => static function () use ( &$calls ) {
 					$calls[] = 'add_option';

@@ -344,6 +344,40 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 	}
 
 	/**
+	 * Client 11.1.0 logs a failed stats deletion and goes on with the order (includes/migrations/
+	 * class-wc-payments-remediate-canceled-auth-fees.php:826-840). Fails when the stats deletion is not caught.
+	 *
+	 * @testdox Remediation logs an Analytics callback that throws while it deletes a refund's stats and still remediates the order.
+	 */
+	public function test_remediate_order_goes_on_when_an_analytics_callback_throws(): void {
+		$order  = $this->create_order_fixture( array( 'status' => 'cancelled' ) );
+		$refund = $this->create_refund( $order, 'WooPayments refund', 're_wcpay' );
+		$this->create_order_stats_row( $refund->get_id(), $order->get_id() );
+		$thrown = false;
+		add_action(
+			'woocommerce_analytics_delete_order_stats',
+			static function () use ( &$thrown ): void {
+				if ( ! $thrown ) {
+					$thrown = true;
+					throw new \Exception( 'Analytics callback failed.' );
+				}
+			}
+		);
+		$logger = RecordingWcLogger::install();
+
+		$result = $this->sut->remediate_order( wc_get_order( $order->get_id() ) );
+
+		$order = wc_get_order( $order->get_id() );
+		$this->assertTrue( $result );
+		$this->assertFalse( (bool) wc_get_order( $refund->get_id() ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_transaction_fee', true ) );
+		$this->assertContains(
+			array( 'warning', sprintf( 'Failed to delete stats for order %d: Analytics callback failed.', $refund->get_id() ), 'wcpay-fee-remediation' ),
+			$logger->lines
+		);
+	}
+
+	/**
 	 * @testdox Remediation aborts without cleanup when refund deletion is vetoed.
 	 */
 	public function test_remediate_order_aborts_when_refund_deletion_is_vetoed(): void {

@@ -440,8 +440,20 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 			foreach ( $woopayments_refunds as $refund ) {
 				$refund_id = $refund->get_id();
 				// While the refund is stored: core's stats deletion reads it and returns early once it is gone. It also fires
-				// woocommerce_analytics_delete_order_stats and invalidates the reports cache.
-				\Automattic\WooCommerce\Admin\API\Reports\Orders\Stats\DataStore::delete_order( $refund_id );
+				// woocommerce_analytics_delete_order_stats, whose callbacks may throw; the stats are not critical, so the
+				// remediation logs and goes on, as client 11.1.0 does (remediate-canceled-auth-fees.php:826-840).
+				try {
+					\Automattic\WooCommerce\Admin\API\Reports\Orders\Stats\DataStore::delete_order( $refund_id );
+					wc_get_logger()->info(
+						sprintf( 'Deleted stats row for refund %d via WC DataStore API', $refund_id ),
+						array( 'source' => 'wcpay-fee-remediation' )
+					);
+				} catch ( Exception $exception ) {
+					wc_get_logger()->warning(
+						sprintf( 'Failed to delete stats for order %d: %s', $refund_id, $exception->getMessage() ),
+						array( 'source' => 'wcpay-fee-remediation' )
+					);
+				}
 				if ( true !== $refund->delete( true ) ) {
 					return false;
 				}
