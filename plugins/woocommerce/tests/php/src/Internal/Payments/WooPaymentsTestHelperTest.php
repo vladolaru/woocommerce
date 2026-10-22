@@ -47,35 +47,21 @@ class WooPaymentsTestHelperTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Runtime status route rejects an unauthenticated request.
+	 * @testdox The $route route rejects an unauthenticated request.
+	 * @testWith ["/wc-native-payments-e2e/v1/status"]
+	 *           ["/wc-native-payments-e2e/v1/saved-card-evidence"]
+	 *
+	 * @param string $route Diagnostic route.
 	 */
-	public function test_status_route_rejects_unauthenticated_request(): void {
+	public function test_diagnostic_routes_reject_unauthenticated_requests( string $route ): void {
 		$this->load_bootstrap();
 		wp_set_current_user( 0 );
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Initializing the REST server in a test.
 		do_action( 'rest_api_init' );
 
-		$response = rest_do_request(
-			new WP_REST_Request( 'GET', '/wc-native-payments-e2e/v1/status' )
-		);
+		$response = rest_do_request( new WP_REST_Request( 'GET', $route ) );
 
 		$this->assertSame( 401, $response->get_status(), 'Unauthenticated diagnostics must be rejected.' );
-	}
-
-	/**
-	 * @testdox Saved-card evidence route rejects an unauthenticated request.
-	 */
-	public function test_saved_card_evidence_route_rejects_unauthenticated_request(): void {
-		$this->load_bootstrap();
-		wp_set_current_user( 0 );
-		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Initializing the REST server in a test.
-		do_action( 'rest_api_init' );
-
-		$response = rest_do_request(
-			new WP_REST_Request( 'GET', '/wc-native-payments-e2e/v1/saved-card-evidence' )
-		);
-
-		$this->assertSame( 401, $response->get_status(), 'Unauthenticated saved-card evidence must be rejected.' );
 	}
 
 	/**

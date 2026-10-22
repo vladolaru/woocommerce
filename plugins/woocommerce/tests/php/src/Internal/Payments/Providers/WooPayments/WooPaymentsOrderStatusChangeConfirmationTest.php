@@ -95,29 +95,33 @@ class WooPaymentsOrderStatusChangeConfirmationTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should project the remaining and refunded amounts for a partially refunded order.
+	 * @testdox Should project the remaining and refunded amounts for a $_dataName.
+	 * @dataProvider refund_amounts_provider
+	 *
+	 * @param float $refund    Amount refunded on the 25.00 order.
+	 * @param float $remaining Expected remaining refundable amount.
+	 * @param float $refunded  Expected refunded amount.
 	 */
-	public function test_projects_amounts_for_partially_refunded_order(): void {
+	public function test_projects_refundable_and_refunded_amounts( float $refund, float $remaining, float $refunded ): void {
 		$order = $this->create_order();
-		$this->refund( $order, 10.0 );
+		$this->refund( $order, $refund );
 
 		$config = $this->sut->get_config( $order );
 
-		$this->assertSame( 15.0, $config['refund_amount'], 'Remaining refundable should be the order total minus refunds.' );
-		$this->assertSame( 10.0, $config['refunded_amount'], 'Refunded amount should reflect the existing refund.' );
+		$this->assertSame( $remaining, $config['refund_amount'], 'Remaining refundable should be the order total minus refunds.' );
+		$this->assertSame( $refunded, $config['refunded_amount'], 'Refunded amount should reflect the existing refunds.' );
 	}
 
 	/**
-	 * @testdox Should project a zero remaining amount for a fully refunded order.
+	 * Refunds on the 25.00 order, with the remaining and refunded amounts projected for each.
+	 *
+	 * @return array<string,array{float,float,float}>
 	 */
-	public function test_projects_zero_remaining_amount_for_fully_refunded_order(): void {
-		$order = $this->create_order();
-		$this->refund( $order, 25.0 );
-
-		$config = $this->sut->get_config( $order );
-
-		$this->assertSame( 0.0, $config['refund_amount'], 'A fully refunded order has nothing left to refund.' );
-		$this->assertSame( 25.0, $config['refunded_amount'], 'Refunded amount should cover the whole order.' );
+	public function refund_amounts_provider(): array {
+		return array(
+			'partially refunded order' => array( 10.0, 15.0, 10.0 ),
+			'fully refunded order'     => array( 25.0, 0.0, 25.0 ),
+		);
 	}
 
 	/**

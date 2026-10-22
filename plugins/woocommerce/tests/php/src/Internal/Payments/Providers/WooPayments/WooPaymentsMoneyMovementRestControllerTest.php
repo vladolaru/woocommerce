@@ -1181,26 +1181,17 @@ class WooPaymentsMoneyMovementRestControllerTest extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox Transactions routes require manage_woocommerce before API calls.
+	 * @testdox The $route route requires manage_woocommerce before API calls.
+	 * @testWith ["/wc/v3/payments/transactions"]
+	 *           ["/wc/v3/payments/fraud_outcomes/pi_test/latest"]
+	 *
+	 * @param string $route Route requested without a user.
 	 */
-	public function test_transactions_routes_require_manage_woocommerce(): void {
+	public function test_routes_require_manage_woocommerce( string $route ): void {
 		$this->create_transactions_controller()->register_routes();
 		wp_set_current_user( 0 );
 
-		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/transactions' ) );
-
-		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
-		$this->assertSame( array(), $this->api_client->last_call );
-	}
-
-	/**
-	 * @testdox Latest fraud outcome route requires manage_woocommerce before API calls.
-	 */
-	public function test_latest_fraud_outcome_route_requires_manage_woocommerce(): void {
-		$this->create_transactions_controller()->register_routes();
-		wp_set_current_user( 0 );
-
-		$response = $this->server->dispatch( new WP_REST_Request( 'GET', '/wc/v3/payments/fraud_outcomes/pi_test/latest' ) );
+		$response = $this->server->dispatch( new WP_REST_Request( 'GET', $route ) );
 
 		$this->assertSame( rest_authorization_required_code(), $response->get_status() );
 		$this->assertSame( array(), $this->api_client->last_call );

@@ -39,32 +39,37 @@ class WooPaymentsTerminalCardFormatterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A recognized terminal network takes precedence over the card brand.
+	 * @testdox The terminal card display name follows the card network or brand: $_dataName.
+	 * @dataProvider terminal_card_display_name_provider
+	 *
+	 * @param array<string,string> $card     Terminal card.
+	 * @param string               $expected Expected display name.
 	 */
-	public function test_prefers_a_recognized_terminal_network(): void {
-		$this->assertSame(
-			'eftpos',
-			WooPaymentsTerminalCardFormatter::get_terminal_card_display_name(
-				array(
-					'brand'   => 'visa',
-					'network' => 'eftpos_au',
-				)
-			)
-		);
+	public function test_terminal_card_display_name( array $card, string $expected ): void {
+		$this->assertSame( $expected, WooPaymentsTerminalCardFormatter::get_terminal_card_display_name( $card ) );
 	}
 
 	/**
-	 * @testdox An unknown terminal network falls back to the card brand.
+	 * Data provider for terminal card display names.
+	 *
+	 * @return array<string,array{array<string,string>,string}>
 	 */
-	public function test_uses_the_card_brand_for_an_unknown_network(): void {
-		$this->assertSame(
-			'Visa',
-			WooPaymentsTerminalCardFormatter::get_terminal_card_display_name(
+	public function terminal_card_display_name_provider(): array {
+		return array(
+			'a recognized network takes precedence over the brand' => array(
+				array(
+					'brand'   => 'visa',
+					'network' => 'eftpos_au',
+				),
+				'eftpos',
+			),
+			'an unknown network falls back to the brand' => array(
 				array(
 					'brand'   => 'visa',
 					'network' => 'unsupported_network',
-				)
-			)
+				),
+				'Visa',
+			),
 		);
 	}
 }

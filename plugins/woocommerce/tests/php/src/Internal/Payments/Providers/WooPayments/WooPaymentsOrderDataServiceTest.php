@@ -185,17 +185,22 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Settlement exchange-rate meta should be omitted when store and account default currencies differ.
+	 * @testdox Settlement exchange-rate meta should be omitted when $_dataName.
+	 * @dataProvider omitted_settlement_exchange_rate_provider
+	 *
+	 * @param string $store_currency Store currency.
+	 * @param string $order_currency Order currency.
+	 * @param float  $rate           Exchange rate the provider reports.
 	 */
-	public function test_get_settlement_exchange_rate_order_meta_skips_provider_rate_when_store_and_account_defaults_differ(): void {
-		update_option( 'woocommerce_currency', 'EUR' );
-		$order = $this->create_order_with_currency( 'GBP' );
+	public function test_settlement_exchange_rate_meta_is_omitted( string $store_currency, string $order_currency, float $rate ): void {
+		update_option( 'woocommerce_currency', $store_currency );
+		$order = $this->create_order_with_currency( $order_currency );
 
 		$meta = $this->sut->get_settlement_exchange_rate_order_meta(
 			$order,
 			array(
 				'balance_transaction' => array(
-					'exchange_rate' => 1.33127,
+					'exchange_rate' => $rate,
 				),
 			),
 			'usd'
@@ -205,29 +210,20 @@ class WooPaymentsOrderDataServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Settlement exchange-rate meta should be omitted when the order and account currencies are equal.
+	 * Cases where the settlement exchange-rate meta is omitted, with the account currency `usd`: store currency, order currency, provider rate.
 	 *
-	 * Mirrors client 11.1.0 `attach_exchange_info_to_order` (`gw:2776-2804`, specifically `gw:2792`):
-	 * the client only requests/attaches a Stripe exchange rate when `$currency_order !== $currency_account`,
-	 * because a same-currency order was never converted and has no meaningful rate to record. This is the
-	 * one branch neither existing data-provider row (all converted-currency pairs) nor the
-	 * store/account-mismatch case above exercises.
+	 * The second case mirrors client 11.1.0 `attach_exchange_info_to_order` (`gw:2776-2804`, specifically `gw:2792`): the
+	 * client only requests/attaches a Stripe exchange rate when `$currency_order !== $currency_account`, because a
+	 * same-currency order was never converted and has no meaningful rate to record. It is the one branch neither
+	 * `settlement_exchange_rate_provider` row (all converted-currency pairs) nor the store/account-mismatch case exercises.
+	 *
+	 * @return array<string,array{string,string,float}>
 	 */
-	public function test_get_settlement_exchange_rate_order_meta_skips_provider_rate_when_order_and_account_currencies_are_equal(): void {
-		update_option( 'woocommerce_currency', 'USD' );
-		$order = $this->create_order_with_currency( 'USD' );
-
-		$meta = $this->sut->get_settlement_exchange_rate_order_meta(
-			$order,
-			array(
-				'balance_transaction' => array(
-					'exchange_rate' => 1.0,
-				),
-			),
-			'usd'
+	public function omitted_settlement_exchange_rate_provider(): array {
+		return array(
+			'store and account default currencies differ' => array( 'EUR', 'GBP', 1.33127 ),
+			'the order and account currencies are equal'  => array( 'USD', 'USD', 1.0 ),
 		);
-
-		$this->assertSame( array(), $meta );
 	}
 
 	/**
