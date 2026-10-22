@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyBootstrap;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 
 /**
  * Registers what WooCommerce's built-in payment provider needs on the current request, and starts Multi-Currency.
@@ -114,7 +115,7 @@ final class PaymentsBootstrap {
 
 		( new MultiCurrencyBootstrap( $this->multi_currency_classes ) )->register( $container, $is_rest_api_request );
 
-		$request_type = MultiCurrencyBootstrap::classify_request( $is_rest_api_request );
+		$request_type = RequestTypeUtil::get_request_type( $is_rest_api_request );
 		$classes      = ( $this->classes_for_request )( $container, $request_type );
 
 		$this->register_classes( $container, $classes );

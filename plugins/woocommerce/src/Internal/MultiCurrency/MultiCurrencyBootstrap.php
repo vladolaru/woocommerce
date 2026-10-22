@@ -7,13 +7,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencyShadowMode;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 
 /**
  * Selects the independent Multi-Currency registrations for the current request.
@@ -185,7 +185,7 @@ final class MultiCurrencyBootstrap {
 			add_filter( 'woocommerce_analytics_update_order_stats_data', array( $this, 'handle_woocommerce_analytics_update_order_stats_data' ), 99999, 2 );
 		}
 
-		$request = self::classify_request( $is_rest_api_request );
+		$request = RequestTypeUtil::get_request_type( $is_rest_api_request );
 		$roots   = $this->get_core_roots( $container, $request );
 		if ( ! empty( $roots ) ) {
 			if ( 'admin' === $request ) {
@@ -392,52 +392,6 @@ final class MultiCurrencyBootstrap {
 			// Preserve recovery services when order history cannot be determined.
 			return 'historical';
 		}
-	}
-
-	/**
-	 * Classify the current request without resolving another service. The native payments bootstrap uses it too.
-	 *
-	 * @since 11.2.0
-	 * @internal
-	 *
-	 * @param callable $is_rest_api_request Whether the current request is a REST request.
-	 * @return string Request class: cli, cron, ajax, rest, admin or front.
-	 */
-	public static function classify_request( callable $is_rest_api_request ): string {
-		return self::classify_signals(
-			Constants::is_true( 'WP_CLI' ),
-			wp_doing_cron() || wc_is_running_from_async_action_scheduler(),
-			wp_doing_ajax(),
-			(bool) $is_rest_api_request(),
-			is_admin()
-		);
-	}
-
-	/**
-	 * Select a request class from early-safe signals in precedence order.
-	 *
-	 * @param bool $is_cli   Whether WP-CLI is running.
-	 * @param bool $is_cron  Whether cron or Action Scheduler is running.
-	 * @param bool $is_ajax  Whether WordPress AJAX is running.
-	 * @param bool $is_rest  Whether this is a REST request.
-	 * @param bool $is_admin Whether this is an admin request.
-	 * @return string Request class.
-	 */
-	private static function classify_signals( bool $is_cli, bool $is_cron, bool $is_ajax, bool $is_rest, bool $is_admin ): string {
-		if ( $is_cli ) {
-			return 'cli';
-		}
-		if ( $is_cron ) {
-			return 'cron';
-		}
-		if ( $is_ajax ) {
-			return 'ajax';
-		}
-		if ( $is_rest ) {
-			return 'rest';
-		}
-
-		return $is_admin ? 'admin' : 'front';
 	}
 
 	/**

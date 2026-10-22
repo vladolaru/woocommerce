@@ -674,28 +674,6 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected, $actual );
 	}
 
-	/** @testdox Should classify CLI, cron, AJAX, REST, admin and front signals in that precedence order. */
-	public function test_classifies_request_signals_with_required_precedence(): void {
-		$classifier = new \ReflectionMethod( MultiCurrencyBootstrap::class, 'classify_signals' );
-		$classifier->setAccessible( true );
-		$cases = array(
-			'CLI'            => array( array( true, false, false, false, false ), 'cli' ),
-			'cron'           => array( array( false, true, false, false, false ), 'cron' ),
-			'AJAX'           => array( array( false, false, true, false, false ), 'ajax' ),
-			'REST'           => array( array( false, false, false, true, false ), 'rest' ),
-			'admin'          => array( array( false, false, false, false, true ), 'admin' ),
-			'front'          => array( array( false, false, false, false, false ), 'front' ),
-			'CLI collision'  => array( array( true, true, true, true, true ), 'cli' ),
-			'cron collision' => array( array( false, true, true, true, true ), 'cron' ),
-			'AJAX collision' => array( array( false, false, true, true, true ), 'ajax' ),
-			'REST collision' => array( array( false, false, false, true, true ), 'rest' ),
-		);
-
-		foreach ( $cases as $label => list( $signals, $expected ) ) {
-			$this->assertSame( $expected, $classifier->invokeArgs( null, $signals ), $label );
-		}
-	}
-
 	/**
 	 * @testdox A $request request on a $tier store registers the cron roots it lacks once, when Action Scheduler first runs an action in it.
 	 * @dataProvider page_request_cron_root_gaps
