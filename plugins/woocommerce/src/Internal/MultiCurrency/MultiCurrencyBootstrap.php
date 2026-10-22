@@ -106,12 +106,6 @@ final class MultiCurrencyBootstrap {
 		MultiCurrencyTrackingController::class,
 	);
 
-	/** Settings management classes. @var array<int,class-string> */
-	private const MANAGEMENT = array(
-		MultiCurrencySettingsController::class,
-		MultiCurrencyRestController::class,
-	);
-
 	/** Admin-only classes. @var array<int,class-string> */
 	private const ADMIN = array(
 		MultiCurrencyAdminNoticesController::class,
@@ -406,20 +400,20 @@ final class MultiCurrencyBootstrap {
 			'configured' => array(
 				'front' => array_merge( self::BASE, self::PRICE, self::COMPAT, self::STOREFRONT ),
 				'ajax'  => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencyStorefrontIntegrationController::class, MultiCurrencyAsyncPriceRendererController::class ), self::HISTORY ),
-				'rest'  => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencySwitcherBlockController::class, MultiCurrencyStorefrontIntegrationController::class, MultiCurrencyAsyncPriceRendererController::class ), self::HISTORY, array( self::MANAGEMENT[1], MultiCurrencyRestRequestOverrideController::class ) ),
-				'admin' => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencyAnalyticsController::class, MultiCurrencySwitcherBlockController::class, self::MANAGEMENT[0], MultiCurrencyTrackingController::class ), self::ADMIN ),
+				'rest'  => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencySwitcherBlockController::class, MultiCurrencyStorefrontIntegrationController::class, MultiCurrencyAsyncPriceRendererController::class ), self::HISTORY, array( MultiCurrencyRestController::class, MultiCurrencyRestRequestOverrideController::class ) ),
+				'admin' => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencyAnalyticsController::class, MultiCurrencySwitcherBlockController::class, MultiCurrencySettingsController::class, MultiCurrencyTrackingController::class ), self::ADMIN ),
 				'cron'  => array_merge( self::BASE, array( MultiCurrencyFrontendPricesController::class ), self::COMPAT, self::HISTORY ),
 				'cli'   => array_merge( self::BASE, array( MultiCurrencyFrontendPricesController::class ), self::COMPAT, self::HISTORY ),
 			),
 			'historical' => array(
-				'admin' => array_merge( self::BASE, array( MultiCurrencyAnalyticsController::class, self::MANAGEMENT[0], MultiCurrencyTrackingController::class ), self::ADMIN ),
-				'rest'  => array_merge( self::BASE, array( MultiCurrencyAnalyticsController::class, self::MANAGEMENT[1], MultiCurrencyRestRequestOverrideController::class, MultiCurrencyTrackingController::class ) ),
+				'admin' => array_merge( self::BASE, array( MultiCurrencyAnalyticsController::class, MultiCurrencySettingsController::class, MultiCurrencyTrackingController::class ), self::ADMIN ),
+				'rest'  => array_merge( self::BASE, array( MultiCurrencyAnalyticsController::class, MultiCurrencyRestController::class, MultiCurrencyRestRequestOverrideController::class, MultiCurrencyTrackingController::class ) ),
 				'cron'  => array_merge( self::BASE, self::HISTORY ),
 			),
 			'empty'      => array(
 				// The availability note targets stores without currencies yet (client 11.1.0 `MultiCurrency.php:380,1135-1145`).
-				'admin' => array( self::MANAGEMENT[0], MultiCurrencyAdminNoteController::class ),
-				'rest'  => array( self::MANAGEMENT[1] ),
+				'admin' => array( MultiCurrencySettingsController::class, MultiCurrencyAdminNoteController::class ),
+				'rest'  => array( MultiCurrencyRestController::class ),
 			),
 		);
 
