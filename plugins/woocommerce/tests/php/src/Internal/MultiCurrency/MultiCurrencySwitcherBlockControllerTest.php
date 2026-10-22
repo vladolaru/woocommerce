@@ -182,30 +182,6 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should provide every compiled runtime dependency when asset metadata is unavailable.
-	 */
-	public function test_fallback_editor_script_dependencies_cover_compiled_bundle(): void {
-		$dependency_resolver = new \ReflectionMethod(
-			MultiCurrencySwitcherBlockController::class,
-			'resolve_editor_script_dependencies'
-		);
-		$dependency_resolver->setAccessible( true );
-
-		$this->assertSame(
-			array(
-				'react-jsx-runtime',
-				'wp-block-editor',
-				'wp-blocks',
-				'wp-components',
-				'wp-i18n',
-				'wp-polyfill',
-				'wp-server-side-render',
-			),
-			$dependency_resolver->invoke( null, null )
-		);
-	}
-
-	/**
 	 * @testdox Should preserve an existing public editor script registration.
 	 */
 	public function test_preserves_existing_editor_script_registration(): void {

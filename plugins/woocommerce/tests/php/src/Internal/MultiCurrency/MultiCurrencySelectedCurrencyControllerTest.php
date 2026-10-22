@@ -324,7 +324,6 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 
 		WC()->session = $session;
 
-		$this->assertTrue( method_exists( $sut, 'handle_woocommerce_load_cart_from_session' ), 'The classic session-readiness callback should exist.' );
 		$sut->handle_woocommerce_load_cart_from_session();
 		$sut->handle_woocommerce_load_cart_from_session();
 
@@ -364,7 +363,6 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		WC()->cart    = $cart;
 
 		try {
-			$this->assertTrue( method_exists( $sut, 'handle_store_api_rest_pre_dispatch' ), 'The Store API session-readiness callback should exist.' );
 			$first_result        = $sut->handle_store_api_rest_pre_dispatch( $result, $server, $request );
 			$initialized_session = WC()->session;
 			$second_result       = $sut->handle_store_api_rest_pre_dispatch( $result, $server, $duplicate_request );
@@ -401,7 +399,6 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		WC()->cart    = $cart;
 
 		try {
-			$this->assertTrue( method_exists( $sut, 'handle_store_api_rest_pre_dispatch' ), 'The Store API session-readiness callback should exist.' );
 			$actual_result = $sut->handle_store_api_rest_pre_dispatch( $result, rest_get_server(), $request );
 
 			$this->assertSame( $result, $actual_result, 'Non-Store REST requests should pass through unchanged.' );

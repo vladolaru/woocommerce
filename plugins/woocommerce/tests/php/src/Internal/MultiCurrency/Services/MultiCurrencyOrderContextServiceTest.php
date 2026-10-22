@@ -12,96 +12,66 @@ use WC_Unit_Test_Case;
 class MultiCurrencyOrderContextServiceTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Should use order currency on WooCommerce order pages and formatting backtraces.
-	 */
-	public function test_uses_order_currency_on_order_page_formatting_backtrace(): void {
-		$sut = $this->create_service(
-			array( 'WC_Order->get_formatted_order_total' )
-		);
-
-		$this->with_query_vars(
-			array(
-				'pagename'  => 'checkout',
-				'order-pay' => 123,
-			),
-			function () use ( $sut ): void {
-				$this->assertTrue( $sut->should_use_order_currency() );
-			}
-		);
-	}
-
-	/**
-	 * @testdox Should use order currency on the My Account orders list.
+	 * @testdox Should use the order's currency only on a supported order page while formatting an order total: $_dataName.
+	 * @dataProvider provide_order_contexts
 	 *
-	 * Client 11.1.0 checks the same 'orders' query var alongside order-pay, order-received, and
-	 * view-order before honoring an order's own currency (FrontendCurrencies.php:461-472).
+	 * Client 11.1.0 checks the 'orders' query var alongside order-pay, order-received and view-order before honoring an
+	 * order's own currency (FrontendCurrencies.php:461-472).
+	 *
+	 * @param array<int,string>   $backtrace  Backtrace summary.
+	 * @param array<string,mixed> $query_vars WordPress query vars.
+	 * @param bool                $expected   Whether the order's currency is used.
 	 */
-	public function test_uses_order_currency_on_my_account_orders_list(): void {
-		$sut = $this->create_service(
-			array( 'WC_Order->get_formatted_order_total' )
-		);
+	public function test_should_use_order_currency_by_page_and_backtrace( array $backtrace, array $query_vars, bool $expected ): void {
+		$sut = $this->create_service( $backtrace );
 
 		$this->with_query_vars(
-			array(
-				'pagename' => 'my-account',
-				'orders'   => 1,
-			),
-			function () use ( $sut ): void {
-				$this->assertTrue( $sut->should_use_order_currency() );
+			$query_vars,
+			function () use ( $sut, $expected ): void {
+				$this->assertSame( $expected, $sut->should_use_order_currency() );
 			}
 		);
 	}
 
-	/**
-	 * @testdox Should not use order currency outside supported WooCommerce pages.
-	 */
-	public function test_does_not_use_order_currency_outside_supported_pages(): void {
-		$sut = $this->create_service(
-			array( 'WC_Order->get_formatted_order_total' )
-		);
+	/** @return array<string,array{array<int,string>,array<string,mixed>,bool}> */
+	public static function provide_order_contexts(): array {
+		$total = array( 'WC_Order->get_formatted_order_total' );
 
-		$this->with_query_vars(
-			array(
-				'pagename'  => 'shop',
-				'order-pay' => 123,
+		return array(
+			'order-pay page while formatting a total'  => array(
+				$total,
+				array(
+					'pagename'  => 'checkout',
+					'order-pay' => 123,
+				),
+				true,
 			),
-			function () use ( $sut ): void {
-				$this->assertFalse( $sut->should_use_order_currency() );
-			}
-		);
-	}
-
-	/**
-	 * @testdox Should not use order currency without supported order query vars.
-	 */
-	public function test_does_not_use_order_currency_without_supported_order_query_vars(): void {
-		$sut = $this->create_service(
-			array( 'WC_Order->get_formatted_order_total' )
-		);
-
-		$this->with_query_vars(
-			array( 'pagename' => 'checkout' ),
-			function () use ( $sut ): void {
-				$this->assertFalse( $sut->should_use_order_currency() );
-			}
-		);
-	}
-
-	/**
-	 * @testdox Should not use order currency without supported formatting backtrace.
-	 */
-	public function test_does_not_use_order_currency_without_supported_formatting_backtrace(): void {
-		$sut = $this->create_service( array( 'Other_Class->render' ) );
-
-		$this->with_query_vars(
-			array(
-				'pagename'       => 'my-account',
-				'view-order'     => 123,
-				'unrelated-data' => 'present',
+			'My Account orders list'                   => array(
+				$total,
+				array(
+					'pagename' => 'my-account',
+					'orders'   => 1,
+				),
+				true,
 			),
-			function () use ( $sut ): void {
-				$this->assertFalse( $sut->should_use_order_currency() );
-			}
+			'outside the supported pages'              => array(
+				$total,
+				array(
+					'pagename'  => 'shop',
+					'order-pay' => 123,
+				),
+				false,
+			),
+			'without a supported order query var'      => array( $total, array( 'pagename' => 'checkout' ), false ),
+			'without a supported formatting backtrace' => array(
+				array( 'Other_Class->render' ),
+				array(
+					'pagename'       => 'my-account',
+					'view-order'     => 123,
+					'unrelated-data' => 'present',
+				),
+				false,
+			),
 		);
 	}
 

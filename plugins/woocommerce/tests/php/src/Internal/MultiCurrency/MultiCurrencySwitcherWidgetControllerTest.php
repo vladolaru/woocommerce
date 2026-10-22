@@ -84,11 +84,6 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	public function test_returns_empty_markup_before_switcher_widget_is_registered(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
-		$this->assertTrue( method_exists( $sut, 'get_switcher_widget_markup' ), 'The controller must expose the template-tag rendering method.' );
-		if ( ! method_exists( $sut, 'get_switcher_widget_markup' ) ) {
-			return;
-		}
-
 		$this->assertSame( '', $sut->get_switcher_widget_markup() );
 	}
 
