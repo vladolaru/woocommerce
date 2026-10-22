@@ -144,6 +144,6 @@ class MultiCurrencyRuntimeArbiter {
 	 * @return bool True when the multi-currency runtime may take ownership.
 	 */
 	private function is_plugin_multi_currency_enabled(): bool {
-		return '1' === (string) $this->legacy_proxy->call_function( 'get_option', '_wcpay_feature_customer_multi_currency', '1' );
+		return '1' === (string) $this->legacy_proxy->call_function( 'get_option', MultiCurrencyFeatureController::WOOPAYMENTS_MULTI_CURRENCY_FLAG_OPTION, '1' );
 	}
 }

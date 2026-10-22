@@ -14,14 +14,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocali
  *
  * Runtime state intentionally contains only currencies that have usable rates.
  * This catalog keeps configured currencies manageable while they await one.
- * Authorized divergence: plan.md Decision 5; data/task-4.2-disable-providerless-design.md:27.
  *
  * @since 11.2.0
  * @internal Transitional internal component for the native multi-currency runtime.
  */
 final class MultiCurrencySettingsCurrencyCatalog {
-
-	private const OPTION_PREFIX = 'wcpay_multi_currency';
 
 	/**
 	 * Localization service.
@@ -135,7 +132,7 @@ final class MultiCurrencySettingsCurrencyCatalog {
 	 * @return string[]
 	 */
 	public function get_configured_currency_codes(): array {
-		$configured = get_option( self::OPTION_PREFIX . '_enabled_currencies', array() );
+		$configured = get_option( MultiCurrencyStateBuilder::ENABLED_CURRENCIES_OPTION, array() );
 		$configured = is_array( $configured ) ? $configured : array();
 		$catalog    = $this->get_catalog_code_lookup();
 		$codes      = array();

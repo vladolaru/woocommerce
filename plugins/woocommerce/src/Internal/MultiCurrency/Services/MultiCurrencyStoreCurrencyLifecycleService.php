@@ -18,9 +18,13 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
  */
 class MultiCurrencyStoreCurrencyLifecycleService {
 
-	private const OPTION_PREFIX         = 'wcpay_multi_currency';
-	private const STORE_CURRENCY_OPTION = self::OPTION_PREFIX . '_store_currency';
-	private const NOTICE_OPTION         = self::OPTION_PREFIX . '_show_store_currency_changed_notice';
+	private const OPTION_PREFIX = 'wcpay_multi_currency';
+	private const NOTICE_OPTION = self::OPTION_PREFIX . '_show_store_currency_changed_notice';
+
+	/**
+	 * Option holding the store currency Multi-Currency last saw, so a store currency change is noticed.
+	 */
+	public const STORE_CURRENCY_OPTION = self::OPTION_PREFIX . '_store_currency';
 
 	/**
 	 * Multi-currency cache.

@@ -217,7 +217,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 
 		$previous_enabled_codes = $this->get_settings_currency_catalog()->get_configured_currency_codes();
 
-		update_option( self::OPTION_PREFIX . '_enabled_currencies', $enabled_codes );
+		update_option( MultiCurrencyStateBuilder::ENABLED_CURRENCIES_OPTION, $enabled_codes );
 		$this->remove_removed_currency_settings( $previous_enabled_codes, $enabled_codes );
 		$this->get_state_builder()->reset();
 

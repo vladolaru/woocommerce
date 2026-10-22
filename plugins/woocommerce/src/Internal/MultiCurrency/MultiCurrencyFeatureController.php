@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Enums\FeaturePluginCompatibility;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 
 /**
@@ -42,9 +43,15 @@ class MultiCurrencyFeatureController {
 	public const LAST_PAYMENTS_OWNER_BUILTIN = 'builtin';
 
 	/**
-	 * The WooPayments extension's own Multi-Currency flag, the only switch the extension reads.
+	 * The WooPayments Multi-Currency flag; the WooPayments extension reads only this, and WooCommerce writes it when the
+	 * Multi-currency feature changes.
 	 */
-	private const EXTENSION_MULTI_CURRENCY_FLAG_OPTION = '_wcpay_feature_customer_multi_currency';
+	public const WOOPAYMENTS_MULTI_CURRENCY_FLAG_OPTION = '_wcpay_feature_customer_multi_currency';
+
+	/**
+	 * Option set once a merchant completed the Multi-Currency setup.
+	 */
+	public const SETUP_COMPLETED_OPTION = 'wcpay_multi_currency_setup_completed';
 
 	/**
 	 * Persisted Multi-Currency usage detector.
@@ -200,12 +207,12 @@ class MultiCurrencyFeatureController {
 	 * @return bool
 	 */
 	private static function is_plugin_multi_currency_in_use(): bool {
-		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies', array() );
+		$enabled_currencies = get_option( MultiCurrencyStateBuilder::ENABLED_CURRENCIES_OPTION, array() );
 		$has_prior_use      = ( is_array( $enabled_currencies ) && ! empty( $enabled_currencies ) )
-			|| filter_var( get_option( 'wcpay_multi_currency_setup_completed', false ), FILTER_VALIDATE_BOOLEAN );
+			|| filter_var( get_option( self::SETUP_COMPLETED_OPTION, false ), FILTER_VALIDATE_BOOLEAN );
 
 		// The plugin's own feature flag, on unless the merchant turned it off (client 11.1.0 `includes/class-wc-payments-features.php:67-69`).
-		return $has_prior_use && '1' === (string) get_option( self::EXTENSION_MULTI_CURRENCY_FLAG_OPTION, '1' );
+		return $has_prior_use && '1' === (string) get_option( self::WOOPAYMENTS_MULTI_CURRENCY_FLAG_OPTION, '1' );
 	}
 
 	/**
@@ -332,7 +339,7 @@ class MultiCurrencyFeatureController {
 			return;
 		}
 
-		update_option( self::EXTENSION_MULTI_CURRENCY_FLAG_OPTION, $enabled ? '1' : '0' );
+		update_option( self::WOOPAYMENTS_MULTI_CURRENCY_FLAG_OPTION, $enabled ? '1' : '0' );
 	}
 
 	/**

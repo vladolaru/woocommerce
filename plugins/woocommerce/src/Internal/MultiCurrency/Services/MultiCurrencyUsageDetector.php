@@ -42,7 +42,7 @@ final class MultiCurrencyUsageDetector {
 	 * @return bool True when preserved configured currency data exists.
 	 */
 	public function has_additional_enabled_currencies(): bool {
-		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies', array() );
+		$enabled_currencies = get_option( MultiCurrencyStateBuilder::ENABLED_CURRENCIES_OPTION, array() );
 		$store_currency     = strtoupper( (string) get_option( 'woocommerce_currency', '' ) );
 
 		if ( ! is_array( $enabled_currencies ) ) {

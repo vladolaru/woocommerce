@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAdminNoticeProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -268,7 +269,7 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 			return false;
 		}
 
-		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies', array() );
+		$enabled_currencies = get_option( MultiCurrencyStateBuilder::ENABLED_CURRENCIES_OPTION, array() );
 		if ( ! is_array( $enabled_currencies ) || array() === $enabled_currencies ) {
 			return false;
 		}

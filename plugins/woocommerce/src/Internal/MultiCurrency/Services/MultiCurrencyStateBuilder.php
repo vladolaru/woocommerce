@@ -26,6 +26,14 @@ class MultiCurrencyStateBuilder {
 	const CURRENCY_STORAGE_KEY    = 'wcpay_currency';
 	const CUSTOMER_CURRENCIES_KEY = 'wcpay_multi_currency_stored_customer_currencies';
 
+	/**
+	 * Option holding the enabled currency codes.
+	 *
+	 * A writer calls reset() on its state builder, and the state builder factory's option listener also invalidates the
+	 * state on every write; each covers a builder the other does not reach.
+	 */
+	public const ENABLED_CURRENCIES_OPTION = 'wcpay_multi_currency_enabled_currencies';
+
 	private const FILTER_OVERRIDE_SELECTED_CURRENCY = 'wcpay_multi_currency_override_selected_currency';
 
 	/**
@@ -367,7 +375,7 @@ class MultiCurrencyStateBuilder {
 	 * @return string[]
 	 */
 	private function get_enabled_currency_codes( string $default_code ): array {
-		$enabled = get_option( self::OPTION_PREFIX . '_enabled_currencies', array() );
+		$enabled = get_option( self::ENABLED_CURRENCIES_OPTION, array() );
 		$enabled = is_array( $enabled ) ? $enabled : array();
 		$enabled = array_map(
 			static fn( $currency_code ) => strtoupper( (string) $currency_code ),
