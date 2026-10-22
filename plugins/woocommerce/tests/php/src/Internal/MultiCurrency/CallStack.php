@@ -14,23 +14,27 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 final class CallStack {
 
 	/**
-	 * Extension classes the compatibility checks look for, with the methods each is called through (`::` for static).
+	 * Extension classes the compatibility checks look for, with the methods each is called through (`::` for static), as
+	 * client 11.1.0 names them in `includes/multi-currency/` (cited per row).
+	 *
+	 * The stubs are test scaffolding: each declared method takes the callback CallStack passes and runs it, which the real
+	 * extension method's signature does not; only the class and method names, and static or not, come from the source.
 	 */
 	private const EXTENSION_METHODS = array(
-		'WC_Product_Booking'           => array( 'get_price_html' ),
-		'WC_Bookings_Cost_Calculation' => array( '::calculate_booking_cost' ),
-		'WC_Deposits_Cart_Manager'     => array( 'deposits_form_output' ),
-		'WC_Shipping_Fedex'            => array( 'set_settings', 'per_item_shipping', 'box_shipping', 'get_fedex_api_request', 'get_fedex_requests', 'process_result' ),
-		'WC_Shipping_UPS'              => array( 'per_item_shipping', 'box_shipping', 'calculate_shipping' ),
-		'WC_Points_Rewards_Discount'   => array( 'get_discount_data' ),
-		'WC_Subscription'              => array( 'get_formatted_order_total' ),
-		'WCS_Template_Loader'          => array( '::get_my_subscriptions' ),
-		'WCS_Cart_Renewal'             => array( 'setup_cart' ),
-		'WCS_Cart_Early_Renewal'       => array( 'setup_cart' ),
-		'WC_Subscriptions_Cart'        => array( '::set_subscription_prices_for_calculation' ),
-		'WC_Subscriptions_Product'     => array( '::get_sign_up_fee' ),
-		'WCS_Switch_Totals_Calculator' => array( 'apportion_sign_up_fees' ),
-		'Automattic\WooCommerce\Admin\Notes\NewSalesRecord' => array( '::sum_sales_for_date', '::possibly_add_note' ),
+		'WC_Product_Booking'           => array( 'get_price_html' ), // Client 11.1.0 Compatibility/WooCommerceBookings.php:108,142.
+		'WC_Bookings_Cost_Calculation' => array( '::calculate_booking_cost' ), // Client 11.1.0 Compatibility/WooCommerceBookings.php:98.
+		'WC_Deposits_Cart_Manager'     => array( 'deposits_form_output' ), // Client 11.1.0 Compatibility/WooCommerceDeposits.php:73.
+		'WC_Shipping_Fedex'            => array( 'set_settings', 'per_item_shipping', 'box_shipping', 'get_fedex_api_request', 'get_fedex_requests', 'process_result' ), // Client 11.1.0 Compatibility/WooCommerceFedEx.php:22-27.
+		'WC_Shipping_UPS'              => array( 'per_item_shipping', 'box_shipping', 'calculate_shipping' ), // Client 11.1.0 Compatibility/WooCommerceUPS.php:44-46.
+		'WC_Points_Rewards_Discount'   => array( 'get_discount_data' ), // Client 11.1.0 Compatibility/WooCommercePointsAndRewards.php:59.
+		'WC_Subscription'              => array( 'get_formatted_order_total' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:331.
+		'WCS_Template_Loader'          => array( '::get_my_subscriptions' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:330.
+		'WCS_Cart_Renewal'             => array( 'setup_cart' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:230.
+		'WCS_Cart_Early_Renewal'       => array( 'setup_cart' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:284.
+		'WC_Subscriptions_Cart'        => array( '::set_subscription_prices_for_calculation' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:122.
+		'WC_Subscriptions_Product'     => array( '::get_sign_up_fee' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:127.
+		'WCS_Switch_Totals_Calculator' => array( 'apportion_sign_up_fees' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:130.
+		'Automattic\WooCommerce\Admin\Notes\NewSalesRecord' => array( '::sum_sales_for_date', '::possibly_add_note' ), // Client 11.1.0 Compatibility.php:263-264.
 	);
 
 	/**
