@@ -873,33 +873,21 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should activate WooPayments payment method promotions.
+	 * @testdox Should $action WooPayments payment method promotions.
+	 * @testWith ["activate", "activate_promotion"]
+	 *           ["dismiss", "dismiss_promotion"]
+	 *
+	 * @param string $action         Promotion action route suffix.
+	 * @param string $service_method Promotions service method the route calls.
 	 */
-	public function test_activate_pm_promotion_by_manager(): void {
+	public function test_pm_promotion_action_by_manager( string $action, string $service_method ): void {
 		$this->mock_pm_promotions_service
 			->expects( $this->once() )
-			->method( 'activate_promotion' )
+			->method( $service_method )
 			->with( 'klarna-promo__spotlight' )
 			->willReturn( true );
 
-		$request  = new WP_REST_Request( 'POST', '/wc/v3/payments/pm-promotions/klarna-promo__spotlight/activate' );
-		$response = $this->server->dispatch( $request );
-
-		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( array( 'success' => true ), $response->get_data() );
-	}
-
-	/**
-	 * @testdox Should dismiss WooPayments payment method promotions.
-	 */
-	public function test_dismiss_pm_promotion_by_manager(): void {
-		$this->mock_pm_promotions_service
-			->expects( $this->once() )
-			->method( 'dismiss_promotion' )
-			->with( 'klarna-promo__spotlight' )
-			->willReturn( true );
-
-		$request  = new WP_REST_Request( 'POST', '/wc/v3/payments/pm-promotions/klarna-promo__spotlight/dismiss' );
+		$request  = new WP_REST_Request( 'POST', '/wc/v3/payments/pm-promotions/klarna-promo__spotlight/' . $action );
 		$response = $this->server->dispatch( $request );
 
 		$this->assertSame( 200, $response->get_status() );

@@ -1098,11 +1098,14 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should ignore escaped product_page shortcode text.
+	 * @testdox Should not resolve a product from the product_page shortcode: $_dataName.
+	 * @dataProvider provide_unresolvable_product_page_shortcodes
+	 *
+	 * @param string $content_template Page content, with the product ID in place of %1$d.
 	 */
-	public function test_product_page_shortcode_ignores_escaped_shortcode_text(): void {
+	public function test_product_page_shortcode_does_not_resolve_a_product( string $content_template ): void {
 		$product = \WC_Helper_Product::create_simple_product( true );
-		$this->set_current_page_with_content( '[[product_page id="' . $product->get_id() . '"]]' );
+		$this->set_current_page_with_content( sprintf( $content_template, $product->get_id() ) );
 		unset( $GLOBALS['product'] );
 
 		$service = $this->create_service();
@@ -1112,17 +1115,15 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep the first live product_page shortcode result when its product is missing.
+	 * Page content whose product_page shortcode resolves no product.
+	 *
+	 * @return array<string,array{0:string}>
 	 */
-	public function test_product_page_shortcode_does_not_skip_a_missing_first_product(): void {
-		$product = \WC_Helper_Product::create_simple_product( true );
-		$this->set_current_page_with_content( '[product_page id="999999"] [product_page id="' . $product->get_id() . '"]' );
-		unset( $GLOBALS['product'] );
-
-		$service = $this->create_service();
-
-		$this->assertFalse( $service->should_show_payment_request_button( 'product' ) );
-		$this->assertSame( array(), $service->get_express_checkout_params( 'product' )['product'] );
+	public function provide_unresolvable_product_page_shortcodes(): array {
+		return array(
+			'escaped shortcode text'                       => array( '[[product_page id="%1$d"]]' ),
+			'live shortcode after a missing first product' => array( '[product_page id="999999"] [product_page id="%1$d"]' ),
+		);
 	}
 
 	/**

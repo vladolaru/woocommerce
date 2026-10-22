@@ -162,12 +162,13 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not reach the adapter for the onboarding redirect on unrelated admin requests.
-	 * @dataProvider provider_unrelated_requests
+	 * @testdox Should ask the adapter for the onboarding redirect only on guarded WooPayments requests: $_dataName.
+	 * @dataProvider provider_onboarding_redirect_requests
 	 *
-	 * @param array<string,string> $request Query request.
+	 * @param array<string,string> $request  Query request.
+	 * @param int                  $expected Times the adapter is asked for the onboarding redirect.
 	 */
-	public function test_does_not_resolve_the_redirect_on_unrelated_requests( array $request ): void {
+	public function test_onboarding_redirect_reaches_the_adapter_only_for_guarded_requests( array $request, int $expected ): void {
 		$adapter = $this->replace_adapter_with_redirect_counter();
 		foreach ( $request as $key => $value ) {
 			$_GET[ $key ] = $value;
@@ -175,81 +176,60 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 
 		$this->create_controller( $this->createMock( WooPaymentsService::class ) )->maybe_redirect_to_onboarding();
 
-		$this->assertSame( 0, $adapter->redirects );
+		$this->assertSame( $expected, $adapter->redirects );
 	}
 
 	/**
-	 * @testdox Should ask the adapter for the onboarding redirect once on the guarded request $request.
-	 * @dataProvider provider_guarded_requests
+	 * Query requests and the times the adapter is asked for the onboarding redirect: once for guarded WooPayments pages and the extension's links to them, never for the rest.
 	 *
-	 * @param array<string,string> $request Query request.
+	 * @return array<string,array{0:array<string,string>,1:int}>
 	 */
-	public function test_guarded_requests_reach_the_onboarding_redirect_once( array $request ): void {
-		$adapter = $this->replace_adapter_with_redirect_counter();
-		foreach ( $request as $key => $value ) {
-			$_GET[ $key ] = $value;
-		}
-
-		$this->create_controller( $this->createMock( WooPaymentsService::class ) )->maybe_redirect_to_onboarding();
-
-		$this->assertSame( 1, $adapter->redirects );
-	}
-
-	/**
-	 * Requests for guarded WooPayments pages and the extension's links to them.
-	 *
-	 * @return array<string,array{0:array<string,string>}>
-	 */
-	public function provider_guarded_requests(): array {
+	public function provider_onboarding_redirect_requests(): array {
 		return array(
-			'transactions route'         => array(
+			'transactions route'          => array(
 				array(
 					'page' => 'wc-settings',
 					'tab'  => 'checkout',
 					'path' => '/woopayments/transactions',
 				),
+				1,
 			),
-			'settings route'             => array(
+			'settings route'              => array(
 				array(
 					'page' => 'wc-settings',
 					'tab'  => 'checkout',
 					'path' => '/woopayments/settings',
 				),
+				1,
 			),
-			'extension settings section' => array(
+			'extension settings section'  => array(
 				array(
 					'page'    => 'wc-settings',
 					'tab'     => 'checkout',
 					'section' => 'woocommerce_payments',
 				),
+				1,
 			),
-			'WC Admin overview link'     => array(
+			'WC Admin overview link'      => array(
 				array(
 					'page' => 'wc-admin',
 					'path' => '/payments/overview',
 				),
+				1,
 			),
-			'WC Admin onboarding link'   => array(
+			'WC Admin onboarding link'    => array(
 				array(
 					'page' => 'wc-admin',
 					'path' => '/payments/onboarding',
 				),
+				1,
 			),
-		);
-	}
-
-	/**
-	 * Requests that are not guarded native WooPayments routes.
-	 *
-	 * @return array<string,array{0:array<string,string>}>
-	 */
-	public function provider_unrelated_requests(): array {
-		return array(
 			'Payments settings main page' => array(
 				array(
 					'page' => 'wc-settings',
 					'tab'  => 'checkout',
 				),
+				0,
 			),
 			'other settings tab'          => array(
 				array(
@@ -257,6 +237,7 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 					'tab'  => 'general',
 					'path' => '/woopayments/overview',
 				),
+				0,
 			),
 			'offline payment method'      => array(
 				array(
@@ -264,6 +245,7 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 					'tab'  => 'checkout',
 					'path' => '/offline/bacs',
 				),
+				0,
 			),
 			'other gateway section'       => array(
 				array(
@@ -271,23 +253,27 @@ class WooPaymentsControllerTest extends WC_Unit_Test_Case {
 					'tab'     => 'checkout',
 					'section' => 'bacs',
 				),
+				0,
 			),
 			'WC Home'                     => array(
 				array(
 					'page' => 'wc-admin',
 				),
+				0,
 			),
 			'wc-admin analytics'          => array(
 				array(
 					'page' => 'wc-admin',
 					'path' => '/analytics/overview',
 				),
+				0,
 			),
 			'unknown payments path'       => array(
 				array(
 					'page' => 'wc-admin',
 					'path' => '/payments/unknown',
 				),
+				0,
 			),
 		);
 	}

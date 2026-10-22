@@ -12,28 +12,34 @@ use WC_Unit_Test_Case;
 class WooPaymentsHtmlUtilsTest extends WC_Unit_Test_Case {
 
 	/**
-	 * @testdox Interpolated HTML escapes unknown markup and text while preserving mapped tags.
+	 * @testdox Interpolated HTML escapes everything except the mapped tags: $_dataName.
+	 * @dataProvider provide_interpolated_html
+	 *
+	 * @param string               $source   Source string.
+	 * @param array<string,string> $mapping  Tag mapping.
+	 * @param string               $expected Escaped string.
 	 */
-	public function test_escape_interpolated_html_preserves_only_mapped_tags(): void {
-		$this->assertSame(
-			'&lt;script&gt;alert(1)&lt;/script&gt; <strong>Paid &amp; settled</strong>',
-			WooPaymentsHtmlUtils::escape_interpolated_html(
-				'<script>alert(1)</script> <strong>Paid & settled</strong>',
-				array( 'strong' => '<strong>' )
-			)
-		);
+	public function test_escape_interpolated_html( string $source, array $mapping, string $expected ): void {
+		$this->assertSame( $expected, WooPaymentsHtmlUtils::escape_interpolated_html( $source, $mapping ) );
 	}
 
 	/**
-	 * @testdox Invalid interpolation mappings escape the complete source string.
+	 * Source strings, tag mappings and the escaped result.
+	 *
+	 * @return array<string,array{0:string,1:array<string,string>,2:string}>
 	 */
-	public function test_escape_interpolated_html_fails_closed_for_invalid_mapping(): void {
-		$this->assertSame(
-			'&lt;strong&gt;Paid&lt;/strong&gt;',
-			WooPaymentsHtmlUtils::escape_interpolated_html(
+	public function provide_interpolated_html(): array {
+		return array(
+			'unknown markup and text are escaped, mapped tags are preserved' => array(
+				'<script>alert(1)</script> <strong>Paid & settled</strong>',
+				array( 'strong' => '<strong>' ),
+				'&lt;script&gt;alert(1)&lt;/script&gt; <strong>Paid &amp; settled</strong>',
+			),
+			'an invalid mapping escapes the complete source string'         => array(
 				'<strong>Paid</strong>',
-				array( 'strong' => 'not-an-html-element' )
-			)
+				array( 'strong' => 'not-an-html-element' ),
+				'&lt;strong&gt;Paid&lt;/strong&gt;',
+			),
 		);
 	}
 }

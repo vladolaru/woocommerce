@@ -124,18 +124,16 @@ class WooPaymentsFraudOrderTrackingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should schedule a preserved new-order tracking action for untracked WooPayments orders.
+	 * @testdox Should schedule a preserved order tracking action for WooPayments orders: $_dataName.
+	 * @dataProvider provide_tracked_and_untracked_orders
+	 *
+	 * @param array<string,string> $meta Order meta.
+	 * @param string               $hook Scheduled tracking hook.
 	 */
-	public function test_schedules_new_order_tracking_for_untracked_woopayments_orders(): void {
+	public function test_schedules_order_tracking_for_woopayments_orders( array $meta, string $hook ): void {
 		$scheduler = new RecordingActionSchedulerService();
 		$service   = $this->create_service( $scheduler );
-		$order     = $this->create_order(
-			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-			array(
-				'_payment_method_id' => 'pm_123',
-				'_wcpay_mode'        => 'test',
-			)
-		);
+		$order     = $this->create_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $meta );
 
 		$this->enable_sift_tracking();
 
@@ -143,11 +141,35 @@ class WooPaymentsFraudOrderTrackingServiceTest extends WC_Unit_Test_Case {
 		$service->handle_woocommerce_update_order( $order->get_id(), $order );
 
 		$this->assertCount( 1, $scheduler->scheduled_jobs );
-		$this->assertSame( 'wcpay_track_new_order', $scheduler->scheduled_jobs[0]['hook'] );
+		$this->assertSame( $hook, $scheduler->scheduled_jobs[0]['hook'] );
 		$this->assertSame( array( 'order_id' => $order->get_id() ), $scheduler->scheduled_jobs[0]['args'] );
 		// Five seconds out, as the client schedules it (class-wc-payment-gateway-wcpay.php:4513-4524).
 		$this->assertGreaterThanOrEqual( $before + 5, $scheduler->scheduled_jobs[0]['timestamp'] );
 		$this->assertLessThanOrEqual( time() + 5, $scheduler->scheduled_jobs[0]['timestamp'] );
+	}
+
+	/**
+	 * Order meta and the tracking hook scheduled for it: an untracked order is a new order, a tracked one an update.
+	 *
+	 * @return array<string,array{0:array<string,string>,1:string}>
+	 */
+	public function provide_tracked_and_untracked_orders(): array {
+		return array(
+			'untracked order' => array(
+				array(
+					'_payment_method_id' => 'pm_123',
+					'_wcpay_mode'        => 'test',
+				),
+				'wcpay_track_new_order',
+			),
+			'tracked order'   => array(
+				array(
+					'_payment_method_id'           => 'pm_123',
+					'_new_order_tracking_complete' => 'yes',
+				),
+				'wcpay_track_update_order',
+			),
+		);
 	}
 
 	/**
@@ -169,33 +191,6 @@ class WooPaymentsFraudOrderTrackingServiceTest extends WC_Unit_Test_Case {
 		$service->handle_woocommerce_update_order( $order->get_id(), $order );
 
 		$this->assertSame( array(), $scheduler->scheduled_jobs );
-	}
-
-	/**
-	 * @testdox Should schedule a preserved update-order tracking action for previously tracked WooPayments orders.
-	 */
-	public function test_schedules_update_order_tracking_for_tracked_woopayments_orders(): void {
-		$scheduler = new RecordingActionSchedulerService();
-		$service   = $this->create_service( $scheduler );
-		$order     = $this->create_order(
-			WooPaymentsPersistenceVocabulary::GATEWAY_ID,
-			array(
-				'_payment_method_id'           => 'pm_123',
-				'_new_order_tracking_complete' => 'yes',
-			)
-		);
-
-		$this->enable_sift_tracking();
-
-		$before = time();
-		$service->handle_woocommerce_update_order( $order->get_id(), $order );
-
-		$this->assertCount( 1, $scheduler->scheduled_jobs );
-		$this->assertSame( 'wcpay_track_update_order', $scheduler->scheduled_jobs[0]['hook'] );
-		$this->assertSame( array( 'order_id' => $order->get_id() ), $scheduler->scheduled_jobs[0]['args'] );
-		// Five seconds out, as the client schedules it (class-wc-payment-gateway-wcpay.php:4513-4524).
-		$this->assertGreaterThanOrEqual( $before + 5, $scheduler->scheduled_jobs[0]['timestamp'] );
-		$this->assertLessThanOrEqual( time() + 5, $scheduler->scheduled_jobs[0]['timestamp'] );
 	}
 
 	/**
