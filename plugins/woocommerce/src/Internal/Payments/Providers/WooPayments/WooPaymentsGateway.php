@@ -1309,7 +1309,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return false;
 		}
 
-		$country_locale = WC() && WC()->countries
+		$country_locale = WC()->countries
 			? WC()->countries->get_country_locale()
 			: array();
 		$fields         = array( 'state', 'city', 'postcode', 'address_1' );

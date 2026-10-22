@@ -1154,7 +1154,7 @@ class WooPaymentsCheckoutAssets {
 		}
 
 		$currency = strtoupper( get_woocommerce_currency() );
-		$total    = WC() && WC()->cart instanceof \WC_Cart
+		$total    = WC()->cart instanceof \WC_Cart
 			? (float) WC()->cart->get_total( '' )
 			: 0.0;
 
@@ -1433,10 +1433,6 @@ class WooPaymentsCheckoutAssets {
 	 * @return array<string,array{required:bool}>
 	 */
 	private function get_enabled_billing_fields(): array {
-		if ( ! WC()->checkout() ) {
-			return array();
-		}
-
 		$enabled_fields = array();
 		$billing_fields = WC()->checkout()->get_checkout_fields( 'billing' );
 		foreach ( $billing_fields as $field_key => $field_options ) {

@@ -210,10 +210,6 @@ class WooPaymentsWooPayEligibility {
 	 * @return bool
 	 */
 	public function is_woopay_gateway_available(): bool {
-		if ( ! WC() ) {
-			return false;
-		}
-
 		$available_gateways = WC()->payment_gateways()->get_available_payment_gateways();
 
 		return isset( $available_gateways['woocommerce_payments'] );
@@ -561,8 +557,7 @@ class WooPaymentsWooPayEligibility {
 			return false;
 		}
 
-		return WC() &&
-			WC()->cart instanceof \WC_Cart &&
+		return WC()->cart instanceof \WC_Cart &&
 			! WC()->cart->is_empty() &&
 			WC()->cart->needs_payment();
 	}

@@ -144,7 +144,7 @@ class WooPaymentsExpressCheckoutService {
 				'currency_decimals'          => $decimals,
 				'stripe_minor_unit'          => WooPaymentsCurrencyUtils::get_stripe_minor_unit_for_currency( $currency ),
 				'country_code'               => $this->get_store_base_country(),
-				'needs_shipping'             => WC() && WC()->cart ? WC()->cart->needs_shipping() : false,
+				'needs_shipping'             => WC()->cart ? WC()->cart->needs_shipping() : false,
 				'needs_payer_phone'          => 'required' === get_option( 'woocommerce_checkout_phone_field', 'required' ),
 				'allowed_shipping_countries' => WC()->countries ? array_keys( WC()->countries->get_shipping_countries() ?? array() ) : array(),
 				'display_prices_with_tax'    => 'incl' === get_option( 'woocommerce_tax_display_cart' ),
@@ -1028,7 +1028,7 @@ class WooPaymentsExpressCheckoutService {
 	 */
 	private function get_store_base_country(): string {
 		$country = (string) get_option( 'woocommerce_default_country', 'US' );
-		if ( WC() && WC()->countries ) {
+		if ( WC()->countries ) {
 			$country = (string) WC()->countries->get_base_country();
 		}
 
