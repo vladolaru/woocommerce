@@ -148,7 +148,7 @@ class MultiCurrencyRequestContext {
 	 *
 	 * @return bool True for WooCommerce REST requests.
 	 */
-	protected function is_wc_rest_api_request(): bool {
+	public function is_wc_rest_api_request(): bool {
 		if ( empty( $_SERVER['REQUEST_URI'] ) ) {
 			return false;
 		}

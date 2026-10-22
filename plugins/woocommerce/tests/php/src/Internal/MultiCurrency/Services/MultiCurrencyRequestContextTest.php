@@ -282,7 +282,7 @@ class MultiCurrencyRequestContextTest extends WC_Unit_Test_Case {
 			 *
 			 * @return bool
 			 */
-			protected function is_wc_rest_api_request(): bool {
+			public function is_wc_rest_api_request(): bool {
 				return $this->is_rest;
 			}
 

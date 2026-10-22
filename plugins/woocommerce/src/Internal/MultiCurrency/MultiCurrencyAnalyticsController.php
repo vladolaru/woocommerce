@@ -415,25 +415,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			return (bool) call_user_func( $this->rest_request_resolver );
 		}
 
-		if ( empty( $_SERVER['REQUEST_URI'] ) ) {
-			return false;
-		}
-
-		// Core's WooCommerce::is_rest_api_request(), which cannot be called while WooCommerce is still constructing: the REST prefix
-		// in the path, or a rest_route parameter on plain-permalink stores and Jetpack-signed calls.
-		// phpcs:disable WordPress.Security.ValidatedSanitizedInput.MissingUnslash, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.NonceVerification.Recommended
-		$rest_prefix         = trailingslashit( rest_get_url_prefix() );
-		$is_rest_api_request = false !== strpos( $_SERVER['REQUEST_URI'], $rest_prefix ) || ! empty( $_GET['rest_route'] );
-		// phpcs:enable
-
-		/**
-		 * Filters whether this is a WooCommerce REST API request.
-		 *
-		 * @since 3.6.0
-		 *
-		 * @param bool $is_rest_api_request Whether this is a WooCommerce REST API request.
-		 */
-		return (bool) apply_filters( 'woocommerce_is_rest_api_request', $is_rest_api_request );
+		return $this->runtime_service_factory->create_request_context()->is_wc_rest_api_request();
 	}
 
 	/**
