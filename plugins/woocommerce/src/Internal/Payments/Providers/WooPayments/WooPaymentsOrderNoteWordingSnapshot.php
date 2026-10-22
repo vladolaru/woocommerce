@@ -161,35 +161,47 @@ class WooPaymentsOrderNoteWordingSnapshot {
 			return;
 		}
 
-		$locales     = is_array( $stored['locales'] ?? null ) ? $stored['locales'] : array();
-		$started     = microtime( true );
-		$out_of_time = false;
-		foreach ( $this->get_locales() as $locale ) {
-			if ( self::STATUS_RENDERED === ( $locales[ $locale ]['status'] ?? '' ) ) {
-				continue;
-			}
-			$out_of_time        = $out_of_time || self::TIME_BUDGET_SECONDS < microtime( true ) - $started;
-			$locales[ $locale ] = $out_of_time
-				? array(
-					'status'  => self::STATUS_UNAVAILABLE,
-					'strings' => array(),
-				)
-				: $this->render_locale( $locale );
-		}
-
 		$payload = array(
 			'schema'            => self::SCHEMA,
-			'extension_version' => $this->get_extension_version( (string) ( $stored['extension_version'] ?? '' ) ),
+			'extension_version' => $this->get_extension_version(),
 			'captured_at'       => time(),
-			'locales'           => $locales,
+			'locales'           => is_array( $stored['locales'] ?? null ) ? $stored['locales'] : array(),
 			'trimmed'           => array(),
 			'attempts'          => array(
 				'count'    => $attempts + 1,
 				'last'     => time(),
-				'complete' => ! $out_of_time,
+				'complete' => false,
 			),
 		);
-		$this->write( $this->fit_size_ceiling( $payload ) );
+		// Stored before rendering, so a capture the request's time limit ends still counts as an attempt.
+		$this->write( $payload, false );
+
+		$started      = $this->now();
+		$out_of_time  = false;
+		$was_switched = is_locale_switched();
+		try {
+			foreach ( $this->get_locales() as $locale ) {
+				if ( self::STATUS_RENDERED === ( $payload['locales'][ $locale ]['status'] ?? '' ) ) {
+					continue;
+				}
+				$out_of_time                   = $out_of_time || self::TIME_BUDGET_SECONDS < $this->now() - $started;
+				$payload['locales'][ $locale ] = $out_of_time
+					? array(
+						'status'  => self::STATUS_UNAVAILABLE,
+						'strings' => array(),
+					)
+					: $this->render_locale( $locale );
+			}
+		} finally {
+			// A change_locale callback that throws leaves the locale it was switching to in place.
+			if ( ! $was_switched && is_locale_switched() ) {
+				restore_current_locale();
+			}
+		}
+
+		$payload['captured_at']          = time();
+		$payload['attempts']['complete'] = ! $out_of_time;
+		$this->write( $this->fit_size_ceiling( $payload ), true );
 	}
 
 	/**
@@ -221,16 +233,24 @@ class WooPaymentsOrderNoteWordingSnapshot {
 	}
 
 	/**
+	 * Get the current time in seconds, which measures the capture's time budget.
+	 *
+	 * @return float
+	 */
+	protected function now(): float {
+		return microtime( true );
+	}
+
+	/**
 	 * Read the header version of the installed extension.
 	 *
-	 * @param string $stored The version stored by an earlier capture, kept once the extension's files are gone.
-	 * @return string
+	 * @return string The version, or '' when the extension's main file cannot be read.
 	 */
-	private function get_extension_version( string $stored ): string {
+	private function get_extension_version(): string {
 		$plugin_file = WP_PLUGIN_DIR . '/' . WooPaymentsRuntimeArbiter::PLUGIN_FILE;
 		$headers     = is_readable( $plugin_file ) ? get_file_data( $plugin_file, array( 'Version' => 'Version' ) ) : array();
 
-		return '' !== ( $headers['Version'] ?? '' ) ? $headers['Version'] : $stored;
+		return (string) ( $headers['Version'] ?? '' );
 	}
 
 	/**
@@ -349,20 +369,22 @@ class WooPaymentsOrderNoteWordingSnapshot {
 	}
 
 	/**
-	 * Store the snapshot, retrying once after flushing a stale object-cache entry, and log when both writes fail.
+	 * Store the snapshot, retrying once after flushing a stale object-cache entry.
 	 *
-	 * The payload always carries a new `captured_at`, so update_option() returns false only when the write failed.
+	 * WordPress's update_option() returns false when the write fails, and also when the option already holds the payload,
+	 * so after a second false the option is read back, and only other contents count as a failed write.
 	 *
 	 * @param array<string,mixed> $payload Snapshot.
+	 * @param bool                $log     Whether a failed write logs a warning.
 	 */
-	private function write( array $payload ): void {
+	private function write( array $payload, bool $log ): void {
 		$written = update_option( self::OPTION, $payload, false );
 		if ( ! $written ) {
 			wp_cache_delete( self::OPTION, 'options' );
-			$written = update_option( self::OPTION, $payload, false );
+			$written = update_option( self::OPTION, $payload, false ) || get_option( self::OPTION ) === $payload;
 		}
 
-		if ( ! $written ) {
+		if ( ! $written && $log ) {
 			wc_get_logger()->warning(
 				'WooPayments order note wordings could not be stored; notes the WooPayments extension wrote are matched in the current language only.',
 				array(
@@ -370,7 +392,6 @@ class WooPaymentsOrderNoteWordingSnapshot {
 					'bytes'  => strlen( serialize( $payload ) ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- Reports the size the option would store.
 				)
 			);
-			return;
 		}
 
 		unset( $this->translations[ get_current_blog_id() ] );

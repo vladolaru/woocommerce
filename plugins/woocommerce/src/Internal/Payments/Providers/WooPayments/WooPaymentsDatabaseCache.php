@@ -277,9 +277,10 @@ class WooPaymentsDatabaseCache {
 	/**
 	 * Store cache contents in their option, not autoloaded, and keep them for the rest of the request.
 	 *
-	 * The contents carry their fetch time, so update_option() returns false only when the write failed. A stale object-cache
-	 * entry for a missing row fails every write, so a failed write flushes the entry and is retried once; a second failure
-	 * is logged once per request and key.
+	 * WordPress's update_option() returns false when the write fails, and also when the option already holds these contents
+	 * (another request stored the same refresh in the same second). A stale object-cache entry for a missing row fails every write,
+	 * so a false result flushes the entry and is retried once. When the retry returns false too, the option is read back and
+	 * a warning is logged, once per request and key, only when it holds other contents.
 	 *
 	 * @since 11.2.0
 	 *
@@ -301,10 +302,14 @@ class WooPaymentsDatabaseCache {
 			return;
 		}
 
+		if ( $cache_contents === $this->legacy_proxy->call_function( 'get_option', $key ) ) {
+			return;
+		}
+
 		if ( ! isset( $this->logged_write_failures[ $key ] ) ) {
 			$this->logged_write_failures[ $key ] = true;
 			wc_get_logger()->warning(
-				'WooPayments could not store a platform cache entry; the next request fetches it again.',
+				'WooPayments did not store a platform cache entry: after a retry, its option still holds other contents.',
 				array(
 					'source' => WooPaymentsLogger::SOURCE,
 					'key'    => $key,

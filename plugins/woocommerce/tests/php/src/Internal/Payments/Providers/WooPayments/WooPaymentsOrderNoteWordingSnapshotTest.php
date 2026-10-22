@@ -8,7 +8,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteWordingSnapshot;
 use MO;
 use PO;
-use WC_Logger_Interface;
 use WC_Unit_Test_Case;
 use WP_Locale_Switcher;
 
@@ -207,11 +206,11 @@ class WooPaymentsOrderNoteWordingSnapshotTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The write path of the cutover job's step: update_option() returns false only when the write failed, because every
-	 * payload carries a new captured_at. Fails when the step retries more than once, logs more than once, throws, or stops
+	 * The write path of the cutover job's step: the attempt is stored before rendering, the snapshot after it, and each
+	 * write is retried once. Fails when a write retries more than once, a capture logs more than once, throws, or stops
 	 * counting attempts.
 	 *
-	 * @testdox Should retry a failed write once, log one warning with the size and return normally when both writes fail.
+	 * @testdox Should retry each failed write once, log one warning with the size and return normally when every write fails.
 	 */
 	public function test_failed_write_is_retried_once_and_logged(): void {
 		$writes = array();
@@ -225,16 +224,99 @@ class WooPaymentsOrderNoteWordingSnapshotTest extends WC_Unit_Test_Case {
 			10,
 			2
 		);
-		$logger = $this->create_recording_logger();
-		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		$logger = RecordingWcLogger::install();
 
 		$this->sut->capture();
 
-		$this->assertCount( 2, $writes, 'One write, then one retry.' );
+		$warnings = array_values( array_intersect_key( $logger->contexts, array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] ) ) );
+		$this->assertCount( 4, $writes, 'The attempt and the snapshot, each written, then retried once.' );
 		$this->assertSame( 1, $writes[0]['attempts']['count'] );
-		$this->assertCount( 1, $logger->warnings );
-		$this->assertGreaterThan( 0, $logger->warnings[0]['context']['bytes'] );
+		$this->assertFalse( $writes[0]['attempts']['complete'], 'The attempt is stored before rendering.' );
+		$this->assertCount( 1, $warnings );
+		$this->assertGreaterThan( 0, $warnings[0]['bytes'] );
 		$this->assertFalse( get_option( WooPaymentsOrderNoteWordingSnapshot::OPTION ) );
+	}
+
+	/**
+	 * A persistent object cache holding an entry for a missing row makes update_option() fail on every write until the
+	 * entry is flushed (WordPress Trac #38931). Fails when the flush before the retry is dropped.
+	 *
+	 * @testdox Should store the snapshot when a stale object-cache entry fails the first write.
+	 */
+	public function test_a_stale_object_cache_entry_is_flushed_and_the_retry_stores_the_snapshot(): void {
+		wp_cache_set( WooPaymentsOrderNoteWordingSnapshot::OPTION, 'stale', 'options' );
+
+		$this->sut->capture();
+
+		$stored = get_option( WooPaymentsOrderNoteWordingSnapshot::OPTION );
+		$this->assertIsArray( $stored );
+		$this->assertTrue( $stored['attempts']['complete'] );
+		$this->assertSame( 'english_fallback', $stored['locales']['en_US']['status'] );
+	}
+
+	/**
+	 * A capture checks its 20-second budget before each locale; once spent, the remaining locales are left for the next
+	 * capture. The clock is the test's. Fails when the budget check is dropped or a capture past it reads as complete.
+	 *
+	 * @testdox Should leave the locales after an exhausted time budget unavailable and the capture incomplete, then resume them.
+	 */
+	public function test_an_exhausted_time_budget_leaves_the_rest_for_the_next_capture(): void {
+		$this->make_locales_available( array( 'es_ES' ) );
+		$this->create_store_manager( 'manager_es', 'es_ES' );
+
+		$this->create_snapshot_with_clock( array( 0.0, 0.0, 21.0 ) )->capture();
+
+		$stored = get_option( WooPaymentsOrderNoteWordingSnapshot::OPTION );
+		$this->assertSame( 'english_fallback', $stored['locales']['en_US']['status'] );
+		$this->assertSame( 'unavailable', $stored['locales']['es_ES']['status'] );
+		$this->assertFalse( $stored['attempts']['complete'] );
+
+		$this->sut->capture();
+
+		$stored = get_option( WooPaymentsOrderNoteWordingSnapshot::OPTION );
+		$this->assertSame( 'english_fallback', $stored['locales']['es_ES']['status'] );
+		$this->assertSame( 2, $stored['attempts']['count'] );
+		$this->assertTrue( $stored['attempts']['complete'] );
+	}
+
+	/**
+	 * A capture the request ends, here an Error from another plugin's change_locale callback, must still count, so the
+	 * switch stops capturing after three attempts, and must not leave the request in the locale it was switching to.
+	 * Fails when the attempt is stored only after rendering or the locale is not restored.
+	 *
+	 * @testdox Should count a capture a change_locale callback ends, restore the site locale, and stop after three attempts.
+	 */
+	public function test_a_capture_a_locale_callback_ends_counts_and_restores_the_locale(): void {
+		$this->make_locales_available( array( 'es_ES' ) );
+		$this->create_store_manager( 'manager_es', 'es_ES' );
+		$switches = 0;
+		add_action(
+			'change_locale',
+			static function ( $locale ) use ( &$switches ) {
+				if ( 'es_ES' === $locale ) {
+					++$switches;
+					throw new \Error( 'A change_locale callback failed.' );
+				}
+			}
+		);
+
+		foreach ( array( 1, 2, 3 ) as $attempt ) {
+			$ended = false;
+			try {
+				$this->sut->capture();
+			} catch ( \Error $error ) {
+				$ended = 'A change_locale callback failed.' === $error->getMessage();
+			}
+
+			$this->assertTrue( $ended, "Attempt $attempt ends in the callback." );
+			$this->assertFalse( is_locale_switched(), "Attempt $attempt leaves no locale switched." );
+			$this->assertSame( 'en_US', determine_locale() );
+			$this->assertSame( $attempt, get_option( WooPaymentsOrderNoteWordingSnapshot::OPTION )['attempts']['count'] );
+		}
+
+		$this->sut->capture();
+
+		$this->assertSame( 3, $switches, 'A fourth capture renders nothing.' );
 	}
 
 	/**
@@ -457,46 +539,37 @@ class WooPaymentsOrderNoteWordingSnapshotTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a logger that records its warnings.
+	 * Create a snapshot whose clock returns the given times, then keeps the last one.
 	 *
-	 * @return object
+	 * @param float[] $times Times in seconds, in call order.
+	 * @return WooPaymentsOrderNoteWordingSnapshot
 	 */
-	private function create_recording_logger(): object {
-		// phpcs:disable Squiz.Commenting
-		return new class() implements WC_Logger_Interface {
-			public array $warnings = array();
+	private function create_snapshot_with_clock( array $times ): WooPaymentsOrderNoteWordingSnapshot {
+		return new class( $times ) extends WooPaymentsOrderNoteWordingSnapshot {
+			/**
+			 * Times still to return.
+			 *
+			 * @var float[]
+			 */
+			private array $times;
 
-			public function add( $handle, $message, $level = \WC_Log_Levels::NOTICE ) {
-				return true;
+			/**
+			 * Constructor.
+			 *
+			 * @param float[] $times Times in seconds.
+			 */
+			public function __construct( array $times ) {
+				$this->times = $times;
 			}
 
-			public function log( $level, $message, $context = array() ) {
-				if ( 'warning' === $level ) {
-					$this->warnings[] = array(
-						'message' => $message,
-						'context' => $context,
-					);
-				}
+			/**
+			 * Get the next time.
+			 *
+			 * @return float
+			 */
+			protected function now(): float {
+				return count( $this->times ) > 1 ? array_shift( $this->times ) : $this->times[0];
 			}
-
-			public function emergency( $message, $context = array() ) {}
-
-			public function alert( $message, $context = array() ) {}
-
-			public function critical( $message, $context = array() ) {}
-
-			public function error( $message, $context = array() ) {}
-
-			public function warning( $message, $context = array() ) {
-				$this->log( 'warning', $message, $context );
-			}
-
-			public function notice( $message, $context = array() ) {}
-
-			public function info( $message, $context = array() ) {}
-
-			public function debug( $message, $context = array() ) {}
 		};
-		// phpcs:enable Squiz.Commenting
 	}
 }

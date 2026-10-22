@@ -261,23 +261,27 @@ class WooPaymentsDatabaseCacheTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * A stale object-cache entry for a missing row makes update_option() return false (WordPress Trac #38931). Fails when
-	 * the retry is dropped (the retry row), when it runs more than once or falls back to add_option() (every row), or when
-	 * the first failure, or every failed write, logs (the failure row).
+	 * A stale object-cache entry for a missing row makes update_option() return false (WordPress Trac #38931), and so does
+	 * an option that already holds the same contents (client 11.1.0 includes/class-database-cache.php:387-393). Fails when
+	 * the retry is dropped (the retry row), when it runs more than once or falls back to add_option() (every row), when the
+	 * option is not read back after a second false (the double-false rows), or when the first failure, every failed write
+	 * or an option already holding the contents logs (the double-false rows).
 	 *
 	 * @testdox Should flush the object-cache entry and retry a failed write once, never adding the option: $_dataName.
 	 *
-	 * @testWith ["the first write succeeds", [true], 1, ["update_option", "wp_cache_delete"], 0]
-	 *           ["the retry succeeds", [false, true], 1, ["update_option", "wp_cache_delete", "update_option", "wp_cache_delete"], 0]
-	 *           ["both writes fail, twice in a request", [false, false, false, false], 2, ["update_option", "wp_cache_delete", "update_option", "update_option", "wp_cache_delete", "update_option"], 1]
+	 * @testWith ["the first write succeeds", [true], 1, "other", ["update_option", "wp_cache_delete"], 0]
+	 *           ["the retry succeeds", [false, true], 1, "other", ["update_option", "wp_cache_delete", "update_option", "wp_cache_delete"], 0]
+	 *           ["both writes fail, twice in a request", [false, false, false, false], 2, "other", ["update_option", "wp_cache_delete", "update_option", "get_option", "update_option", "wp_cache_delete", "update_option", "get_option"], 1]
+	 *           ["both return false while the option holds these contents", [false, false], 1, "same", ["update_option", "wp_cache_delete", "update_option", "get_option"], 0]
 	 *
 	 * @param string   $name           Case label.
 	 * @param bool[]   $results        update_option() results, in call order.
 	 * @param int      $writes         Calls to write().
+	 * @param string   $stored         What the option holds when read back: the same contents or other ones.
 	 * @param string[] $expected_calls Expected option and cache calls, in order.
 	 * @param int      $expected_logs  Expected warning lines.
 	 */
-	public function test_write_retries_a_failed_update_once( string $name, array $results, int $writes, array $expected_calls, int $expected_logs ): void {
+	public function test_write_retries_a_failed_update_once( string $name, array $results, int $writes, string $stored, array $expected_calls, int $expected_logs ): void {
 		unset( $name );
 		$calls    = array();
 		$contents = array(
@@ -295,6 +299,11 @@ class WooPaymentsDatabaseCacheTest extends WC_Unit_Test_Case {
 
 					return array_shift( $results );
 				},
+				'get_option'      => static function ( $key ) use ( &$calls, $contents, $stored ) {
+					$calls[] = WooPaymentsDatabaseCache::ACCOUNT_KEY === $key ? 'get_option' : 'get_option of another key';
+
+					return 'same' === $stored ? $contents : array( 'data' => array( 'account_id' => 'acct_other' ) );
+				},
 				'add_option'      => static function () use ( &$calls ) {
 					$calls[] = 'add_option';
 
@@ -307,36 +316,18 @@ class WooPaymentsDatabaseCacheTest extends WC_Unit_Test_Case {
 				},
 			)
 		);
-		$logger = new class() extends \WC_Logger {
-			/**
-			 * Contexts of the warning lines.
-			 *
-			 * @var array<int,array<string,mixed>>
-			 */
-			public array $warnings = array();
-
-			/**
-			 * Record a warning line.
-			 *
-			 * @param string              $message Message.
-			 * @param array<string,mixed> $context Context.
-			 */
-			public function warning( $message, $context = array() ) {
-				unset( $message );
-				$this->warnings[] = $context;
-			}
-		};
-		add_filter( 'woocommerce_logging_class', static fn() => $logger );
-		$sut = new WooPaymentsDatabaseCache();
+		$logger = RecordingWcLogger::install();
+		$sut    = new WooPaymentsDatabaseCache();
 		$sut->init( wc_get_container()->get( LegacyProxy::class ) );
 
 		for ( $i = 0; $i < $writes; $i++ ) {
 			$sut->write( WooPaymentsDatabaseCache::ACCOUNT_KEY, $contents );
 		}
 
+		$warnings = array_values( array_intersect_key( $logger->contexts, array_filter( $logger->lines, static fn( array $line ): bool => 'warning' === $line[0] ) ) );
 		$this->assertSame( $expected_calls, $calls );
-		$this->assertCount( $expected_logs, $logger->warnings );
-		foreach ( $logger->warnings as $context ) {
+		$this->assertCount( $expected_logs, $warnings );
+		foreach ( $warnings as $context ) {
 			$this->assertSame( WooPaymentsDatabaseCache::ACCOUNT_KEY, $context['key'] );
 			$this->assertSame( strlen( maybe_serialize( $contents ) ), $context['bytes'] );
 		}

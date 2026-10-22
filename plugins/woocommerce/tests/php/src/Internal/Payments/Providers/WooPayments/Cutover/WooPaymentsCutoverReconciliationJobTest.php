@@ -1492,6 +1492,50 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * The capture before the deactivation leaves the locales after its time budget for the next capture; the normal switch's
+	 * next one is the ownership check. Fails when the ownership check does not capture.
+	 *
+	 * @testdox The ownership check resumes a note wording capture that ran out of time before the deactivation.
+	 */
+	public function test_ownership_check_resumes_an_incomplete_note_wording_capture(): void {
+		$this->arrange_extension_era_store();
+		$preflight = $this->create_plugin_deactivating_preflight();
+		$origin    = $this->create_state_writing_job( true, $preflight );
+		$this->assertTrue( $origin->enqueue( 'merchant' ) );
+		$pending = $this->state_store->get_record();
+		$this->assertIsArray( $pending );
+		$this->scheduler->cancel( $pending['generation'], 1 );
+		$origin->handle_reconcile( $pending['generation'], 1 );
+		$verification = $this->state_store->get_record();
+		$this->assertIsArray( $verification );
+		update_option(
+			WooPaymentsOrderNoteWordingSnapshot::OPTION,
+			array(
+				'schema'   => 1,
+				'locales'  => array(
+					'en_US' => array(
+						'status'  => 'unavailable',
+						'strings' => array(),
+					),
+				),
+				'attempts' => array(
+					'count'    => 1,
+					'last'     => 1,
+					'complete' => false,
+				),
+			),
+			false
+		);
+
+		$this->run_ownership_verification_in_a_fresh_request( $verification, $preflight );
+
+		$stored = get_option( WooPaymentsOrderNoteWordingSnapshot::OPTION );
+		$this->assertSame( 'english_fallback', $stored['locales']['en_US']['status'] );
+		$this->assertSame( 2, $stored['attempts']['count'] );
+		$this->assertTrue( $stored['attempts']['complete'] );
+	}
+
+	/**
 	 * Whether the finalization tier write landed before the ownership check runs.
 	 *
 	 * @return array<string,array{bool}>

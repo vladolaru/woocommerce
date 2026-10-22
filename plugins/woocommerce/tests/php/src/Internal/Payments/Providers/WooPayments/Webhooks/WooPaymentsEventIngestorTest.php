@@ -3529,7 +3529,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A $status charge.refund.updated deletes the linked local refund, fires no refund deleted hook and leaves a $order_status order $expected_status.
 	 *
-	 * Client 11.1.0 deletes the refund and fires nothing (class-wc-payments-order-service.php:1961-1964), and marks the order
+	 * Client 11.1.0 deletes the refund and fires nothing (class-wc-payments-order-service.php:1965-1966), and marks the order
 	 * failed only when it is refunded (:2002-2005). The hook assertion fails when the handler fires woocommerce_refund_deleted.
 	 *
 	 * @dataProvider provider_refund_update_failure_deletes_the_linked_refund

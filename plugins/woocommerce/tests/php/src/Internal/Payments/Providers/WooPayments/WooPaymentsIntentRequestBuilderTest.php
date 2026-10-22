@@ -715,6 +715,8 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 				$calls[] = array( $metadata, count( $args ) );
 				if ( ! isset( $metadata['order_id'] ) ) {
 					$metadata['woopay_save_user_extra'] = 'from the email-only call';
+					$metadata['order_id']               = 999999;
+					$metadata['order_key']              = 'wc_order_conflicting';
 				}
 
 				return $metadata;
@@ -732,6 +734,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 
 		$this->assertCount( $expected_calls, $calls );
 		$this->assertSame( $order->get_id(), $request['metadata']['order_id'], 'The order metadata wins over the email-only call.' );
+		$this->assertSame( $order->get_order_key(), $request['metadata']['order_key'], 'The order metadata wins over the email-only call.' );
 		if ( $save_in_woopay ) {
 			$this->assertSame( array( array( 'customer_email' => 'shopper@example.com' ), 1 ), $calls[1], 'The second call is seeded with the billing email and passes the order only.' );
 			$this->assertSame( 'from the email-only call', $request['metadata']['woopay_save_user_extra'] );

@@ -439,8 +439,9 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 			$parent_order_id = $order->get_id();
 			foreach ( $woopayments_refunds as $refund ) {
 				$refund_id = $refund->get_id();
-				// While the refund is stored: core's stats deletion reads it and returns early once it is gone.
-				$this->delete_refund_order_stats( $refund_id );
+				// While the refund is stored: core's stats deletion reads it and returns early once it is gone. It also fires
+				// woocommerce_analytics_delete_order_stats and invalidates the reports cache.
+				\Automattic\WooCommerce\Admin\API\Reports\Orders\Stats\DataStore::delete_order( $refund_id );
 				if ( true !== $refund->delete( true ) ) {
 					return false;
 				}
@@ -785,27 +786,6 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 		} catch ( Exception $exception ) {
 			wc_get_logger()->warning(
 				sprintf( 'Failed to sync order %d to analytics: %s', $order_id, $exception->getMessage() ),
-				array( 'source' => 'wcpay-fee-remediation' )
-			);
-		}
-	}
-
-	/**
-	 * Delete a refund's order stats from WooCommerce Analytics through the order stats data store, which also fires
-	 * woocommerce_analytics_delete_order_stats and invalidates the reports cache.
-	 *
-	 * @param int $refund_id Refund ID.
-	 */
-	protected function delete_refund_order_stats( int $refund_id ): void {
-		try {
-			\Automattic\WooCommerce\Admin\API\Reports\Orders\Stats\DataStore::delete_order( $refund_id );
-			wc_get_logger()->info(
-				sprintf( 'Deleted stats row for refund %d', $refund_id ),
-				array( 'source' => 'wcpay-fee-remediation' )
-			);
-		} catch ( Exception $exception ) {
-			wc_get_logger()->warning(
-				sprintf( 'Failed to delete stats for refund %d: %s', $refund_id, $exception->getMessage() ),
 				array( 'source' => 'wcpay-fee-remediation' )
 			);
 		}
