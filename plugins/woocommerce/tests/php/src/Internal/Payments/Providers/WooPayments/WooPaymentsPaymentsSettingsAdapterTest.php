@@ -22,6 +22,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Testing\Tools\DependencyManagement\MockableLegacyProxy;
+use Automattic\WooCommerce\Testing\Tools\TestingContainer;
 use Automattic\WooCommerce\Tests\Internal\Admin\Settings\Mocks\FakePaymentGateway;
 use WC_Unit_Test_Case;
 
@@ -340,19 +341,19 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The settings adapter should resolve no built-in collaborator when initialized.
+	 * @testdox The settings adapter should resolve no built-in collaborator when initialized, only on first use.
 	 */
 	public function test_init_resolves_no_builtin_collaborator(): void {
 		$extension_runtime = new WooPaymentsExtensionRuntime();
 		$extension_runtime->init( $this->legacy_proxy );
+		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		$adapter = new WooPaymentsPaymentsSettingsAdapter();
-		$adapter->init( $extension_runtime, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );
 
-		foreach ( array( 'provider', 'builtin_gateway', 'account_service', 'api_client', 'onboarding_service' ) as $property ) {
-			$reflection = new \ReflectionProperty( WooPaymentsPaymentsSettingsAdapter::class, $property );
-			$reflection->setAccessible( true );
-			$this->assertNull( $reflection->getValue( $adapter ), $property . ' must be resolved on first use, not when the adapter is initialized.' );
-		}
+		$on_init = $this->get_container_requests_during( fn() => $adapter->init( $extension_runtime, $arbiter ) );
+		$on_use  = $this->get_container_requests_during( fn() => $adapter->store_referral_code( 'partner-code' ) );
+
+		$this->assertSame( array(), $on_init, 'The adapter must not ask the container for a collaborator when it is initialized.' );
+		$this->assertContains( WooPaymentsOnboardingService::class, $on_use, 'The adapter must ask the container for the onboarding service when it first needs it.' );
 	}
 
 	/**
@@ -616,5 +617,35 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 			$reflection->setAccessible( true );
 			$reflection->setValue( $adapter, $collaborator );
 		}
+	}
+
+	/**
+	 * Run a callback while recording every class the global container is asked for.
+	 *
+	 * @param callable $callback Code to run.
+	 * @return string[] Class names requested from the container, in order.
+	 */
+	private function get_container_requests_during( callable $callback ): array {
+		$container = wc_get_container();
+		$requested = array();
+		$recorder  = $this->getMockBuilder( TestingContainer::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get' ) )
+			->getMock();
+		$recorder->method( 'get' )->willReturnCallback(
+			static function ( string $class_name ) use ( $container, &$requested ) {
+				$requested[] = $class_name;
+				return $container->get( $class_name );
+			}
+		);
+
+		$GLOBALS['wc_container'] = $recorder;
+		try {
+			$callback();
+		} finally {
+			$GLOBALS['wc_container'] = $container;
+		}
+
+		return $requested;
 	}
 }

@@ -15,8 +15,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsDebugTools;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusReport;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
+use Automattic\WooCommerce\Testing\Tools\TestingContainer;
 use WC_REST_System_Status_Tools_V2_Controller;
 use WC_Unit_Test_Case;
 
@@ -80,14 +82,15 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 * @testdox Should build no diagnostic collaborator when initialized, so registering the report builds no payment code.
 	 */
 	public function test_init_resolves_no_diagnostic_collaborator(): void {
-		$sut = new WooPaymentsStatusReport();
-		$sut->init( wc_get_container()->get( WooPaymentsRuntimeArbiter::class ), wc_get_container()->get( WooPaymentsSetupTier::class ) );
+		$arbiter    = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+		$setup_tier = wc_get_container()->get( WooPaymentsSetupTier::class );
+		$sut        = new WooPaymentsStatusReport();
 
-		foreach ( array( 'account_service', 'cutover_preflight_service', 'provider_registry_factory', 'cutover_state_store' ) as $property ) {
-			$reflection = new \ReflectionProperty( WooPaymentsStatusReport::class, $property );
-			$reflection->setAccessible( true );
-			$this->assertNull( $reflection->getValue( $sut ), $property . ' must be resolved when a diagnostic runs, not when the report is initialized.' );
-		}
+		$on_init = $this->get_container_requests_during( fn() => $sut->init( $arbiter, $setup_tier ) );
+		$on_use  = $this->get_container_requests_during( fn() => $sut->add_debug_tools( array() ) );
+
+		$this->assertSame( array(), $on_init, 'The report must not ask the container for a collaborator when it is initialized.' );
+		$this->assertContains( WooPaymentsDebugTools::class, $on_use, 'The report must ask the container for the debug tools when they are first needed.' );
 	}
 
 	/**
@@ -1144,5 +1147,35 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 				},
 			)
 		);
+	}
+
+	/**
+	 * Run a callback while recording every class the global container is asked for.
+	 *
+	 * @param callable $callback Code to run.
+	 * @return string[] Class names requested from the container, in order.
+	 */
+	private function get_container_requests_during( callable $callback ): array {
+		$container = wc_get_container();
+		$requested = array();
+		$recorder  = $this->getMockBuilder( TestingContainer::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get' ) )
+			->getMock();
+		$recorder->method( 'get' )->willReturnCallback(
+			static function ( string $class_name ) use ( $container, &$requested ) {
+				$requested[] = $class_name;
+				return $container->get( $class_name );
+			}
+		);
+
+		$GLOBALS['wc_container'] = $recorder;
+		try {
+			$callback();
+		} finally {
+			$GLOBALS['wc_container'] = $container;
+		}
+
+		return $requested;
 	}
 }

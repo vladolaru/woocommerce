@@ -126,25 +126,45 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep plugin multi-currency ownership while the WooPayments plugin owns payments.
+	 * @testdox Should resolve the multi-currency runtime owner and registrations from the payments state.
+	 * @dataProvider runtime_owner_provider
+	 *
+	 * @param bool   $plugin_active         Whether the WooPayments plugin is active.
+	 * @param bool   $plugin_multi_currency Whether the plugin's customer multi-currency feature is enabled.
+	 * @param bool   $woopayments_feature   Whether the WooPayments feature is enabled.
+	 * @param bool   $core_multi_currency   Whether the core multi-currency feature is enabled.
+	 * @param string $owner                 Expected runtime owner.
+	 * @param bool   $core_registers        Whether core multi-currency should register.
+	 * @param bool   $plugin_registers      Whether plugin multi-currency should register.
 	 */
-	public function test_plugin_payments_owner_keeps_plugin_multi_currency_owner(): void {
-		$this->fake_plugin( true );
+	public function test_runtime_owner_by_state( bool $plugin_active, bool $plugin_multi_currency, bool $woopayments_feature, bool $core_multi_currency, string $owner, bool $core_registers, bool $plugin_registers ): void {
+		$this->fake_plugin( $plugin_active, false, false, $plugin_multi_currency );
+		if ( $woopayments_feature ) {
+			$this->enable_native_runtime();
+		}
+		if ( $core_multi_currency ) {
+			$this->enable_core_multi_currency();
+		}
 
-		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'Plugin payments ownership should also own multi-currency.' );
-		$this->assertTrue( $this->sut->should_plugin_register(), 'Plugin multi-currency should remain responsible for price filters in plugin mode.' );
-		$this->assertFalse( $this->sut->should_core_register(), 'Core multi-currency must not register price filters in plugin mode.' );
+		$this->assertSame( $owner, $this->sut->get_runtime_owner(), 'Runtime owner.' );
+		$this->assertSame( $core_registers, $this->sut->should_core_register(), 'Core registration.' );
+		$this->assertSame( $plugin_registers, $this->sut->should_plugin_register(), 'Plugin registration.' );
 	}
 
 	/**
-	 * @testdox Should leave multi-currency unowned when the plugin disables customer multi-currency.
+	 * Provide runtime owner rows: plugin active, plugin multi-currency flag, WooPayments feature, core multi-currency
+	 * feature, expected owner, core registers, plugin registers.
+	 *
+	 * @return array<string,array{0:bool,1:bool,2:bool,3:bool,4:string,5:bool,6:bool}>
 	 */
-	public function test_plugin_payments_owner_with_disabled_customer_multi_currency_leaves_multi_currency_unowned(): void {
-		$this->fake_plugin( true, false, false, false );
-
-		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'Plugin payments ownership alone should not imply plugin multi-currency ownership.' );
-		$this->assertFalse( $this->sut->should_plugin_register(), 'Plugin multi-currency should not register when the WooPayments feature is disabled.' );
-		$this->assertFalse( $this->sut->should_core_register(), 'Core multi-currency must not register while the plugin still owns payments.' );
+	public function runtime_owner_provider(): array {
+		return array(
+			'the plugin owns payments'                    => array( true, true, false, false, MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, false, true ),
+			'the plugin disables customer multi-currency' => array( true, false, false, false, MultiCurrencyRuntimeArbiter::OWNER_NONE, false, false ),
+			'the built-in owns payments and core is enabled' => array( false, true, true, true, MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false ),
+			'the plugin flag is disabled under the built-in' => array( false, false, true, true, MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false ),
+			'no payments runtime owns the site'           => array( false, true, false, false, MultiCurrencyRuntimeArbiter::OWNER_NONE, false, false ),
+		);
 	}
 
 	/**
@@ -156,32 +176,6 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, $this->sut->get_runtime_owner(), 'Plugin-wins must avoid split-brain multi-currency ownership.' );
 		$this->assertFalse( $this->sut->should_core_register(), 'Core multi-currency must not register while the plugin remains active.' );
-	}
-
-	/**
-	 * @testdox Should use core multi-currency when native payments owns the site.
-	 */
-	public function test_native_payments_owner_uses_core_multi_currency_owner(): void {
-		$this->fake_plugin();
-		$this->enable_native_runtime();
-		$this->enable_core_multi_currency();
-
-		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner(), 'Native payments ownership should flip multi-currency to core.' );
-		$this->assertTrue( $this->sut->should_core_register(), 'Core multi-currency may register only in native payments mode.' );
-		$this->assertFalse( $this->sut->should_plugin_register(), 'Plugin multi-currency should not own the price pipeline in native mode.' );
-	}
-
-	/**
-	 * @testdox Should use the core feature flag when native payments owns the site, independently of the plugin flag.
-	 */
-	public function test_native_payments_owner_ignores_disabled_plugin_multi_currency_flag(): void {
-		$this->fake_plugin( false, false, false, false );
-		$this->enable_native_runtime();
-		$this->enable_core_multi_currency();
-
-		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->sut->get_runtime_owner(), 'The plugin flag must not override the independent core feature setting.' );
-		$this->assertTrue( $this->sut->should_core_register(), 'Core multi-currency should register when its core feature is enabled.' );
-		$this->assertFalse( $this->sut->should_plugin_register(), 'Plugin multi-currency must not register in native mode either.' );
 	}
 
 	/**
@@ -215,17 +209,6 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 		$this->enable_native_runtime();
 		$this->assertFalse( $this->sut->is_payments_extension_owner() );
 		$this->assertTrue( $this->sut->is_payments_builtin_owner() );
-	}
-
-	/**
-	 * @testdox Should leave multi-currency unowned when no payments runtime owns the site and its core feature is off.
-	 */
-	public function test_no_payments_owner_leaves_multi_currency_unowned(): void {
-		$this->fake_plugin();
-
-		$this->assertSame( MultiCurrencyRuntimeArbiter::OWNER_NONE, $this->sut->get_runtime_owner(), 'With its core feature off, core multi-currency should stay dormant.' );
-		$this->assertFalse( $this->sut->should_core_register(), 'Core multi-currency must not register while its feature is off.' );
-		$this->assertFalse( $this->sut->should_plugin_register(), 'Plugin multi-currency is absent when the plugin is absent.' );
 	}
 
 	/**

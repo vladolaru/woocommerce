@@ -4,7 +4,7 @@ const { http, HttpResponse } = require( 'msw' );
 const server = setupServer();
 
 beforeAll( () => {
-	server.listen( { onUnhandledRequest: 'bypass' } );
+	server.listen( { onUnhandledRequest: 'error' } );
 } );
 
 afterEach( () => {
