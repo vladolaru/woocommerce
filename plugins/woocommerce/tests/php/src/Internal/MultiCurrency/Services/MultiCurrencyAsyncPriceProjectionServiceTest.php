@@ -136,7 +136,7 @@ class MultiCurrencyAsyncPriceProjectionServiceTest extends WC_Unit_Test_Case {
 		$manifest         = MultiCurrencyAsyncPriceProjectionService::get_asset_manifest(
 			'https://example.test/wp-json/wc/v3/payments/multi-currency/public/config',
 			$default_currency,
-			'https://example.test/wp-content/plugins/woocommerce/dist/multi-currency-async-renderer.css',
+			'https://example.test/wp-content/plugins/woocommerce/assets/css/multi-currency-async-renderer.css',
 			'1.2.3'
 		);
 
@@ -167,7 +167,7 @@ class MultiCurrencyAsyncPriceProjectionServiceTest extends WC_Unit_Test_Case {
 				'style'  => array(
 					'handle'        => 'wc-multi-currency-async-renderer',
 					'legacy_handle' => 'wcpay-multi-currency-async-renderer',
-					'url'           => 'https://example.test/wp-content/plugins/woocommerce/dist/multi-currency-async-renderer.css',
+					'url'           => 'https://example.test/wp-content/plugins/woocommerce/assets/css/multi-currency-async-renderer.css',
 					'version'       => '1.2.3',
 				),
 			),
