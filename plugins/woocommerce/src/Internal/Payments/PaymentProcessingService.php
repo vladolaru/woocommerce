@@ -234,24 +234,18 @@ class PaymentProcessingService {
 	/**
 	 * Log a warning when a checkout is refused because the order changed before the lock was claimed.
 	 *
-	 * Logging is best-effort and never throws.
-	 *
 	 * @param WC_Order $order  Order being paid.
 	 * @param string   $reason Why the charge was refused.
 	 */
 	private function log_checkout_refused_after_claim( WC_Order $order, string $reason ): void {
-		try {
-			wc_get_logger()->warning(
-				sprintf( 'Checkout charged nothing: order %1$d changed before this request claimed its payment lock.', $order->get_id() ),
-				array(
-					'source'   => 'order-payments',
-					'order_id' => $order->get_id(),
-					'reason'   => $reason,
-				)
-			);
-		} catch ( Throwable $logging_exception ) {
-			return;
-		}
+		wc_get_logger()->warning(
+			sprintf( 'Checkout charged nothing: order %1$d changed before this request claimed its payment lock.', $order->get_id() ),
+			array(
+				'source'   => 'order-payments',
+				'order_id' => $order->get_id(),
+				'reason'   => $reason,
+			)
+		);
 	}
 
 	/**
@@ -348,14 +342,10 @@ class PaymentProcessingService {
 			$context['reconciliation_skipped'] = $reconciliation_skipped;
 		}
 
-		try {
-			wc_get_logger()->error(
-				'Payment provider operation returned a reconcilable outcome but applying local effects failed; best-effort reconciliation persistence was attempted.',
-				$context
-			);
-		} catch ( Throwable $logging_exception ) {
-			return;
-		}
+		wc_get_logger()->error(
+			'Payment provider operation returned a reconcilable outcome but applying local effects failed; best-effort reconciliation persistence was attempted.',
+			$context
+		);
 	}
 
 	/**
@@ -507,18 +497,14 @@ class PaymentProcessingService {
 	 * @return int[]
 	 */
 	private function get_refund_ids( WC_Order $order ): array {
-		try {
-			$ids = wc_get_orders(
-				array(
-					'type'   => 'shop_order_refund',
-					'parent' => $order->get_id(),
-					'limit'  => -1,
-					'return' => 'ids',
-				)
-			);
-		} catch ( Throwable $exception ) {
-			return array();
-		}
+		$ids = wc_get_orders(
+			array(
+				'type'   => 'shop_order_refund',
+				'parent' => $order->get_id(),
+				'limit'  => -1,
+				'return' => 'ids',
+			)
+		);
 
 		$refund_ids = array();
 		foreach ( is_array( $ids ) ? $ids : array() as $id ) {
@@ -829,8 +815,8 @@ class PaymentProcessingService {
 	/**
 	 * Log a provider operation throwable with idempotency correlation.
 	 *
-	 * Logging is best-effort and must never replace the normalized failed outcome. The exception's message and the
-	 * provider's error code are left out: both are the provider platform's text, which can hold an email, a URL or a key.
+	 * The exception's message and the provider's error code are left out: both are the provider platform's text, which
+	 * can hold an email, a URL or a key.
 	 *
 	 * @param WC_Order  $order           Order being processed.
 	 * @param string    $operation       Provider operation.
@@ -838,21 +824,17 @@ class PaymentProcessingService {
 	 * @param Throwable $exception       Provider throwable.
 	 */
 	private function log_provider_failure( WC_Order $order, string $operation, string $idempotency_key, Throwable $exception ): void {
-		try {
-			wc_get_logger()->error(
-				'Payment provider operation threw an exception.',
-				array(
-					'source'          => 'order-payments',
-					'operation'       => $operation,
-					'order_id'        => $order->get_id(),
-					'idempotency_key' => $idempotency_key,
-					'exception_class' => get_class( $exception ),
-					'exception_code'  => $exception->getCode(),
-				)
-			);
-		} catch ( Throwable $logging_exception ) {
-			return;
-		}
+		wc_get_logger()->error(
+			'Payment provider operation threw an exception.',
+			array(
+				'source'          => 'order-payments',
+				'operation'       => $operation,
+				'order_id'        => $order->get_id(),
+				'idempotency_key' => $idempotency_key,
+				'exception_class' => get_class( $exception ),
+				'exception_code'  => $exception->getCode(),
+			)
+		);
 	}
 
 	/**

@@ -3064,9 +3064,8 @@ class WooPaymentsService {
 
 		foreach ( DefaultPaymentGateways::get_wcpay_countries() as $country_code ) {
 			$country_code = strtoupper( (string) $country_code );
-			$country_name = $country_names[ $country_code ] ?? $country_code;
 
-			$supported_countries[ $country_code ] = is_scalar( $country_name ) ? (string) $country_name : $country_code;
+			$supported_countries[ $country_code ] = $country_names[ $country_code ] ?? $country_code;
 		}
 
 		return $supported_countries;

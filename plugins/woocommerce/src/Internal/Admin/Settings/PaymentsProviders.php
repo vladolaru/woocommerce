@@ -532,20 +532,10 @@ class PaymentsProviders {
 		$provider->set_admin_runtime_collaborators(
 			$woopayments_extension_runtime,
 			function () use ( $container ): WooPaymentsRestController {
-				$rest_controller = $container->get( WooPaymentsRestController::class );
-				if ( ! $rest_controller instanceof WooPaymentsRestController ) {
-					throw new \RuntimeException( 'WooPayments REST controller is not available.' );
-				}
-
-				return $rest_controller;
+				return $container->get( WooPaymentsRestController::class );
 			},
 			function () use ( $container ): WooPaymentsService {
-				$service = $container->get( WooPaymentsService::class );
-				if ( ! $service instanceof WooPaymentsService ) {
-					throw new \RuntimeException( 'WooPayments service is not available.' );
-				}
-
-				return $service;
+				return $container->get( WooPaymentsService::class );
 			},
 			$container->get( WooPaymentsPaymentsSettingsAdapter::class )
 		);

@@ -554,33 +554,6 @@ class OrderPaymentLockTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A lock refusal's log line never throws, even when the log filter throws $thrown.
-	 *
-	 * The logger is WooCommerce's own, so the line runs the woocommerce_logger_log_message filter (WC_Logger::log()). Every
-	 * caller logs the refusal and then refuses its operation; a throw here would replace that refusal.
-	 *
-	 * @testWith ["RuntimeException"]
-	 *           ["Error"]
-	 *
-	 * @param string $thrown Class the filter throws.
-	 */
-	public function test_lock_refusal_log_survives_a_throwing_log_filter( string $thrown ): void {
-		$order  = wc_create_order();
-		$throws = 0;
-		add_filter(
-			'woocommerce_logger_log_message',
-			static function () use ( $thrown, &$throws ) {
-				++$throws;
-				throw new $thrown( 'Log write failed.' );
-			}
-		);
-
-		$this->sut->log_refusal( $order, $this->persistence_vocabulary, 'refund' );
-
-		$this->assertSame( 1, $throws, 'The refusal line was attempted once.' );
-	}
-
-	/**
 	 * Skip a test that drives the database lock path when transients live in a persistent object cache.
 	 */
 	private function skip_when_transients_live_in_object_cache(): void {

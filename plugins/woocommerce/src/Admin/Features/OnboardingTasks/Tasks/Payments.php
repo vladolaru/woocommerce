@@ -196,8 +196,7 @@ class Payments extends Task {
 	 * @return bool
 	 */
 	private function is_woopayments_active(): bool {
-		$extension_runtime = $this->get_woopayments_extension_runtime();
-		if ( null !== $extension_runtime && $extension_runtime->is_loaded() ) {
+		if ( wc_get_container()->get( WooPaymentsExtensionRuntime::class )->is_loaded() ) {
 			return true;
 		}
 
@@ -337,8 +336,7 @@ class Payments extends Task {
 	 * @return bool Whether the country is supported by WooPayments.
 	 */
 	private function is_woopayments_supported_country( string $country_code ): bool {
-		$extension_runtime   = $this->get_woopayments_extension_runtime();
-		$supported_countries = null !== $extension_runtime ? $extension_runtime->get_supported_countries() : null;
+		$supported_countries = wc_get_container()->get( WooPaymentsExtensionRuntime::class )->get_supported_countries();
 		if ( is_array( $supported_countries ) ) {
 			$supported_countries = array_keys( $supported_countries );
 			return in_array( $country_code, $supported_countries, true );
@@ -527,20 +525,5 @@ class Payments extends Task {
 		}
 
 		return null;
-	}
-
-	/**
-	 * Get the WooPayments extension runtime.
-	 *
-	 * @return WooPaymentsExtensionRuntime|null
-	 */
-	private function get_woopayments_extension_runtime(): ?WooPaymentsExtensionRuntime {
-		try {
-			$extension_runtime = wc_get_container()->get( WooPaymentsExtensionRuntime::class );
-		} catch ( \Throwable $e ) {
-			return null;
-		}
-
-		return $extension_runtime instanceof WooPaymentsExtensionRuntime ? $extension_runtime : null;
 	}
 }

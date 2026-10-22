@@ -357,7 +357,7 @@ class PaymentLifecycleEvent {
 		$normalized = array();
 
 		foreach ( $meta_to_update as $key => $value ) {
-			$normalized[ (string) $key ] = $this->normalize_meta_value( $value );
+			$normalized[ $key ] = $this->normalize_meta_value( $value );
 		}
 
 		ksort( $normalized );

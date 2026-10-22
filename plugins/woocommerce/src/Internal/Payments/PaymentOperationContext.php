@@ -168,7 +168,7 @@ class PaymentOperationContext {
 	 * @return int
 	 */
 	public function get_order_id(): int {
-		return (int) $this->order->get_id();
+		return $this->order->get_id();
 	}
 
 	/**

@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments;
 
-use Throwable;
 use WC_Order;
 
 /**
@@ -102,7 +101,7 @@ class OrderPaymentLock {
 	 * Log a warning when the order payment lock refuses an operation.
 	 *
 	 * Writes one warning line with a fixed prefix, naming the order, the refused operation, the
-	 * operation holding the lock and the lock's age. Logging is best-effort and never throws.
+	 * operation holding the lock and the lock's age.
 	 *
 	 * @since 11.2.0
 	 *
@@ -113,42 +112,38 @@ class OrderPaymentLock {
 	 * @param array<string,mixed>                    $extra_context       Caller-specific context added to the line.
 	 */
 	public function log_refusal( WC_Order $order, ProviderPersistenceVocabularyInterface $persistence_vocabulary, string $refused_operation, ?string $source = null, array $extra_context = array() ): void {
-		try {
-			$lock_value       = $this->read_lock_transient( $persistence_vocabulary->get_order_lock_key( $order ) );
-			$holder           = $this->read_lock_transient( $this->get_lock_holder_key( $order, $persistence_vocabulary ) );
-			$holder_operation = null;
-			$lock_age_seconds = null;
+		$lock_value       = $this->read_lock_transient( $persistence_vocabulary->get_order_lock_key( $order ) );
+		$holder           = $this->read_lock_transient( $this->get_lock_holder_key( $order, $persistence_vocabulary ) );
+		$holder_operation = null;
+		$lock_age_seconds = null;
 
-			// A holder record only describes the live lock when both carry the same lock value.
-			if ( is_array( $holder ) && false !== $lock_value && isset( $holder['operation'], $holder['lock_value'], $holder['claimed_at'] ) && (string) $lock_value === $holder['lock_value'] ) {
-				$holder_operation = (string) $holder['operation'];
-				$lock_age_seconds = max( 0, time() - (int) $holder['claimed_at'] );
-			}
-
-			wc_get_logger()->warning(
-				sprintf(
-					'%1$s: order %2$d, refused %3$s, held by %4$s for %5$s',
-					self::LOCK_REFUSAL_LOG_PREFIX,
-					$order->get_id(),
-					$refused_operation,
-					$holder_operation ?? 'an unknown operation',
-					null === $lock_age_seconds ? 'an unknown time' : $lock_age_seconds . 's'
-				),
-				array_merge(
-					$extra_context,
-					array(
-						'source'            => $source ?? self::LOCK_REFUSAL_LOG_SOURCE,
-						'order_id'          => $order->get_id(),
-						'refused_operation' => $refused_operation,
-						'holder_operation'  => $holder_operation,
-						'lock_age_seconds'  => $lock_age_seconds,
-						'lock_value'        => false === $lock_value ? null : (string) $lock_value,
-					)
-				)
-			);
-		} catch ( Throwable $exception ) {
-			return;
+		// A holder record only describes the live lock when both carry the same lock value.
+		if ( is_array( $holder ) && false !== $lock_value && isset( $holder['operation'], $holder['lock_value'], $holder['claimed_at'] ) && (string) $lock_value === $holder['lock_value'] ) {
+			$holder_operation = (string) $holder['operation'];
+			$lock_age_seconds = max( 0, time() - (int) $holder['claimed_at'] );
 		}
+
+		wc_get_logger()->warning(
+			sprintf(
+				'%1$s: order %2$d, refused %3$s, held by %4$s for %5$s',
+				self::LOCK_REFUSAL_LOG_PREFIX,
+				$order->get_id(),
+				$refused_operation,
+				$holder_operation ?? 'an unknown operation',
+				null === $lock_age_seconds ? 'an unknown time' : $lock_age_seconds . 's'
+			),
+			array_merge(
+				$extra_context,
+				array(
+					'source'            => $source ?? self::LOCK_REFUSAL_LOG_SOURCE,
+					'order_id'          => $order->get_id(),
+					'refused_operation' => $refused_operation,
+					'holder_operation'  => $holder_operation,
+					'lock_age_seconds'  => $lock_age_seconds,
+					'lock_value'        => false === $lock_value ? null : (string) $lock_value,
+				)
+			)
+		);
 	}
 
 	/**

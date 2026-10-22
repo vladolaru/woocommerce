@@ -2504,49 +2504,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Recovery logging failures cannot replace a referenced provider outcome.
-	 */
-	public function test_process_checkout_outcome_keeps_provider_result_when_recovery_logging_throws(): void {
-		$order    = $this->create_woopayments_order( '10.00' );
-		$outcome  = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_logger_recovery_failure', '', 'pm_logger_recovery_failure' );
-		$provider = new class( $outcome ) extends RecordingProvider implements ProviderOperationEffectApplierInterface {
-			// phpcs:disable Squiz.Commenting.FunctionComment.InvalidNoReturn -- This test double always throws.
-			/**
-			 * Fail provider effect application after the remote payment succeeded.
-			 *
-			 * @param PaymentOperationContext $context   Payment context.
-			 * @param PaymentOutcome          $outcome   Provider outcome.
-			 * @param string                  $operation Operation name.
-			 * @return PaymentOutcome
-			 * @throws RuntimeException Always.
-			 */
-			public function apply_operation_effects( PaymentOperationContext $context, PaymentOutcome $outcome, string $operation ): PaymentOutcome {
-				unset( $context, $outcome, $operation );
-				throw new RuntimeException( 'Provider effect write failed.' );
-			}
-			// phpcs:enable Squiz.Commenting.FunctionComment.InvalidNoReturn
-		};
-		$logger   = $this->create_throwing_logger();
-		add_filter(
-			'woocommerce_logging_class',
-			static function () use ( $logger ) {
-				return $logger;
-			}
-		);
-
-		try {
-			$exception = $this->expect_outcome_apply_exception(
-				fn() => $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_logger_recovery_failure' ), $provider )
-			);
-		} finally {
-			remove_all_filters( 'woocommerce_logging_class' );
-		}
-
-		$this->assertSame( $outcome, $exception->get_outcome() );
-		$this->assertSame( 'Provider effect write failed.', $exception->get_failure()->getMessage(), 'The logging failure must not replace the original failure.' );
-	}
-
-	/**
 	 * @testdox Successful captures stay reconcilable when provider effect application throws.
 	 */
 	public function test_capture_keeps_provider_success_when_effect_application_throws(): void {
@@ -3082,44 +3039,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_second' ) );
 		$outcome  = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $loaded, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_second' ), $provider );
 
-		$this->assertSame( 0, $provider->charge_calls, 'Another submission is at work on this order.' );
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
-		$this->assertSame( 'A payment operation is already in progress for this order.', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] ?? null );
-	}
-
-	/**
-	 * @testdox Should still refuse, without a charge, an order another submission changed when the refusal's log line throws $thrown.
-	 *
-	 * The logger is WooCommerce's own, so the line runs the woocommerce_logger_log_message filter (WC_Logger::log()).
-	 *
-	 * @testWith ["RuntimeException"]
-	 *           ["Error"]
-	 *
-	 * @param string $thrown Class the filter throws.
-	 */
-	public function test_process_checkout_refusal_for_a_changed_order_survives_a_throwing_log_filter( string $thrown ): void {
-		$order  = $this->create_woopayments_order( '10.00' );
-		$loaded = wc_get_order( $order->get_id() );
-		$this->assertInstanceOf( WC_Order::class, $loaded );
-		$order->set_status( 'failed' );
-		$order->save();
-		$throws = 0;
-		add_filter(
-			'woocommerce_logger_log_message',
-			static function ( $message ) use ( $thrown, &$throws ) {
-				if ( false !== strpos( (string) $message, 'changed before this request claimed its payment lock' ) ) {
-					++$throws;
-					throw new $thrown( 'Log write failed.' );
-				}
-
-				return $message;
-			}
-		);
-
-		$provider = new RecordingProvider( new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_second' ) );
-		$outcome  = $this->sut->process_checkout_outcome( PaymentOperationContext::for_checkout( $loaded, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_second' ), $provider );
-
-		$this->assertSame( 1, $throws, 'The refusal line was attempted once.' );
 		$this->assertSame( 0, $provider->charge_calls, 'Another submission is at work on this order.' );
 		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
 		$this->assertSame( 'A payment operation is already in progress for this order.', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_MESSAGE ] ?? null );
@@ -6260,66 +6179,6 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 					'message' => $message,
 					'context' => $context,
 				);
-			}
-		};
-		// phpcs:enable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
-	}
-
-	/**
-	 * Create a fake WC logger whose error method throws.
-	 *
-	 * @return object Throwing fake logger.
-	 */
-	private function create_throwing_logger(): object {
-		$logger = $this->create_fake_logger();
-
-		// phpcs:disable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch
-		return new class( $logger ) implements \WC_Logger_Interface {
-			private object $logger;
-
-			public function __construct( object $logger ) {
-				$this->logger = $logger;
-			}
-
-			public function add( $handle, $message, $level = \WC_Log_Levels::NOTICE ) {
-				return $this->logger->add( $handle, $message, $level );
-			}
-
-			public function log( $level, $message, $context = array() ) {
-				$this->logger->log( $level, $message, $context );
-			}
-
-			public function emergency( $message, $context = array() ) {
-				$this->logger->emergency( $message, $context );
-			}
-
-			public function alert( $message, $context = array() ) {
-				$this->logger->alert( $message, $context );
-			}
-
-			public function critical( $message, $context = array() ) {
-				$this->logger->critical( $message, $context );
-			}
-
-			public function notice( $message, $context = array() ) {
-				$this->logger->notice( $message, $context );
-			}
-
-			public function debug( $message, $context = array() ) {
-				$this->logger->debug( $message, $context );
-			}
-
-			public function info( $message, $context = array() ) {
-				$this->logger->info( $message, $context );
-			}
-
-			public function warning( $message, $context = array() ) {
-				$this->logger->warning( $message, $context );
-			}
-
-			public function error( $message, $context = array() ) {
-				unset( $message, $context );
-				throw new RuntimeException( 'Recovery logger failed.' );
 			}
 		};
 		// phpcs:enable Squiz.Commenting, Squiz.Classes.ClassFileName.NoMatch

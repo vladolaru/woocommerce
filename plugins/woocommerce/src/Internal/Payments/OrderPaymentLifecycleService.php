@@ -264,8 +264,8 @@ class OrderPaymentLifecycleService {
 				return (bool) $order->payment_complete( (string) $event->get_payment_reference() );
 
 			case PaymentLifecycleEvent::STATUS_AUTHORIZED:
-				if ( null !== $event->get_payment_reference() && '' !== (string) $event->get_payment_reference() ) {
-					$order->set_transaction_id( (string) $event->get_payment_reference() );
+				if ( null !== $event->get_payment_reference() && '' !== $event->get_payment_reference() ) {
+					$order->set_transaction_id( $event->get_payment_reference() );
 				}
 				$order->update_status( OrderStatus::ON_HOLD );
 				return true;
@@ -284,8 +284,8 @@ class OrderPaymentLifecycleService {
 				return true;
 
 			case PaymentLifecycleEvent::STATUS_STARTED:
-				if ( null !== $event->get_payment_reference() && '' !== (string) $event->get_payment_reference() && '' === (string) $order->get_transaction_id() ) {
-					$order->set_transaction_id( (string) $event->get_payment_reference() );
+				if ( null !== $event->get_payment_reference() && '' !== $event->get_payment_reference() && '' === (string) $order->get_transaction_id() ) {
+					$order->set_transaction_id( $event->get_payment_reference() );
 				}
 				return false;
 		}

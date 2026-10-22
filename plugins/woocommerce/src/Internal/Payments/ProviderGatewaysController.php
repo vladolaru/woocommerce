@@ -98,7 +98,7 @@ class ProviderGatewaysController implements RegisterHooksInterface {
 		}
 
 		foreach ( $provider->get_payment_gateways() as $gateway ) {
-			if ( ! $gateway instanceof WC_Payment_Gateway || $this->has_gateway( $gateways, $gateway ) ) {
+			if ( $this->has_gateway( $gateways, $gateway ) ) {
 				continue;
 			}
 
@@ -127,7 +127,7 @@ class ProviderGatewaysController implements RegisterHooksInterface {
 		}
 
 		foreach ( $provider->get_payment_gateways() as $gateway ) {
-			if ( $gateway instanceof WC_Payment_Gateway && $gateway_id === $gateway->id ) {
+			if ( $gateway_id === $gateway->id ) {
 				return true;
 			}
 		}
@@ -136,19 +136,14 @@ class ProviderGatewaysController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Resolve the provider on first use. A resolver that returns no provider leaves no provider set.
+	 * Resolve the provider on first use.
 	 *
 	 * @return PaymentGatewayProviderInterface|null
 	 */
 	private function resolve_provider(): ?PaymentGatewayProviderInterface {
 		if ( null === $this->provider && null !== $this->resolver ) {
-			$provider       = ( $this->resolver )();
+			$this->provider = ( $this->resolver )();
 			$this->resolver = null;
-			if ( $provider instanceof PaymentGatewayProviderInterface ) {
-				$this->provider = $provider;
-			} else {
-				$this->should_register_gateways = null;
-			}
 		}
 
 		return $this->provider;
