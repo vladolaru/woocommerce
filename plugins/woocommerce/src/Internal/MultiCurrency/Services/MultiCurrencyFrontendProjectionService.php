@@ -24,7 +24,6 @@ class MultiCurrencyFrontendProjectionService {
 	const CURRENCY_STORAGE_KEY      = 'wcpay_currency';
 	const RENDERING_MODE_SPEED      = 'speed';
 	const RENDERING_MODE_CACHE      = 'cache';
-	const CACHE_FEATURE_FLAG_OPTION = '_wcpay_feature_mc_cache_optimized';
 	const APPLY_CHARM_PRODUCTS_HOOK = 'wcpay_multi_currency_apply_charm_only_to_products';
 
 	/**
@@ -254,7 +253,6 @@ class MultiCurrencyFrontendProjectionService {
 			self::OPTION_PREFIX . '_enable_auto_currency' => $this->is_using_auto_currency_switching(),
 			self::OPTION_PREFIX . '_enable_storefront_switcher' => $this->is_using_storefront_switcher(),
 			self::OPTION_PREFIX . '_rendering_mode'       => $this->get_rendering_mode(),
-			'is_cache_optimized_feature_enabled'          => $this->is_cache_optimized_feature_enabled(),
 			'site_theme'                                  => wp_get_theme()->get( 'Name' ),
 			'date_format'                                 => esc_attr( get_option( 'date_format', 'F j, Y' ) ),
 			'time_format'                                 => esc_attr( get_option( 'time_format', 'g:i a' ) ),
@@ -302,8 +300,7 @@ class MultiCurrencyFrontendProjectionService {
 	 * @return bool
 	 */
 	public function is_cache_optimized_mode(): bool {
-		return $this->is_cache_optimized_feature_enabled()
-			&& self::RENDERING_MODE_CACHE === $this->get_rendering_mode();
+		return self::RENDERING_MODE_CACHE === $this->get_rendering_mode();
 	}
 
 	/**
@@ -444,15 +441,6 @@ class MultiCurrencyFrontendProjectionService {
 	 */
 	private function get_rendering_mode(): string {
 		return (string) get_option( self::OPTION_PREFIX . '_rendering_mode', self::RENDERING_MODE_SPEED );
-	}
-
-	/**
-	 * Tell whether the cache-optimized feature flag is enabled.
-	 *
-	 * @return bool
-	 */
-	private function is_cache_optimized_feature_enabled(): bool {
-		return '1' === get_option( self::CACHE_FEATURE_FLAG_OPTION, '1' );
 	}
 
 	/**

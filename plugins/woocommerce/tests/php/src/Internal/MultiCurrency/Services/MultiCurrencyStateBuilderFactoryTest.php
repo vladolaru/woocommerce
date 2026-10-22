@@ -156,7 +156,6 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.80' );
 		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
 		update_option( 'wcpay_multi_currency_rendering_mode', 'cache' );
-		update_option( '_wcpay_feature_mc_cache_optimized', '1' );
 		$product = \WC_Helper_Product::create_simple_product();
 		\WC_Helper_Coupon::create_coupon( 'storefront-fixed', array( 'coupon_amount' => '5' ) );
 		// A guest without a session cookie: the async placeholder is for shoppers with no session yet.

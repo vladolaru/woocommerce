@@ -54,7 +54,6 @@ const normalizeStoreSettings = (
 	renderingMode: response.wcpay_multi_currency_rendering_mode || 'speed',
 	shouldRecommendCacheMode: response.should_recommend_cache_mode,
 	cacheRecommendationDismissed: response.cache_recommendation_dismissed,
-	isCacheOptimizedFeatureEnabled: response.is_cache_optimized_feature_enabled,
 	siteTheme: response.site_theme,
 	storeUrl: response.store_url,
 } );
@@ -320,37 +319,32 @@ export function StoreLevelSettings() {
 						</Button>
 					</Notice>
 				) }
-				{ draftSettings.isCacheOptimizedFeatureEnabled && (
-					<RadioControl
-						label={ __( 'Price rendering mode', 'woocommerce' ) }
-						help={ __(
-							'Choose how multi-currency prices are rendered. "Optimized for caching" outputs identical HTML for all visitors and converts prices client-side, allowing hosting providers to cache pages effectively.',
-							'woocommerce'
-						) }
-						selected={ draftSettings.renderingMode }
-						options={ [
-							{
-								label: __(
-									'Optimized for speed (default)',
-									'woocommerce'
-								),
-								value: 'speed',
-							},
-							{
-								label: __(
-									'Optimized for caching',
-									'woocommerce'
-								),
-								value: 'cache',
-							},
-						] }
-						onChange={ ( value ) =>
-							updateDraftSettings( {
-								renderingMode: value as RenderingMode,
-							} )
-						}
-					/>
-				) }
+				<RadioControl
+					label={ __( 'Price rendering mode', 'woocommerce' ) }
+					help={ __(
+						'Choose how multi-currency prices are rendered. "Optimized for caching" outputs identical HTML for all visitors and converts prices client-side, allowing hosting providers to cache pages effectively.',
+						'woocommerce'
+					) }
+					selected={ draftSettings.renderingMode }
+					options={ [
+						{
+							label: __(
+								'Optimized for speed (default)',
+								'woocommerce'
+							),
+							value: 'speed',
+						},
+						{
+							label: __( 'Optimized for caching', 'woocommerce' ),
+							value: 'cache',
+						},
+					] }
+					onChange={ ( value ) =>
+						updateDraftSettings( {
+							renderingMode: value as RenderingMode,
+						} )
+					}
+				/>
 				{ draftSettings.siteTheme === 'Storefront' && (
 					<CheckboxControl
 						__nextHasNoMarginBottom

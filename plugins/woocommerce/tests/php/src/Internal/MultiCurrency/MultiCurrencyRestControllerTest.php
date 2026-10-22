@@ -54,7 +54,6 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 		'wcpay_multi_currency_enable_auto_currency',
 		'wcpay_multi_currency_enable_storefront_switcher',
 		'wcpay_multi_currency_rendering_mode',
-		'_wcpay_feature_mc_cache_optimized',
 		'wcpay_multi_currency_cache_autodetect_done',
 		'wcpay_multi_currency_cache_recommendation_dismissed',
 		'wcpay_multi_currency_stored_customer_currencies',
@@ -471,7 +470,6 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should project cache recommendation state and persist an explicit dismissal.
 	 */
 	public function test_projects_cache_recommendation_state_and_persists_an_explicit_dismissal(): void {
-		update_option( '_wcpay_feature_mc_cache_optimized', '1' );
 		update_option( 'wcpay_multi_currency_rendering_mode', 'speed' );
 		$cache_rendering_service = $this->getMockBuilder( MultiCurrencyCacheRenderingService::class )
 			->onlyMethods( array( 'maybe_auto_enable_cache_rendering_mode' ) )

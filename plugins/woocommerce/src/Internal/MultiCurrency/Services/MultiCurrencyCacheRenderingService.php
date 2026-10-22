@@ -49,10 +49,6 @@ class MultiCurrencyCacheRenderingService {
 			return;
 		}
 
-		if ( ! $this->is_cache_optimized_feature_enabled() ) {
-			return;
-		}
-
 		$missing_rendering_mode = new \stdClass();
 		$rendering_mode         = get_option( MultiCurrencyFrontendProjectionService::OPTION_PREFIX . '_rendering_mode', $missing_rendering_mode );
 		if ( $missing_rendering_mode !== $rendering_mode ) {
@@ -80,10 +76,6 @@ class MultiCurrencyCacheRenderingService {
 	 * @return bool Whether cache rendering should be recommended.
 	 */
 	public function should_recommend_cache_mode(): bool {
-		if ( ! $this->is_cache_optimized_feature_enabled() ) {
-			return false;
-		}
-
 		if ( MultiCurrencyFrontendProjectionService::RENDERING_MODE_SPEED !== get_option( MultiCurrencyFrontendProjectionService::OPTION_PREFIX . '_rendering_mode', MultiCurrencyFrontendProjectionService::RENDERING_MODE_SPEED ) ) {
 			return false;
 		}
@@ -104,14 +96,5 @@ class MultiCurrencyCacheRenderingService {
 	 */
 	public function is_cache_recommendation_dismissed(): bool {
 		return 'yes' === get_option( self::DISMISSED_OPTION );
-	}
-
-	/**
-	 * Tell whether the cache-optimized rendering feature is enabled.
-	 *
-	 * @return bool Whether the feature is enabled.
-	 */
-	private function is_cache_optimized_feature_enabled(): bool {
-		return '1' === get_option( MultiCurrencyFrontendProjectionService::CACHE_FEATURE_FLAG_OPTION, '1' );
 	}
 }

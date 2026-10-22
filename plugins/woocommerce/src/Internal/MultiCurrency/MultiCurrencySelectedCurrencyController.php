@@ -25,10 +25,9 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  */
 class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface {
 
-	private const OPTION_PREFIX             = 'wcpay_multi_currency';
-	private const RENDERING_MODE_CACHE      = 'cache';
-	private const CACHE_FEATURE_FLAG_OPTION = '_wcpay_feature_mc_cache_optimized';
-	private const DISABLE_SWITCHING_FILTER  = 'wcpay_multi_currency_should_disable_currency_switching';
+	private const OPTION_PREFIX            = 'wcpay_multi_currency';
+	private const RENDERING_MODE_CACHE     = 'cache';
+	private const DISABLE_SWITCHING_FILTER = 'wcpay_multi_currency_should_disable_currency_switching';
 
 	private const FILTER_OVERRIDE_NOTICE_COUNTRY       = 'wcpay_multi_currency_override_notice_country';
 	private const FILTER_OVERRIDE_NOTICE_CURRENCY_NAME = 'wcpay_multi_currency_override_notice_currency_name';
@@ -635,8 +634,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	 * @return bool
 	 */
 	private function is_cache_optimized_mode(): bool {
-		return '1' === get_option( self::CACHE_FEATURE_FLAG_OPTION, '1' )
-			&& self::RENDERING_MODE_CACHE === get_option( self::OPTION_PREFIX . '_rendering_mode', MultiCurrencyFrontendProjectionService::RENDERING_MODE_SPEED );
+		return self::RENDERING_MODE_CACHE === get_option( self::OPTION_PREFIX . '_rendering_mode', MultiCurrencyFrontendProjectionService::RENDERING_MODE_SPEED );
 	}
 
 	/**

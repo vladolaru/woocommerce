@@ -37,7 +37,6 @@ export interface StoreSettingsResponse {
 	wcpay_multi_currency_rendering_mode: RenderingMode;
 	should_recommend_cache_mode: boolean;
 	cache_recommendation_dismissed: boolean;
-	is_cache_optimized_feature_enabled: boolean;
 	site_theme: string;
 	date_format: string;
 	time_format: string;
@@ -50,7 +49,6 @@ export interface StoreSettingsState {
 	renderingMode: RenderingMode;
 	shouldRecommendCacheMode: boolean;
 	cacheRecommendationDismissed: boolean;
-	isCacheOptimizedFeatureEnabled: boolean;
 	siteTheme: string;
 	storeUrl: string;
 }

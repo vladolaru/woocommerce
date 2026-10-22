@@ -110,7 +110,6 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_currency', 'USD' );
 		delete_option( 'wcpay_multi_currency_enable_auto_currency' );
 		delete_option( 'wcpay_multi_currency_rendering_mode' );
-		delete_option( '_wcpay_feature_mc_cache_optimized' );
 		WC()->session = $this->original_session;
 		WC()->cart    = $this->original_cart;
 
@@ -514,34 +513,11 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should persist geolocation currency in cache mode when explicitly disabled.
-	 */
-	public function test_persists_geolocation_currency_in_cache_mode_when_explicitly_disabled(): void {
-		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
-		update_option( 'wcpay_multi_currency_rendering_mode', 'cache' );
-		update_option( '_wcpay_feature_mc_cache_optimized', '0' );
-		WC()->session = $this->create_session( false );
-		$service      = $this->create_persistence_service();
-		$sut          = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
-			$service,
-			$this->create_request_context( true, false )
-		);
-		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD' ) );
-
-		$sut->handle_geolocation_init();
-
-		$this->assertSame( array( 'CAD' ), $service->updated_currencies );
-		$this->assertSame( array( false ), $service->persist_flags );
-	}
-
-	/**
 	 * @testdox Should persist geolocation currency in cache mode for Store API requests.
 	 */
 	public function test_persists_geolocation_currency_in_cache_mode_for_store_api_requests(): void {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
 		update_option( 'wcpay_multi_currency_rendering_mode', 'cache' );
-		update_option( '_wcpay_feature_mc_cache_optimized', '1' );
 		WC()->session = $this->create_session( false );
 		$service      = $this->create_persistence_service();
 		$sut          = $this->create_controller(

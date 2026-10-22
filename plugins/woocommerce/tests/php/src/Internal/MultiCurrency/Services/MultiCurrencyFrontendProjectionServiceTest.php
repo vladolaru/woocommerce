@@ -47,7 +47,6 @@ class MultiCurrencyFrontendProjectionServiceTest extends WC_Unit_Test_Case {
 		'wcpay_multi_currency_enable_auto_currency',
 		'wcpay_multi_currency_enable_storefront_switcher',
 		'wcpay_multi_currency_rendering_mode',
-		'_wcpay_feature_mc_cache_optimized',
 		'wcpay_multi_currency_exchange_rate_gbp',
 		'wcpay_multi_currency_manual_rate_gbp',
 		'wcpay_multi_currency_price_rounding_gbp',
@@ -185,7 +184,6 @@ class MultiCurrencyFrontendProjectionServiceTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
 		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'no' );
 		update_option( 'wcpay_multi_currency_rendering_mode', 'cache' );
-		update_option( '_wcpay_feature_mc_cache_optimized', '1' );
 		$sut = $this->create_service( $this->create_state( 'GBP' ) );
 
 		$currencies = $sut->get_store_currencies();
@@ -197,7 +195,6 @@ class MultiCurrencyFrontendProjectionServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $settings['wcpay_multi_currency_enable_auto_currency'] );
 		$this->assertFalse( $settings['wcpay_multi_currency_enable_storefront_switcher'] );
 		$this->assertSame( 'cache', $settings['wcpay_multi_currency_rendering_mode'] );
-		$this->assertTrue( $settings['is_cache_optimized_feature_enabled'] );
 		$this->assertTrue( $sut->is_cache_optimized_mode() );
 	}
 
@@ -208,20 +205,7 @@ class MultiCurrencyFrontendProjectionServiceTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_rendering_mode', 'cache' );
 		$sut = $this->create_service( $this->create_state( 'GBP' ) );
 
-		$this->assertTrue( $sut->get_settings()['is_cache_optimized_feature_enabled'] );
 		$this->assertTrue( $sut->is_cache_optimized_mode() );
-	}
-
-	/**
-	 * @testdox Should keep cache-optimized rendering disabled when explicitly disabled.
-	 */
-	public function test_keeps_cache_optimized_rendering_disabled_when_explicitly_disabled(): void {
-		update_option( 'wcpay_multi_currency_rendering_mode', 'cache' );
-		update_option( '_wcpay_feature_mc_cache_optimized', '0' );
-		$sut = $this->create_service( $this->create_state( 'GBP' ) );
-
-		$this->assertFalse( $sut->get_settings()['is_cache_optimized_feature_enabled'] );
-		$this->assertFalse( $sut->is_cache_optimized_mode() );
 	}
 
 	/**
@@ -231,7 +215,6 @@ class MultiCurrencyFrontendProjectionServiceTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_rendering_mode', 'speed' );
 		$sut = $this->create_service( $this->create_state( 'GBP' ) );
 
-		$this->assertTrue( $sut->get_settings()['is_cache_optimized_feature_enabled'] );
 		$this->assertFalse( $sut->is_cache_optimized_mode() );
 	}
 

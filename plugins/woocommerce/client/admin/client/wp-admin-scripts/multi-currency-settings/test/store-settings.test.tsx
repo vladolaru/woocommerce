@@ -55,7 +55,6 @@ const storeSettingsResponse = {
 	wcpay_multi_currency_rendering_mode: 'speed',
 	should_recommend_cache_mode: false,
 	cache_recommendation_dismissed: false,
-	is_cache_optimized_feature_enabled: true,
 	site_theme: 'Storefront',
 	date_format: 'F j, Y',
 	time_format: 'g:i a',
@@ -93,7 +92,7 @@ describe( 'StoreLevelSettings', () => {
 				name: 'Optimized for speed (default)',
 			} )
 		).toBeChecked();
-		// N-085: client 11.1.0 store-settings/index.js:231
+		// Client 11.1.0 store-settings/index.js:231
 		// (`disabled={ isSaving || ! isDirty }`) keeps the Save control disabled
 		// until something is dirty; loading the settings must not itself POST any
 		// change.
@@ -323,10 +322,9 @@ describe( 'StoreLevelSettings', () => {
 		} );
 	} );
 
-	it( 'hides conditional settings when the store does not support them', async () => {
+	it( 'hides the Storefront switcher setting on other themes', async () => {
 		mockApiFetch.mockResolvedValueOnce( {
 			...storeSettingsResponse,
-			is_cache_optimized_feature_enabled: false,
 			site_theme: 'Twenty Twenty-Four',
 		} );
 
@@ -339,9 +337,6 @@ describe( 'StoreLevelSettings', () => {
 			screen.queryByRole( 'checkbox', {
 				name: /Add a currency switcher to the Storefront theme/i,
 			} )
-		).not.toBeInTheDocument();
-		expect(
-			screen.queryByRole( 'radio', { name: 'Optimized for caching' } )
 		).not.toBeInTheDocument();
 	} );
 

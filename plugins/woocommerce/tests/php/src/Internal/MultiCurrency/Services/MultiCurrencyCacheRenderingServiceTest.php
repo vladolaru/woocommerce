@@ -5,7 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCachingEnvironment;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
 use WC_Unit_Test_Case;
 
 /**
@@ -18,30 +17,10 @@ class MultiCurrencyCacheRenderingServiceTest extends WC_Unit_Test_Case {
 	private const MODE_OPTION      = 'wcpay_multi_currency_rendering_mode';
 
 	/**
-	 * @testdox Should skip detection and writes when the cache feature is disabled.
-	 */
-	public function test_skips_detection_and_writes_when_the_cache_feature_is_disabled(): void {
-		update_option( MultiCurrencyFrontendProjectionService::CACHE_FEATURE_FLAG_OPTION, '0' );
-		$environment = $this->create_environment( true );
-
-		$this->create_service( $environment )->maybe_auto_enable_cache_rendering_mode();
-
-		$this->assertSame( 0, $environment->calls );
-		$this->assertFalse( get_option( self::DONE_OPTION, false ) );
-		$this->assertFalse( get_option( self::MODE_OPTION, false ) );
-	}
-
-	/**
 	 * @testdox Should skip detector work once auto-detection is done.
 	 */
 	public function test_skips_detector_work_once_auto_detection_is_done(): void {
 		update_option( self::DONE_OPTION, 'yes' );
-		add_filter(
-			'pre_option_' . MultiCurrencyFrontendProjectionService::CACHE_FEATURE_FLAG_OPTION,
-			static function () {
-				throw new \RuntimeException( 'Feature option should not be read.' );
-			}
-		);
 		add_filter(
 			'pre_option_' . self::MODE_OPTION,
 			static function () {
@@ -53,7 +32,6 @@ class MultiCurrencyCacheRenderingServiceTest extends WC_Unit_Test_Case {
 		try {
 			$this->create_service( $environment )->maybe_auto_enable_cache_rendering_mode();
 		} finally {
-			remove_all_filters( 'pre_option_' . MultiCurrencyFrontendProjectionService::CACHE_FEATURE_FLAG_OPTION );
 			remove_all_filters( 'pre_option_' . self::MODE_OPTION );
 		}
 
@@ -197,15 +175,13 @@ class MultiCurrencyCacheRenderingServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should recommend cache mode only for active undismissed speed mode.
 	 * @dataProvider provider_recommendation_states
 	 *
-	 * @param string $feature Feature value.
-	 * @param mixed  $mode Rendering mode.
-	 * @param mixed  $dismissed Dismissal value.
-	 * @param bool   $active Whether caching is active.
-	 * @param bool   $expected Whether recommendation is expected.
-	 * @param int    $calls Expected detector calls.
+	 * @param mixed $mode Rendering mode.
+	 * @param mixed $dismissed Dismissal value.
+	 * @param bool  $active Whether caching is active.
+	 * @param bool  $expected Whether recommendation is expected.
+	 * @param int   $calls Expected detector calls.
 	 */
-	public function test_recommends_cache_mode_only_for_active_undismissed_speed_mode( string $feature, $mode, $dismissed, bool $active, bool $expected, int $calls ): void {
-		update_option( MultiCurrencyFrontendProjectionService::CACHE_FEATURE_FLAG_OPTION, $feature );
+	public function test_recommends_cache_mode_only_for_active_undismissed_speed_mode( $mode, $dismissed, bool $active, bool $expected, int $calls ): void {
 		update_option( self::MODE_OPTION, $mode );
 		update_option( self::DISMISSED_OPTION, $dismissed );
 		$environment = $this->create_environment( $active );
@@ -293,15 +269,14 @@ class MultiCurrencyCacheRenderingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Provide recommendation conditions.
 	 *
-	 * @return array<string,array{string,mixed,mixed,bool,bool,int}>
+	 * @return array<string,array{mixed,mixed,bool,bool,int}>
 	 */
 	public function provider_recommendation_states(): array {
 		return array(
-			'active speed'      => array( '1', 'speed', 'no', true, true, 1 ),
-			'feature disabled'  => array( '0', 'speed', 'no', true, false, 0 ),
-			'cache mode'        => array( '1', 'cache', 'no', true, false, 0 ),
-			'dismissed'         => array( '1', 'speed', 'yes', true, false, 0 ),
-			'no detected cache' => array( '1', 'speed', 'no', false, false, 1 ),
+			'active speed'      => array( 'speed', 'no', true, true, 1 ),
+			'cache mode'        => array( 'cache', 'no', true, false, 0 ),
+			'dismissed'         => array( 'speed', 'yes', true, false, 0 ),
+			'no detected cache' => array( 'speed', 'no', false, false, 1 ),
 		);
 	}
 
