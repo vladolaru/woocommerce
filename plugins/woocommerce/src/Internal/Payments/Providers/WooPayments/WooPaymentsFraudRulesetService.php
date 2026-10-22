@@ -14,7 +14,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBui
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStoreCurrencyLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Throwable;
 
 /**
  * Keeps the store's fraud protection ruleset in step with the platform.
@@ -598,18 +597,14 @@ class WooPaymentsFraudRulesetService {
 	}
 
 	/**
-	 * Log fraud ruleset refresh warnings without interrupting admin settings responses.
+	 * Log a fraud ruleset refresh warning.
 	 *
 	 * @param string              $message Warning message.
 	 * @param array<string,mixed> $context Log context.
 	 * @return void
 	 */
 	private function log_fraud_ruleset_refresh_warning( string $message, array $context = array() ): void {
-		try {
-			$this->logger->log( $message, 'warning', $context );
-		} catch ( Throwable $e ) {
-			unset( $e );
-		}
+		$this->logger->log( $message, 'warning', $context );
 	}
 
 	/**

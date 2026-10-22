@@ -48,7 +48,7 @@ class MultiCurrencyLocalizationService implements MultiCurrencyLocalizationInter
 	 * @return array<string,mixed>
 	 */
 	public function get_currency_format( $currency_code ): array {
-		$currency_code   = strtoupper( (string) $currency_code );
+		$currency_code   = strtoupper( $currency_code );
 		$currency_format = array(
 			'currency_pos' => 'left',
 			'thousand_sep' => ',',
@@ -80,7 +80,7 @@ class MultiCurrencyLocalizationService implements MultiCurrencyLocalizationInter
 	 * @return array<string,mixed>
 	 */
 	public function get_country_locale_data( $country ): array {
-		return $this->locale_info[ strtoupper( (string) $country ) ] ?? array();
+		return $this->locale_info[ strtoupper( $country ) ] ?? array();
 	}
 
 	/**

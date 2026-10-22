@@ -274,17 +274,15 @@ class WooPaymentsCutoverPreflightService {
 			);
 		}
 
-		return array_values(
-			array_map(
-				static function ( array $action ): array {
-					return array(
-						'action_id' => (int) $action['action_id'],
-						'hook'      => (string) $action['hook'],
-						'group'     => isset( $action['action_group'] ) ? (string) $action['action_group'] : '',
-					);
-				},
-				$actions
-			)
+		return array_map(
+			static function ( array $action ): array {
+				return array(
+					'action_id' => (int) $action['action_id'],
+					'hook'      => (string) $action['hook'],
+					'group'     => isset( $action['action_group'] ) ? (string) $action['action_group'] : '',
+				);
+			},
+			$actions
 		);
 	}
 
@@ -417,11 +415,7 @@ class WooPaymentsCutoverPreflightService {
 		if ( ! $this->has_automatic_multi_currency_rate_currencies() ) {
 			return false;
 		}
-		try {
-			return ! ( $this->get_rate_api_client()->is_server_connected() && $this->get_rate_account()->is_provider_connected() && ! $this->get_rate_account()->is_account_rejected() );
-		} catch ( \Throwable $e ) {
-			return true;
-		}
+		return ! ( $this->get_rate_api_client()->is_server_connected() && $this->get_rate_account()->is_provider_connected() && ! $this->get_rate_account()->is_account_rejected() );
 	}
 
 	/**

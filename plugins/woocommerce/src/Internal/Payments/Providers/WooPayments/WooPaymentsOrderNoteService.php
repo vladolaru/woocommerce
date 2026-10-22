@@ -433,13 +433,13 @@ class WooPaymentsOrderNoteService {
 	 * @throws \InvalidArgumentException When the event type has no note.
 	 */
 	public function format_other_charge_note( string $event_type, array $facts ): string {
-		$intent_id        = (string) ( $facts['intent_id'] ?? '' );
-		$charge_id        = (string) ( $facts['charge_id'] ?? '' );
-		$refund_id        = (string) ( $facts['refund_id'] ?? '' );
-		$dispute_id       = (string) ( $facts['dispute_id'] ?? '' );
-		$status           = (string) ( $facts['status'] ?? '' );
+		$intent_id        = $facts['intent_id'] ?? '';
+		$charge_id        = $facts['charge_id'] ?? '';
+		$refund_id        = $facts['refund_id'] ?? '';
+		$dispute_id       = $facts['dispute_id'] ?? '';
+		$status           = $facts['status'] ?? '';
 		$transaction_url  = esc_url( $this->transaction_url( $intent_id, $charge_id ) );
-		$dispute_url      = esc_url( (string) ( $facts['dispute_url'] ?? '' ) );
+		$dispute_url      = esc_url( $facts['dispute_url'] ?? '' );
 		$dispute_elements = array(
 			'code' => '<code>',
 			'a'    => '<a href="%3$s" target="_blank" rel="noopener noreferrer">',
@@ -450,7 +450,7 @@ class WooPaymentsOrderNoteService {
 
 		switch ( $event_type ) {
 			case 'payment_intent.succeeded':
-				$amount = WooPaymentsCurrencyUtils::format_price_in_currency( (float) ( $facts['amount'] ?? 0 ), strtoupper( (string) ( $facts['currency'] ?? '' ) ) );
+				$amount = WooPaymentsCurrencyUtils::format_price_in_currency( (float) ( $facts['amount'] ?? 0 ), strtoupper( $facts['currency'] ?? '' ) );
 				/* translators: %1$s: WooPayments charge ID, %2$s: charged amount, %3$s: transaction URL. */
 				$format = __( 'WooPayments charge <a>%1$s</a> for %2$s does not pay this order, so it was recorded without changing the order.', 'woocommerce' );
 				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $link( '%3$s' ) ), esc_html( '' !== $charge_id ? $charge_id : $intent_id ), $amount, $transaction_url );
@@ -466,7 +466,7 @@ class WooPaymentsOrderNoteService {
 				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $link( '%2$s' ) ), esc_html( $charge_id ), $transaction_url );
 
 			case 'charge.refunded':
-				$amount = WooPaymentsCurrencyUtils::format_price_in_currency( (float) ( $facts['amount'] ?? 0 ), strtoupper( (string) ( $facts['currency'] ?? '' ) ) );
+				$amount = WooPaymentsCurrencyUtils::format_price_in_currency( (float) ( $facts['amount'] ?? 0 ), strtoupper( $facts['currency'] ?? '' ) );
 				/* translators: %1$s: refunded amount, %2$s: WooPayments refund ID, %3$s: WooPayments charge ID, %4$s: transaction URL. */
 				$format = __( 'A refund of %1$s (<code>%2$s</code>) was made on WooPayments charge <a>%3$s</a>, which does not pay this order. No refund was added to the order.', 'woocommerce' );
 				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, array_merge( $link( '%4$s' ), array( 'code' => '<code>' ) ) ), $amount, esc_html( $refund_id ), esc_html( $charge_id ), $transaction_url );
@@ -497,12 +497,12 @@ class WooPaymentsOrderNoteService {
 			case 'charge.dispute.funds_reinstated':
 				/* translators: %1$s: WooPayments dispute ID, %2$s: WooPayments charge ID, %3$s: dispute details URL, %4$s: dispute status, such as "under_review", %5$s: what happened, such as "Payment dispute has been updated". */
 				$format = __( '%5$s: the dispute <code>%1$s</code> on WooPayments charge <code>%2$s</code>, which does not pay this order, has status %4$s. The order status was not changed. See the <a>dispute overview</a>.', 'woocommerce' );
-				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $dispute_elements ), esc_html( $dispute_id ), esc_html( $charge_id ), $dispute_url, esc_html( $status ), esc_html( (string) ( $facts['message'] ?? '' ) ) );
+				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, $dispute_elements ), esc_html( $dispute_id ), esc_html( $charge_id ), $dispute_url, esc_html( $status ), esc_html( $facts['message'] ?? '' ) );
 
 			case 'radar.early_fraud_warning.created':
 				/* translators: %1$s: WooPayments early fraud warning ID, %2$s: WooPayments charge ID, %3$s: transaction URL. */
 				$format = __( 'An early fraud warning (<code>%1$s</code>) was raised on WooPayments charge <a>%2$s</a>, which does not pay this order.', 'woocommerce' );
-				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, array_merge( $link( '%3$s' ), array( 'code' => '<code>' ) ) ), esc_html( (string) ( $facts['warning_id'] ?? '' ) ), esc_html( $charge_id ), $transaction_url );
+				return sprintf( WooPaymentsHtmlUtils::escape_interpolated_html( $format, array_merge( $link( '%3$s' ), array( 'code' => '<code>' ) ) ), esc_html( $facts['warning_id'] ?? '' ), esc_html( $charge_id ), $transaction_url );
 		}
 
 		// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Event types are fixed strings, not HTML output.

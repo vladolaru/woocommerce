@@ -444,7 +444,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 			) {
 				$meta_query[ $key ]['value'] = $this->get_price_projection_service()->get_price_filter_query_value(
 					$query['value'],
-					(string) $query['compare']
+					$query['compare']
 				);
 				continue;
 			}

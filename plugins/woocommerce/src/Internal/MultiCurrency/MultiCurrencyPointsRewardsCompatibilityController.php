@@ -182,8 +182,8 @@ class MultiCurrencyPointsRewardsCompatibilityController implements RegisterHooks
 			}
 
 			$call = isset( $frame['class'] )
-				? (string) $frame['class'] . (string) ( $frame['type'] ?? '::' ) . (string) $frame['function']
-				: (string) $frame['function'];
+				? $frame['class'] . ( $frame['type'] ?? '::' ) . $frame['function']
+				: $frame['function'];
 
 			if ( isset( $expected_lookup[ $call ] ) ) {
 				return true;

@@ -198,7 +198,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 
 			$currencies = $definition->get_supported_currencies( '' !== $country ? $country : null );
 			foreach ( $currencies as $currency_code ) {
-				$codes[] = strtoupper( (string) $currency_code );
+				$codes[] = strtoupper( $currency_code );
 			}
 		}
 

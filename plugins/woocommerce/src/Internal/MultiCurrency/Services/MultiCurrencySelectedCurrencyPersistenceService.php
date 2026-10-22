@@ -189,7 +189,7 @@ class MultiCurrencySelectedCurrencyPersistenceService {
 			WC()->initialize_session();
 		}
 
-		if ( ! WC()->session || ! method_exists( WC()->session, 'set' ) ) {
+		if ( ! WC()->session ) {
 			return false;
 		}
 
