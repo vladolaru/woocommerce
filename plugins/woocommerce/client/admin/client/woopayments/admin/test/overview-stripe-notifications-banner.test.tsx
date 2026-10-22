@@ -14,6 +14,7 @@ import { WooPaymentsOverviewPage } from '../overview/page';
 import {
 	createWooPaymentsAccountSession,
 	getWooPaymentsDepositsOverview,
+	getWooPaymentsDisputeReadiness,
 	getWooPaymentsOverviewShell,
 	getWooPaymentsRecentDeposits,
 } from '../overview/data';
@@ -179,6 +180,9 @@ describe( 'WooPayments Overview Stripe notifications banner', () => {
 			notes: [],
 		} );
 		( getWooPaymentsDepositsOverview as jest.Mock ).mockReturnValue(
+			new Promise( () => {} )
+		);
+		( getWooPaymentsDisputeReadiness as jest.Mock ).mockReturnValue(
 			new Promise( () => {} )
 		);
 		( getWooPaymentsRecentDeposits as jest.Mock ).mockResolvedValue( {

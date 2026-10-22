@@ -47,7 +47,6 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_onboarding_test_mode' );
 		delete_option( 'wcpay_dispute_status_counts_cache' );
 		delete_option( 'wcpay_test_dispute_status_counts_cache' );
-		delete_option( '_wcpay_feature_dispute_readiness_overview' );
 		delete_option( 'wcpay_instant_deposits_previously_eligible' );
 		delete_option( 'wcpay_instant_deposit_notice_dismissed' );
 
@@ -124,7 +123,6 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_deleted_todo_tasks', array( 'deleted-task' ) );
 		update_option( 'woocommerce_remind_me_later_todo_tasks', array( 'later-task' => 1781740800000 ) );
 		update_option( 'wcpay_connection_success_modal_dismissed', 'yes' );
-		update_option( '_wcpay_feature_dispute_readiness_overview', 'yes' );
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
@@ -194,7 +192,6 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 			),
 			$overview['account_fees']
 		);
-		$this->assertTrue( $overview['feature_flags']['dispute_readiness_overview'] );
 		$this->assertTrue( $overview['account_loans']['has_active_loan'] );
 		$this->assertSame( array( 'flxln_paid|paid', 'flxln_123456|active' ), $overview['account_loans']['loans'] );
 		$this->assertFalse( $overview['instant_deposits_previously_eligible'] );
@@ -229,7 +226,6 @@ class WooPaymentsOverviewServiceTest extends WC_Unit_Test_Case {
 		$this->assertNull( $overview['disputes_awaiting_response_count'] );
 		$this->assertNull( $overview['account_details'] );
 		$this->assertSame( array(), $overview['account_fees'] );
-		$this->assertSame( array( 'dispute_readiness_overview' => true ), $overview['feature_flags'] );
 		$this->assertFalse( $overview['account_loans']['has_active_loan'] );
 		$this->assertSame( array(), $overview['account_loans']['loans'] );
 	}

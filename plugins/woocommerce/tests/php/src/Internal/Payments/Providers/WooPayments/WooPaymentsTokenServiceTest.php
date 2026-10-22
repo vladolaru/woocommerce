@@ -1598,25 +1598,15 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Client 11.1.0 retrieves Amazon Pay on an all-gateway read only while its gateway exists and is enabled
-	 * (`includes/class-wc-payments-token-service.php:338-354`, the check at `:347-349`), and registers that gateway only
-	 * while the feature is on (`includes/payment-methods/Configs/Registry/PaymentMethodDefinitionRegistry.php:102-105`).
-	 * Core's token data store leaves out tokens of an unregistered gateway
-	 * (`includes/data-stores/class-wc-payment-token-data-store.php:259-273`).
+	 * Client 11.1.0 retrieves Amazon Pay on an all-gateway read while its gateway exists and is enabled
+	 * (`includes/class-wc-payments-token-service.php:338-354`, the check at `:347-349`).
 	 *
-	 * @testdox Should retrieve and keep one Amazon Pay token on all-gateway reads only while the Amazon Pay feature is on.
-	 * @dataProvider amazon_pay_feature_states
-	 *
-	 * @param string   $flag              The Amazon Pay feature flag option value.
-	 * @param string[] $gateway_ids       Registered gateway IDs.
-	 * @param bool     $retrieved         Whether Amazon Pay is fetched and its token returned.
-	 * @param int[]    $saved_after_reads Saved tokens after each of the two reads.
+	 * @testdox Should retrieve and keep one Amazon Pay token on all-gateway reads.
 	 */
-	public function test_reconcile_retrieves_amazon_pay_only_while_its_feature_is_on( string $flag, array $gateway_ids, bool $retrieved, array $saved_after_reads ): void {
+	public function test_reconcile_retrieves_amazon_pay(): void {
 		global $wpdb;
 
-		update_option( '_wcpay_feature_amazon_pay', $flag );
-		$this->register_gateway_ids( $gateway_ids );
+		$this->register_gateway_ids( array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay' ) );
 		$this->register_token_class_map();
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
@@ -1647,21 +1637,9 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 			$saved_counts[] = $count_tokens();
 		}
 
-		$this->assertSame( $saved_after_reads, $saved_counts, 'Saved Amazon Pay tokens after each read.' );
-		$this->assertSame( $retrieved, in_array( 'pm_amazon', $returned, true ), 'Whether the second read returns the Amazon Pay token.' );
-		$this->assertSame( $retrieved, isset( $customer_service->fetch_counts['amazon_pay'] ), 'Whether Amazon Pay is fetched from the platform.' );
-	}
-
-	/**
-	 * Amazon Pay feature states: the flag and the gateways WooCommerce registers in each.
-	 *
-	 * @return array<string,array{string,string[],bool,int[]}>
-	 */
-	public function amazon_pay_feature_states(): array {
-		return array(
-			'feature on'  => array( '1', array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay' ), true, array( 1, 1 ) ),
-			'feature off' => array( '0', array( WooPaymentsPersistenceVocabulary::GATEWAY_ID ), false, array( 0, 0 ) ),
-		);
+		$this->assertSame( array( 1, 1 ), $saved_counts, 'Saved Amazon Pay tokens after each read.' );
+		$this->assertContains( 'pm_amazon', $returned, 'The second read returns the Amazon Pay token.' );
+		$this->assertArrayHasKey( 'amazon_pay', $customer_service->fetch_counts, 'Amazon Pay is fetched from the platform.' );
 	}
 
 	/**

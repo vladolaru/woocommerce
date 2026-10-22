@@ -274,15 +274,9 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should report Amazon Pay as available only while its feature flag is on (the WooPayments extension `PaymentMethodDefinitionRegistry.php:102-104` registers it only then).
-	 * @testWith ["1", true]
-	 *           ["0", false]
-	 *
-	 * @param string $flag     The Amazon Pay feature flag option value.
-	 * @param bool   $expected Whether Amazon Pay is reported as available.
+	 * @testdox Should report Amazon Pay as available (the WooPayments extension `PaymentMethodDefinitionRegistry.php:102-104` registers it).
 	 */
-	public function test_store_setup_sync_reports_amazon_pay_only_while_its_feature_is_on( string $flag, bool $expected ): void {
-		update_option( '_wcpay_feature_amazon_pay', $flag );
+	public function test_store_setup_sync_reports_amazon_pay(): void {
 		// The account's `fees` is keyed by payment method ID, as in the recorded Fixtures/platform-test-drive-account.json `account.fees`.
 		$account_service = $this->create_account_service(
 			array(
@@ -293,13 +287,9 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		try {
-			$snapshot = $this->send_store_setup_snapshot( array( 'enabled' => 'yes' ), $account_service );
-		} finally {
-			delete_option( '_wcpay_feature_amazon_pay' );
-		}
+		$snapshot = $this->send_store_setup_snapshot( array( 'enabled' => 'yes' ), $account_service );
 
-		$this->assertSame( $expected, in_array( 'amazon_pay', $snapshot['payment_methods']['available'], true ) );
+		$this->assertContains( 'amazon_pay', $snapshot['payment_methods']['available'] );
 	}
 
 	/**
@@ -704,8 +694,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 		return array(
 			'iDEAL on a US account'                     => array( array(), 'US', 'usd', array( 'eur' => 0.9 ), 'ideal', array( 'EUR' ), array() ),
 			// Amazon Pay's supported currencies on a GB account include EUR (client 11.1.0 `includes/payment-methods/Configs/Definitions/AmazonPayDefinition.php:106-128`).
-			'Amazon Pay with its feature on'            => array( array( '_wcpay_feature_amazon_pay' => '1' ), 'GB', 'gbp', array( 'eur' => 0.9 ), 'amazon_pay', array( 'EUR' ), array() ),
-			'Amazon Pay with its feature off'           => array( array( '_wcpay_feature_amazon_pay' => '0' ), 'GB', 'gbp', array( 'eur' => 0.9 ), 'amazon_pay', array(), array( 'EUR' ) ),
+			'Amazon Pay on a GB account'                => array( array(), 'GB', 'gbp', array( 'eur' => 0.9 ), 'amazon_pay', array( 'EUR' ), array() ),
 			'Affirm on a CA account with a EUR default' => array(
 				array(),
 				'CA',

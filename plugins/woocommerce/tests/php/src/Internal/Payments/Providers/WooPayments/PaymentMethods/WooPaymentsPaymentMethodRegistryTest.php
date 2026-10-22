@@ -643,17 +643,15 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Amazon Pay is enabled only with its rollout flag on and ECE confirmation tokens on ($description).
+	 * @testdox Amazon Pay is enabled only with ECE confirmation tokens on ($description).
 	 * @dataProvider amazon_pay_gate_provider
 	 *
 	 * @param string     $description  Case.
-	 * @param string     $flag         Stored rollout flag.
 	 * @param array|null $account_data Cached account, or null for no account.
 	 * @param bool       $expected     Whether Amazon Pay is enabled.
 	 */
-	public function test_amazon_pay_follows_its_flag_and_confirmation_tokens( string $description, string $flag, ?array $account_data, bool $expected ): void {
+	public function test_amazon_pay_follows_confirmation_tokens( string $description, ?array $account_data, bool $expected ): void {
 		unset( $description );
-		update_option( '_wcpay_feature_amazon_pay', $flag );
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data' ) )
@@ -664,17 +662,16 @@ class WooPaymentsPaymentMethodRegistryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Provide Amazon Pay gate rows: case, flag, cached account, expected.
+	 * Provide Amazon Pay gate rows: case, cached account, expected.
 	 *
-	 * @return array<string,array{0:string,1:string,2:array<string,mixed>|null,3:bool}>
+	 * @return array<string,array{0:string,1:array<string,mixed>|null,2:bool}>
 	 */
 	public function amazon_pay_gate_provider(): array {
 		return array(
-			'flag on, tokens on'         => array( 'flag on, tokens on', '1', array( 'ece_confirmation_tokens_disabled' => false ), true ),
-			'flag on, tokens off'        => array( 'flag on, tokens off', '1', array( 'ece_confirmation_tokens_disabled' => true ), false ),
-			'flag off, tokens on'        => array( 'flag off, tokens on', '0', array( 'ece_confirmation_tokens_disabled' => false ), false ),
+			'tokens on'         => array( 'tokens on', array( 'ece_confirmation_tokens_disabled' => false ), true ),
+			'tokens off'        => array( 'tokens off', array( 'ece_confirmation_tokens_disabled' => true ), false ),
 			// No cached account reads as tokens off, as client 11.1.0 class-wc-payments-features.php:438-442 does.
-			'flag on, no cached account' => array( 'flag on, no cached account', '1', null, false ),
+			'no cached account' => array( 'no cached account', null, false ),
 		);
 	}
 

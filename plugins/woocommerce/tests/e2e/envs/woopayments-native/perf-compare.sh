@@ -456,7 +456,7 @@ write_gateway_rows() {
 		if [[ "$gateway_second" != '0' ]]; then verdict=fail; fi
 		if [[ "$state" == 'connected' ]]; then
 			# Budget 3: WooPaymentsProvider::build_payment_gateway_map() primes the split-gateway settings in one batch, and the
-			# Amazon Pay decision reads _wcpay_feature_amazon_pay and wcpay_onboarding_test_mode, the options the client reads for it.
+			# Amazon Pay decision reads wcpay_onboarding_test_mode.
 			if [[ $qd -gt 3 ]]; then verdict=fail; fi
 		elif [[ "$reference" == 'active_plugin' ]]; then
 			if [[ $qd -gt 2 ]]; then verdict=fail; fi

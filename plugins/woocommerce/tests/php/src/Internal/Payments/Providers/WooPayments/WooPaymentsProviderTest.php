@@ -51,7 +51,6 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		delete_option( 'woocommerce_woocommerce_payments_settings' );
 		delete_option( 'woocommerce_woocommerce_payments_affirm_settings' );
 		delete_option( 'woocommerce_woocommerce_payments_klarna_settings' );
-		delete_option( '_wcpay_feature_amazon_pay' );
 		remove_all_filters( 'wcpay_upe_available_payment_methods' );
 
 		parent::tearDown();
@@ -479,24 +478,15 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Amazon Pay identity is published only when its shared feature prerequisites are enabled.
+	 * @testdox Amazon Pay identity is published only when ECE confirmation tokens are enabled.
 	 */
 	public function test_provider_applies_amazon_pay_feature_policy_when_building_gateways(): void {
-		update_option( '_wcpay_feature_amazon_pay', '1' );
 		$confirmation_tokens_disabled = $this->create_provider_with_capabilities(
 			array( 'amazon_pay_payments' => 'active' ),
 			array( 'ece_confirmation_tokens_disabled' => true )
 		);
 		$this->assertNull( $confirmation_tokens_disabled->get_gateway_for_method( 'amazon_pay' ) );
 
-		update_option( '_wcpay_feature_amazon_pay', '0' );
-		$feature_disabled = $this->create_provider_with_capabilities(
-			array( 'amazon_pay_payments' => 'active' ),
-			array( 'ece_confirmation_tokens_disabled' => false )
-		);
-		$this->assertNull( $feature_disabled->get_gateway_for_method( 'amazon_pay' ) );
-
-		update_option( '_wcpay_feature_amazon_pay', '1' );
 		$enabled = $this->create_provider_with_capabilities(
 			array( 'amazon_pay_payments' => 'active' ),
 			array( 'ece_confirmation_tokens_disabled' => false )

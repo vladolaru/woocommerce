@@ -363,9 +363,7 @@ export const WooPaymentsOverviewPage = () => {
 	// Client 11.1.0 `overview/index.js:134-139,385`: the account status decides, not whether payments are enabled.
 	const showAccountStatusSections =
 		!! shell?.account.connected && ! isAccountRejectedOrUnderReview;
-	const shouldLoadDisputeReadiness =
-		showAccountStatusSections &&
-		!! shell?.feature_flags?.dispute_readiness_overview;
+	const shouldLoadDisputeReadiness = showAccountStatusSections;
 
 	return (
 		<div className="woocommerce-woopayments-overview__content">

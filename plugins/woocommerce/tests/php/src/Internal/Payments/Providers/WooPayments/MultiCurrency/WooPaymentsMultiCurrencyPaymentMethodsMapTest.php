@@ -115,17 +115,11 @@ class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Client 11.1.0 builds the map from the payment method map (`includes/compat/multi-currency/class-wc-payments-currency-manager.php:67-70`),
-	 * which holds Amazon Pay only while its feature is on (`includes/payment-methods/Configs/Registry/PaymentMethodDefinitionRegistry.php:102-105`).
+	 * which holds Amazon Pay (`includes/payment-methods/Configs/Registry/PaymentMethodDefinitionRegistry.php:102-105`).
 	 *
-	 * @testdox Should map Amazon Pay's currencies only while its feature is on, even when it is in the stored enabled list.
-	 * @testWith ["1", true]
-	 *           ["0", false]
-	 *
-	 * @param string $flag   The Amazon Pay feature flag option value.
-	 * @param bool   $mapped Whether Amazon Pay should appear in the map.
+	 * @testdox Should map Amazon Pay's currencies when it is in the stored enabled list.
 	 */
-	public function test_maps_amazon_pay_only_while_its_feature_is_on( string $flag, bool $mapped ): void {
-		update_option( '_wcpay_feature_amazon_pay', $flag );
+	public function test_maps_amazon_pay(): void {
 		$this->enable_methods( array( 'card', 'ideal', 'amazon_pay' ) );
 
 		$map            = $this->create_sut( true, 'GB' )->get_currency_payment_methods_map();
@@ -134,7 +128,7 @@ class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
 			static fn( array $methods ): bool => isset( $methods['amazon_pay'] )
 		);
 
-		$this->assertSame( $mapped, array() !== $amazon_pay_map );
+		$this->assertNotSame( array(), $amazon_pay_map );
 		$this->assertArrayHasKey( 'ideal', $map['EUR'] ?? array(), 'Other enabled methods stay mapped.' );
 	}
 

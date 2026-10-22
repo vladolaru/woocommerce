@@ -123,7 +123,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		delete_option( '_wcpay_feature_stripe_billing' );
 		delete_option( '_wcpay_feature_woopay_express_checkout' );
 		delete_option( '_wcpay_feature_dynamic_checkout_place_order_button' );
-		delete_option( '_wcpay_feature_amazon_pay' );
 		delete_option( '_wcpay_pm_promotion_dismissals' );
 		delete_option( 'wcpay_duplicate_payment_method_notices_dismissed' );
 		delete_option( 'wcpay_fraud_protection_welcome_tour_dismissed' );
@@ -695,63 +694,15 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should list Amazon Pay as available on the settings screen only while its feature is on (the WooPayments extension `PaymentMethodDefinitionRegistry.php:102-104`, read by the settings controller's `get_settings()` at `class-wc-rest-payments-settings-controller.php:516`).
-	 * @testWith ["1", true]
-	 *           ["0", false]
-	 *
-	 * @param string $flag   The Amazon Pay feature flag option value.
-	 * @param bool   $listed Whether Amazon Pay should be listed.
+	 * @testdox Should list Amazon Pay as available on the settings screen (the WooPayments extension `PaymentMethodDefinitionRegistry.php:102-104`, read by the settings controller's `get_settings()` at `class-wc-rest-payments-settings-controller.php:516`).
 	 */
-	public function test_get_settings_lists_amazon_pay_only_while_its_feature_is_on( string $flag, bool $listed ): void {
-		update_option( '_wcpay_feature_amazon_pay', $flag );
+	public function test_get_settings_lists_amazon_pay(): void {
 		$this->store_card_and_amazon_pay_account_data();
 
 		$available = $this->sut->get_settings()['available_payment_method_ids'];
 
-		$this->assertSame( $listed, in_array( 'amazon_pay', $available, true ) );
-		$this->assertContains( 'card', $available );
-	}
-
-	/**
-	 * @testdox Should leave Amazon Pay out of the catalog the availability filter receives while its feature is off (the WooPayments extension `PaymentMethodDefinitionRegistry.php:97-105` registers it only while the feature is on, and `class-wc-payment-gateway-wcpay.php:4851-4864` filters that catalog).
-	 */
-	public function test_availability_filter_receives_no_amazon_pay_while_its_feature_is_off(): void {
-		update_option( '_wcpay_feature_amazon_pay', '0' );
-		$this->store_card_and_amazon_pay_account_data();
-		$received = array();
-		$record   = static function ( array $payment_method_ids ) use ( &$received ): array {
-			$received = $payment_method_ids;
-
-			return $payment_method_ids;
-		};
-		add_filter( 'wcpay_upe_available_payment_methods', $record );
-
-		try {
-			$this->sut->get_settings();
-		} finally {
-			remove_filter( 'wcpay_upe_available_payment_methods', $record );
-		}
-
-		$this->assertContains( 'card', $received );
-		$this->assertNotContains( 'amazon_pay', $received );
-	}
-
-	/**
-	 * @testdox Should keep Amazon Pay available when an availability filter callback adds it while its feature is off (the WooPayments extension `class-wc-payment-gateway-wcpay.php:4864-4879` keeps what the filter returns, then intersects with the fees).
-	 */
-	public function test_availability_filter_can_add_amazon_pay_while_its_feature_is_off(): void {
-		update_option( '_wcpay_feature_amazon_pay', '0' );
-		$this->store_card_and_amazon_pay_account_data();
-		$add_amazon_pay = static fn( array $payment_method_ids ): array => array_values( array_unique( array_merge( $payment_method_ids, array( 'amazon_pay' ) ) ) );
-		add_filter( 'wcpay_upe_available_payment_methods', $add_amazon_pay );
-
-		try {
-			$available = $this->sut->get_settings()['available_payment_method_ids'];
-		} finally {
-			remove_filter( 'wcpay_upe_available_payment_methods', $add_amazon_pay );
-		}
-
 		$this->assertContains( 'amazon_pay', $available );
+		$this->assertContains( 'card', $available );
 	}
 
 	/**
@@ -794,7 +745,6 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	public function test_get_settings_exposes_disabled_express_checkout_feature_flags(): void {
 		update_option( '_wcpay_feature_woopay_express_checkout', '0' );
 		update_option( '_wcpay_feature_dynamic_checkout_place_order_button', '0' );
-		update_option( '_wcpay_feature_amazon_pay', '0' );
 		update_option(
 			'woocommerce_woocommerce_payments_settings',
 			array(
@@ -819,14 +769,12 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 		$settings = $this->sut->get_settings();
 
 		$this->assertTrue( $settings['is_woopay_enabled'], 'The saved WooPay setting should remain independent of express feature flags.' );
-		$this->assertNotContains( 'amazon_pay', $settings['available_payment_method_ids'] );
-		$this->assertNotContains( 'amazon_pay', $settings['enabled_payment_method_ids'] );
 		$this->assertSame(
 			array(
 				'woopay'                                   => true,
 				'woopayExpressCheckout'                    => false,
 				'isDynamicCheckoutPlaceOrderButtonEnabled' => false,
-				'amazonPay'                                => false,
+				'amazonPay'                                => true,
 				'isEceUsingConfirmationTokens'             => true,
 			),
 			$settings['feature_flags']

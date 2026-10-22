@@ -70,36 +70,6 @@ class WooPaymentsDisputeReadinessServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should return the reference disabled overview payload.
-	 */
-	public function test_get_disabled_overview_payload_returns_reference_shape(): void {
-		$payload = $this->sut->get_disabled_overview_payload();
-
-		$this->assertSame(
-			array(
-				'overview' => array(
-					'enabled'             => false,
-					'hidden'              => true,
-					'score'               => 0,
-					'total'               => 0,
-					'state'               => 'incomplete',
-					'isDismissed'         => true,
-					'completeSignalIds'   => array(),
-					'incompleteSignalIds' => array(),
-					'signals'             => array(),
-					'dismissal'           => array(
-						'isDismissed'       => true,
-						'isStoredDismissal' => false,
-						'reappearReason'    => 'feature_disabled',
-					),
-				),
-			),
-			$payload,
-			'Disabled dispute readiness should preserve the legacy payload shape.'
-		);
-	}
-
-	/**
 	 * @testdox Should build complete enabled overview signals from Core pages and stored account data.
 	 */
 	public function test_get_overview_payload_marks_all_signals_complete(): void {

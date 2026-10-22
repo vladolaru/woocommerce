@@ -1354,14 +1354,8 @@ describe( 'WooPaymentsOverviewPage', () => {
 		).not.toBeInTheDocument();
 	} );
 
-	it( 'renders dispute readiness when the shell feature flag and payload allow it', async () => {
-		mockGetShell.mockResolvedValue(
-			createShell( {
-				feature_flags: {
-					dispute_readiness_overview: true,
-				},
-			} )
-		);
+	it( 'renders dispute readiness when the payload allows it', async () => {
+		mockGetShell.mockResolvedValue( createShell() );
 		mockGetDisputeReadiness.mockResolvedValue(
 			createDisputeReadinessPayload()
 		);
@@ -1413,36 +1407,6 @@ describe( 'WooPaymentsOverviewPage', () => {
 					connected: false,
 					working: false,
 				},
-				feature_flags: {
-					dispute_readiness_overview: true,
-				},
-			} )
-		);
-		mockGetOverview.mockResolvedValue( createDepositsOverview() );
-		mockGetRecent.mockResolvedValue( {
-			data: [],
-			total_count: 0,
-		} );
-
-		render( <WooPaymentsOverviewPage /> );
-
-		expect(
-			await screen.findByRole( 'heading', { name: 'Balance' } )
-		).toBeInTheDocument();
-		expect( mockGetDisputeReadiness ).not.toHaveBeenCalled();
-		expect(
-			screen.queryByRole( 'heading', {
-				name: 'Dispute readiness',
-			} )
-		).not.toBeInTheDocument();
-	} );
-
-	it( 'hides dispute readiness when the feature flag is disabled', async () => {
-		mockGetShell.mockResolvedValue(
-			createShell( {
-				feature_flags: {
-					dispute_readiness_overview: false,
-				},
 			} )
 		);
 		mockGetOverview.mockResolvedValue( createDepositsOverview() );
@@ -1465,13 +1429,7 @@ describe( 'WooPaymentsOverviewPage', () => {
 	} );
 
 	it( 'dismisses dispute readiness without losing focus', async () => {
-		mockGetShell.mockResolvedValue(
-			createShell( {
-				feature_flags: {
-					dispute_readiness_overview: true,
-				},
-			} )
-		);
+		mockGetShell.mockResolvedValue( createShell() );
 		mockGetDisputeReadiness.mockResolvedValue(
 			createDisputeReadinessPayload()
 		);
@@ -1515,13 +1473,7 @@ describe( 'WooPaymentsOverviewPage', () => {
 	} );
 
 	it( 'confirms the dispute readiness statement descriptor review', async () => {
-		mockGetShell.mockResolvedValue(
-			createShell( {
-				feature_flags: {
-					dispute_readiness_overview: true,
-				},
-			} )
-		);
+		mockGetShell.mockResolvedValue( createShell() );
 		mockGetDisputeReadiness.mockResolvedValue(
 			createDisputeReadinessPayload()
 		);
@@ -1580,13 +1532,7 @@ describe( 'WooPaymentsOverviewPage', () => {
 					ReturnType< typeof dismissWooPaymentsDisputeReadinessCard >
 				>
 			>();
-		mockGetShell.mockResolvedValue(
-			createShell( {
-				feature_flags: {
-					dispute_readiness_overview: true,
-				},
-			} )
-		);
+		mockGetShell.mockResolvedValue( createShell() );
 		mockGetDisputeReadiness.mockResolvedValue(
 			createDisputeReadinessPayload()
 		);

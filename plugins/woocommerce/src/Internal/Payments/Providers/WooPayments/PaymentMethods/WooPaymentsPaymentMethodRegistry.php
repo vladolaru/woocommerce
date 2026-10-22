@@ -36,8 +36,6 @@ class WooPaymentsPaymentMethodRegistry {
 
 	private const EXPRESS_CHECKOUT = 'express_checkout';
 
-	private const AMAZON_PAY_FLAG_OPTION = '_wcpay_feature_amazon_pay';
-
 	/**
 	 * Payment methods WooPayments discontinued: they have no definition here, and settings that still name them are cleaned when a store switches to the built-in WooPayments.
 	 */
@@ -96,7 +94,7 @@ class WooPaymentsPaymentMethodRegistry {
 	}
 
 	/**
-	 * Tell whether Amazon Pay is enabled by rollout and account policy.
+	 * Tell whether Amazon Pay is enabled by account policy: it needs Express Checkout confirmation tokens.
 	 *
 	 * @since 11.2.0
 	 *
@@ -104,8 +102,7 @@ class WooPaymentsPaymentMethodRegistry {
 	 * @return bool
 	 */
 	public function is_amazon_pay_enabled( WooPaymentsAccountService $account_service ): bool {
-		return '1' === (string) get_option( self::AMAZON_PAY_FLAG_OPTION, '1' )
-			&& $account_service->is_ece_confirmation_tokens_enabled();
+		return $account_service->is_ece_confirmation_tokens_enabled();
 	}
 
 	/**

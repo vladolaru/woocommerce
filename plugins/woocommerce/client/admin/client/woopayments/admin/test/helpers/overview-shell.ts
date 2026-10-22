@@ -78,7 +78,6 @@ export const createRecordedOverviewShell = (
 		banner: null,
 	},
 	account_fees: [],
-	feature_flags: { dispute_readiness_overview: true },
 	account_loans: { has_active_loan: false, loans: [] },
 	instant_deposits_previously_eligible: false,
 	urls: {

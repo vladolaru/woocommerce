@@ -10,6 +10,7 @@ import { useSelect } from '@wordpress/data';
 import { WooPaymentsOverviewPage } from '../overview/page';
 import {
 	getWooPaymentsDepositsOverview,
+	getWooPaymentsDisputeReadiness,
 	getWooPaymentsOverviewShell,
 	getWooPaymentsRecentDeposits,
 } from '../overview/data';
@@ -31,6 +32,7 @@ jest.mock( '../../promotions/spotlight', () => ( {
 jest.mock( '../overview/data', () => ( {
 	createWooPaymentsAccountSession: jest.fn(),
 	getWooPaymentsDepositsOverview: jest.fn(),
+	getWooPaymentsDisputeReadiness: jest.fn(),
 	getWooPaymentsOverviewDisputes: jest.fn(),
 	getWooPaymentsOverviewShell: jest.fn(),
 	getWooPaymentsRecentDeposits: jest.fn(),
@@ -52,6 +54,9 @@ describe( 'WooPayments Overview Stripe notifications banner chunk failure', () =
 			notes: [],
 		} );
 		( getWooPaymentsDepositsOverview as jest.Mock ).mockReturnValue(
+			new Promise( () => {} )
+		);
+		( getWooPaymentsDisputeReadiness as jest.Mock ).mockReturnValue(
 			new Promise( () => {} )
 		);
 		( getWooPaymentsRecentDeposits as jest.Mock ).mockResolvedValue( {

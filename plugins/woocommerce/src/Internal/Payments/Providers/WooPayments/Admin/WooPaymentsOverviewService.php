@@ -63,7 +63,6 @@ class WooPaymentsOverviewService {
 			'disputes_awaiting_response_count'      => $this->get_cached_disputes_awaiting_response_count(),
 			'account_details'                       => $this->get_account_details( $account_data ),
 			'account_fees'                          => $this->get_active_account_fees( $account_data ),
-			'feature_flags'                         => $this->get_feature_flags(),
 			'account_loans'                         => $this->get_capital_loans( $account_data ),
 			// Client 11.1.0 `class-wc-payments-admin.php:1062` localizes this option as `instantDepositsPreviouslyEligible`.
 			'instant_deposits_previously_eligible'  => $this->is_truthy( get_option( 'wcpay_instant_deposits_previously_eligible', false ) ),
@@ -307,7 +306,6 @@ class WooPaymentsOverviewService {
 				'woocommerce_deleted_todo_tasks',
 				'woocommerce_remind_me_later_todo_tasks',
 				'wcpay_connection_success_modal_dismissed',
-				'_wcpay_feature_dispute_readiness_overview',
 				'wcpay_instant_deposits_previously_eligible',
 				'wcpay_instant_deposit_notice_dismissed',
 			)
@@ -388,17 +386,6 @@ class WooPaymentsOverviewService {
 		}
 
 		return array_values( array_unique( $sanitized_ids ) );
-	}
-
-	/**
-	 * Get Overview feature flags.
-	 *
-	 * @return array<string,bool>
-	 */
-	private function get_feature_flags(): array {
-		return array(
-			'dispute_readiness_overview' => $this->is_truthy( get_option( '_wcpay_feature_dispute_readiness_overview', '1' ) ),
-		);
 	}
 
 	/**

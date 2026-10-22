@@ -191,9 +191,6 @@ export interface WooPaymentsOverviewShell {
 	disputes_awaiting_response_count: number | null;
 	account_details?: WooPaymentsOverviewAccountDetails | null;
 	account_fees?: WooPaymentsOverviewAccountFee[];
-	feature_flags?: {
-		dispute_readiness_overview?: boolean;
-	};
 	account_loans?: {
 		has_active_loan?: boolean;
 		/** `<loan id>|<status>` strings, as client 11.1.0 `wcpaySettings.accountLoans.loans`. */

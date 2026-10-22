@@ -49,34 +49,6 @@ class WooPaymentsDisputeReadinessService {
 	}
 
 	/**
-	 * Returns the disabled response used while the feature flag is off.
-	 *
-	 * @since 11.0.0
-	 *
-	 * @return array<string,mixed>
-	 */
-	public function get_disabled_overview_payload(): array {
-		return array(
-			'overview' => array(
-				'enabled'             => false,
-				'hidden'              => true,
-				'score'               => 0,
-				'total'               => 0,
-				'state'               => self::STATUS_INCOMPLETE,
-				'isDismissed'         => true,
-				'completeSignalIds'   => array(),
-				'incompleteSignalIds' => array(),
-				'signals'             => array(),
-				'dismissal'           => array(
-					'isDismissed'       => true,
-					'isStoredDismissal' => false,
-					'reappearReason'    => 'feature_disabled',
-				),
-			),
-		);
-	}
-
-	/**
 	 * Builds the enabled overview payload.
 	 *
 	 * @since 11.0.0
