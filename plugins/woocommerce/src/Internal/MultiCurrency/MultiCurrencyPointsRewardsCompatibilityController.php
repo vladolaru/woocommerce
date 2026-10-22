@@ -126,7 +126,7 @@ class MultiCurrencyPointsRewardsCompatibilityController implements RegisterHooks
 		if (
 			! MultiCurrencyPointsRewardsCompatibilityProjectionService::should_convert_ratio(
 				$selected_currency->get_code() !== $default_currency->get_code(),
-				$this->is_call_in_backtrace( self::POINTS_REWARDS_DISCOUNT_DATA_CALLS )
+				MultiCurrencyRequestContext::is_call_in_backtrace( self::POINTS_REWARDS_DISCOUNT_DATA_CALLS )
 			)
 		) {
 			return $ratio;
@@ -145,16 +145,6 @@ class MultiCurrencyPointsRewardsCompatibilityController implements RegisterHooks
 	 */
 	protected function is_points_rewards_runtime_available(): bool {
 		return class_exists( 'WC_Points_Rewards' );
-	}
-
-	/**
-	 * Check if any expected call appears in the backtrace summary.
-	 *
-	 * @param string[] $calls Expected calls.
-	 * @return bool
-	 */
-	protected function is_call_in_backtrace( array $calls ): bool {
-		return MultiCurrencyRequestContext::is_call_in_backtrace( $calls );
 	}
 
 	/**

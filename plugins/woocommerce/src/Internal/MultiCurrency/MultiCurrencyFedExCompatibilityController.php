@@ -96,7 +96,7 @@ class MultiCurrencyFedExCompatibilityController implements RegisterHooksInterfac
 	public function should_convert_product_price( bool $should_convert ): bool {
 		return MultiCurrencyFedExCompatibilityProjectionService::should_convert_product_price(
 			$should_convert,
-			$this->is_call_in_backtrace( self::FEDEX_SHIPPING_CALLS )
+			MultiCurrencyRequestContext::is_call_in_backtrace( self::FEDEX_SHIPPING_CALLS )
 		);
 	}
 
@@ -109,7 +109,7 @@ class MultiCurrencyFedExCompatibilityController implements RegisterHooksInterfac
 	public function should_return_store_currency( bool $should_return ): bool {
 		return MultiCurrencyFedExCompatibilityProjectionService::should_return_store_currency(
 			$should_return,
-			$this->is_call_in_backtrace( self::FEDEX_SHIPPING_CALLS )
+			MultiCurrencyRequestContext::is_call_in_backtrace( self::FEDEX_SHIPPING_CALLS )
 		);
 	}
 
@@ -120,16 +120,6 @@ class MultiCurrencyFedExCompatibilityController implements RegisterHooksInterfac
 	 */
 	protected function is_fedex_runtime_available(): bool {
 		return class_exists( 'WC_Shipping_Fedex_Init' );
-	}
-
-	/**
-	 * Check if any expected call appears in the backtrace summary.
-	 *
-	 * @param string[] $calls Expected calls.
-	 * @return bool
-	 */
-	protected function is_call_in_backtrace( array $calls ): bool {
-		return MultiCurrencyRequestContext::is_call_in_backtrace( $calls );
 	}
 
 	/**

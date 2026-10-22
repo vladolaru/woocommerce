@@ -46,6 +46,35 @@ class MultiCurrencyRequestContextTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should find an instance or static method call on the real call stack, and nothing that is not on it.
+	 */
+	public function test_is_call_in_backtrace_matches_the_real_stack(): void {
+		$fixture = new class() {
+			/**
+			 * Ask from inside an instance method.
+			 *
+			 * @return bool
+			 */
+			public function matches_instance_method_call(): bool {
+				return MultiCurrencyRequestContext::is_call_in_backtrace( array( self::class . '->matches_instance_method_call' ) );
+			}
+
+			/**
+			 * Ask from inside a static method.
+			 *
+			 * @return bool
+			 */
+			public static function matches_static_method_call(): bool {
+				return MultiCurrencyRequestContext::is_call_in_backtrace( array( self::class . '::matches_static_method_call' ) );
+			}
+		};
+
+		$this->assertTrue( $fixture->matches_instance_method_call() );
+		$this->assertTrue( $fixture::matches_static_method_call() );
+		$this->assertFalse( MultiCurrencyRequestContext::is_call_in_backtrace( array( 'Nonexistent_Class->nonexistent_method' ) ) );
+	}
+
+	/**
 	 * @testdox Should treat normal requests as frontend requests.
 	 */
 	public function test_treats_normal_request_as_frontend_request(): void {

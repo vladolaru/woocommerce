@@ -341,7 +341,7 @@ class WooPaymentsGatewayListControllerTest extends WC_Unit_Test_Case {
 		( new PaymentsBootstrap(
 			static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
 			static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner()
-		) )->register( wc_get_container(), RequestTypeUtil::get_request_type( $is_rest_api_request ) );
+		) )->register( wc_get_container(), RequestTypeUtil::get_request_type( (bool) $is_rest_api_request() ) );
 	}
 
 	/**

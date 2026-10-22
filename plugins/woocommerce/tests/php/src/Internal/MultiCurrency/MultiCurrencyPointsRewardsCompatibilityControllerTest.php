@@ -108,58 +108,12 @@ class MultiCurrencyPointsRewardsCompatibilityControllerTest extends WC_Unit_Test
 
 	/**
 	 * @testdox Should preserve ratios while Points and Rewards discount data is calculated.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_preserves_ratios_while_discount_data_is_calculated(): void {
 		$sut = $this->create_controller();
-		$sut->set_backtrace_calls( array( 'WC_Points_Rewards_Discount->get_discount_data' ) );
-
-		$this->assertSame( '10:2', $sut->convert_points_ratio( '10:2' ) );
-	}
-
-	/**
-	 * @testdox Should preserve backtrace matching semantics against a real call stack.
-	 */
-	public function test_is_call_in_backtrace_preserves_semantics_against_real_stack(): void {
-		$sut = new class() extends MultiCurrencyPointsRewardsCompatibilityController {
-			/**
-			 * Expose the real is_call_in_backtrace() against the live stack.
-			 *
-			 * @param string[] $calls Expected call strings.
-			 * @return bool
-			 */
-			public function matches_current_backtrace( array $calls ): bool {
-				return $this->is_call_in_backtrace( $calls );
-			}
-		};
-
-		$fixture = new class() {
-			/**
-			 * Ask the controller whether an instance-method call is on the stack.
-			 *
-			 * @param object $controller Controller exposing matches_current_backtrace().
-			 * @return bool
-			 */
-			public function matches_instance_method_call( object $controller ): bool {
-				return $controller->matches_current_backtrace( array( self::class . '->matches_instance_method_call' ) );
-			}
-
-			/**
-			 * Ask the controller whether a static-method call is on the stack.
-			 *
-			 * @param object $controller Controller exposing matches_current_backtrace().
-			 * @return bool
-			 */
-			public static function matches_static_method_call( object $controller ): bool {
-				return $controller->matches_current_backtrace( array( self::class . '::matches_static_method_call' ) );
-			}
-		};
-
-		// A stack that includes the expected call returns true for both instance and static frames.
-		$this->assertTrue( $fixture->matches_instance_method_call( $sut ) );
-		$this->assertTrue( $fixture::matches_static_method_call( $sut ) );
-
-		// A stack that does not include the expected call returns false.
-		$this->assertFalse( $sut->matches_current_backtrace( array( 'Nonexistent_Class->nonexistent_method' ) ) );
+		$this->assertSame( '10:2', CallStack::run( array( 'WC_Points_Rewards_Discount->get_discount_data' ), fn() => $sut->convert_points_ratio( '10:2' ) ) );
 	}
 
 	/**
@@ -210,13 +164,6 @@ class MultiCurrencyPointsRewardsCompatibilityControllerTest extends WC_Unit_Test
 			private bool $plugins_loaded;
 
 			/**
-			 * Backtrace summary calls.
-			 *
-			 * @var string[]
-			 */
-			private array $backtrace_calls = array();
-
-			/**
 			 * Constructor.
 			 *
 			 * @param bool $points_rewards_available Whether Points and Rewards runtime is available.
@@ -239,15 +186,6 @@ class MultiCurrencyPointsRewardsCompatibilityControllerTest extends WC_Unit_Test
 			}
 
 			/**
-			 * Set backtrace summary calls.
-			 *
-			 * @param string[] $backtrace_calls Backtrace summary calls.
-			 */
-			public function set_backtrace_calls( array $backtrace_calls ): void {
-				$this->backtrace_calls = $backtrace_calls;
-			}
-
-			/**
 			 * Check if Points and Rewards runtime is available.
 			 *
 			 * @return bool
@@ -256,17 +194,6 @@ class MultiCurrencyPointsRewardsCompatibilityControllerTest extends WC_Unit_Test
 				return $this->points_rewards_available;
 			}
 
-
-
-			/**
-			 * Check if any expected call appears in the deterministic backtrace.
-			 *
-			 * @param string[] $calls Expected calls.
-			 * @return bool
-			 */
-			protected function is_call_in_backtrace( array $calls ): bool {
-				return array() !== array_intersect( $calls, $this->backtrace_calls );
-			}
 			/**
 			 * The request signals this double's case sets.
 			 *

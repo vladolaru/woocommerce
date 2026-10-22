@@ -15,7 +15,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencyBookingsCompatibilityProjectionService {
 
-
 	/**
 	 * Project the Bookings compatibility hook/filter manifest.
 	 *

@@ -533,10 +533,6 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 				return $this->product_addons_available;
 			}
 
-
-
-
-
 			/**
 			 * Get a product by ID.
 			 *
@@ -569,6 +565,7 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 			protected function get_cart_product_price( $product ): string {
 				return 'cart:' . $product->get_price();
 			}
+
 			/**
 			 * The request signals this double's case sets.
 			 *

@@ -348,7 +348,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 			unset( $wp_actions[ $hook ] ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 		}
 		try {
-			$request_type = RequestTypeUtil::get_request_type( 'rest' === $request ? '__return_true' : '__return_false' );
+			$request_type = RequestTypeUtil::get_request_type( 'rest' === $request );
 			( new MultiCurrencyBootstrap( static fn(): array => WooPaymentsProvider::get_multi_currency_classes() ) )->register( $container, $request_type );
 			( new PaymentsBootstrap(
 				static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
@@ -1044,6 +1044,6 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		( new PaymentsBootstrap(
 			static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
 			static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner()
-		) )->register( wc_get_container(), RequestTypeUtil::get_request_type( $is_rest_api_request ) );
+		) )->register( wc_get_container(), RequestTypeUtil::get_request_type( (bool) $is_rest_api_request() ) );
 	}
 }

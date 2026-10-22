@@ -15,7 +15,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencyProductAddOnsCompatibilityProjectionService {
 
-
 	/**
 	 * Project frontend Product Add-ons compatibility filters.
 	 *

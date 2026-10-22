@@ -198,13 +198,14 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 
 	/**
 	 * @testdox Should override selected currency while a My Account subscription total is formatting.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_overrides_selected_currency_while_my_account_subscription_total_is_formatting(): void {
 		$sut          = $this->create_controller();
 		$subscription = $this->create_subscription( 'EUR' );
 		$details      = array( 'price' => 'placeholder' );
-		$sut->set_backtrace_calls( array( 'WC_Subscription->get_formatted_order_total' ) );
-		$calls = array();
+		$calls        = array();
 		add_filter(
 			'wcpay_multi_currency_should_output_explicit_price',
 			static function ( bool $current_default ) use ( &$calls ): bool {
@@ -213,11 +214,16 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 			}
 		);
 
-		$this->assertSame( $details, $sut->maybe_set_current_my_account_subscription( $details, $subscription ) );
-		$this->assertSame( 'EUR', $sut->override_selected_currency( false ) );
-		$this->assertSame( '<span>$10.00</span> EUR', $sut->maybe_get_explicit_format_for_subscription_total( '<span>$10.00</span>' ) );
-		$this->assertSame( '<span>$10.00</span> EUR', $sut->maybe_clear_current_my_account_subscription( '<span>$10.00</span> EUR', $subscription ) );
-		$this->assertFalse( $sut->override_selected_currency( false ) );
+		CallStack::run(
+			array( 'WC_Subscription->get_formatted_order_total' ),
+			function () use ( $sut, $details, $subscription ): void {
+				$this->assertSame( $details, $sut->maybe_set_current_my_account_subscription( $details, $subscription ) );
+				$this->assertSame( 'EUR', $sut->override_selected_currency( false ) );
+				$this->assertSame( '<span>$10.00</span> EUR', $sut->maybe_get_explicit_format_for_subscription_total( '<span>$10.00</span>' ) );
+				$this->assertSame( '<span>$10.00</span> EUR', $sut->maybe_clear_current_my_account_subscription( '<span>$10.00</span> EUR', $subscription ) );
+				$this->assertFalse( $sut->override_selected_currency( false ) );
+			}
+		);
 		$this->assertSame( array(), $calls );
 	}
 
@@ -236,29 +242,39 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 
 	/**
 	 * @testdox Should preserve explicit currency formatting when no code is needed.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_preserves_explicit_currency_formatting_when_no_code_is_needed(): void {
 		$sut          = $this->create_controller();
 		$subscription = $this->create_subscription( 'EUR' );
-		$sut->set_backtrace_calls( array( 'WCS_Template_Loader::get_my_subscriptions' ) );
+		CallStack::run(
+			array( 'WCS_Template_Loader::get_my_subscriptions' ),
+			function () use ( $sut, $subscription ): void {
+				$sut->maybe_set_current_my_account_subscription( array(), $subscription );
 
-		$sut->maybe_set_current_my_account_subscription( array(), $subscription );
-
-		$this->assertSame( '<span>$10.00 EUR</span>', $sut->maybe_get_explicit_format_for_subscription_total( '<span>$10.00 EUR</span>' ) );
-		$this->assertSame( 'GBP', $sut->override_selected_currency( 'GBP' ) );
+				$this->assertSame( '<span>$10.00 EUR</span>', $sut->maybe_get_explicit_format_for_subscription_total( '<span>$10.00 EUR</span>' ) );
+				$this->assertSame( 'GBP', $sut->override_selected_currency( 'GBP' ) );
+			}
+		);
 	}
 
 	/**
 	 * @testdox Should skip explicit subscription total formatting when additional currencies are disabled.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_skips_explicit_subscription_total_formatting_when_additional_currencies_are_disabled(): void {
 		$sut          = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false, false, false );
 		$subscription = $this->create_subscription( 'EUR' );
-		$sut->set_backtrace_calls( array( 'WC_Subscription->get_formatted_order_total' ) );
+		CallStack::run(
+			array( 'WC_Subscription->get_formatted_order_total' ),
+			function () use ( $sut, $subscription ): void {
+				$sut->maybe_set_current_my_account_subscription( array(), $subscription );
 
-		$sut->maybe_set_current_my_account_subscription( array(), $subscription );
-
-		$this->assertSame( '<span>$10.00</span>', $sut->maybe_get_explicit_format_for_subscription_total( '<span>$10.00</span>' ) );
+				$this->assertSame( '<span>$10.00</span>', $sut->maybe_get_explicit_format_for_subscription_total( '<span>$10.00</span>' ) );
+			}
+		);
 	}
 
 	/**
@@ -282,6 +298,8 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 
 	/**
 	 * @testdox Should apply subscription product conversion decisions.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_applies_subscription_product_conversion_decisions(): void {
 		$product = (object) array( 'id' => 1 );
@@ -292,21 +310,17 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 
 		$renewal = $this->create_controller();
 		$renewal->set_subscription_cart_item( 'renewal', $this->create_subscription( 'EUR' ) );
-		$renewal->set_backtrace_calls( array( 'WC_Cart_Totals->calculate_item_totals' ) );
-
-		$this->assertFalse( $renewal->should_convert_product_price( true, $product ) );
+		$this->assertFalse( CallStack::run( array( 'WC_Cart_Totals->calculate_item_totals' ), fn() => $renewal->should_convert_product_price( true, $product ) ) );
 
 		$renewal_setup = $this->create_controller();
 		$renewal_setup->set_subscription_cart_item( 'renewal', $this->create_subscription( 'EUR' ) );
-		$renewal_setup->set_backtrace_calls( array( 'WCS_Cart_Renewal->setup_cart', 'WC_Cart_Totals->calculate_item_totals' ) );
 
-		$this->assertTrue( $renewal_setup->should_convert_product_price( true, $product ) );
+		$this->assertTrue( CallStack::run( array( 'WCS_Cart_Renewal->setup_cart', 'WC_Cart_Totals->calculate_item_totals' ), fn() => $renewal_setup->should_convert_product_price( true, $product ) ) );
 
 		$resubscribe = $this->create_controller();
 		$resubscribe->set_subscription_cart_item( 'resubscribe', $this->create_subscription( 'GBP' ) );
-		$resubscribe->set_backtrace_calls( array( 'WC_Cart->get_product_subtotal' ) );
 
-		$this->assertFalse( $resubscribe->should_convert_product_price( true, $product ) );
+		$this->assertFalse( CallStack::run( array( 'WC_Cart->get_product_subtotal' ), fn() => $resubscribe->should_convert_product_price( true, $product ) ) );
 	}
 
 	/**
@@ -321,9 +335,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 
 		$renewal = $this->create_controller();
 		$renewal->set_subscription_cart_item( 'renewal', $this->create_subscription( 'EUR' ) );
-		$renewal->set_backtrace_calls( array( 'WC_Cart_Totals->calculate_item_totals' ) );
-
-		$this->assertSame( '10.00', $renewal->get_subscription_product_price( '10.00', $product ) );
+		$this->assertSame( '10.00', CallStack::run( array( 'WC_Cart_Totals->calculate_item_totals' ), fn() => $renewal->get_subscription_product_price( '10.00', $product ) ) );
 	}
 
 	/**
@@ -339,18 +351,20 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 
 	/**
 	 * @testdox Should preserve switch subscription sign-up fees during price setup.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_preserves_switch_subscription_signup_fees_during_price_setup(): void {
 		$product = $this->create_product( 10 );
 		$sut     = $this->create_controller();
 		$sut->set_switch_cart_item( 10, 0, 'switch-item' );
-		$sut->set_backtrace_calls( array( 'WC_Subscriptions_Cart::set_subscription_prices_for_calculation' ) );
-
-		$this->assertSame( '10.00', $sut->get_subscription_product_signup_fee( '10.00', $product ) );
+		$this->assertSame( '10.00', CallStack::run( array( 'WC_Subscriptions_Cart::set_subscription_prices_for_calculation' ), fn() => $sut->get_subscription_product_signup_fee( '10.00', $product ) ) );
 	}
 
 	/**
 	 * @testdox Should preserve repeated switch sign-up fees during proration total calculation.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_preserves_repeated_switch_signup_fees_during_proration_total_calculation(): void {
 		$product = $this->create_product( 10 );
@@ -359,13 +373,13 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 
 		$this->assertSame( 20.0, $sut->get_subscription_product_signup_fee( '10.00', $product ) );
 
-		$sut->set_backtrace_calls( array( 'WC_Subscriptions_Product::get_sign_up_fee', 'WC_Cart->calculate_totals' ) );
-
-		$this->assertSame( '10.00', $sut->get_subscription_product_signup_fee( '10.00', $product ) );
+		$this->assertSame( '10.00', CallStack::run( array( 'WC_Subscriptions_Product::get_sign_up_fee', 'WC_Cart->calculate_totals' ), fn() => $sut->get_subscription_product_signup_fee( '10.00', $product ) ) );
 	}
 
 	/**
 	 * @testdox Should convert repeated switch sign-up fees while apportioning switch totals.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_converts_repeated_switch_signup_fees_while_apportioning_switch_totals(): void {
 		$product = $this->create_product( 10 );
@@ -374,9 +388,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 
 		$this->assertSame( 20.0, $sut->get_subscription_product_signup_fee( '10.00', $product ) );
 
-		$sut->set_backtrace_calls( array( 'WC_Subscriptions_Product::get_sign_up_fee', 'WC_Cart->calculate_totals', 'WCS_Switch_Totals_Calculator->apportion_sign_up_fees' ) );
-
-		$this->assertSame( 20.0, $sut->get_subscription_product_signup_fee( '10.00', $product ) );
+		$this->assertSame( 20.0, CallStack::run( array( 'WC_Subscriptions_Product::get_sign_up_fee', 'WC_Cart->calculate_totals', 'WCS_Switch_Totals_Calculator->apportion_sign_up_fees' ), fn() => $sut->get_subscription_product_signup_fee( '10.00', $product ) ) );
 	}
 
 	/**
@@ -394,6 +406,8 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 
 	/**
 	 * @testdox Should apply subscription coupon conversion decisions.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_applies_subscription_coupon_conversion_decisions(): void {
 		$sut = $this->create_controller();
@@ -404,47 +418,17 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 
 		$renewal = $this->create_controller();
 		$renewal->set_subscription_cart_item( 'renewal', $this->create_subscription( 'EUR' ) );
-		$renewal->set_backtrace_calls( array( 'WC_Discounts->apply_coupon' ) );
-
-		$this->assertFalse( $renewal->should_convert_coupon_amount( true, $this->create_coupon( 'renewal_fee' ) ) );
-		$this->assertTrue( $renewal->should_convert_coupon_amount( true, $this->create_coupon( 'fixed_cart' ) ) );
+		CallStack::run(
+			array( 'WC_Discounts->apply_coupon' ),
+			function () use ( $renewal ): void {
+				$this->assertFalse( $renewal->should_convert_coupon_amount( true, $this->create_coupon( 'renewal_fee' ) ) );
+				$this->assertTrue( $renewal->should_convert_coupon_amount( true, $this->create_coupon( 'fixed_cart' ) ) );
+			}
+		);
 
 		$early_renewal = $this->create_controller();
 		$early_renewal->set_subscription_cart_item( 'renewal', $this->create_subscription( 'EUR' ) );
-		$early_renewal->set_backtrace_calls( array( 'WCS_Cart_Early_Renewal->setup_cart', 'WC_Discounts->apply_coupon' ) );
-
-		$this->assertTrue( $early_renewal->should_convert_coupon_amount( true, $this->create_coupon( 'renewal_fee' ) ) );
-	}
-
-	/**
-	 * @testdox Should match instance method calls in the real backtrace.
-	 */
-	public function test_matches_instance_method_calls_in_real_backtrace(): void {
-		$sut = new class() extends MultiCurrencySubscriptionsCompatibilityController {
-			/**
-			 * Tell whether an expected call is present in the real backtrace.
-			 *
-			 * @param string $expected_call Expected call string.
-			 * @return bool
-			 */
-			public function matches_current_backtrace( string $expected_call ): bool {
-				return $this->is_call_in_backtrace( array( $expected_call ) );
-			}
-		};
-
-		$fixture = new class() {
-			/**
-			 * Call the controller from an instance method.
-			 *
-			 * @param object $controller Controller exposing matches_current_backtrace().
-			 * @return bool
-			 */
-			public function matches_instance_method_call( object $controller ): bool {
-				return $controller->matches_current_backtrace( self::class . '->matches_instance_method_call' );
-			}
-		};
-
-		$this->assertTrue( $fixture->matches_instance_method_call( $sut ) );
+		$this->assertTrue( CallStack::run( array( 'WCS_Cart_Early_Renewal->setup_cart', 'WC_Discounts->apply_coupon' ), fn() => $early_renewal->should_convert_coupon_amount( true, $this->create_coupon( 'renewal_fee' ) ) ) );
 	}
 
 	/**
@@ -613,13 +597,6 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 			private ?object $switch_request_subscription = null;
 
 			/**
-			 * Active backtrace calls keyed by call string.
-			 *
-			 * @var array<string,bool>
-			 */
-			private array $backtrace_calls = array();
-
-			/**
 			 * Constructor.
 			 *
 			 * @param bool $subscriptions_available Whether Subscriptions runtime is available.
@@ -690,17 +667,6 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 			}
 
 			/**
-			 * Set deterministic backtrace calls.
-			 *
-			 * @param string[] $backtrace_calls Backtrace call strings.
-			 */
-			public function set_backtrace_calls( array $backtrace_calls ): void {
-				$this->backtrace_calls = array_fill_keys( $backtrace_calls, true );
-			}
-
-
-
-			/**
 			 * Tell whether Subscriptions runtime is available.
 			 *
 			 * @return bool
@@ -708,7 +674,6 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 			protected function is_subscriptions_runtime_available(): bool {
 				return $this->subscriptions_available;
 			}
-
 
 			/**
 			 * Get a deterministic subscription cart item.
@@ -742,21 +707,6 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 				return $this->switch_request_subscription;
 			}
 
-			/**
-			 * Tell whether expected calls are present in the backtrace.
-			 *
-			 * @param string[] $expected_calls Expected call strings.
-			 * @return bool
-			 */
-			protected function is_call_in_backtrace( array $expected_calls ): bool {
-				foreach ( $expected_calls as $expected_call ) {
-					if ( isset( $this->backtrace_calls[ $expected_call ] ) ) {
-						return true;
-					}
-				}
-
-				return false;
-			}
 			/**
 			 * The request signals this double's case sets.
 			 *

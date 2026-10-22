@@ -748,7 +748,7 @@ final class WooCommerce {
 			return;
 		}
 
-		$request_type = Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil::get_request_type( fn(): bool => $this->is_rest_api_request() );
+		$request_type = Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil::get_request_type( (bool) $this->is_rest_api_request() );
 		( new Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyBootstrap(
 			static fn(): array => Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider::get_multi_currency_classes()
 		) )->register( $container, $request_type );

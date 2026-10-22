@@ -15,7 +15,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencyUpsCompatibilityProjectionService {
 
-
 	/**
 	 * Project the UPS compatibility hook/filter manifest.
 	 *

@@ -117,15 +117,18 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 
 	/**
 	 * @testdox Should convert percent deposit amount meta while Deposits form output is rendered.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_converts_percent_deposit_amount_meta_while_deposits_form_output_is_rendered(): void {
 		$sut = $this->create_controller();
-		$sut->set_backtrace_calls( array( 'WC_Deposits_Cart_Manager->deposits_form_output' ) );
-
-		$this->assertSame( 8.4, $sut->modify_cart_item_deposit_amount_meta( '10.00', $this->create_deposit_product( 'percent' ) ) );
-		$this->assertSame( '10.00', $sut->modify_cart_item_deposit_amount_meta( '10.00', $this->create_deposit_product( 'plan' ) ) );
-
-		$sut->set_backtrace_calls( array() );
+		CallStack::run(
+			array( 'WC_Deposits_Cart_Manager->deposits_form_output' ),
+			function () use ( $sut ): void {
+				$this->assertSame( 8.4, $sut->modify_cart_item_deposit_amount_meta( '10.00', $this->create_deposit_product( 'percent' ) ) );
+				$this->assertSame( '10.00', $sut->modify_cart_item_deposit_amount_meta( '10.00', $this->create_deposit_product( 'plan' ) ) );
+			}
+		);
 
 		$this->assertSame( '10.00', $sut->modify_cart_item_deposit_amount_meta( '10.00', $this->create_deposit_product( 'percent' ) ) );
 	}
@@ -135,11 +138,14 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 	 */
 	public function test_suppresses_product_price_conversion_for_payment_plans_during_cart_totals(): void {
 		$sut = $this->create_controller();
-		$sut->set_backtrace_calls( array( 'WC_Cart->calculate_totals' ) );
-
-		$this->assertFalse( $sut->maybe_convert_product_prices_for_deposits( true, $this->create_deposit_product( 'plan' ) ) );
-		$this->assertTrue( $sut->maybe_convert_product_prices_for_deposits( true, $this->create_deposit_product( 'percent' ) ) );
-		$this->assertFalse( $sut->maybe_convert_product_prices_for_deposits( false, $this->create_deposit_product( 'plan' ) ) );
+		CallStack::run(
+			array( 'WC_Cart->calculate_totals' ),
+			function () use ( $sut ): void {
+				$this->assertFalse( $sut->maybe_convert_product_prices_for_deposits( true, $this->create_deposit_product( 'plan' ) ) );
+				$this->assertTrue( $sut->maybe_convert_product_prices_for_deposits( true, $this->create_deposit_product( 'percent' ) ) );
+				$this->assertFalse( $sut->maybe_convert_product_prices_for_deposits( false, $this->create_deposit_product( 'plan' ) ) );
+			}
+		);
 	}
 
 	/**
@@ -169,52 +175,6 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 
 		$updated = wc_get_order( $remaining->get_id() );
 		$this->assertSame( 'USD', $updated->get_currency( 'view' ) );
-	}
-
-	/**
-	 * @testdox Should preserve backtrace matching semantics against a real call stack.
-	 */
-	public function test_is_call_in_backtrace_preserves_semantics_against_real_stack(): void {
-		$sut = new class() extends MultiCurrencyDepositsCompatibilityController {
-			/**
-			 * Expose the real is_call_in_backtrace() against the live stack.
-			 *
-			 * @param string[] $calls Expected call strings.
-			 * @return bool
-			 */
-			public function matches_current_backtrace( array $calls ): bool {
-				return $this->is_call_in_backtrace( $calls );
-			}
-		};
-
-		$fixture = new class() {
-			/**
-			 * Ask the controller whether an instance-method call is on the stack.
-			 *
-			 * @param object $controller Controller exposing matches_current_backtrace().
-			 * @return bool
-			 */
-			public function matches_instance_method_call( object $controller ): bool {
-				return $controller->matches_current_backtrace( array( self::class . '->matches_instance_method_call' ) );
-			}
-
-			/**
-			 * Ask the controller whether a static-method call is on the stack.
-			 *
-			 * @param object $controller Controller exposing matches_current_backtrace().
-			 * @return bool
-			 */
-			public static function matches_static_method_call( object $controller ): bool {
-				return $controller->matches_current_backtrace( array( self::class . '::matches_static_method_call' ) );
-			}
-		};
-
-		// A stack that includes the expected call returns true for both instance and static frames.
-		$this->assertTrue( $fixture->matches_instance_method_call( $sut ) );
-		$this->assertTrue( $fixture::matches_static_method_call( $sut ) );
-
-		// A stack that does not include the expected call returns false.
-		$this->assertFalse( $sut->matches_current_backtrace( array( 'Nonexistent_Class->nonexistent_method' ) ) );
 	}
 
 	/**
@@ -267,13 +227,6 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 			private bool $plugins_loaded;
 
 			/**
-			 * Backtrace summary calls.
-			 *
-			 * @var string[]
-			 */
-			private array $backtrace_calls = array();
-
-			/**
 			 * Constructor.
 			 *
 			 * @param bool        $deposits_available Whether Deposits runtime is available.
@@ -296,15 +249,6 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 			}
 
 			/**
-			 * Set backtrace summary calls.
-			 *
-			 * @param string[] $backtrace_calls Backtrace summary calls.
-			 */
-			public function set_backtrace_calls( array $backtrace_calls ): void {
-				$this->backtrace_calls = $backtrace_calls;
-			}
-
-			/**
 			 * Check if Deposits runtime is available.
 			 *
 			 * @return bool
@@ -322,17 +266,6 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 				return $this->deposits_version;
 			}
 
-
-			/**
-			 * Check if any expected call appears in the deterministic backtrace.
-			 *
-			 * @param string[] $calls Expected calls.
-			 * @return bool
-			 */
-			protected function is_call_in_backtrace( array $calls ): bool {
-				return array() !== array_intersect( $calls, $this->backtrace_calls );
-			}
-
 			/**
 			 * Gets the deposit type of a product.
 			 *
@@ -342,6 +275,7 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 			protected function get_product_deposit_type( $product ) {
 				return is_object( $product ) && isset( $product->deposit_type ) ? $product->deposit_type : false;
 			}
+
 			/**
 			 * The request signals this double's case sets.
 			 *

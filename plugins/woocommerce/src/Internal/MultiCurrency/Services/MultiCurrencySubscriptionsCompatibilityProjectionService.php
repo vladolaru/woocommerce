@@ -15,7 +15,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencySubscriptionsCompatibilityProjectionService {
 
-
 	private const SUBSCRIPTION_PERCENT_COUPON_TYPES = array(
 		'recurring_percent',
 		'sign_up_fee_percent',

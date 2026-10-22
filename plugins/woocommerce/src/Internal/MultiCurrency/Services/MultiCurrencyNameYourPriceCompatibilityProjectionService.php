@@ -15,7 +15,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencyNameYourPriceCompatibilityProjectionService {
 
-
 	/**
 	 * Project the Name Your Price compatibility hook/filter manifest.
 	 *

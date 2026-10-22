@@ -161,7 +161,7 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 		if (
 			! MultiCurrencyDepositsCompatibilityProjectionService::should_convert_deposit_amount_meta(
 				$this->get_product_deposit_type( $product ),
-				$this->is_call_in_backtrace( self::DEPOSITS_FORM_OUTPUT_CALLS )
+				MultiCurrencyRequestContext::is_call_in_backtrace( self::DEPOSITS_FORM_OUTPUT_CALLS )
 			)
 		) {
 			return $amount;
@@ -181,7 +181,7 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 		return MultiCurrencyDepositsCompatibilityProjectionService::should_convert_product_price(
 			$result,
 			$this->get_product_deposit_type( $product ),
-			$this->is_call_in_backtrace( self::CART_TOTALS_CALLS )
+			MultiCurrencyRequestContext::is_call_in_backtrace( self::CART_TOTALS_CALLS )
 		);
 	}
 
@@ -241,16 +241,6 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 	 */
 	protected function get_deposits_version(): ?string {
 		return defined( 'WC_DEPOSITS_VERSION' ) ? (string) constant( 'WC_DEPOSITS_VERSION' ) : null;
-	}
-
-	/**
-	 * Check if any expected call appears in the backtrace summary.
-	 *
-	 * @param string[] $calls Expected calls.
-	 * @return bool
-	 */
-	protected function is_call_in_backtrace( array $calls ): bool {
-		return MultiCurrencyRequestContext::is_call_in_backtrace( $calls );
 	}
 
 	/**

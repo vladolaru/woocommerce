@@ -178,9 +178,7 @@ class MultiCurrencyRequestContext {
 	 * @return array<string,mixed>
 	 */
 	public static function get_current_query_args(): array {
-		$query_args = wc_clean( wp_unslash( $_GET ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only query preservation for switcher form inputs.
-
-		return is_array( $query_args ) ? $query_args : array();
+		return (array) wc_clean( wp_unslash( $_GET ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only query preservation for switcher form inputs.
 	}
 
 	/**

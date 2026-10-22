@@ -474,7 +474,6 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 				return $this->name_your_price_function_available;
 			}
 
-
 			/**
 			 * Tell whether a product is NYP-enabled.
 			 *
@@ -498,6 +497,7 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 			protected function set_name_your_price_cart_item( array $cart_item ): array {
 				return $cart_item;
 			}
+
 			/**
 			 * The request signals this double's case sets.
 			 *

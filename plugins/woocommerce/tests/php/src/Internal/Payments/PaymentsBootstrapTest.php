@@ -9,7 +9,9 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
+use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
@@ -65,6 +67,37 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertNotFalse( $payments_rest, 'The payment provider must register its REST classes on a REST request.' );
 		$this->assertLessThan( $multi_currency_rest, $multi_currency_provider );
 		$this->assertLessThan( $payments_rest, $multi_currency_rest );
+	}
+
+	/**
+	 * @testdox WooCommerce's own load ran the composition: the Multi-Currency bootstrap put the extension-flag mirror on the Features change action.
+	 */
+	public function test_woocommerce_load_runs_the_composition(): void {
+		// The test site runs without the WooPayments extension, so the bootstrap adds the mirror whatever the features say.
+		$this->assertSame( 10, has_action( FeaturesController::FEATURE_ENABLED_CHANGED_ACTION, array( MultiCurrencyFeatureController::class, 'mirror_extension_flag' ) ) );
+	}
+
+	/**
+	 * @testdox A woocommerce_is_rest_api_request callback that returns null does not stop WooCommerce's load; the request is not REST.
+	 */
+	public function test_null_rest_api_request_answer_does_not_stop_the_load(): void {
+		$container              = $this->make_container( WooPaymentsSetupTier::CONNECTED, WooPaymentsRuntimeArbiter::OWNER_BUILTIN, MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
+		$returns_null           = static function () {
+			return null;
+		};
+		$previous_uri           = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Saved as is to restore it after the case.
+		$_SERVER['REQUEST_URI'] = '/wp-json/wc/v3/products';
+		add_filter( 'woocommerce_is_rest_api_request', $returns_null );
+
+		try {
+			$this->load_as_woocommerce_does( $container );
+		} finally {
+			remove_filter( 'woocommerce_is_rest_api_request', $returns_null );
+			$this->restore_request_uri( $previous_uri );
+		}
+
+		$this->assertNotContains( MultiCurrencyRestController::class, $container->resolved, 'A null answer is not a REST request.' );
+		$this->assertContains( MultiCurrencyFrontendPricesController::class, $container->resolved, 'Multi-Currency must still start.' );
 	}
 
 	/** @testdox With woocommerce_load_payment_providers false, WooCommerce starts neither bootstrap and does not classify the request. */

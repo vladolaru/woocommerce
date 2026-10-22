@@ -156,7 +156,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	public function adjust_amount_for_calculated_booking_cost( $costs ) {
 		if (
 			! MultiCurrencyBookingsCompatibilityProjectionService::should_adjust_calculated_booking_cost(
-				$this->is_call_in_backtrace( self::CART_ADD_TO_CART_CALLS )
+				MultiCurrencyRequestContext::is_call_in_backtrace( self::CART_ADD_TO_CART_CALLS )
 			)
 		) {
 			return $costs;
@@ -175,8 +175,8 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 		if (
 			! MultiCurrencyBookingsCompatibilityProjectionService::should_convert_booking_price(
 				$price,
-				$this->is_call_in_backtrace( self::CART_ADD_TO_CART_CALLS )
-					&& $this->is_call_in_backtrace( self::BOOKINGS_COST_CALCULATION_CALLS )
+				MultiCurrencyRequestContext::is_call_in_backtrace( self::CART_ADD_TO_CART_CALLS )
+					&& MultiCurrencyRequestContext::is_call_in_backtrace( self::BOOKINGS_COST_CALCULATION_CALLS )
 			)
 		) {
 			return $price;
@@ -185,7 +185,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 		return $this->get_price_projection_service()->get_price(
 			$price,
 			MultiCurrencyBookingsCompatibilityProjectionService::get_booking_price_type(
-				$this->is_call_in_backtrace( self::BOOKING_PRICE_HTML_CALLS )
+				MultiCurrencyRequestContext::is_call_in_backtrace( self::BOOKING_PRICE_HTML_CALLS )
 			)
 		);
 	}
@@ -219,7 +219,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 		return MultiCurrencyBookingsCompatibilityProjectionService::should_convert_booking_product_price(
 			$should_convert,
 			$this->get_product_type( $product ),
-			$this->is_call_in_backtrace( self::BOOKING_PRICE_HTML_CALLS )
+			MultiCurrencyRequestContext::is_call_in_backtrace( self::BOOKING_PRICE_HTML_CALLS )
 		);
 	}
 
@@ -258,16 +258,6 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	 */
 	protected function is_bookings_runtime_available(): bool {
 		return class_exists( 'WC_Bookings' );
-	}
-
-	/**
-	 * Check if any expected call appears in the backtrace summary.
-	 *
-	 * @param string[] $calls Expected calls.
-	 * @return bool
-	 */
-	protected function is_call_in_backtrace( array $calls ): bool {
-		return MultiCurrencyRequestContext::is_call_in_backtrace( $calls );
 	}
 
 	/**

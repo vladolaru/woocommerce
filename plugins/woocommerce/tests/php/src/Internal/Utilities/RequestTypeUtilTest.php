@@ -45,17 +45,8 @@ class RequestTypeUtilTest extends WC_Unit_Test_Case {
 		if ( $signals['admin'] ?? false ) {
 			set_current_screen( 'edit-page' );
 		}
-		$rest_checks = 0;
 
-		$type = RequestTypeUtil::get_request_type(
-			static function () use ( $signals, &$rest_checks ): bool {
-				++$rest_checks;
-				return $signals['rest'] ?? false;
-			}
-		);
-
-		$this->assertSame( $expected, $type );
-		$this->assertSame( 1, $rest_checks, 'The REST check runs once on every request.' );
+		$this->assertSame( $expected, RequestTypeUtil::get_request_type( $signals['rest'] ?? false ) );
 	}
 
 	/** @return array<string,array{array<string,bool>,string}> */

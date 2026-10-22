@@ -19,6 +19,9 @@ use WC_Unit_Test_Case;
  */
 class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 
+	/** The WooCommerce Admin new sales record call the conversion runs inside. */
+	private const SALES_RECORD_CALL = 'Automattic\WooCommerce\Admin\Notes\NewSalesRecord::sum_sales_for_date';
+
 	/**
 	 * Hooks touched by the compatibility controller.
 	 *
@@ -135,9 +138,11 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should convert sales record order totals to default currency.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_converts_sales_record_order_totals_to_default_currency(): void {
-		$sut   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, true );
+		$sut   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$order = wc_create_order();
 		$order->set_currency( 'GBP' );
 		$order->set_total( 1000 );
@@ -147,7 +152,7 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 
 		add_filter( 'woocommerce_order_query', array( $sut, 'convert_order_prices' ) );
 
-		$result = $sut->convert_order_prices( array( $order ) );
+		$result = CallStack::run( array( self::SALES_RECORD_CALL ), fn() => $sut->convert_order_prices( array( $order ) ) );
 
 		wc_get_container()->get( OrderCache::class )->remove( $order->get_id() );
 		$stored_order = wc_get_order( $order->get_id() );
@@ -160,10 +165,12 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should skip sales record conversion when context or meta do not match.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_skips_sales_record_conversion_when_context_or_meta_do_not_match(): void {
-		$wrong_context = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
-		$missing_meta  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, true );
+		$wrong_context = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+		$missing_meta  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$order         = wc_create_order();
 		$order->set_currency( 'GBP' );
 		$order->set_total( 1000 );
@@ -171,8 +178,8 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 		$object_results = (object) array( $order );
 
 		$this->assertSame( array( $order ), $wrong_context->convert_order_prices( array( $order ) ) );
-		$this->assertSame( array( $order ), $missing_meta->convert_order_prices( array( $order ) ) );
-		$this->assertSame( $object_results, $missing_meta->convert_order_prices( $object_results ) );
+		$this->assertSame( array( $order ), CallStack::run( array( self::SALES_RECORD_CALL ), fn() => $missing_meta->convert_order_prices( array( $order ) ) ) );
+		$this->assertSame( $object_results, CallStack::run( array( self::SALES_RECORD_CALL ), fn() => $missing_meta->convert_order_prices( $object_results ) ) );
 		$this->assertSame( 1000.0, (float) $order->get_total() );
 	}
 
@@ -181,17 +188,15 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string $owner                 Runtime owner.
 	 * @param bool   $is_cron               Whether the request is cron.
-	 * @param bool   $is_expected_backtrace Whether the sales-record backtrace is present.
 	 * @param int    $enabled_count         Enabled currency count.
 	 * @return MultiCurrencyCompatibilityController
 	 */
 	private function create_controller(
 		string $owner,
 		bool $is_cron = false,
-		bool $is_expected_backtrace = true,
 		int $enabled_count = 2
 	): MultiCurrencyCompatibilityController {
-		$controller = new class( $is_cron, $is_expected_backtrace ) extends MultiCurrencyCompatibilityController {
+		$controller = new class( $is_cron ) extends MultiCurrencyCompatibilityController {
 			/**
 			 * Whether the request is cron.
 			 *
@@ -200,35 +205,14 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 			private bool $is_cron;
 
 			/**
-			 * Whether the expected sales-record backtrace is present.
-			 *
-			 * @var bool
-			 */
-			private bool $is_expected_backtrace;
-
-			/**
 			 * Constructor.
 			 *
-			 * @param bool $is_cron               Whether the request is cron.
-			 * @param bool $is_expected_backtrace Whether the expected sales-record backtrace is present.
+			 * @param bool $is_cron Whether the request is cron.
 			 */
-			public function __construct( bool $is_cron, bool $is_expected_backtrace ) {
-				$this->is_cron               = $is_cron;
-				$this->is_expected_backtrace = $is_expected_backtrace;
+			public function __construct( bool $is_cron ) {
+				$this->is_cron = $is_cron;
 			}
 
-
-			/**
-			 * Tell whether expected calls are present in the backtrace.
-			 *
-			 * @param string[] $expected_calls Expected call strings.
-			 * @return bool
-			 */
-			protected function is_call_in_backtrace( array $expected_calls ): bool {
-				unset( $expected_calls );
-
-				return $this->is_expected_backtrace;
-			}
 			/**
 			 * The request signals this double's case sets.
 			 *

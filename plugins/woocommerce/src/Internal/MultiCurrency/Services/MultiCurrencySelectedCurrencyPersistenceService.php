@@ -15,7 +15,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencySelectedCurrencyPersistenceService {
 
-
 	/**
 	 * State builder.
 	 *

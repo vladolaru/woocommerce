@@ -15,7 +15,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencyFedExCompatibilityProjectionService {
 
-
 	/**
 	 * Project the FedEx compatibility hook/filter manifest.
 	 *

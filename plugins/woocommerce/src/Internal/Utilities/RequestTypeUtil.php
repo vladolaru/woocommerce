@@ -43,21 +43,19 @@ final class RequestTypeUtil {
 	/**
 	 * Get the type of the current request.
 	 *
-	 * It reads only signals that are safe while WooCommerce loads: constants, WordPress's request checks and the REST check
-	 * passed in, so it calls no WC() method. Every signal is read on every request, so the REST check runs once whatever the
-	 * type turns out to be.
+	 * It reads only signals that are safe while WooCommerce loads: constants, WordPress's request checks and the REST answer
+	 * the caller passes in, so it calls no WC() method. Every signal is read on every request, so the wp_doing_cron and
+	 * wp_doing_ajax filters run once whatever the type turns out to be.
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param callable $is_rest_api_request Whether the current request is a REST request.
-	 * @phpstan-param callable(): bool $is_rest_api_request
+	 * @param bool $is_rest_api_request Whether the current request is a REST request.
 	 * @return string One of the class constants.
 	 */
-	public static function get_request_type( callable $is_rest_api_request ): string {
+	public static function get_request_type( bool $is_rest_api_request ): string {
 		$is_cli   = Constants::is_true( 'WP_CLI' );
 		$is_cron  = wp_doing_cron() || wc_is_running_from_async_action_scheduler();
 		$is_ajax  = wp_doing_ajax();
-		$is_rest  = (bool) $is_rest_api_request();
 		$is_admin = is_admin();
 
 		if ( $is_cli ) {
@@ -69,7 +67,7 @@ final class RequestTypeUtil {
 		if ( $is_ajax ) {
 			return self::AJAX;
 		}
-		if ( $is_rest ) {
+		if ( $is_rest_api_request ) {
 			return self::REST;
 		}
 

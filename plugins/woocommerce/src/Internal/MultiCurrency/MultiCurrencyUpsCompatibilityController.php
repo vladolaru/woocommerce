@@ -93,7 +93,7 @@ class MultiCurrencyUpsCompatibilityController implements RegisterHooksInterface 
 	public function should_return_store_currency( bool $should_return ): bool {
 		return MultiCurrencyUpsCompatibilityProjectionService::should_return_store_currency(
 			$should_return,
-			$this->is_call_in_backtrace( self::UPS_SHIPPING_CALLS )
+			MultiCurrencyRequestContext::is_call_in_backtrace( self::UPS_SHIPPING_CALLS )
 		);
 	}
 
@@ -104,16 +104,6 @@ class MultiCurrencyUpsCompatibilityController implements RegisterHooksInterface 
 	 */
 	protected function is_ups_runtime_available(): bool {
 		return class_exists( 'WC_Shipping_UPS_Init' );
-	}
-
-	/**
-	 * Check if any expected call appears in the backtrace summary.
-	 *
-	 * @param string[] $calls Expected calls.
-	 * @return bool
-	 */
-	protected function is_call_in_backtrace( array $calls ): bool {
-		return MultiCurrencyRequestContext::is_call_in_backtrace( $calls );
 	}
 
 	/**

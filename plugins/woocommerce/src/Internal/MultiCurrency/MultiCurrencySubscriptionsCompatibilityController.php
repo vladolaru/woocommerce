@@ -337,8 +337,8 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 			$should_convert,
 			null !== $this->get_subscription_type_from_cart( 'renewal' ),
 			null !== $this->get_subscription_type_from_cart( 'resubscribe' ),
-			$this->is_call_in_backtrace( self::RENEWAL_SETUP_CALLS ),
-			$this->is_call_in_backtrace( self::PRODUCT_PRICE_CALCULATION_CALLS )
+			MultiCurrencyRequestContext::is_call_in_backtrace( self::RENEWAL_SETUP_CALLS ),
+			MultiCurrencyRequestContext::is_call_in_backtrace( self::PRODUCT_PRICE_CALCULATION_CALLS )
 		);
 	}
 
@@ -354,8 +354,8 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 			$should_convert,
 			$this->get_coupon_discount_type( $coupon ),
 			null !== $this->get_subscription_type_from_cart( 'renewal' ),
-			$this->is_call_in_backtrace( self::EARLY_RENEWAL_SETUP_CALLS ),
-			$this->is_call_in_backtrace( self::APPLY_COUPON_CALLS )
+			MultiCurrencyRequestContext::is_call_in_backtrace( self::EARLY_RENEWAL_SETUP_CALLS ),
+			MultiCurrencyRequestContext::is_call_in_backtrace( self::APPLY_COUPON_CALLS )
 		);
 	}
 
@@ -404,7 +404,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 			$is_switch_product = $product_id === $switch_product_id;
 
 			if ( $is_switch_product ) {
-				$is_subscription_price_setup_context = $this->is_call_in_backtrace( self::SUBSCRIPTION_PRICE_SETUP_CALLS );
+				$is_subscription_price_setup_context = MultiCurrencyRequestContext::is_call_in_backtrace( self::SUBSCRIPTION_PRICE_SETUP_CALLS );
 				$is_switch_proration_context         = $this->is_subscription_switch_proration_context( $current_switch_cart_item, $previous_switch_cart_item );
 				$has_changed_signup_fee_meta         = $this->has_changed_subscription_signup_fee_meta( $product, $current_switch_cart_item, $previous_switch_cart_item );
 			}
@@ -435,8 +435,8 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	public function maybe_set_current_my_account_subscription( $subscription_details, $subscription ): array {
 		if (
 			MultiCurrencySubscriptionsCompatibilityProjectionService::should_set_current_my_account_subscription(
-				$this->is_call_in_backtrace( self::MY_ACCOUNT_SUBSCRIPTIONS_TEMPLATE_CALLS ),
-				$this->is_call_in_backtrace( self::FORMATTED_SUBSCRIPTION_TOTAL_CALLS )
+				MultiCurrencyRequestContext::is_call_in_backtrace( self::MY_ACCOUNT_SUBSCRIPTIONS_TEMPLATE_CALLS ),
+				MultiCurrencyRequestContext::is_call_in_backtrace( self::FORMATTED_SUBSCRIPTION_TOTAL_CALLS )
 			)
 			&& null !== $this->get_subscription_currency( is_object( $subscription ) ? $subscription : null )
 		) {
@@ -629,16 +629,6 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	}
 
 	/**
-	 * Check if any expected call appears in the backtrace summary.
-	 *
-	 * @param string[] $calls Expected calls.
-	 * @return bool
-	 */
-	protected function is_call_in_backtrace( array $calls ): bool {
-		return MultiCurrencyRequestContext::is_call_in_backtrace( $calls );
-	}
-
-	/**
 	 * Tell whether switch proration totals are reading a repeated sign-up fee.
 	 *
 	 * @param string $current_switch_cart_item  Current switch cart item key.
@@ -648,9 +638,9 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	private function is_subscription_switch_proration_context( string $current_switch_cart_item, string $previous_switch_cart_item ): bool {
 		return '' !== $current_switch_cart_item
 			&& $current_switch_cart_item === $previous_switch_cart_item
-			&& $this->is_call_in_backtrace( self::SUBSCRIPTION_PRODUCT_SIGNUP_FEE_CALLS )
-			&& $this->is_call_in_backtrace( self::CART_CALCULATE_TOTALS_CALLS )
-			&& ! $this->is_call_in_backtrace( self::SWITCH_APPORTION_SIGNUP_FEE_CALLS );
+			&& MultiCurrencyRequestContext::is_call_in_backtrace( self::SUBSCRIPTION_PRODUCT_SIGNUP_FEE_CALLS )
+			&& MultiCurrencyRequestContext::is_call_in_backtrace( self::CART_CALCULATE_TOTALS_CALLS )
+			&& ! MultiCurrencyRequestContext::is_call_in_backtrace( self::SWITCH_APPORTION_SIGNUP_FEE_CALLS );
 	}
 
 	/**

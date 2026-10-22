@@ -15,7 +15,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencyDepositsCompatibilityProjectionService {
 
-
 	/**
 	 * Project the Deposits compatibility hook/filter manifest.
 	 *

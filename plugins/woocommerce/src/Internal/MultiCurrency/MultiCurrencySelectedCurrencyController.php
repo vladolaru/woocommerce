@@ -437,10 +437,10 @@ document.addEventListener( 'DOMContentLoaded', () => {
 				$data['meta_data'],
 				static function ( $meta ): bool {
 					if ( $meta instanceof \WC_Meta_Data ) {
-						return 'wcpay_currency' !== $meta->key;
+						return MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY !== $meta->key;
 					}
 
-					return ! ( is_array( $meta ) && isset( $meta['key'] ) && 'wcpay_currency' === $meta['key'] );
+					return ! ( is_array( $meta ) && isset( $meta['key'] ) && MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY === $meta['key'] );
 				}
 			)
 		);

@@ -221,7 +221,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 	 * @return mixed
 	 */
 	public function convert_order_prices( $results ) {
-		if ( ! is_array( $results ) || ! $this->is_call_in_backtrace( self::NEW_SALES_RECORD_BACKTRACE_CALLS ) ) {
+		if ( ! is_array( $results ) || ! MultiCurrencyRequestContext::is_call_in_backtrace( self::NEW_SALES_RECORD_BACKTRACE_CALLS ) ) {
 			return $results;
 		}
 
@@ -261,16 +261,6 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 		}
 
 		return $this->state_builder;
-	}
-
-	/**
-	 * Check if any expected call appears in the backtrace summary.
-	 *
-	 * @param string[] $calls Expected calls.
-	 * @return bool
-	 */
-	protected function is_call_in_backtrace( array $calls ): bool {
-		return MultiCurrencyRequestContext::is_call_in_backtrace( $calls );
 	}
 
 	/**

@@ -4866,7 +4866,6 @@ function wc_add_aria_label_to_pagination_numbers( $html, $args ) {
 	$html = $p->get_updated_html();
 	return $html;
 }
-
 add_filter( 'paginate_links_output', 'wc_add_aria_label_to_pagination_numbers', 10, 2 );
 
 if ( ! function_exists( 'wc_get_currency_switcher_markup' ) ) {

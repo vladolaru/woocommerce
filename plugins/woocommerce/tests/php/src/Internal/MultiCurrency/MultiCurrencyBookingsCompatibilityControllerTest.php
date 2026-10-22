@@ -118,32 +118,37 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 		$this->assertSame( 8.4, $sut->adjust_amount_for_calculated_booking_cost( '8.21' ) );
 		$this->assertSame( 9.9, $sut->adjust_amount_for_calculated_booking_cost( '10.00' ) );
 
-		$sut->set_backtrace_calls( array( 'WC_Cart->add_to_cart' ) );
-
-		$this->assertSame( '10.00', $sut->adjust_amount_for_calculated_booking_cost( '10.00' ) );
+		$this->assertSame( '10.00', CallStack::run( array( 'WC_Cart->add_to_cart' ), fn() => $sut->adjust_amount_for_calculated_booking_cost( '10.00' ) ) );
 	}
 
 	/**
 	 * @testdox Should convert Bookings price hooks with context-specific price types.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_converts_bookings_price_hooks_with_context_specific_price_types(): void {
 		$sut = $this->create_controller();
 
 		$this->assertSame( 8.2, $sut->get_price( '10.00' ) );
 
-		$sut->set_backtrace_calls( array( 'WC_Product_Booking->get_price_html' ) );
-
-		$this->assertSame( 8.4, $sut->get_price( '10.00' ) );
-		$this->assertSame( 0, $sut->get_price( 0 ) );
-
-		$sut->set_backtrace_calls(
-			array(
-				'WC_Cart->add_to_cart',
-				'WC_Bookings_Cost_Calculation::calculate_booking_cost',
-			)
+		CallStack::run(
+			array( 'WC_Product_Booking->get_price_html' ),
+			function () use ( $sut ): void {
+				$this->assertSame( 8.4, $sut->get_price( '10.00' ) );
+				$this->assertSame( 0, $sut->get_price( 0 ) );
+			}
 		);
 
-		$this->assertSame( '10.00', $sut->get_price( '10.00' ) );
+		$this->assertSame(
+			'10.00',
+			CallStack::run(
+				array(
+					'WC_Cart->add_to_cart',
+					'WC_Bookings_Cost_Calculation::calculate_booking_cost',
+				),
+				fn() => $sut->get_price( '10.00' )
+			)
+		);
 	}
 
 	/**
@@ -169,17 +174,22 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 
 	/**
 	 * @testdox Should suppress default product conversion for Bookings price HTML.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
 	 */
 	public function test_suppresses_default_product_conversion_for_bookings_price_html(): void {
 		$sut = $this->create_controller();
 
 		$this->assertTrue( $sut->should_convert_product_price( true, $this->create_product_type( 'booking' ) ) );
 
-		$sut->set_backtrace_calls( array( 'WC_Product_Booking->get_price_html' ) );
-
-		$this->assertFalse( $sut->should_convert_product_price( true, $this->create_product_type( 'booking' ) ) );
-		$this->assertTrue( $sut->should_convert_product_price( true, $this->create_product_type( 'simple' ) ) );
-		$this->assertFalse( $sut->should_convert_product_price( false, $this->create_product_type( 'booking' ) ) );
+		CallStack::run(
+			array( 'WC_Product_Booking->get_price_html' ),
+			function () use ( $sut ): void {
+				$this->assertFalse( $sut->should_convert_product_price( true, $this->create_product_type( 'booking' ) ) );
+				$this->assertTrue( $sut->should_convert_product_price( true, $this->create_product_type( 'simple' ) ) );
+				$this->assertFalse( $sut->should_convert_product_price( false, $this->create_product_type( 'booking' ) ) );
+			}
+		);
 	}
 
 	/**
@@ -209,52 +219,6 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 				)
 			)
 		);
-	}
-
-	/**
-	 * @testdox Should preserve backtrace matching semantics against a real call stack.
-	 */
-	public function test_is_call_in_backtrace_preserves_semantics_against_real_stack(): void {
-		$sut = new class() extends MultiCurrencyBookingsCompatibilityController {
-			/**
-			 * Expose the real is_call_in_backtrace() against the live stack.
-			 *
-			 * @param string[] $calls Expected call strings.
-			 * @return bool
-			 */
-			public function matches_current_backtrace( array $calls ): bool {
-				return $this->is_call_in_backtrace( $calls );
-			}
-		};
-
-		$fixture = new class() {
-			/**
-			 * Ask the controller whether an instance-method call is on the stack.
-			 *
-			 * @param object $controller Controller exposing matches_current_backtrace().
-			 * @return bool
-			 */
-			public function matches_instance_method_call( object $controller ): bool {
-				return $controller->matches_current_backtrace( array( self::class . '->matches_instance_method_call' ) );
-			}
-
-			/**
-			 * Ask the controller whether a static-method call is on the stack.
-			 *
-			 * @param object $controller Controller exposing matches_current_backtrace().
-			 * @return bool
-			 */
-			public static function matches_static_method_call( object $controller ): bool {
-				return $controller->matches_current_backtrace( array( self::class . '::matches_static_method_call' ) );
-			}
-		};
-
-		// A stack that includes the expected call returns true for both instance and static frames.
-		$this->assertTrue( $fixture->matches_instance_method_call( $sut ) );
-		$this->assertTrue( $fixture::matches_static_method_call( $sut ) );
-
-		// A stack that does not include the expected call returns false.
-		$this->assertFalse( $sut->matches_current_backtrace( array( 'Nonexistent_Class->nonexistent_method' ) ) );
 	}
 
 	/**
@@ -315,13 +279,6 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 			private bool $plugins_loaded;
 
 			/**
-			 * Backtrace summary calls.
-			 *
-			 * @var string[]
-			 */
-			private array $backtrace_calls = array();
-
-			/**
 			 * Constructor.
 			 *
 			 * @param bool $bookings_available Whether Bookings runtime is available.
@@ -346,15 +303,6 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 			}
 
 			/**
-			 * Set backtrace summary calls.
-			 *
-			 * @param string[] $backtrace_calls Backtrace summary calls.
-			 */
-			public function set_backtrace_calls( array $backtrace_calls ): void {
-				$this->backtrace_calls = $backtrace_calls;
-			}
-
-			/**
 			 * Check if Bookings runtime is available.
 			 *
 			 * @return bool
@@ -363,18 +311,6 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 				return $this->bookings_available;
 			}
 
-
-
-
-			/**
-			 * Check if any expected call appears in the deterministic backtrace.
-			 *
-			 * @param string[] $calls Expected calls.
-			 * @return bool
-			 */
-			protected function is_call_in_backtrace( array $calls ): bool {
-				return array() !== array_intersect( $calls, $this->backtrace_calls );
-			}
 			/**
 			 * The request signals this double's case sets.
 			 *
