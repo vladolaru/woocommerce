@@ -1438,9 +1438,6 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsAdminNavigationController
 	 */
 	private function create_controller( bool $builtin_owner, array $account_state = array(), array $badge_counts = array(), bool $connected = true ): WooPaymentsAdminNavigationController {
-		$class_name = WooPaymentsAdminNavigationController::class;
-		$this->assertTrue( class_exists( $class_name ), 'WooPayments admin navigation controller should exist.' );
-
 		$arbiter = $this->getMockBuilder( WooPaymentsRuntimeArbiter::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_builtin_owner' ) )
@@ -1451,7 +1448,7 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$badge_service   = $this->create_badge_service( $badge_counts );
 		$api_client      = $this->createMock( WooPaymentsApiClient::class );
 		$api_client->method( 'is_available' )->willReturn( $connected );
-		$controller          = new $class_name();
+		$controller          = new WooPaymentsAdminNavigationController();
 		$onboarding_redirect = new WooPaymentsOnboardingRedirect();
 		$onboarding_redirect->init( $arbiter, $api_client, $account_service );
 		$controller->init( $arbiter, $account_service, $badge_service, $onboarding_redirect );

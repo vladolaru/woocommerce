@@ -30,10 +30,8 @@ class WooPaymentsCutoverActionSchedulerTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 
-		if ( class_exists( WooPaymentsCutoverActionScheduler::class ) ) {
-			$this->sut = new WooPaymentsCutoverActionScheduler();
-			$this->cleanup_actions();
-		}
+		$this->sut = new WooPaymentsCutoverActionScheduler();
+		$this->cleanup_actions();
 	}
 
 	/**
@@ -143,14 +141,11 @@ class WooPaymentsCutoverActionSchedulerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Require the scheduler after the initial class-existence red assertion.
+	 * Get the scheduler under test.
 	 *
 	 * @return WooPaymentsCutoverActionScheduler
 	 */
 	private function require_sut(): WooPaymentsCutoverActionScheduler {
-		$this->assertTrue( class_exists( WooPaymentsCutoverActionScheduler::class ), 'The cutover Action Scheduler adapter has not been implemented yet.' );
-		$this->assertInstanceOf( WooPaymentsCutoverActionScheduler::class, $this->sut, 'The cutover Action Scheduler adapter has not been implemented yet.' );
-
 		return $this->sut;
 	}
 

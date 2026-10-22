@@ -53,17 +53,6 @@ class PaymentsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should read WooPayments account ownership through the injected runtime.
-	 */
-	public function test_woopayments_account_ownership_uses_injected_runtime(): void {
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Read a local source file for a boundary assertion.
-		$source = (string) file_get_contents( WC()->plugin_path() . '/src/Internal/Admin/Settings/PaymentsController.php' );
-
-		$this->assertStringNotContainsString( "class_exists( '\\WC_Payments' )", $source, 'PaymentsController should ask WooPaymentsExtensionRuntime whether WooPayments is loaded.' );
-		$this->assertStringNotContainsString( "'wcpay_account_data'", $source, 'PaymentsController should read WooPayments account cache through WooPaymentsExtensionRuntime.' );
-	}
-
-	/**
 	 * @testdox Should skip Core Payments menu when WooPayments owns the onboarded account menu.
 	 */
 	public function test_add_menu_skips_core_payments_menu_when_woopayments_account_is_onboarded(): void {

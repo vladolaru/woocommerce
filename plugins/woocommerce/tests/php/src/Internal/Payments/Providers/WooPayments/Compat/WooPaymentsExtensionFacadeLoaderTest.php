@@ -426,8 +426,6 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	 * @param bool $builtin_owns Whether the native runtime owns payments.
 	 */
 	private function register_extension_facades( bool $builtin_owns = true ): void {
-		$this->assertTrue( class_exists( WooPaymentsExtensionFacadeLoader::class ), 'The native runtime should provide a dedicated legacy facade loader.' );
-
 		// A process whose bootstrap found native payments enabled already registered the production loader for an ordinary
 		// request; the request under test replaces it, as it would be the only loader in that request.
 		foreach ( spl_autoload_functions() as $autoloader ) {

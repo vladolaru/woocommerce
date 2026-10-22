@@ -47,8 +47,6 @@ class WooPaymentsWooPayBlocksDataExtractorTest extends WC_Unit_Test_Case {
 	public function test_get_data_extracts_supported_checkout_block_script_data(): void {
 		$this->register_fake_mailchimp_blocks_integration();
 
-		$this->assertTrue( class_exists( WooPaymentsWooPayBlocksDataExtractor::class ), 'WooPaymentsWooPayBlocksDataExtractor should exist.' );
-
 		$extractor = new WooPaymentsWooPayBlocksDataExtractor();
 
 		$this->assertSame(
@@ -66,8 +64,6 @@ class WooPaymentsWooPayBlocksDataExtractorTest extends WC_Unit_Test_Case {
 	 * @testdox Blocks data extractor maps an unmigrated Checkout block's field attributes to WooPay field status through the checkout field settings.
 	 */
 	public function test_get_optional_fields_status_reads_checkout_block_attrs(): void {
-		$this->assertTrue( class_exists( WooPaymentsWooPayBlocksDataExtractor::class ), 'WooPaymentsWooPayBlocksDataExtractor should exist.' );
-
 		$page_id = self::factory()->post->create(
 			array(
 				'post_type'    => 'page',

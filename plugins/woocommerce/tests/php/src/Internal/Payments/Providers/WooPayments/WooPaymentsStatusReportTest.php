@@ -1011,8 +1011,6 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsStatusReport
 	 */
 	private function get_sut(): WooPaymentsStatusReport {
-		$this->assertTrue( class_exists( WooPaymentsStatusReport::class ), 'WooPaymentsStatusReport should exist.' );
-
 		$this->sut = wc_get_container()->get( WooPaymentsStatusReport::class );
 
 		return $this->sut;

@@ -73,31 +73,25 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 
-		if (
-			class_exists( WooPaymentsCutoverReconciliationJob::class )
-			&& class_exists( WooPaymentsCutoverStateStore::class )
-			&& class_exists( WooPaymentsCutoverActionScheduler::class )
-		) {
-			$request_token = new \ReflectionProperty( WooPaymentsCutoverReconciliationJob::class, 'request_token' );
-			$request_token->setAccessible( true );
-			$request_token->setValue( null );
-			$this->state_store       = new WooPaymentsCutoverStateStore();
-			$this->scheduler         = new RecordingWooPaymentsCutoverActionScheduler( $this->state_store );
-			$this->preflight_service = new class() extends WooPaymentsCutoverPreflightService {
-				/**
-				 * Report the controlled site-local activation state.
-				 *
-				 * The real implementation reads through `$legacy_proxy`, which this shared
-				 * fixture never initializes; every test using the default preflight service
-				 * exercises site-local reconciliation, so the answer is fixed.
-				 */
-				public function is_woopayments_network_active(): bool {
-					return false;
-				}
-			};
-			$this->cleanup_state();
-			$this->sut = $this->create_job( true );
-		}
+		$request_token = new \ReflectionProperty( WooPaymentsCutoverReconciliationJob::class, 'request_token' );
+		$request_token->setAccessible( true );
+		$request_token->setValue( null );
+		$this->state_store       = new WooPaymentsCutoverStateStore();
+		$this->scheduler         = new RecordingWooPaymentsCutoverActionScheduler( $this->state_store );
+		$this->preflight_service = new class() extends WooPaymentsCutoverPreflightService {
+			/**
+			 * Report the controlled site-local activation state.
+			 *
+			 * The real implementation reads through `$legacy_proxy`, which this shared
+			 * fixture never initializes; every test using the default preflight service
+			 * exercises site-local reconciliation, so the answer is fixed.
+			 */
+			public function is_woopayments_network_active(): bool {
+				return false;
+			}
+		};
+		$this->cleanup_state();
+		$this->sut = $this->create_job( true );
 	}
 
 	/**
@@ -4834,38 +4828,29 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Require the job after the initial class-existence red assertion.
+	 * Get the job under test.
 	 *
 	 * @return WooPaymentsCutoverReconciliationJob
 	 */
 	private function require_sut(): WooPaymentsCutoverReconciliationJob {
-		$this->assertTrue( class_exists( WooPaymentsCutoverReconciliationJob::class ), 'The cutover reconciliation job has not been implemented yet.' );
-		$this->assertInstanceOf( WooPaymentsCutoverReconciliationJob::class, $this->sut, 'The cutover reconciliation job has not been implemented yet.' );
-
 		return $this->sut;
 	}
 
 	/**
-	 * Require the state store fixture.
+	 * Get the state store fixture.
 	 *
 	 * @return WooPaymentsCutoverStateStore
 	 */
 	private function require_state_store(): WooPaymentsCutoverStateStore {
-		$this->assertTrue( class_exists( WooPaymentsCutoverStateStore::class ), 'The cutover state store has not been implemented yet.' );
-		$this->assertInstanceOf( WooPaymentsCutoverStateStore::class, $this->state_store, 'The cutover state store has not been implemented yet.' );
-
 		return $this->state_store;
 	}
 
 	/**
-	 * Require the scheduler fixture.
+	 * Get the scheduler fixture.
 	 *
 	 * @return RecordingWooPaymentsCutoverActionScheduler
 	 */
 	private function require_scheduler(): RecordingWooPaymentsCutoverActionScheduler {
-		$this->assertTrue( class_exists( WooPaymentsCutoverActionScheduler::class ), 'The cutover scheduler has not been implemented yet.' );
-		$this->assertInstanceOf( RecordingWooPaymentsCutoverActionScheduler::class, $this->scheduler, 'The cutover scheduler test fixture has not been initialized.' );
-
 		return $this->scheduler;
 	}
 

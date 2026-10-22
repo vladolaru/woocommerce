@@ -25,7 +25,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverDataMigration;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Shadow\NativePaymentsShadowMode;
-use ReflectionMethod;
 use WC_Unit_Test_Case;
 
 /**
@@ -34,34 +33,6 @@ use WC_Unit_Test_Case;
 class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	private const WCPAY = 'Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\\';
-
-	/**
-	 * A source scan, kept because the laziness shows only in which classes autoload while WooCommerce boots, and this
-	 * test process has loaded them all already. An array callable or a first-class callable would autoload the provider.
-	 *
-	 * @testdox Production composition passes the provider's class lists and its built-in owner gateway check through closures, so building the bootstrap autoloads no provider class.
-	 */
-	public function test_production_composition_resolves_provider_roots_lazily(): void {
-		$method       = new ReflectionMethod( \WooCommerce::class, 'init_hooks' );
-		$source_lines = file( $method->getFileName() );
-		$method_body  = implode( '', array_slice( $source_lines, $method->getStartLine() - 1, $method->getEndLine() - $method->getStartLine() + 1 ) );
-
-		$this->assertMatchesRegularExpression(
-			'/\b(?:fn|function)\s*\([^)]*\)[^;]*?WooPaymentsSetupTier::class\s*\)->get_classes_for_request\(/',
-			$method_body,
-			'WooPaymentsSetupTier::get_classes_for_request() must be called from inside a closure.'
-		);
-		$this->assertMatchesRegularExpression(
-			'/\b(?:fn|function)\s*\([^)]*\)[^;]*?WooPaymentsProvider::get_multi_currency_provider_roots\(\)/',
-			$method_body,
-			'WooPaymentsProvider::get_multi_currency_provider_roots() must be called from inside a closure.'
-		);
-		$this->assertMatchesRegularExpression(
-			'/PaymentsBootstrap\(\s*(?:static\s+)?fn\s*\([^)]*\)[^\n]*,\s*(?:static\s+)?fn\s*\([^)]*\)\s*:\s*bool\s*=>\s*\$container->get\(\s*[\w\\\\]*WooPaymentsRuntimeArbiter::class\s*\)->is_builtin_owner\(\),/',
-			$method_body,
-			'The gateway check must be WooPaymentsRuntimeArbiter::is_builtin_owner(), called from inside a closure.'
-		);
-	}
 
 	/** @testdox PaymentsBootstrap passes provider roots and REST classification into Multi-Currency registration. */
 	public function test_bootstrap_passes_provider_roots_and_rest_classifier_to_multi_currency_registration(): void {

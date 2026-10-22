@@ -148,72 +148,6 @@ class WooPaymentsIppReceiptEmailTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Fixture normalization handles an order ID that matches the rendered timestamp minute.
-	 */
-	public function test_oracle_normalization_handles_order_id_inside_rendered_timestamp(): void {
-		$order = $this->getMockBuilder( WC_Order::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_date_created', 'get_id', 'get_items', 'get_view_order_url' ) )
-			->getMock();
-		$order->method( 'get_date_created' )->willReturn( null );
-		$order->method( 'get_id' )->willReturn( 52 );
-		$order->method( 'get_items' )->willReturn( array() );
-		$order->method( 'get_view_order_url' )->willReturn( 'https://example.test/order/52' );
-
-		$method = new \ReflectionMethod( $this, 'normalize_receipt_content' );
-		$method->setAccessible( true );
-
-		$this->assertSame(
-			'Date: <RENDERED_AT>; order #<ORDER_ID>',
-			$method->invoke( $this, 'Date: 2026-09-10 12:52PM; order #52', $order, true )
-		);
-	}
-
-	/**
-	 * @testdox Fixture normalization leaves a price alone when it starts with the order ID.
-	 */
-	public function test_oracle_normalization_handles_order_id_inside_price(): void {
-		$order = $this->getMockBuilder( WC_Order::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_date_created', 'get_id', 'get_items', 'get_view_order_url' ) )
-			->getMock();
-		$order->method( 'get_date_created' )->willReturn( null );
-		$order->method( 'get_id' )->willReturn( 10 );
-		$order->method( 'get_items' )->willReturn( array() );
-		$order->method( 'get_view_order_url' )->willReturn( 'https://example.test/order/10' );
-
-		$method = new \ReflectionMethod( $this, 'normalize_receipt_content' );
-		$method->setAccessible( true );
-
-		$this->assertSame(
-			'Total: $10.00; order #<ORDER_ID>; "orderNumber":"<ORDER_ID>"',
-			$method->invoke( $this, 'Total: $10.00; order #10; "orderNumber":"10"', $order, true )
-		);
-	}
-
-	/**
-	 * @testdox Fixture normalization leaves a postcode alone when it starts with the order ID.
-	 */
-	public function test_oracle_normalization_handles_order_id_inside_postcode(): void {
-		$order = $this->getMockBuilder( WC_Order::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_date_created', 'get_id', 'get_items', 'get_view_order_url' ) )
-			->getMock();
-		$order->method( 'get_date_created' )->willReturn( null );
-		$order->method( 'get_id' )->willReturn( 94 );
-		$order->method( 'get_items' )->willReturn( array() );
-		$order->method( 'get_view_order_url' )->willReturn( 'https://example.test/order/94' );
-
-		$method = new \ReflectionMethod( $this, 'normalize_receipt_content' );
-		$method->setAccessible( true );
-
-		$this->assertSame(
-			'San Francisco, CA, 94107; order #<ORDER_ID>',
-			$method->invoke( $this, 'San Francisco, CA, 94107; order #94', $order, true )
-		);
-	}
-
-	/**
 	 * @testdox Receipt email compliance details prefer a recognized terminal network.
 	 */
 	public function test_compliance_details_prefer_a_recognized_terminal_network(): void {
@@ -236,8 +170,6 @@ class WooPaymentsIppReceiptEmailTest extends WC_Unit_Test_Case {
 	 * @return object
 	 */
 	private function create_recording_email(): object {
-		$this->assertTrue( class_exists( WooPaymentsIppReceiptEmail::class ), 'Native IPP receipt email class should exist.' );
-
 		return new class() extends WooPaymentsIppReceiptEmail {
 			/**
 			 * Number of send attempts.

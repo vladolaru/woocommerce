@@ -629,8 +629,6 @@ class WooPaymentsCutoverDataMigrationTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsCutoverDataMigration
 	 */
 	private function create_runner(): WooPaymentsCutoverDataMigration {
-		$this->assertTrue( class_exists( WooPaymentsCutoverDataMigration::class ), 'WooPaymentsCutoverDataMigration should exist.' );
-
 		$this->runner = new WooPaymentsCutoverDataMigration();
 		$this->runner->init( wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
 

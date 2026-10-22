@@ -550,10 +550,6 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 
 		foreach ( $cases as $case_name => $case ) {
 			list( $candidate_method, $arguments ) = $case;
-			$this->assertTrue( method_exists( $sut, $candidate_method ), "Missing candidate formatter for {$case_name}." );
-			if ( ! method_exists( $sut, $candidate_method ) ) {
-				continue;
-			}
 
 			$candidates = $sut->{$candidate_method}( ...$arguments );
 			$this->assertCount( 2, $candidates, "Expected Core and plugin candidates for {$case_name}." );

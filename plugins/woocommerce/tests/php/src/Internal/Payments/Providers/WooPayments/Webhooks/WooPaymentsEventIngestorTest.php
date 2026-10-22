@@ -865,7 +865,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 */
 	public function test_payment_intent_succeeded_sends_ipp_receipt_email_for_card_present_charge( string $description, ?array $account, array $expected, bool $saved = true ): void {
 		unset( $description );
-		$this->assertTrue( class_exists( WooPaymentsIppReceiptEmail::class ), 'Native IPP receipt email class should exist before webhook dispatch can send it.' );
 		// Business details saved in the settings, with other values: the receipt must not show them.
 		$saved_details = array(
 			'account_business_name'            => 'Saved Store',
@@ -1003,7 +1002,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox payment_intent.succeeded does not send an IPP receipt email for non-card-present charges.
 	 */
 	public function test_payment_intent_succeeded_does_not_send_ipp_receipt_email_for_non_card_present_charge(): void {
-		$this->assertTrue( class_exists( WooPaymentsIppReceiptEmail::class ), 'Native IPP receipt email class should exist before webhook dispatch can send it.' );
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'test_mode' => 'yes' ) );
 		$order = $this->create_woopayments_order();
 		$email = $this->create_recording_ipp_receipt_email();

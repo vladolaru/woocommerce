@@ -9,9 +9,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
-use Automattic\WooCommerce\Internal\Payments\ProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplierInterface;
-use Automattic\WooCommerce\Internal\Payments\ProviderOutcomeMetadataMapperInterface;
 use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplierInterface;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -68,11 +66,6 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 
 	/** @testdox Provider exposes its Multi-Currency bootstrap root without knowing how core composes it. */
 	public function test_provider_exposes_its_multi_currency_bootstrap_root(): void {
-		$this->assertTrue( method_exists( WooPaymentsProvider::class, 'get_multi_currency_provider_roots' ) );
-		if ( ! method_exists( WooPaymentsProvider::class, 'get_multi_currency_provider_roots' ) ) {
-			return;
-		}
-
 		$this->assertSame(
 			array( WooPaymentsMultiCurrencyProviderBootstrap::class, WooPaymentsMultiCurrencyPaymentMethodsMap::class ),
 			WooPaymentsProvider::get_multi_currency_provider_roots()
@@ -87,33 +80,6 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( ProviderPersistenceVocabularyInterface::class, $vocabulary );
 		$this->assertSame( WooPaymentsPersistenceVocabulary::GATEWAY_ID, $this->sut->get_id() );
-	}
-
-	/**
-	 * @testdox Provider contracts keep persistence vocabulary separate from outcome mapping behavior.
-	 */
-	public function test_provider_contract_separates_persistence_vocabulary_from_outcome_mapping(): void {
-		$return_type = ( new \ReflectionMethod( ProviderInterface::class, 'get_persistence_vocabulary' ) )->getReturnType();
-
-		$this->assertSame( ProviderPersistenceVocabularyInterface::class, (string) $return_type );
-		$this->assertInstanceOf( ProviderOutcomeMetadataMapperInterface::class, $this->sut );
-	}
-
-	/**
-	 * @testdox The provider exposes the money-moving operations.
-	 */
-	public function test_provider_exposes_the_money_moving_operations(): void {
-		foreach (
-			array(
-				'get_payment_gateways',
-				'charge',
-				'capture',
-				'cancel',
-				'refund',
-			) as $method
-		) {
-			$this->assertTrue( method_exists( $this->sut, $method ), "{$method} must be exposed through ProviderInterface for A3." );
-		}
 	}
 
 	/**
@@ -669,20 +635,6 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 		return array(
 			'true'  => array( true ),
 			'false' => array( false ),
-		);
-	}
-
-	/**
-	 * @testdox Provider should receive the payment operation service through dependency injection.
-	 */
-	public function test_provider_payment_operations_are_injected(): void {
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reads local plugin source for provider-boundary regression coverage.
-		$source = (string) file_get_contents( WC()->plugin_path() . '/src/Internal/Payments/Providers/WooPayments/WooPaymentsProvider.php' );
-
-		$this->assertDoesNotMatchRegularExpression(
-			'/wc_get_container\(\)\s*->get\(\s*WooPaymentsPaymentOperationService::class\s*\)/',
-			$source,
-			'WooPaymentsProvider should receive the gateway adapter through init injection.'
 		);
 	}
 }

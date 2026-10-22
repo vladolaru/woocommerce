@@ -29,10 +29,8 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	public function setUp(): void {
 		parent::setUp();
 
-		if ( class_exists( WooPaymentsCutoverStateStore::class ) ) {
-			$this->sut = new WooPaymentsCutoverStateStore();
-			$this->cleanup_options();
-		}
+		$this->sut = new WooPaymentsCutoverStateStore();
+		$this->cleanup_options();
 	}
 
 	/**
@@ -430,14 +428,11 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Require the state store after the initial class-existence red assertion.
+	 * Get the state store under test.
 	 *
 	 * @return WooPaymentsCutoverStateStore
 	 */
 	private function require_sut(): WooPaymentsCutoverStateStore {
-		$this->assertTrue( class_exists( WooPaymentsCutoverStateStore::class ), 'The cutover state store has not been implemented yet.' );
-		$this->assertInstanceOf( WooPaymentsCutoverStateStore::class, $this->sut, 'The cutover state store has not been implemented yet.' );
-
 		return $this->sut;
 	}
 
