@@ -382,6 +382,15 @@ describe( 'WooPayments checkout', () => {
 
 	beforeEach( () => {
 		jest.resetModules();
+		// The script depends on wc-checkout, which loads wc-custom-place-order-button
+		// (includes/class-wc-frontend-scripts.php), so the API is always there; an
+		// empty form makes the script find the checkout or order-pay form itself.
+		window.wc = {
+			customPlaceOrderButton: {
+				__getForm: jest.fn( () => [] ),
+				register: jest.fn(),
+			},
+		};
 		bodyEventHandlers = {};
 		checkoutFormEventHandlers = {};
 		documentEventListeners = [];
@@ -2328,9 +2337,9 @@ describe( 'WooPayments checkout', () => {
 		expectClassicCheckoutBlockedOnce();
 	} );
 
-	// T.3 Task 4 (plan-task-t3.md): a `#wcpay-confirm-si` hash with no trailing
-	// confirmation-token segment (REC-3DS-4/REC-3DS-5's shape, which never
-	// carries one) must go through handleNextAction rather than confirmSetup.
+	// A `#wcpay-confirm-si` hash with no trailing confirmation-token segment
+	// (the recorded 3DS setup shape, which never carries one) must go through
+	// handleNextAction rather than confirmSetup.
 	test( 'handles SetupIntent confirmation hashes without a confirmation token through next actions', async () => {
 		stripeMock.handleNextAction.mockResolvedValueOnce( {
 			setupIntent: { id: 'seti_native' },
@@ -2960,7 +2969,6 @@ describe( 'WooPayments checkout', () => {
 	} );
 
 	test( 'adds the fraud-prevention token before submitting the order-pay form', async () => {
-		// T.3 Task 3 (`plan-task-t3.md`, carried from the revised T.1 Batch 9):
 		// `appendPaymentFields()` calls `ensureHiddenField( form,
 		// 'wcpay-fraud-prevention-token', getFraudPreventionToken() )`
 		// (`woopayments-checkout.js:1470-1474`) on every gateway submission,

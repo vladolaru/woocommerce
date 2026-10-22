@@ -62,10 +62,6 @@
 	var ORDER_ATTRIBUTION_ELEMENT_ID =
 		'wcpay-express-checkout__order-attribution-inputs';
 
-	function getApiFetch() {
-		return window.wp && window.wp.apiFetch;
-	}
-
 	function getButtonContext() {
 		return (
 			config.button_context ||
@@ -314,7 +310,7 @@
 	 * @return {Promise} The response body.
 	 */
 	function requestCart( options, adoptSession ) {
-		var apiFetch = getApiFetch();
+		var apiFetch = window.wp.apiFetch;
 		var includeSessionNonce = isProduct();
 		var requestOptions = Object.assign( {}, options, {
 			// Pin the currency the page was rendered with, so cache-optimized
@@ -343,7 +339,7 @@
 	}
 
 	function requestOrder( options ) {
-		var apiFetch = getApiFetch();
+		var apiFetch = window.wp.apiFetch;
 
 		return apiFetch(
 			Object.assign( {}, options, {
@@ -374,20 +370,12 @@
 	}
 
 	function applyWpFilters( hookName, value, extraArg, secondExtraArg ) {
-		if (
-			window.wp &&
-			window.wp.hooks &&
-			typeof window.wp.hooks.applyFilters === 'function'
-		) {
-			return window.wp.hooks.applyFilters(
-				hookName,
-				value,
-				extraArg,
-				secondExtraArg
-			);
-		}
-
-		return value;
+		return window.wp.hooks.applyFilters(
+			hookName,
+			value,
+			extraArg,
+			secondExtraArg
+		);
 	}
 
 	function decodeEntities( text ) {
@@ -1680,7 +1668,7 @@
 	}
 
 	function requestIapiProductPreview( product ) {
-		var apiFetch = getApiFetch();
+		var apiFetch = window.wp.apiFetch;
 		var headers = Object.assign( {}, getStoreApiHeaders( true, true ), {
 			'X-WooPayments-Tokenized-Cart-Session': '',
 			'X-WooPayments-Tokenized-Cart-Is-Ephemeral-Cart': '1',
@@ -2275,11 +2263,7 @@
 	 * Register the extension compatibility filters the client 11.1.0 classic express checkout bundle imports.
 	 */
 	function registerExtensionCompatibility() {
-		var hooks = window.wp && window.wp.hooks;
-
-		if ( ! hooks || typeof hooks.addFilter !== 'function' ) {
-			return;
-		}
+		var hooks = window.wp.hooks;
 
 		// WooCommerce Deposits: send the shopper's deposit choice with the product
 		// (client shortcode-buttons-express/compatibility/wc-deposits.js:15-33).
@@ -3173,7 +3157,6 @@
 			isBlockSurface() ||
 			( ! isProduct() &&
 				! ( isPaymentRequestEnabled() || isAmazonPayEnabled() ) ) ||
-			! getApiFetch() ||
 			! document.getElementById( 'wcpay-express-checkout-element' )
 		) {
 			return;

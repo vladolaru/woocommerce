@@ -391,6 +391,7 @@ describe( 'WooPayments express checkout', () => {
 		window.$ = jQueryMock;
 		window.wp = {
 			apiFetch: jest.fn().mockResolvedValue( getCartResponse() ),
+			hooks: createWpHooks(),
 			i18n: createI18nStub(),
 		};
 		window.wcpayExpressCheckoutParams = getBaseConfig();
@@ -3193,6 +3194,7 @@ describe( 'WooPayments express checkout', () => {
 				)
 			);
 		window.wp.hooks = {
+			addFilter: jest.fn(),
 			applyFilters: jest.fn( ( hookName, defaultValue ) =>
 				hookName === 'wcpay.express-checkout.shipping-package-id'
 					? 2

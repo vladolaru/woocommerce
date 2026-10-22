@@ -148,7 +148,13 @@ describe( 'woopayments-express-checkout', () => {
 
 	beforeEach( () => {
 		apiFetch = jest.fn();
-		window.wp = { apiFetch };
+		window.wp = {
+			apiFetch,
+			hooks: {
+				addFilter: jest.fn(),
+				applyFilters: jest.fn( ( hookName, value ) => value ),
+			},
+		};
 		global.jQuery = jest.fn( () => ( { on: jest.fn() } ) );
 	} );
 

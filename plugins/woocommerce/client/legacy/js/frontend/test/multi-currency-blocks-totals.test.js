@@ -22,8 +22,4 @@ describe( 'multi-currency-blocks-totals', () => {
 		).toBe( '<price/> CAD' );
 		expect( getTotalValue( '<price/>', {}, { cart: {} } ) ).toBe( '<price/>' );
 	} );
-
-	test( 'does nothing without the checkout filter registry', () => {
-		expect( () => require( '../multi-currency-blocks-totals' ) ).not.toThrow();
-	} );
 } );

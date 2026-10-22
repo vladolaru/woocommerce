@@ -303,19 +303,11 @@
 	}
 
 	function getActivePaymentForm() {
-		var customButtonApi =
-			window.wc && window.wc.customPlaceOrderButton;
-		var form;
+		var form = window.wc.customPlaceOrderButton.__getForm();
 		var formElement;
 
-		if (
-			customButtonApi &&
-			typeof customButtonApi.__getForm === 'function'
-		) {
-			form = customButtonApi.__getForm();
-			if ( form && form.length ) {
-				return form;
-			}
+		if ( form && form.length ) {
+			return form;
 		}
 
 		formElement = document.querySelector(
@@ -1106,17 +1098,10 @@
 	}
 
 	function registerPaymentListWallet( paymentGatewayId ) {
-		var customButtonApi =
-			window.wc && window.wc.customPlaceOrderButton;
 		var walletType = getExpressWalletType( paymentGatewayId );
 		var state;
 
-		if (
-			! walletType ||
-			! customButtonApi ||
-			typeof customButtonApi.register !== 'function' ||
-			expressButtonStates[ paymentGatewayId ]
-		) {
+		if ( ! walletType || expressButtonStates[ paymentGatewayId ] ) {
 			return;
 		}
 
@@ -1127,7 +1112,7 @@
 		};
 		expressButtonStates[ paymentGatewayId ] = state;
 
-		customButtonApi.register( paymentGatewayId, {
+		window.wc.customPlaceOrderButton.register( paymentGatewayId, {
 			render: function ( container, checkoutApi ) {
 				mergeRefreshedPaymentFieldsConfig();
 

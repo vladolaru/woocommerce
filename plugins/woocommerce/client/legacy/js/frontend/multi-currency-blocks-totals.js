@@ -13,9 +13,6 @@
 		module.exports = { getTotalValue: getTotalValue };
 	}
 
-	var blocksCheckout = typeof window !== 'undefined' && window.wc && window.wc.blocksCheckout;
-	if ( blocksCheckout && blocksCheckout.registerCheckoutFilters ) {
-		// The plugin's namespace, so code that targets the plugin's filter still finds it.
-		blocksCheckout.registerCheckoutFilters( 'woocommerce-payments', { totalValue: getTotalValue } );
-	}
+	// The plugin's namespace, so code that targets the plugin's filter still finds it.
+	window.wc.blocksCheckout.registerCheckoutFilters( 'woocommerce-payments', { totalValue: getTotalValue } );
 }() );
