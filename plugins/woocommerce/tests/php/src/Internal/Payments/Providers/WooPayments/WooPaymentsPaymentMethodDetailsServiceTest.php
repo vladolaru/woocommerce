@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use RuntimeException;
 use WC_Unit_Test_Case;
@@ -83,8 +84,13 @@ class WooPaymentsPaymentMethodDetailsServiceTest extends WC_Unit_Test_Case {
 			),
 		);
 
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => fn( $class_name ) => 'WC_Payments' !== ltrim( (string) $class_name, '\\' ) && class_exists( $class_name ),
+			)
+		);
 		$extension_runtime = new WooPaymentsExtensionRuntime();
-		$extension_runtime->init( new WooPaymentsExtensionRuntimeProxy( false ) );
+		$extension_runtime->init( wc_get_container()->get( LegacyProxy::class ) );
 
 		$client = new class( $details ) extends WooPaymentsApiClient {
 				/**

@@ -32,7 +32,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntimeProxy;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\SubscriptionDouble;
@@ -1354,8 +1353,13 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsTokenService
 	 */
 	private function create_token_service_whose_payment_method_fetch_throws( \Throwable $thrown ): WooPaymentsTokenService {
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => fn( $class_name ) => 'WC_Payments' !== ltrim( (string) $class_name, '\\' ) && class_exists( $class_name ),
+			)
+		);
 		$extension_runtime = new WooPaymentsExtensionRuntime();
-		$extension_runtime->init( new WooPaymentsExtensionRuntimeProxy( false ) );
+		$extension_runtime->init( wc_get_container()->get( LegacyProxy::class ) );
 		$details_service = new WooPaymentsPaymentMethodDetailsService();
 		$details_service->init(
 			$extension_runtime,

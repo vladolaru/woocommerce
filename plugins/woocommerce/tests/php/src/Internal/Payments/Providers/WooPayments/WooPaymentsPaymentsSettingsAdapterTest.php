@@ -303,17 +303,21 @@ class WooPaymentsPaymentsSettingsAdapterTest extends WC_Unit_Test_Case {
 	 * @testdox Extension runtime seam supplies extension, gateway, account, and URL data.
 	 */
 	public function test_extension_runtime_seam_supplies_extension_gateway_account_and_url_data(): void {
-		$runtime = new WooPaymentsExtensionRuntime();
-		$runtime->init(
-			new WooPaymentsExtensionRuntimeProxy(
-				true,
-				$this->gateway,
-				$this->account_service,
-				null,
-				null,
-				'https://example.com/runtime-connect'
+		$this->legacy_proxy->register_function_mocks(
+			array(
+				'class_exists' => fn( $class_name ) => 'WC_Payments' === ltrim( (string) $class_name, '\\' ) || class_exists( $class_name ),
+				'is_callable'  => fn( $target ) => '\WC_Payments_Account::get_connect_url' === $target || is_callable( $target ),
 			)
 		);
+		$this->legacy_proxy->register_static_mocks(
+			array(
+				'WC_Payments_Account' => array(
+					'get_connect_url' => fn() => 'https://example.com/runtime-connect',
+				),
+			)
+		);
+		$runtime = new WooPaymentsExtensionRuntime();
+		$runtime->init( $this->legacy_proxy );
 
 		$adapter = new WooPaymentsPaymentsSettingsAdapter();
 		$this->init_adapter( $adapter, $runtime, $this->provider, new WooPaymentsGateway(), $this->builtin_account_service, wc_get_container()->get( WooPaymentsRuntimeArbiter::class ) );

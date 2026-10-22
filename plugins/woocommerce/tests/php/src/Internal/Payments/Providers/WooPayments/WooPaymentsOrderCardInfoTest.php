@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderCardInfo;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Tests\Internal\Payments\StaticWooPaymentsRuntimeArbiter;
 use WC_Order;
 use WC_Unit_Test_Case;
@@ -303,8 +304,13 @@ class WooPaymentsOrderCardInfoTest extends WC_Unit_Test_Case {
 	 * @param WooPaymentsApiClient $client API client double.
 	 */
 	private function register_card_info_service( WooPaymentsApiClient $client ): void {
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => fn( $class_name ) => 'WC_Payments' !== ltrim( (string) $class_name, '\\' ) && class_exists( $class_name ),
+			)
+		);
 		$extension_runtime = new WooPaymentsExtensionRuntime();
-		$extension_runtime->init( new WooPaymentsExtensionRuntimeProxy( false ) );
+		$extension_runtime->init( wc_get_container()->get( LegacyProxy::class ) );
 		$service = new WooPaymentsPaymentMethodDetailsService();
 		$service->init( $extension_runtime, $client, new StaticWooPaymentsRuntimeArbiter( true ) );
 		// The PaymentInfo fallback asks the container's service.

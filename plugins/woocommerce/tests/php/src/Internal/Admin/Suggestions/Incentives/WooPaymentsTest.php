@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Internal\Admin\Suggestions\Incentives\Incentive;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\Incentives\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntimeProxy;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use PHPUnit\Framework\MockObject\MockObject;
 use WC_Unit_Test_Case;
 
@@ -533,10 +533,14 @@ class WooPaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_incentives_context_counts_account_data_without_mode_flags() {
 		// Arrange.
-		$proxy = new WooPaymentsExtensionRuntimeProxy( false );
-		$proxy->set_account_data( array( 'data' => array( 'account_id' => '123' ) ) );
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => fn( $class_name ) => 'WC_Payments' !== ltrim( (string) $class_name, '\\' ) && class_exists( $class_name ),
+			)
+		);
+		update_option( 'wcpay_account_data', array( 'data' => array( 'account_id' => '123' ) ) );
 		$runtime = new WooPaymentsExtensionRuntime();
-		$runtime->init( $proxy );
+		$runtime->init( wc_get_container()->get( LegacyProxy::class ) );
 		$this->sut = new WooPayments( $this->suggestion_id, $runtime );
 
 		add_filter( 'pre_http_request', $this->response_mock_ref, 10, 3 );

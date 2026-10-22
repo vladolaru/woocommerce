@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
-use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntimeProxy;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
 /**
@@ -161,7 +161,22 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 		$account_resolver  = new MultiCurrencyProviderAccountResolver();
 		$arbiter           = $this->create_arbiter( $native_owner, $plugin_owner );
 		$extension_runtime = new WooPaymentsExtensionRuntime();
-		$extension_runtime->init( new WooPaymentsExtensionRuntimeProxy( true, null, $this->create_legacy_account(), $this->create_legacy_api_client() ) );
+		$legacy_account    = $this->create_legacy_account();
+		$legacy_api_client = $this->create_legacy_api_client();
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => fn( $class_name ) => 'WC_Payments' === ltrim( (string) $class_name, '\\' ) || class_exists( $class_name ),
+			)
+		);
+		$this->register_legacy_proxy_static_mocks(
+			array(
+				'WC_Payments' => array(
+					'get_account_service'     => fn() => $legacy_account,
+					'get_payments_api_client' => fn() => $legacy_api_client,
+				),
+			)
+		);
+		$extension_runtime->init( wc_get_container()->get( LegacyProxy::class ) );
 
 		$legacy_account_adapter = new WooPaymentsLegacyAccountAdapter();
 		$legacy_account_adapter->init( $extension_runtime );
