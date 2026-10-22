@@ -205,7 +205,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$token_class_map = new WooPaymentsTokenClassMapController();
 		$token_class_map->register();
 		$sut = $this->create_controller( $api_client, null, $token_service, $account_service );
-		$this->ensure_wcs_order_contains_renewal_double();
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
 		$GLOBALS['wcpay_test_renewal_order_ids'] = array( $order->get_id() );
 
 		$response = $sut->confirm_order_payment(
@@ -246,7 +246,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$subscription->set_payment_method_title( 'Card' );
 		$subscription->save();
 		// Relates the subscription without marking the order recurring: the renewal check reads its own registry.
-		$this->ensure_wcs_subscriptions_for_order_double();
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
 		$GLOBALS['wcpay_test_order_subscription_relationships'] = array( $order->get_id() => array( 'renewal' => array( $subscription->get_id() ) ) );
 
 		$api_client           = new class() extends WooPaymentsApiClient {
@@ -2589,8 +2589,8 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * @param string $renewal_status Renewal order status.
 	 */
 	public function test_update_order_status_saves_and_syncs_new_card_for_failed_or_pending_renewal( string $renewal_status ): void {
-		$this->ensure_wcs_order_contains_renewal_double();
-		$this->ensure_wcs_subscriptions_for_order_double();
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
 		$user_id      = $this->factory()->user->create();
 		$order        = $this->create_woopayments_order( '10.00' );
 		$subscription = $this->create_woopayments_order( '10.00' );
@@ -2835,7 +2835,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * @param string $expected_notice   Success notice the shopper sees.
 	 */
 	public function test_update_order_status_updates_subscription_payment_method_after_change_payment_confirmation( bool $update_all_result, string $expected_notice ): void {
-		$this->ensure_wcs_change_payment_gateway_double();
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
 		\WC_Subscriptions_Change_Payment_Gateway::$update_all_payment_methods_result = $update_all_result;
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
@@ -2949,7 +2949,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * change request flag is set (includes/core/class-wc-subscription.php:2025-2041).
 	 */
 	public function test_update_order_status_confirms_change_payment_setup_intent_on_subscription_with_recurring_total(): void {
-		$this->ensure_wcs_change_payment_gateway_double();
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
 		\WC_Subscriptions_Change_Payment_Gateway::$will_update_all_payment_methods = false;
 		WooCommerceSubscriptionsDoubles::load();
 		WooCommerceSubscriptionsDoubles::load_subscription_detector();
@@ -3086,7 +3086,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 * A subscription with a recurring total whose new card cannot be saved: the confirmation refuses it inside the flag's scope.
 	 */
 	public function test_update_order_status_restores_the_change_request_flag_when_the_change_fails(): void {
-		$this->ensure_wcs_change_payment_gateway_double();
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
 		WooCommerceSubscriptionsDoubles::load();
 		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		WooCommerceSubscriptionsDoubles::load_order_detector();
@@ -3232,7 +3232,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		};
 		$sut           = $this->create_controller( $api_client, null, $token_service );
 
-		$this->ensure_wcs_order_contains_renewal_double();
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
 		$GLOBALS['wcpay_test_renewal_order_ids'] = array( $order->get_id() );
 
 		$response = $sut->confirm_order_payment(
@@ -4272,89 +4272,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	 */
 	private function make_parent_order_of( WC_Order $order, WC_Order $subscription ): void {
 		WooCommerceSubscriptionsDoubles::load_order_detector();
-		$this->ensure_wcs_subscriptions_for_order_double();
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
 		$GLOBALS['wcpay_test_order_subscription_relationships'] = array( $order->get_id() => array( 'parent' => array( $subscription->get_id() ) ) );
-	}
-
-	/**
-	 * Ensure a WCS subscriptions-for-order double with WCS relationship defaults exists.
-	 *
-	 * @return void
-	 */
-	private function ensure_wcs_subscriptions_for_order_double(): void {
-		if ( function_exists( 'wcs_get_subscriptions_for_order' ) ) {
-			return;
-		}
-
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public order lookup contract.
-		eval( 'namespace { function wcs_get_subscriptions_for_order( $order_id, $args = array() ) { $order_id = is_object( $order_id ) && method_exists( $order_id, "get_id" ) ? $order_id->get_id() : absint( $order_id ); $order_types = $args["order_type"] ?? array( "parent", "switch" ); $order_types = is_array( $order_types ) ? $order_types : array( $order_types ); $relationships = $GLOBALS["wcpay_test_order_subscription_relationships"][ $order_id ] ?? array(); $order_types = in_array( "any", $order_types, true ) ? array_keys( $relationships ) : $order_types; $ids = array(); foreach ( $order_types as $order_type ) { $ids = array_merge( $ids, $relationships[ $order_type ] ?? array() ); } return array_values( array_filter( array_map( "wc_get_order", array_unique( array_map( "absint", $ids ) ) ) ) ); } }' );
-	}
-
-	/**
-	 * Ensure a renewal-order detector double exists.
-	 *
-	 * @return void
-	 */
-	private function ensure_wcs_order_contains_renewal_double(): void {
-		if ( function_exists( 'wcs_order_contains_renewal' ) ) {
-			return;
-		}
-
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public renewal detector.
-		eval( 'namespace { function wcs_order_contains_renewal( $order ) { $order_id = is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : absint( $order ); return in_array( $order_id, $GLOBALS["wcpay_test_renewal_order_ids"] ?? array(), true ); } }' );
-	}
-
-	/**
-	 * Ensure a minimal WC Subscriptions change-payment gateway double exists.
-	 *
-	 * @return void
-	 */
-	private function ensure_wcs_change_payment_gateway_double(): void {
-		if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) ) {
-			\WC_Subscriptions_Change_Payment_Gateway::reset();
-			return;
-		}
-
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- The production class is optional; tests need a process-local stand-in.
-		eval(
-			<<<'PHP'
-			namespace {
-			class WC_Subscriptions_Change_Payment_Gateway {
-				public static $is_request_to_change_payment = false;
-				public static $updated_payment_methods = array();
-				public static $updated_all_payment_methods = array();
-				public static $will_update_all_payment_methods = true;
-				public static $update_all_payment_methods_result = true;
-
-				public static function reset() {
-					self::$updated_payment_methods = array();
-					self::$updated_all_payment_methods = array();
-					self::$will_update_all_payment_methods = true;
-					self::$update_all_payment_methods_result = true;
-				}
-
-				public static function update_payment_method( $order, $gateway_id ) {
-					self::$updated_payment_methods[] = array(
-						"order_id" => is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : 0,
-						"gateway_id" => $gateway_id,
-					);
-				}
-
-				public static function will_subscription_update_all_payment_methods( $order ) {
-					unset( $order );
-					return self::$will_update_all_payment_methods;
-				}
-
-				public static function update_all_payment_methods_from_subscription( $order, $gateway_id ) {
-					self::$updated_all_payment_methods[] = array(
-						"order_id" => is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : 0,
-						"gateway_id" => $gateway_id,
-					);
-					return self::$update_all_payment_methods_result;
-				}
-			}
-			}
-PHP
-		);
 	}
 }

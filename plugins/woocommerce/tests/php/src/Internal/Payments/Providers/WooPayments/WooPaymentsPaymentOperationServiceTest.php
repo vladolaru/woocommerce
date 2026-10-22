@@ -3509,7 +3509,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Charge should resolve saved WooCommerce token IDs before the transport call.
 	 *
-	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The response is now REC-3DS-1's saved-PM
+	 * T.3 Task 4: RECORD swap. The response is now REC-3DS-1's saved-PM
 	 * variant (`Fixtures/platform-intention-3ds-requires-action.json`, pair
 	 * `saved_payment_method_requires_action`): an on-session PaymentIntent for an already-attached
 	 * 3DS-required card, real from the local platform. The token-resolution guard this test exists
@@ -3590,7 +3590,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_subscription_checkout_composition_matches_11_1_request_shape( string $created_via, bool $is_renewal, string $expected_payment_type, string $expected_subscription_payment ): void {
 		$this->ensure_wcs_order_subscription_detector_double();
-		$this->ensure_wcs_order_renewal_detector_double();
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
 
 		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		$order   = $this->create_woopayments_order( '12.34' );
@@ -3880,7 +3880,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Customer-present early renewals should send recurring renewal metadata without off-session semantics.
 	 */
 	public function test_customer_present_early_renewal_uses_recurring_renewal_request_shape(): void {
-		$this->ensure_wcs_order_renewal_detector_double();
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
 		$user_id          = self::factory()->user->create( array( 'role' => 'customer' ) );
 		$order            = $this->create_woopayments_order( '9.99' );
 		$saved_token      = $this->create_card_token( $user_id, 'pm_plugin_subscription' );
@@ -3983,7 +3983,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Customer-present early renewals retain online mandate data for methods that require it.
 	 */
 	public function test_customer_present_early_renewal_retains_online_mandate_data(): void {
-		$this->ensure_wcs_order_renewal_detector_double();
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
 		$order = $this->create_woopayments_order( '9.99' );
 		$order->set_currency( 'EUR' );
 		$order->set_customer_ip_address( '203.0.113.7' );
@@ -4682,7 +4682,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A card decline over a fake transport fails the order exactly once with the recorded intent identity.
 	 *
-	 * T.3 Task 2 (`plan-task-t3.md`): joins the two halves T.1 proved separately — the adapter's own
+	 * T.3 Task 2: joins the two halves T.1 proved separately — the adapter's own
 	 * decline-envelope mapping ({@see self::test_charge_decline_envelope_maps_each_card_code})
 	 * and {@see \Automattic\WooCommerce\Tests\Internal\Payments\PaymentProcessingServiceTest::test_woopayments_card_decline_fails_order_with_intent_note_and_allow_meta}'s
 	 * hand-mirrored outcome — by running the recorded REC-1 decline envelope through the real
@@ -5326,7 +5326,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Charge decoding should plan card display effects without mutating the order.
 	 *
-	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The response is now REC-3DS-1's new-card
+	 * T.3 Task 4: RECORD swap. The response is now REC-3DS-1's new-card
 	 * variant (`Fixtures/platform-intention-3ds-requires-action.json`, pair `new_card_requires_action`), real
 	 * from the local platform. A real `requires_action` PaymentIntent carries no charge yet
 	 * (`charges.total_count 0`): unlike the earlier hand-written stub, which put a charge on the
@@ -5642,7 +5642,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * test (`WooPaymentsOrderEffectApplierTest::test_setup_intent_effects_persist_provider_references`)
 	 * covered pieces of this before; neither goes through the adapter's own intent-type wiring.
 	 *
-	 * T.3 Task 4 (`plan-task-t3.md`): RECORD swap. The response is now REC-3DS-4's recorded envelope
+	 * T.3 Task 4: RECORD swap. The response is now REC-3DS-4's recorded envelope
 	 * (`Fixtures/platform-setup-intent-requires-action.json`, pair `setup_intent_requires_action`), the
 	 * same real My Account add-payment-method `requires_action` SetupIntent REC-2 recorded its
 	 * declines from.
@@ -8855,7 +8855,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A card checkout over a fake transport pays the order exactly once with the recorded intent identity.
 	 *
-	 * T.3 Task 2 (`plan-task-t3.md`): joins the request-shape half
+	 * T.3 Task 2: joins the request-shape half
 	 * ({@see self::test_single_card_checkout_without_save_matches_11_1_request_shape}) and the
 	 * order-completion half ({@see \Automattic\WooCommerce\Tests\Internal\Payments\PaymentProcessingServiceTest::test_process_checkout_completes_order_for_completed_outcome})
 	 * by running a real recorded PaymentIntent response through the full production stack:
@@ -8985,7 +8985,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A card checkout with save over a fake transport creates exactly one token from the recorded payment method.
 	 *
-	 * T.3 Task 2 (`plan-task-t3.md`): the save path from a real recorded response to exactly one token
+	 * T.3 Task 2: the save path from a real recorded response to exactly one token
 	 * row, joining {@see \Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplierTest::test_requested_token_effects_are_idempotent}'s
 	 * hand-built outcome with a real REC-SUB step-1 signup response
 	 * (`Fixtures/platform-intention-subscription.json`, pair `signup_initial_setup_future_usage`) run through the
@@ -9072,7 +9072,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A scheduled renewal charge over a fake transport pays the renewal order exactly once with the recorded off-session intent.
 	 *
-	 * T.3 Task 2 (`plan-task-t3.md`): joins
+	 * T.3 Task 2: joins
 	 * {@see self::test_scheduled_subscription_charge_uses_merchant_initiated_recurring_request_shape}'s
 	 * merchant-initiated request shape with a real off-session REC-SUB step-2 renewal response
 	 * (`Fixtures/platform-intention-subscription.json`, pair `renewal_off_session`), built the same way that test
@@ -9080,7 +9080,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * transport, and asserts the renewal order actually ends up paid (`completed`,
 	 * `OrderPaymentLifecycleService::apply_status_transition()`) with exactly one `successfully
 	 * charged` note — not just that the outcome is reported successful. REC-SUB step 2 sends no
-	 * `mandate` and no `payment_method_update_data` (`data/rec-t3-api-recordings.md`), so the wire
+	 * `mandate` and no `payment_method_update_data`, so the wire
 	 * comparison covers money, customer, payment method, and `off_session`; `metadata` is native's own
 	 * order-derived payload (`WooPaymentsIntentRequestBuilder::metadata_from_order()`, filterable via
 	 * `wcpay_metadata_from_order`), not the recording's placeholder `metadata` (`{rec: 'REC-SUB', ...}`,
@@ -9252,7 +9252,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A pending redirect-method refund over a fake transport becomes successful on a `charge.refund.updated` succeeded webhook.
 	 *
-	 * K4 (`data/t1-provider-family-audit.md` risk K4, §4 Batch 5): the real-event
+	 * K4: the real-event
 	 * proof that a pending redirect-method refund becomes successful, deleted
 	 * from the browser suite with R4-R7. The first leg runs end to end through
 	 * the same production wiring as
@@ -10208,18 +10208,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'wcpay_gateway_unavailable', $outcome->get_data()['error_code'], "The $operation must report the unavailable gateway." );
 			$this->assertSame( $operation, $outcome->get_data()['operation'], "The $operation must name itself." );
 		}
-	}
-
-	/**
-	 * Ensure a minimal WooCommerce Subscriptions renewal-order detector exists.
-	 */
-	private function ensure_wcs_order_renewal_detector_double(): void {
-		if ( function_exists( 'wcs_order_contains_renewal' ) ) {
-			return;
-		}
-
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public renewal-order detector.
-		eval( 'namespace { function wcs_order_contains_renewal( $order ) { $order_id = is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : absint( $order ); return in_array( $order_id, $GLOBALS["wcpay_test_renewal_order_ids"] ?? array(), true ); } }' );
 	}
 
 	/**

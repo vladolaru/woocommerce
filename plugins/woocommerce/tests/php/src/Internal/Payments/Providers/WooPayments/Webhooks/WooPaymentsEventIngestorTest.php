@@ -545,7 +545,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox payment_intent.succeeded repairs the payment token on an unpaid recurring order.
 	 */
 	public function test_payment_intent_succeeded_repairs_token_for_recurring_unpaid_order(): void {
-		$this->ensure_wcs_order_contains_renewal_double();
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
 		$customer_id = self::factory()->user->create();
 
 		$token = new \WC_Payment_Token_CC();
@@ -578,8 +578,8 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox payment_intent.succeeded writes the repaired token through to related subscriptions.
 	 */
 	public function test_payment_intent_succeeded_repair_syncs_related_subscriptions(): void {
-		$this->ensure_wcs_order_contains_renewal_double();
-		$this->ensure_wcs_subscriptions_for_order_double();
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
 		$customer_id = self::factory()->user->create();
 
 		$token = new \WC_Payment_Token_CC();
@@ -642,7 +642,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox payment_intent.succeeded does not re-save the token on an already-paid recurring order.
 	 */
 	public function test_payment_intent_succeeded_skips_token_repair_for_paid_order(): void {
-		$this->ensure_wcs_order_contains_renewal_double();
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
 		$customer_id = self::factory()->user->create();
 
 		$token = new \WC_Payment_Token_CC();
@@ -678,7 +678,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox payment_intent.succeeded notes the token change when repair replaces an attached token.
 	 */
 	public function test_payment_intent_succeeded_notes_token_change_on_repair(): void {
-		$this->ensure_wcs_order_contains_renewal_double();
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
 		$customer_id = self::factory()->user->create();
 
 		$old_token = new \WC_Payment_Token_CC();
@@ -724,7 +724,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	 * @testdox A platform error saving a renewal's payment method from the webhook is logged with its status and code, never its message.
 	 */
 	public function test_webhook_token_save_failure_log_leaves_out_platform_text(): void {
-		$this->ensure_wcs_order_contains_renewal_double();
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
 		$customer_id = self::factory()->user->create();
 		$order       = $this->create_woopayments_order();
 		$order->set_customer_id( $customer_id );
@@ -4570,34 +4570,6 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 				),
 			),
 		);
-	}
-
-	/**
-	 * Ensure a WCS subscriptions-for-order double with WCS relationship defaults exists.
-	 *
-	 * @return void
-	 */
-	private function ensure_wcs_subscriptions_for_order_double(): void {
-		if ( function_exists( 'wcs_get_subscriptions_for_order' ) ) {
-			return;
-		}
-
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public order lookup contract.
-		eval( 'namespace { function wcs_get_subscriptions_for_order( $order_id, $args = array() ) { $order_id = is_object( $order_id ) && method_exists( $order_id, "get_id" ) ? $order_id->get_id() : absint( $order_id ); $order_types = $args["order_type"] ?? array( "parent", "switch" ); $order_types = is_array( $order_types ) ? $order_types : array( $order_types ); $relationships = $GLOBALS["wcpay_test_order_subscription_relationships"][ $order_id ] ?? array(); $order_types = in_array( "any", $order_types, true ) ? array_keys( $relationships ) : $order_types; $ids = array(); foreach ( $order_types as $order_type ) { $ids = array_merge( $ids, $relationships[ $order_type ] ?? array() ); } return array_values( array_filter( array_map( "wc_get_order", array_unique( array_map( "absint", $ids ) ) ) ) ); } }' );
-	}
-
-	/**
-	 * Ensure a minimal renewal-order detector double exists.
-	 *
-	 * @return void
-	 */
-	private function ensure_wcs_order_contains_renewal_double(): void {
-		if ( function_exists( 'wcs_order_contains_renewal' ) ) {
-			return;
-		}
-
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public renewal detector.
-		eval( 'namespace { function wcs_order_contains_renewal( $order ) { $order_id = is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : absint( $order ); return in_array( $order_id, $GLOBALS["wcpay_test_renewal_order_ids"] ?? array(), true ); } }' );
 	}
 
 	/**

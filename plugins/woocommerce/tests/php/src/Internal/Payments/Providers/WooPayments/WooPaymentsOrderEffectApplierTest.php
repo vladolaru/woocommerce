@@ -878,7 +878,7 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 	 * @testdox Recurring renewal token effects synchronize the new customer token and provider metadata.
 	 */
 	public function test_recurring_token_effects_synchronize_failed_renewal_subscriptions(): void {
-		$this->ensure_wcs_subscriptions_for_order_double();
+		WooCommerceSubscriptionsDoubles::load_order_subscriptions();
 		$user_id      = $this->factory()->user->create();
 		$order        = $this->create_woopayments_order();
 		$subscription = $this->create_woopayments_order();
@@ -2009,20 +2009,6 @@ class WooPaymentsOrderEffectApplierTest extends WC_Unit_Test_Case {
 			$this->assertSame( '', $stored->get_meta( '_wcpay_refund_status', true ), 'No refund status is written before the note renders.' );
 			$this->assertCount( $notes_before, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ), 'No note is added.' );
 		}
-	}
-
-	/**
-	 * Ensure a WCS subscriptions-for-order double with WCS relationship defaults exists.
-	 *
-	 * @return void
-	 */
-	private function ensure_wcs_subscriptions_for_order_double(): void {
-		if ( function_exists( 'wcs_get_subscriptions_for_order' ) ) {
-			return;
-		}
-
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public order lookup contract.
-		eval( 'namespace { function wcs_get_subscriptions_for_order( $order_id, $args = array() ) { $order_id = is_object( $order_id ) && method_exists( $order_id, "get_id" ) ? $order_id->get_id() : absint( $order_id ); $order_types = $args["order_type"] ?? array( "parent", "switch" ); $order_types = is_array( $order_types ) ? $order_types : array( $order_types ); $relationships = $GLOBALS["wcpay_test_order_subscription_relationships"][ $order_id ] ?? array(); $order_types = in_array( "any", $order_types, true ) ? array_keys( $relationships ) : $order_types; $ids = array(); foreach ( $order_types as $order_type ) { $ids = array_merge( $ids, $relationships[ $order_type ] ?? array() ); } return array_values( array_filter( array_map( "wc_get_order", array_unique( array_map( "absint", $ids ) ) ) ) ); } }' );
 	}
 
 	/**

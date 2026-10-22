@@ -719,7 +719,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$renewal->set_customer_id( $user_id );
 		$renewal->add_payment_token( $this->create_card_token( $user_id, 'pm_renewal' ) );
 		$renewal->save();
-		$this->ensure_wcs_renewal_subscriptions_double();
+		WooCommerceSubscriptionsDoubles::load();
 		$sut = $this->create_sut( wc_get_container()->get( PaymentProcessingService::class ), new WooPaymentsProvider() );
 
 		$lock       = wc_get_container()->get( OrderPaymentLock::class );
@@ -762,7 +762,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$renewal->add_payment_token( $active_token );
 		$renewal->save();
 
-		$this->ensure_wcs_renewal_subscriptions_double();
+		WooCommerceSubscriptionsDoubles::load();
 
 		$service = new RecordingPaymentProcessingService();
 		$sut     = $this->create_sut( $service, new WooPaymentsProvider() );
@@ -1118,7 +1118,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox A platform error during the renewal token repair is logged with its status and code, never its message.
 	 */
 	public function test_renewal_token_repair_log_leaves_out_platform_text(): void {
-		$this->ensure_wcs_renewal_subscriptions_double();
+		WooCommerceSubscriptionsDoubles::load();
 		self::enable_woopayments_debug_logging();
 		$customer_id = self::factory()->user->create();
 		$parent      = wc_create_order();
@@ -1161,7 +1161,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should repair a renewal order's missing token from the parent order and charge it.
 	 */
 	public function test_scheduled_subscription_payment_repairs_missing_token_from_parent_order(): void {
-		$this->ensure_wcs_renewal_subscriptions_double();
+		WooCommerceSubscriptionsDoubles::load();
 		$customer_id = self::factory()->user->create();
 
 		$parent = wc_create_order();
@@ -1221,7 +1221,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should still fail the renewal when the parent order has no payment method to restore.
 	 */
 	public function test_scheduled_subscription_payment_fails_when_repair_finds_nothing(): void {
-		$this->ensure_wcs_renewal_subscriptions_double();
+		WooCommerceSubscriptionsDoubles::load();
 		$customer_id = self::factory()->user->create();
 
 		$parent = wc_create_order();
@@ -1274,7 +1274,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_scheduled_subscription_payment_token_repair_failure( string $label, string $source, string $throwable_class, string $message, string $status, bool $propagates, bool $note_added, array $logged_exceptions ): void {
 		unset( $label );
-		$this->ensure_wcs_renewal_subscriptions_double();
+		WooCommerceSubscriptionsDoubles::load();
 		$customer_id = self::factory()->user->create();
 
 		$parent = wc_create_order();
@@ -1406,7 +1406,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not attempt token repair when network-wide saved cards are forced.
 	 */
 	public function test_scheduled_subscription_payment_skips_repair_for_network_saved_cards(): void {
-		$this->ensure_wcs_renewal_subscriptions_double();
+		WooCommerceSubscriptionsDoubles::load();
 		$customer_id = self::factory()->user->create();
 
 		$parent = wc_create_order();
@@ -1895,22 +1895,6 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 				}
 			}
 		};
-	}
-
-	/**
-	 * Ensure a minimal renewal-subscriptions lookup double exists.
-	 *
-	 * @return void
-	 */
-	private function ensure_wcs_renewal_subscriptions_double(): void {
-		if ( function_exists( 'wcs_get_subscriptions_for_renewal_order' ) ) {
-			return;
-		}
-
-		// Stands in for WooCommerce Subscriptions' `wcs_get_subscriptions_for_renewal_order( $order )` (9.2.0
-		// `includes/core/wcs-renewal-functions.php:173-175`), which returns the renewal order's subscriptions.
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public renewal lookup.
-		eval( 'namespace { function wcs_get_subscriptions_for_renewal_order( $order_id ) { $ids = $GLOBALS["wcpay_test_renewal_subscription_ids"][ $order_id ] ?? array(); return array_map( "wc_get_order", $ids ); } }' );
 	}
 
 	/**

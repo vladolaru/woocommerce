@@ -430,7 +430,7 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$order->set_billing_email( 'ordinary-order@example.com' );
 		$order->save();
 
-		$this->fake_wcs_is_subscription();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() + 1 );
 		$_GET['change_payment_method']          = (string) ( $order->get_id() + 1 );
 
@@ -443,18 +443,6 @@ class WooPaymentsTerminalPaymentsRestControllerTest extends WC_REST_Unit_Test_Ca
 		$this->assertSame( array( 'id' => 'cus_user' ), $response->get_data() );
 		$this->assertCount( 1, $this->api_client->updated_customers );
 		$this->assertSame( 'ordinary-order@example.com', $this->api_client->updated_customers[0]['customer_data']['email'] );
-	}
-
-	/**
-	 * Define a test-only wcs_is_subscription() backed by $GLOBALS['wcpay_test_subscription_ids'].
-	 */
-	private function fake_wcs_is_subscription(): void {
-		if ( function_exists( 'wcs_is_subscription' ) ) {
-			return;
-		}
-
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Test-only shim for the WooCommerce Subscriptions predicate.
-		eval( 'namespace { function wcs_is_subscription( $subscription_id ) { $subscription_id = is_object( $subscription_id ) && method_exists( $subscription_id, "get_id" ) ? $subscription_id->get_id() : $subscription_id; return in_array( $subscription_id, $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ) || in_array( absint( $subscription_id ), $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ); } }' );
 	}
 
 	/**

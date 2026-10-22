@@ -2333,7 +2333,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$gateway = new WooPaymentsGateway();
 		$gateway->init( $service, new WooPaymentsProvider() );
 
-		$this->ensure_wcs_subscription_detector_double();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
 
 		$previous_status = $order->get_status();
@@ -3199,8 +3199,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * excludes the change (`:1326`).
 	 */
 	public function test_process_payment_downstream_exception_on_succeeded_intent_keeps_subscription_payment_method_change(): void {
-		$this->ensure_wcs_change_payment_gateway_double();
-		$this->ensure_wcs_subscription_detector_double();
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		$subscription = $this->create_order();
 		$subscription->update_meta_data( '_intention_status', 'succeeded' );
 		$subscription->save();
@@ -3362,8 +3362,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * (gw:2036-2067), and the subscription's renewals keep charging the card the shopper meant to replace.
 	 */
 	public function test_process_payment_refuses_subscription_change_when_new_card_cannot_be_saved(): void {
-		$this->ensure_wcs_change_payment_gateway_double();
-		$this->ensure_wcs_subscription_detector_double();
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		$user_id      = $this->factory()->user->create();
 		$subscription = $this->create_order();
 		$subscription->set_customer_id( $user_id );
@@ -3650,8 +3650,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * failure return (`:1436-1439`) still apply.
 	 */
 	public function test_process_payment_exception_on_subscription_payment_method_change_keeps_status(): void {
-		$this->ensure_wcs_change_payment_gateway_double();
-		$this->ensure_wcs_subscription_detector_double();
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		$subscription = $this->create_order();
 
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $subscription->get_id() );
@@ -4455,8 +4455,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should hand successful subscription payment-method changes back to WC Subscriptions.
 	 */
 	public function test_process_payment_updates_subscription_payment_method_after_successful_new_method_change(): void {
-		$this->ensure_wcs_change_payment_gateway_double();
-		$this->ensure_wcs_subscription_detector_double();
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
 		$gateway = new WooPaymentsGateway();
@@ -4517,8 +4517,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param string $delayed_update  Expected `_delayed_update_payment_method_all` meta.
 	 */
 	public function test_process_payment_keeps_the_redirect_and_defers_subscription_change_bookkeeping( string $status, string $intent_id, string $redirect_format, bool $update_all, string $delayed_update ): void {
-		$this->ensure_wcs_change_payment_gateway_double();
-		$this->ensure_wcs_subscription_detector_double();
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		$order                     = $this->create_order();
 		$redirect                  = sprintf( $redirect_format, $order->get_id() );
 		$service                   = new RecordingPaymentProcessingService();
@@ -4570,8 +4570,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_process_payment_does_not_complete_subscription_change_without_provider_credential(): void {
 		wc_clear_notices();
-		$this->ensure_wcs_change_payment_gateway_double();
-		$this->ensure_wcs_subscription_detector_double();
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
 		$gateway = new WooPaymentsGateway();
@@ -4614,8 +4614,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_refused_subscription_change_keeps_the_subscription_and_answers_the_refusal( string $refusal, string $message, bool $earlier_change_succeeded ): void {
 		wc_clear_notices();
-		$this->ensure_wcs_change_payment_gateway_double();
-		$this->ensure_wcs_subscription_detector_double();
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		$order = $this->create_order();
 		$order->set_status( 'on-hold' );
 		if ( $earlier_change_succeeded ) {
@@ -4722,8 +4722,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param bool   $redirects_order_received Whether checkout redirects to the order-received page, or to nothing.
 	 */
 	public function test_process_payment_does_not_complete_subscription_change_on_an_incomplete_outcome( string $status, string $result, bool $redirects_order_received ): void {
-		$this->ensure_wcs_change_payment_gateway_double();
-		$this->ensure_wcs_subscription_detector_double();
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		$order                     = $this->create_order();
 		$service                   = new RecordingPaymentProcessingService();
 		$redirect                  = $redirects_order_received ? $order->get_checkout_order_received_url() : '';
@@ -4782,8 +4782,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @param int[]    $subscription_offsets  Offsets from the order ID of the IDs registered as subscriptions.
 	 */
 	public function test_process_payment_rejects_invalid_subscription_change_requests( string $nonce, string $request_key, ?int $request_offset, array $subscription_offsets ): void {
-		$this->ensure_wcs_change_payment_gateway_double();
-		$this->ensure_wcs_subscription_detector_double();
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		$order   = $this->create_order();
 		$service = new RecordingPaymentProcessingService();
 		$gateway = new WooPaymentsGateway();
@@ -4831,8 +4831,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should transport validated saved-method subscription changes without changing new-method semantics.
 	 */
 	public function test_process_payment_transports_validated_saved_method_subscription_change(): void {
-		$this->ensure_wcs_change_payment_gateway_double();
-		$this->ensure_wcs_subscription_detector_double();
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		$order   = $this->create_order();
 		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		$token   = $this->create_card_token( $user_id, 'pm_saved_card' );
@@ -4875,8 +4875,8 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * filterable, so the check could otherwise refuse the change.
 	 */
 	public function test_process_payment_saved_token_subscription_change_skips_the_already_paid_check(): void {
-		$this->ensure_wcs_change_payment_gateway_double();
-		$this->ensure_wcs_subscription_detector_double();
+		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		$order   = $this->create_order();
 		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
 		$token   = $this->create_card_token( $user_id, 'pm_saved_card' );
@@ -5645,7 +5645,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should print the classic checkout error region with an assertive live-region role.
 	 *
-	 * T.3 Task 4 (`plan-task-t3.md`), the classic-error-region owner MISSING row: a screen reader
+	 * T.3 Task 4, the classic-error-region owner MISSING row: a screen reader
 	 * only announces a payment failure as soon as it appears when the region is an assertive live
 	 * region (`role="alert"`); a plain or absent live-region role can leave it unannounced while
 	 * focus stays on the payment fields. The payment form prints the region hidden up front so the
@@ -5754,7 +5754,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * @testdox Should render mandatory subscription change saving as a visually hidden checked checkbox.
 	 */
 	public function test_payment_fields_hide_checked_save_payment_method_for_subscription_change(): void {
-		$this->ensure_wcs_subscription_detector_double();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		$order = $this->create_order();
 
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
@@ -6060,7 +6060,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 */
 	public function test_payment_fields_reject_mismatched_subscription_change_form_identity(): void {
 		RecordedPublicFraudServices::answer();
-		$this->ensure_wcs_subscription_detector_double();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		$order = $this->create_order();
 		// Changing a subscription's payment method is a My Account flow; a guest gets no save control at all.
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'customer' ) ) );
@@ -6851,20 +6851,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Ensure a minimal WooCommerce Subscriptions detector double exists.
-	 *
-	 * @return void
-	 */
-	private function ensure_wcs_subscription_detector_double(): void {
-		if ( function_exists( 'wcs_is_subscription' ) ) {
-			return;
-		}
-
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public detector contract.
-		eval( 'namespace { function wcs_is_subscription( $subscription_id ) { $subscription_id = is_object( $subscription_id ) && method_exists( $subscription_id, "get_id" ) ? $subscription_id->get_id() : $subscription_id; return in_array( absint( $subscription_id ), $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ); } }' );
-	}
-
-	/**
 	 * Create a checkout assets double that returns a fixed payment fields config.
 	 *
 	 * @param array<string,mixed> $config            Config the double returns for the payment form.
@@ -6889,61 +6875,6 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$assets->method( 'should_expose_checkout_surface' )->willReturn( $can_take_payments );
 
 		return $assets;
-	}
-
-	/**
-	 * Ensure a minimal WC Subscriptions change-payment gateway double exists.
-	 *
-	 * @return void
-	 */
-	private function ensure_wcs_change_payment_gateway_double(): void {
-		if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) ) {
-			\WC_Subscriptions_Change_Payment_Gateway::reset();
-			return;
-		}
-
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- The production class is optional; tests need a process-local stand-in.
-		eval(
-			'class WC_Subscriptions_Change_Payment_Gateway {
-				public static $is_request_to_change_payment = false;
-				public static $updated_payment_methods = array();
-				public static $updated_all_payment_methods = array();
-				public static $will_update_all_payment_methods = true;
-				public static $update_all_payment_methods_result = true;
-
-				public static function reset() {
-					self::$updated_payment_methods = array();
-					self::$updated_all_payment_methods = array();
-					self::$will_update_all_payment_methods = true;
-					self::$update_all_payment_methods_result = true;
-				}
-
-				public static function update_payment_method( $order, $gateway_id ) {
-					self::$updated_payment_methods[] = array(
-						"order_id" => is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : 0,
-						"gateway_id" => $gateway_id,
-					);
-					// The real method sets the gateway, whose title then replaces the stored one.
-					if ( is_object( $order ) && method_exists( $order, "set_payment_method_title" ) ) {
-						$order->set_payment_method_title( "Card" );
-						$order->save();
-					}
-				}
-
-				public static function will_subscription_update_all_payment_methods( $order ) {
-					unset( $order );
-					return self::$will_update_all_payment_methods;
-				}
-
-				public static function update_all_payment_methods_from_subscription( $order, $gateway_id ) {
-					self::$updated_all_payment_methods[] = array(
-						"order_id" => is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : 0,
-						"gateway_id" => $gateway_id,
-					);
-					return self::$update_all_payment_methods_result;
-				}
-			}'
-		);
 	}
 
 	/**

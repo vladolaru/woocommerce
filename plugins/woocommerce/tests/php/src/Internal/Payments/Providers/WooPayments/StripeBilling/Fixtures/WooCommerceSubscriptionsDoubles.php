@@ -30,7 +30,7 @@ final class WooCommerceSubscriptionsDoubles {
 	public const SUBSCRIPTION_PRODUCT_IDS = 'wcpay_test_subscription_product_ids';
 
 	/**
-	 * Global holding the IDs of the orders loaded as `SubscriptionDouble`; other native tests read it in their `wcs_is_subscription()` double.
+	 * Global holding the IDs of the orders loaded as `SubscriptionDouble`, and the IDs `wcs_is_subscription()` reports as subscriptions.
 	 */
 	public const SUBSCRIPTION_IDS = 'wcpay_test_subscription_ids';
 
@@ -43,7 +43,7 @@ final class WooCommerceSubscriptionsDoubles {
 	public const ORDER_SUBSCRIPTIONS = 'wcpay_test_order_subscription_relationships';
 
 	/**
-	 * Global holding, per renewal order ID, the subscription IDs `wcs_get_subscriptions_for_renewal_order()` returns; the gateway tests read it too.
+	 * Global holding, per renewal order ID, the subscription IDs `wcs_get_subscriptions_for_renewal_order()` returns.
 	 */
 	public const RENEWAL_SUBSCRIPTIONS = 'wcpay_test_renewal_subscription_ids';
 
@@ -96,7 +96,7 @@ final class WooCommerceSubscriptionsDoubles {
 		self::load_order_subscriptions();
 
 		if ( ! function_exists( 'wcs_get_subscriptions_for_renewal_order' ) ) {
-			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Same double as the gateway tests define, reading the same registry.
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its renewal subscriptions lookup.
 			eval( 'namespace { function wcs_get_subscriptions_for_renewal_order( $order_id ) { $ids = $GLOBALS["' . self::RENEWAL_SUBSCRIPTIONS . '"][ $order_id ] ?? array(); return array_map( "wc_get_order", $ids ); } }' );
 		}
 
@@ -145,7 +145,7 @@ final class WooCommerceSubscriptionsDoubles {
 	 */
 	public static function load_order_subscriptions(): void {
 		if ( ! function_exists( 'wcs_get_subscriptions_for_order' ) ) {
-			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Same double as the other native tests define, reading the same registry.
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public order lookup.
 			eval( 'namespace { function wcs_get_subscriptions_for_order( $order_id, $args = array() ) { $order_id = is_object( $order_id ) && method_exists( $order_id, "get_id" ) ? $order_id->get_id() : absint( $order_id ); $order_types = $args["order_type"] ?? array( "parent", "switch" ); $order_types = is_array( $order_types ) ? $order_types : array( $order_types ); $relationships = $GLOBALS["' . self::ORDER_SUBSCRIPTIONS . '"][ $order_id ] ?? array(); $order_types = in_array( "any", $order_types, true ) ? array_keys( $relationships ) : $order_types; $ids = array(); foreach ( $order_types as $order_type ) { $ids = array_merge( $ids, $relationships[ $order_type ] ?? array() ); } return array_values( array_filter( array_map( "wc_get_order", array_unique( array_map( "absint", $ids ) ) ) ) ); } }' );
 		}
 	}
@@ -159,7 +159,7 @@ final class WooCommerceSubscriptionsDoubles {
 	 */
 	public static function load_renewal_detector(): void {
 		if ( ! function_exists( 'wcs_order_contains_renewal' ) ) {
-			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Same double as the other native tests define, reading the same registry.
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public renewal detector.
 			eval( 'namespace { function wcs_order_contains_renewal( $order ) { $order_id = is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : absint( $order ); return in_array( $order_id, $GLOBALS["wcpay_test_renewal_order_ids"] ?? array(), true ); } }' );
 		}
 	}
@@ -181,7 +181,7 @@ final class WooCommerceSubscriptionsDoubles {
 	 */
 	public static function load_subscription_detector(): void {
 		if ( ! function_exists( 'wcs_is_subscription' ) ) {
-			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Same double as the other native tests define, reading the same registry.
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its public subscription detector.
 			eval( 'namespace { function wcs_is_subscription( $subscription_id ) { $subscription_id = is_object( $subscription_id ) && method_exists( $subscription_id, "get_id" ) ? $subscription_id->get_id() : $subscription_id; return in_array( absint( $subscription_id ), $GLOBALS["' . self::SUBSCRIPTION_IDS . '"] ?? array(), true ); } }' );
 		}
 	}
@@ -230,8 +230,6 @@ final class WooCommerceSubscriptionsDoubles {
 
 	/**
 	 * Define the payment method change handler, with the request flag the Stripe Billing module saves and restores.
-	 *
-	 * The other members match the doubles the gateway and checkout tests define, so whichever is defined first serves all of them.
 	 */
 	public static function load_change_payment_gateway(): void {
 		if ( class_exists( 'WC_Subscriptions_Change_Payment_Gateway', false ) ) {
@@ -263,6 +261,11 @@ final class WooCommerceSubscriptionsDoubles {
 						"order_id" => is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : 0,
 						"gateway_id" => $gateway_id,
 					);
+					// The real method sets the gateway, whose title then replaces the stored one.
+					if ( is_object( $order ) && method_exists( $order, "set_payment_method_title" ) ) {
+						$order->set_payment_method_title( "Card" );
+						$order->save();
+					}
 				}
 
 				public static function will_subscription_update_all_payment_methods( $order ) {

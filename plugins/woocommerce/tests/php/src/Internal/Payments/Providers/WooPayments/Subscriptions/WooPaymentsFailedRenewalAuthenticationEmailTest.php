@@ -188,10 +188,7 @@ class WooPaymentsFailedRenewalAuthenticationEmailTest extends WC_Unit_Test_Case 
 	 * @return WC_Order
 	 */
 	private function create_renewal_order(): WC_Order {
-		if ( ! function_exists( 'wcs_order_contains_renewal' ) ) {
-			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; the email asks its renewal detector.
-			eval( 'function wcs_order_contains_renewal( $order ) { $order_id = is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : absint( $order ); return in_array( $order_id, $GLOBALS["wcpay_test_renewal_order_ids"] ?? array(), true ); }' );
-		}
+		WooCommerceSubscriptionsDoubles::load_renewal_detector();
 		$order                                     = $this->create_order();
 		$GLOBALS['wcpay_test_renewal_order_ids'][] = $order->get_id();
 

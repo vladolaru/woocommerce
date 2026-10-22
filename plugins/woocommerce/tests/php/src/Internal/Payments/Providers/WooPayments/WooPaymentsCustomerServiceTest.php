@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Order;
 use WC_Unit_Test_Case;
 
@@ -547,7 +548,7 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		update_user_option( $user_id, '_wcpay_customer_id_live', $stored_customer );
 
 		$request_id = $order->get_id() + $request_id_offset;
-		$this->fake_wcs_is_subscription();
+		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		$GLOBALS['wcpay_test_subscription_ids'] = $request_id_is_subscription ? array( $request_id ) : array();
 		$_GET['change_payment_method']          = (string) $request_id;
 
@@ -864,18 +865,6 @@ class WooPaymentsCustomerServiceTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_account_is_live' )->willReturn( null );
 
 		return $account_service;
-	}
-
-	/**
-	 * Define a test-only wcs_is_subscription() backed by \$GLOBALS['wcpay_test_subscription_ids'].
-	 */
-	private function fake_wcs_is_subscription(): void {
-		if ( function_exists( 'wcs_is_subscription' ) ) {
-			return;
-		}
-
-		// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Test-only shim for the WooCommerce Subscriptions predicate.
-		eval( 'namespace { function wcs_is_subscription( $subscription_id ) { $subscription_id = is_object( $subscription_id ) && method_exists( $subscription_id, "get_id" ) ? $subscription_id->get_id() : $subscription_id; return in_array( $subscription_id, $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ) || in_array( absint( $subscription_id ), $GLOBALS["wcpay_test_subscription_ids"] ?? array(), true ); } }' );
 	}
 
 	/**
