@@ -73,6 +73,10 @@ const setAdminRouteAvailability = (
 		adminUrl: 'http://example.com/wp-admin',
 		admin: {
 			woopaymentsSettings: {
+				// The admin preload sends the Reports flag with the route availability.
+				featureFlags: {
+					reportsArea: true,
+				},
 				adminRouteAvailability: {
 					...protectedRouteAvailability,
 					allowedRoutes: {
@@ -121,11 +125,6 @@ describe( 'WooPayments Settings Payments routes', () => {
 		window.wcSettings = {
 			adminUrl: 'http://example.com/wp-admin',
 		};
-		delete (
-			window as typeof window & {
-				wcpaySettings?: unknown;
-			}
-		 ).wcpaySettings;
 		mockApiFetch.mockReset();
 	} );
 
@@ -184,34 +183,6 @@ describe( 'WooPayments Settings Payments routes', () => {
 		}
 
 		render( route.element );
-
-		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
-			'Reports are unavailable.'
-		);
-		expect(
-			screen.queryByText( 'Loading WooPayments…' )
-		).not.toBeInTheDocument();
-	} );
-
-	it( 'uses the legacy Reports feature flag when native settings do not provide one', () => {
-		(
-			window as typeof window & {
-				wcpaySettings?: {
-					featureFlags?: {
-						reportsArea?: boolean;
-					};
-				};
-			}
-		 ).wcpaySettings = {
-			featureFlags: {
-				reportsArea: false,
-			},
-		};
-		setAdminRouteAvailability( {
-			'/woopayments/reports': true,
-		} );
-
-		render( getRouteElement( '/woopayments/reports' ) );
 
 		expect( screen.getByRole( 'status' ) ).toHaveTextContent(
 			'Reports are unavailable.'

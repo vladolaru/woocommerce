@@ -140,27 +140,12 @@ type WooPaymentsRouteWindow = typeof globalThis & {
 			};
 		};
 	};
-	wcpaySettings?: {
-		featureFlags?: {
-			reportsArea?: boolean;
-		};
-	};
 };
 
-const getReportsAreaFeatureFlag = () => {
-	const settings = globalThis as WooPaymentsRouteWindow;
-	const nativeFlag =
-		settings.wcSettings?.admin?.woopaymentsSettings?.featureFlags
-			?.reportsArea;
-
-	if ( typeof nativeFlag === 'boolean' ) {
-		return nativeFlag;
-	}
-
-	const legacyFlag = settings.wcpaySettings?.featureFlags?.reportsArea;
-
-	return typeof legacyFlag === 'boolean' ? legacyFlag : true;
-};
+// The admin preload sends the flag with the route availability, so it is set wherever the Reports route is available.
+const getReportsAreaFeatureFlag = () =>
+	( globalThis as WooPaymentsRouteWindow ).wcSettings?.admin
+		?.woopaymentsSettings?.featureFlags?.reportsArea === true;
 
 const getAdminRouteAvailability = () => {
 	const settings = globalThis as WooPaymentsRouteWindow;

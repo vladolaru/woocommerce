@@ -41,51 +41,13 @@ const FraudProtectionTour = lazy( () =>
 	).then( ( module ) => ( { default: module.FraudProtectionTour } ) )
 );
 
-const getNestedBooleanOrUndefined = (
-	record: SettingsRecord,
-	keys: string[]
-): boolean | undefined => {
-	let current: unknown = record;
-
-	for ( const key of keys ) {
-		if ( ! current || typeof current !== 'object' ) {
-			return undefined;
-		}
-
-		current = ( current as SettingsRecord )[ key ];
-	}
-
-	return typeof current === 'boolean' ? current : undefined;
-};
-
+// The settings send both checks as booleans, on by default.
 const getFraudProtectionFlags = ( settings: SettingsRecord ) => {
 	const fraudProtection = asSettingsRecord( settings.fraud_protection );
-	const accountStatus = asSettingsRecord( settings.account_status );
-	const accountFraudProtection = asSettingsRecord(
-		asSettingsRecord( accountStatus.fraudProtection )
-	);
-	const nativeAvsFailureDecline = getNestedBooleanOrUndefined(
-		fraudProtection,
-		[ 'decline_on_avs_failure' ]
-	);
-	const legacyAvsFailureDecline = getNestedBooleanOrUndefined(
-		accountFraudProtection,
-		[ 'declineOnAVSFailure' ]
-	);
-	const nativeCvcFailureDecline = getNestedBooleanOrUndefined(
-		fraudProtection,
-		[ 'decline_on_cvc_failure' ]
-	);
-	const legacyCvcFailureDecline = getNestedBooleanOrUndefined(
-		accountFraudProtection,
-		[ 'declineOnCVCFailure' ]
-	);
 
 	return {
-		declineOnAVSFailure:
-			nativeAvsFailureDecline ?? legacyAvsFailureDecline ?? true,
-		declineOnCVCFailure:
-			nativeCvcFailureDecline ?? legacyCvcFailureDecline ?? true,
+		declineOnAVSFailure: fraudProtection.decline_on_avs_failure !== false,
+		declineOnCVCFailure: fraudProtection.decline_on_cvc_failure !== false,
 	};
 };
 

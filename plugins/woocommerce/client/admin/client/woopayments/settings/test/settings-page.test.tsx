@@ -5766,12 +5766,6 @@ describe( 'WooPaymentsSettingsPage', () => {
 				decline_on_avs_failure: false,
 				decline_on_cvc_failure: false,
 			},
-			account_status: {
-				fraudProtection: {
-					declineOnAVSFailure: true,
-					declineOnCVCFailure: true,
-				},
-			},
 		} );
 
 		render( <WooPaymentsSettingsPage /> );
