@@ -19,8 +19,11 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
+use Automattic\WooCommerce\Internal\DataStores\Orders\DataSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
+use Automattic\WooCommerce\RestApi\UnitTests\Helpers\OrderHelper;
+use Automattic\WooCommerce\Utilities\OrderUtil;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -538,6 +541,78 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$subscription = wc_get_order( $subscription->get_id() );
 		$this->assertSame( 'active', $subscription->get_status() );
 		$this->assertSame( 0, $subscription->get_suspension_count() );
+	}
+
+	/**
+	 * @testdox With orders stored as posts, a refused delivery whose request still caches the renewal as unpaid reads it past that cache and leaves the subscription active with no suspension counted.
+	 *
+	 * The other delivery pays the renewal and still holds the order lock; this delivery's post cache keeps the renewal as
+	 * it was before that payment. The posts data store reads the order's status through get_post()
+	 * (abstract-wc-order-data-store-cpt.php), so only a read that clears that cache sees the payment.
+	 */
+	public function test_paid_lock_refusal_recovers_from_a_stale_order_post_cache(): void {
+		// Keep both order stores in step, so switching the authoritative store back afterwards is allowed.
+		add_filter( 'pre_option_' . DataSynchronizer::ORDERS_DATA_SYNC_ENABLED_OPTION, static fn(): string => 'yes' );
+		$hpos_was_enabled = OrderUtil::custom_orders_table_usage_is_enabled();
+		OrderHelper::toggle_cot_feature_and_usage( false );
+
+		try {
+			$subscription = $this->create_subscription( self::CLOCK_SUBSCRIPTION_ID );
+			$order        = WooCommerceSubscriptionsDoubles::create_renewal_order( $subscription );
+			$order->set_payment_method( 'woocommerce_payments' );
+			$order->update_meta_data( '_wcpay_billing_invoice_id', self::RENEWAL_INVOICE_ID );
+			$order->save();
+			$payments_completed = did_action( 'woocommerce_payment_complete' );
+			for ( $delivery = 1; $delivery <= 2; $delivery++ ) {
+				$this->queue_response( 200, $this->get_renewal_intent() );
+				$this->queue_billing( 'update_invoice', 'update_charge', 'get_charge_for_update_transaction', 'update_transaction' );
+			}
+			$event        = $this->get_event( 'invoice_paid_renewal' );
+			$vocabulary   = new WooPaymentsPersistenceVocabulary();
+			$lock_token   = null;
+			$pending_post = null;
+			// After this delivery's hold, its post cache holds the renewal as it was before the other delivery paid it.
+			$restore = function () use ( $order, &$pending_post, &$restore ): void {
+				remove_action( 'woocommerce_subscription_status_on-hold', $restore );
+				wp_cache_set( $order->get_id(), $pending_post, 'posts' );
+			};
+			$overlap = function ( ...$args ) use ( $event, $order, $vocabulary, &$lock_token, &$pending_post, &$restore, &$overlap ) {
+				remove_filter( 'wcpay_api_request_params', $overlap );
+				clean_post_cache( $order->get_id() );
+				get_post( $order->get_id() );
+				$pending_post = wp_cache_get( $order->get_id(), 'posts' );
+				$this->sut->handle_event( $event );
+				$lock_token = wc_get_container()->get( OrderPaymentLock::class )->claim( $order, $vocabulary, self::RENEWAL_INTENT_ID, 'payment status update' );
+				add_action( 'woocommerce_subscription_status_on-hold', $restore );
+				return $args[0] ?? null;
+			};
+			add_filter( 'wcpay_api_request_params', $overlap );
+
+			$refusal = null;
+			try {
+				$this->sut->handle_event( $event );
+			} catch ( OrderPaymentLockRefusedException $exception ) {
+				$refusal = $exception;
+			} finally {
+				remove_filter( 'wcpay_api_request_params', $overlap );
+				remove_action( 'woocommerce_subscription_status_on-hold', $restore );
+				if ( null !== $lock_token ) {
+					wc_get_container()->get( OrderPaymentLock::class )->release( $order, $vocabulary, $lock_token );
+				}
+			}
+
+			$this->assertIsObject( $pending_post );
+			$this->assertSame( 'wc-pending', $pending_post->post_status, 'The cached renewal is the unpaid one.' );
+			$this->assertInstanceOf( OrderPaymentLockRefusedException::class, $refusal, 'The refusal is passed on, so invoice.paid is retried.' );
+			$this->assertSame( 1, did_action( 'woocommerce_payment_complete' ) - $payments_completed );
+			clean_post_cache( $order->get_id() );
+			$this->assertSame( 'processing', wc_get_order( $order->get_id() )->get_status() );
+			$subscription = wc_get_order( $subscription->get_id() );
+			$this->assertSame( 'active', $subscription->get_status() );
+			$this->assertSame( 0, $subscription->get_suspension_count() );
+		} finally {
+			OrderHelper::toggle_cot_feature_and_usage( $hpos_was_enabled );
+		}
 	}
 
 	/**
