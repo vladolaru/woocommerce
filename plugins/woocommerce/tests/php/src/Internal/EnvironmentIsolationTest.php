@@ -7,6 +7,7 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Testing\Tools\EnvironmentIsolation;
+use PHPUnit\Framework\AssertionFailedError;
 use WC_Unit_Test_Case;
 
 /**
@@ -57,5 +58,18 @@ class EnvironmentIsolationTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( $feature_on ? 'yes' : 'no', get_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION ) );
 		$this->assertSame( $feature_on, wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_enabled(), 'The built-in WooPayments runs only on the leg that asks for it.' );
+	}
+
+	/**
+	 * @testdox Should fail the test that makes an HTTP request nothing answered, even though the code under test only receives an error.
+	 */
+	public function test_unmocked_http_request_fails_the_test_that_made_it(): void {
+		$response = wp_remote_get( 'https://example.test/unmocked' );
+
+		$this->assertWPError( $response );
+		$this->expectException( AssertionFailedError::class );
+		$this->expectExceptionMessage( 'GET https://example.test/unmocked' );
+
+		EnvironmentIsolation::assert_no_unmocked_requests();
 	}
 }

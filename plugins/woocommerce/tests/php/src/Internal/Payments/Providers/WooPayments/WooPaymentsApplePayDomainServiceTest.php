@@ -519,6 +519,28 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	public function test_error_notice_does_not_render_on_other_admin_screens( string $label, array $query ): void {
 		unset( $label );
 		$this->arrange_failed_domain_verification();
+		// The admin notices of other admin screens include WooCommerce.com's extension update check; answer it with "no updates". The body `[]` is hand-written:
+		// it is decoded to an empty product map and an empty map means no updates (includes/admin/helper/class-wc-helper-updater.php:741 and :772).
+		add_filter(
+			'pre_http_request',
+			static function ( $response, $parsed_args, $url ) {
+				unset( $parsed_args );
+
+				if ( str_contains( $url, 'woocommerce.com/wp-json/helper/1.0/update-check-public' ) ) {
+					return array(
+						'response' => array(
+							'code'    => 200,
+							'message' => 'OK',
+						),
+						'body'     => wp_json_encode( array() ),
+					);
+				}
+
+				return $response;
+			},
+			10,
+			3
+		);
 
 		$previous_screen = $GLOBALS['current_screen'] ?? null;
 		set_current_screen( 'woocommerce_page_wc-settings' );

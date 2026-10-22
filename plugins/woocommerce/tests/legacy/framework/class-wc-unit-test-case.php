@@ -177,6 +177,8 @@ class WC_Unit_Test_Case extends WP_HTTP_TestCase {
 			// test that runs after this one.
 			parent::tearDown();
 		}
+
+		EnvironmentIsolation::assert_no_unmocked_requests();
 	}
 
 	/**

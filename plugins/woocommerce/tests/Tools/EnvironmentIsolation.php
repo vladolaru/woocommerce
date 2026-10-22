@@ -11,6 +11,7 @@ namespace Automattic\WooCommerce\Testing\Tools;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use PHPUnit\Framework\Assert;
 
 /**
  * Restores a production-shaped baseline for the PHPUnit run.
@@ -59,7 +60,9 @@ final class EnvironmentIsolation {
 	private const WOOPAYMENTS_FEATURE_ENV = 'WOOPAYMENTS_FEATURE';
 
 	/**
-	 * Native payments test namespaces kept off the network: no native test may depend on an outside service, so they get a fixed geolocation answer and any un-mocked HTTP request fails.
+	 * Native payments test namespaces, and exact class names where a namespace also holds core's own tests, kept off the
+	 * network: no native test may depend on an outside service, so they get a fixed geolocation answer and any un-mocked
+	 * HTTP request fails the test that made it.
 	 *
 	 * @var string[]
 	 */
@@ -67,12 +70,26 @@ final class EnvironmentIsolation {
 		'Automattic\\WooCommerce\\Tests\\Internal\\Payments\\',
 		'Automattic\\WooCommerce\\Tests\\Internal\\MultiCurrency\\',
 		'Automattic\\WooCommerce\\Tests\\Internal\\Admin\\Settings\\PaymentsProviders\\',
+		'Automattic\\WooCommerce\\Tests\\Admin\\Features\\OnboardingTasks\\Tasks\\PaymentsTest',
+		'Automattic\\WooCommerce\\Tests\\Blocks\\Payments\\',
+		'Automattic\\WooCommerce\\Tests\\Internal\\Admin\\EventsTest',
+		'Automattic\\WooCommerce\\Tests\\Internal\\Admin\\Settings\\PaymentsControllerTest',
+		'Automattic\\WooCommerce\\Tests\\Internal\\Admin\\WcPayWelcomePageTest',
+		'Automattic\\WooCommerce\\Tests\\Internal\\Compatibility\\',
+		'Automattic\\WooCommerce\\Tests\\Internal\\EnvironmentIsolationTest',
 	);
 
 	/**
 	 * Country the fixed geolocation answer reports.
 	 */
 	private const OFFLINE_GEOLOCATION_COUNTRY = 'US';
+
+	/**
+	 * HTTP requests refused during the running test, as "METHOD URL".
+	 *
+	 * @var string[]
+	 */
+	private static array $refused_requests = array();
 
 	/**
 	 * Apply the baseline.
@@ -114,6 +131,8 @@ final class EnvironmentIsolation {
 	 * @param string $test_class Fully qualified name of the running test class.
 	 */
 	public static function apply_for_test( string $test_class ): void {
+		self::$refused_requests = array();
+
 		foreach ( self::OFFLINE_TEST_NAMESPACES as $namespace ) {
 			if ( 0 === strpos( $test_class, $namespace ) ) {
 				add_filter( 'woocommerce_geolocate_ip', array( self::class, 'answer_offline_geolocation' ) );
@@ -138,7 +157,21 @@ final class EnvironmentIsolation {
 
 		$method = is_array( $args ) && isset( $args['method'] ) ? (string) $args['method'] : 'GET';
 
+		self::$refused_requests[] = $method . ' ' . $url;
+
 		return new \WP_Error( 'woocommerce_test_unmocked_http_request', sprintf( 'Un-mocked HTTP request in a native payments test: %s %s', $method, $url ) );
+	}
+
+	/**
+	 * Fail the running test when it made an HTTP request no callback answered, so code that absorbs the refusal cannot hide it.
+	 */
+	public static function assert_no_unmocked_requests(): void {
+		$refused                = self::$refused_requests;
+		self::$refused_requests = array();
+
+		if ( array() !== $refused ) {
+			Assert::fail( 'Un-mocked HTTP request in a native payments test: ' . implode( ', ', $refused ) );
+		}
 	}
 
 	/**

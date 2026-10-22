@@ -3732,29 +3732,32 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->markTestSkipped( 'ZipArchive is required to build the test package.' );
 		}
 
-		// The upgrader runs core's update checks; answer them with "no updates", since this case is about deactivation.
+		// The upgrader runs core's update checks, and WooCommerce.com's extension update check; answer them with "no updates", since this case is about deactivation.
+		// For WooCommerce.com, the body `[]` is a hand-written "no products" answer: it is decoded to an empty product map and an
+		// empty map means no updates (includes/admin/helper/class-wc-helper-updater.php:741 and :772).
 		add_filter(
 			'pre_http_request',
 			static function ( $response, $args, $url ) {
 				unset( $args );
 				$no_updates = array(
-					'/core/version-check/'   => array(
+					'api.wordpress.org/core/version-check/'   => array(
 						'offers'       => array(),
 						'translations' => array(),
 					),
-					'/plugins/update-check/' => array(
+					'api.wordpress.org/plugins/update-check/' => array(
 						'plugins'      => array(),
 						'translations' => array(),
 						'no_update'    => array(),
 					),
-					'/themes/update-check/'  => array(
+					'api.wordpress.org/themes/update-check/'  => array(
 						'themes'       => array(),
 						'translations' => array(),
 						'no_update'    => array(),
 					),
+					'woocommerce.com/wp-json/helper/1.0/update-check-public' => array(),
 				);
 				foreach ( $no_updates as $path => $body ) {
-					if ( false === $response && 'api.wordpress.org' === wp_parse_url( $url, PHP_URL_HOST ) && false !== strpos( $url, $path ) ) {
+					if ( false === $response && false !== strpos( $url, $path ) ) {
 						return array(
 							'headers'  => array(),
 							'body'     => wp_json_encode( $body ),

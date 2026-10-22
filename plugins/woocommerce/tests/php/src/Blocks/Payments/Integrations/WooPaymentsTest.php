@@ -21,12 +21,12 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsEx
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
-use WP_UnitTestCase;
+use WC_Unit_Test_Case;
 
 /**
  * Tests for the Blocks WooPayments integration.
  */
-class WooPaymentsTest extends WP_UnitTestCase {
+class WooPaymentsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Tear down test fixtures.

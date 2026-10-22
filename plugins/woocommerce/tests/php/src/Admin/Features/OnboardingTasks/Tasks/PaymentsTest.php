@@ -66,6 +66,28 @@ class PaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_fires_no_retired_woopayments_task_filter( string $feature ): void {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'on' === $feature ? 'yes' : 'no' );
+		// A hand-written "no incentive" answer: the body `[]` is decoded and kept as the empty incentive list
+		// (src/Internal/Admin/Suggestions/Incentives/WooPayments.php:246-249).
+		add_filter(
+			'pre_http_request',
+			static function ( $preempt, $parsed_args, $url ) {
+				unset( $parsed_args );
+
+				if ( str_contains( $url, 'https://public-api.wordpress.com/wpcom/v2/wcpay/incentives' ) ) {
+					return array(
+						'success'  => true,
+						'body'     => wp_json_encode( array() ),
+						'response' => array(
+							'code' => 200,
+						),
+					);
+				}
+
+				return $preempt;
+			},
+			10,
+			3
+		);
 		$fired = array();
 		foreach ( array( 'woocommerce_admin_woopayments_onboarding_task_badge', 'woocommerce_admin_woopayments_onboarding_task_additional_data' ) as $hook ) {
 			add_filter(

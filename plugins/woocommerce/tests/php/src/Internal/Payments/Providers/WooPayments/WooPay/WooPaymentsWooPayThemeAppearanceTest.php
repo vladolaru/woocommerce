@@ -5,12 +5,12 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\W
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayThemeAppearance;
 use WP_Theme_JSON_Data;
-use WP_UnitTestCase;
+use WC_Unit_Test_Case;
 
 /**
  * Tests for the WooPay appearance computed from the theme.
  */
-class WooPaymentsWooPayThemeAppearanceTest extends WP_UnitTestCase {
+class WooPaymentsWooPayThemeAppearanceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Style handles registered by a test.

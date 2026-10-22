@@ -208,12 +208,30 @@ class WooPaymentsTracksTest extends WC_Unit_Test_Case {
 
 			return $properties;
 		};
+		// An AJAX request sends the Tracks pixel at once; answer it as the pixel endpoint does, so no event leaves the test.
+		$answer_pixel = static function ( $response, $parsed_args, $url ) {
+			unset( $parsed_args );
+
+			if ( str_contains( $url, 'pixel.wp.com/t.gif' ) ) {
+				return array(
+					'response' => array(
+						'code'    => 200,
+						'message' => 'OK',
+					),
+					'body'     => '',
+				);
+			}
+
+			return $response;
+		};
 		add_filter( 'woocommerce_tracks_event_properties', $capture, 10, 2 );
+		add_filter( 'pre_http_request', $answer_pixel, 10, 3 );
 
 		try {
 			$act();
 		} finally {
 			remove_filter( 'woocommerce_tracks_event_properties', $capture, 10 );
+			remove_filter( 'pre_http_request', $answer_pixel, 10 );
 		}
 
 		return $recorded;

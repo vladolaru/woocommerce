@@ -4,12 +4,12 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFrontendAssets;
-use WP_UnitTestCase;
+use WC_Unit_Test_Case;
 
 /**
  * Tests for the shared WooPayments frontend assets and the current-page lookup.
  */
-class WooPaymentsFrontendAssetsTest extends WP_UnitTestCase {
+class WooPaymentsFrontendAssetsTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Restore the global post after each test.
