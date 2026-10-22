@@ -67,7 +67,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	public function test_provider_exposes_its_multi_currency_bootstrap_root(): void {
 		$this->assertSame(
 			array( WooPaymentsMultiCurrencyProviderBootstrap::class, WooPaymentsMultiCurrencyPaymentMethodsMap::class ),
-			WooPaymentsProvider::get_multi_currency_provider_roots()
+			WooPaymentsProvider::get_multi_currency_classes()
 		);
 	}
 

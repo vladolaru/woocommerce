@@ -380,13 +380,13 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	}
 
 	/**
-	 * Get WooPayments-owned Multi-Currency bootstrap roots.
+	 * Get the classes WooPayments adds to Multi-Currency, which the Multi-Currency bootstrap registers ahead of its own.
 	 *
 	 * @since 11.2.0
 	 *
-	 * @return array<int,class-string> Root classes in registration order.
+	 * @return array<int,class-string> Class names in registration order.
 	 */
-	public static function get_multi_currency_provider_roots(): array {
+	public static function get_multi_currency_classes(): array {
 		return array( WooPaymentsMultiCurrencyProviderBootstrap::class, WooPaymentsMultiCurrencyPaymentMethodsMap::class );
 	}
 

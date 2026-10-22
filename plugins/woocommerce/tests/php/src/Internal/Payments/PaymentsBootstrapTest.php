@@ -56,7 +56,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( 1, $rest_checks, 'The request must be classified once for both bootstraps.' );
-		$multi_currency_provider = array_search( WooPaymentsProvider::get_multi_currency_provider_roots()[0], $container->resolved, true );
+		$multi_currency_provider = array_search( WooPaymentsProvider::get_multi_currency_classes()[0], $container->resolved, true );
 		$multi_currency_rest     = array_search( MultiCurrencyRestController::class, $container->resolved, true );
 		$payments_rest_class     = WooPaymentsProvider::get_classes_by_setup_tier()[ WooPaymentsSetupTier::CONNECTED ]['rest'][1];
 		$payments_rest           = array_search( $payments_rest_class, $container->resolved, true );

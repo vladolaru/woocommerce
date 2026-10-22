@@ -30,7 +30,7 @@ final class MultiCurrencyBootstrap {
 	private $admin_rest_container = null;
 
 	/**
-	 * Container for the cron roots this request registers when Action Scheduler first runs an action.
+	 * Container for the cron classes this request registers when Action Scheduler first runs an action.
 	 *
 	 * @var Container|RuntimeContainer|null
 	 */
@@ -44,39 +44,40 @@ final class MultiCurrencyBootstrap {
 	private $order_container = null;
 
 	/**
-	 * Roots this request registered when WooCommerce loaded.
+	 * Classes this request registered when WooCommerce loaded.
 	 *
 	 * @var array<int,class-string>
 	 */
-	private array $registered_roots = array();
+	private array $registered_classes = array();
 
 	/**
-	 * Persisted data tier, or null when this request class does not check order history at load.
+	 * How far the store uses Multi-Currency (configured, historical or empty), or null when this request type does not
+	 * check order history at load.
 	 *
 	 * @var string|null
 	 */
-	private ?string $data_tier = null;
+	private ?string $usage = null;
 
 	/**
-	 * Provider roots, resolved once per request.
+	 * Provider classes, resolved once per request.
 	 *
 	 * @var array<int,class-string>|null
 	 */
-	private ?array $provider_roots = null;
+	private ?array $provider_classes = null;
 
-	/** Base lifecycle root. @var array<int,class-string> */
+	/** Base lifecycle class. @var array<int,class-string> */
 	private const BASE = array(
 		MultiCurrencyStoreCurrencyLifecycleController::class,
 	);
 
-	/** Currency and price conversion roots. @var array<int,class-string> */
+	/** Currency and price conversion classes. @var array<int,class-string> */
 	private const PRICE = array(
 		MultiCurrencyFrontendCurrenciesController::class,
 		MultiCurrencyFrontendPricesController::class,
 		MultiCurrencySelectedCurrencyController::class,
 	);
 
-	/** Extension compatibility roots. @var array<int,class-string> */
+	/** Extension compatibility classes. @var array<int,class-string> */
 	private const COMPAT = array(
 		MultiCurrencyCompatibilityController::class,
 		MultiCurrencyBookingsCompatibilityController::class,
@@ -91,7 +92,7 @@ final class MultiCurrencyBootstrap {
 		MultiCurrencyExplicitPriceController::class,
 	);
 
-	/** Storefront presentation roots. @var array<int,class-string> */
+	/** Storefront presentation classes. @var array<int,class-string> */
 	private const STOREFRONT = array(
 		MultiCurrencySwitcherWidgetController::class,
 		MultiCurrencySwitcherBlockController::class,
@@ -99,42 +100,42 @@ final class MultiCurrencyBootstrap {
 		MultiCurrencyAsyncPriceRendererController::class,
 	);
 
-	/** Historical analytics roots. @var array<int,class-string> */
+	/** Historical analytics classes. @var array<int,class-string> */
 	private const HISTORY = array(
 		MultiCurrencyAnalyticsController::class,
 		MultiCurrencyTrackingController::class,
 	);
 
-	/** Settings management roots. @var array<int,class-string> */
+	/** Settings management classes. @var array<int,class-string> */
 	private const MANAGEMENT = array(
 		MultiCurrencySettingsController::class,
 		MultiCurrencyRestController::class,
 	);
 
-	/** Admin-only roots. @var array<int,class-string> */
+	/** Admin-only classes. @var array<int,class-string> */
 	private const ADMIN = array(
 		MultiCurrencyAdminNoticesController::class,
 		MultiCurrencyAdminNoteController::class,
 	);
 
 	/**
-	 * Provider-owned Multi-Currency roots resolver.
+	 * Lists the provider's Multi-Currency classes.
 	 *
 	 * @var callable
 	 * @phpstan-var callable(): array<int,class-string>
 	 */
-	private $provider_roots_resolver;
+	private $provider_classes_resolver;
 
 	/**
 	 * Initialize provider-neutral Multi-Currency composition.
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param callable $provider_roots_resolver Provider-owned roots resolver.
-	 * @phpstan-param callable(): array<int,class-string> $provider_roots_resolver
+	 * @param callable $provider_classes_resolver Lists the provider's Multi-Currency classes.
+	 * @phpstan-param callable(): array<int,class-string> $provider_classes_resolver
 	 */
-	public function __construct( callable $provider_roots_resolver ) {
-		$this->provider_roots_resolver = $provider_roots_resolver;
+	public function __construct( callable $provider_classes_resolver ) {
+		$this->provider_classes_resolver = $provider_classes_resolver;
 	}
 
 	/**
@@ -170,7 +171,7 @@ final class MultiCurrencyBootstrap {
 				return;
 			}
 
-			$this->register_roots( $container, array_merge( $this->get_provider_roots(), array( MultiCurrencyShadowMode::class ) ) );
+			$this->register_classes( $container, array_merge( $this->get_provider_classes(), array( MultiCurrencyShadowMode::class ) ) );
 			return;
 		}
 
@@ -184,55 +185,54 @@ final class MultiCurrencyBootstrap {
 			add_filter( 'woocommerce_analytics_update_order_stats_data', array( $this, 'handle_woocommerce_analytics_update_order_stats_data' ), 99999, 2 );
 		}
 
-		$request = $request_type;
-		$roots   = $this->get_core_roots( $container, $request );
-		if ( ! empty( $roots ) ) {
-			if ( 'admin' === $request ) {
+		$classes = $this->get_module_classes_for_request( $container, $request_type );
+		if ( ! empty( $classes ) ) {
+			if ( 'admin' === $request_type ) {
 				$this->admin_rest_container = $container;
 				if ( false === has_action( 'rest_api_init', array( $this, 'register_admin_rest_controller' ) ) ) {
 					add_action( 'rest_api_init', array( $this, 'register_admin_rest_controller' ), 0 );
 				}
 			}
 
-			if ( array( MultiCurrencyExplicitPriceController::class ) !== $roots ) {
-				$roots = array_merge( $this->get_provider_roots(), $roots );
+			if ( array( MultiCurrencyExplicitPriceController::class ) !== $classes ) {
+				$classes = array_merge( $this->get_provider_classes(), $classes );
 			}
 
-			$this->register_roots( $container, $roots );
+			$this->register_classes( $container, $classes );
 		}
 
-		$this->register_cron_roots_on_demand( $container, $request, $roots );
+		$this->register_cron_classes_on_demand( $container, $request_type, $classes );
 	}
 
 	/**
-	 * Register the cron roots this request lacks once Action Scheduler runs an action in it.
+	 * Register the cron classes this request lacks once Action Scheduler runs an action in it.
 	 *
 	 * ALTERNATE_WP_CRON and WP-CLI run actions, such as the Analytics import and the tracker, inside a front or CLI request.
-	 * Admin and REST requests already register every cron root, so the Tools > Scheduled Actions "Run" link never needs this listener.
+	 * Admin and REST requests already register every cron class, so the Tools > Scheduled Actions "Run" link never needs this listener.
 	 * The client registers Analytics and Tracking on every request (client 11.1.0 `includes/multi-currency/MultiCurrency.php:340,344`).
 	 *
 	 * @param Container|RuntimeContainer $container  Runtime dependency container.
-	 * @param string                     $request    Request class.
-	 * @param array<int,class-string>    $registered Roots registered for this request.
+	 * @param string                     $request_type Request type.
+	 * @param array<int,class-string>    $registered   Classes registered for this request.
 	 */
-	private function register_cron_roots_on_demand( $container, string $request, array $registered ): void {
-		if ( 'cron' === $request ) {
+	private function register_cron_classes_on_demand( $container, string $request_type, array $registered ): void {
+		if ( 'cron' === $request_type ) {
 			return;
 		}
 
 		// A request that did not check order history at load leaves that check to the listener.
-		if ( null !== $this->data_tier && empty( array_diff( $this->get_roots_for_tier( $this->data_tier, 'cron' ), $registered ) ) ) {
+		if ( null !== $this->usage && empty( array_diff( $this->get_classes_for_usage( $this->usage, 'cron' ), $registered ) ) ) {
 			return;
 		}
 
 		$this->on_demand_container = $container;
-		$this->registered_roots    = $registered;
+		$this->registered_classes  = $registered;
 		// Action Scheduler fires this before it checks the action has callbacks and runs it (`ActionScheduler_Abstract_QueueRunner::process_action()`).
 		add_action( 'action_scheduler_before_execute', array( $this, 'handle_action_scheduler_before_execute' ), 0 );
 	}
 
 	/**
-	 * Register the missing cron roots before Action Scheduler runs the first action of this request.
+	 * Register the missing cron classes before Action Scheduler runs the first action of this request.
 	 *
 	 * @internal
 	 */
@@ -244,13 +244,13 @@ final class MultiCurrencyBootstrap {
 			return;
 		}
 
-		$tier = $this->data_tier ?? $this->get_history_tier( $container->get( MultiCurrencyUsageDetector::class ) );
-		$cron = $this->get_roots_for_tier( $tier, 'cron' );
+		$usage = $this->usage ?? $this->get_usage_from_order_history( $container->get( MultiCurrencyUsageDetector::class ) );
+		$cron  = $this->get_classes_for_usage( $usage, 'cron' );
 		if ( empty( $cron ) ) {
 			return;
 		}
 
-		$this->register_roots( $container, array_values( array_diff( array_merge( $this->get_provider_roots(), $cron ), $this->registered_roots ) ) );
+		$this->register_classes( $container, array_values( array_diff( array_merge( $this->get_provider_classes(), $cron ), $this->registered_classes ) ) );
 	}
 
 	/**
@@ -321,16 +321,16 @@ final class MultiCurrencyBootstrap {
 	}
 
 	/**
-	 * Get the provider roots, resolving them once per request.
+	 * Get the provider's Multi-Currency classes, resolving them once per request.
 	 *
-	 * @return array<int,class-string> Provider root class names.
+	 * @return array<int,class-string> Provider class names.
 	 */
-	private function get_provider_roots(): array {
-		if ( null === $this->provider_roots ) {
-			$this->provider_roots = ( $this->provider_roots_resolver )();
+	private function get_provider_classes(): array {
+		if ( null === $this->provider_classes ) {
+			$this->provider_classes = ( $this->provider_classes_resolver )();
 		}
 
-		return $this->provider_roots;
+		return $this->provider_classes;
 	}
 
 	/**
@@ -353,38 +353,39 @@ final class MultiCurrencyBootstrap {
 	}
 
 	/**
-	 * Get core-owned roots for the persisted data and current request.
+	 * Get the module's classes for the current request type, and record how far the store uses Multi-Currency, which the
+	 * on-demand cron registration reads.
 	 *
-	 * @param Container|RuntimeContainer $container Runtime dependency container.
-	 * @param string                     $request   Request class.
-	 * @return array<int,class-string> Root class names in registration order.
+	 * @param Container|RuntimeContainer $container    Runtime dependency container.
+	 * @param string                     $request_type Request type.
+	 * @return array<int,class-string> Class names in registration order.
 	 */
-	private function get_core_roots( $container, string $request ): array {
+	private function get_module_classes_for_request( $container, string $request_type ): array {
 		/** Resolve persisted Multi-Currency usage. @var MultiCurrencyUsageDetector $usage_detector */
 		$usage_detector = $container->get( MultiCurrencyUsageDetector::class );
 		if ( $usage_detector->has_additional_enabled_currencies() ) {
-			$this->data_tier = 'configured';
-			return $this->get_roots_for_tier( 'configured', $request );
+			$this->usage = 'configured';
+			return $this->get_classes_for_usage( 'configured', $request_type );
 		}
 
 		// The explicit-price filter can be added after WooCommerce loads, so its controller registers wherever prices may render and
 		// the filter is read at render, as the client does (client 11.1.0 `includes/class-wc-payments-explicit-price-formatter.php:55-73`).
-		if ( in_array( $request, array( 'front', 'ajax', 'cli' ), true ) ) {
+		if ( in_array( $request_type, array( 'front', 'ajax', 'cli' ), true ) ) {
 			return array( MultiCurrencyExplicitPriceController::class );
 		}
 
-		$this->data_tier = $this->get_history_tier( $usage_detector );
+		$this->usage = $this->get_usage_from_order_history( $usage_detector );
 
-		return array_merge( $this->get_roots_for_tier( $this->data_tier, $request ), array( MultiCurrencyExplicitPriceController::class ) );
+		return array_merge( $this->get_classes_for_usage( $this->usage, $request_type ), array( MultiCurrencyExplicitPriceController::class ) );
 	}
 
 	/**
-	 * Get the data tier of a store without additional currencies from its order history.
+	 * Get how far a store without additional currencies uses Multi-Currency, from its order history.
 	 *
 	 * @param MultiCurrencyUsageDetector $usage_detector Persisted usage detector.
-	 * @return string Persisted data tier: historical or empty.
+	 * @return string Usage: historical or empty.
 	 */
-	private function get_history_tier( $usage_detector ): string {
+	private function get_usage_from_order_history( $usage_detector ): string {
 		try {
 			return $usage_detector->has_foreign_currency_orders() ? 'historical' : 'empty';
 		} catch ( \RuntimeException $error ) {
@@ -394,13 +395,13 @@ final class MultiCurrencyBootstrap {
 	}
 
 	/**
-	 * Get roots for one data tier and request class.
+	 * Get the module's classes for one usage and request type.
 	 *
-	 * @param string $tier    Persisted data tier.
-	 * @param string $request Request class.
-	 * @return array<int,class-string> Root class names in registration order.
+	 * @param string $usage        How far the store uses Multi-Currency: configured, historical or empty.
+	 * @param string $request_type Request type.
+	 * @return array<int,class-string> Class names in registration order.
 	 */
-	private function get_roots_for_tier( string $tier, string $request ): array {
+	private function get_classes_for_usage( string $usage, string $request_type ): array {
 		$matrix = array(
 			'configured' => array(
 				'front' => array_merge( self::BASE, self::PRICE, self::COMPAT, self::STOREFRONT ),
@@ -422,34 +423,24 @@ final class MultiCurrencyBootstrap {
 			),
 		);
 
-		return $matrix[ $tier ][ $request ] ?? array();
+		return $matrix[ $usage ][ $request_type ] ?? array();
 	}
 
 	/**
-	 * Resolve and register explicit roots once, preserving provider-before-core order.
+	 * Resolve and register each listed class once, keeping the provider's classes ahead of the module's.
 	 *
 	 * @param Container|RuntimeContainer $container Runtime dependency container.
-	 * @param array<int,class-string>    $roots     Root class names.
+	 * @param array<int,class-string>    $classes   Class names in registration order.
 	 */
-	private function register_roots( $container, array $roots ): void {
-		foreach ( array_unique( $roots ) as $root ) {
-			$this->register_root( $container, $root );
+	private function register_classes( $container, array $classes ): void {
+		foreach ( array_unique( $classes ) as $class_name ) {
+			/**
+			 * Registrar.
+			 *
+			 * @var RegisterHooksInterface $registrar
+			 */
+			$registrar = $container->get( $class_name );
+			$registrar->register();
 		}
-	}
-
-	/**
-	 * Resolve and register one explicit Multi-Currency root.
-	 *
-	 * @param Container|RuntimeContainer $container Runtime dependency container.
-	 * @param class-string               $root      Root class name.
-	 */
-	private function register_root( $container, string $root ): void {
-		/**
-		 * Resolve the explicit registrar.
-		 *
-		 * @var RegisterHooksInterface $registrar
-		 */
-		$registrar = $container->get( $root );
-		$registrar->register();
 	}
 }

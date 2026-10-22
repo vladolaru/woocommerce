@@ -349,7 +349,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		}
 		try {
 			$request_type = RequestTypeUtil::get_request_type( 'rest' === $request ? '__return_true' : '__return_false' );
-			( new MultiCurrencyBootstrap( static fn(): array => WooPaymentsProvider::get_multi_currency_provider_roots() ) )->register( $container, $request_type );
+			( new MultiCurrencyBootstrap( static fn(): array => WooPaymentsProvider::get_multi_currency_classes() ) )->register( $container, $request_type );
 			( new PaymentsBootstrap(
 				static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
 				static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner()
