@@ -11,6 +11,8 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPricePro
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 
 /**
  * Registers native multi-currency compatibility hooks when core owns multi-currency.
@@ -19,7 +21,6 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  * @internal Transitional internal component for the native multi-currency runtime.
  */
 class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
-
 
 	private const NEW_SALES_RECORD_BACKTRACE_CALLS = array(
 		'Automattic\WooCommerce\Admin\Notes\NewSalesRecord::sum_sales_for_date',
@@ -79,7 +80,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( $this->is_cron_request() ) {
+		if ( Constants::is_defined( 'DOING_CRON' ) ) {
 			$this->add_filter_once( 'woocommerce_admin_sales_record_milestone_enabled', array( $this, 'attach_order_modifier' ) );
 		}
 	}
@@ -263,38 +264,13 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the current request is a cron request.
+	 * Check if any expected call appears in the backtrace summary.
 	 *
+	 * @param string[] $calls Expected calls.
 	 * @return bool
 	 */
-	protected function is_cron_request(): bool {
-		return defined( 'DOING_CRON' );
-	}
-
-	/**
-	 * Tell whether any expected calls are present in the backtrace.
-	 *
-	 * @param string[] $expected_calls Expected call strings.
-	 * @return bool
-	 */
-	protected function is_call_in_backtrace( array $expected_calls ): bool {
-		$expected_lookup = array_fill_keys( $expected_calls, true );
-
-		foreach ( debug_backtrace( DEBUG_BACKTRACE_IGNORE_ARGS ) as $call ) { // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_debug_backtrace
-			if ( empty( $call['function'] ) ) {
-				continue;
-			}
-
-			$call_string = isset( $call['class'] )
-				? (string) $call['class'] . '::' . (string) $call['function']
-				: (string) $call['function'];
-
-			if ( isset( $expected_lookup[ $call_string ] ) ) {
-				return true;
-			}
-		}
-
-		return false;
+	protected function is_call_in_backtrace( array $calls ): bool {
+		return MultiCurrencyRequestContext::is_call_in_backtrace( $calls );
 	}
 
 	/**

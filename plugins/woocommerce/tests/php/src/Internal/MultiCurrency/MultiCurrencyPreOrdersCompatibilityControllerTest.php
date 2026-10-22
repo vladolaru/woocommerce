@@ -174,12 +174,17 @@ class MultiCurrencyPreOrdersCompatibilityControllerTest extends WC_Unit_Test_Cas
 			}
 
 			/**
-			 * Check if plugins have loaded.
+			 * The request signals this double's case sets.
 			 *
-			 * @return bool
+			 * @return array<string,bool>
 			 */
-			protected function have_plugins_loaded(): bool {
-				return $this->plugins_loaded;
+			private function request_signals(): array {
+				return array( 'plugins_loaded' => $this->plugins_loaded );
+			}
+
+			/** Register with this case's request signals set. */
+			public function register() {
+				RequestSignals::run( $this->request_signals(), fn() => parent::register() );
 			}
 		};
 

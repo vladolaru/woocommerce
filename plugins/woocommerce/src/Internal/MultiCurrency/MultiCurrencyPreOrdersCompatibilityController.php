@@ -73,7 +73,7 @@ class MultiCurrencyPreOrdersCompatibilityController implements RegisterHooksInte
 			return;
 		}
 
-		if ( $this->is_pre_orders_runtime_available() || $this->have_plugins_loaded() ) {
+		if ( $this->is_pre_orders_runtime_available() || did_action( 'plugins_loaded' ) > 0 ) {
 			$this->register_pre_orders_filters();
 			return;
 		}
@@ -129,15 +129,6 @@ class MultiCurrencyPreOrdersCompatibilityController implements RegisterHooksInte
 	 */
 	protected function is_pre_orders_runtime_available(): bool {
 		return class_exists( 'WC_Pre_Orders' );
-	}
-
-	/**
-	 * Check if plugins have loaded.
-	 *
-	 * @return bool
-	 */
-	protected function have_plugins_loaded(): bool {
-		return did_action( 'plugins_loaded' ) > 0;
 	}
 
 	/**

@@ -9,6 +9,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUpsCompatibilityProjectionService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 
 /**
  * Registers native multi-currency UPS compatibility hooks when core owns multi-currency.
@@ -50,7 +51,7 @@ class MultiCurrencyUpsCompatibilityController implements RegisterHooksInterface 
 			return;
 		}
 
-		if ( $this->is_ups_runtime_available() || $this->have_plugins_loaded() ) {
+		if ( $this->is_ups_runtime_available() || did_action( 'plugins_loaded' ) > 0 ) {
 			$this->register_ups_filters();
 			return;
 		}
@@ -106,41 +107,13 @@ class MultiCurrencyUpsCompatibilityController implements RegisterHooksInterface 
 	}
 
 	/**
-	 * Check if plugins have loaded.
-	 *
-	 * @return bool
-	 */
-	protected function have_plugins_loaded(): bool {
-		return did_action( 'plugins_loaded' ) > 0;
-	}
-
-	/**
 	 * Check if any expected call appears in the backtrace summary.
 	 *
 	 * @param string[] $calls Expected calls.
 	 * @return bool
 	 */
 	protected function is_call_in_backtrace( array $calls ): bool {
-		$expected_lookup = array_fill_keys( $calls, true );
-
-		// Cheaper equivalent of wp_debug_backtrace_summary( null, 0, false ) + in_array():
-		// DEBUG_BACKTRACE_IGNORE_ARGS skips capturing argument values, and the loop early-returns
-		// on the first matching frame instead of formatting the whole stack into a summary array.
-		foreach ( debug_backtrace( DEBUG_BACKTRACE_IGNORE_ARGS ) as $frame ) { // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_debug_backtrace -- Compatibility guard on the price/cart hot path.
-			if ( empty( $frame['function'] ) ) {
-				continue;
-			}
-
-			$call = isset( $frame['class'] )
-				? (string) $frame['class'] . (string) ( $frame['type'] ?? '::' ) . (string) $frame['function']
-				: (string) $frame['function'];
-
-			if ( isset( $expected_lookup[ $call ] ) ) {
-				return true;
-			}
-		}
-
-		return false;
+		return MultiCurrencyRequestContext::is_call_in_backtrace( $calls );
 	}
 
 	/**

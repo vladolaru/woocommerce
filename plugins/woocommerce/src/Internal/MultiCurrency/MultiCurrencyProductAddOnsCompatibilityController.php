@@ -75,7 +75,7 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 			return;
 		}
 
-		if ( $this->is_product_addons_runtime_available() || $this->have_plugins_loaded() ) {
+		if ( $this->is_product_addons_runtime_available() || did_action( 'plugins_loaded' ) > 0 ) {
 			$this->register_product_addons_hooks();
 			return;
 		}
@@ -89,9 +89,9 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 	 * @internal
 	 */
 	public function register_product_addons_hooks(): void {
-		$is_admin = $this->is_admin_request();
-		$is_ajax  = $this->is_ajax_request();
-		$is_cron  = $this->is_cron_request();
+		$is_admin = is_admin();
+		$is_ajax  = wp_doing_ajax();
+		$is_cron  = wp_doing_cron();
 
 		if (
 			! $this->arbiter->should_core_register()
@@ -356,42 +356,6 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 	 */
 	protected function is_product_addons_runtime_available(): bool {
 		return class_exists( 'WC_Product_Addons' );
-	}
-
-	/**
-	 * Check if plugins have loaded.
-	 *
-	 * @return bool
-	 */
-	protected function have_plugins_loaded(): bool {
-		return did_action( 'plugins_loaded' ) > 0;
-	}
-
-	/**
-	 * Check if this is an admin request.
-	 *
-	 * @return bool
-	 */
-	protected function is_admin_request(): bool {
-		return is_admin();
-	}
-
-	/**
-	 * Check if this is an Ajax request.
-	 *
-	 * @return bool
-	 */
-	protected function is_ajax_request(): bool {
-		return wp_doing_ajax();
-	}
-
-	/**
-	 * Check if this is a cron request.
-	 *
-	 * @return bool
-	 */
-	protected function is_cron_request(): bool {
-		return wp_doing_cron();
 	}
 
 	/**

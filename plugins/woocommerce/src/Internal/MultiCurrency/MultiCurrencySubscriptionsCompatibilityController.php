@@ -14,6 +14,8 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySubscrip
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 
 /**
  * Registers native multi-currency Subscriptions compatibility hooks when core owns multi-currency.
@@ -203,13 +205,13 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	public function register() {
 		if (
 			! $this->arbiter->should_core_register()
-			|| $this->is_admin_request()
-			|| $this->is_cron_request()
+			|| is_admin()
+			|| Constants::is_defined( 'DOING_CRON' )
 		) {
 			return;
 		}
 
-		if ( $this->is_subscriptions_runtime_available() || $this->have_plugins_loaded() ) {
+		if ( $this->is_subscriptions_runtime_available() || 0 < did_action( 'plugins_loaded' ) ) {
 			$this->register_subscription_filters();
 			return;
 		}
@@ -225,8 +227,8 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	public function register_subscription_filters(): void {
 		if (
 			! $this->arbiter->should_core_register()
-			|| $this->is_admin_request()
-			|| $this->is_cron_request()
+			|| is_admin()
+			|| Constants::is_defined( 'DOING_CRON' )
 			|| ! $this->is_subscriptions_runtime_available()
 		) {
 			return;
@@ -494,39 +496,12 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	}
 
 	/**
-	 * Tell whether the current request is an admin request.
-	 *
-	 * @return bool
-	 */
-	protected function is_admin_request(): bool {
-		return is_admin();
-	}
-
-	/**
-	 * Tell whether the current request is a cron request.
-	 *
-	 * @return bool
-	 */
-	protected function is_cron_request(): bool {
-		return defined( 'DOING_CRON' );
-	}
-
-	/**
 	 * Tell whether WooCommerce Subscriptions is available.
 	 *
 	 * @return bool
 	 */
 	protected function is_subscriptions_runtime_available(): bool {
 		return class_exists( 'WC_Subscriptions' );
-	}
-
-	/**
-	 * Tell whether WordPress has finished loading active plugins.
-	 *
-	 * @return bool
-	 */
-	protected function have_plugins_loaded(): bool {
-		return 0 < did_action( 'plugins_loaded' );
 	}
 
 	/**
@@ -654,29 +629,13 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	}
 
 	/**
-	 * Tell whether any expected calls are present in the backtrace.
+	 * Check if any expected call appears in the backtrace summary.
 	 *
-	 * @param string[] $expected_calls Expected call strings.
+	 * @param string[] $calls Expected calls.
 	 * @return bool
 	 */
-	protected function is_call_in_backtrace( array $expected_calls ): bool {
-		$expected_lookup = array_fill_keys( $expected_calls, true );
-
-		foreach ( debug_backtrace( DEBUG_BACKTRACE_IGNORE_ARGS ) as $call ) { // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_debug_backtrace
-			if ( empty( $call['function'] ) ) {
-				continue;
-			}
-
-			$call_string = isset( $call['class'] )
-				? (string) $call['class'] . (string) ( $call['type'] ?? '::' ) . (string) $call['function']
-				: (string) $call['function'];
-
-			if ( isset( $expected_lookup[ $call_string ] ) ) {
-				return true;
-			}
-		}
-
-		return false;
+	protected function is_call_in_backtrace( array $calls ): bool {
+		return MultiCurrencyRequestContext::is_call_in_backtrace( $calls );
 	}
 
 	/**

@@ -106,7 +106,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 			return;
 		}
 
-		if ( $this->is_name_your_price_runtime_available() || $this->have_plugins_loaded() ) {
+		if ( $this->is_name_your_price_runtime_available() || did_action( 'plugins_loaded' ) > 0 ) {
 			$this->register_name_your_price_hooks();
 			return;
 		}
@@ -356,15 +356,6 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	 */
 	protected function is_name_your_price_function_available(): bool {
 		return function_exists( 'WC_Name_Your_Price' );
-	}
-
-	/**
-	 * Check if plugins have loaded.
-	 *
-	 * @return bool
-	 */
-	protected function have_plugins_loaded(): bool {
-		return did_action( 'plugins_loaded' ) > 0;
 	}
 
 	/**

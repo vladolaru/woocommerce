@@ -322,14 +322,6 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 				return $this->deposits_version;
 			}
 
-			/**
-			 * Check if plugins have loaded.
-			 *
-			 * @return bool
-			 */
-			protected function have_plugins_loaded(): bool {
-				return $this->plugins_loaded;
-			}
 
 			/**
 			 * Check if any expected call appears in the deterministic backtrace.
@@ -349,6 +341,19 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 			 */
 			protected function get_product_deposit_type( $product ) {
 				return is_object( $product ) && isset( $product->deposit_type ) ? $product->deposit_type : false;
+			}
+			/**
+			 * The request signals this double's case sets.
+			 *
+			 * @return array<string,bool>
+			 */
+			private function request_signals(): array {
+				return array( 'plugins_loaded' => $this->plugins_loaded );
+			}
+
+			/** Register with this case's request signals set. */
+			public function register() {
+				RequestSignals::run( $this->request_signals(), fn() => parent::register() );
 			}
 		};
 

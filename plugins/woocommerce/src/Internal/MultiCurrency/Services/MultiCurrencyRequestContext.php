@@ -23,7 +23,7 @@ class MultiCurrencyRequestContext {
 	 * @since 11.0.0
 	 */
 	public function is_frontend_request(): bool {
-		return ! $this->is_admin_request() && ! $this->is_cron_request() && ! $this->is_admin_api_request();
+		return ! $this->is_wp_admin() && ! $this->is_doing_cron() && ! $this->is_admin_api_request();
 	}
 
 	/**
@@ -130,7 +130,7 @@ class MultiCurrencyRequestContext {
 	 *
 	 * @return bool True for admin requests.
 	 */
-	protected function is_admin_request(): bool {
+	protected function is_wp_admin(): bool {
 		return is_admin();
 	}
 
@@ -139,8 +139,37 @@ class MultiCurrencyRequestContext {
 	 *
 	 * @return bool True for cron requests.
 	 */
-	protected function is_cron_request(): bool {
+	protected function is_doing_cron(): bool {
 		return wp_doing_cron();
+	}
+
+	/**
+	 * Tell whether any of the given calls appears in the current backtrace, as `Class->method`, `Class::method` or `function`.
+	 *
+	 * @param string[] $calls Expected calls.
+	 * @return bool
+	 */
+	public static function is_call_in_backtrace( array $calls ): bool {
+		$expected_lookup = array_fill_keys( $calls, true );
+
+		// Cheaper equivalent of wp_debug_backtrace_summary( null, 0, false ) + in_array():
+		// DEBUG_BACKTRACE_IGNORE_ARGS skips capturing argument values, and the loop early-returns
+		// on the first matching frame instead of formatting the whole stack into a summary array.
+		foreach ( debug_backtrace( DEBUG_BACKTRACE_IGNORE_ARGS ) as $frame ) { // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_debug_backtrace -- Compatibility guard on the price/cart hot path.
+			if ( empty( $frame['function'] ) ) {
+				continue;
+			}
+
+			$call = isset( $frame['class'] )
+				? (string) $frame['class'] . (string) ( $frame['type'] ?? '::' ) . (string) $frame['function']
+				: (string) $frame['function'];
+
+			if ( isset( $expected_lookup[ $call ] ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

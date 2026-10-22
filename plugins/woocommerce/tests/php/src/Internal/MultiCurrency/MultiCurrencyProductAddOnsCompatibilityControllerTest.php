@@ -533,41 +533,9 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 				return $this->product_addons_available;
 			}
 
-			/**
-			 * Check if plugins have loaded.
-			 *
-			 * @return bool
-			 */
-			protected function have_plugins_loaded(): bool {
-				return $this->plugins_loaded;
-			}
 
-			/**
-			 * Check if this is an admin request.
-			 *
-			 * @return bool
-			 */
-			protected function is_admin_request(): bool {
-				return $this->is_admin;
-			}
 
-			/**
-			 * Check if this is an Ajax request.
-			 *
-			 * @return bool
-			 */
-			protected function is_ajax_request(): bool {
-				return $this->is_ajax;
-			}
 
-			/**
-			 * Check if this is a cron request.
-			 *
-			 * @return bool
-			 */
-			protected function is_cron_request(): bool {
-				return $this->is_cron;
-			}
 
 			/**
 			 * Get a product by ID.
@@ -600,6 +568,24 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 			 */
 			protected function get_cart_product_price( $product ): string {
 				return 'cart:' . $product->get_price();
+			}
+			/**
+			 * The request signals this double's case sets.
+			 *
+			 * @return array<string,bool>
+			 */
+			private function request_signals(): array {
+				return array(
+					'plugins_loaded' => $this->plugins_loaded,
+					'admin'          => $this->is_admin,
+					'ajax'           => $this->is_ajax,
+					'cron'           => $this->is_cron,
+				);
+			}
+
+			/** Register with this case's request signals set. */
+			public function register() {
+				RequestSignals::run( $this->request_signals(), fn() => parent::register() );
 			}
 		};
 

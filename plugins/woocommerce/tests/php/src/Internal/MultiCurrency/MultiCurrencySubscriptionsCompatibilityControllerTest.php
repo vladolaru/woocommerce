@@ -698,23 +698,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 				$this->backtrace_calls = array_fill_keys( $backtrace_calls, true );
 			}
 
-			/**
-			 * Tell whether the current request is an admin request.
-			 *
-			 * @return bool
-			 */
-			protected function is_admin_request(): bool {
-				return $this->is_admin;
-			}
 
-			/**
-			 * Tell whether the current request is a cron request.
-			 *
-			 * @return bool
-			 */
-			protected function is_cron_request(): bool {
-				return $this->is_cron;
-			}
 
 			/**
 			 * Tell whether Subscriptions runtime is available.
@@ -725,14 +709,6 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 				return $this->subscriptions_available;
 			}
 
-			/**
-			 * Tell whether WordPress has finished loading plugins.
-			 *
-			 * @return bool
-			 */
-			protected function have_plugins_loaded(): bool {
-				return $this->plugins_loaded;
-			}
 
 			/**
 			 * Get a deterministic subscription cart item.
@@ -780,6 +756,23 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 				}
 
 				return false;
+			}
+			/**
+			 * The request signals this double's case sets.
+			 *
+			 * @return array<string,bool>
+			 */
+			private function request_signals(): array {
+				return array(
+					'admin'          => $this->is_admin,
+					'cron'           => $this->is_cron,
+					'plugins_loaded' => $this->plugins_loaded,
+				);
+			}
+
+			/** Register with this case's request signals set. */
+			public function register() {
+				RequestSignals::run( $this->request_signals(), fn() => parent::register() );
 			}
 		};
 

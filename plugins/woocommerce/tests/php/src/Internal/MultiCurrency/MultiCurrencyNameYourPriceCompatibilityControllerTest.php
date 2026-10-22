@@ -474,14 +474,6 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 				return $this->name_your_price_function_available;
 			}
 
-			/**
-			 * Check if plugins have loaded.
-			 *
-			 * @return bool
-			 */
-			protected function have_plugins_loaded(): bool {
-				return $this->plugins_loaded;
-			}
 
 			/**
 			 * Tell whether a product is NYP-enabled.
@@ -505,6 +497,19 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 			 */
 			protected function set_name_your_price_cart_item( array $cart_item ): array {
 				return $cart_item;
+			}
+			/**
+			 * The request signals this double's case sets.
+			 *
+			 * @return array<string,bool>
+			 */
+			private function request_signals(): array {
+				return array( 'plugins_loaded' => $this->plugins_loaded );
+			}
+
+			/** Register with this case's request signals set. */
+			public function register() {
+				RequestSignals::run( $this->request_signals(), fn() => parent::register() );
 			}
 		};
 

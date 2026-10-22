@@ -217,14 +217,6 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 				$this->is_expected_backtrace = $is_expected_backtrace;
 			}
 
-			/**
-			 * Tell whether the current request is cron.
-			 *
-			 * @return bool
-			 */
-			protected function is_cron_request(): bool {
-				return $this->is_cron;
-			}
 
 			/**
 			 * Tell whether expected calls are present in the backtrace.
@@ -236,6 +228,19 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 				unset( $expected_calls );
 
 				return $this->is_expected_backtrace;
+			}
+			/**
+			 * The request signals this double's case sets.
+			 *
+			 * @return array<string,bool>
+			 */
+			private function request_signals(): array {
+				return array( 'cron' => $this->is_cron );
+			}
+
+			/** Register with this case's request signals set. */
+			public function register() {
+				RequestSignals::run( $this->request_signals(), fn() => parent::register() );
 			}
 		};
 		$controller->init(

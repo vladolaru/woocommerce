@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontend
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 
 /**
  * Registers native multi-currency Bookings compatibility hooks when core owns multi-currency.
@@ -104,7 +105,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 			return;
 		}
 
-		if ( $this->is_bookings_runtime_available() || $this->have_plugins_loaded() ) {
+		if ( $this->is_bookings_runtime_available() || did_action( 'plugins_loaded' ) > 0 ) {
 			$this->register_bookings_filters();
 			return;
 		}
@@ -122,8 +123,8 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 			! $this->arbiter->should_core_register()
 			|| ! MultiCurrencyBookingsCompatibilityProjectionService::should_register(
 				$this->is_bookings_runtime_available(),
-				$this->is_admin_request(),
-				$this->is_ajax_request()
+				is_admin(),
+				wp_doing_ajax()
 			)
 		) {
 			return;
@@ -260,59 +261,13 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	}
 
 	/**
-	 * Check if this is an admin request.
-	 *
-	 * @return bool
-	 */
-	protected function is_admin_request(): bool {
-		return is_admin();
-	}
-
-	/**
-	 * Check if this is an Ajax request.
-	 *
-	 * @return bool
-	 */
-	protected function is_ajax_request(): bool {
-		return wp_doing_ajax();
-	}
-
-	/**
-	 * Check if plugins have loaded.
-	 *
-	 * @return bool
-	 */
-	protected function have_plugins_loaded(): bool {
-		return did_action( 'plugins_loaded' ) > 0;
-	}
-
-	/**
 	 * Check if any expected call appears in the backtrace summary.
 	 *
 	 * @param string[] $calls Expected calls.
 	 * @return bool
 	 */
 	protected function is_call_in_backtrace( array $calls ): bool {
-		$expected_lookup = array_fill_keys( $calls, true );
-
-		// Cheaper equivalent of wp_debug_backtrace_summary( null, 0, false ) + in_array():
-		// DEBUG_BACKTRACE_IGNORE_ARGS skips capturing argument values, and the loop early-returns
-		// on the first matching frame instead of formatting the whole stack into a summary array.
-		foreach ( debug_backtrace( DEBUG_BACKTRACE_IGNORE_ARGS ) as $frame ) { // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_debug_backtrace -- Compatibility guard on the price/cart hot path.
-			if ( empty( $frame['function'] ) ) {
-				continue;
-			}
-
-			$call = isset( $frame['class'] )
-				? (string) $frame['class'] . (string) ( $frame['type'] ?? '::' ) . (string) $frame['function']
-				: (string) $frame['function'];
-
-			if ( isset( $expected_lookup[ $call ] ) ) {
-				return true;
-			}
-		}
-
-		return false;
+		return MultiCurrencyRequestContext::is_call_in_backtrace( $calls );
 	}
 
 	/**

@@ -254,14 +254,6 @@ class MultiCurrencyFedExCompatibilityControllerTest extends WC_Unit_Test_Case {
 				return $this->fedex_available;
 			}
 
-			/**
-			 * Check if plugins have loaded.
-			 *
-			 * @return bool
-			 */
-			protected function have_plugins_loaded(): bool {
-				return $this->plugins_loaded;
-			}
 
 			/**
 			 * Check if any expected call appears in the deterministic backtrace.
@@ -271,6 +263,19 @@ class MultiCurrencyFedExCompatibilityControllerTest extends WC_Unit_Test_Case {
 			 */
 			protected function is_call_in_backtrace( array $calls ): bool {
 				return array() !== array_intersect( $calls, $this->backtrace_calls );
+			}
+			/**
+			 * The request signals this double's case sets.
+			 *
+			 * @return array<string,bool>
+			 */
+			private function request_signals(): array {
+				return array( 'plugins_loaded' => $this->plugins_loaded );
+			}
+
+			/** Register with this case's request signals set. */
+			public function register() {
+				RequestSignals::run( $this->request_signals(), fn() => parent::register() );
 			}
 		};
 

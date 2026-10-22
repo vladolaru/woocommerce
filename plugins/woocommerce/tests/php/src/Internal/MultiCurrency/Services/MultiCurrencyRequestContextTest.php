@@ -264,7 +264,7 @@ class MultiCurrencyRequestContextTest extends WC_Unit_Test_Case {
 			 *
 			 * @return bool
 			 */
-			protected function is_admin_request(): bool {
+			protected function is_wp_admin(): bool {
 				return $this->is_admin;
 			}
 
@@ -273,7 +273,7 @@ class MultiCurrencyRequestContextTest extends WC_Unit_Test_Case {
 			 *
 			 * @return bool
 			 */
-			protected function is_cron_request(): bool {
+			protected function is_doing_cron(): bool {
 				return $this->doing_cron;
 			}
 
