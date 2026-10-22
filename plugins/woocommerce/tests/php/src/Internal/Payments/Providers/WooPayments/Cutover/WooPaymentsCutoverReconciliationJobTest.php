@@ -21,6 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverDataMigration;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteWordingSnapshot;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverStateStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
@@ -275,9 +276,35 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox An all-clear attempt normalizes, seeds features, deactivates WooPayments, and schedules fresh-request ownership verification.
+	 * @testdox An all-clear attempt normalizes, seeds features, captures the note wordings, deactivates WooPayments, and schedules fresh-request ownership verification ($_dataName).
+	 *
+	 * The note wordings are captured while the extension and its language packs are still in place; a capture that throws
+	 * fails only its own step.
+	 *
+	 * @testWith ["the capture stores its snapshot", false]
+	 *           ["the capture throws", true]
+	 *
+	 * @param string $name           Case label.
+	 * @param bool   $capture_throws Whether the note wording capture throws.
 	 */
-	public function test_all_clear_attempt_starts_two_request_finalization(): void {
+	public function test_all_clear_attempt_starts_two_request_finalization( string $name, bool $capture_throws ): void {
+		unset( $name );
+		delete_option( WooPaymentsOrderNoteWordingSnapshot::OPTION );
+		if ( $capture_throws ) {
+			wc_get_container()->replace(
+				WooPaymentsOrderNoteWordingSnapshot::class,
+				new class() extends WooPaymentsOrderNoteWordingSnapshot {
+					/**
+					 * Fail as a third-party locale hook can.
+					 *
+					 * @throws \RuntimeException Always.
+					 */
+					public function capture(): void {
+						throw new \RuntimeException( 'A change_locale callback failed.' );
+					}
+				}
+			);
+		}
 		$plugin_active = true;
 		$preflight     = new class( $plugin_active ) extends WooPaymentsCutoverPreflightService {
 			/** @var bool */
@@ -285,6 +312,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 			/** @var int */
 			private int $deactivation_calls = 0;
+
+			/** @var bool */
+			public bool $snapshot_stored_before_deactivation = false;
 
 			/**
 			 * @param bool $plugin_active Whether the plugin is active.
@@ -310,7 +340,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			/** Deactivate the controlled plugin. */
 			public function deactivate_woopayments_plugin(): bool {
 				++$this->deactivation_calls;
-				$this->plugin_active = false;
+				$this->snapshot_stored_before_deactivation = false !== get_option( WooPaymentsOrderNoteWordingSnapshot::OPTION );
+				$this->plugin_active                       = false;
 				return true;
 			}
 
@@ -371,11 +402,16 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->scheduler->cancel( $pending['generation'], 1 );
 		$before = time();
 
-		$sut->handle_reconcile( $pending['generation'], 1 );
+		try {
+			$sut->handle_reconcile( $pending['generation'], 1 );
+		} finally {
+			wc_get_container()->reset_all_replacements();
+		}
 
 		$verification = $this->state_store->get_record();
 		$this->assertIsArray( $verification );
 		$this->assertSame( 1, $normalization->get_run_count() );
+		$this->assertSame( ! $capture_throws, $preflight->snapshot_stored_before_deactivation, 'The note wordings are stored before the extension is deactivated.' );
 		$this->assertSame( 'no', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ), 'The reconciliation does not write the Multi-Currency option.' );
 		$this->assertSame( 1, $preflight->get_deactivation_calls() );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $verification['state'] );

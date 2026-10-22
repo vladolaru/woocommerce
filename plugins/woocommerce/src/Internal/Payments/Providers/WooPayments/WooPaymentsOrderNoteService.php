@@ -18,7 +18,8 @@ use WC_Order;
  *
  * Most notes are formatted twice, in WooCommerce's text domain and in the `woocommerce-payments` text domain the extension
  * wrote with (the `*_note_candidates()` builders return every wording), so a note the extension already left on the order
- * is recognised as the same note and not added again. The cancel-failed, insufficient-balance refund, rate-limited
+ * is recognised as the same note and not added again. The extension wordings are also rendered in each language the
+ * switch captured (WooPaymentsOrderNoteWordingSnapshot). The cancel-failed, insufficient-balance refund, rate-limited
  * payment, refund failure and other-charge notes are formatted once, in WooCommerce's text domain.
  *
  * @since 11.0.0
@@ -104,8 +105,10 @@ class WooPaymentsOrderNoteService {
 		return $this->unique_note_candidates(
 			/* translators: %1$s: the successfully charged amount, %2$s: WooPayments, %3$s: SetupIntent ID. */
 			sprintf( __( 'A payment of %1$s was successfully charged using %2$s (%3$s).', 'woocommerce' ), $amount, 'WooPayments', esc_html( $setup_intent_id ) ),
-			/* translators: %1$s: the successfully charged amount, %2$s: WooPayments, %3$s: SetupIntent ID. */
-			sprintf( __( 'A payment of %1$s was successfully charged using %2$s (%3$s).', 'woocommerce-payments' ), $amount, 'WooPayments', esc_html( $setup_intent_id ) ) // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- The extension's note in the woocommerce-payments text domain, so a note already on the order is recognised.
+			...$this->extension_wordings(
+				/* translators: %1$s: the successfully charged amount, %2$s: WooPayments, %3$s: SetupIntent ID. */
+				fn(): string => sprintf( __( 'A payment of %1$s was successfully charged using %2$s (%3$s).', 'woocommerce-payments' ), $amount, 'WooPayments', esc_html( $setup_intent_id ) ) // phpcs:ignore WordPress.WP.I18n.TextDomainMismatch -- The extension's note in the woocommerce-payments text domain, so a note already on the order is recognised.
+			)
 		);
 	}
 
@@ -155,7 +158,7 @@ class WooPaymentsOrderNoteService {
 	public function format_capture_cancelled_note_candidates( string $intent_id, string $charge_id ): array {
 		return $this->unique_note_candidates(
 			$this->format_capture_cancelled_note_for_domain( $intent_id, $charge_id, 'woocommerce' ),
-			$this->format_capture_cancelled_note_for_domain( $intent_id, $charge_id, 'woocommerce-payments' )
+			...$this->extension_wordings( fn(): string => $this->format_capture_cancelled_note_for_domain( $intent_id, $charge_id, 'woocommerce-payments' ) )
 		);
 	}
 
@@ -418,7 +421,7 @@ class WooPaymentsOrderNoteService {
 	public function format_capture_expired_note_candidates( string $intent_id, string $charge_id ): array {
 		return $this->unique_note_candidates(
 			$this->format_capture_expired_note_for_domain( $intent_id, $charge_id, 'woocommerce' ),
-			$this->format_capture_expired_note_for_domain( $intent_id, $charge_id, 'woocommerce-payments' )
+			...$this->extension_wordings( fn(): string => $this->format_capture_expired_note_for_domain( $intent_id, $charge_id, 'woocommerce-payments' ) )
 		);
 	}
 
@@ -1477,7 +1480,7 @@ class WooPaymentsOrderNoteService {
 	public function format_early_fraud_warning_note_candidates( string $charge_id, bool $actionable, string $fraud_type ): array {
 		return $this->unique_note_candidates(
 			$this->format_early_fraud_warning_note_for_domain( $charge_id, $actionable, $fraud_type, 'woocommerce' ),
-			$this->format_early_fraud_warning_note_for_domain( $charge_id, $actionable, $fraud_type, 'woocommerce-payments' )
+			...$this->extension_wordings( fn(): string => $this->format_early_fraud_warning_note_for_domain( $charge_id, $actionable, $fraud_type, 'woocommerce-payments' ) )
 		);
 	}
 
@@ -1515,7 +1518,7 @@ class WooPaymentsOrderNoteService {
 		$notes = array( $this->format_created_refund_note( $order, $amount, $currency, $refund_id, $reason, $is_pending ) );
 
 		foreach ( $this->format_amount_candidates( $order, $amount, $currency ) as $formatted_amount ) {
-			$notes[] = $this->format_created_refund_note_for_domain( $order, $amount, $currency, $refund_id, $reason, $is_pending, 'woocommerce-payments', $formatted_amount );
+			$notes = array_merge( $notes, $this->extension_wordings( fn(): string => $this->format_created_refund_note_for_domain( $order, $amount, $currency, $refund_id, $reason, $is_pending, 'woocommerce-payments', $formatted_amount ) ) );
 		}
 
 		return $this->unique_note_candidates( ...$notes );
@@ -1532,10 +1535,32 @@ class WooPaymentsOrderNoteService {
 		$notes = array( $formatter( 'woocommerce', $this->format_order_amount( $order ) ) );
 
 		foreach ( $this->format_amount_candidates( $order, (float) $order->get_total(), $order->get_currency() ) as $formatted_amount ) {
-			$notes[] = $formatter( 'woocommerce-payments', $formatted_amount );
+			$notes = array_merge( $notes, $this->extension_wordings( fn(): string => $formatter( 'woocommerce-payments', $formatted_amount ) ) );
 		}
 
 		return $this->unique_note_candidates( ...$notes );
+	}
+
+	/**
+	 * Render an extension wording live, then once in each language the switch captured, so a note the extension wrote in
+	 * any of them is recognised after its language packs are gone.
+	 *
+	 * @param callable():string $render Renders the wording in the woocommerce-payments text domain.
+	 * @return string[]
+	 */
+	private function extension_wordings( callable $render ): array {
+		$wordings = array( $render() );
+		foreach ( wc_get_container()->get( WooPaymentsOrderNoteWordingSnapshot::class )->get_rendered_translations() as $translations ) {
+			$translate = static fn( $translation, $text ) => is_string( $text ) && isset( $translations[ $text ] ) ? $translations[ $text ] : $translation;
+			add_filter( 'gettext_woocommerce-payments', $translate, PHP_INT_MAX, 2 );
+			try {
+				$wordings[] = $render();
+			} finally {
+				remove_filter( 'gettext_woocommerce-payments', $translate, PHP_INT_MAX );
+			}
+		}
+
+		return $wordings;
 	}
 
 	/**

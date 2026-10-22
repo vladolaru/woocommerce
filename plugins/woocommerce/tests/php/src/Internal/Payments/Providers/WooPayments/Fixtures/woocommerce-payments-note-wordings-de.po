@@ -1,0 +1,14 @@
+# Three WooPayments extension order-note wordings with German translations, for the note wording snapshot tests.
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: de_DE\n"
+
+msgid "A payment of %1$s was <strong>successfully charged</strong> using %2$s (<a>%3$s</a>)."
+msgstr "Eine Zahlung von %1$s wurde mit %2$s <strong>erfolgreich belastet</strong> (<a>%3$s</a>)."
+
+msgid "Payment authorization was successfully <strong>cancelled</strong> (<a>%1$s</a>)."
+msgstr "Die Zahlungsautorisierung wurde erfolgreich <strong>storniert</strong> (<a>%1$s</a>)."
+
+msgid "Payment authorization has <strong>expired</strong> (<a>%1$s</a>)."
+msgstr "Die Zahlungsautorisierung ist <strong>abgelaufen</strong> (<a>%1$s</a>)."

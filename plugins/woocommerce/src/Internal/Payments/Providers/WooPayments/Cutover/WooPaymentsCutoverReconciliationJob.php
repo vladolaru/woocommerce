@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountMilestonesController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCanceledAuthorizationFeeRemediationService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteWordingSnapshot;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStoreSetupReportController;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -755,6 +756,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		if ( null === $claimed ) {
 			return;
 		}
+		$this->capture_note_wordings();
 		// The fence stores this request's token, which makes the built-in WooPayments the owner once the extension is inactive
 		// (WooPaymentsRuntimeArbiter), so a lost write deactivates nothing and the extension keeps payments.
 		$claimed = $this->fence_finalizing_claim( $claimed, self::$request_token );
@@ -880,6 +882,25 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 	}
 
 	/**
+	 * Capture the extension's translated order-note wordings while its language packs are on the store. Best effort: a
+	 * failure is logged and the switch goes on.
+	 */
+	private function capture_note_wordings(): void {
+		try {
+			wc_get_container()->get( WooPaymentsOrderNoteWordingSnapshot::class )->capture();
+		} catch ( \Throwable $error ) {
+			// Switching locales runs other plugins' hooks.
+			$this->write_log_warning(
+				'WooPayments cutover: the order note wordings capture failed.',
+				array(
+					'source' => self::LOG_SOURCE,
+					'error'  => $error->getMessage(),
+				)
+			);
+		}
+	}
+
+	/**
 	 * Complete one verification claim once a fresh request shows that the built-in WooPayments owns the site: fence the claim,
 	 * sync the setup tier, schedule the fee remediation and record the switch as done.
 	 *
@@ -897,6 +918,8 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return;
 		}
 		$this->account_service->sync_setup_tier_from_options( false );
+		// Resumes a capture that ran out of time before the deactivation.
+		$this->capture_note_wordings();
 		// Every finalized claim reaches this step once the built-in WooPayments owns its site.
 		try {
 			$remediation_scheduled = $this->preflight_service->ensure_fee_remediation_scheduled();
