@@ -15,7 +15,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencySelectedCurrencyPersistenceService {
 
-	private const CURRENCY_STORAGE_KEY = 'wcpay_currency';
 
 	/**
 	 * State builder.
@@ -61,7 +60,7 @@ class MultiCurrencySelectedCurrencyPersistenceService {
 
 		$user_id = get_current_user_id();
 		if ( $user_id ) {
-			update_user_meta( $user_id, self::CURRENCY_STORAGE_KEY, $currency_code );
+			update_user_meta( $user_id, MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY, $currency_code );
 		} else {
 			$this->set_session_currency( $currency_code, $persist_change );
 		}
@@ -85,7 +84,7 @@ class MultiCurrencySelectedCurrencyPersistenceService {
 			return false;
 		}
 
-		$currency_code = WC()->session->get( self::CURRENCY_STORAGE_KEY );
+		$currency_code = WC()->session->get( MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY );
 		if ( ! is_string( $currency_code ) ) {
 			return false;
 		}
@@ -95,7 +94,7 @@ class MultiCurrencySelectedCurrencyPersistenceService {
 			return false;
 		}
 
-		update_user_meta( $customer_id, self::CURRENCY_STORAGE_KEY, $currency_code );
+		update_user_meta( $customer_id, MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY, $currency_code );
 
 		return true;
 	}
@@ -152,13 +151,13 @@ class MultiCurrencySelectedCurrencyPersistenceService {
 	public function has_stored_currency_code(): bool {
 		$user_id = get_current_user_id();
 		if ( $user_id ) {
-			$currency_code = get_user_meta( $user_id, self::CURRENCY_STORAGE_KEY, true );
+			$currency_code = get_user_meta( $user_id, MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY, true );
 
 			return is_string( $currency_code ) && '' !== $currency_code;
 		}
 
 		if ( WC()->session ) {
-			$currency_code = WC()->session->get( self::CURRENCY_STORAGE_KEY );
+			$currency_code = WC()->session->get( MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY );
 
 			return is_string( $currency_code ) && '' !== $currency_code;
 		}
@@ -188,7 +187,7 @@ class MultiCurrencySelectedCurrencyPersistenceService {
 			WC()->initialize_session();
 		}
 
-		WC()->session->set( self::CURRENCY_STORAGE_KEY, $currency_code );
+		WC()->session->set( MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY, $currency_code );
 
 		// The session class is swappable (woocommerce_session_handler), and not every handler sets a customer cookie.
 		if ( $persist_change && method_exists( WC()->session, 'set_customer_session_cookie' ) ) {

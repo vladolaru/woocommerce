@@ -23,7 +23,6 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  */
 class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInterface {
 
-	private const OPTION_PREFIX            = 'wcpay_multi_currency';
 	private const DISABLE_SWITCHING_FILTER = 'wcpay_multi_currency_should_disable_currency_switching';
 
 	/**
@@ -283,7 +282,7 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	 * @return bool
 	 */
 	private function is_using_storefront_switcher(): bool {
-		return 'yes' === get_option( self::OPTION_PREFIX . '_enable_storefront_switcher', 'no' );
+		return 'yes' === get_option( MultiCurrencyStateBuilder::OPTION_PREFIX . '_enable_storefront_switcher', 'no' );
 	}
 
 	/**
@@ -376,6 +375,6 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	 * @return string
 	 */
 	private static function filter_name( string $suffix ): string {
-		return self::OPTION_PREFIX . '_' . $suffix;
+		return MultiCurrencyStateBuilder::OPTION_PREFIX . '_' . $suffix;
 	}
 }

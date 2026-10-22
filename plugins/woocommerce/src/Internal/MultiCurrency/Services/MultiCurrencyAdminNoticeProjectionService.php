@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoticesController;
+
 /**
  * Projects multi-currency admin notices without registering hooks.
  *
@@ -15,13 +17,8 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencyAdminNoticeProjectionService {
 
-	private const NOTICE_KEY_CURRENCY_CHANGED     = 'currency_changed';
-	private const NOTICE_OPTION_NAME              = 'wcpay_multi_currency_show_store_currency_changed_notice';
-	private const NOTICE_OPTION_HIDDEN_VALUE      = 'no';
-	private const CANONICAL_HIDE_NOTICE_QUERY_ARG = 'wc-multi-currency-hide-notice';
-	private const LEGACY_HIDE_NOTICE_QUERY_ARG    = 'wcpay-multi-currency-hide-notice';
-	private const CANONICAL_NONCE_QUERY_ARG       = 'wc-multi-currency-notice-nonce';
-	private const LEGACY_NONCE_QUERY_ARG          = '_wcpay_multi_currency_notice_nonce';
+	private const NOTICE_KEY_CURRENCY_CHANGED = 'currency_changed';
+	private const NOTICE_OPTION_HIDDEN_VALUE  = 'no';
 
 	/**
 	 * Project the manual-rate currency-changed notice.
@@ -109,8 +106,8 @@ class MultiCurrencyAdminNoticeProjectionService {
 	 * @since 11.0.0
 	 */
 	public static function get_hide_notice_intent( array $query, bool $nonce_valid, bool $can_manage_woocommerce ): array {
-		$notice_key = self::get_clean_query_arg( $query, self::CANONICAL_HIDE_NOTICE_QUERY_ARG, self::LEGACY_HIDE_NOTICE_QUERY_ARG );
-		$nonce      = self::get_clean_query_arg( $query, self::CANONICAL_NONCE_QUERY_ARG, self::LEGACY_NONCE_QUERY_ARG );
+		$notice_key = self::get_clean_query_arg( $query, MultiCurrencyAdminNoticesController::CANONICAL_NOTICE_QUERY, MultiCurrencyAdminNoticesController::LEGACY_NOTICE_QUERY );
+		$nonce      = self::get_clean_query_arg( $query, MultiCurrencyAdminNoticesController::CANONICAL_NONCE_QUERY, MultiCurrencyAdminNoticesController::LEGACY_NONCE_QUERY );
 		if ( null === $notice_key || null === $nonce ) {
 			return self::get_noop_hide_intent();
 		}
@@ -126,7 +123,7 @@ class MultiCurrencyAdminNoticeProjectionService {
 		if ( self::NOTICE_KEY_CURRENCY_CHANGED === $notice_key ) {
 			return array(
 				'should_hide'  => true,
-				'option_name'  => self::NOTICE_OPTION_NAME,
+				'option_name'  => MultiCurrencyStoreCurrencyLifecycleService::NOTICE_OPTION,
 				'option_value' => self::NOTICE_OPTION_HIDDEN_VALUE,
 				'error'        => null,
 			);
@@ -148,7 +145,7 @@ class MultiCurrencyAdminNoticeProjectionService {
 		}
 
 		// Core's dismiss placement (top right, aligned with the first line) instead of client 11.1.0's floated link, which
-		// WooCommerce's `.woocommerce-message-close` rule pushes 12px down (owner ruling N-251 R7). The `is-dismissible`
+		// WooCommerce's `.woocommerce-message-close` rule pushes 12px down. The `is-dismissible`
 		// class is left off so WordPress does not add its own JavaScript-only dismiss button next to this nonce link.
 		return '<a href="' . esc_url( $dismiss_url ) . '" class="notice-dismiss" style="text-decoration:none;"><span class="screen-reader-text">' . esc_html__( 'Dismiss this notice.', 'woocommerce' ) . '</span></a>';
 	}

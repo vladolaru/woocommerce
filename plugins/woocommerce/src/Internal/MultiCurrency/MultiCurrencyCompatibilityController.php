@@ -20,7 +20,6 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  */
 class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 
-	private const FILTER_PREFIX = 'wcpay_multi_currency_';
 
 	private const NEW_SALES_RECORD_BACKTRACE_CALLS = array(
 		'Automattic\WooCommerce\Admin\Notes\NewSalesRecord::sum_sales_for_date',
@@ -319,6 +318,6 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 	 * @return string
 	 */
 	private static function filter_name( string $suffix ): string {
-		return self::FILTER_PREFIX . $suffix;
+		return MultiCurrencyStateBuilder::FILTER_PREFIX . $suffix;
 	}
 }

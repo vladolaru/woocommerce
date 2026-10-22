@@ -23,6 +23,7 @@ use Automattic\WooCommerce\Utilities\OrderUtil;
 class MultiCurrencyStateBuilder {
 
 	const OPTION_PREFIX           = 'wcpay_multi_currency';
+	const FILTER_PREFIX           = 'wcpay_multi_currency_';
 	const CURRENCY_STORAGE_KEY    = 'wcpay_currency';
 	const CUSTOMER_CURRENCIES_KEY = 'wcpay_multi_currency_stored_customer_currencies';
 
@@ -34,7 +35,7 @@ class MultiCurrencyStateBuilder {
 	 */
 	public const ENABLED_CURRENCIES_OPTION = 'wcpay_multi_currency_enabled_currencies';
 
-	private const FILTER_OVERRIDE_SELECTED_CURRENCY = 'wcpay_multi_currency_override_selected_currency';
+	public const FILTER_OVERRIDE_SELECTED_CURRENCY = 'wcpay_multi_currency_override_selected_currency';
 
 	/**
 	 * Localization service.

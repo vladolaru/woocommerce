@@ -18,13 +18,15 @@ use Automattic\WooCommerce\Proxies\LegacyProxy;
  */
 class MultiCurrencyStoreCurrencyLifecycleService {
 
-	private const OPTION_PREFIX = 'wcpay_multi_currency';
-	private const NOTICE_OPTION = self::OPTION_PREFIX . '_show_store_currency_changed_notice';
+	/**
+	 * Option listing the manual-rate currencies the store currency notice names after the store currency changed.
+	 */
+	public const NOTICE_OPTION = 'wcpay_multi_currency_show_store_currency_changed_notice';
 
 	/**
 	 * Option holding the store currency Multi-Currency last saw, so a store currency change is noticed.
 	 */
-	public const STORE_CURRENCY_OPTION = self::OPTION_PREFIX . '_store_currency';
+	public const STORE_CURRENCY_OPTION = MultiCurrencyStateBuilder::OPTION_PREFIX . '_store_currency';
 
 	/**
 	 * Multi-currency cache.
@@ -89,7 +91,7 @@ class MultiCurrencyStoreCurrencyLifecycleService {
 		$manual_currencies = array();
 
 		foreach ( $this->state_builder->build()->get_enabled_currencies() as $currency ) {
-			$rate_type = get_option( self::OPTION_PREFIX . '_exchange_rate_' . $currency->get_id(), false );
+			$rate_type = get_option( MultiCurrencyStateBuilder::OPTION_PREFIX . '_exchange_rate_' . $currency->get_id(), false );
 			if ( 'manual' === $rate_type ) {
 				$manual_currencies[] = $currency->get_name();
 			}

@@ -50,7 +50,7 @@ class MultiCurrencyCacheRenderingService {
 		}
 
 		$missing_rendering_mode = new \stdClass();
-		$rendering_mode         = get_option( MultiCurrencyFrontendProjectionService::OPTION_PREFIX . '_rendering_mode', $missing_rendering_mode );
+		$rendering_mode         = get_option( MultiCurrencyFrontendProjectionService::RENDERING_MODE_OPTION, $missing_rendering_mode );
 		if ( $missing_rendering_mode !== $rendering_mode ) {
 			update_option( self::AUTODETECT_DONE_OPTION, 'yes', true );
 			return;
@@ -58,7 +58,7 @@ class MultiCurrencyCacheRenderingService {
 
 		if ( $this->caching_environment->is_page_caching_active() ) {
 			add_option(
-				MultiCurrencyFrontendProjectionService::OPTION_PREFIX . '_rendering_mode',
+				MultiCurrencyFrontendProjectionService::RENDERING_MODE_OPTION,
 				MultiCurrencyFrontendProjectionService::RENDERING_MODE_CACHE,
 				'',
 				true
@@ -76,7 +76,7 @@ class MultiCurrencyCacheRenderingService {
 	 * @return bool Whether cache rendering should be recommended.
 	 */
 	public function should_recommend_cache_mode(): bool {
-		if ( MultiCurrencyFrontendProjectionService::RENDERING_MODE_SPEED !== get_option( MultiCurrencyFrontendProjectionService::OPTION_PREFIX . '_rendering_mode', MultiCurrencyFrontendProjectionService::RENDERING_MODE_SPEED ) ) {
+		if ( MultiCurrencyFrontendProjectionService::RENDERING_MODE_SPEED !== get_option( MultiCurrencyFrontendProjectionService::RENDERING_MODE_OPTION, MultiCurrencyFrontendProjectionService::RENDERING_MODE_SPEED ) ) {
 			return false;
 		}
 

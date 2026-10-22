@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjecti
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 
 /**
  * Registers native async price renderer hooks when core owns multi-currency.
@@ -23,12 +24,11 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  */
 class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterface {
 
-	private const OPTION_PREFIX        = 'wcpay_multi_currency';
-	private const PRICE_TYPE_FILTER    = 'wcpay_multi_currency_async_price_type';
-	private const SCRIPT_HANDLE        = 'wc-multi-currency-async-renderer';
-	private const LEGACY_SCRIPT_HANDLE = 'wcpay-multi-currency-async-renderer';
-	private const SCRIPT_PATH          = 'assets/js/frontend/multi-currency-async-renderer';
-	private const STYLE_PATH           = 'assets/css/multi-currency-async-renderer.css';
+	private const PRICE_TYPE_FILTER   = 'wcpay_multi_currency_async_price_type';
+	public const SCRIPT_HANDLE        = 'wc-multi-currency-async-renderer';
+	public const LEGACY_SCRIPT_HANDLE = 'wcpay-multi-currency-async-renderer';
+	private const SCRIPT_PATH         = 'assets/js/frontend/multi-currency-async-renderer';
+	private const STYLE_PATH          = 'assets/css/multi-currency-async-renderer.css';
 
 	/**
 	 * Runtime owner arbiter.
@@ -383,7 +383,7 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	 * @return bool
 	 */
 	private function is_using_auto_currency_switching(): bool {
-		return 'yes' === get_option( self::OPTION_PREFIX . '_enable_auto_currency', 'no' );
+		return 'yes' === get_option( MultiCurrencyStateBuilder::OPTION_PREFIX . '_enable_auto_currency', 'no' );
 	}
 
 	/**

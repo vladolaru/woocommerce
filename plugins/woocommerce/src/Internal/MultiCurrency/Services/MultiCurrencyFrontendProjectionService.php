@@ -20,10 +20,9 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
  */
 class MultiCurrencyFrontendProjectionService {
 
-	const OPTION_PREFIX             = 'wcpay_multi_currency';
-	const CURRENCY_STORAGE_KEY      = 'wcpay_currency';
 	const RENDERING_MODE_SPEED      = 'speed';
 	const RENDERING_MODE_CACHE      = 'cache';
+	const RENDERING_MODE_OPTION     = 'wcpay_multi_currency_rendering_mode';
 	const APPLY_CHARM_PRODUCTS_HOOK = 'wcpay_multi_currency_apply_charm_only_to_products';
 
 	/**
@@ -236,10 +235,10 @@ class MultiCurrencyFrontendProjectionService {
 		$currency_id = strtolower( $currency_code );
 
 		return array(
-			'exchange_rate_type' => get_option( self::OPTION_PREFIX . '_exchange_rate_' . $currency_id, 'automatic' ),
-			'manual_rate'        => get_option( self::OPTION_PREFIX . '_manual_rate_' . $currency_id, null ),
-			'price_rounding'     => get_option( self::OPTION_PREFIX . '_price_rounding_' . $currency_id, null ),
-			'price_charm'        => get_option( self::OPTION_PREFIX . '_price_charm_' . $currency_id, null ),
+			'exchange_rate_type' => get_option( MultiCurrencyStateBuilder::OPTION_PREFIX . '_exchange_rate_' . $currency_id, 'automatic' ),
+			'manual_rate'        => get_option( MultiCurrencyStateBuilder::OPTION_PREFIX . '_manual_rate_' . $currency_id, null ),
+			'price_rounding'     => get_option( MultiCurrencyStateBuilder::OPTION_PREFIX . '_price_rounding_' . $currency_id, null ),
+			'price_charm'        => get_option( MultiCurrencyStateBuilder::OPTION_PREFIX . '_price_charm_' . $currency_id, null ),
 		);
 	}
 
@@ -250,13 +249,13 @@ class MultiCurrencyFrontendProjectionService {
 	 */
 	public function get_settings(): array {
 		return array(
-			self::OPTION_PREFIX . '_enable_auto_currency' => $this->is_using_auto_currency_switching(),
-			self::OPTION_PREFIX . '_enable_storefront_switcher' => $this->is_using_storefront_switcher(),
-			self::OPTION_PREFIX . '_rendering_mode'       => $this->get_rendering_mode(),
-			'site_theme'                                  => wp_get_theme()->get( 'Name' ),
-			'date_format'                                 => esc_attr( get_option( 'date_format', 'F j, Y' ) ),
-			'time_format'                                 => esc_attr( get_option( 'time_format', 'g:i a' ) ),
-			'store_url'                                   => esc_attr( $this->get_store_page_uri() ),
+			MultiCurrencyStateBuilder::OPTION_PREFIX . '_enable_auto_currency' => $this->is_using_auto_currency_switching(),
+			MultiCurrencyStateBuilder::OPTION_PREFIX . '_enable_storefront_switcher' => $this->is_using_storefront_switcher(),
+			self::RENDERING_MODE_OPTION => $this->get_rendering_mode(),
+			'site_theme'                => wp_get_theme()->get( 'Name' ),
+			'date_format'               => esc_attr( get_option( 'date_format', 'F j, Y' ) ),
+			'time_format'               => esc_attr( get_option( 'time_format', 'g:i a' ) ),
+			'store_url'                 => esc_attr( $this->get_store_page_uri() ),
 		);
 	}
 
@@ -345,7 +344,7 @@ class MultiCurrencyFrontendProjectionService {
 	 */
 	private function get_public_config_selected_currency_code( array $enabled_currencies, string $default_code ): string {
 		if ( $this->has_active_session() ) {
-			$stored = WC()->session->get( self::CURRENCY_STORAGE_KEY );
+			$stored = WC()->session->get( MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY );
 			$stored = is_string( $stored ) ? strtoupper( $stored ) : null;
 
 			if ( $stored && isset( $enabled_currencies[ $stored ] ) ) {
@@ -422,7 +421,7 @@ class MultiCurrencyFrontendProjectionService {
 	 * @return bool
 	 */
 	private function is_using_auto_currency_switching(): bool {
-		return 'yes' === get_option( self::OPTION_PREFIX . '_enable_auto_currency', 'no' );
+		return 'yes' === get_option( MultiCurrencyStateBuilder::OPTION_PREFIX . '_enable_auto_currency', 'no' );
 	}
 
 	/**
@@ -431,7 +430,7 @@ class MultiCurrencyFrontendProjectionService {
 	 * @return bool
 	 */
 	private function is_using_storefront_switcher(): bool {
-		return 'yes' === get_option( self::OPTION_PREFIX . '_enable_storefront_switcher', 'no' );
+		return 'yes' === get_option( MultiCurrencyStateBuilder::OPTION_PREFIX . '_enable_storefront_switcher', 'no' );
 	}
 
 	/**
@@ -440,7 +439,7 @@ class MultiCurrencyFrontendProjectionService {
 	 * @return string
 	 */
 	private function get_rendering_mode(): string {
-		return (string) get_option( self::OPTION_PREFIX . '_rendering_mode', self::RENDERING_MODE_SPEED );
+		return (string) get_option( self::RENDERING_MODE_OPTION, self::RENDERING_MODE_SPEED );
 	}
 
 	/**

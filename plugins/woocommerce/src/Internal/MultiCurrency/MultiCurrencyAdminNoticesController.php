@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProvider
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAdminNoticeProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStoreCurrencyLifecycleService;
 
 /**
  * Registers native multi-currency admin notices when core owns multi-currency.
@@ -23,11 +24,10 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 
 	private const ADMIN_NOTICES_HOOK                   = 'admin_notices';
 	private const WP_LOADED_HOOK                       = 'wp_loaded';
-	private const NOTICE_OPTION                        = 'wcpay_multi_currency_show_store_currency_changed_notice';
-	private const CANONICAL_NOTICE_QUERY               = 'wc-multi-currency-hide-notice';
-	private const LEGACY_NOTICE_QUERY                  = 'wcpay-multi-currency-hide-notice';
-	private const CANONICAL_NONCE_QUERY                = 'wc-multi-currency-notice-nonce';
-	private const LEGACY_NONCE_QUERY                   = '_wcpay_multi_currency_notice_nonce';
+	public const CANONICAL_NOTICE_QUERY                = 'wc-multi-currency-hide-notice';
+	public const LEGACY_NOTICE_QUERY                   = 'wcpay-multi-currency-hide-notice';
+	public const CANONICAL_NONCE_QUERY                 = 'wc-multi-currency-notice-nonce';
+	public const LEGACY_NONCE_QUERY                    = '_wcpay_multi_currency_notice_nonce';
 	private const NONCE_ACTION                         = 'wcpay_multi_currency_hide_notices_nonce';
 	private const ERROR_INVALID_NONCE                  = 'invalid_nonce';
 	private const ERROR_FORBIDDEN                      = 'forbidden';
@@ -98,7 +98,7 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	public function handle_admin_notices(): void {
 		$notices              = MultiCurrencyAdminNoticeProjectionService::get_notices_for_user(
 			current_user_can( 'manage_woocommerce' ),
-			get_option( self::NOTICE_OPTION, false )
+			get_option( MultiCurrencyStoreCurrencyLifecycleService::NOTICE_OPTION, false )
 		);
 		$rate_provider_notice = $this->get_rate_provider_unavailable_notice( current_user_can( 'manage_woocommerce' ) );
 		if ( null !== $rate_provider_notice ) {

@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 
 /**
  * Registers native non-Store REST request-local currency override filters.
@@ -19,9 +20,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  */
 class MultiCurrencyRestRequestOverrideController implements RegisterHooksInterface {
 
-	private const FILTER_OVERRIDE_SELECTED_CURRENCY   = 'wcpay_multi_currency_override_selected_currency';
 	private const FILTER_SHOULD_RETURN_STORE_CURRENCY = 'wcpay_multi_currency_should_return_store_currency';
-	private const FILTER_SHOULD_CONVERT_PRODUCT_PRICE = 'wcpay_multi_currency_should_convert_product_price';
 
 	/**
 	 * Runtime owner arbiter.
@@ -77,13 +76,13 @@ class MultiCurrencyRestRequestOverrideController implements RegisterHooksInterfa
 		}
 
 		if ( isset( $_GET['currency'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			$this->add_filter_once( self::FILTER_OVERRIDE_SELECTED_CURRENCY, array( $this, 'get_currency_from_query_param' ) );
+			$this->add_filter_once( MultiCurrencyStateBuilder::FILTER_OVERRIDE_SELECTED_CURRENCY, array( $this, 'get_currency_from_query_param' ) );
 			return;
 		}
 
 		$this->add_filter_once( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, '__return_true' );
-		$this->add_filter_once( self::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, '__return_false' );
-		$this->add_filter_once( self::FILTER_OVERRIDE_SELECTED_CURRENCY, array( $this, 'get_store_currency_code' ) );
+		$this->add_filter_once( MultiCurrencyFrontendPricesController::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, '__return_false' );
+		$this->add_filter_once( MultiCurrencyStateBuilder::FILTER_OVERRIDE_SELECTED_CURRENCY, array( $this, 'get_store_currency_code' ) );
 	}
 
 	/**

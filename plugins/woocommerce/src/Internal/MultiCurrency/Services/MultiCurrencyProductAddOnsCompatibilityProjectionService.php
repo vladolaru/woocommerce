@@ -15,7 +15,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencyProductAddOnsCompatibilityProjectionService {
 
-	private const FILTER_PREFIX = 'wcpay_multi_currency_';
 
 	/**
 	 * Project frontend Product Add-ons compatibility filters.
@@ -140,6 +139,6 @@ class MultiCurrencyProductAddOnsCompatibilityProjectionService {
 	 * @return string
 	 */
 	private static function filter_name( string $suffix ): string {
-		return self::FILTER_PREFIX . $suffix;
+		return MultiCurrencyStateBuilder::FILTER_PREFIX . $suffix;
 	}
 }

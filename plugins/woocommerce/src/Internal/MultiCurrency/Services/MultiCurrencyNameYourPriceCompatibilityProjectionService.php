@@ -15,7 +15,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencyNameYourPriceCompatibilityProjectionService {
 
-	private const FILTER_PREFIX = 'wcpay_multi_currency_';
 
 	/**
 	 * Project the Name Your Price compatibility hook/filter manifest.
@@ -147,6 +146,6 @@ class MultiCurrencyNameYourPriceCompatibilityProjectionService {
 	 * @return string
 	 */
 	private static function filter_name( string $suffix ): string {
-		return self::FILTER_PREFIX . $suffix;
+		return MultiCurrencyStateBuilder::FILTER_PREFIX . $suffix;
 	}
 }

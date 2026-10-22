@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAsyncPriceRendererController;
+
 /**
  * Projects async price renderer metadata and markup without registering hooks.
  *
@@ -15,9 +17,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencyAsyncPriceProjectionService {
 
-	private const SCRIPT_HANDLE        = 'wc-multi-currency-async-renderer';
-	private const LEGACY_SCRIPT_HANDLE = 'wcpay-multi-currency-async-renderer';
-	private const LOCALIZED_OBJECT     = 'wcpayAsyncPriceConfig';
+	private const LOCALIZED_OBJECT = 'wcpayAsyncPriceConfig';
 
 	/**
 	 * Project activation blockers for the async price renderer.
@@ -246,8 +246,8 @@ class MultiCurrencyAsyncPriceProjectionService {
 				),
 			),
 			'style'  => array(
-				'handle'        => self::SCRIPT_HANDLE,
-				'legacy_handle' => self::LEGACY_SCRIPT_HANDLE,
+				'handle'        => MultiCurrencyAsyncPriceRendererController::SCRIPT_HANDLE,
+				'legacy_handle' => MultiCurrencyAsyncPriceRendererController::LEGACY_SCRIPT_HANDLE,
 				'url'           => $style_url,
 				'version'       => $style_version,
 			),

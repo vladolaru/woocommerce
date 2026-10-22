@@ -17,7 +17,6 @@ class MultiCurrencyStorefrontProjectionService {
 
 	private const THEME_STOREFRONT = 'storefront';
 	private const STYLE_HANDLE     = 'storefront-style';
-	private const FILTER_PREFIX    = 'wcpay_multi_currency_';
 	private const WIDGET_ID        = 'woocommerce-payments-multi-currency-storefront-widget';
 
 	/**
@@ -169,6 +168,6 @@ class MultiCurrencyStorefrontProjectionService {
 	 * @return string
 	 */
 	private static function filter_name( string $suffix ): string {
-		return self::FILTER_PREFIX . $suffix;
+		return MultiCurrencyStateBuilder::FILTER_PREFIX . $suffix;
 	}
 }

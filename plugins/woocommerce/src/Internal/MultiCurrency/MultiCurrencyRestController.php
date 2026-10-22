@@ -33,11 +33,8 @@ use WP_REST_Response;
  */
 class MultiCurrencyRestController extends WP_REST_Controller implements RegisterHooksInterface {
 
-	private const OPTION_PREFIX        = 'wcpay_multi_currency';
-	private const REST_NAMESPACE       = 'wc/v3';
-	private const REST_BASE            = 'payments/multi-currency';
-	private const RENDERING_MODE_SPEED = 'speed';
-	private const RENDERING_MODE_CACHE = 'cache';
+	public const REST_NAMESPACE = 'wc/v3';
+	public const REST_BASE      = 'payments/multi-currency';
 
 	/**
 	 * Runtime owner arbiter.
@@ -316,8 +313,8 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 			$value = sanitize_text_field( (string) $params[ $option_name ] );
 
 			if (
-				self::OPTION_PREFIX . '_rendering_mode' === $option_name
-				&& ! in_array( $value, array( self::RENDERING_MODE_SPEED, self::RENDERING_MODE_CACHE ), true )
+				MultiCurrencyFrontendProjectionService::RENDERING_MODE_OPTION === $option_name
+				&& ! in_array( $value, array( MultiCurrencyFrontendProjectionService::RENDERING_MODE_SPEED, MultiCurrencyFrontendProjectionService::RENDERING_MODE_CACHE ), true )
 			) {
 				continue;
 			}
@@ -472,7 +469,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 			}
 
 			foreach ( array( 'price_charm', 'price_rounding', 'manual_rate', 'exchange_rate' ) as $setting ) {
-				delete_option( self::OPTION_PREFIX . '_' . $setting . '_' . strtolower( $currency_code ) );
+				delete_option( MultiCurrencyStateBuilder::OPTION_PREFIX . '_' . $setting . '_' . strtolower( $currency_code ) );
 			}
 		}
 	}
@@ -484,9 +481,9 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	 */
 	private function get_updateable_settings(): array {
 		return array(
-			self::OPTION_PREFIX . '_enable_auto_currency',
-			self::OPTION_PREFIX . '_enable_storefront_switcher',
-			self::OPTION_PREFIX . '_rendering_mode',
+			MultiCurrencyStateBuilder::OPTION_PREFIX . '_enable_auto_currency',
+			MultiCurrencyStateBuilder::OPTION_PREFIX . '_enable_storefront_switcher',
+			MultiCurrencyFrontendProjectionService::RENDERING_MODE_OPTION,
 			MultiCurrencyCacheRenderingService::DISMISSED_OPTION,
 		);
 	}

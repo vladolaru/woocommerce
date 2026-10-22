@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
+
 /**
  * Projects multi-currency REST route metadata without registering routes.
  *
@@ -15,8 +17,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencyRestProjectionService {
 
-	private const REST_NAMESPACE              = 'wc/v3';
-	private const REST_BASE                   = 'payments/multi-currency';
 	private const METHOD_GET                  = 'GET';
 	private const METHOD_POST                 = 'POST';
 	private const PERMISSION_PUBLIC           = 'public';
@@ -90,8 +90,8 @@ class MultiCurrencyRestProjectionService {
 		);
 
 		return array(
-			'namespace' => self::REST_NAMESPACE,
-			'base'      => self::REST_BASE,
+			'namespace' => MultiCurrencyRestController::REST_NAMESPACE,
+			'base'      => MultiCurrencyRestController::REST_BASE,
 			'routes'    => $routes,
 		);
 	}
@@ -127,7 +127,7 @@ class MultiCurrencyRestProjectionService {
 		array $args = array()
 	): array {
 		return array(
-			'path'       => '/' . self::REST_BASE . $path_suffix,
+			'path'       => '/' . MultiCurrencyRestController::REST_BASE . $path_suffix,
 			'methods'    => $methods,
 			'permission' => $permission,
 			'callback'   => $callback,
@@ -199,7 +199,7 @@ class MultiCurrencyRestProjectionService {
 				'format'   => 'text-field',
 				'required' => true,
 			),
-			'wcpay_multi_currency_rendering_mode'       => array(
+			MultiCurrencyFrontendProjectionService::RENDERING_MODE_OPTION => array(
 				'type'     => 'string',
 				'required' => false,
 				'enum'     => array( 'speed', 'cache' ),

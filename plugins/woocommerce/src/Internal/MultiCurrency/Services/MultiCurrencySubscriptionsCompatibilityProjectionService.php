@@ -15,7 +15,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencySubscriptionsCompatibilityProjectionService {
 
-	private const FILTER_PREFIX = 'wcpay_multi_currency_';
 
 	private const SUBSCRIPTION_PERCENT_COUPON_TYPES = array(
 		'recurring_percent',
@@ -313,6 +312,6 @@ class MultiCurrencySubscriptionsCompatibilityProjectionService {
 	 * @return string
 	 */
 	private static function filter_name( string $suffix ): string {
-		return self::FILTER_PREFIX . $suffix;
+		return MultiCurrencyStateBuilder::FILTER_PREFIX . $suffix;
 	}
 }

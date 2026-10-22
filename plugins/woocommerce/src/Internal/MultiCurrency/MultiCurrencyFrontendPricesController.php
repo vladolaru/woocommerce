@@ -21,7 +21,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  */
 class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 
-	private const FILTER_SHOULD_CONVERT_PRODUCT_PRICE   = 'wcpay_multi_currency_should_convert_product_price';
+	public const FILTER_SHOULD_CONVERT_PRODUCT_PRICE    = 'wcpay_multi_currency_should_convert_product_price';
 	private const FILTER_SHOULD_CONVERT_COUPON_AMOUNT   = 'wcpay_multi_currency_should_convert_coupon_amount';
 	private const FILTER_SHOULD_CONVERT_SHIPPING_AMOUNT = 'wcpay_multi_currency_should_convert_shipping_amount';
 	private const STORE_API_COLLECTION_DATA_ROUTE       = '/wc/store/v1/products/collection-data';

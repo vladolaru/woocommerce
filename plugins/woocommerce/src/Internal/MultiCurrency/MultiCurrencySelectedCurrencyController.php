@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeS
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelectedCurrencyPersistenceService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUserSettingsProjectionService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 
 /**
  * Registers native selected-currency entry points when core owns multi-currency.
@@ -25,8 +26,6 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  */
 class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface {
 
-	private const OPTION_PREFIX            = 'wcpay_multi_currency';
-	private const RENDERING_MODE_CACHE     = 'cache';
 	private const DISABLE_SWITCHING_FILTER = 'wcpay_multi_currency_should_disable_currency_switching';
 
 	private const FILTER_OVERRIDE_NOTICE_COUNTRY       = 'wcpay_multi_currency_override_notice_country';
@@ -591,7 +590,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	 * @return bool
 	 */
 	private function is_using_auto_currency_switching(): bool {
-		return 'yes' === get_option( self::OPTION_PREFIX . '_enable_auto_currency', 'no' );
+		return 'yes' === get_option( MultiCurrencyStateBuilder::OPTION_PREFIX . '_enable_auto_currency', 'no' );
 	}
 
 	/**
@@ -634,7 +633,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	 * @return bool
 	 */
 	private function is_cache_optimized_mode(): bool {
-		return self::RENDERING_MODE_CACHE === get_option( self::OPTION_PREFIX . '_rendering_mode', MultiCurrencyFrontendProjectionService::RENDERING_MODE_SPEED );
+		return MultiCurrencyFrontendProjectionService::RENDERING_MODE_CACHE === get_option( MultiCurrencyFrontendProjectionService::RENDERING_MODE_OPTION, MultiCurrencyFrontendProjectionService::RENDERING_MODE_SPEED );
 	}
 
 	/**

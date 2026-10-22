@@ -15,7 +15,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  */
 class MultiCurrencyDepositsCompatibilityProjectionService {
 
-	private const FILTER_PREFIX = 'wcpay_multi_currency_';
 
 	/**
 	 * Project the Deposits compatibility hook/filter manifest.
@@ -131,6 +130,6 @@ class MultiCurrencyDepositsCompatibilityProjectionService {
 	 * @return string
 	 */
 	private static function filter_name( string $suffix ): string {
-		return self::FILTER_PREFIX . $suffix;
+		return MultiCurrencyStateBuilder::FILTER_PREFIX . $suffix;
 	}
 }
