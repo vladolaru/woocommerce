@@ -192,12 +192,12 @@ class WooPaymentsWooPaySessionService {
 
 		$customer = WC()->customer;
 		if ( is_object( $customer ) ) {
-			$billing_email = is_callable( array( $customer, 'get_billing_email' ) ) ? (string) $customer->get_billing_email() : '';
+			$billing_email = (string) $customer->get_billing_email();
 			if ( '' !== $billing_email ) {
 				return $billing_email;
 			}
 
-			$customer_email = is_callable( array( $customer, 'get_email' ) ) ? (string) $customer->get_email() : '';
+			$customer_email = (string) $customer->get_email();
 			if ( '' !== $customer_email ) {
 				return $customer_email;
 			}
@@ -413,7 +413,7 @@ class WooPaymentsWooPaySessionService {
 		}
 
 		$customer = WC()->customer;
-		if ( is_object( $customer ) && is_callable( array( $customer, 'set_billing_email' ) ) && is_callable( array( $customer, 'save' ) ) ) {
+		if ( is_object( $customer ) ) {
 			$customer->set_billing_email( $email );
 			$customer->save();
 		}

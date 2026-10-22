@@ -218,8 +218,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 * @return mixed
 	 */
 	public function handle_store_api_response( $response, $server = null, $request = null ) {
-		// The session class is swappable (woocommerce_session_handler), so only methods the handler has are called.
-		if ( ! $response instanceof WP_REST_Response || ! WC()->session || ! is_callable( array( WC()->session, 'get_customer_id' ) ) ) {
+		if ( ! $response instanceof WP_REST_Response || ! WC()->session ) {
 			return $response;
 		}
 
@@ -228,6 +227,8 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 			$response->header( self::RESPONSE_SESSION_HEADER, $this->create_session_token( $session_id ) );
 		}
 
+		// delete_session() is declared by WooCommerce's session handlers, not by the WC_Session base that the
+		// woocommerce_session_handler filter may swap in.
 		if ( self::is_ephemeral_request() && is_callable( array( WC()->session, 'delete_session' ) ) ) {
 			WC()->session->delete_session( $session_id );
 		}
@@ -293,7 +294,8 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 
 		$session  = WC()->session;
 		$snapshot = array();
-		// The session class is swappable (woocommerce_session_handler), so only methods the handler has are called.
+		// get_session_data() is declared by WooCommerce's session handlers, not by the WC_Session base that the
+		// woocommerce_session_handler filter may swap in.
 		if ( is_callable( array( $session, 'get_session_data' ) ) ) {
 			foreach ( (array) $session->get_session_data() as $key => $value ) {
 				$snapshot[ (string) $key ] = maybe_unserialize( $value );
@@ -301,11 +303,9 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 		}
 
 		foreach ( self::CART_SESSION_KEYS as $key ) {
-			if ( is_callable( array( $session, 'get' ) ) ) {
-				$value = $session->get( $key, null );
-				if ( null !== $value ) {
-					$snapshot[ $key ] = $value;
-				}
+			$value = $session->get( $key, null );
+			if ( null !== $value ) {
+				$snapshot[ $key ] = $value;
 			}
 		}
 
@@ -318,7 +318,7 @@ class WooPaymentsTokenizedCartSessionController implements RegisterHooksInterfac
 	 * @param array<string,mixed> $snapshot Session values to restore.
 	 */
 	private function restore_cart_session_snapshot( array $snapshot ): void {
-		if ( ! WC()->session || ! is_callable( array( WC()->session, 'set' ) ) ) {
+		if ( ! WC()->session ) {
 			return;
 		}
 
