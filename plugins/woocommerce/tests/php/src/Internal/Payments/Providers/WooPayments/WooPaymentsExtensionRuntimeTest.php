@@ -6,6 +6,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
+use RuntimeException;
 use WC_Unit_Test_Case;
 
 /**
@@ -17,8 +19,7 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 	 * @testdox Should fail closed when the WooPayments runtime is absent.
 	 */
 	public function test_fails_closed_when_woopayments_runtime_is_absent(): void {
-		$sut = new WooPaymentsExtensionRuntime();
-		$sut->init( new WooPaymentsExtensionRuntimeProxy( false ) );
+		$sut = $this->create_runtime( array() );
 
 		$this->assertFalse( $sut->is_loaded() );
 		$this->assertNull( $sut->get_gateway() );
@@ -35,8 +36,7 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 			->method( 'is_extension_owner' )
 			->willReturn( false );
 
-		$sut = new WooPaymentsExtensionRuntime();
-		$sut->init( new WooPaymentsExtensionRuntimeProxy( true ), $arbiter );
+		$sut = $this->create_runtime( array( 'WC_Payments' ), $arbiter );
 
 		$this->assertFalse( $sut->is_loaded() );
 	}
@@ -48,9 +48,16 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 		$gateway    = (object) array( 'id' => 'gateway' );
 		$account    = (object) array( 'id' => 'account' );
 		$api_client = (object) array( 'id' => 'api_client' );
-		$logger     = (object) array( 'id' => 'logger' );
-		$sut        = new WooPaymentsExtensionRuntime();
-		$sut->init( new WooPaymentsExtensionRuntimeProxy( true, $gateway, $account, $api_client, $logger ) );
+		$this->register_legacy_proxy_static_mocks(
+			array(
+				'WC_Payments' => array(
+					'get_gateway'             => fn() => $gateway,
+					'get_account_service'     => fn() => $account,
+					'get_payments_api_client' => fn() => $api_client,
+				),
+			)
+		);
+		$sut = $this->create_runtime();
 
 		$this->assertTrue( $sut->is_loaded() );
 		$this->assertSame( $gateway, $sut->get_gateway() );
@@ -65,17 +72,19 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 	 * @param string|null $connect_url Connect URL the extension's helper answers, or null when the helper is unavailable.
 	 */
 	public function test_returns_woopayments_account_urls_only_when_helpers_are_callable( ?string $connect_url ): void {
-		$sut = new WooPaymentsExtensionRuntime();
-		$sut->init(
-			new WooPaymentsExtensionRuntimeProxy(
-				true,
-				null,
-				null,
-				null,
-				null,
-				$connect_url
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'is_callable' => fn( $target ) => null !== $connect_url && '\WC_Payments_Account::get_connect_url' === $target,
 			)
 		);
+		$this->register_legacy_proxy_static_mocks(
+			array(
+				'WC_Payments_Account' => array(
+					'get_connect_url' => fn() => 'https://example.com/connect',
+				),
+			)
+		);
+		$sut = $this->create_runtime();
 
 		$this->assertSame( $connect_url, $sut->get_account_connect_url( 'native-payments' ) );
 	}
@@ -124,8 +133,14 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 				return true;
 			}
 		};
-		$sut  = new WooPaymentsExtensionRuntime();
-		$sut->init( new WooPaymentsExtensionRuntimeProxy( true, null, null, null, null, null, null, $mode ) );
+		$this->register_legacy_proxy_static_mocks(
+			array(
+				'WC_Payments' => array(
+					'mode' => fn() => $mode,
+				),
+			)
+		);
+		$sut = $this->create_runtime();
 
 		$this->assertTrue( $sut->is_test_mode() );
 		$this->assertFalse( $sut->is_dev_mode() );
@@ -149,23 +164,25 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$sut     = new WooPaymentsExtensionRuntime();
-		$sut->init(
-			new WooPaymentsExtensionRuntimeProxy(
-				true,
-				null,
-				$account,
-				null,
-				null,
-				null,
-				null,
-				null,
-				array(
-					'US' => 'United States',
-					'CA' => 'Canada',
-				)
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'is_callable' => fn( $target ) => in_array( $target, array( 'WC_Payments_Utils::supported_countries', '\WC_Payments_Utils::supported_countries' ), true ) || is_callable( $target ),
 			)
 		);
+		$this->register_legacy_proxy_static_mocks(
+			array(
+				'WC_Payments'       => array(
+					'get_account_service' => fn() => $account,
+				),
+				'WC_Payments_Utils' => array(
+					'supported_countries' => fn() => array(
+						'US' => 'United States',
+						'CA' => 'Canada',
+					),
+				),
+			)
+		);
+		$sut = $this->create_runtime( array( 'WC_Payments', 'WC_Payments_Utils' ) );
 
 		$this->assertSame(
 			array(
@@ -238,8 +255,7 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 		}
 
 		try {
-			$sut = new WooPaymentsExtensionRuntime();
-			$sut->init( new WooPaymentsExtensionRuntimeProxy( true ) );
+			$sut = $this->create_runtime();
 
 			$this->assertSame( $expected, $sut->get_admin_onboarding_context() );
 		} finally {
@@ -323,8 +339,7 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 		}
 
 		try {
-			$sut = new WooPaymentsExtensionRuntime();
-			$sut->init( new WooPaymentsExtensionRuntimeProxy( true ) );
+			$sut = $this->create_runtime();
 
 			$this->assertSame( $expected, $sut->is_extension_version_less_than( $minimum_version ) );
 		} finally {
@@ -352,9 +367,17 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 	 */
 	public function test_resets_onboarding_test_mode_option_when_available(): void {
 		Constants::set_constant( 'WC_Payments_Onboarding_Service::TEST_MODE_OPTION', 'wcpay_test_mode' );
-		$proxy = new WooPaymentsExtensionRuntimeProxy( true );
-		$sut   = new WooPaymentsExtensionRuntime();
-		$sut->init( $proxy );
+		$updated_options = array();
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'update_option' => function ( $option, $value ) use ( &$updated_options ) {
+					$updated_options[ $option ] = $value;
+
+					return true;
+				},
+			)
+		);
+		$sut = $this->create_runtime( array( 'WC_Payments_Onboarding_Service' ) );
 
 		try {
 			$sut->reset_onboarding_test_mode_option();
@@ -363,7 +386,7 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 				array(
 					'wcpay_test_mode' => 'no',
 				),
-				$proxy->get_updated_options()
+				$updated_options
 			);
 		} finally {
 			Constants::clear_constants();
@@ -374,8 +397,11 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 	 * @testdox Should swallow extension runtime lookup exceptions.
 	 */
 	public function test_swallows_runtime_lookup_exceptions(): void {
+		$proxy = $this->createMock( LegacyProxy::class );
+		$proxy->method( 'call_function' )->willThrowException( new RuntimeException( 'Runtime lookup failed.' ) );
+		$proxy->method( 'call_static' )->willThrowException( new RuntimeException( 'Runtime lookup failed.' ) );
 		$sut = new WooPaymentsExtensionRuntime();
-		$sut->init( new ThrowingWooPaymentsExtensionRuntimeProxy() );
+		$sut->init( $proxy );
 
 		$this->assertFalse( $sut->is_loaded() );
 		$this->assertNull( $sut->get_gateway() );
@@ -401,11 +427,31 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 	 * @return WooPaymentsExtensionRuntime
 	 */
 	private function create_runtime_with_account_data( $account_data ): WooPaymentsExtensionRuntime {
-		$proxy = new WooPaymentsExtensionRuntimeProxy( true );
-		$proxy->set_account_data( $account_data );
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'get_option' => fn( $option, $default_value = false ) => 'wcpay_account_data' === $option ? $account_data : get_option( $option, $default_value ),
+			)
+		);
+
+		return $this->create_runtime();
+	}
+
+	/**
+	 * Create a runtime over the container's legacy proxy, with only the given WooPayments extension classes existing.
+	 *
+	 * @param string[]                       $extension_classes Extension classes that exist.
+	 * @param WooPaymentsRuntimeArbiter|null $arbiter           Runtime arbiter.
+	 * @return WooPaymentsExtensionRuntime
+	 */
+	private function create_runtime( array $extension_classes = array( 'WC_Payments' ), ?WooPaymentsRuntimeArbiter $arbiter = null ): WooPaymentsExtensionRuntime {
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'class_exists' => fn( $class_name ) => in_array( ltrim( (string) $class_name, '\\' ), $extension_classes, true ),
+			)
+		);
 
 		$sut = new WooPaymentsExtensionRuntime();
-		$sut->init( $proxy );
+		$sut->init( wc_get_container()->get( LegacyProxy::class ), $arbiter );
 
 		return $sut;
 	}
