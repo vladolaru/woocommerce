@@ -261,6 +261,89 @@ class WooPaymentsDatabaseCacheTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * A stale object-cache entry for a missing row makes update_option() return false (WordPress Trac #38931). Fails when
+	 * the retry is dropped (the retry row), when it runs more than once or falls back to add_option() (every row), or when
+	 * the first failure, or every failed write, logs (the failure row).
+	 *
+	 * @testdox Should flush the object-cache entry and retry a failed write once, never adding the option: $_dataName.
+	 *
+	 * @testWith ["the first write succeeds", [true], 1, ["update_option", "wp_cache_delete"], 0]
+	 *           ["the retry succeeds", [false, true], 1, ["update_option", "wp_cache_delete", "update_option", "wp_cache_delete"], 0]
+	 *           ["both writes fail, twice in a request", [false, false, false, false], 2, ["update_option", "wp_cache_delete", "update_option", "update_option", "wp_cache_delete", "update_option"], 1]
+	 *
+	 * @param string   $name           Case label.
+	 * @param bool[]   $results        update_option() results, in call order.
+	 * @param int      $writes         Calls to write().
+	 * @param string[] $expected_calls Expected option and cache calls, in order.
+	 * @param int      $expected_logs  Expected warning lines.
+	 */
+	public function test_write_retries_a_failed_update_once( string $name, array $results, int $writes, array $expected_calls, int $expected_logs ): void {
+		unset( $name );
+		$calls    = array();
+		$contents = array(
+			'data'    => array( 'account_id' => 'acct_native_test' ),
+			'fetched' => time(),
+			'errored' => false,
+		);
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'update_option'   => static function ( $key, $value ) use ( &$calls, &$results, $contents ) {
+					$calls[] = 'update_option';
+					if ( WooPaymentsDatabaseCache::ACCOUNT_KEY !== $key || $contents !== $value ) {
+						return null;
+					}
+
+					return array_shift( $results );
+				},
+				'add_option'      => static function () use ( &$calls ) {
+					$calls[] = 'add_option';
+
+					return true;
+				},
+				'wp_cache_delete' => static function ( $key, $group ) use ( &$calls ) {
+					$calls[] = WooPaymentsDatabaseCache::ACCOUNT_KEY === $key && 'options' === $group ? 'wp_cache_delete' : 'wp_cache_delete of another key';
+
+					return true;
+				},
+			)
+		);
+		$logger = new class() extends \WC_Logger {
+			/**
+			 * Contexts of the warning lines.
+			 *
+			 * @var array<int,array<string,mixed>>
+			 */
+			public array $warnings = array();
+
+			/**
+			 * Record a warning line.
+			 *
+			 * @param string              $message Message.
+			 * @param array<string,mixed> $context Context.
+			 */
+			public function warning( $message, $context = array() ) {
+				unset( $message );
+				$this->warnings[] = $context;
+			}
+		};
+		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		$sut = new WooPaymentsDatabaseCache();
+		$sut->init( wc_get_container()->get( LegacyProxy::class ) );
+
+		for ( $i = 0; $i < $writes; $i++ ) {
+			$sut->write( WooPaymentsDatabaseCache::ACCOUNT_KEY, $contents );
+		}
+
+		$this->assertSame( $expected_calls, $calls );
+		$this->assertCount( $expected_logs, $logger->warnings );
+		foreach ( $logger->warnings as $context ) {
+			$this->assertSame( WooPaymentsDatabaseCache::ACCOUNT_KEY, $context['key'] );
+			$this->assertSame( strlen( maybe_serialize( $contents ) ), $context['bytes'] );
+		}
+		$this->assertSame( $contents, $sut->get_contents( WooPaymentsDatabaseCache::ACCOUNT_KEY ), 'The request keeps the fetched contents.' );
+	}
+
+	/**
 	 * @testdox Should read an entry from the database once per request and blog, then serve it from memory.
 	 */
 	public function test_reads_an_entry_once_per_request(): void {

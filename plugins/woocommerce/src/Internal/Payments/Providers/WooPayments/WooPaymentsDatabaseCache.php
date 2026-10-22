@@ -106,6 +106,13 @@ class WooPaymentsDatabaseCache {
 	private bool $refresh_disabled = false;
 
 	/**
+	 * Cache keys whose failed write was logged in this request.
+	 *
+	 * @var array<string,true>
+	 */
+	private array $logged_write_failures = array();
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -270,6 +277,10 @@ class WooPaymentsDatabaseCache {
 	/**
 	 * Store cache contents in their option, not autoloaded, and keep them for the rest of the request.
 	 *
+	 * The contents carry their fetch time, so update_option() returns false only when the write failed. A stale object-cache
+	 * entry for a missing row fails every write, so a failed write flushes the entry and is retried once; a second failure
+	 * is logged once per request and key.
+	 *
 	 * @since 11.2.0
 	 *
 	 * @param string              $key            Cache key.
@@ -280,8 +291,26 @@ class WooPaymentsDatabaseCache {
 		$this->contents[ get_current_blog_id() ][ $key ] = $cache_contents;
 
 		$result = $this->legacy_proxy->call_function( 'update_option', $key, $cache_contents, 'no' );
+		if ( false === $result ) {
+			$this->legacy_proxy->call_function( 'wp_cache_delete', $key, 'options' );
+			$result = $this->legacy_proxy->call_function( 'update_option', $key, $cache_contents, 'no' );
+		}
+
 		if ( false !== $result ) {
 			$this->legacy_proxy->call_function( 'wp_cache_delete', $key, 'options' );
+			return;
+		}
+
+		if ( ! isset( $this->logged_write_failures[ $key ] ) ) {
+			$this->logged_write_failures[ $key ] = true;
+			wc_get_logger()->warning(
+				'WooPayments could not store a platform cache entry; the next request fetches it again.',
+				array(
+					'source' => WooPaymentsLogger::SOURCE,
+					'key'    => $key,
+					'bytes'  => strlen( maybe_serialize( $cache_contents ) ),
+				)
+			);
 		}
 	}
 
