@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNoticesPassthrough;
+use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 
 /**
  * Stores the built-in WooPayments setup tier, reports the effective tier and lists the classes each request type loads for it.
@@ -120,7 +121,7 @@ final class WooPaymentsSetupTier {
 
 		$classes = $this->classes_by_setup_tier[ $tier ][ $request_type ] ?? array();
 		// A store waiting for its switch keeps the switch notice on the WooPayments pages, which strip other notices.
-		if ( 'admin' === $request_type && self::AVAILABLE === $tier && $this->runtime_arbiter->is_awaiting_switch() ) {
+		if ( RequestTypeUtil::ADMIN === $request_type && self::AVAILABLE === $tier && $this->runtime_arbiter->is_awaiting_switch() ) {
 			$classes[] = WooPaymentsAdminNoticesPassthrough::class;
 		}
 

@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments;
 use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 
 /**
  * Registers what WooCommerce's built-in payment provider needs on the current request.
@@ -103,11 +104,11 @@ final class PaymentsBootstrap {
 	 * @param array<int,class-string>    $registered   Classes already registered for this request.
 	 */
 	private function register_cron_classes_on_demand( $container, string $request_type, array $registered ): void {
-		if ( 'cron' === $request_type || 'cli' === $request_type ) {
+		if ( RequestTypeUtil::CRON === $request_type || RequestTypeUtil::CLI === $request_type ) {
 			return;
 		}
 
-		$missing = self::classes_missing_from( ( $this->classes_for_request )( $container, 'cron' ), $registered );
+		$missing = self::classes_missing_from( ( $this->classes_for_request )( $container, RequestTypeUtil::CRON ), $registered );
 		if ( empty( $missing ) ) {
 			return;
 		}

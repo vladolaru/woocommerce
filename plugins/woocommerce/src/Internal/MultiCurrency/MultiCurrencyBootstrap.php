@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencyShadowMode;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 
 /**
  * Selects the independent Multi-Currency registrations for the current request.
@@ -181,7 +182,7 @@ final class MultiCurrencyBootstrap {
 
 		$classes = $this->get_module_classes_for_request( $container, $request_type );
 		if ( ! empty( $classes ) ) {
-			if ( 'admin' === $request_type ) {
+			if ( RequestTypeUtil::ADMIN === $request_type ) {
 				$this->admin_rest_container = $container;
 				if ( false === has_action( 'rest_api_init', array( $this, 'register_admin_rest_controller' ) ) ) {
 					add_action( 'rest_api_init', array( $this, 'register_admin_rest_controller' ), 0 );
@@ -210,12 +211,12 @@ final class MultiCurrencyBootstrap {
 	 * @param array<int,class-string>    $registered   Classes registered for this request.
 	 */
 	private function register_cron_classes_on_demand( $container, string $request_type, array $registered ): void {
-		if ( 'cron' === $request_type ) {
+		if ( RequestTypeUtil::CRON === $request_type ) {
 			return;
 		}
 
 		// A request that did not check order history at load leaves that check to the listener.
-		if ( null !== $this->usage && empty( array_diff( $this->get_classes_for_usage( $this->usage, 'cron' ), $registered ) ) ) {
+		if ( null !== $this->usage && empty( array_diff( $this->get_classes_for_usage( $this->usage, RequestTypeUtil::CRON ), $registered ) ) ) {
 			return;
 		}
 
@@ -239,7 +240,7 @@ final class MultiCurrencyBootstrap {
 		}
 
 		$usage = $this->usage ?? $this->get_usage_from_order_history( $container->get( MultiCurrencyUsageDetector::class ) );
-		$cron  = $this->get_classes_for_usage( $usage, 'cron' );
+		$cron  = $this->get_classes_for_usage( $usage, RequestTypeUtil::CRON );
 		if ( empty( $cron ) ) {
 			return;
 		}
@@ -364,7 +365,7 @@ final class MultiCurrencyBootstrap {
 
 		// The explicit-price filter can be added after WooCommerce loads, so its controller registers wherever prices may render and
 		// the filter is read at render, as the client does (client 11.1.0 `includes/class-wc-payments-explicit-price-formatter.php:55-73`).
-		if ( in_array( $request_type, array( 'front', 'ajax', 'cli' ), true ) ) {
+		if ( in_array( $request_type, array( RequestTypeUtil::FRONT, RequestTypeUtil::AJAX, RequestTypeUtil::CLI ), true ) ) {
 			return array( MultiCurrencyExplicitPriceController::class );
 		}
 
@@ -398,22 +399,22 @@ final class MultiCurrencyBootstrap {
 	private function get_classes_for_usage( string $usage, string $request_type ): array {
 		$matrix = array(
 			'configured' => array(
-				'front' => array_merge( self::BASE, self::PRICE, self::COMPAT, self::STOREFRONT ),
-				'ajax'  => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencyStorefrontIntegrationController::class, MultiCurrencyAsyncPriceRendererController::class ), self::HISTORY ),
-				'rest'  => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencySwitcherBlockController::class, MultiCurrencyStorefrontIntegrationController::class, MultiCurrencyAsyncPriceRendererController::class ), self::HISTORY, array( MultiCurrencyRestController::class, MultiCurrencyRestRequestOverrideController::class ) ),
-				'admin' => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencyAnalyticsController::class, MultiCurrencySwitcherBlockController::class, MultiCurrencySettingsController::class, MultiCurrencyTrackingController::class ), self::ADMIN ),
-				'cron'  => array_merge( self::BASE, array( MultiCurrencyFrontendPricesController::class ), self::COMPAT, self::HISTORY ),
-				'cli'   => array_merge( self::BASE, array( MultiCurrencyFrontendPricesController::class ), self::COMPAT, self::HISTORY ),
+				RequestTypeUtil::FRONT => array_merge( self::BASE, self::PRICE, self::COMPAT, self::STOREFRONT ),
+				RequestTypeUtil::AJAX  => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencyStorefrontIntegrationController::class, MultiCurrencyAsyncPriceRendererController::class ), self::HISTORY ),
+				RequestTypeUtil::REST  => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencySwitcherBlockController::class, MultiCurrencyStorefrontIntegrationController::class, MultiCurrencyAsyncPriceRendererController::class ), self::HISTORY, array( MultiCurrencyRestController::class, MultiCurrencyRestRequestOverrideController::class ) ),
+				RequestTypeUtil::ADMIN => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencyAnalyticsController::class, MultiCurrencySwitcherBlockController::class, MultiCurrencySettingsController::class, MultiCurrencyTrackingController::class ), self::ADMIN ),
+				RequestTypeUtil::CRON  => array_merge( self::BASE, array( MultiCurrencyFrontendPricesController::class ), self::COMPAT, self::HISTORY ),
+				RequestTypeUtil::CLI   => array_merge( self::BASE, array( MultiCurrencyFrontendPricesController::class ), self::COMPAT, self::HISTORY ),
 			),
 			'historical' => array(
-				'admin' => array_merge( self::BASE, array( MultiCurrencyAnalyticsController::class, MultiCurrencySettingsController::class, MultiCurrencyTrackingController::class ), self::ADMIN ),
-				'rest'  => array_merge( self::BASE, array( MultiCurrencyAnalyticsController::class, MultiCurrencyRestController::class, MultiCurrencyRestRequestOverrideController::class, MultiCurrencyTrackingController::class ) ),
-				'cron'  => array_merge( self::BASE, self::HISTORY ),
+				RequestTypeUtil::ADMIN => array_merge( self::BASE, array( MultiCurrencyAnalyticsController::class, MultiCurrencySettingsController::class, MultiCurrencyTrackingController::class ), self::ADMIN ),
+				RequestTypeUtil::REST  => array_merge( self::BASE, array( MultiCurrencyAnalyticsController::class, MultiCurrencyRestController::class, MultiCurrencyRestRequestOverrideController::class, MultiCurrencyTrackingController::class ) ),
+				RequestTypeUtil::CRON  => array_merge( self::BASE, self::HISTORY ),
 			),
 			'empty'      => array(
 				// The availability note targets stores without currencies yet (client 11.1.0 `MultiCurrency.php:380,1135-1145`).
-				'admin' => array( MultiCurrencySettingsController::class, MultiCurrencyAdminNoteController::class ),
-				'rest'  => array( MultiCurrencyRestController::class ),
+				RequestTypeUtil::ADMIN => array( MultiCurrencySettingsController::class, MultiCurrencyAdminNoteController::class ),
+				RequestTypeUtil::REST  => array( MultiCurrencyRestController::class ),
 			),
 		);
 

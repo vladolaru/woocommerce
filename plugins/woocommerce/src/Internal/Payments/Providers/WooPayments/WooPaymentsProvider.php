@@ -39,6 +39,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaym
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsCurrencyComplianceNotice;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsUserPreferenceFields;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsHomeTasks;
+use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 
 /**
  * Connects WooPayments to the payments runtime: its gateways, its charge, capture, cancel and refund operations with their
@@ -229,19 +230,19 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 
 		$matrix = array(
 			WooPaymentsSetupTier::AVAILABLE => array(
-				'admin' => $cutover_admin,
-				'cron'  => $cutover_cron,
+				RequestTypeUtil::ADMIN => $cutover_admin,
+				RequestTypeUtil::CRON  => $cutover_cron,
 			),
 			WooPaymentsSetupTier::CONNECTED => array(
 				// The VAT details link lands on a front-end URL (client 11.1.0 `includes/class-wc-payments-vat-redirect-service.php:25`).
-				'front' => array_merge( $gateway_prefix, array( WooPaymentsVatDetailsRedirect::class ) ),
-				'admin' => array_merge( $gateway_prefix, $connected_admin ),
-				'ajax'  => array_merge( $gateway_prefix, $connected_ajax ),
-				'rest'  => array_merge( $gateway_prefix, $connected_rest ),
-				'cron'  => array_merge( $gateway_prefix, $connected_cron ),
+				RequestTypeUtil::FRONT => array_merge( $gateway_prefix, array( WooPaymentsVatDetailsRedirect::class ) ),
+				RequestTypeUtil::ADMIN => array_merge( $gateway_prefix, $connected_admin ),
+				RequestTypeUtil::AJAX  => array_merge( $gateway_prefix, $connected_ajax ),
+				RequestTypeUtil::REST  => array_merge( $gateway_prefix, $connected_rest ),
+				RequestTypeUtil::CRON  => array_merge( $gateway_prefix, $connected_cron ),
 			),
 			WooPaymentsSetupTier::ACTIVE    => array(
-				'front' => array_merge(
+				RequestTypeUtil::FRONT => array_merge(
 					$gateway_prefix,
 					array(
 						WooPaymentsAccountService::class,
@@ -272,8 +273,8 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 						WooPaymentsVatDetailsRedirect::class,
 					)
 				),
-				'admin' => array_merge( $active_maintenance_prefix, $connected_admin ),
-				'ajax'  => array_merge(
+				RequestTypeUtil::ADMIN => array_merge( $active_maintenance_prefix, $connected_admin ),
+				RequestTypeUtil::AJAX  => array_merge(
 					$gateway_prefix,
 					$connected_ajax,
 					array(
@@ -287,7 +288,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 						WooPaymentsFrontendTrackingController::class,
 					)
 				),
-				'rest'  => array_merge(
+				RequestTypeUtil::REST  => array_merge(
 					$gateway_prefix,
 					$connected_rest,
 					array(
@@ -303,7 +304,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 						WooPaymentsFrontendTrackingController::class,
 					)
 				),
-				'cron'  => array_merge(
+				RequestTypeUtil::CRON  => array_merge(
 					$active_maintenance_prefix,
 					$connected_cron,
 					array(
@@ -317,7 +318,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		// WP-CLI runs Action Scheduler queues and cron on many hosts, so it gets the cron roots. Client 11.1.0 attaches its
 		// scheduled-action handlers whenever it loads (`includes/class-wc-payments.php:603,657`).
 		foreach ( array( WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
-			$matrix[ $state ]['cli'] = $matrix[ $state ]['cron'];
+			$matrix[ $state ][ RequestTypeUtil::CLI ] = $matrix[ $state ][ RequestTypeUtil::CRON ];
 		}
 
 		// WordPress fires its plugin lifecycle hooks in whatever request activates or deactivates a plugin: wp-admin,
@@ -325,7 +326,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		// Jetpack's remote plugin management runs. Client 11.1.0 registers its lifecycle callbacks on every request
 		// (`woocommerce-payments.php:67-68`); the listener resolves the cutover controller only when a plugin changes.
 		foreach ( array( WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
-			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
+			foreach ( array( RequestTypeUtil::FRONT, RequestTypeUtil::ADMIN, RequestTypeUtil::AJAX, RequestTypeUtil::REST, RequestTypeUtil::CRON, RequestTypeUtil::CLI ) as $request ) {
 				$matrix[ $state ][ $request ] = array_merge( $matrix[ $state ][ $request ] ?? array(), $cutover_every_request );
 			}
 		}
@@ -333,7 +334,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		// Renewals, their emails and saved-card hooks run on any request of a connected or active store, with or
 		// without the gateway enabled, as in the client (client 11.1.0 `includes/class-wc-payments.php:611,649`).
 		foreach ( array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
-			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request ) {
+			foreach ( array( RequestTypeUtil::FRONT, RequestTypeUtil::ADMIN, RequestTypeUtil::AJAX, RequestTypeUtil::REST, RequestTypeUtil::CRON, RequestTypeUtil::CLI ) as $request ) {
 				$matrix[ $state ][ $request ][] = WooPaymentsSubscriptionsController::class;
 				// Every request that can write a WooPayments log line numbers it under one request id, as client 11.1.0's logger
 				// context does on every request (`includes/class-wc-payments.php:552`, `src/Internal/LoggerContext.php:73-79`).
@@ -359,18 +360,18 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 				// asks for them on every request (`woocommerce-payments.php:85-156`).
 				$matrix[ $state ][ $request ][] = WooPaymentsConnectionFeatures::class;
 				// The gateway settings can be written directly (classic toggle, REST, WP-CLI); keep the tier in step.
-				if ( 'front' !== $request ) {
+				if ( RequestTypeUtil::FRONT !== $request ) {
 					$matrix[ $state ][ $request ][] = WooPaymentsGatewaySettingsSynchronizer::class;
 				}
 				// The first page after a login links the pre-login Sift session; client 11.1.0 hooks it on init of every request,
 				// returns early without a connection, and skips AJAX, REST and WP-CLI (`includes/class-wc-payments.php:605`,
 				// `includes/class-wc-payments-fraud-service.php:82,151-177`).
-				if ( 'front' === $request || 'admin' === $request ) {
+				if ( RequestTypeUtil::FRONT === $request || RequestTypeUtil::ADMIN === $request ) {
 					$matrix[ $state ][ $request ][] = WooPaymentsFraudService::class;
 				}
 				// Selling locations are written by the general settings form, the REST settings API, WP-CLI and scheduled
 				// imports; the client only watches the form save (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:582`).
-				if ( 'front' !== $request && 'ajax' !== $request ) {
+				if ( RequestTypeUtil::FRONT !== $request && RequestTypeUtil::AJAX !== $request ) {
 					$matrix[ $state ][ $request ][] = WooPaymentsSellingLocationsFraudSync::class;
 				}
 			}
