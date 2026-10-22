@@ -159,7 +159,11 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 		update_option( '_wcpay_feature_mc_cache_optimized', '1' );
 		$product = \WC_Helper_Product::create_simple_product();
 		\WC_Helper_Coupon::create_coupon( 'storefront-fixed', array( 'coupon_amount' => '5' ) );
+		// A guest without a session cookie: the async placeholder is for shoppers with no session yet.
 		wp_set_current_user( 0 );
+		WC()->session     = null;
+		$original_cookies = $_COOKIE;
+		$_COOKIE          = array();
 		set_current_screen( 'front' );
 		add_filter( 'wcpay_multi_currency_override_selected_currency', static fn() => 'GBP' );
 
@@ -185,6 +189,7 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 			$amount = ( new \WC_Coupon( 'storefront-fixed' ) )->get_amount();
 			$markup = wc_price( $price );
 		} finally {
+			$_COOKIE = $original_cookies;
 			wc_get_container()->reset_all_resolved();
 		}
 

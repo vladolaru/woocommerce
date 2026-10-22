@@ -3,7 +3,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Blocks\Assets\Api;
 use Automattic\WooCommerce\Blocks\Assets\AssetDataRegistry;
 use Automattic\WooCommerce\Blocks\Package;
 use Automattic\WooCommerce\Internal\Admin\WCAdminAssets;
@@ -17,7 +16,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateServ
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
-use Automattic\WooCommerce\Tests\Blocks\Mocks\AssetDataRegistryMock;
 use WC_Unit_Test_Case;
 
 /**
@@ -49,11 +47,31 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	);
 
 	/**
-	 * Asset data registry the Blocks container hands the controller, when a test asked for one.
+	 * Shared asset data registry.
 	 *
-	 * @var AssetDataRegistryMock|null
+	 * @var AssetDataRegistry
 	 */
-	private ?AssetDataRegistryMock $registry = null;
+	private $registry;
+
+	/**
+	 * Registry values before the test.
+	 *
+	 * @var array<string,mixed>
+	 */
+	private array $registry_state = array();
+
+	/**
+	 * Snapshot the shared asset data registry.
+	 */
+	public function set_up(): void {
+		parent::set_up();
+		$this->registry = Package::container()->get( AssetDataRegistry::class );
+		foreach ( array( 'data', 'lazy_data' ) as $property ) {
+			$reflection = new \ReflectionProperty( AssetDataRegistry::class, $property );
+			$reflection->setAccessible( true );
+			$this->registry_state[ $property ] = $reflection->getValue( $this->registry );
+		}
+	}
 
 	/**
 	 * Tear down test fixtures.
@@ -64,15 +82,16 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		}
 
 		delete_transient( 'wc_mc_has_orders' );
+		foreach ( $this->registry_state as $property => $value ) {
+			$reflection = new \ReflectionProperty( AssetDataRegistry::class, $property );
+			$reflection->setAccessible( true );
+			$reflection->setValue( $this->registry, $value );
+		}
 		unset( $_GET['page'] );
 		set_current_screen( 'front' );
 		wp_dequeue_script( 'wc-admin-multi-currency-analytics' );
 		wp_deregister_script( 'wc-admin-multi-currency-analytics' );
 		wp_deregister_script( 'WCPAY_MULTI_CURRENCY_ANALYTICS' );
-		if ( null !== $this->registry ) {
-			Package::container( true );
-			Package::init();
-		}
 
 		parent::tear_down();
 	}
@@ -448,7 +467,6 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
 		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
-		$this->use_fresh_asset_data_registry();
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		set_current_screen( 'woocommerce_page_wc-admin' );
 		$sut->register();
@@ -475,10 +493,10 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 					'value' => 'USD',
 				),
 			),
-			$this->registry->get()['customerCurrencies']
+			$this->get_registry_data()['customerCurrencies']
 		);
 		// Every currency's symbol, as the client's currencyData (client `includes/admin/class-wc-payments-admin.php:943-954`).
-		$symbols = $this->registry->get()['customerCurrencySymbols'];
+		$symbols = $this->get_registry_data()['customerCurrencySymbols'];
 		$this->assertSame( '€', $symbols['EUR'] );
 		$this->assertSame( '$', $symbols['USD'] );
 		$this->assertSame( '¥', $symbols['JPY'] );
@@ -494,7 +512,6 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 			// CI's PHP job runs without the admin build; local runs and the release package have it.
 			$this->markTestSkipped( 'The admin client is not built: ' . $e->getMessage() );
 		}
-		$this->use_fresh_asset_data_registry();
 		$sut          = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$_GET['page'] = 'wc-admin';
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
@@ -516,7 +533,6 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_keeps_customer_currencies_another_plugin_registered( string $label, bool $lazy ): void {
 		unset( $label );
-		$this->use_fresh_asset_data_registry();
 		$sut          = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$_GET['page'] = 'wc-admin';
 		wp_set_current_user( self::factory()->user->create( array( 'role' => 'shop_manager' ) ) );
@@ -529,19 +545,24 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$this->registry->add( 'customerCurrencies', $lazy ? static fn(): array => $theirs : $theirs );
 
 		$sut->handle_admin_enqueue_scripts();
-		$this->registry->execute_lazy_data();
+		$lazy_data = new \ReflectionMethod( AssetDataRegistry::class, 'execute_lazy_data' );
+		$lazy_data->setAccessible( true );
+		$lazy_data->invoke( $this->registry );
 
-		$this->assertSame( $theirs, $this->registry->get()['customerCurrencies'] );
-		$this->assertSame( '€', $this->registry->get()['customerCurrencySymbols']['EUR'] );
+		$this->assertSame( $theirs, $this->get_registry_data()['customerCurrencies'] );
+		$this->assertSame( '€', $this->get_registry_data()['customerCurrencySymbols']['EUR'] );
 	}
 
 	/**
-	 * Hand the controller a fresh asset data registry through a fresh Blocks container, which keeps its first registration;
-	 * tear_down() rebuilds the Blocks container.
+	 * Read the asset data registry's registered values.
+	 *
+	 * @return array<string,mixed>
 	 */
-	private function use_fresh_asset_data_registry(): void {
-		$this->registry = new AssetDataRegistryMock( Package::container()->get( Api::class ) );
-		Package::container( true )->register( AssetDataRegistry::class, $this->registry );
+	private function get_registry_data(): array {
+		$data = new \ReflectionProperty( AssetDataRegistry::class, 'data' );
+		$data->setAccessible( true );
+
+		return $data->getValue( $this->registry );
 	}
 
 	/**

@@ -62,8 +62,8 @@ class MultiCurrencySelectedCurrencyPersistenceService {
 		$user_id = get_current_user_id();
 		if ( $user_id ) {
 			update_user_meta( $user_id, self::CURRENCY_STORAGE_KEY, $currency_code );
-		} elseif ( ! $this->set_session_currency( $currency_code, $persist_change ) ) {
-			return false;
+		} else {
+			$this->set_session_currency( $currency_code, $persist_change );
 		}
 
 		$this->state_builder->reset();
@@ -182,15 +182,10 @@ class MultiCurrencySelectedCurrencyPersistenceService {
 	 *
 	 * @param string $currency_code  Currency code.
 	 * @param bool   $persist_change Whether to request a persistent customer session cookie.
-	 * @return bool True when the session value was stored.
 	 */
-	private function set_session_currency( string $currency_code, bool $persist_change ): bool {
+	private function set_session_currency( string $currency_code, bool $persist_change ): void {
 		if ( ! WC()->session ) {
 			WC()->initialize_session();
-		}
-
-		if ( ! WC()->session ) {
-			return false;
 		}
 
 		WC()->session->set( self::CURRENCY_STORAGE_KEY, $currency_code );
@@ -199,8 +194,6 @@ class MultiCurrencySelectedCurrencyPersistenceService {
 		if ( $persist_change && method_exists( WC()->session, 'set_customer_session_cookie' ) ) {
 			WC()->session->set_customer_session_cookie( true );
 		}
-
-		return true;
 	}
 
 	/**

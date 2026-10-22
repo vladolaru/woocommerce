@@ -28,8 +28,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPay
  */
 class WooPaymentsSettingsService {
 
-	private const MULTI_CURRENCY_FLAG_OPTION = MultiCurrencyFeatureController::WOOPAYMENTS_MULTI_CURRENCY_FLAG_OPTION;
-
 	private const WOOPAY_EXPRESS_CHECKOUT_FLAG_OPTION = '_wcpay_feature_woopay_express_checkout';
 
 	private const DYNAMIC_CHECKOUT_PLACE_ORDER_BUTTON_FLAG_OPTION = '_wcpay_feature_dynamic_checkout_place_order_button';
@@ -524,7 +522,7 @@ class WooPaymentsSettingsService {
 			// The checkbox is core Multi-Currency's switch, as on the Features page; the extension's own flag follows it, so a
 			// return to the extension keeps the merchant's choice (the Features page change writes it too, but only on a change).
 			wc_get_container()->get( FeaturesController::class )->change_feature_enable( MultiCurrencyFeatureController::FEATURE_ID, (bool) $params['is_multi_currency_enabled'] );
-			update_option( self::MULTI_CURRENCY_FLAG_OPTION, $params['is_multi_currency_enabled'] ? '1' : '0' );
+			update_option( MultiCurrencyFeatureController::WOOPAYMENTS_MULTI_CURRENCY_FLAG_OPTION, $params['is_multi_currency_enabled'] ? '1' : '0' );
 		}
 
 		if ( array_key_exists( 'is_wcpay_subscriptions_enabled', $params ) && ! $params['is_wcpay_subscriptions_enabled'] ) {
