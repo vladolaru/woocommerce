@@ -315,7 +315,6 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 		WC()->session = $session;
 
 		$this->assertSame( 'USD', $frontend_builder->build()->get_selected_currency()->get_code(), 'The same frontend builder should retain its cached projection until readiness invalidates it.' );
-		$this->assertTrue( method_exists( $persistence, 'reset_selected_currency_state' ), 'The request-local selected-currency reset method should exist.' );
 		$persistence->reset_selected_currency_state();
 
 		$this->assertSame( 'GBP', $frontend_builder->build()->get_selected_currency()->get_code(), 'The same frontend builder should rebuild from the ready GBP session.' );

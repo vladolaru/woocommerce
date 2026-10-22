@@ -224,7 +224,6 @@ class MultiCurrencySelectedCurrencyPersistenceServiceTest extends WC_Unit_Test_C
 			}
 			$before_snapshot = $storage_snapshotter();
 
-			$this->assertTrue( method_exists( $sut, 'reset_selected_currency_state' ), 'The request-local selected-currency reset method should exist.' );
 			$sut->reset_selected_currency_state();
 
 			$this->assertSame( 1, $state_builder->reset_calls, 'The shared state builder should reset exactly once.' );
