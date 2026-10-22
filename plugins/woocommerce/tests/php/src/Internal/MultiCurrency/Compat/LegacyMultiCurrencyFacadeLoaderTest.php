@@ -27,11 +27,6 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 	 * @preserveGlobalState disabled
 	 */
 	public function test_core_owned_facade_preserves_grounded_extension_calls(): void {
-		$this->assertTrue( class_exists( LegacyMultiCurrencyFacadeLoader::class ), 'The native runtime should provide a dedicated MultiCurrency facade loader.' );
-		if ( ! class_exists( LegacyMultiCurrencyFacadeLoader::class ) ) {
-			return;
-		}
-
 		$failed_projection = $this->createMock( MultiCurrencyPriceProjectionService::class );
 		$failed_projection->method( 'get_price' )->willThrowException( new \RuntimeException( 'Projection failed.' ) );
 		$loader   = $this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $failed_projection );
@@ -112,10 +107,6 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 	 * @testdox The facade stays absent outside core-owned MultiCurrency.
 	 */
 	public function test_facade_stays_absent_outside_core_ownership(): void {
-		$this->assertTrue( class_exists( LegacyMultiCurrencyFacadeLoader::class ), 'The native runtime should provide a dedicated MultiCurrency facade loader.' );
-		if ( ! class_exists( LegacyMultiCurrencyFacadeLoader::class ) ) {
-			return;
-		}
 		// The case that declares the facade runs in its own process; an in-process declaration would show here first.
 		$this->assertFalse( class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ), 'Precondition: an earlier in-process test declared the facade.' );
 

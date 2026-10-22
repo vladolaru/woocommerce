@@ -390,8 +390,14 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $container->registered );
 	}
 
-	/** @testdox Should not resolve provider roots for an empty front request. */
-	public function test_empty_front_request_does_not_resolve_provider_roots(): void {
+	/**
+	 * @testdox Should not resolve provider roots for an empty $request request.
+	 * @dataProvider provide_empty_requests_without_provider_roots
+	 *
+	 * @param string $request Request class.
+	 * @param bool   $is_rest Whether the REST signal is also set; AJAX and WP-CLI take precedence over it.
+	 */
+	public function test_empty_request_does_not_resolve_provider_roots( string $request, bool $is_rest ): void {
 		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
 		$resolver_calls = 0;
 		$sut            = new MultiCurrencyBootstrap(
@@ -400,11 +406,39 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 				return array( 'ProviderRoot' );
 			}
 		);
+		if ( 'ajax' === $request ) {
+			add_filter( 'wp_doing_ajax', '__return_true' );
+		}
+		if ( 'cli' === $request ) {
+			Constants::set_constant( 'WP_CLI', true );
+		}
 
-		$sut->register( $container, '__return_false' );
+		try {
+			$sut->register( $container, $is_rest ? '__return_true' : '__return_false' );
+		} finally {
+			remove_filter( 'wp_doing_ajax', '__return_true' );
+		}
 
 		$this->assertSame( 0, $resolver_calls );
 		$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $container->registered );
+	}
+
+	/** @return array<string,array{string,bool}> */
+	public static function provide_empty_requests_without_provider_roots(): array {
+		return array(
+			'front' => array( 'front', false ),
+			'AJAX'  => array( 'ajax', true ),
+			'CLI'   => array( 'cli', true ),
+		);
+	}
+
+	/** @testdox Should add no cart or order total filter on an empty front request. */
+	public function test_empty_front_request_adds_no_total_filters(): void {
+		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
+		$sut       = new MultiCurrencyBootstrap( static fn(): array => array( 'ProviderRoot' ) );
+
+		$sut->register( $container, '__return_false' );
+
 		$this->assertFalse( has_filter( 'woocommerce_cart_total' ) );
 		$this->assertFalse( has_filter( 'woocommerce_get_formatted_order_total' ) );
 		$this->assertFalse( has_action( 'woocommerce_admin_order_totals_after_tax' ) );
@@ -487,28 +521,6 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'ProviderRoot', self::CORE_ROOTS[21], MultiCurrencyExplicitPriceController::class ), $container->registered );
 	}
 
-	/** @testdox Should not resolve provider roots for an empty AJAX request. */
-	public function test_empty_ajax_request_does_not_resolve_provider_roots(): void {
-		add_filter( 'wp_doing_ajax', '__return_true' );
-		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
-		$resolver_calls = 0;
-		$sut            = new MultiCurrencyBootstrap(
-			static function () use ( &$resolver_calls ): array {
-				++$resolver_calls;
-				return array( 'ProviderRoot' );
-			}
-		);
-
-		try {
-			$sut->register( $container, '__return_true' );
-		} finally {
-			remove_filter( 'wp_doing_ajax', '__return_true' );
-		}
-
-		$this->assertSame( 0, $resolver_calls );
-		$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $container->registered );
-	}
-
 	/**
 	 * @testdox Should treat an empty Action Scheduler request as cron before AJAX, REST, and admin.
 	 */
@@ -535,27 +547,6 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not resolve provider roots for an empty CLI request.
-	 */
-	public function test_empty_cli_request_does_not_resolve_provider_roots(): void {
-		Constants::set_constant( 'WP_CLI', true );
-
-		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
-		$resolver_calls = 0;
-		$sut            = new MultiCurrencyBootstrap(
-			static function () use ( &$resolver_calls ): array {
-				++$resolver_calls;
-				return array( 'ProviderRoot' );
-			}
-		);
-
-		$sut->register( $container, '__return_true' );
-
-		$this->assertSame( 0, $resolver_calls );
-		$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $container->registered );
-	}
-
-	/**
 	 * @testdox Should select the exact core root matrix for each persisted-data tier and request class.
 	 *
 	 * @dataProvider core_root_matrix
@@ -567,15 +558,10 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 */
 	public function test_selects_exact_core_root_matrix( bool $configured, bool $historical, string $request, array $expected ): void {
 		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $configured, $historical );
-		$sut       = new MultiCurrencyBootstrap( static fn(): array => array() );
-		$this->assertTrue( method_exists( MultiCurrencyBootstrap::class, 'get_core_roots' ) );
-		if ( ! method_exists( MultiCurrencyBootstrap::class, 'get_core_roots' ) ) {
-			return;
-		}
-		$method = new \ReflectionMethod( MultiCurrencyBootstrap::class, 'get_core_roots' );
-		$method->setAccessible( true );
 
-		$this->assertSame( $expected, $method->invoke( $sut, $container, $request ) );
+		$this->register_as( new MultiCurrencyBootstrap( static fn(): array => array() ), $container, $request );
+
+		$this->assertSame( $expected, $container->registered );
 	}
 
 	/**
@@ -590,10 +576,10 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 */
 	public function test_selects_the_same_core_root_matrix_without_a_payments_owner( bool $configured, bool $historical, string $request, array $expected ): void {
 		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $configured, $historical, false, null, WooPaymentsRuntimeArbiter::OWNER_NONE );
-		$method    = new \ReflectionMethod( MultiCurrencyBootstrap::class, 'get_core_roots' );
-		$method->setAccessible( true );
 
-		$this->assertSame( $expected, $method->invoke( new MultiCurrencyBootstrap( static fn(): array => array() ), $container, $request ) );
+		$this->register_as( new MultiCurrencyBootstrap( static fn(): array => array() ), $container, $request );
+
+		$this->assertSame( $expected, $container->registered );
 	}
 
 	/** @return array<string,array{bool,bool,string,array<int,string>}> */
@@ -641,11 +627,10 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 */
 	public function test_retains_historical_roots_when_historical_order_detection_fails( string $request, array $expected ): void {
 		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false, true );
-		$sut       = new MultiCurrencyBootstrap( static fn(): array => array() );
-		$method    = new \ReflectionMethod( MultiCurrencyBootstrap::class, 'get_core_roots' );
-		$method->setAccessible( true );
 
-		$this->assertSame( $expected, $method->invoke( $sut, $container, $request ) );
+		$this->register_as( new MultiCurrencyBootstrap( static fn(): array => array() ), $container, $request );
+
+		$this->assertSame( $expected, $container->registered );
 		$this->assertSame( 1, $container->foreign_currency_order_checks, $request . ' must check historical orders once.' );
 	}
 
@@ -664,15 +649,10 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	public function test_no_config_front_ajax_and_cli_skip_historical_order_detection(): void {
 		foreach ( array( 'front', 'ajax', 'cli' ) as $request ) {
 			$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, true );
-			$sut       = new MultiCurrencyBootstrap( static fn(): array => array() );
-			$this->assertTrue( method_exists( MultiCurrencyBootstrap::class, 'get_core_roots' ) );
-			if ( ! method_exists( MultiCurrencyBootstrap::class, 'get_core_roots' ) ) {
-				return;
-			}
-			$method = new \ReflectionMethod( MultiCurrencyBootstrap::class, 'get_core_roots' );
-			$method->setAccessible( true );
 
-			$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $method->invoke( $sut, $container, $request ) );
+			$this->register_as( new MultiCurrencyBootstrap( static fn(): array => array() ), $container, $request );
+
+			$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $container->registered );
 			$this->assertSame( 0, $container->foreign_currency_order_checks, $request . ' must return before querying order storage.' );
 		}
 	}
