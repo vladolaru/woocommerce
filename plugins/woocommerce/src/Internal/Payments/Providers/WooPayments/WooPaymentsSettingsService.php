@@ -28,7 +28,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPay
  */
 class WooPaymentsSettingsService {
 
-	private const MULTI_CURRENCY_FLAG_OPTION = '_wcpay_feature_customer_multi_currency';
+	private const MULTI_CURRENCY_FLAG_OPTION = MultiCurrencyFeatureController::WOOPAYMENTS_MULTI_CURRENCY_FLAG_OPTION;
 
 	private const WOOPAY_EXPRESS_CHECKOUT_FLAG_OPTION = '_wcpay_feature_woopay_express_checkout';
 
@@ -56,7 +56,7 @@ class WooPaymentsSettingsService {
 	);
 
 	private const ALLOWED_OPTIONS = array(
-		'wcpay_multi_currency_setup_completed'             => 'bool',
+		MultiCurrencyFeatureController::SETUP_COMPLETED_OPTION => 'bool',
 		'woocommerce_dismissed_todo_tasks'                 => 'array',
 		'woocommerce_remind_me_later_todo_tasks'           => 'array',
 		'woocommerce_deleted_todo_tasks'                   => 'array',

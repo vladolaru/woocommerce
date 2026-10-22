@@ -7,6 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
@@ -428,10 +430,10 @@ class WooPaymentsCutoverPreflightService {
 	 * @return bool
 	 */
 	private function has_automatic_multi_currency_rate_currencies(): bool {
-		if ( '1' !== (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ) ) {
+		if ( '1' !== (string) get_option( MultiCurrencyFeatureController::WOOPAYMENTS_MULTI_CURRENCY_FLAG_OPTION, '1' ) ) {
 			return false;
 		}
-		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies', array() );
+		$enabled_currencies = get_option( MultiCurrencyStateBuilder::ENABLED_CURRENCIES_OPTION, array() );
 		if ( ! is_array( $enabled_currencies ) || array() === $enabled_currencies ) {
 			return false;
 		}

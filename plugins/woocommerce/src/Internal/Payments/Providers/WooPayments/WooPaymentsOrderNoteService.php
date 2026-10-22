@@ -7,7 +7,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use WC_Order;
 
@@ -1756,7 +1758,7 @@ class WooPaymentsOrderNoteService {
 	 * @return bool
 	 */
 	private function is_multi_currency_feature_enabled(): bool {
-		return '1' === (string) get_option( '_wcpay_feature_customer_multi_currency', '1' );
+		return '1' === (string) get_option( MultiCurrencyFeatureController::WOOPAYMENTS_MULTI_CURRENCY_FLAG_OPTION, '1' );
 	}
 
 	/**
@@ -1766,7 +1768,7 @@ class WooPaymentsOrderNoteService {
 	 */
 	private function has_configured_additional_currency(): bool {
 		$store_currency     = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
-		$enabled_currencies = get_option( 'wcpay_multi_currency_enabled_currencies', array() );
+		$enabled_currencies = get_option( MultiCurrencyStateBuilder::ENABLED_CURRENCIES_OPTION, array() );
 		$enabled_currencies = is_array( $enabled_currencies ) ? $enabled_currencies : array();
 		$enabled_currencies = array_map(
 			static fn( $currency_code ) => strtoupper( (string) $currency_code ),

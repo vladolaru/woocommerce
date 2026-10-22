@@ -9,7 +9,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDatabaseCache;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStoreCurrencyLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Throwable;
@@ -379,14 +381,14 @@ class WooPaymentsFraudRulesetService {
 	private function get_fraud_threshold_amount(): string {
 		$amount         = 100000;
 		$store_currency = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
-		$enabled_codes  = get_option( 'wcpay_multi_currency_enabled_currencies', array() );
+		$enabled_codes  = get_option( MultiCurrencyStateBuilder::ENABLED_CURRENCIES_OPTION, array() );
 		// The Multi-Currency rates are read only when USD is enabled, the one case that converts.
 		if ( 'USD' !== $store_currency && is_array( $enabled_codes ) && in_array( 'USD', array_map( 'strtoupper', $enabled_codes ), true ) ) {
 			$usd_rate = 0.0;
 			// A USD rate, manual or fetched, is quoted against the store currency it was set or fetched for. Client 11.1.0
 			// deletes the rates cache and asks the merchant to review manual rates when the store currency changes
 			// (includes/multi-currency/MultiCurrency.php:321-336, :1832-1844); nothing does while Multi-Currency is off.
-			if ( strtoupper( (string) get_option( 'wcpay_multi_currency_store_currency', '' ) ) === $store_currency ) {
+			if ( strtoupper( (string) get_option( MultiCurrencyStoreCurrencyLifecycleService::STORE_CURRENCY_OPTION, '' ) ) === $store_currency ) {
 				$enabled_currencies = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create()->build()->get_enabled_currencies();
 				// With Multi-Currency off no rate provider runs, so an automatic rate is the one the rates cache still holds.
 				$usd_rate = isset( $enabled_currencies['USD'] )

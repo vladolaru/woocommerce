@@ -7,7 +7,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
@@ -136,7 +138,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 	 * Does what client 11.1.0's WC_Payments_Currency_Manager::maybe_add_missing_currencies() does (compat/multi-currency/class-wc-payments-currency-manager.php:96): without it, enabling a currency-restricted method such as iDEAL (EUR) leaves the required currency disabled, so the method is marked enabled but never offered at checkout.
 	 */
 	public function maybe_add_missing_currencies(): void {
-		if ( '1' !== (string) get_option( '_wcpay_feature_customer_multi_currency', '1' ) ) {
+		if ( '1' !== (string) get_option( MultiCurrencyFeatureController::WOOPAYMENTS_MULTI_CURRENCY_FLAG_OPTION, '1' ) ) {
 			return;
 		}
 
@@ -161,7 +163,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 			return;
 		}
 
-		update_option( 'wcpay_multi_currency_enabled_currencies', array_values( array_unique( array_merge( array_keys( $enabled ), $missing_codes ) ) ) );
+		update_option( MultiCurrencyStateBuilder::ENABLED_CURRENCIES_OPTION, array_values( array_unique( array_merge( array_keys( $enabled ), $missing_codes ) ) ) );
 		$state_builder->reset();
 	}
 

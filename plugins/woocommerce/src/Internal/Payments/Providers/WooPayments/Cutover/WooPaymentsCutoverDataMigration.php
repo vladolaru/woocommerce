@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
@@ -408,7 +409,7 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 			return false;
 		}
 
-		return update_option( 'wcpay_multi_currency_cache_autodetect_done', 'yes' );
+		return update_option( MultiCurrencyCacheRenderingService::AUTODETECT_DONE_OPTION, 'yes' );
 	}
 
 	/**
