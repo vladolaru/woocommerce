@@ -138,10 +138,9 @@ class MultiCurrencyTrackingProjectionService {
 	 * @return string
 	 */
 	private function get_price_rounding_label( MultiCurrencyCurrency $currency ): string {
-		$default_rounding = $currency->get_is_zero_decimal() ? '100' : '1.00';
-		$rounding         = $currency->get_rounding();
+		$rounding = $currency->get_rounding();
 
-		return $default_rounding === $rounding ? $rounding . ' (default)' : $rounding;
+		return $currency->get_default_rounding() === $rounding ? $rounding . ' (default)' : $rounding;
 	}
 
 	/**

@@ -440,7 +440,7 @@ class MultiCurrencyStateBuilder {
 		$charm       = get_option( self::OPTION_PREFIX . '_price_charm_' . $currency_id, 0.00 );
 		$rounding    = get_option(
 			self::OPTION_PREFIX . '_price_rounding_' . $currency_id,
-			$currency->get_is_zero_decimal() ? '100' : '1.00'
+			$currency->get_default_rounding()
 		);
 
 		$currency->set_charm( $charm );

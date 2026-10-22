@@ -220,6 +220,15 @@ class MultiCurrencyCurrency implements \JsonSerializable {
 	}
 
 	/**
+	 * Get the rounding a currency has until the merchant sets one: 100 for a zero-decimal currency, 1.00 otherwise.
+	 *
+	 * @return string
+	 */
+	public function get_default_rounding(): string {
+		return $this->is_zero_decimal ? '100' : '1.00';
+	}
+
+	/**
 	 * Get the last successful rate update timestamp.
 	 *
 	 * @return int|null
