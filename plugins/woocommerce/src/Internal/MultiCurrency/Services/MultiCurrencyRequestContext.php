@@ -144,6 +144,17 @@ class MultiCurrencyRequestContext {
 	}
 
 	/**
+	 * Get the current request's query arguments, cleaned, for the currency switcher forms to carry over.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public static function get_current_query_args(): array {
+		$query_args = wc_clean( wp_unslash( $_GET ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only query preservation for switcher form inputs.
+
+		return is_array( $query_args ) ? $query_args : array();
+	}
+
+	/**
 	 * Tell whether WooCommerce considers this a REST API request.
 	 *
 	 * @return bool True for WooCommerce REST requests.

@@ -10,6 +10,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherProjectionService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 
 /**
  * Registers native multi-currency switcher block rendering when core owns multi-currency.
@@ -194,7 +195,7 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 	public function render_block_widget( $block_attributes ): string {
 		return $this->get_switcher_projection_service()->get_block_markup(
 			is_array( $block_attributes ) ? $block_attributes : array(),
-			$this->get_current_query_args(),
+			MultiCurrencyRequestContext::get_current_query_args(),
 			$this->compatibility_controller->should_disable_currency_switching()
 		);
 	}
@@ -243,17 +244,6 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 				'default' => 'transparent',
 			),
 		);
-	}
-
-	/**
-	 * Get sanitized current query arguments for switcher forms.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function get_current_query_args(): array {
-		$query_args = wc_clean( wp_unslash( $_GET ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only query preservation for switcher form inputs.
-
-		return is_array( $query_args ) ? $query_args : array();
 	}
 
 	/**

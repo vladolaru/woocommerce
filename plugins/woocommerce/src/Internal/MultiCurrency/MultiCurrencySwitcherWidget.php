@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 
 /**
  * Native multi-currency switcher widget.
@@ -81,21 +82,10 @@ class MultiCurrencySwitcherWidget extends \WC_Widget {
 		$markup = $this->switcher_projection_service->get_widget_markup(
 			is_array( $instance ) ? $instance : array(),
 			is_array( $args ) ? $args : array(),
-			$this->get_current_query_args(),
+			MultiCurrencyRequestContext::get_current_query_args(),
 			$this->compatibility_controller->should_disable_currency_switching()
 		);
 
 		echo $markup; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Switcher projection service escapes the generated markup.
-	}
-
-	/**
-	 * Get sanitized query args to preserve in the switcher form.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function get_current_query_args(): array {
-		$query_args = wc_clean( wp_unslash( $_GET ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only query preservation for switcher form inputs.
-
-		return is_array( $query_args ) ? $query_args : array();
 	}
 }

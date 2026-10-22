@@ -14,6 +14,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBui
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStorefrontProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherProjectionService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 
 /**
  * Registers native Storefront multi-currency switcher hooks when core owns multi-currency.
@@ -192,7 +193,7 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 		$widget_markup = $this->get_switcher_projection_service()->get_widget_markup(
 			$instance,
 			$args,
-			$this->get_current_query_args(),
+			MultiCurrencyRequestContext::get_current_query_args(),
 			$this->should_disable_currency_switching()
 		);
 
@@ -291,7 +292,7 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	 * @return array<string,mixed>
 	 */
 	private function get_simulation_variables(): array {
-		$query_args    = $this->get_current_query_args();
+		$query_args    = MultiCurrencyRequestContext::get_current_query_args();
 		$is_simulation = filter_var( $query_args['is_mc_onboarding_simulation'] ?? false, FILTER_VALIDATE_BOOLEAN );
 
 		if ( ! $is_simulation || ! array_key_exists( 'enable_storefront_switcher', $query_args ) ) {
@@ -319,25 +320,10 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 		$external_filter_disabled = (bool) apply_filters( self::DISABLE_SWITCHING_FILTER, false );
 
 		return MultiCurrencyCompatibilityProjectionService::should_disable_currency_switching(
-			$this->get_current_query_args(),
+			MultiCurrencyRequestContext::get_current_query_args(),
 			false,
 			$external_filter_disabled
 		);
-	}
-
-	/**
-	 * Get sanitized current query args.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function get_current_query_args(): array {
-		if ( empty( $_GET ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			return array();
-		}
-
-		$query_args = wc_clean( wp_unslash( $_GET ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-
-		return is_array( $query_args ) ? $query_args : array();
 	}
 
 	/**
