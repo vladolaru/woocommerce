@@ -208,7 +208,7 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( $domain !== (string) $this->get_gateway_setting( 'apple_pay_verified_domain', '' ) ) {
+		if ( $domain !== (string) $this->account_service->get_gateway_setting( 'apple_pay_verified_domain', '' ) ) {
 			$this->verify_domain_if_configured();
 		}
 	}
@@ -333,7 +333,7 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	 * @param array<string,mixed>|null $settings Optional settings snapshot.
 	 */
 	public function verify_domain_if_configured( ?array $settings = null ): void {
-		$settings = $settings ?? $this->get_gateway_settings();
+		$settings = $settings ?? $this->account_service->get_gateway_settings();
 
 		if ( ! $this->is_apple_pay_configured( $settings ) ) {
 			return;
@@ -472,13 +472,13 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	 * @return string|null The stored error ('' when only the domain flag failed), or null when no notice is due.
 	 */
 	private function read_error_notice(): ?string {
-		if ( ! $this->is_apple_pay_configured( $this->get_gateway_settings() ) || ! $this->account_service->has_live_account() ) {
+		if ( ! $this->is_apple_pay_configured( $this->account_service->get_gateway_settings() ) || ! $this->account_service->has_live_account() ) {
 			return null;
 		}
 
 		// The error is only ever stored together with the 'no' flag (see register_domain()),
 		// so skip the option read on healthy stores; this runs on every Payments tab load.
-		if ( 'no' !== (string) $this->get_gateway_setting( 'apple_pay_domain_set', '' ) ) {
+		if ( 'no' !== (string) $this->account_service->get_gateway_setting( 'apple_pay_domain_set', '' ) ) {
 			return null;
 		}
 
@@ -579,36 +579,14 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the stored gateway settings.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function get_gateway_settings(): array {
-		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
-
-		return is_array( $settings ) ? $settings : array();
-	}
-
-	/**
-	 * Get a gateway setting.
-	 *
-	 * @param string $key      Setting key.
-	 * @param mixed  $fallback Fallback value.
-	 * @return mixed
-	 */
-	private function get_gateway_setting( string $key, $fallback = null ) {
-		$settings = $this->get_gateway_settings();
-
-		return array_key_exists( $key, $settings ) ? $settings[ $key ] : $fallback;
-	}
-
-	/**
-	 * Update some gateway settings, keeping the others.
+	 * Update some gateway settings, keeping the stored others.
 	 *
 	 * @param array<string,mixed> $updates Settings to update.
 	 */
 	private function update_gateway_settings( array $updates ): void {
-		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array_merge( $this->get_gateway_settings(), $updates ) );
+		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
+
+		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array_merge( is_array( $settings ) ? $settings : array(), $updates ) );
 	}
 
 	/**

@@ -4,8 +4,10 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPmPromotionsService;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
 /**
@@ -44,7 +46,8 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 
 		$this->api_client      = new RecordingPmPromotionsApiClient();
 		$this->account_service = new RecordingPmPromotionsAccountService();
-		$this->sut             = new WooPaymentsPmPromotionsService();
+		$this->account_service->init( wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsDatabaseCache::class ) );
+		$this->sut = new WooPaymentsPmPromotionsService();
 		$this->sut->init(
 			$this->api_client,
 			$this->account_service,
@@ -372,6 +375,31 @@ class WooPaymentsPmPromotionsServiceTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'not_a_payment_method' ) ) );
 		// Reduced from Fixtures/platform-test-drive-account.json account.fees (:196; card :203, klarna :311): only the fee
 		// keys are read, so the fee objects are empty.
+		$this->account_service->cached_account_data = array(
+			'fees' => array(
+				'card'   => array(),
+				'klarna' => array(),
+			),
+		);
+		$this->api_client->promotions_response      = array(
+			$this->promotion_fixture( 'klarna-promo__spotlight', 'klarna-promo', 'klarna', 'spotlight' ),
+		);
+
+		$this->assertTrue( $this->sut->activate_promotion( 'klarna-promo__spotlight' ) );
+
+		$this->assertSame( array( 'card', 'klarna' ), get_option( 'woocommerce_woocommerce_payments_settings' )['upe_enabled_payment_method_ids'] );
+	}
+
+	/**
+	 * Client 11.1.0 adds the method to the list each gateway reads through `get_upe_enabled_payment_method_ids()`, whose
+	 * default is cards (includes/class-wc-payments-pm-promotions-service.php:447-455,
+	 * includes/class-wc-payment-gateway-wcpay.php:4682-4689). Fails when the list is read from the stored settings alone,
+	 * which drops cards.
+	 *
+	 * @testdox Should keep cards in the list when activation adds the promoted method to settings that never stored a list.
+	 */
+	public function test_activate_promotion_keeps_cards_when_the_settings_never_stored_a_list(): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enabled' => 'yes' ) );
 		$this->account_service->cached_account_data = array(
 			'fees' => array(
 				'card'   => array(),

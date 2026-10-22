@@ -1078,6 +1078,7 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'has_live_account', 'is_payment_request_method_enabled' ) )
 			->getMock();
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsDatabaseCache::class ) );
 		$account_service->method( 'has_live_account' )->willReturn( $live_account );
 		$account_service->method( 'is_payment_request_method_enabled' )->willReturn( true );
 

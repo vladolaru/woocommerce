@@ -716,17 +716,14 @@ class WooPaymentsPmPromotionsService {
 	}
 
 	/**
-	 * Get the enabled payment method IDs from the stored gateway settings.
+	 * Get the enabled payment method IDs from the gateway settings; settings that never stored the list read its default, cards.
 	 *
 	 * @return string[]
 	 */
 	private function get_enabled_payment_method_ids(): array {
-		$settings = $this->get_gateway_settings();
-		$enabled  = isset( $settings['upe_enabled_payment_method_ids'] ) && is_array( $settings['upe_enabled_payment_method_ids'] )
-			? $settings['upe_enabled_payment_method_ids']
-			: array();
+		$enabled = $this->account_service->get_gateway_setting( 'upe_enabled_payment_method_ids' );
 
-		return $this->sanitize_payment_method_ids( $enabled );
+		return $this->sanitize_payment_method_ids( is_array( $enabled ) ? $enabled : array() );
 	}
 
 	/**
