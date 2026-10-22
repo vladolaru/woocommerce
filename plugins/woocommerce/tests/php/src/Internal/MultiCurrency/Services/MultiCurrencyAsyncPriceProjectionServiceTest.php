@@ -153,9 +153,6 @@ class MultiCurrencyAsyncPriceProjectionServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			array(
 				'script' => array(
-					'handle'           => 'wc-multi-currency-async-renderer',
-					'legacy_handle'    => 'wcpay-multi-currency-async-renderer',
-					'path'             => 'dist/multi-currency-async-renderer',
 					'localized_object' => 'wcpayAsyncPriceConfig',
 					'config'           => array(
 						'apiUrl'          => 'https://example.test/wp-json/wc/v3/payments/multi-currency/public/config',
@@ -170,15 +167,8 @@ class MultiCurrencyAsyncPriceProjectionServiceTest extends WC_Unit_Test_Case {
 				'style'  => array(
 					'handle'        => 'wc-multi-currency-async-renderer',
 					'legacy_handle' => 'wcpay-multi-currency-async-renderer',
-					'path'          => 'dist/multi-currency-async-renderer.css',
 					'url'           => 'https://example.test/wp-content/plugins/woocommerce/dist/multi-currency-async-renderer.css',
 					'version'       => '1.2.3',
-				),
-				'client' => array(
-					'session_cache_key'    => 'wcpay_mc_async_config',
-					'session_cache_ttl_ms' => 300000,
-					'timeout_ms'           => 10000,
-					'max_cache_size'       => 500,
 				),
 			),
 			$manifest

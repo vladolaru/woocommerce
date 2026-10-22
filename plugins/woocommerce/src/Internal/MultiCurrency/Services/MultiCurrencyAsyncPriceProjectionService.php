@@ -17,13 +17,7 @@ class MultiCurrencyAsyncPriceProjectionService {
 
 	private const SCRIPT_HANDLE        = 'wc-multi-currency-async-renderer';
 	private const LEGACY_SCRIPT_HANDLE = 'wcpay-multi-currency-async-renderer';
-	private const SCRIPT_PATH          = 'dist/multi-currency-async-renderer';
-	private const STYLE_PATH           = 'dist/multi-currency-async-renderer.css';
 	private const LOCALIZED_OBJECT     = 'wcpayAsyncPriceConfig';
-	private const SESSION_CACHE_KEY    = 'wcpay_mc_async_config';
-	private const SESSION_CACHE_TTL_MS = 300000;
-	private const TIMEOUT_MS           = 10000;
-	private const MAX_CACHE_SIZE       = 500;
 
 	/**
 	 * Project activation blockers for the async price renderer.
@@ -244,9 +238,6 @@ class MultiCurrencyAsyncPriceProjectionService {
 	): array {
 		return array(
 			'script' => array(
-				'handle'           => self::SCRIPT_HANDLE,
-				'legacy_handle'    => self::LEGACY_SCRIPT_HANDLE,
-				'path'             => self::SCRIPT_PATH,
 				'localized_object' => self::LOCALIZED_OBJECT,
 				'config'           => array(
 					'apiUrl'          => $api_url,
@@ -257,15 +248,8 @@ class MultiCurrencyAsyncPriceProjectionService {
 			'style'  => array(
 				'handle'        => self::SCRIPT_HANDLE,
 				'legacy_handle' => self::LEGACY_SCRIPT_HANDLE,
-				'path'          => self::STYLE_PATH,
 				'url'           => $style_url,
 				'version'       => $style_version,
-			),
-			'client' => array(
-				'session_cache_key'    => self::SESSION_CACHE_KEY,
-				'session_cache_ttl_ms' => self::SESSION_CACHE_TTL_MS,
-				'timeout_ms'           => self::TIMEOUT_MS,
-				'max_cache_size'       => self::MAX_CACHE_SIZE,
 			),
 		);
 	}
