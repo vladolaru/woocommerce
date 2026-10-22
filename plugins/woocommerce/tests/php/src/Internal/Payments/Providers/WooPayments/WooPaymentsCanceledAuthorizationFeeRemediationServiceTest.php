@@ -315,7 +315,12 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 	}
 
 	/**
-	 * @testdox Remediation deletes the stale WooCommerce Analytics stats row for deleted WooPayments refunds.
+	 * Client 11.1.0 deletes the stats row through core's DataStore::delete_order() before it deletes the refund
+	 * (includes/migrations/class-wc-payments-remediate-canceled-auth-fees.php:707-718,820-841), so core fires
+	 * woocommerce_analytics_delete_order_stats while the refund is still stored. The timing assertion fails when the row is
+	 * deleted after the refund.
+	 *
+	 * @testdox Remediation deletes the stale WooCommerce Analytics stats row for deleted WooPayments refunds, through core, before the refund.
 	 */
 	public function test_remediate_order_deletes_refund_order_stats(): void {
 		$order  = $this->create_order_fixture( array( 'status' => 'cancelled' ) );
@@ -324,10 +329,18 @@ class WooPaymentsCanceledAuthorizationFeeRemediationServiceTest extends WC_Unit_
 		$this->create_order_stats_row( $refund->get_id(), $order->get_id() );
 
 		$this->assertSame( 1, $this->get_order_stats_row_count( $refund->get_id() ) );
+		$stats_deletions = array();
+		add_action(
+			'woocommerce_analytics_delete_order_stats',
+			static function ( $order_id ) use ( &$stats_deletions ): void {
+				$stats_deletions[] = array( (int) $order_id, wc_get_order( $order_id ) instanceof WC_Order_Refund );
+			}
+		);
 
 		$this->sut->remediate_order( wc_get_order( $order->get_id() ) );
 
 		$this->assertSame( 0, $this->get_order_stats_row_count( $refund->get_id() ) );
+		$this->assertSame( array( $refund->get_id(), true ), $stats_deletions[0] ?? null, 'The first stats deletion runs while the refund is still stored.' );
 	}
 
 	/**

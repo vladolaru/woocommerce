@@ -675,6 +675,72 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 applies wcpay_metadata_from_order a second time on a zero-total order whose shopper saves their details
+	 * in WooPay, seeded with only the billing email and two arguments, and merges the result under the order metadata
+	 * (includes/class-wc-payment-gateway-wcpay.php:1947-1964). Fails when the setup intent applies the filter once.
+	 *
+	 * @testdox Should apply the order metadata filter a second time for a zero-total WooPay save-user setup intent: $_dataName.
+	 *
+	 * @testWith ["saves the shopper in WooPay", true, 2]
+	 *           ["does not save the shopper", false, 1]
+	 *
+	 * @param string $name           Case label.
+	 * @param bool   $save_in_woopay Whether the shopper saves their details in WooPay.
+	 * @param int    $expected_calls Expected filter calls.
+	 */
+	public function test_setup_intent_applies_the_metadata_filter_again_when_saving_the_shopper_in_woopay( string $name, bool $save_in_woopay, int $expected_calls ): void {
+		unset( $name );
+		$order = wc_create_order();
+		$order->set_billing_email( 'shopper@example.com' );
+		$order->set_currency( 'USD' );
+		$order->set_total( '0.00' );
+		$order->save();
+
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_setting' ) )
+			->getMock();
+		$account_service->method( 'get_gateway_setting' )->willReturn( 'no' );
+		$request_builder = new WooPaymentsIntentRequestBuilder();
+		$request_builder->init(
+			$account_service,
+			new WooPaymentsOrderDataService(),
+			$this->createStub( WooPaymentsTokenService::class ),
+			new WooPaymentsPaymentMethodRegistry()
+		);
+		$calls = array();
+		add_filter(
+			'wcpay_metadata_from_order',
+			static function ( $metadata, ...$args ) use ( &$calls ) {
+				$calls[] = array( $metadata, count( $args ) );
+				if ( ! isset( $metadata['order_id'] ) ) {
+					$metadata['woopay_save_user_extra'] = 'from the email-only call';
+				}
+
+				return $metadata;
+			},
+			10,
+			3
+		);
+
+		$request = $request_builder->setup_intent_request_data(
+			PaymentOperationContext::for_checkout( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card', array(), array( 'save_payment_method_to_platform' => $save_in_woopay ) ),
+			'pm_card',
+			'cus_native',
+			false
+		);
+
+		$this->assertCount( $expected_calls, $calls );
+		$this->assertSame( $order->get_id(), $request['metadata']['order_id'], 'The order metadata wins over the email-only call.' );
+		if ( $save_in_woopay ) {
+			$this->assertSame( array( array( 'customer_email' => 'shopper@example.com' ), 1 ), $calls[1], 'The second call is seeded with the billing email and passes the order only.' );
+			$this->assertSame( 'from the email-only call', $request['metadata']['woopay_save_user_extra'] );
+		} else {
+			$this->assertArrayNotHasKey( 'woopay_save_user_extra', $request['metadata'] );
+		}
+	}
+
+	/**
 	 * @testdox Link-token renewals declare card and link with no return_url, even when the checkout fold is off.
 	 */
 	public function test_link_token_renewals_declare_card_and_link_without_return_url(): void {

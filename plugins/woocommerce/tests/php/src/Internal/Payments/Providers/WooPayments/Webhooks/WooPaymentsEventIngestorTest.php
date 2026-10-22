@@ -3527,9 +3527,10 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A $status charge.refund.updated deletes the linked local refund, fires the refund deleted hook and leaves a $order_status order $expected_status.
+	 * @testdox A $status charge.refund.updated deletes the linked local refund, fires no refund deleted hook and leaves a $order_status order $expected_status.
 	 *
-	 * Client 11.1.0 marks the order failed only when it is refunded (class-wc-payments-order-service.php:2002-2005).
+	 * Client 11.1.0 deletes the refund and fires nothing (class-wc-payments-order-service.php:1961-1964), and marks the order
+	 * failed only when it is refunded (:2002-2005). The hook assertion fails when the handler fires woocommerce_refund_deleted.
 	 *
 	 * @dataProvider provider_refund_update_failure_deletes_the_linked_refund
 	 *
@@ -3576,7 +3577,7 @@ class WooPaymentsEventIngestorTest extends WC_Unit_Test_Case {
 		$this->assertNull( get_post( $refund_id ), 'The matched local refund post should be deleted after the provider marks it ' . $status . '.' );
 		$this->assertSame( 'failed', $order->get_meta( '_wcpay_refund_status', true ) );
 		$this->assertOrderHasNoteContaining( $order, $note_fragments );
-		$this->assertSame( array( array( $refund_id, $order->get_id() ) ), $hook_calls );
+		$this->assertSame( array(), $hook_calls, 'WooCommerce fires woocommerce_refund_deleted only from its own refund deletion.' );
 	}
 
 	/**

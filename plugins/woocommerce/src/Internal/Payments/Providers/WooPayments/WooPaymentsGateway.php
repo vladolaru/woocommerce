@@ -2037,6 +2037,11 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return string
 	 */
 	private function get_fraud_prevention_error_message( bool $is_checkout ): string {
+		$fraud_prevention_service = $this->get_fraud_prevention_service();
+		if ( ! $fraud_prevention_service->has_session() ) {
+			return '';
+		}
+
 		if ( $is_checkout ) {
 			/**
 			 * Filters whether the request is a WooPay Store API request, which skips the card-testing token check; the WooPay
@@ -2054,8 +2059,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			}
 		}
 
-		$fraud_prevention_service = $this->get_fraud_prevention_service();
-		if ( ! $fraud_prevention_service->has_session() || ! $fraud_prevention_service->is_enabled() ) {
+		if ( ! $fraud_prevention_service->is_enabled() ) {
 			return '';
 		}
 

@@ -302,13 +302,31 @@ class WooPaymentsIntentRequestBuilder {
 		$payment_type         = $is_recurring ? 'recurring' : 'single';
 		$subscription_payment = $is_renewal ? 'renewal' : ( $is_recurring ? 'initial' : 'no' );
 		$payment_method_types = $this->payment_method_types_for_request( $context, (string) $order->get_currency() );
-		$request_data         = array(
+		$metadata             = array_merge(
+			self::metadata_from_order( $order, $payment_type, $subscription_payment ),
+			self::fingerprint_metadata( $context )
+		);
+
+		if ( ! empty( $provider_data[ WooPaymentsPlatformPaymentMethodContext::SAVE_TO_PLATFORM_PROVIDER_DATA_KEY ] ) ) {
+			/**
+			 * Filters the WooPayments metadata created from an order, applied again with only the billing email when the shopper
+			 * saves their details in WooPay on a zero-total order. The order metadata wins over its result.
+			 *
+			 * Keeps this name because extensions listen to it.
+			 *
+			 * @since 11.0.0
+			 *
+			 * @param array<string,mixed> $metadata Metadata being sent to WooPayments.
+			 * @param WC_Order            $order    Order object.
+			 */
+			$save_user_metadata = apply_filters( 'wcpay_metadata_from_order', array( 'customer_email' => $order->get_billing_email() ), $order );
+			$metadata           = array_merge( (array) $save_user_metadata, $metadata );
+		}
+
+		$request_data = array(
 			'customer'             => $customer_id,
 			'description'          => self::intent_description( (string) $order->get_order_number() ),
-			'metadata'             => array_merge(
-				self::metadata_from_order( $order, $payment_type, $subscription_payment ),
-				self::fingerprint_metadata( $context )
-			),
+			'metadata'             => $metadata,
 			'payment_method_types' => $payment_method_types,
 		);
 

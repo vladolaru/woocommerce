@@ -372,22 +372,11 @@ class WooPaymentsRefundEventHandler {
 	 */
 	private function handle_failed_refund( WC_Order $order, string $refund_id, int $amount, string $currency, ?WC_Order_Refund $wc_refund, bool $is_cancelled, string $failure_reason ): void {
 		if ( $wc_refund instanceof WC_Order_Refund ) {
-			$wc_refund_id = $wc_refund->get_id();
-			$deleted      = $wc_refund->delete( true );
+			$deleted = $wc_refund->delete( true );
 			if ( false === $deleted || is_wp_error( $deleted ) ) {
 				$this->log_refund_failure( $order, sprintf( 'Failed to delete local refund %d after provider refund failure.', $wc_refund->get_id() ) );
 				throw new RuntimeException( esc_html( sprintf( 'Could not delete failed local refund %d.', $wc_refund->get_id() ) ) );
 			}
-
-			/**
-			 * Fires after a refund is deleted while handling a WooPayments refund webhook.
-			 *
-			 * @since 11.0.0
-			 *
-			 * @param int $wc_refund_id Deleted refund ID.
-			 * @param int $order_id     Parent order ID.
-			 */
-			do_action( 'woocommerce_refund_deleted', $wc_refund_id, $order->get_id() );
 		}
 
 		if ( ! $is_cancelled && 'insufficient_funds' === $failure_reason ) {

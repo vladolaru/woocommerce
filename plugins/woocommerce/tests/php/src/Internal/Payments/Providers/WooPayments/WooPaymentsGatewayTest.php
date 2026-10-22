@@ -2520,6 +2520,41 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 asks the filter only when a session exists: `WC()->session && ! apply_filters( ... )`
+	 * (includes/class-wc-payment-gateway-wcpay.php:1219). Fails when the filter runs before the session check.
+	 *
+	 * @testdox Should not ask wcpay_is_woopay_store_api_request on a checkout without a WooCommerce session.
+	 */
+	public function test_process_payment_without_a_session_does_not_ask_the_woopay_store_api_filter(): void {
+		$order                     = $this->create_order();
+		$service                   = new RecordingPaymentProcessingService();
+		$gateway                   = new WooPaymentsGateway();
+		$original_session          = WC()->session;
+		$service->checkout_outcome = new PaymentOutcome( PaymentOutcome::STATUS_COMPLETED, 'pi_mock' );
+		$gateway->init( $service, new WooPaymentsProvider() );
+		$filter_calls = 0;
+		add_filter(
+			'wcpay_is_woopay_store_api_request',
+			static function ( $value ) use ( &$filter_calls ) {
+				++$filter_calls;
+
+				return $value;
+			}
+		);
+		WC()->session = null;
+
+		$_POST['wcpay-payment-method'] = 'pm_card';
+		try {
+			$result = $gateway->process_payment( $order->get_id() );
+		} finally {
+			WC()->session = $original_session;
+		}
+
+		$this->assertSame( 'success', $result['result'] );
+		$this->assertSame( 0, $filter_calls );
+	}
+
+	/**
 	 * @testdox Should carry checked save intent only across order-pay confirmation redirects.
 	 *
 	 * @dataProvider confirmation_redirect_save_intent_contexts

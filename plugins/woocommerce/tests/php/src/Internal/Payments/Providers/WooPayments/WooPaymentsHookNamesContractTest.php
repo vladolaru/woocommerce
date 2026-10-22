@@ -75,56 +75,56 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 	 * @var array<string,string>
 	 */
 	private const ALLOWED_DIFFERENCES = array(
-		'__wcpay_customer_data_localized'                  => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:91 §1(a)',
-		'__wcpay_upe_config_localized'                     => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:90 §1(a)',
-		'wc_payments_add_upe_payment_fields'               => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:88 §1(a)',
-		'wc_payments_api_client'                           => 'data/bc-surface-diff.md:117 §1(b) dropped by design (DI container, no class-substitution filter)',
-		'wc_payments_display_save_payment_method_checkbox' => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:92 §1(a)',
-		'wc_payments_http'                                 => 'data/bc-surface-diff.md:118 §1(b) dropped by design',
-		'wc_payments_save_to_account_text'                 => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:93 §1(a)',
-		'wc_payments_set_gateway'                          => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:87 §1(a)',
-		'wcpay_add_account_tos_agreement'                  => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:79 §1(a)',
-		'wcpay_calculated_total'                           => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:100 §1(a)',
-		'wcpay_cancel_intent_request'                      => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:70 §1(a)',
-		'wcpay_capture_intent_request'                     => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:69 §1(a)',
-		'wcpay_confirm_without_payment_intent'             => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:94 §1(a)',
-		'wcpay_create_and_confirm_intent_request'          => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:65 §1(a)',
-		'wcpay_create_and_confirm_intent_request_api'      => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:66 §1(a)',
-		'wcpay_create_and_confirm_setup_intention_request' => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:72 §1(a)',
-		'wcpay_create_intent_request'                      => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:64 §1(a)',
-		'wcpay_create_request'                             => 'data/bc-surface-diff.md:119 §1(b) dropped by design (no Request factory)',
-		'wcpay_create_setup_intention_request'             => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:71 §1(a)',
-		'wcpay_disable_new_onboarding'                     => 'data/bc-surface-diff.md:121 §1(b) dropped by design (NOX onboarding)',
-		'wcpay_express_checkout_js_params'                 => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:101 §1(a)',
-		'wcpay_frontend_tracks'                            => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:105 §1(a)',
-		'wcpay_get_account'                                => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:77 §1(a)',
-		'wcpay_get_all_deposits_overviews'                 => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:81 §1(a)',
-		'wcpay_get_charge_request'                         => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:74 §1(a)',
-		'wcpay_get_deposit'                                => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:82 §1(a)',
-		'wcpay_get_intent_request'                         => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:67 §1(a)',
-		'wcpay_get_setup_intent_request'                   => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:73 §1(a)',
-		'wcpay_get_terminal_location'                      => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:83 §1(a)',
-		'wcpay_get_terminal_locations'                     => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:84 §1(a)',
-		'wcpay_get_terminal_readers_request'               => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:85 §1(a)',
-		'wcpay_get_transactions_summary_request'           => 'data/consumer-map/consumer-map.md:67 (the Request-framework filters as a class are changelog items)',
-		'wcpay_is_wcpay_subscriptions_enabled'             => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:107 §1(a)',
-		'wcpay_list_charge_refunds_request'                => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:76 §1(a)',
-		'wcpay_multi_currency_available_currencies'        => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:108 §1(a)',
-		'wcpay_order_intent_id_updated'                    => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:97 §1(a)',
-		'wcpay_order_payment_method_id_updated'            => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:98 §1(a)',
-		'wcpay_payment_fields_upe'                         => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:89 §1(a)',
-		'wcpay_payment_request_button_locale'              => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:102 §1(a)',
-		'wcpay_plugins_page_js_settings'                   => 'data/bc-surface-diff.md:120 §1(b) dropped by design (no plugin row)',
-		'wcpay_prepare_terminal_payment_request'           => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:86 §1(a)',
-		'wcpay_refund_charge_request'                      => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:75 §1(a)',
+		'__wcpay_customer_data_localized'                  => 'Request-framework or other non-contract filter, a changelog item',
+		'__wcpay_upe_config_localized'                     => 'Request-framework or other non-contract filter, a changelog item',
+		'wc_payments_add_upe_payment_fields'               => 'Request-framework or other non-contract filter, a changelog item',
+		'wc_payments_api_client'                           => 'dropped by design (DI container, no class-substitution filter)',
+		'wc_payments_display_save_payment_method_checkbox' => 'Request-framework or other non-contract filter, a changelog item',
+		'wc_payments_http'                                 => 'dropped by design',
+		'wc_payments_save_to_account_text'                 => 'Request-framework or other non-contract filter, a changelog item',
+		'wc_payments_set_gateway'                          => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_add_account_tos_agreement'                  => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_calculated_total'                           => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_cancel_intent_request'                      => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_capture_intent_request'                     => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_confirm_without_payment_intent'             => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_create_and_confirm_intent_request'          => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_create_and_confirm_intent_request_api'      => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_create_and_confirm_setup_intention_request' => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_create_intent_request'                      => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_create_request'                             => 'dropped by design (no Request factory)',
+		'wcpay_create_setup_intention_request'             => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_disable_new_onboarding'                     => 'dropped by design (NOX onboarding)',
+		'wcpay_express_checkout_js_params'                 => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_frontend_tracks'                            => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_get_account'                                => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_get_all_deposits_overviews'                 => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_get_charge_request'                         => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_get_deposit'                                => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_get_intent_request'                         => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_get_setup_intent_request'                   => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_get_terminal_location'                      => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_get_terminal_locations'                     => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_get_terminal_readers_request'               => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_get_transactions_summary_request'           => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_is_wcpay_subscriptions_enabled'             => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_list_charge_refunds_request'                => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_multi_currency_available_currencies'        => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_order_intent_id_updated'                    => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_order_payment_method_id_updated'            => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_payment_fields_upe'                         => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_payment_request_button_locale'              => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_plugins_page_js_settings'                   => 'dropped by design (no plugin row)',
+		'wcpay_prepare_terminal_payment_request'           => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_refund_charge_request'                      => 'Request-framework or other non-contract filter, a changelog item',
 		'wcpay_review_prompt_experiment_variant'           => 'data/client-delta-10.8.0-11.1.0.tsv:81 and :105 (11.0.0 review-prompt rows, n/a, owner review 2026-09-12)',
-		'wcpay_update_account_settings'                    => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:78 §1(a)',
-		'wcpay_update_intention_request'                   => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:68 §1(a)',
-		'wcpay_update_payment_result_on_error'             => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:95 §1(a)',
-		'wcpay_woopay_use_blog_token'                      => 'data/bc-surface-diff.md:123 §1(b) dropped by design (no mode switch)',
+		'wcpay_update_account_settings'                    => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_update_intention_request'                   => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_update_payment_result_on_error'             => 'Request-framework or other non-contract filter, a changelog item',
+		'wcpay_woopay_use_blog_token'                      => 'dropped by design (no mode switch)',
 		'woocommerce_payments_abilities_enabled'           => 'data/client-delta-10.8.0-11.1.0.tsv:20 (10.9.0 Abilities API registration, n/a)',
-		'woocommerce_payments_order_failed'                => 'data/consumer-map/consumer-map.md:67 (Request-framework and other non-contract filters are changelog items) + data/bc-surface-diff.md:96 §1(a)',
-		'woocommerce_woocommerce_payments_updated'         => 'data/bc-surface-diff.md:124 §1(b) dropped by design (no plugin version)',
+		'woocommerce_payments_order_failed'                => 'Request-framework or other non-contract filter, a changelog item',
+		'woocommerce_woocommerce_payments_updated'         => 'dropped by design (no plugin version)',
 	);
 
 	/**
@@ -230,7 +230,9 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 	 * (for example `wcpay_database_cache_ttl` also fires from
 	 * `MultiCurrencyDatabaseCache`, and
 	 * `wcpay_list_transactions_request` also fires from `WooPaymentsReportsRestController` twice).
-	 * This closes that gap statically, without a second runtime probe per secondary site.
+	 * This closes that gap statically, without a second runtime probe per secondary site. A site may also use the arity of
+	 * another client 11.1.0 site of the hook (the fixture's `sites`), as `wcpay_metadata_from_order` fires with two
+	 * arguments on the zero-total WooPay save-user path (class-wc-payment-gateway-wcpay.php:1957).
 	 */
 	public function test_probed_hook_secondary_sites_keep_the_fixture_arity(): void {
 		$probed      = WooPaymentsHookArityContractTest::probed_hooks();
@@ -243,8 +245,9 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 				continue;
 			}
 
+			$client_arities = array_map( 'intval', array_merge( array( $entry['arity'] ), array_column( $entry['sites'] ?? array(), 'arity' ) ) );
 			foreach ( $sites[ $name ] ?? array() as $site ) {
-				if ( (int) $entry['arity'] !== $site['arity'] ) {
+				if ( ! in_array( $site['arity'], $client_arities, true ) ) {
 					$wrong_arity[] = $name . ' at ' . $site['site'] . ' (found arity ' . $site['arity'] . ', expected ' . $entry['arity'] . ')';
 				}
 			}
