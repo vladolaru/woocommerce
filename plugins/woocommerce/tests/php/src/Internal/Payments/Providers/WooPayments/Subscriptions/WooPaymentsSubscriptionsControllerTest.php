@@ -1704,9 +1704,8 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$before = isset( $wp_filter['init'] ) ? $wp_filter['init']->callbacks : array();
 		( new PaymentsBootstrap(
 			static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
-			static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner(),
-			static fn(): array => array()
-		) )->register( wc_get_container(), '__return_false' );
+			static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner()
+		) )->register( wc_get_container(), 'front' );
 
 		$after = isset( $wp_filter['init'] ) ? $wp_filter['init']->callbacks : array();
 		ksort( $after );

@@ -272,7 +272,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false );
 		$sut       = new MultiCurrencyBootstrap( static fn(): array => array() );
 
-		$sut->register( $container, '__return_false' );
+		$sut->register( $container, 'front' );
 
 		$this->assertSame( self::core_root_matrix()['configured front'][3], $container->registered );
 	}
@@ -295,7 +295,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		add_filter( 'wcpay_multi_currency_should_output_explicit_price', '__return_true' );
 
 		try {
-			$sut->register( $container, '__return_false' );
+			$sut->register( $container, 'front' );
 		} finally {
 			remove_filter( 'wcpay_multi_currency_should_output_explicit_price', '__return_true' );
 		}
@@ -329,7 +329,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$sut->register( $container, '__return_false' );
+		$sut->register( $container, 'front' );
 
 		$this->assertSame( array_merge( array( 'ProviderRoot' ), self::core_root_matrix()['configured front'][3] ), $container->registered );
 		$this->assertSame( array_values( array_unique( $container->registered ) ), $container->registered );
@@ -348,7 +348,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$sut->register( $container, '__return_false' );
+		$sut->register( $container, 'front' );
 
 		$this->assertSame( array( 'ProviderRoot', MultiCurrencyShadowMode::class ), $container->registered );
 		$this->assertSame( 1, $resolver_calls );
@@ -365,7 +365,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$sut->register( $container, '__return_false' );
+		$sut->register( $container, 'front' );
 
 		$this->assertSame( 0, $resolver_calls );
 		$this->assertSame( array(), $container->registered );
@@ -384,7 +384,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$sut->register( $container, '__return_false' );
+		$sut->register( $container, 'front' );
 
 		$this->assertSame( 0, $resolver_calls );
 		$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $container->registered );
@@ -394,10 +394,9 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 * @testdox Should not resolve provider roots for an empty $request request.
 	 * @dataProvider provide_empty_requests_without_provider_roots
 	 *
-	 * @param string $request Request class.
-	 * @param bool   $is_rest Whether the REST signal is also set; AJAX and WP-CLI take precedence over it.
+	 * @param string $request Request type.
 	 */
-	public function test_empty_request_does_not_resolve_provider_roots( string $request, bool $is_rest ): void {
+	public function test_empty_request_does_not_resolve_provider_roots( string $request ): void {
 		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
 		$resolver_calls = 0;
 		$sut            = new MultiCurrencyBootstrap(
@@ -406,29 +405,20 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 				return array( 'ProviderRoot' );
 			}
 		);
-		if ( 'ajax' === $request ) {
-			add_filter( 'wp_doing_ajax', '__return_true' );
-		}
-		if ( 'cli' === $request ) {
-			Constants::set_constant( 'WP_CLI', true );
-		}
 
-		try {
-			$sut->register( $container, $is_rest ? '__return_true' : '__return_false' );
-		} finally {
-			remove_filter( 'wp_doing_ajax', '__return_true' );
-		}
+		$this->register_as( $sut, $container, $request );
 
 		$this->assertSame( 0, $resolver_calls );
 		$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $container->registered );
 	}
 
-	/** @return array<string,array{string,bool}> */
+	/** @return array<string,array{string}> */
 	public static function provide_empty_requests_without_provider_roots(): array {
 		return array(
-			'front' => array( 'front', false ),
-			'AJAX'  => array( 'ajax', true ),
-			'CLI'   => array( 'cli', true ),
+			'front' => array( 'front' ),
+			'AJAX'  => array( 'ajax' ),
+			'CLI'   => array( 'cli' ),
+			'cron'  => array( 'cron' ),
 		);
 	}
 
@@ -437,7 +427,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
 		$sut       = new MultiCurrencyBootstrap( static fn(): array => array( 'ProviderRoot' ) );
 
-		$sut->register( $container, '__return_false' );
+		$sut->register( $container, 'front' );
 
 		$this->assertFalse( has_filter( 'woocommerce_cart_total' ) );
 		$this->assertFalse( has_filter( 'woocommerce_get_formatted_order_total' ) );
@@ -459,7 +449,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 				return array( 'ProviderRoot' );
 			}
 		);
-		$sut->register( $container, '__return_false' );
+		$sut->register( $container, 'front' );
 		// Added after WooCommerce loaded, as a theme or a later plugin does; the client applies it at render
 		// (client 11.1.0 `includes/class-wc-payments-explicit-price-formatter.php:55-73`).
 		add_filter(
@@ -492,7 +482,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			}
 		);
 
-		$sut->register( $container, '__return_true' );
+		$sut->register( $container, 'rest' );
 
 		$this->assertSame( 1, $resolver_calls );
 		$this->assertSame( array( 'ProviderRoot', self::CORE_ROOTS[21], MultiCurrencyExplicitPriceController::class ), $container->registered );
@@ -512,38 +502,13 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		add_filter( 'wcpay_multi_currency_should_output_explicit_price', '__return_true' );
 
 		try {
-			$sut->register( $container, '__return_true' );
+			$sut->register( $container, 'rest' );
 		} finally {
 			remove_filter( 'wcpay_multi_currency_should_output_explicit_price', '__return_true' );
 		}
 
 		$this->assertSame( 1, $resolver_calls );
 		$this->assertSame( array( 'ProviderRoot', self::CORE_ROOTS[21], MultiCurrencyExplicitPriceController::class ), $container->registered );
-	}
-
-	/**
-	 * @testdox Should treat an empty Action Scheduler request as cron before AJAX, REST, and admin.
-	 */
-	public function test_empty_action_scheduler_request_precedes_ajax_rest_and_admin_without_resolving_provider_roots(): void {
-		$_REQUEST['action'] = 'as_async_request_queue_runner';
-		add_filter( 'wp_doing_ajax', '__return_true' );
-		$container      = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, false );
-		$resolver_calls = 0;
-		$sut            = new MultiCurrencyBootstrap(
-			static function () use ( &$resolver_calls ): array {
-				++$resolver_calls;
-				return array( 'ProviderRoot' );
-			}
-		);
-
-		try {
-			$sut->register( $container, '__return_true' );
-		} finally {
-			remove_filter( 'wp_doing_ajax', '__return_true' );
-		}
-
-		$this->assertSame( 0, $resolver_calls );
-		$this->assertSame( array( MultiCurrencyExplicitPriceController::class ), $container->registered );
 	}
 
 	/**
@@ -947,7 +912,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			set_current_screen( 'woocommerce_page_wc-status' );
 		}
 
-		( new MultiCurrencyBootstrap( static fn(): array => array() ) )->register( wc_get_container(), '__return_false' );
+		( new MultiCurrencyBootstrap( static fn(): array => array() ) )->register( wc_get_container(), 'admin_run' === $request ? 'admin' : 'front' );
 		if ( 'alternate_wp_cron' === $request ) {
 			// ALTERNATE_WP_CRON runs wp-cron.php on wp_loaded, so DOING_CRON appears only after WooCommerce loaded.
 			add_filter( 'wp_doing_cron', '__return_true' );
@@ -970,11 +935,11 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Run the bootstrap as WooCommerce loads it in one request class.
+	 * Run the bootstrap as WooCommerce loads it in one request type, with that request's signals set.
 	 *
 	 * @param MultiCurrencyBootstrap                             $sut       Bootstrap under test.
 	 * @param \Automattic\WooCommerce\Container|RuntimeContainer $container Recording or real container.
-	 * @param string                                             $request   Request class: front, ajax, rest, admin, cron or cli.
+	 * @param string                                             $request   Request type: front, ajax, rest, admin, cron or cli.
 	 * @param callable|null                                      $then      Work to run while the request signals are still set.
 	 */
 	private function register_as( MultiCurrencyBootstrap $sut, $container, string $request, ?callable $then = null ): void {
@@ -993,7 +958,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		}
 
 		try {
-			$sut->register( $container, 'rest' === $request ? '__return_true' : '__return_false' );
+			$sut->register( $container, $request );
 			if ( null !== $then ) {
 				$then();
 			}
@@ -1035,7 +1000,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 */
 	private function register_for_payments_owner( string $payments_owner ): RuntimeContainer {
 		$container = $this->make_container( MultiCurrencyRuntimeArbiter::OWNER_NONE, false, false, false, null, $payments_owner );
-		( new MultiCurrencyBootstrap( static fn(): array => array() ) )->register( $container, '__return_false' );
+		( new MultiCurrencyBootstrap( static fn(): array => array() ) )->register( $container, 'front' );
 
 		return $container;
 	}

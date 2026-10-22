@@ -105,6 +105,7 @@ class RequestTypeUtilTest extends WC_Unit_Test_Case {
 				array(
 					'as_runner' => true,
 					'ajax'      => true,
+					'rest'      => true,
 					'admin'     => true,
 				),
 				RequestTypeUtil::CRON,

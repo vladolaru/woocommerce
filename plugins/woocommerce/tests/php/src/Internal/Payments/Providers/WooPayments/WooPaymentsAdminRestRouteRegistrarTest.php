@@ -40,8 +40,7 @@ class WooPaymentsAdminRestRouteRegistrarTest extends WC_REST_Unit_Test_Case {
 		$runtime          = $fixture['runtime'];
 		$bootstrap        = new PaymentsBootstrap(
 			static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
-			static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner(),
-			static fn(): array => array()
+			static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner()
 		);
 		$register_classes = new ReflectionMethod( PaymentsBootstrap::class, 'register_classes' );
 		$register_classes->setAccessible( true );

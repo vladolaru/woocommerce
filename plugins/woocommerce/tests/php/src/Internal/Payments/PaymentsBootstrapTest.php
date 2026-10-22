@@ -34,68 +34,62 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 	private const WCPAY = 'Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\\';
 
-	/** @testdox PaymentsBootstrap passes provider roots and REST classification into Multi-Currency registration. */
-	public function test_bootstrap_passes_provider_roots_and_rest_classifier_to_multi_currency_registration(): void {
-		$container      = $this->make_container( WooPaymentsSetupTier::DISABLED, WooPaymentsRuntimeArbiter::OWNER_BUILTIN, MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
-		$provider_calls = 0;
-		$rest_calls     = 0;
-		$sut            = new PaymentsBootstrap(
-			static fn(): array => array(),
-			static fn(): bool => true,
-			static function () use ( &$provider_calls ): array {
-				++$provider_calls;
-				return array( 'MultiCurrencyProviderRoot' );
-			}
-		);
+	/**
+	 * @testdox WooCommerce classifies a REST request once and starts Multi-Currency, the provider's Multi-Currency classes first, before the payment provider.
+	 */
+	public function test_woocommerce_starts_multi_currency_before_payments_on_one_request_type(): void {
+		$container   = $this->make_container( WooPaymentsSetupTier::CONNECTED, WooPaymentsRuntimeArbiter::OWNER_BUILTIN, MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
+		$rest_checks = 0;
+		$count       = static function ( $is_rest ) use ( &$rest_checks ) {
+			++$rest_checks;
+			return $is_rest;
+		};
+		add_filter( 'woocommerce_is_rest_api_request', $count );
+		$previous_uri           = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Saved as is to restore it after the case.
+		$_SERVER['REQUEST_URI'] = '/wp-json/wc/v3/products';
 
-		$sut->register(
-			$container,
-			static function () use ( &$rest_calls ): bool {
-				++$rest_calls;
-				return true;
-			}
-		);
+		try {
+			$this->load_as_woocommerce_does( $container );
+		} finally {
+			remove_filter( 'woocommerce_is_rest_api_request', $count );
+			$this->restore_request_uri( $previous_uri );
+		}
 
-		$this->assertSame( 1, $provider_calls );
-		$this->assertSame( 2, $rest_calls );
-		$this->assertContains( 'MultiCurrencyProviderRoot', $container->resolved );
-		$this->assertContains( MultiCurrencyRestController::class, $container->resolved );
-		$this->assertContains( 'register:MultiCurrencyProviderRoot', $container->events );
-
-		$provider_root_position   = array_search( 'MultiCurrencyProviderRoot', $container->resolved, true );
-		$rest_controller_position = array_search( MultiCurrencyRestController::class, $container->resolved, true );
-
-		$this->assertNotFalse( $provider_root_position );
-		$this->assertNotFalse( $rest_controller_position );
-		$this->assertLessThan( $rest_controller_position, $provider_root_position );
+		$this->assertSame( 1, $rest_checks, 'The request must be classified once for both bootstraps.' );
+		$multi_currency_provider = array_search( WooPaymentsProvider::get_multi_currency_provider_roots()[0], $container->resolved, true );
+		$multi_currency_rest     = array_search( MultiCurrencyRestController::class, $container->resolved, true );
+		$payments_rest_class     = WooPaymentsProvider::get_classes_by_setup_tier()[ WooPaymentsSetupTier::CONNECTED ]['rest'][1];
+		$payments_rest           = array_search( $payments_rest_class, $container->resolved, true );
+		$this->assertNotFalse( $multi_currency_provider );
+		$this->assertNotFalse( $multi_currency_rest, 'Multi-Currency must register its REST classes on a REST request.' );
+		$this->assertNotFalse( $payments_rest, 'The payment provider must register its REST classes on a REST request.' );
+		$this->assertLessThan( $multi_currency_rest, $multi_currency_provider );
+		$this->assertLessThan( $payments_rest, $multi_currency_rest );
 	}
 
-	/** @testdox Should return before request or container work when the bootstrap filter is false. */
-	public function test_bootstrap_filter_false_short_circuits_all_work(): void {
-		add_filter( PaymentsBootstrap::FILTER_LOAD_PAYMENT_PROVIDERS, '__return_false' );
-		$matrix_calls = 0;
-		$container    = $this->make_container( WooPaymentsSetupTier::ACTIVE, WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
-		$rest_calls   = 0;
-		$sut          = new PaymentsBootstrap(
-			static function () use ( &$matrix_calls ): array {
-				++$matrix_calls;
-				return array();
-			},
-			static fn(): bool => true,
-			static fn(): array => array()
-		);
+	/** @testdox With woocommerce_load_payment_providers false, WooCommerce starts neither bootstrap and does not classify the request. */
+	public function test_load_payment_providers_false_starts_neither_bootstrap(): void {
+		add_filter( 'woocommerce_load_payment_providers', '__return_false' );
+		$container   = $this->make_container( WooPaymentsSetupTier::ACTIVE, WooPaymentsRuntimeArbiter::OWNER_BUILTIN, MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
+		$rest_checks = 0;
+		$count       = static function ( $is_rest ) use ( &$rest_checks ) {
+			++$rest_checks;
+			return $is_rest;
+		};
+		add_filter( 'woocommerce_is_rest_api_request', $count );
+		$previous_uri           = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Saved as is to restore it after the case.
+		$_SERVER['REQUEST_URI'] = '/wp-json/wc/v3/products';
 
-		$sut->register(
-			$container,
-			static function () use ( &$rest_calls ): bool {
-				++$rest_calls;
-				return true;
-			}
-		);
+		try {
+			$this->load_as_woocommerce_does( $container );
+		} finally {
+			remove_filter( 'woocommerce_is_rest_api_request', $count );
+			remove_filter( 'woocommerce_load_payment_providers', '__return_false' );
+			$this->restore_request_uri( $previous_uri );
+		}
 
-		$this->assertSame( array(), $container->events, 'The disabled bootstrap should not resolve any service.' );
-		$this->assertSame( 0, $rest_calls, 'The disabled bootstrap should not classify the request.' );
-		$this->assertSame( 0, $matrix_calls, 'The disabled bootstrap should not ask the provider for its class lists.' );
+		$this->assertSame( array(), $container->events, 'Neither bootstrap may resolve a service.' );
+		$this->assertSame( 0, $rest_checks, 'The request must not be classified.' );
 	}
 
 	/**
@@ -105,7 +99,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$container = $this->make_container( WooPaymentsSetupTier::CONNECTED, WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 		$sut       = $this->make_bootstrap();
 
-		$sut->register( $container, '__return_false' );
+		$sut->register( $container, 'front' );
 
 		$this->assertNotContains( WooPaymentsProvider::class, $container->resolved, 'Registering the gateway must not build the provider.' );
 		$resolvers = $container->get( ProviderGatewaysController::class )->provider_resolvers;
@@ -119,7 +113,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$container = $this->make_container( WooPaymentsSetupTier::CONNECTED, WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 		$sut       = $this->make_bootstrap();
 
-		$sut->register( $container, '__return_true' );
+		$sut->register( $container, 'rest' );
 
 		$this->assertSame( $this->expected_events( WooPaymentsProvider::get_classes_by_setup_tier()[ WooPaymentsSetupTier::CONNECTED ]['rest'] ), $container->events );
 		$this->assertSame( array_values( array_unique( $container->resolved ) ), $container->resolved, 'Each listed class should be resolved once.' );
@@ -141,7 +135,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 			set_current_screen( 'woocommerce_page_wc-status' );
 		}
 
-		$sut->register( $container, '__return_false' );
+		$sut->register( $container, $request );
 		set_current_screen( 'front' );
 
 		$this->assertSame( $this->expected_events( $request_classes ), $container->events, 'Loading must register only the request classes.' );
@@ -180,22 +174,14 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** @testdox Adds no Action Scheduler listener on a disabled store, on cron and WP-CLI requests, or when the request already has every cron class. */
 	public function test_adds_no_action_scheduler_listener_when_no_cron_class_is_missing(): void {
 		$cases = array(
-			'disabled front'  => array( WooPaymentsSetupTier::DISABLED, '__return_false', false ),
-			'available admin' => array( WooPaymentsSetupTier::AVAILABLE, '__return_false', true ),
-			'active cron'     => array( WooPaymentsSetupTier::ACTIVE, '__return_false', false ),
+			'disabled front'  => array( WooPaymentsSetupTier::DISABLED, 'front' ),
+			'available admin' => array( WooPaymentsSetupTier::AVAILABLE, 'admin' ),
+			'active cron'     => array( WooPaymentsSetupTier::ACTIVE, 'cron' ),
 		);
-		foreach ( $cases as $label => list( $state, $is_rest, $admin ) ) {
-			if ( 'active cron' === $label ) {
-				add_filter( 'wp_doing_cron', '__return_true' );
-			}
-			if ( $admin ) {
-				set_current_screen( 'woocommerce_page_wc-status' );
-			}
+		foreach ( $cases as $label => list( $state, $request ) ) {
 			$sut = $this->make_bootstrap();
 
-			$sut->register( $this->make_container( $state, WooPaymentsRuntimeArbiter::OWNER_BUILTIN ), $is_rest );
-			remove_filter( 'wp_doing_cron', '__return_true' );
-			set_current_screen( 'front' );
+			$sut->register( $this->make_container( $state, WooPaymentsRuntimeArbiter::OWNER_BUILTIN ), $request );
 
 			$this->assertFalse( has_action( 'action_scheduler_before_execute', array( $sut, 'handle_action_scheduler_before_execute' ) ), $label );
 		}
@@ -211,7 +197,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$container = $this->make_container( WooPaymentsSetupTier::ACTIVE, WooPaymentsRuntimeArbiter::OWNER_EXTENSION );
 		$sut       = $this->make_bootstrap();
 
-		$sut->register( $container, '__return_false' );
+		$sut->register( $container, 'front' );
 
 		// A plugin deactivated over XML-RPC (Jetpack remote management, a front request) must still start the switch.
 		$this->assertSame( $this->expected_events( array( WooPaymentsCutoverPluginLifecycleListener::class ) ), $container->events );
@@ -229,7 +215,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 		$container = $this->make_container( WooPaymentsSetupTier::ACTIVE, WooPaymentsRuntimeArbiter::OWNER_NONE );
 		$sut       = $this->make_bootstrap();
 
-		$sut->register( $container, '__return_false' );
+		$sut->register( $container, 'front' );
 
 		$this->assertSame( $this->expected_events( array() ), $container->events );
 	}
@@ -246,7 +232,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 			$container = $this->make_container( WooPaymentsSetupTier::DISABLED, $owner );
 			$sut       = $this->make_bootstrap();
 
-			$sut->register( $container, '__return_false' );
+			$sut->register( $container, 'front' );
 
 			$this->assertSame( $this->expected_events( $expected_classes ), $container->events, $owner );
 		}
@@ -282,12 +268,11 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace( WooPaymentsProvider::class, $provider );
 		$sut = new PaymentsBootstrap(
 			static fn(): array => array( WooPaymentsProvider::class ),
-			static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner(),
-			static fn(): array => array()
+			static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner()
 		);
 
 		try {
-			$sut->register( wc_get_container(), '__return_false' );
+			$sut->register( wc_get_container(), 'front' );
 			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Building the gateway list as WooCommerce does.
 			$this->assertSame( array( $gateway ), apply_filters( 'woocommerce_payment_gateways', array() ), 'The gateway must be listed while the built-in WooPayments owns payments.' );
 			$this->assertSame( 1, $provider->gateway_reads );
@@ -305,9 +290,10 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * WooCommerce runs this bootstrap inside its constructor, before WC() has an instance to return, so any WC() call on this
-	 * path constructs WooCommerce again and recurses until PHP gives up. The test reproduces that by clearing the instance;
-	 * a WC() call then re-enters the bootstrap, which the bootstrap filter records.
+	 * WooCommerce runs both bootstraps inside its constructor, before WC() has an instance to return, so any WC() call on
+	 * this path constructs WooCommerce again and recurses until PHP gives up. The test reproduces that by clearing the
+	 * instance; a WC() call then re-enters WooCommerce's composition, which the woocommerce_load_payment_providers filter
+	 * records.
 	 *
 	 * @testdox The payments and Multi-Currency bootstrap makes no WC() call in a $request request with the $theme theme in the $state tier.
 	 * @dataProvider bootstrap_request_themes
@@ -344,19 +330,14 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 
 			return $enabled;
 		};
-		add_filter( PaymentsBootstrap::FILTER_LOAD_PAYMENT_PROVIDERS, $recorder );
+		add_filter( 'woocommerce_load_payment_providers', $recorder );
 
-		$sut      = new PaymentsBootstrap(
-			static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
-			static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner(),
-			static fn(): array => WooPaymentsProvider::get_multi_currency_provider_roots()
-		);
 		$instance = new \ReflectionProperty( \WooCommerce::class, '_instance' );
 		$instance->setAccessible( true );
 		$woocommerce = $instance->getValue();
 		$instance->setValue( null, null );
 		try {
-			$this->register_as( $sut, $request );
+			$this->load_as( $woocommerce, $request );
 		} catch ( \LogicException $e ) {
 			unset( $e );
 		} finally {
@@ -383,12 +364,12 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Run the bootstrap as WooCommerce loads it in one request class, with the shared container.
+	 * Run WooCommerce's payments and Multi-Currency composition in one request type, with the shared container.
 	 *
-	 * @param PaymentsBootstrap $sut     Bootstrap under test.
-	 * @param string            $request Request class: front, ajax, rest, admin, cron or cli.
+	 * @param \WooCommerce $woocommerce The WooCommerce instance whose composition runs.
+	 * @param string       $request     Request type: front, ajax, rest, admin, cron or cli.
 	 */
-	private function register_as( PaymentsBootstrap $sut, string $request ): void {
+	private function load_as( \WooCommerce $woocommerce, string $request ): void {
 		$filter = array(
 			'ajax' => 'wp_doing_ajax',
 			'cron' => 'wp_doing_cron',
@@ -402,16 +383,55 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 		if ( 'admin' === $request ) {
 			set_current_screen( 'edit-page' );
 		}
+		$previous_uri = $_SERVER['REQUEST_URI'] ?? null; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- Saved as is to restore it after the case.
+		if ( 'rest' === $request ) {
+			$_SERVER['REQUEST_URI'] = '/wp-json/wc/v3/products';
+		}
 
 		try {
-			$sut->register( wc_get_container(), 'rest' === $request ? '__return_true' : '__return_false' );
+			$this->invoke_composition( $woocommerce, wc_get_container() );
 		} finally {
 			if ( null !== $filter ) {
 				remove_filter( $filter, '__return_true' );
 			}
 			Constants::clear_single_constant( 'WP_CLI' );
 			set_current_screen( 'front' );
+			$this->restore_request_uri( $previous_uri );
 		}
+	}
+
+	/**
+	 * Put back the request URI a case replaced.
+	 *
+	 * @param string|null $previous_uri The request URI before the case, or null when it had none.
+	 */
+	private function restore_request_uri( ?string $previous_uri ): void {
+		if ( null === $previous_uri ) {
+			unset( $_SERVER['REQUEST_URI'] );
+			return;
+		}
+		$_SERVER['REQUEST_URI'] = $previous_uri;
+	}
+
+	/**
+	 * Run WooCommerce's payments and Multi-Currency composition with a recording container.
+	 *
+	 * @param RuntimeContainer $container Recording container.
+	 */
+	private function load_as_woocommerce_does( RuntimeContainer $container ): void {
+		$this->invoke_composition( WC(), $container );
+	}
+
+	/**
+	 * Call the private method WooCommerce::init_hooks() starts both bootstraps through.
+	 *
+	 * @param \WooCommerce                                       $woocommerce WooCommerce instance.
+	 * @param \Automattic\WooCommerce\Container|RuntimeContainer $container   Dependency container.
+	 */
+	private function invoke_composition( \WooCommerce $woocommerce, $container ): void {
+		$method = new \ReflectionMethod( \WooCommerce::class, 'load_payments_and_multi_currency' );
+		$method->setAccessible( true );
+		$method->invoke( $woocommerce, $container );
 	}
 
 	/**
@@ -422,8 +442,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 	private function make_bootstrap(): PaymentsBootstrap {
 		return new PaymentsBootstrap(
 			static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
-			static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner(),
-			array( WooPaymentsProvider::class, 'get_multi_currency_provider_roots' )
+			static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner()
 		);
 	}
 
@@ -435,9 +454,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 	 * @return array<int,string>
 	 */
 	private function expected_events( array $classes, array $on_demand_classes = array() ): array {
-		$events = array(
-			'get:' . MultiCurrencyRuntimeArbiter::class,
-		);
+		$events = array();
 
 		foreach ( array_merge( $classes, $on_demand_classes ) as $class_name ) {
 			if ( is_a( $class_name, PaymentGatewayProviderInterface::class, true ) ) {

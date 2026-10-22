@@ -9,12 +9,10 @@ namespace Automattic\WooCommerce\Internal\Payments;
 
 use Automattic\WooCommerce\Container;
 use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyBootstrap;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
-use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 
 /**
- * Registers what WooCommerce's built-in payment provider needs on the current request, and starts Multi-Currency.
+ * Registers what WooCommerce's built-in payment provider needs on the current request.
  * Payment extensions add their gateways through `woocommerce_payment_gateways`; this bootstrap loads only the payment
  * provider built into WooCommerce.
  *
@@ -26,9 +24,6 @@ use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
  * @internal
  */
 final class PaymentsBootstrap {
-
-	/** Filter that decides whether WooCommerce loads its built-in payment provider on this request. */
-	public const FILTER_LOAD_PAYMENT_PROVIDERS = 'woocommerce_load_payment_providers';
 
 	/**
 	 * Lists the classes a request type registers for the built-in payment provider.
@@ -45,14 +40,6 @@ final class PaymentsBootstrap {
 	 * @phpstan-var callable(Container|RuntimeContainer): bool
 	 */
 	private $should_register_gateways;
-
-	/**
-	 * Lists the Multi-Currency classes the built-in payment provider contributes.
-	 *
-	 * @var callable
-	 * @phpstan-var callable(): array<int,class-string>
-	 */
-	private $multi_currency_classes;
 
 	/**
 	 * Container for the cron classes this request registers when Action Scheduler first runs an action.
@@ -73,20 +60,17 @@ final class PaymentsBootstrap {
 	 *
 	 * WooCommerce::init_hooks() builds these inputs as closures, so the bootstrap names no provider, and building it loads
 	 * no provider class and makes no WC() call while WooCommerce is still being constructed. They give the classes each
-	 * request type registers, in order and empty when nothing is set up; whether the gateways belong in the gateway list,
-	 * which the bootstrap only hands to ProviderGatewaysController; and the Multi-Currency classes the provider contributes.
+	 * request type registers, in order and empty when nothing is set up; and whether the gateways belong in the gateway
+	 * list, which the bootstrap only hands to ProviderGatewaysController.
 	 *
 	 * @param callable $classes_for_request      Lists the classes a request type registers.
 	 * @param callable $should_register_gateways Tells whether the provider's gateways belong in the gateway list now.
-	 * @param callable $multi_currency_classes   Lists the provider's Multi-Currency classes.
 	 * @phpstan-param callable(Container|RuntimeContainer, string): array<int,class-string> $classes_for_request
 	 * @phpstan-param callable(Container|RuntimeContainer): bool $should_register_gateways
-	 * @phpstan-param callable(): array<int,class-string> $multi_currency_classes
 	 */
-	public function __construct( callable $classes_for_request, callable $should_register_gateways, callable $multi_currency_classes ) {
+	public function __construct( callable $classes_for_request, callable $should_register_gateways ) {
 		$this->classes_for_request      = $classes_for_request;
 		$this->should_register_gateways = $should_register_gateways;
-		$this->multi_currency_classes   = $multi_currency_classes;
 	}
 
 	/**
@@ -96,27 +80,11 @@ final class PaymentsBootstrap {
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param Container|RuntimeContainer $container           Runtime dependency container.
-	 * @param callable                   $is_rest_api_request Whether the current request is a REST request.
+	 * @param Container|RuntimeContainer $container    Runtime dependency container.
+	 * @param string                     $request_type The request type, one of the RequestTypeUtil constants.
 	 */
-	public function register( $container, callable $is_rest_api_request ): void {
-		/**
-		 * Whether WooCommerce loads its built-in payment provider and the Multi-Currency integration it starts on this request.
-		 * It is applied while WooCommerce loads, so the callback must be added before WooCommerce loads, from a mu-plugin or a
-		 * plugin that loads earlier; returning false loads neither the built-in payment provider nor the Multi-Currency it starts.
-		 *
-		 * @since 11.2.0
-		 *
-		 * @param bool $load Whether to load the built-in payment provider and Multi-Currency.
-		 */
-		if ( ! apply_filters( self::FILTER_LOAD_PAYMENT_PROVIDERS, true ) ) {
-			return;
-		}
-
-		( new MultiCurrencyBootstrap( $this->multi_currency_classes ) )->register( $container, $is_rest_api_request );
-
-		$request_type = RequestTypeUtil::get_request_type( $is_rest_api_request );
-		$classes      = ( $this->classes_for_request )( $container, $request_type );
+	public function register( $container, string $request_type ): void {
+		$classes = ( $this->classes_for_request )( $container, $request_type );
 
 		$this->register_classes( $container, $classes );
 		$this->register_cron_classes_on_demand( $container, $request_type, $classes );

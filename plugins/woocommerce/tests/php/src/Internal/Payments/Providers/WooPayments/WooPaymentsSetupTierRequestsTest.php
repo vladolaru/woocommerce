@@ -10,7 +10,9 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Jetpack\JetpackConnection;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyBootstrap;
 use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
+use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
@@ -346,11 +348,12 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 			unset( $wp_actions[ $hook ] ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 		}
 		try {
+			$request_type = RequestTypeUtil::get_request_type( 'rest' === $request ? '__return_true' : '__return_false' );
+			( new MultiCurrencyBootstrap( static fn(): array => WooPaymentsProvider::get_multi_currency_provider_roots() ) )->register( $container, $request_type );
 			( new PaymentsBootstrap(
 				static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
-				static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner(),
-				static fn(): array => WooPaymentsProvider::get_multi_currency_provider_roots()
-			) )->register( $container, 'rest' === $request ? '__return_true' : '__return_false' );
+				static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner()
+			) )->register( $container, $request_type );
 		} finally {
 			$wp_actions = array_merge( $wp_actions, $counts ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 			$manager_property->setValue( null, $original_manager );
@@ -1040,8 +1043,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	private function run_bootstrap( callable $is_rest_api_request ): void {
 		( new PaymentsBootstrap(
 			static fn( $container, string $request_type ): array => $container->get( WooPaymentsSetupTier::class )->get_classes_for_request( $request_type ),
-			static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner(),
-			static fn(): array => array()
-		) )->register( wc_get_container(), $is_rest_api_request );
+			static fn( $container ): bool => $container->get( WooPaymentsRuntimeArbiter::class )->is_builtin_owner()
+		) )->register( wc_get_container(), RequestTypeUtil::get_request_type( $is_rest_api_request ) );
 	}
 }

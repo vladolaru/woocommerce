@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Cutover;
 
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\Payments\PaymentsBootstrap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverActionScheduler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverDataMigration;
@@ -653,7 +652,7 @@ class WooPaymentsPerSiteActivationControllerTest extends WC_Unit_Test_Case {
 	public function test_network_activation_is_refused_while_sites_keep_woopayments_in_woocommerce( string $tier, bool $main_feature_on, bool $providers_off = false ): void {
 		$this->skip_unless_multisite();
 		if ( $providers_off ) {
-			add_filter( PaymentsBootstrap::FILTER_LOAD_PAYMENT_PROVIDERS, '__return_false' );
+			add_filter( 'woocommerce_load_payment_providers', '__return_false' );
 		}
 		$main   = get_current_blog_id();
 		$first  = $this->create_site( 'first', true, false );

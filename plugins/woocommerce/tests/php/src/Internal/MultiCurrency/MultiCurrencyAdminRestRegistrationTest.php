@@ -44,7 +44,7 @@ class MultiCurrencyAdminRestRegistrationTest extends WC_REST_Unit_Test_Case {
 		set_current_screen( 'edit-page' );
 
 		try {
-			$bootstrap->register( $container, '__return_false' );
+			$bootstrap->register( $container, 'admin' );
 
 			$this->assertNotContains( MultiCurrencyRestController::class, $container->resolved, 'Ordinary admin bootstrap must not construct the REST controller.' );
 			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Exercising WordPress's internal REST initialization boundary.
@@ -82,7 +82,7 @@ class MultiCurrencyAdminRestRegistrationTest extends WC_REST_Unit_Test_Case {
 		set_current_screen( 'edit-page' );
 
 		try {
-			$bootstrap->register( $container, '__return_false' );
+			$bootstrap->register( $container, 'admin' );
 
 			$this->assertFalse( has_action( 'rest_api_init', array( $bootstrap, 'register_admin_rest_controller' ) ) );
 			$this->assertNotContains( MultiCurrencyRestController::class, $container->resolved );

@@ -13,7 +13,6 @@ use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencyShadowMode;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
-use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 
 /**
  * Selects the independent Multi-Currency registrations for the current request.
@@ -143,10 +142,10 @@ final class MultiCurrencyBootstrap {
 	 *
 	 * @since 11.2.0
 	 *
-	 * @param Container|RuntimeContainer $container           Runtime dependency container.
-	 * @param callable                   $is_rest_api_request Whether the current request is a REST request.
+	 * @param Container|RuntimeContainer $container    Runtime dependency container.
+	 * @param string                     $request_type The request type, one of the RequestTypeUtil constants.
 	 */
-	public function register( $container, callable $is_rest_api_request ): void {
+	public function register( $container, string $request_type ): void {
 		$arbiter = $container->get( MultiCurrencyRuntimeArbiter::class );
 		// Before the arbiter reads the feature option, so the first request after the extension stops owning payments runs on the handed-over value.
 		MultiCurrencyFeatureController::track_payments_owner( $arbiter->is_payments_extension_owner(), $arbiter->is_payments_builtin_owner() );
@@ -185,7 +184,7 @@ final class MultiCurrencyBootstrap {
 			add_filter( 'woocommerce_analytics_update_order_stats_data', array( $this, 'handle_woocommerce_analytics_update_order_stats_data' ), 99999, 2 );
 		}
 
-		$request = RequestTypeUtil::get_request_type( $is_rest_api_request );
+		$request = $request_type;
 		$roots   = $this->get_core_roots( $container, $request );
 		if ( ! empty( $roots ) ) {
 			if ( 'admin' === $request ) {
