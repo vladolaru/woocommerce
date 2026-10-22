@@ -4867,6 +4867,8 @@ function wc_add_aria_label_to_pagination_numbers( $html, $args ) {
 	return $html;
 }
 
+add_filter( 'paginate_links_output', 'wc_add_aria_label_to_pagination_numbers', 10, 2 );
+
 if ( ! function_exists( 'wc_get_currency_switcher_markup' ) ) {
 	/**
 	 * Get the currency switcher widget markup.
@@ -4881,7 +4883,6 @@ if ( ! function_exists( 'wc_get_currency_switcher_markup' ) ) {
 		return wc_get_container()->get( \Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherWidgetController::class )->get_switcher_widget_markup( $instance, $args );
 	}
 }
-add_filter( 'paginate_links_output', 'wc_add_aria_label_to_pagination_numbers', 10, 2 );
 
 /**
  * Get the quantity input args.
