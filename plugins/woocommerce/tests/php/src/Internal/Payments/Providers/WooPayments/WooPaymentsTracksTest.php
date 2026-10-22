@@ -208,7 +208,8 @@ class WooPaymentsTracksTest extends WC_Unit_Test_Case {
 
 			return $properties;
 		};
-		// An AJAX request sends the Tracks pixel at once; answer it as the pixel endpoint does, so no event leaves the test.
+		// An AJAX request sends the Tracks pixel at once; answer it with core's test stub so no event leaves the test
+		// (tests/php/includes/tracks/class-wc-tracks-client-test.php:64-71).
 		$answer_pixel = static function ( $response, $parsed_args, $url ) {
 			unset( $parsed_args );
 

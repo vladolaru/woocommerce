@@ -66,8 +66,8 @@ class PaymentsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_fires_no_retired_woopayments_task_filter( string $feature ): void {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'on' === $feature ? 'yes' : 'no' );
-		// A hand-written "no incentive" answer: the body `[]` is decoded and kept as the empty incentive list
-		// (src/Internal/Admin/Suggestions/Incentives/WooPayments.php:246-249).
+		// Incidental: no assertion reads this answer, it only keeps the incentives request offline. The empty list is decoded
+		// and kept as "no incentive" (src/Internal/Admin/Suggestions/Incentives/WooPayments.php:246-249).
 		add_filter(
 			'pre_http_request',
 			static function ( $preempt, $parsed_args, $url ) {

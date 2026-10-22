@@ -49,7 +49,7 @@ class WooPaymentsCutoverActionSchedulerTest extends WC_Unit_Test_Case {
 	 * @testdox Schedules one unique action with the canonical hook, group, generation, and attempt.
 	 */
 	public function test_schedule_persists_the_exact_action_identity_once(): void {
-		$sut       = $this->require_sut();
+		$sut       = $this->sut;
 		$timestamp = time() + HOUR_IN_SECONDS;
 
 		$first_id  = $sut->schedule( $timestamp, 7, 3 );
@@ -74,7 +74,7 @@ class WooPaymentsCutoverActionSchedulerTest extends WC_Unit_Test_Case {
 	 * @testdox A running generation can schedule its next attempt because the canonical args change.
 	 */
 	public function test_schedule_allows_a_successor_for_a_running_attempt(): void {
-		$sut        = $this->require_sut();
+		$sut        = $this->sut;
 		$current_id = $sut->schedule( time(), 4, 1 );
 		ActionScheduler::store()->log_execution( $current_id );
 
@@ -90,7 +90,7 @@ class WooPaymentsCutoverActionSchedulerTest extends WC_Unit_Test_Case {
 	 * @testdox Explicit dispatch sends one nonblocking loopback request when cutover work is due.
 	 */
 	public function test_dispatch_async_sends_nonblocking_request_for_due_work(): void {
-		$sut = $this->require_sut();
+		$sut = $this->sut;
 		$sut->schedule( time() - 1, 5, 1 );
 		$requests = array();
 		$preempt  = static function ( $response, array $args, string $url ) use ( &$requests ) {
@@ -127,7 +127,7 @@ class WooPaymentsCutoverActionSchedulerTest extends WC_Unit_Test_Case {
 	 * @testdox Finds and cancels only the exact generation and attempt.
 	 */
 	public function test_cancel_targets_only_the_exact_action_identity(): void {
-		$sut       = $this->require_sut();
+		$sut       = $this->sut;
 		$first_id  = $sut->schedule( time() + HOUR_IN_SECONDS, 9, 1 );
 		$second_id = $sut->schedule( time() + HOUR_IN_SECONDS, 9, 2 );
 
@@ -138,15 +138,6 @@ class WooPaymentsCutoverActionSchedulerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 0, $sut->get_scheduled_action_id( 9, 1 ), 'The requested attempt should be canceled.' );
 		$this->assertSame( $second_id, $sut->get_scheduled_action_id( 9, 2 ), 'A later attempt must remain scheduled.' );
-	}
-
-	/**
-	 * Get the scheduler under test.
-	 *
-	 * @return WooPaymentsCutoverActionScheduler
-	 */
-	private function require_sut(): WooPaymentsCutoverActionScheduler {
-		return $this->sut;
 	}
 
 	/**

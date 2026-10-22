@@ -125,7 +125,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @param bool $previous Whether the job was already inside a plugin change of its own.
 	 */
 	public function test_plugin_change_mark_is_restored_when_the_callback_throws( bool $previous ): void {
-		$job           = $this->require_sut();
+		$job           = $this->sut;
 		$marked_inside = null;
 		$restored      = null;
 		$thrown        = null;
@@ -158,13 +158,13 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox Enqueue creates one complete autoloaded state record and one exact action.
 	 */
 	public function test_enqueue_persists_initial_state_and_exact_action(): void {
-		$sut    = $this->require_sut();
+		$sut    = $this->sut;
 		$before = time();
 
 		$this->assertTrue( $sut->enqueue( 'merchant' ), 'An enabled native runtime should accept cutover work.' );
 
 		$after      = time();
-		$record     = $this->require_state_store()->get_record();
+		$record     = $this->state_store->get_record();
 		$alloptions = wp_load_alloptions( true );
 		$this->assertIsArray( $record );
 		$this->assertSame( 1, $record['schema_version'] );
@@ -207,9 +207,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox One-click cutover dispatches accepted merchant work after releasing its state lease.
 	 */
 	public function test_enqueue_dispatches_accepted_merchant_work_after_releasing_its_state_lease(): void {
-		$scheduler = $this->require_scheduler();
+		$scheduler = $this->scheduler;
 
-		$this->assertTrue( $this->require_sut()->enqueue( 'merchant' ) );
+		$this->assertTrue( $this->sut->enqueue( 'merchant' ) );
 
 		$this->assertSame( 1, $scheduler->dispatch_count, 'Accepted merchant work should request one immediate async dispatch.' );
 		$this->assertTrue( $scheduler->dispatch_observed_released_lease, 'The durable state lease must be released before the async request can race the job.' );
@@ -219,9 +219,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox Non-merchant cutover work retains the ordinary Action Scheduler dispatch path.
 	 */
 	public function test_enqueue_does_not_explicitly_dispatch_non_merchant_work(): void {
-		$scheduler = $this->require_scheduler();
+		$scheduler = $this->scheduler;
 
-		$this->assertTrue( $this->require_sut()->enqueue( 'mandatory' ) );
+		$this->assertTrue( $this->sut->enqueue( 'mandatory' ) );
 
 		$this->assertSame( 0, $scheduler->dispatch_count, 'Mandatory cutover work should retain the ordinary queue dispatch path.' );
 	}
@@ -230,13 +230,13 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox Duplicate enqueue preserves the active record and does not create another action.
 	 */
 	public function test_enqueue_is_idempotent_for_an_active_job(): void {
-		$sut = $this->require_sut();
+		$sut = $this->sut;
 		$sut->enqueue( 'merchant' );
-		$first_record = $this->require_state_store()->get_record();
+		$first_record = $this->state_store->get_record();
 
 		$this->assertTrue( $sut->enqueue( 'mandatory' ) );
 
-		$this->assertSame( $first_record, $this->require_state_store()->get_record(), 'A duplicate trigger should not rewrite the active generation.' );
+		$this->assertSame( $first_record, $this->state_store->get_record(), 'A duplicate trigger should not rewrite the active generation.' );
 		$this->assertSame( 1, $this->count_cutover_actions(), 'A duplicate trigger should retain one scheduled action.' );
 	}
 
@@ -244,30 +244,30 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox Disabled built-in runtime refuses work without persisting state or scheduling an action.
 	 */
 	public function test_enqueue_does_nothing_when_the_builtin_runtime_is_disabled(): void {
-		$this->require_sut();
+		$this->sut;
 		$sut = $this->create_job( false );
 
 		$this->assertFalse( $sut->enqueue( 'merchant' ) );
-		$this->assertNull( $this->require_state_store()->get_record() );
+		$this->assertNull( $this->state_store->get_record() );
 		$this->assertSame( 0, $this->count_cutover_actions() );
-		$this->assertSame( 0, $this->require_scheduler()->dispatch_count, 'Rejected merchant work must not request an async dispatch.' );
+		$this->assertSame( 0, $this->scheduler->dispatch_count, 'Rejected merchant work must not request an async dispatch.' );
 	}
 
 	/**
 	 * @testdox A merchant start while another request holds the write lock is refused and writes nothing.
 	 */
 	public function test_enqueue_does_nothing_while_the_write_lock_is_busy(): void {
-		$sut  = $this->require_sut();
-		$busy = $this->require_state_store()->acquire_write_lock( time() );
+		$sut  = $this->sut;
+		$busy = $this->state_store->acquire_write_lock( time() );
 		$this->assertIsString( $busy );
 
 		try {
 			$this->assertFalse( $sut->enqueue( 'merchant' ) );
-			$this->assertNull( $this->require_state_store()->get_record() );
+			$this->assertNull( $this->state_store->get_record() );
 			$this->assertSame( 0, $this->count_cutover_actions() );
-			$this->assertSame( 0, $this->require_scheduler()->dispatch_count );
+			$this->assertSame( 0, $this->scheduler->dispatch_count );
 		} finally {
-			$this->require_state_store()->release_write_lock( $busy );
+			$this->state_store->release_write_lock( $busy );
 		}
 
 		$this->assertTrue( $sut->enqueue( 'merchant' ), 'Once the lock is free, the same start is accepted.' );
@@ -359,21 +359,21 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 		};
 		$sut           = new WooPaymentsCutoverReconciliationJob();
-		$sut->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight, $normalization, $this->create_inert_account_service() );
+		$sut->init( $arbiter, $this->state_store, $this->scheduler, $preflight, $normalization, $this->create_inert_account_service() );
 		$this->jobs[] = $sut;
 		// Plugin Multi-Currency use (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`) next to a stored core choice: the
 		// handover runs on the first native-owned request, so the reconciliation itself must leave the choice alone.
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'no' );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		$before = time();
 
 		$sut->handle_reconcile( $pending['generation'], 1 );
 
-		$verification = $this->require_state_store()->get_record();
+		$verification = $this->state_store->get_record();
 		$this->assertIsArray( $verification );
 		$this->assertSame( 1, $normalization->get_run_count() );
 		$this->assertSame( 'no', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ), 'The reconciliation does not write the Multi-Currency option.' );
@@ -384,7 +384,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertIsString( $verification['request_origin_token'] );
 		$this->assertNotSame( '', $verification['request_origin_token'] );
 		$this->assertGreaterThan( $before, $verification['next_attempt_at'] );
-		$this->assertSame( $verification['action_id'], $this->require_scheduler()->get_scheduled_action_id( $verification['generation'], 2 ) );
+		$this->assertSame( $verification['action_id'], $this->scheduler->get_scheduled_action_id( $verification['generation'], 2 ) );
 	}
 
 	/**
@@ -393,7 +393,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	public function test_finalize_moves_the_tier_when_the_ownership_check_loses_the_write_lock(): void {
 		$this->arrange_extension_era_store();
 		$busy      = null;
-		$preflight = new class( $busy, $this->require_state_store() ) extends WooPaymentsCutoverPreflightService {
+		$preflight = new class( $busy, $this->state_store ) extends WooPaymentsCutoverPreflightService {
 			/** @var string|null */
 			private $busy;
 
@@ -442,20 +442,20 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 		$job       = $this->create_state_writing_job( true, $preflight );
 		$this->assertTrue( $job->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 
 		try {
 			$job->handle_reconcile( $pending['generation'], 1 );
 		} finally {
 			if ( is_string( $busy ) ) {
-				$this->require_state_store()->release_write_lock( $busy );
+				$this->state_store->release_write_lock( $busy );
 			}
 		}
 
 		$this->assertIsString( $busy, 'Another request held the write lock after the deactivation.' );
-		$record = $this->require_state_store()->get_record();
+		$record = $this->state_store->get_record();
 		$this->assertIsArray( $record );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_RUNNING, $record['state'], 'The ownership check was not stored.' );
 		$this->assertIsString( $record['request_origin_token'], 'The token was stored before the deactivation.' );
@@ -517,7 +517,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 		};
 		// The data migration runs right before the fence; another request takes the write lock in between.
-		$normalization = new class( $busy, $this->require_state_store() ) extends WooPaymentsCutoverDataMigration {
+		$normalization = new class( $busy, $this->state_store ) extends WooPaymentsCutoverDataMigration {
 			/** @var string|null */
 			private $busy;
 
@@ -543,22 +543,22 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 		$job           = $this->create_job( true, $preflight, null, true, $normalization, wc_get_container()->get( WooPaymentsAccountService::class ) );
 		$this->assertTrue( $job->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 
 		try {
 			$job->handle_reconcile( $pending['generation'], 1 );
 		} finally {
 			if ( is_string( $busy ) ) {
-				$this->require_state_store()->release_write_lock( $busy );
+				$this->state_store->release_write_lock( $busy );
 			}
 		}
 
 		$this->assertIsString( $busy, 'Another request held the write lock at the fence.' );
 		$this->assertSame( 0, $deactivations, 'Nothing is deactivated without the stored token.' );
 		$this->assertSame( array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ), get_option( 'active_plugins' ) );
-		$record = $this->require_state_store()->get_record();
+		$record = $this->state_store->get_record();
 		$this->assertIsArray( $record );
 		$this->assertNull( $record['request_origin_token'] );
 		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
@@ -613,9 +613,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 		$job               = $this->create_state_writing_job( true, $preflight );
 		$this->assertTrue( $job->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		add_action( 'update_option_active_plugins', $throwing_listener );
 
 		try {
@@ -625,7 +625,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( array(), get_option( 'active_plugins' ), 'WordPress wrote the active plugins before the listener threw.' );
-		$record = $this->require_state_store()->get_record();
+		$record = $this->state_store->get_record();
 		$this->assertIsArray( $record );
 		$this->assertSame( 'verify_builtin_ownership', $record['current_step'], 'The ownership check is scheduled, not a rollback.' );
 		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
@@ -684,21 +684,21 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 		$job                = $this->create_state_writing_job( true, $preflight );
 		$this->assertTrue( $job->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		$after_deactivation = function () use ( $preflight ): void {
 			$this->create_state_writing_job( true, $preflight )->record_plugin_activation();
 		};
 
 		$job->handle_reconcile( $pending['generation'], 1 );
 
-		$after = $this->require_state_store()->get_record();
+		$after = $this->state_store->get_record();
 		$this->assertIsArray( $after );
 		$this->assertSame( $pending['generation'] + 1, $after['generation'], 'The activation rolled the switch back, and the rollback survives finalize.' );
 		$this->assertSame( 'awaiting_merchant_start', $after['current_step'] );
-		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $pending['generation'], $pending['attempt'] + 2 ), 'No ownership check is scheduled.' );
-		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $after['generation'], 1 ), 'The rollback waits for a fresh merchant start.' );
+		$this->assertSame( 0, $this->scheduler->get_scheduled_action_id( $pending['generation'], $pending['attempt'] + 2 ), 'No ownership check is scheduled.' );
+		$this->assertSame( 0, $this->scheduler->get_scheduled_action_id( $after['generation'], 1 ), 'The rollback waits for a fresh merchant start.' );
 		// Finalize writes the built-in tier after the rollback re-synced it. That loads nothing: the effective tier is capped
 		// at available while the extension owns payments.
 		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
@@ -806,10 +806,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			return $this->create_job( true, $preflight, new WooPaymentsCutoverReconciliationJob(), $extension_owner, $migration, $account_service );
 		};
 		$run_attempt        = function ( array $record, bool $extension_owner ) use ( $make_job ): array {
-			$this->require_scheduler()->cancel( $record['generation'], $record['attempt'] + 1 );
+			$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
 			$this->start_fresh_request();
 			$make_job( $extension_owner )->handle_reconcile( $record['generation'], $record['attempt'] + 1 );
-			$after = $this->require_state_store()->get_record();
+			$after = $this->state_store->get_record();
 			$this->assertIsArray( $after );
 
 			return $after;
@@ -817,7 +817,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$job_for_activation = $make_job( false );
 
 		$this->assertTrue( $make_job( true )->enqueue( 'merchant' ) );
-		$record = $this->require_state_store()->get_record();
+		$record = $this->state_store->get_record();
 		$this->assertIsArray( $record );
 		if ( in_array( $shape, array( 'an ownership check deferred while the extension still read as active', 'an ownership check deferred on financial_migrations_unavailable', 'a stale running claim recovered after finalize', "the job's own plugin lifecycle change" ), true ) ) {
 			$record = $run_attempt( $record, true );
@@ -834,27 +834,27 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->assertSame( array( 'financial_migrations_unavailable' ), $record['deferred_codes'] );
 			$this->assertSame( 'deferred', $record['current_step'] );
 		} elseif ( 'a stale running claim recovered after finalize' === $shape ) {
-			$this->require_scheduler()->cancel( $record['generation'], $record['attempt'] + 1 );
+			$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
 			$running                     = $this->create_running_record( $record );
 			$expired                     = $running;
 			$expired['revision']         = $running['revision'] + 1;
 			$expired['lease_expires_at'] = time() - 1;
-			$this->assertTrue( $this->require_state_store()->compare_and_set_record( $running, $expired ) );
+			$this->assertTrue( $this->state_store->compare_and_set_record( $running, $expired ) );
 			$make_job( false )->repair_schedule();
-			$record = $this->require_state_store()->get_record();
+			$record = $this->state_store->get_record();
 			$this->assertIsArray( $record );
 			$this->assertSame( 'recovered_stale_running', $record['current_step'] );
 		} elseif ( 'a claim running in another request' === $shape ) {
 			// The activation rolls a running claim back too; the worker's finalize fence then refuses to deactivate.
-			$this->require_scheduler()->cancel( $record['generation'], 1 );
+			$this->scheduler->cancel( $record['generation'], 1 );
 			$record = $this->create_running_record( $record );
 		} elseif ( "awaiting the merchant's start" === $shape ) {
-			$this->require_scheduler()->cancel( $record['generation'], 1 );
+			$this->scheduler->cancel( $record['generation'], 1 );
 			$awaiting                 = $record;
 			$awaiting['revision']     = $record['revision'] + 1;
 			$awaiting['current_step'] = 'awaiting_merchant_start';
 			$awaiting['action_id']    = 0;
-			$this->assertTrue( $this->require_state_store()->compare_and_set_record( $record, $awaiting ) );
+			$this->assertTrue( $this->state_store->compare_and_set_record( $record, $awaiting ) );
 			$record = $awaiting;
 		}
 		if ( "the job's own plugin lifecycle change" === $shape ) {
@@ -862,7 +862,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$flag->setAccessible( true );
 			$flag->setValue( $job_for_activation, true );
 		}
-		$this->assertSame( $record['action_id'], $this->require_scheduler()->get_scheduled_action_id( $record['generation'], $record['attempt'] + 1 ) );
+		$this->assertSame( $record['action_id'], $this->scheduler->get_scheduled_action_id( $record['generation'], $record['attempt'] + 1 ) );
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
 		$deactivations_before  = $deactivations;
 		$migration_runs_before = $migration_runs;
@@ -871,7 +871,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$controller->handle_plugin_activated( WooPaymentsRuntimeArbiter::PLUGIN_FILE, false );
 
-		$after = $this->require_state_store()->get_record();
+		$after = $this->state_store->get_record();
 		$this->assertIsArray( $after );
 		if ( ! $supersedes ) {
 			$this->assertSame( $record, $after, 'The activation leaves this generation as it was.' );
@@ -881,14 +881,14 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $after['state'] );
 		$this->assertSame( 'awaiting_merchant_start', $after['current_step'] );
 		$this->assertSame( array( 'source' => 'rollback' ), $after['step_log'][0]['context'] ?? null );
-		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $record['generation'], $record['attempt'] + 1 ), 'The superseded attempt is cancelled.' );
-		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $after['generation'], 1 ), 'The rollback generation waits for a fresh merchant start.' );
+		$this->assertSame( 0, $this->scheduler->get_scheduled_action_id( $record['generation'], $record['attempt'] + 1 ), 'The superseded attempt is cancelled.' );
+		$this->assertSame( 0, $this->scheduler->get_scheduled_action_id( $after['generation'], 1 ), 'The rollback generation waits for a fresh merchant start.' );
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The tier follows the extension again.' );
 
 		// The superseded attempt, delivered anyway, does nothing: no deactivation and no data migration.
 		$this->start_fresh_request();
 		$make_job( false )->handle_reconcile( $record['generation'], $record['attempt'] + 1 );
-		$this->assertSame( $after, $this->require_state_store()->get_record() );
+		$this->assertSame( $after, $this->state_store->get_record() );
 		$this->assertSame( $deactivations_before, $deactivations );
 		$this->assertSame( $migration_runs_before, $migration_runs );
 	}
@@ -1058,16 +1058,16 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				}
 			};
 			$job     = new WooPaymentsCutoverReconciliationJob();
-			$job->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight, $migration, $account_service );
+			$job->init( $arbiter, $this->state_store, $this->scheduler, $preflight, $migration, $account_service );
 			$this->jobs[] = $job;
 
 			return $job;
 		};
 		$run_attempt       = function ( array $record ) use ( $make_job ): array {
-			$this->require_scheduler()->cancel( $record['generation'], $record['attempt'] + 1 );
+			$this->scheduler->cancel( $record['generation'], $record['attempt'] + 1 );
 			$this->start_fresh_request();
 			$make_job()->handle_reconcile( $record['generation'], $record['attempt'] + 1 );
-			$after = $this->require_state_store()->get_record();
+			$after = $this->state_store->get_record();
 			$this->assertIsArray( $after );
 
 			return $after;
@@ -1077,7 +1077,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 
 		$this->assertTrue( $make_job()->enqueue( 'merchant' ) );
-		$record = $this->require_state_store()->get_record();
+		$record = $this->state_store->get_record();
 		$this->assertIsArray( $record );
 		// The first finalize: the job deactivates the extension and schedules the ownership check.
 		$record = $run_attempt( $record );
@@ -1111,8 +1111,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'awaiting_merchant_start', $after['current_step'] );
 		$this->assertSame( array( 'source' => 'rollback' ), $after['step_log'][0]['context'] ?? null );
 		$this->assertSame( WooPaymentsSetupTier::AVAILABLE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The tier follows the extension, not the built-in WooPayments.' );
-		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $record['generation'], $record['attempt'] + 2 ), 'No further attempt of the switch is scheduled.' );
-		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $after['generation'], 1 ), 'The rollback waits for a fresh merchant start.' );
+		$this->assertSame( 0, $this->scheduler->get_scheduled_action_id( $record['generation'], $record['attempt'] + 2 ), 'No further attempt of the switch is scheduled.' );
+		$this->assertSame( 0, $this->scheduler->get_scheduled_action_id( $after['generation'], 1 ), 'The rollback waits for a fresh merchant start.' );
 		if ( 'a retry finalize whose activation lost the write lock' === $shape ) {
 			$this->assertSame( $preflight_reads_before, $preflight_reads, 'The rollback comes before the preflight and the plugin update.' );
 			$this->assertSame( $migration_runs_before, $migration_runs, 'The rollback comes before the data migration.' );
@@ -1123,7 +1123,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$this->start_fresh_request();
 			$make_job()->handle_reconcile( $record['generation'], $attempt );
 		}
-		$this->assertSame( $after, $this->require_state_store()->get_record() );
+		$this->assertSame( $after, $this->state_store->get_record() );
 		$this->assertSame( $expected_deactivations, $deactivations );
 	}
 
@@ -1174,18 +1174,18 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 		$sut           = $this->create_job( true, $preflight, null, true, $migration, wc_get_container()->get( WooPaymentsAccountService::class ) );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		// Another request rewrites the stored record; this request's option cache keeps the copy it claimed.
 		$during_run = function () use ( $wpdb ): void {
-			$claimed = $this->require_state_store()->get_record();
+			$claimed = $this->state_store->get_record();
 			$this->assertIsArray( $claimed );
 			$superseded                 = $claimed;
 			$superseded['revision']     = $claimed['revision'] + 1;
 			$superseded['current_step'] = 'awaiting_merchant_start';
 			$wpdb->update( $wpdb->options, array( 'option_value' => maybe_serialize( $superseded ) ), array( 'option_name' => WooPaymentsCutoverStateStore::OPTION_NAME ) );
-			$this->assertSame( $claimed, $this->require_state_store()->get_record(), 'The cached read still returns the claim.' );
+			$this->assertSame( $claimed, $this->state_store->get_record(), 'The cached read still returns the claim.' );
 		};
 		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::AVAILABLE );
 
@@ -1294,22 +1294,22 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 		$sut           = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization() );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		// A claim whose fifteen minutes ran out while its worker updated the extension or migrated data.
 		$running                     = $this->create_running_record( $pending );
 		$expired                     = $running;
 		$expired['revision']         = $running['revision'] + 1;
 		$expired['lease_expires_at'] = time() - 1;
-		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $running, $expired ) );
+		$this->assertTrue( $this->state_store->compare_and_set_record( $running, $expired ) );
 		$reconcile = new \ReflectionMethod( WooPaymentsCutoverReconciliationJob::class, 'reconcile_claim' );
 		$reconcile->setAccessible( true );
 
 		$reconcile->invoke( $sut, $expired );
 
 		$this->assertSame( 0, $deactivations, 'A worker whose claim expired must not deactivate the extension.' );
-		$this->assertSame( $expired, $this->require_state_store()->get_record(), 'The expired claim stays for repair_schedule() to recover.' );
+		$this->assertSame( $expired, $this->state_store->get_record(), 'The expired claim stays for repair_schedule() to recover.' );
 	}
 
 	/**
@@ -1357,19 +1357,19 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 		$origin        = $this->create_job( true, $preflight, $job, true, $normalization, wc_get_container()->get( WooPaymentsAccountService::class ) );
 		$this->assertTrue( $origin->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		$claimable = $pending;
 		if ( $age > 0 ) {
 			$claimable['revision']   = $pending['revision'] + 1;
 			$claimable['started_at'] = time() - $age;
-			$this->assertTrue( $this->require_state_store()->compare_and_set_record( $pending, $claimable ) );
+			$this->assertTrue( $this->state_store->compare_and_set_record( $pending, $claimable ) );
 		}
 
 		$origin->handle_reconcile( $claimable['generation'], 1 );
 
-		$verification = $this->require_state_store()->get_record();
+		$verification = $this->state_store->get_record();
 		$this->assertIsArray( $verification );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $verification['state'], 'The click is the decision; a late queue does not ask the merchant again.' );
 		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
@@ -1400,22 +1400,22 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox The merchant's start restarts the retry clock of an offer created earlier.
 	 */
 	public function test_merchant_start_restarts_the_retry_clock(): void {
-		$sut = $this->require_sut();
+		$sut = $this->sut;
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		$awaiting                 = $pending;
 		$awaiting['revision']     = $pending['revision'] + 1;
 		$awaiting['current_step'] = 'awaiting_merchant_start';
 		$awaiting['action_id']    = 0;
 		$awaiting['started_at']   = time() - 3 * DAY_IN_SECONDS;
-		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $pending, $awaiting ) );
+		$this->assertTrue( $this->state_store->compare_and_set_record( $pending, $awaiting ) );
 		$before = time();
 
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 
-		$queued = $this->require_state_store()->get_record();
+		$queued = $this->state_store->get_record();
 		$this->assertIsArray( $queued );
 		$this->assertSame( 'queued', $queued['current_step'] );
 		$this->assertGreaterThanOrEqual( $before, $queued['started_at'] );
@@ -1435,12 +1435,12 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$origin    = $this->create_state_writing_job( true, $preflight );
 
 		$this->assertTrue( $origin->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		$origin->handle_reconcile( $pending['generation'], 1 );
 
-		$verification = $this->require_state_store()->get_record();
+		$verification = $this->state_store->get_record();
 		$this->assertIsArray( $verification );
 		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
 		$this->assertSame( WooPaymentsSetupTier::ACTIVE, get_option( WooPaymentsSetupTier::OPTION_NAME ), 'The deactivating request must leave the tier the next request bootstraps from.' );
@@ -1484,11 +1484,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$origin    = $this->create_state_writing_job( true, $preflight );
 
 		$this->assertTrue( $origin->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		$origin->handle_reconcile( $pending['generation'], 1 );
-		$verification = $this->require_state_store()->get_record();
+		$verification = $this->state_store->get_record();
 		$this->assertIsArray( $verification );
 		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
 		$this->run_ownership_verification_in_a_fresh_request( $verification, $preflight );
@@ -1554,9 +1554,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$normalization->init( wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
 		$sut = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true, $normalization );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 
 		$sut->handle_reconcile( $pending['generation'], 1 );
 
@@ -1567,7 +1567,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( $expected, $after, 'Every historical order field and multi-currency metadata value should remain exact.' );
 		$this->assertSame( $before, $after, 'Cutover normalization must not rewrite historical order money records.' );
 		$this->assertSame( '4', get_option( 'woocommerce_woopayments_cutover_normalization_version' ), 'The actual normalization runner should complete.' );
-		$verification = $this->require_state_store()->get_record();
+		$verification = $this->state_store->get_record();
 		$this->assertIsArray( $verification );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $verification['state'], 'With no WooPayments plugin active, the attempt finalizes after actual normalization.' );
 		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'], 'The attempt should continue to ownership verification.' );
@@ -1617,9 +1617,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$normalization->init( wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
 		$sut = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true, $normalization );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 
 		$sut->handle_reconcile( $pending['generation'], 1 );
 
@@ -1751,9 +1751,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$normalization->init( wc_get_container()->get( WooPaymentsGatewaySettingsSynchronizer::class ) );
 		$sut = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true, $normalization );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 
 		$sut->handle_reconcile( $pending['generation'], 1 );
 
@@ -1774,9 +1774,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$preflight = $this->create_preflight_with_failures( array() );
 		$origin    = $this->create_job( true, $preflight );
 		$this->assertTrue( $origin->enqueue( 'merchant' ) );
-		$queued = $this->require_state_store()->get_record();
+		$queued = $this->state_store->get_record();
 		$this->assertIsArray( $queued );
-		$this->require_scheduler()->cancel( $queued['generation'], 1 );
+		$this->scheduler->cancel( $queued['generation'], 1 );
 		$request_token = new \ReflectionProperty( WooPaymentsCutoverReconciliationJob::class, 'request_token' );
 		$request_token->setAccessible( true );
 		$verification                         = $queued;
@@ -1786,22 +1786,22 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$verification['current_step']         = 'verify_builtin_ownership';
 		$verification['next_attempt_at']      = time() + MINUTE_IN_SECONDS;
 		$verification['request_origin_token'] = $request_token->getValue();
-		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $queued, $verification ) );
+		$this->assertTrue( $this->state_store->compare_and_set_record( $queued, $verification ) );
 		$owner->invalidate();
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN, $owner->get_runtime_owner(), 'Past finalize, before done, the built-in WooPayments owns payments.' );
 
 		$origin->handle_reconcile( $verification['generation'], 2 );
 
-		$this->assertSame( $verification, $this->require_state_store()->get_record(), 'The request that scheduled verification must not claim or complete it.' );
+		$this->assertSame( $verification, $this->state_store->get_record(), 'The request that scheduled verification must not claim or complete it.' );
 		$same_request = $this->create_job( true, $preflight, null, false );
 		$same_request->handle_reconcile( $verification['generation'], 2 );
-		$this->assertSame( $verification, $this->require_state_store()->get_record(), 'A second job instance in the same request must share the origin fence.' );
+		$this->assertSame( $verification, $this->state_store->get_record(), 'A second job instance in the same request must share the origin fence.' );
 
 		$request_token->setValue( null );
 		$fresh_request = $this->create_job( true, $preflight, null, false );
 		$fresh_request->handle_reconcile( $verification['generation'], 2 );
 
-		$done = $this->require_state_store()->get_record();
+		$done = $this->state_store->get_record();
 		$this->assertIsArray( $done );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DONE, $done['state'] );
 		$this->assertSame( 'done', $done['current_step'] );
@@ -1824,9 +1824,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$owner = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		$sut   = $this->create_job( true, $this->create_preflight_with_failures( array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS ) ), null, false, $this->create_noop_normalization() );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$queued = $this->require_state_store()->get_record();
+		$queued = $this->state_store->get_record();
 		$this->assertIsArray( $queued );
-		$this->require_scheduler()->cancel( $queued['generation'], 1 );
+		$this->scheduler->cancel( $queued['generation'], 1 );
 		// The ownership check deferred after finalize (fee remediation unavailable), so the next attempt re-runs the reconcile.
 		$deferred                         = $queued;
 		$deferred['revision']             = $queued['revision'] + 1;
@@ -1837,11 +1837,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$deferred['deferred_codes']       = array( 'builtin_ownership_unverified' );
 		$deferred['next_attempt_at']      = time() - 1;
 		$deferred['request_origin_token'] = 'previous-finalize-token';
-		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $queued, $deferred ) );
+		$this->assertTrue( $this->state_store->compare_and_set_record( $queued, $deferred ) );
 
 		$sut->handle_reconcile( $deferred['generation'], 2 );
 
-		$after = $this->require_state_store()->get_record();
+		$after = $this->state_store->get_record();
 		$this->assertIsArray( $after );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $after['state'], 'Past finalize, the bundled failure defers instead of excluding.' );
 		$this->assertContains( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $after['deferred_codes'] );
@@ -1899,13 +1899,13 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 		$sut           = $this->create_job( true, $preflight, null, false, $this->create_noop_normalization() );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 
 		$sut->handle_reconcile( $pending['generation'], 1 );
 
-		$verification = $this->require_state_store()->get_record();
+		$verification = $this->state_store->get_record();
 		$this->assertIsArray( $verification );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $verification['state'] );
 		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
@@ -1929,20 +1929,20 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$sut              = $this->create_job( true, $preflight, null, false, $this->create_noop_normalization() );
 
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		$sut->handle_reconcile( $pending['generation'], 1 );
-		$verification = $this->require_state_store()->get_record();
+		$verification = $this->state_store->get_record();
 		$this->assertIsArray( $verification );
 		$this->assertSame( 'verify_builtin_ownership', $verification['current_step'] );
 		$this->assertSame( 0, $scheduling_calls, 'Remediation waits until a fresh request sees native ownership.' );
 
-		$this->require_scheduler()->cancel( $verification['generation'], 2 );
+		$this->scheduler->cancel( $verification['generation'], 2 );
 		$this->start_fresh_request();
 		$this->create_job( true, $preflight, null, false, $this->create_noop_normalization() )->handle_reconcile( $verification['generation'], 2 );
 
-		$record = $this->require_state_store()->get_record();
+		$record = $this->state_store->get_record();
 		$this->assertIsArray( $record );
 		$this->assertSame( $first_state, $record['state'] );
 		$this->assertSame( $first_codes, $record['deferred_codes'] );
@@ -1953,10 +1953,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$throws      = false;
 		for ( $step = 0; $step < 4 && WooPaymentsCutoverStateStore::STATE_DONE !== $record['state']; ++$step ) {
 			$next_attempt = $record['attempt'] + 1;
-			$this->require_scheduler()->cancel( $record['generation'], $next_attempt );
+			$this->scheduler->cancel( $record['generation'], $next_attempt );
 			$this->start_fresh_request();
 			$this->create_job( true, $preflight, null, false, $this->create_noop_normalization() )->handle_reconcile( $record['generation'], $next_attempt );
-			$record = $this->require_state_store()->get_record();
+			$record = $this->state_store->get_record();
 			$this->assertIsArray( $record );
 		}
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DONE, $record['state'] );
@@ -1986,9 +1986,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$preflight        = $this->create_preflight_with_fee_remediation( $scheduling_calls, $schedulable, $throws );
 		$origin           = $this->create_job( true, $preflight );
 		$this->assertTrue( $origin->enqueue( 'merchant' ) );
-		$queued = $this->require_state_store()->get_record();
+		$queued = $this->state_store->get_record();
 		$this->assertIsArray( $queued );
-		$this->require_scheduler()->cancel( $queued['generation'], 1 );
+		$this->scheduler->cancel( $queued['generation'], 1 );
 		$verification                         = $queued;
 		$verification['revision']             = $queued['revision'] + 1;
 		$verification['attempt']              = 1;
@@ -1996,12 +1996,12 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$verification['current_step']         = 'verify_builtin_ownership';
 		$verification['next_attempt_at']      = time() + MINUTE_IN_SECONDS;
 		$verification['request_origin_token'] = 'previous-request-token';
-		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $queued, $verification ) );
+		$this->assertTrue( $this->state_store->compare_and_set_record( $queued, $verification ) );
 
 		$this->start_fresh_request();
 		$this->create_job( true, $preflight, null, true, $this->create_noop_normalization() )->handle_reconcile( $verification['generation'], 2 );
 
-		$deferred = $this->require_state_store()->get_record();
+		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
 		$this->assertSame( array( 'builtin_ownership_unverified' ), $deferred['deferred_codes'] );
@@ -2090,13 +2090,13 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 		$sut                = $this->create_job( true, $preflight, null, true, $this->create_noop_normalization(), $account_service );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 
 		$sut->handle_reconcile( $pending['generation'], 1 );
 
-		$deferred = $this->require_state_store()->get_record();
+		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( 1, $deactivation_calls );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
@@ -2205,11 +2205,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	public function test_completion_notice_stays_until_dismissed(): void {
 		$sut   = $this->create_job( true );
-		$store = $this->require_state_store();
+		$store = $this->state_store;
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		$done                           = $pending;
 		$done['revision']               = $pending['revision'] + 1;
 		$done['state']                  = WooPaymentsCutoverStateStore::STATE_DONE;
@@ -2284,7 +2284,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$this->assertNull( $sut->refresh_notice_record() );
 		$this->assertSame( 0, $preflight->scans, 'Every admin page would otherwise scan Action Scheduler, order meta and tables.' );
-		$this->assertNull( $this->require_state_store()->get_record() );
+		$this->assertNull( $this->state_store->get_record() );
 	}
 
 	/**
@@ -2301,7 +2301,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $sut->dismiss_notice( $bundled ) );
 		$this->assertFalse( $sut->dismiss_notice( $bundled ), 'A dismissed notice stays dismissed.' );
 		wp_cache_flush();
-		$this->assertFalse( $sut->is_bundled_exclusion_notice_due( $this->require_state_store()->get_record() ) );
+		$this->assertFalse( $sut->is_bundled_exclusion_notice_due( $this->state_store->get_record() ) );
 
 		$failures = array();
 		$awaiting = $sut->refresh_notice_record();
@@ -2417,10 +2417,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $awaiting );
 		$this->assertSame( 'awaiting_merchant_start', $awaiting['current_step'] );
 		$sut->register();
-		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $awaiting['generation'], 1 ) );
+		$this->assertSame( 0, $this->scheduler->get_scheduled_action_id( $awaiting['generation'], 1 ) );
 
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$queued = $this->require_state_store()->get_record();
+		$queued = $this->state_store->get_record();
 		$this->assertIsArray( $queued );
 		$this->assertSame( $awaiting['generation'], $queued['generation'] );
 		$this->assertSame( 'queued', $queued['current_step'] );
@@ -2449,8 +2449,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 
-		$this->assertSame( $excluded, $this->require_state_store()->get_record(), 'A store that still has Stripe Billing subscriptions must stay excluded after the click.' );
-		$this->assertSame( 0, $this->require_scheduler()->get_scheduled_action_id( $excluded['generation'] + 1, 1 ), 'No generation may be scheduled.' );
+		$this->assertSame( $excluded, $this->state_store->get_record(), 'A store that still has Stripe Billing subscriptions must stay excluded after the click.' );
+		$this->assertSame( 0, $this->scheduler->get_scheduled_action_id( $excluded['generation'] + 1, 1 ), 'No generation may be scheduled.' );
 	}
 
 	/** @testdox A classifier cannot overwrite pending work created while it resolves an initial Stripe marker. */
@@ -2510,13 +2510,13 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$sut       = $this->create_job_with_preflight( true, $preflight );
 
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		$sut->register();
 		$sut->handle_reconcile( $pending['generation'], 1 );
 
-		$record = $this->require_state_store()->get_record();
+		$record = $this->state_store->get_record();
 		$this->assertIsArray( $record );
 		$this->assertSame( $expected_state, $record['state'] );
 		$this->assertNotSame( WooPaymentsCutoverStateStore::STATE_RUNNING, $record['state'], 'A disposition must not leave its claimed record running.' );
@@ -2551,18 +2551,18 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$preflight = $this->create_preflight_with_failures( array( 'wpcom_connection_owner_unavailable' ) );
 		$sut       = $this->create_job_with_preflight( true, $preflight );
 		$sut->enqueue( 'merchant' );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		$sut->register();
 		$sut->handle_reconcile( $pending['generation'], 1 );
 
-		$deferred = $this->require_state_store()->get_record();
+		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( array( 'wpcom_connection_owner_unavailable' ), $deferred['deferred_codes'] );
 		$sut->handle_reconcile( $deferred['generation'], 2 );
 
-		$replayed = $this->require_state_store()->get_record();
+		$replayed = $this->state_store->get_record();
 		$this->assertIsArray( $replayed );
 		$reconnect_outcomes = array_filter(
 			$replayed['informational_outcomes'],
@@ -2574,14 +2574,14 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
 		$reconnect = WooPaymentsCutoverReconciliationJob::NOTICE_RECONNECT;
 		for ( $page = 0; $page < 2; $page++ ) {
-			$this->assertTrue( $sut->is_reconnect_notice_due( $this->require_state_store()->get_record() ), 'Every admin page shows the notice, since some screens hide it.' );
+			$this->assertTrue( $sut->is_reconnect_notice_due( $this->state_store->get_record() ), 'Every admin page shows the notice, since some screens hide it.' );
 		}
-		$this->assertSame( $replayed, $this->require_state_store()->get_record(), 'Showing the notice must not change the record.' );
+		$this->assertSame( $replayed, $this->state_store->get_record(), 'Showing the notice must not change the record.' );
 
 		$this->assertTrue( $sut->dismiss_notice( $reconnect ) );
 		$this->assertFalse( $sut->dismiss_notice( $reconnect ), 'A dismissed notice stays dismissed.' );
 		wp_cache_flush();
-		$dismissed = $this->require_state_store()->get_record();
+		$dismissed = $this->state_store->get_record();
 		$this->assertIsArray( $dismissed );
 		$this->assertContains( array( 'code' => 'reconnect_notice_dismissed' ), $dismissed['informational_outcomes'] );
 		$this->assertFalse( $sut->is_reconnect_notice_due( $dismissed ) );
@@ -2634,13 +2634,13 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$preflight = $this->create_preflight_with_failures( array( 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable' ) );
 		$sut       = $this->create_job_with_preflight( true, $preflight );
 		$sut->enqueue( 'merchant' );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		$sut->register();
 		$sut->handle_reconcile( $pending['generation'], 1 );
 
-		$deferred = $this->require_state_store()->get_record();
+		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
 		$this->assertNotContains( array( 'code' => 'reconnect_required' ), $deferred['informational_outcomes'] );
@@ -2665,17 +2665,17 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$preflight = $this->create_preflight_with_failures( array( 'wpcom_connection_owner_unavailable' ) );
 		$sut       = $this->create_job_with_preflight( true, $preflight );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		$sut->handle_reconcile( $pending['generation'], 1 );
-		$deferred = $this->require_state_store()->get_record();
+		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
-		$this->require_scheduler()->cancel( $deferred['generation'], $deferred['attempt'] + 1 );
+		$this->scheduler->cancel( $deferred['generation'], $deferred['attempt'] + 1 );
 		$running = $this->create_running_record( $deferred );
 
 		$this->assertFalse( $sut->dismiss_notice( WooPaymentsCutoverReconciliationJob::NOTICE_RECONNECT ) );
-		$this->assertSame( $running, $this->require_state_store()->get_record() );
+		$this->assertSame( $running, $this->state_store->get_record() );
 	}
 
 	/**
@@ -2685,14 +2685,14 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$preflight = $this->create_preflight_with_failures( array(), true );
 		$sut       = $this->create_job_with_preflight( true, $preflight );
 		$sut->enqueue( 'merchant' );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		$sut->register();
 
 		$sut->handle_reconcile( $pending['generation'], 1 );
 
-		$deferred = $this->require_state_store()->get_record();
+		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
 		$this->assertSame( array( 'reconciliation_resolver_failed' ), $deferred['deferred_codes'] );
@@ -2733,14 +2733,14 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		);
 		$sut       = $this->create_job_with_preflight( true, $preflight );
 		$sut->enqueue( 'merchant' );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		$sut->register();
 
 		$sut->handle_reconcile( $pending['generation'], 1 );
 
-		$deferred = $this->require_state_store()->get_record();
+		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( ActionScheduler_Store::STATUS_PENDING, ActionScheduler::store()->get_status( $builtin_action_id ) );
 		$this->assertSame( ActionScheduler_Store::STATUS_PENDING, ActionScheduler::store()->get_status( $migrator_action_id ) );
@@ -2782,20 +2782,20 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		);
 		$sut       = $this->create_job_with_preflight( true, $preflight );
 		$sut->enqueue( 'merchant' );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 
 		$sut->handle_reconcile( $pending['generation'], 1 );
 
-		$deferred = $this->require_state_store()->get_record();
+		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
 		$this->assertSame( array( 'normalization_failed' ), $deferred['deferred_codes'] );
 		$this->assertSame( ActionScheduler_Store::STATUS_PENDING, ActionScheduler::store()->get_status( $action_id ) );
 		$sut->handle_reconcile( $deferred['generation'], 2 );
 
-		$replayed = $this->require_state_store()->get_record();
+		$replayed = $this->state_store->get_record();
 		$this->assertIsArray( $replayed );
 		$adopted_outcomes = array_filter(
 			$replayed['informational_outcomes'],
@@ -2867,9 +2867,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		try {
 			$sut->enqueue( 'merchant' );
-			$pending = $this->require_state_store()->get_record();
+			$pending = $this->state_store->get_record();
 			$this->assertIsArray( $pending );
-			$this->require_scheduler()->cancel( $pending['generation'], 1 );
+			$this->scheduler->cancel( $pending['generation'], 1 );
 			$sut->handle_reconcile( $pending['generation'], 1 );
 		} finally {
 			if ( 'lock' === $blocker ) {
@@ -2877,7 +2877,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 		}
 
-		$deferred = $this->require_state_store()->get_record();
+		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
 		$this->assertSame( array( 'woopayments_plugin_version_unsupported' ), $deferred['deferred_codes'] );
@@ -3067,7 +3067,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( $sut->enqueue( 'merchant' ), 'The merchant start is refused.' );
 		$this->assertFalse( $sut->enqueue( 'mandatory' ), 'The mandatory start is refused.' );
-		$this->assertNull( $this->require_state_store()->get_record(), 'No record is written.' );
+		$this->assertNull( $this->state_store->get_record(), 'No record is written.' );
 		$this->assertSame( 0, $this->count_cutover_actions(), 'No attempt is scheduled.' );
 	}
 
@@ -3146,9 +3146,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 		$sut           = $this->create_job( true, $preflight, null, true, $migration );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		// A super admin activates the extension for every site between the start and its attempt.
 		$sitewide = true;
 
@@ -3156,7 +3156,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 0, $deactivations, 'Finalize deactivates nothing.' );
 		$this->assertSame( 0, $migrations, 'The data migration waits too.' );
-		$deferred = $this->require_state_store()->get_record();
+		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
 		$this->assertSame( array( 'plugin_active_sitewide' ), $deferred['deferred_codes'] );
@@ -3168,11 +3168,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	public function test_switched_site_beside_a_reactivated_extension_reopens_on_its_next_admin_page(): void {
 		$sut   = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true );
-		$store = $this->require_state_store();
+		$store = $this->state_store;
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		$done                    = $pending;
 		$done['revision']        = $pending['revision'] + 1;
 		$done['state']           = WooPaymentsCutoverStateStore::STATE_DONE;
@@ -3201,19 +3201,19 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$sut              = $this->create_job( true, $preflight, null, false, $this->create_noop_normalization() );
 		update_option( WooPaymentsCutoverReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION, time() + DAY_IN_SECONDS );
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		$sut->handle_reconcile( $pending['generation'], 1 );
-		$verification = $this->require_state_store()->get_record();
+		$verification = $this->state_store->get_record();
 		$this->assertIsArray( $verification );
-		$this->require_scheduler()->cancel( $verification['generation'], 2 );
+		$this->scheduler->cancel( $verification['generation'], 2 );
 		$this->assertNotFalse( get_option( WooPaymentsCutoverReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION ), 'Kept until the switch completes.' );
 
 		$this->start_fresh_request();
 		$this->create_job( true, $preflight, null, false, $this->create_noop_normalization() )->handle_reconcile( $verification['generation'], 2 );
 
-		$done = $this->require_state_store()->get_record();
+		$done = $this->state_store->get_record();
 		$this->assertIsArray( $done );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DONE, $done['state'] );
 		$this->assertFalse( get_option( WooPaymentsCutoverReconciliationJob::START_NOTICE_SNOOZED_UNTIL_OPTION ) );
@@ -3224,11 +3224,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	public function test_rollback_clears_the_start_notice_snooze(): void {
 		$sut   = $this->create_job( true, $this->create_preflight_with_failures( array() ), null, true );
-		$store = $this->require_state_store();
+		$store = $this->state_store;
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
 		$pending = $store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		$done                    = $pending;
 		$done['revision']        = $pending['revision'] + 1;
 		$done['state']           = WooPaymentsCutoverStateStore::STATE_DONE;
@@ -3265,13 +3265,13 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		);
 		$sut       = $this->create_job_with_preflight( true, $preflight );
 		$sut->enqueue( 'merchant' );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 
 		$sut->handle_reconcile( $pending['generation'], 1 );
 
-		$deferred = $this->require_state_store()->get_record();
+		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
 		$this->assertSame( ActionScheduler_Store::STATUS_PENDING, ActionScheduler::store()->get_status( $action_id ) );
@@ -3284,16 +3284,16 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$preflight = $this->create_preflight_with_failures( array( 'bundled_stripe_billing_subscriptions_present' ) );
 		$sut       = $this->create_job_with_preflight( true, $preflight );
 		$sut->enqueue( 'merchant' );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 
 		$sut->handle_reconcile( $pending['generation'], 1 );
-		$excluded = $this->require_state_store()->get_record();
+		$excluded = $this->state_store->get_record();
 		$this->assertIsArray( $excluded );
 		$sut->handle_reconcile( $excluded['generation'], $excluded['attempt'] );
 
-		$this->assertSame( $excluded, $this->require_state_store()->get_record() );
+		$this->assertSame( $excluded, $this->state_store->get_record() );
 	}
 
 	/**
@@ -3403,13 +3403,13 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, array(), 'woocommerce-payments/woocommerce-payments.php' );
 		$sut       = $this->create_job( true, $preflight, $job );
 		$sut->enqueue( 'merchant' );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 
 		$sut->handle_reconcile( $pending['generation'], 1 );
 
-		$deferred = $this->require_state_store()->get_record();
+		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
 		$this->assertSame( array( 'woopayments_plugin_version_unsupported' ), $deferred['deferred_codes'] );
@@ -3569,13 +3569,13 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		};
 		$sut           = $this->create_job( true, $preflight, $job, true, $normalization );
 		$sut->enqueue( 'merchant' );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 
 		$sut->handle_reconcile( $pending['generation'], 1 );
 
-		$first = $this->require_state_store()->get_record();
+		$first = $this->state_store->get_record();
 		$this->assertIsArray( $first );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $first['state'] );
 		$this->assertSame( array( 'woopayments_plugin_version_unsupported' ), $first['deferred_codes'] );
@@ -3587,10 +3587,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$this->assertSame( 0, $preflight->deactivation_calls );
 
 		$preflight->mark_plugin_version_supported();
-		$this->require_scheduler()->cancel( $first['generation'], 2 );
+		$this->scheduler->cancel( $first['generation'], 2 );
 		$sut->handle_reconcile( $first['generation'], 2 );
 
-		$second = $this->require_state_store()->get_record();
+		$second = $this->state_store->get_record();
 		$this->assertIsArray( $second );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_PENDING, $second['state'] );
 		$this->assertSame( 'verify_builtin_ownership', $second['current_step'] );
@@ -3685,9 +3685,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, array(), $plugin_file );
 			$sut       = $this->create_job( true, $preflight, $job );
 			$sut->enqueue( 'merchant' );
-			$pending = $this->require_state_store()->get_record();
+			$pending = $this->state_store->get_record();
 			$this->assertIsArray( $pending );
-			$this->require_scheduler()->cancel( $pending['generation'], 1 );
+			$this->scheduler->cancel( $pending['generation'], 1 );
 
 			$sut->handle_reconcile( $pending['generation'], 1 );
 		} finally {
@@ -3698,7 +3698,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( $expected_version, $installed_version );
-		$deferred = $this->require_state_store()->get_record();
+		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
 		$this->assertSame( array( 'woopayments_plugin_version_unsupported' ), $deferred['deferred_codes'] );
@@ -3733,8 +3733,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		}
 
 		// The upgrader runs core's update checks, and WooCommerce.com's extension update check; answer them with "no updates", since this case is about deactivation.
-		// For WooCommerce.com, the body `[]` is a hand-written "no products" answer: it is decoded to an empty product map and an
-		// empty map means no updates (includes/admin/helper/class-wc-helper-updater.php:741 and :772).
+		// Incidental: no assertion reads the WooCommerce.com answer, it only keeps the request offline. The empty list is decoded
+		// to an empty product map, which means no updates (includes/admin/helper/class-wc-helper-updater.php:741 and :772).
 		add_filter(
 			'pre_http_request',
 			static function ( $response, $args, $url ) {
@@ -3849,9 +3849,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$preflight = $this->create_preflight_with_failures( array( 'woopayments_plugin_version_unsupported' ), false, array(), $plugin_file );
 			$sut       = $this->create_job( true, $preflight, $job );
 			$sut->enqueue( 'merchant' );
-			$pending = $this->require_state_store()->get_record();
+			$pending = $this->state_store->get_record();
 			$this->assertIsArray( $pending );
-			$this->require_scheduler()->cancel( $pending['generation'], 1 );
+			$this->scheduler->cancel( $pending['generation'], 1 );
 
 			$sut->handle_reconcile( $pending['generation'], 1 );
 
@@ -3890,7 +3890,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			}
 		}
 
-		$deferred = $this->require_state_store()->get_record();
+		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
 		$this->assertSame( array( 'woopayments_plugin_version_unsupported' ), $deferred['deferred_codes'] );
@@ -3932,9 +3932,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	public function test_defer_uses_the_retry_cadence_from_started_at( int $age, int $expected_delay ): void {
 		$sut       = $this->create_job_with_preflight( true, $this->create_preflight_with_failures( array( 'builtin_transport_unavailable' ) ) );
-		$scheduler = $this->require_scheduler();
+		$scheduler = $this->scheduler;
 		$sut->enqueue( 'merchant' );
-		$record = $this->require_state_store()->get_record();
+		$record = $this->state_store->get_record();
 		$this->assertIsArray( $record );
 		$scheduler->cancel( $record['generation'], 1 );
 		// The cadence is read on a retry, so the record is set to its second attempt.
@@ -3942,12 +3942,12 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$aged['revision']   = $record['revision'] + 1;
 		$aged['attempt']    = 1;
 		$aged['started_at'] = time() - $age;
-		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $record, $aged ) );
+		$this->assertTrue( $this->state_store->compare_and_set_record( $record, $aged ) );
 		$record = $aged;
 		$before = time();
 		$sut->handle_reconcile( $record['generation'], 2 );
 		$after    = time();
-		$deferred = $this->require_state_store()->get_record();
+		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
 		$this->assertSame( 2, $deferred['attempt'] );
@@ -3961,7 +3961,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox Registration repairs a state whose initial Action Scheduler insert failed.
 	 */
 	public function test_register_repairs_a_failed_initial_schedule(): void {
-		$sut    = $this->require_sut();
+		$sut    = $this->sut;
 		$filter = static function (): int {
 			return 0;
 		};
@@ -3972,16 +3972,16 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			remove_filter( 'pre_as_schedule_single_action', $filter, 10 );
 		}
 
-		$failed_record = $this->require_state_store()->get_record();
+		$failed_record = $this->state_store->get_record();
 		$this->assertIsArray( $failed_record );
 		$this->assertSame( 0, $failed_record['action_id'], 'The durable record should expose that scheduling did not succeed.' );
 
 		$sut->register();
-		$repaired_record = $this->require_state_store()->get_record();
+		$repaired_record = $this->state_store->get_record();
 
 		$this->assertIsArray( $repaired_record );
 		$this->assertGreaterThan( 0, $repaired_record['action_id'] );
-		$this->assertSame( $repaired_record['action_id'], $this->require_scheduler()->get_scheduled_action_id( $repaired_record['generation'], 1 ) );
+		$this->assertSame( $repaired_record['action_id'], $this->scheduler->get_scheduled_action_id( $repaired_record['generation'], 1 ) );
 	}
 
 	/**
@@ -3995,15 +3995,15 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		if ( 'deferred' === $state ) {
 			$sut = $this->create_job_with_preflight( true, $this->create_preflight_with_failures( array( 'builtin_transport_unavailable' ) ) );
 			$sut->enqueue( 'merchant' );
-			$pending = $this->require_state_store()->get_record();
+			$pending = $this->state_store->get_record();
 			$this->assertIsArray( $pending );
-			$this->require_scheduler()->cancel( $pending['generation'], 1 );
+			$this->scheduler->cancel( $pending['generation'], 1 );
 			$sut->handle_reconcile( $pending['generation'], 1 );
-			$deferred = $this->require_state_store()->get_record();
+			$deferred = $this->state_store->get_record();
 			$this->assertIsArray( $deferred );
 			$old_action_id = $deferred['action_id'];
 		} else {
-			$sut           = $this->require_sut();
+			$sut           = $this->sut;
 			$old_action_id = $this->prepare_pending_action();
 		}
 
@@ -4012,9 +4012,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		} elseif ( 'failed' === $death ) {
 			ActionScheduler::store()->mark_failure( $old_action_id );
 		} elseif ( 'canceled' === $death ) {
-			$record = $this->require_state_store()->get_record();
+			$record = $this->state_store->get_record();
 			$this->assertIsArray( $record );
-			$this->require_scheduler()->cancel( $record['generation'], 1 );
+			$this->scheduler->cancel( $record['generation'], 1 );
 		} elseif ( 'completed' === $death ) {
 			ActionScheduler::store()->mark_complete( $old_action_id );
 		}
@@ -4055,10 +4055,10 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		unset( $wp_filter['action_scheduler_init'] );
 
 		try {
-			$this->require_sut()->register();
+			$this->sut->register();
 
 			$this->assertSame( 0, $this->count_cutover_actions(), 'Registration before Action Scheduler init should only attach recovery.' );
-			$this->assertSame( 10, has_action( 'action_scheduler_init', array( $this->require_sut(), 'repair_schedule' ) ) );
+			$this->assertSame( 10, has_action( 'action_scheduler_init', array( $this->sut, 'repair_schedule' ) ) );
 
 			do_action( 'action_scheduler_init' );
 
@@ -4087,17 +4087,17 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @param int    $actions     Pending or running cutover actions after registration.
 	 */
 	public function test_register_writes_no_lease_when_nothing_needs_repair( string $record_kind, int $actions ): void {
-		$sut      = $this->require_sut();
+		$sut      = $this->sut;
 		$expected = null;
 		if ( 'none' !== $record_kind ) {
 			$this->assertTrue( $sut->enqueue( 'merchant' ) );
-			$pending = $this->require_state_store()->get_record();
+			$pending = $this->state_store->get_record();
 			$this->assertIsArray( $pending );
 			if ( 'scheduled' === $record_kind ) {
 				$this->assertGreaterThan( 0, $pending['action_id'] );
 				$expected = $pending;
 			} else {
-				$this->require_scheduler()->cancel( $pending['generation'], 1 );
+				$this->scheduler->cancel( $pending['generation'], 1 );
 			}
 			if ( 'done' === $record_kind || 'excluded' === $record_kind ) {
 				$expected                 = $pending;
@@ -4105,7 +4105,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				$expected['state']        = $record_kind;
 				$expected['action_id']    = 0;
 				$expected['current_step'] = $record_kind;
-				$this->assertTrue( $this->require_state_store()->compare_and_set_record( $pending, $expected ) );
+				$this->assertTrue( $this->state_store->compare_and_set_record( $pending, $expected ) );
 			} elseif ( 'running' === $record_kind ) {
 				$expected = $this->create_running_record( $pending );
 			}
@@ -4119,7 +4119,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array(), $lease_events, 'Nothing needs repair, so registration must not write the lease option.' );
 		$this->assertNull( get_option( WooPaymentsCutoverStateStore::LEASE_OPTION_NAME, null ) );
-		$this->assertSame( $expected, $this->require_state_store()->get_record() );
+		$this->assertSame( $expected, $this->state_store->get_record() );
 		$this->assertSame( $actions, $this->count_cutover_actions() );
 	}
 
@@ -4142,12 +4142,12 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox A record still pointing at a replaced action is repaired under the lease to the action that is scheduled now.
 	 */
 	public function test_register_with_a_replaced_attempt_records_the_scheduled_action(): void {
-		$sut = $this->require_sut();
+		$sut = $this->sut;
 		$this->assertTrue( $sut->enqueue( 'merchant' ) );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
-		$replacement_id = $this->require_scheduler()->schedule( time(), $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
+		$replacement_id = $this->scheduler->schedule( time(), $pending['generation'], 1 );
 		$this->assertGreaterThan( 0, $replacement_id );
 		$this->assertNotSame( $pending['action_id'], $replacement_id );
 
@@ -4158,7 +4158,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertContains( 'INSERT', array_column( $lease_events, 'write' ), 'The stale record must be repaired under the lease.' );
-		$repaired = $this->require_state_store()->get_record();
+		$repaired = $this->state_store->get_record();
 		$this->assertIsArray( $repaired );
 		$this->assertSame( $replacement_id, $repaired['action_id'] );
 		$this->assertSame( 1, $this->count_cutover_actions(), 'The repair records the scheduled action instead of adding another.' );
@@ -4168,71 +4168,71 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox Registration recovers a stale running claim into one immediately due deferred attempt.
 	 */
 	public function test_register_recovers_stale_running_state(): void {
-		$sut = $this->require_sut();
+		$sut = $this->sut;
 		$sut->enqueue( 'merchant' );
-		$record = $this->require_state_store()->get_record();
+		$record = $this->state_store->get_record();
 		$this->assertIsArray( $record );
-		$this->require_scheduler()->cancel( $record['generation'], 1 );
+		$this->scheduler->cancel( $record['generation'], 1 );
 		$running                     = $this->create_running_record( $record );
 		$expired                     = $running;
 		$expired['revision']         = $running['revision'] + 1;
 		$expired['updated_at']       = time() - WooPaymentsCutoverReconciliationJob::RUNNING_TIMEOUT - 1;
 		$expired['lease_expires_at'] = time() - 1;
-		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $running, $expired ) );
+		$this->assertTrue( $this->state_store->compare_and_set_record( $running, $expired ) );
 		$before = time();
 
 		$sut->register();
 
 		$after     = time();
-		$recovered = $this->require_state_store()->get_record();
+		$recovered = $this->state_store->get_record();
 		$this->assertIsArray( $recovered );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $recovered['state'] );
 		$this->assertSame( 'recovered_stale_running', $recovered['current_step'] );
 		$this->assertGreaterThanOrEqual( $before, $recovered['next_attempt_at'] );
 		$this->assertLessThanOrEqual( $after, $recovered['next_attempt_at'] );
-		$this->assertSame( $recovered['action_id'], $this->require_scheduler()->get_scheduled_action_id( $recovered['generation'], 2 ) );
+		$this->assertSame( $recovered['action_id'], $this->scheduler->get_scheduled_action_id( $recovered['generation'], 2 ) );
 	}
 
 	/**
 	 * @testdox Duplicate and stale callbacks cannot reclaim a generation or advance its attempt.
 	 */
 	public function test_handle_reconcile_ignores_duplicate_and_stale_callbacks(): void {
-		$sut = $this->require_sut();
+		$sut = $this->sut;
 		$sut->enqueue( 'merchant' );
-		$record = $this->require_state_store()->get_record();
+		$record = $this->state_store->get_record();
 		$this->assertIsArray( $record );
-		$this->require_scheduler()->cancel( $record['generation'], 1 );
+		$this->scheduler->cancel( $record['generation'], 1 );
 
 		$sut->handle_reconcile( 2, 1 );
-		$this->assertSame( $record, $this->require_state_store()->get_record(), 'A callback for another generation must not mutate current state.' );
+		$this->assertSame( $record, $this->state_store->get_record(), 'A callback for another generation must not mutate current state.' );
 
 		$sut->handle_reconcile( 1, 1 );
-		$claimed = $this->require_state_store()->get_record();
+		$claimed = $this->state_store->get_record();
 		$this->assertIsArray( $claimed );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $claimed['state'] );
 		$this->assertSame( 1, $claimed['attempt'] );
 		$sut->handle_reconcile( 1, 1 );
 
-		$this->assertSame( $claimed, $this->require_state_store()->get_record(), 'A duplicate callback must not reclaim an already running attempt.' );
+		$this->assertSame( $claimed, $this->state_store->get_record(), 'A duplicate callback must not reclaim an already running attempt.' );
 	}
 
 	/**
 	 * @testdox A callback that skips ahead of the next scheduled attempt cannot claim the generation.
 	 */
 	public function test_handle_reconcile_ignores_a_skipped_ahead_attempt(): void {
-		$sut = $this->require_sut();
+		$sut = $this->sut;
 		$sut->enqueue( 'merchant' );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 		$sut->handle_reconcile( $pending['generation'], 1 );
-		$deferred = $this->require_state_store()->get_record();
+		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
 
 		$sut->handle_reconcile( $deferred['generation'], $deferred['attempt'] + 2 );
 
-		$this->assertSame( $deferred, $this->require_state_store()->get_record(), 'Only the next attempt may claim the generation.' );
+		$this->assertSame( $deferred, $this->state_store->get_record(), 'Only the next attempt may claim the generation.' );
 	}
 
 	/**
@@ -4254,9 +4254,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @param mixed $attempt    Hook attempt value.
 	 */
 	public function test_handle_reconcile_safely_ignores_malformed_hook_arguments( $generation, $attempt ): void {
-		$sut = $this->require_sut();
+		$sut = $this->sut;
 		$sut->enqueue( 'merchant' );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
 		$thrown = null;
 
@@ -4272,22 +4272,22 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 
 		$this->assertNull( $thrown, 'Malformed public hook values must not cause a TypeError.' );
 		$this->assertSame( array(), $lease_events, 'Malformed hook values should be rejected before coordination.' );
-		$this->assertSame( $pending, $this->require_state_store()->get_record() );
+		$this->assertSame( $pending, $this->state_store->get_record() );
 	}
 
 	/**
 	 * @testdox The public callback coerces positive integer strings before claiming the scheduled attempt.
 	 */
 	public function test_handle_reconcile_coerces_positive_integer_strings(): void {
-		$sut = $this->require_sut();
+		$sut = $this->sut;
 		$sut->enqueue( 'merchant' );
-		$pending = $this->require_state_store()->get_record();
+		$pending = $this->state_store->get_record();
 		$this->assertIsArray( $pending );
-		$this->require_scheduler()->cancel( $pending['generation'], 1 );
+		$this->scheduler->cancel( $pending['generation'], 1 );
 
 		$sut->handle_reconcile( (string) $pending['generation'], '1' );
 
-		$claimed = $this->require_state_store()->get_record();
+		$claimed = $this->state_store->get_record();
 		$this->assertIsArray( $claimed );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $claimed['state'] );
 		$this->assertSame( 1, $claimed['attempt'] );
@@ -4297,11 +4297,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox Claiming an attempt retains only the newest bounded diagnostic steps.
 	 */
 	public function test_handle_reconcile_bounds_the_step_log(): void {
-		$sut = $this->require_sut();
+		$sut = $this->sut;
 		$sut->enqueue( 'merchant' );
-		$record = $this->require_state_store()->get_record();
+		$record = $this->state_store->get_record();
 		$this->assertIsArray( $record );
-		$this->require_scheduler()->cancel( $record['generation'], 1 );
+		$this->scheduler->cancel( $record['generation'], 1 );
 		$filled             = $record;
 		$filled['revision'] = $record['revision'] + 1;
 		$filled['step_log'] = array();
@@ -4311,11 +4311,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				'at'   => $record['updated_at'] + $index,
 			);
 		}
-		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $record, $filled ) );
+		$this->assertTrue( $this->state_store->compare_and_set_record( $record, $filled ) );
 
 		$sut->handle_reconcile( $filled['generation'], 1 );
 
-		$claimed = $this->require_state_store()->get_record();
+		$claimed = $this->state_store->get_record();
 		$this->assertIsArray( $claimed );
 		$this->assertCount( WooPaymentsCutoverStateStore::MAX_STEP_LOG_ENTRIES, $claimed['step_log'] );
 		$this->assertSame( 'step-2', $claimed['step_log'][0]['step'] );
@@ -4329,24 +4329,24 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @param string $superseded_by What superseded the claim: expiry, terminal or newer claim.
 	 */
 	public function test_defer_refuses_a_superseded_claim( string $superseded_by ): void {
-		$sut = $this->require_sut();
+		$sut = $this->sut;
 		$sut->enqueue( 'merchant' );
-		$record = $this->require_state_store()->get_record();
+		$record = $this->state_store->get_record();
 		$this->assertIsArray( $record );
-		$this->require_scheduler()->cancel( $record['generation'], 1 );
+		$this->scheduler->cancel( $record['generation'], 1 );
 		if ( 'expiry' === $superseded_by ) {
 			// An expired claim cannot persist a deferred completion before repair fences it.
 			$running                     = $this->create_running_record( $record );
 			$expired                     = $running;
 			$expired['revision']         = $running['revision'] + 1;
 			$expired['lease_expires_at'] = time() - 1;
-			$this->assertTrue( $this->require_state_store()->compare_and_set_record( $running, $expired ) );
+			$this->assertTrue( $this->state_store->compare_and_set_record( $running, $expired ) );
 			$stale   = $expired;
 			$current = $expired;
 		} elseif ( 'terminal' === $superseded_by ) {
 			// A fenced terminal update prevents the stale claimant from persisting its completion.
 			$sut->handle_reconcile( $record['generation'], 1 );
-			$claimed = $this->require_state_store()->get_record();
+			$claimed = $this->state_store->get_record();
 			$this->assertIsArray( $claimed );
 			$excluded                     = $claimed;
 			$excluded['revision']         = $claimed['revision'] + 1;
@@ -4354,7 +4354,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$excluded['attempt']          = $claimed['attempt'] + 1;
 			$excluded['lease_token']      = null;
 			$excluded['lease_expires_at'] = null;
-			$this->assertTrue( $this->require_state_store()->compare_and_set_record( $claimed, $excluded ) );
+			$this->assertTrue( $this->state_store->compare_and_set_record( $claimed, $excluded ) );
 			$stale   = $claimed;
 			$current = $excluded;
 		} else {
@@ -4367,7 +4367,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$recovered['next_attempt_at']  = time();
 			$recovered['lease_token']      = null;
 			$recovered['lease_expires_at'] = null;
-			$this->assertTrue( $this->require_state_store()->compare_and_set_record( $stale_claim, $recovered ) );
+			$this->assertTrue( $this->state_store->compare_and_set_record( $stale_claim, $recovered ) );
 			$live_claim                     = $recovered;
 			$live_claim['revision']         = $recovered['revision'] + 1;
 			$live_claim['state']            = WooPaymentsCutoverStateStore::STATE_RUNNING;
@@ -4376,13 +4376,13 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			$live_claim['next_attempt_at']  = null;
 			$live_claim['lease_token']      = 'second-worker-lease-token';
 			$live_claim['lease_expires_at'] = time() + WooPaymentsCutoverReconciliationJob::RUNNING_TIMEOUT;
-			$this->assertTrue( $this->require_state_store()->compare_and_set_record( $recovered, $live_claim ) );
+			$this->assertTrue( $this->state_store->compare_and_set_record( $recovered, $live_claim ) );
 			$stale   = $stale_claim;
 			$current = $live_claim;
 		}
 
 		$this->assertFalse( $sut->defer( $stale, array( 'builtin_transport_unavailable' ) ) );
-		$this->assertSame( $current, $this->require_state_store()->get_record() );
+		$this->assertSame( $current, $this->state_store->get_record() );
 	}
 
 	/**
@@ -4402,18 +4402,18 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @testdox A real running Action Scheduler callback can persist and schedule its successor.
 	 */
 	public function test_running_action_can_schedule_deferred_successor_inside_its_callback(): void {
-		$sut = $this->require_sut();
+		$sut = $this->sut;
 		$sut->register();
 		$defer_callback = function ( int $generation, int $attempt ) use ( $sut ): void {
 			unset( $generation, $attempt );
-			$claimed = $this->require_state_store()->get_record();
+			$claimed = $this->state_store->get_record();
 			$this->assertIsArray( $claimed );
 			$sut->defer( $claimed, array( 'builtin_transport_unavailable' ) );
 		};
 		add_action( 'woocommerce_woopayments_cutover_reconcile', $defer_callback, 20, 2 );
 		try {
 			$sut->enqueue( 'merchant' );
-			$pending = $this->require_state_store()->get_record();
+			$pending = $this->state_store->get_record();
 			$this->assertIsArray( $pending );
 
 			ActionScheduler_QueueRunner::instance()->process_action( $pending['action_id'], 'WooPayments cutover unit test' );
@@ -4421,12 +4421,12 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 			remove_action( 'woocommerce_woopayments_cutover_reconcile', $defer_callback, 20 );
 		}
 
-		$deferred = $this->require_state_store()->get_record();
+		$deferred = $this->state_store->get_record();
 		$this->assertIsArray( $deferred );
 		$this->assertSame( ActionScheduler_Store::STATUS_COMPLETE, ActionScheduler::store()->get_status( $pending['action_id'] ) );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DEFERRED, $deferred['state'] );
 		$this->assertGreaterThan( 0, $deferred['action_id'] );
-		$this->assertSame( $deferred['action_id'], $this->require_scheduler()->get_scheduled_action_id( $deferred['generation'], 2 ) );
+		$this->assertSame( $deferred['action_id'], $this->scheduler->get_scheduled_action_id( $deferred['generation'], 2 ) );
 	}
 
 	/**
@@ -4579,11 +4579,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$request_token->setValue( null );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
-		$this->require_scheduler()->cancel( $verification['generation'], $verification['attempt'] + 1 );
+		$this->scheduler->cancel( $verification['generation'], $verification['attempt'] + 1 );
 
 		$this->create_state_writing_job( false, $preflight )->handle_reconcile( $verification['generation'], $verification['attempt'] + 1 );
 
-		$done = $this->require_state_store()->get_record();
+		$done = $this->state_store->get_record();
 		$this->assertIsArray( $done );
 		$this->assertSame( WooPaymentsCutoverStateStore::STATE_DONE, $done['state'] );
 	}
@@ -4662,7 +4662,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				);
 			}
 		};
-		$job->init( $arbiter, $this->require_state_store(), $this->require_scheduler(), $preflight_service, $data_migration, $account_service ?? $this->create_inert_account_service() );
+		$job->init( $arbiter, $this->state_store, $this->scheduler, $preflight_service, $data_migration, $account_service ?? $this->create_inert_account_service() );
 		$this->jobs[] = $job;
 
 		return $job;
@@ -4825,36 +4825,9 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$running['next_attempt_at']  = null;
 		$running['lease_token']      = 'test-lease-token';
 		$running['lease_expires_at'] = time() + WooPaymentsCutoverReconciliationJob::RUNNING_TIMEOUT;
-		$this->assertTrue( $this->require_state_store()->compare_and_set_record( $record, $running ) );
+		$this->assertTrue( $this->state_store->compare_and_set_record( $record, $running ) );
 
 		return $running;
-	}
-
-	/**
-	 * Get the job under test.
-	 *
-	 * @return WooPaymentsCutoverReconciliationJob
-	 */
-	private function require_sut(): WooPaymentsCutoverReconciliationJob {
-		return $this->sut;
-	}
-
-	/**
-	 * Get the state store fixture.
-	 *
-	 * @return WooPaymentsCutoverStateStore
-	 */
-	private function require_state_store(): WooPaymentsCutoverStateStore {
-		return $this->state_store;
-	}
-
-	/**
-	 * Get the scheduler fixture.
-	 *
-	 * @return RecordingWooPaymentsCutoverActionScheduler
-	 */
-	private function require_scheduler(): RecordingWooPaymentsCutoverActionScheduler {
-		return $this->scheduler;
 	}
 
 	/**
@@ -4863,8 +4836,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @return int
 	 */
 	private function prepare_pending_action(): int {
-		$this->require_sut()->enqueue( 'merchant' );
-		$record = $this->require_state_store()->get_record();
+		$this->sut->enqueue( 'merchant' );
+		$record = $this->state_store->get_record();
 		$this->assertIsArray( $record );
 
 		return $record['action_id'];
@@ -4876,11 +4849,11 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 * @param int $old_action_id Superseded action ID.
 	 */
 	private function assert_repaired_action_replaced( int $old_action_id ): void {
-		$record = $this->require_state_store()->get_record();
+		$record = $this->state_store->get_record();
 		$this->assertIsArray( $record );
 		$this->assertGreaterThan( 0, $record['action_id'] );
 		$this->assertNotSame( $old_action_id, $record['action_id'] );
-		$this->assertSame( $record['action_id'], $this->require_scheduler()->get_scheduled_action_id( $record['generation'], $record['attempt'] + 1 ) );
+		$this->assertSame( $record['action_id'], $this->scheduler->get_scheduled_action_id( $record['generation'], $record['attempt'] + 1 ) );
 		$this->assertSame( 1, $this->count_cutover_actions() );
 	}
 

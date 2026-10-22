@@ -48,7 +48,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	 * @testdox Persists only complete valid records in the site-local autoloaded option.
 	 */
 	public function test_create_record_persists_a_valid_autoloaded_record(): void {
-		$sut    = $this->require_sut();
+		$sut    = $this->sut;
 		$record = $this->valid_record();
 
 		$this->assertTrue( $sut->create_record( $record ), 'A valid cutover record should persist.' );
@@ -62,7 +62,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	 */
 	public function test_first_save_replaces_the_absent_marker(): void {
 		global $wpdb;
-		$sut    = $this->require_sut();
+		$sut    = $this->sut;
 		$record = $this->valid_record();
 		add_option( WooPaymentsCutoverStateStore::OPTION_NAME, 'none', '', true ); // What WC_Install::create_options() seeds.
 		wp_load_alloptions( true );
@@ -82,7 +82,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	 */
 	public function test_first_save_over_the_absent_marker_fails_when_another_writer_wins(): void {
 		global $wpdb;
-		$sut                 = $this->require_sut();
+		$sut                 = $this->sut;
 		$winner              = $this->valid_record();
 		$loser               = $winner;
 		$loser['generation'] = $winner['generation'] + 1;
@@ -142,10 +142,10 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 			switch_to_blog( $blog_id );
 			$this->assert_first_save_after_a_missed_read_keeps_the_winner();
 			delete_option( WooPaymentsCutoverStateStore::OPTION_NAME );
-			$this->assertTrue( $this->require_sut()->create_record( $this->valid_record() ), 'A sub-site without a row should still get its first record.' );
+			$this->assertTrue( $this->sut->create_record( $this->valid_record() ), 'A sub-site without a row should still get its first record.' );
 			$this->assertArrayHasKey( WooPaymentsCutoverStateStore::OPTION_NAME, wp_load_alloptions( true ), 'The sub-site record should be autoloaded.' );
 			restore_current_blog();
-			$this->assertNull( $this->require_sut()->get_record(), 'The main site must not see the sub-site record.' );
+			$this->assertNull( $this->sut->get_record(), 'The main site must not see the sub-site record.' );
 		} finally {
 			while ( ms_is_switched() ) {
 				restore_current_blog();
@@ -161,7 +161,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	 */
 	private function assert_first_save_after_a_missed_read_keeps_the_winner( bool $same_record = false ): void {
 		global $wpdb;
-		$sut    = $this->require_sut();
+		$sut    = $this->sut;
 		$name   = WooPaymentsCutoverStateStore::OPTION_NAME;
 		$winner = $this->valid_record();
 		$loser  = $winner;
@@ -248,7 +248,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	 * @testdox Rejects records whose state is outside the persisted cutover vocabulary.
 	 */
 	public function test_create_record_rejects_an_invalid_state(): void {
-		$sut             = $this->require_sut();
+		$sut             = $this->sut;
 		$record          = $this->valid_record();
 		$record['state'] = 'unknown';
 
@@ -268,7 +268,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	 * @param string $state Persisted cutover state.
 	 */
 	public function test_create_record_accepts_each_durable_state( string $state ): void {
-		$sut             = $this->require_sut();
+		$sut             = $this->sut;
 		$record          = $this->valid_record();
 		$record['state'] = $state;
 		if ( WooPaymentsCutoverStateStore::STATE_RUNNING === $state ) {
@@ -284,7 +284,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	 * @testdox Treats incomplete or malformed persisted data as unavailable state.
 	 */
 	public function test_get_record_rejects_malformed_persisted_data(): void {
-		$sut = $this->require_sut();
+		$sut = $this->sut;
 		add_option(
 			WooPaymentsCutoverStateStore::OPTION_NAME,
 			array(
@@ -302,7 +302,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	 * @testdox A live lease excludes another worker and an expired lease can be recovered.
 	 */
 	public function test_lease_excludes_concurrent_workers_and_recovers_after_expiry(): void {
-		$sut         = $this->require_sut();
+		$sut         = $this->sut;
 		$now         = 1_700_000_000;
 		$first_token = $sut->acquire_write_lock( $now );
 
@@ -321,7 +321,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	 */
 	public function test_lease_acquisition_after_a_missed_read_keeps_the_other_workers_lease(): void {
 		global $wpdb;
-		$sut   = $this->require_sut();
+		$sut   = $this->sut;
 		$now   = 1_700_000_000;
 		$name  = WooPaymentsCutoverStateStore::LEASE_OPTION_NAME;
 		$other = array(
@@ -349,7 +349,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	 * @testdox Releasing a stale token cannot remove the current worker's lease.
 	 */
 	public function test_release_lease_ignores_a_stale_owner_token(): void {
-		$sut         = $this->require_sut();
+		$sut         = $this->sut;
 		$now         = 1_700_000_000;
 		$first_token = $sut->acquire_write_lock( $now );
 		$this->assertIsString( $first_token );
@@ -367,7 +367,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	 * @testdox An external fenced terminal transition prevents a stale worker from completing its claim.
 	 */
 	public function test_compare_and_set_rejects_a_stale_post_claim_write(): void {
-		$sut     = $this->require_sut();
+		$sut     = $this->sut;
 		$pending = $this->valid_record();
 		$this->assertTrue( $sut->create_record( $pending ) );
 
@@ -400,7 +400,7 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	 * @testdox Compare-and-set requires the exact serialized option bytes.
 	 */
 	public function test_compare_and_set_rejects_a_case_only_mismatch(): void {
-		$sut                            = $this->require_sut();
+		$sut                            = $this->sut;
 		$stored                         = $this->valid_record();
 		$stored['request_origin_token'] = 'Opaque-Token';
 		$this->assertTrue( $sut->create_record( $stored ) );
@@ -418,22 +418,13 @@ class WooPaymentsCutoverStateStoreTest extends WC_Unit_Test_Case {
 	 * @testdox Compare-and-set requires exactly the next monotonic revision.
 	 */
 	public function test_compare_and_set_rejects_a_non_monotonic_revision(): void {
-		$sut         = $this->require_sut();
+		$sut         = $this->sut;
 		$current     = $this->valid_record();
 		$replacement = $current;
 		$this->assertTrue( $sut->create_record( $current ) );
 
 		$this->assertFalse( $sut->compare_and_set_record( $current, $replacement ) );
 		$this->assertSame( $current, $sut->get_record() );
-	}
-
-	/**
-	 * Get the state store under test.
-	 *
-	 * @return WooPaymentsCutoverStateStore
-	 */
-	private function require_sut(): WooPaymentsCutoverStateStore {
-		return $this->sut;
 	}
 
 	/**
