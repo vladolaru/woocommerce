@@ -15,7 +15,7 @@ use WC_Unit_Test_Case;
  * nor recorded as an allowed difference is a build-time failure instead of a silent regression.
  *
  * Every fixture hook is covered by exactly one of three routes: proven at runtime by the arity
- * test's `probed_hooks()` (70 names), resolved here by a static native fire-site scan, or listed in
+ * test's `probed_hooks()` (69 names), resolved here by a static native fire-site scan, or listed in
  * `ALLOWED_DIFFERENCES` with its recorded authority. `BUILTIN_ONLY_HOOKS` (D6) separately pins the 4
  * native-only filters that carry no plugin fixture entry at all.
  *
@@ -83,6 +83,7 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 		'wc_payments_http'                                 => 'dropped by design',
 		'wc_payments_save_to_account_text'                 => 'Request-framework or other non-contract filter, a changelog item',
 		'wc_payments_set_gateway'                          => 'Request-framework or other non-contract filter, a changelog item',
+		'wc_payments_thank_you_page_bnpl_payment_method_logo_url' => 'deprecated by the WooPayments extension in 8.5.0 for wc_payments_thank_you_page_lpm_payment_method_logo_url, which fires; no caller outside the extension',
 		'wcpay_add_account_tos_agreement'                  => 'Request-framework or other non-contract filter, a changelog item',
 		'wcpay_calculated_total'                           => 'Request-framework or other non-contract filter, a changelog item',
 		'wcpay_cancel_intent_request'                      => 'Request-framework or other non-contract filter, a changelog item',
@@ -117,12 +118,12 @@ class WooPaymentsHookNamesContractTest extends WC_Unit_Test_Case {
 		'wcpay_plugins_page_js_settings'                   => 'dropped by design (no plugin row)',
 		'wcpay_prepare_terminal_payment_request'           => 'Request-framework or other non-contract filter, a changelog item',
 		'wcpay_refund_charge_request'                      => 'Request-framework or other non-contract filter, a changelog item',
-		'wcpay_review_prompt_experiment_variant'           => 'data/client-delta-10.8.0-11.1.0.tsv:81 and :105 (11.0.0 review-prompt rows, n/a, owner review 2026-09-12)',
+		'wcpay_review_prompt_experiment_variant'           => 'review prompt experiment of the extension 11.0.0, not part of the built-in WooPayments',
 		'wcpay_update_account_settings'                    => 'Request-framework or other non-contract filter, a changelog item',
 		'wcpay_update_intention_request'                   => 'Request-framework or other non-contract filter, a changelog item',
 		'wcpay_update_payment_result_on_error'             => 'Request-framework or other non-contract filter, a changelog item',
 		'wcpay_woopay_use_blog_token'                      => 'dropped by design (no mode switch)',
-		'woocommerce_payments_abilities_enabled'           => 'data/client-delta-10.8.0-11.1.0.tsv:20 (10.9.0 Abilities API registration, n/a)',
+		'woocommerce_payments_abilities_enabled'           => 'Abilities API registration of the extension 10.9.0, not part of the built-in WooPayments',
 		'woocommerce_payments_order_failed'                => 'Request-framework or other non-contract filter, a changelog item',
 		'woocommerce_woocommerce_payments_updated'         => 'dropped by design (no plugin version)',
 	);

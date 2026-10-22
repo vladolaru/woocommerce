@@ -790,13 +790,6 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 		$dark_icon_url   = WC()->plugin_url() . '/' . ltrim( $definition->get_dark_icon_asset_path( $account_country ), '/' );
 
 		if ( ! $is_express ) {
-			$icon_url = apply_filters_deprecated(
-				'wc_payments_thank_you_page_bnpl_payment_method_logo_url',
-				array( $icon_url, $definition->get_id() ),
-				'8.5.0',
-				'wc_payments_thank_you_page_lpm_payment_method_logo_url'
-			);
-
 			/**
 			 * Filters the payment method logo URL shown on the thank-you page.
 			 *

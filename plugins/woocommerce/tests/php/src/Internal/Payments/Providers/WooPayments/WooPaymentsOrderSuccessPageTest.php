@@ -493,14 +493,12 @@ class WooPaymentsOrderSuccessPageTest extends WC_Unit_Test_Case {
 			return $url;
 		};
 		add_filter( 'woocommerce_is_order_received_page', '__return_true' );
-		add_filter( 'wc_payments_thank_you_page_bnpl_payment_method_logo_url', $lpm_filter );
 		add_filter( 'wc_payments_thank_you_page_lpm_payment_method_logo_url', $lpm_filter );
 
 		try {
 			$title = $page->filter_payment_method_title( 'Payment Request', $order );
 		} finally {
 			remove_filter( 'woocommerce_is_order_received_page', '__return_true' );
-			remove_filter( 'wc_payments_thank_you_page_bnpl_payment_method_logo_url', $lpm_filter );
 			remove_filter( 'wc_payments_thank_you_page_lpm_payment_method_logo_url', $lpm_filter );
 		}
 

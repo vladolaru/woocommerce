@@ -67,7 +67,7 @@ use WP_REST_Request;
 use WC_Unit_Test_Case;
 
 /**
- * Pins the plugin 11.1.0 hook argument shapes (arity and declared types) for the 70 hooks of the
+ * Pins the plugin 11.1.0 hook argument shapes (arity and declared types) for the 69 hooks of the
  * retired `hook-shape-parity.php` manifest (38 probe groups), by driving native's own product-path entry point for each group and observing
  * the hook fire, instead of firing it directly.
  *
@@ -86,7 +86,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * plan's time box, with the reason, and the fixture arity they still need to satisfy statically
 	 * (via the name test's native fire-site scanner instead of a runtime probe).
 	 *
-	 * Empty: every one of the 70 manifest hooks has a working product-path probe below.
+	 * Empty: every one of the 69 manifest hooks has a working product-path probe below.
 	 *
 	 * @var array<string,string>
 	 */
@@ -101,7 +101,6 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 * @var array<string,true>
 	 */
 	private const TRIGGERS_DEPRECATION_NOTICE = array(
-		'wc_payments_thank_you_page_bnpl_payment_method_logo_url' => true,
 		'wcpay_multi_currency_should_hide_widgets' => true,
 	);
 
@@ -248,7 +247,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * The 70 manifest hooks this class proves at runtime, mapped to the private probe method that
+	 * The 69 manifest hooks this class proves at runtime, mapped to the private probe method that
 	 * reaches each one through native's own product path. Read by the name test
 	 * (`WooPaymentsHookNamesContractTest`) so it does not re-prove them statically.
 	 *
@@ -281,7 +280,6 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 			'wcpay_upe_available_payment_methods'          => 'probe_payment_method_availability',
 			'wcpay_payment_fields_js_config'               => 'probe_checkout_config',
 			'wc_payments_account_id_for_intent_confirmation' => 'probe_checkout_config',
-			'wc_payments_thank_you_page_bnpl_payment_method_logo_url' => 'probe_order_success_logos',
 			'wc_payments_thank_you_page_lpm_payment_method_logo_url' => 'probe_order_success_logos',
 			'wcpay_is_woopay_store_api_request'            => 'probe_store_api_request',
 			'wcpay_payment_request_is_product_supported'   => 'probe_express_product',
@@ -349,7 +347,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	public function test_probe_set_is_the_preserved_manifest(): void {
 		$probed = array_keys( self::probed_hooks() );
 
-		$this->assertCount( 70, $probed, 'The preserved hook-shape manifest has 70 hooks.' );
+		$this->assertCount( 69, $probed, 'The preserved hook-shape manifest has 69 hooks.' );
 		$this->assertSame( array_unique( $probed ), $probed, 'Every probed hook name must be unique.' );
 
 		$missing_from_fixture = array_diff( $probed, array_keys( self::$fixture_by_name ) );
