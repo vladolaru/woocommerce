@@ -7,8 +7,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
-use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Admin\Logging\LogHandlerFileV2;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Utilities\LoggingUtil;
 use WC_Log_Handler_DB;
 use WC_Log_Handler_File;
 use WC_Logger_Interface;
@@ -19,7 +20,8 @@ defined( 'ABSPATH' ) || exit;
  * Writes the log of the migration off Stripe Billing, and keeps it through WooCommerce's log cleanup.
  *
  * Client 11.1.0 does the same in `includes/subscriptions/class-wc-payments-subscription-migration-log-handler.php`, with the
- * same log source, so the WooPayments extension and this code write and keep one log.
+ * same log source, so the WooPayments extension and this code write and keep one log. The handler WooCommerce writes with
+ * comes from `LoggingUtil::get_default_handler()`, and both file handlers count as files, as in core's logging settings.
  *
  * @since 11.2.0
  * @internal
@@ -52,9 +54,11 @@ class StripeBillingMigrationLogHandler {
 	 * Keep migration logs through WooCommerce's log cleanup, which deletes logs at priority 10.
 	 */
 	public function init_hooks(): void {
-		if ( $this->has_file_logger_enabled() ) {
+		$handler = LoggingUtil::get_default_handler();
+
+		if ( in_array( $handler, array( LogHandlerFileV2::class, WC_Log_Handler_File::class ), true ) ) {
 			add_action( 'woocommerce_cleanup_logs', array( $this, 'extend_life_of_migration_file_logs' ), 5 );
-		} elseif ( $this->has_db_logger_enabled() ) {
+		} elseif ( WC_Log_Handler_DB::class === $handler ) {
 			add_action( 'woocommerce_cleanup_logs', array( $this, 'extend_life_of_migration_db_logs' ), 5 );
 			add_action( 'woocommerce_cleanup_logs', array( $this, 'restore_db_log_timestamps' ), 100 );
 		}
@@ -170,38 +174,5 @@ class StripeBillingMigrationLogHandler {
 		$today = (string) wc_get_container()->get( LegacyProxy::class )->call_function( 'gmdate', 'Y-m-d' );
 
 		return $matches[2] === $today ? $old_filename : "{$matches[1]}-{$today}-{$matches[3]}.log";
-	}
-
-	/**
-	 * Get the log handler class named by the `WC_LOG_HANDLER` constant, or the file handler when it names no loaded class.
-	 *
-	 * @return string
-	 */
-	private function get_default_log_handler_class(): string {
-		$handler_class = Constants::get_constant( 'WC_LOG_HANDLER' );
-
-		if ( ! is_string( $handler_class ) || ! class_exists( $handler_class ) ) {
-			$handler_class = WC_Log_Handler_File::class;
-		}
-
-		return $handler_class;
-	}
-
-	/**
-	 * Tell whether WooCommerce logs to files.
-	 *
-	 * @return bool
-	 */
-	private function has_file_logger_enabled(): bool {
-		return WC_Log_Handler_File::class === $this->get_default_log_handler_class();
-	}
-
-	/**
-	 * Tell whether WooCommerce logs to the database.
-	 *
-	 * @return bool
-	 */
-	private function has_db_logger_enabled(): bool {
-		return WC_Log_Handler_DB::class === $this->get_default_log_handler_class();
 	}
 }

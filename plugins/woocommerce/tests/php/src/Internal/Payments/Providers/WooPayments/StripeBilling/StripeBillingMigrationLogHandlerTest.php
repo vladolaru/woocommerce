@@ -4,7 +4,9 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling;
 
 use Automattic\Jetpack\Constants;
+use Automattic\WooCommerce\Internal\Admin\Logging\LogHandlerFileV2;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingMigrationLogHandler;
+use Automattic\WooCommerce\Utilities\LoggingUtil;
 use WC_Log_Handler_DB;
 use WC_Log_Handler_File;
 use WC_Logger;
@@ -69,9 +71,24 @@ class StripeBillingMigrationLogHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should rename an aged migration log file to today's date when WooCommerce cleans up logs, keeping its content.
+	 * @testdox Should rename an aged migration log file to today's date when WooCommerce cleans up logs, keeping its content: $_dataName.
+	 *
+	 * WooCommerce writes files with LogHandlerFileV2 by default, and names it in WC_LOG_HANDLER on stores that pin it
+	 * (Settings::get_default_handler()). Both are file handlers to core (Settings::get_settings_definitions()). The
+	 * constant row fails when the handler is detected only by an exact WC_Log_Handler_File match.
+	 *
+	 * @testWith ["default handler", null]
+	 *           ["WC_LOG_HANDLER names LogHandlerFileV2", "Automattic\\WooCommerce\\Internal\\Admin\\Logging\\LogHandlerFileV2"]
+	 *
+	 * @param string      $name     Case label.
+	 * @param string|null $constant WC_LOG_HANDLER value, or null to leave it undefined.
 	 */
-	public function test_keeps_aged_migration_log_files(): void {
+	public function test_keeps_aged_migration_log_files( string $name, ?string $constant ): void {
+		unset( $name );
+		if ( null !== $constant ) {
+			Constants::set_constant( 'WC_LOG_HANDLER', $constant );
+		}
+		$this->assertSame( $constant ?? LogHandlerFileV2::class, LoggingUtil::get_default_handler(), 'The premise: WooCommerce writes with LogHandlerFileV2.' );
 		$message = 'Migrating subscription #4712.';
 		$sut     = new StripeBillingMigrationLogHandler();
 		$sut->init_hooks();
@@ -114,12 +131,25 @@ class StripeBillingMigrationLogHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should keep aged migration log entries in the database through WooCommerce's cleanup, with their timestamps, while other aged entries go.
+	 * @testdox Should keep aged migration log entries in the database through WooCommerce's cleanup, with their timestamps, while other aged entries go: $_dataName.
+	 *
+	 * A store picks the database handler with WC_LOG_HANDLER or in WooCommerce > Status > Logs, which stores the
+	 * woocommerce_logs_default_handler option (Settings::get_default_handler()). The setting row fails when the handler
+	 * is read from the constant alone.
+	 *
+	 * @testWith ["WC_LOG_HANDLER"]
+	 *           ["logs setting"]
+	 *
+	 * @param string $chosen_by Where the store chose the database handler.
 	 */
-	public function test_keeps_aged_migration_log_entries_in_the_database(): void {
+	public function test_keeps_aged_migration_log_entries_in_the_database( string $chosen_by ): void {
 		global $wpdb;
 
-		Constants::set_constant( 'WC_LOG_HANDLER', WC_Log_Handler_DB::class );
+		if ( 'WC_LOG_HANDLER' === $chosen_by ) {
+			Constants::set_constant( 'WC_LOG_HANDLER', WC_Log_Handler_DB::class );
+		} else {
+			update_option( 'woocommerce_logs_default_handler', WC_Log_Handler_DB::class );
+		}
 		$db_logger = new WC_Logger( array( new WC_Log_Handler_DB() ) );
 		add_action( 'woocommerce_cleanup_logs', array( $db_logger, 'clear_expired_logs' ) );
 		$sut = new StripeBillingMigrationLogHandler();
