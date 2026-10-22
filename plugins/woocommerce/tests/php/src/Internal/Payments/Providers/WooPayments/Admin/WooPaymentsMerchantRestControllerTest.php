@@ -874,16 +874,15 @@ class WooPaymentsMerchantRestControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should $action WooPayments payment method promotions.
-	 * @testWith ["activate", "activate_promotion"]
-	 *           ["dismiss", "dismiss_promotion"]
+	 * @testWith ["activate"]
+	 *           ["dismiss"]
 	 *
-	 * @param string $action         Promotion action route suffix.
-	 * @param string $service_method Promotions service method the route calls.
+	 * @param string $action Promotion action: the route suffix, and the promotions service method without its `_promotion` suffix.
 	 */
-	public function test_pm_promotion_action_by_manager( string $action, string $service_method ): void {
+	public function test_pm_promotion_action_by_manager( string $action ): void {
 		$this->mock_pm_promotions_service
 			->expects( $this->once() )
-			->method( $service_method )
+			->method( $action . '_promotion' )
 			->with( 'klarna-promo__spotlight' )
 			->willReturn( true );
 

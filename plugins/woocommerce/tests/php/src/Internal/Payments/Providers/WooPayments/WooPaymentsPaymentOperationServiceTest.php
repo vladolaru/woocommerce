@@ -3589,7 +3589,7 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 * @param string $expected_subscription_payment Expected pinned subscription payment classification.
 	 */
 	public function test_subscription_checkout_composition_matches_11_1_request_shape( string $created_via, bool $is_renewal, string $expected_payment_type, string $expected_subscription_payment ): void {
-		$this->ensure_wcs_order_subscription_detector_double();
+		WooCommerceSubscriptionsDoubles::load_order_detector();
 		WooCommerceSubscriptionsDoubles::load_renewal_detector();
 
 		$user_id = self::factory()->user->create( array( 'role' => 'customer' ) );
@@ -10208,13 +10208,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 			$this->assertSame( 'wcpay_gateway_unavailable', $outcome->get_data()['error_code'], "The $operation must report the unavailable gateway." );
 			$this->assertSame( $operation, $outcome->get_data()['operation'], "The $operation must name itself." );
 		}
-	}
-
-	/**
-	 * Ensure a minimal WooCommerce Subscriptions order detector exists.
-	 */
-	private function ensure_wcs_order_subscription_detector_double(): void {
-		\Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles::load_order_detector();
 	}
 
 	/**

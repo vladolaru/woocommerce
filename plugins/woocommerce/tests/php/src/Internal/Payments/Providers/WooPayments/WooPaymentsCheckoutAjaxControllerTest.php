@@ -2952,7 +2952,6 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
 		\WC_Subscriptions_Change_Payment_Gateway::$will_update_all_payment_methods = false;
 		WooCommerceSubscriptionsDoubles::load();
-		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		WooCommerceSubscriptionsDoubles::load_order_detector();
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );
@@ -3088,7 +3087,6 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 	public function test_update_order_status_restores_the_change_request_flag_when_the_change_fails(): void {
 		WooCommerceSubscriptionsDoubles::load_change_payment_gateway();
 		WooCommerceSubscriptionsDoubles::load();
-		WooCommerceSubscriptionsDoubles::load_subscription_detector();
 		WooCommerceSubscriptionsDoubles::load_order_detector();
 		$user_id = $this->factory()->user->create();
 		wp_set_current_user( $user_id );

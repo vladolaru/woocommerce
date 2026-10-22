@@ -96,6 +96,7 @@ final class WooCommerceSubscriptionsDoubles {
 		self::load_order_subscriptions();
 
 		if ( ! function_exists( 'wcs_get_subscriptions_for_renewal_order' ) ) {
+			// Stands in for WooCommerce Subscriptions 9.2.0 `includes/core/wcs-renewal-functions.php:173-175`, which returns the renewal order's subscriptions.
 			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- WooCommerce Subscriptions is optional; tests need its renewal subscriptions lookup.
 			eval( 'namespace { function wcs_get_subscriptions_for_renewal_order( $order_id ) { $ids = $GLOBALS["' . self::RENEWAL_SUBSCRIPTIONS . '"][ $order_id ] ?? array(); return array_map( "wc_get_order", $ids ); } }' );
 		}
@@ -261,11 +262,11 @@ final class WooCommerceSubscriptionsDoubles {
 						"order_id" => is_object( $order ) && method_exists( $order, "get_id" ) ? $order->get_id() : 0,
 						"gateway_id" => $gateway_id,
 					);
-					// The real method sets the gateway, whose title then replaces the stored one.
-					if ( is_object( $order ) && method_exists( $order, "set_payment_method_title" ) ) {
-						$order->set_payment_method_title( "Card" );
-						$order->save();
-					}
+					// The real method sets the gateway and saves the order with the gateway's title, which replaces the stored one
+					// (subscriptions-core as bundled in WooPayments 11.1.0, includes/class-wc-subscriptions-change-payment-gateway.php:502, :519, :531).
+					// "Card" is the fixture gateway's title.
+					$order->set_payment_method_title( "Card" );
+					$order->save();
 				}
 
 				public static function will_subscription_update_all_payment_methods( $order ) {
