@@ -20,7 +20,6 @@ class MultiCurrencyProviderAccountResolverTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( MultiCurrencyProviderAccountResolver::class, $sut );
 		$this->assertFalse( $sut->is_provider_connected(), 'A missing legacy account should fail closed.' );
-		$this->assertSame( '', $sut->get_provider_onboarding_page_url(), 'A missing legacy account should not fabricate settings fallback URLs.' );
 	}
 
 	/**
@@ -28,10 +27,9 @@ class MultiCurrencyProviderAccountResolverTest extends WC_Unit_Test_Case {
 	 */
 	public function test_delegates_provider_state_to_configured_account_boundary(): void {
 		$sut = new MultiCurrencyProviderAccountResolver();
-		$sut->set_account( $this->create_account( true, 'https://example.test/onboarding' ) );
+		$sut->set_account( $this->create_account( true ) );
 
 		$this->assertTrue( $sut->is_provider_connected() );
-		$this->assertSame( 'https://example.test/onboarding', $sut->get_provider_onboarding_page_url() );
 	}
 
 	/**
@@ -39,22 +37,20 @@ class MultiCurrencyProviderAccountResolverTest extends WC_Unit_Test_Case {
 	 */
 	public function test_returns_defensive_defaults_when_configured_account_throws(): void {
 		$sut = new MultiCurrencyProviderAccountResolver();
-		$sut->set_account( $this->create_account( true, 'https://example.test/onboarding', true ) );
+		$sut->set_account( $this->create_account( true, true ) );
 
 		$this->assertFalse( $sut->is_provider_connected(), 'Provider connection checks should fail closed on account errors.' );
-		$this->assertSame( '', $sut->get_provider_onboarding_page_url(), 'Provider onboarding URL lookups should fail closed on account errors.' );
 	}
 
 	/**
 	 * Create a static account boundary.
 	 *
-	 * @param bool   $connected      Whether the provider account is connected.
-	 * @param string $onboarding_url Provider onboarding URL.
-	 * @param bool   $throws         Whether account methods should throw.
+	 * @param bool $connected Whether the provider account is connected.
+	 * @param bool $throws    Whether account methods should throw.
 	 * @return MultiCurrencyAccountInterface
 	 */
-	private function create_account( bool $connected, string $onboarding_url, bool $throws = false ): MultiCurrencyAccountInterface {
-		return new class( $connected, $onboarding_url, $throws ) implements MultiCurrencyAccountInterface {
+	private function create_account( bool $connected, bool $throws = false ): MultiCurrencyAccountInterface {
+		return new class( $connected, $throws ) implements MultiCurrencyAccountInterface {
 
 			/**
 			 * Whether the provider account is connected.
@@ -62,13 +58,6 @@ class MultiCurrencyProviderAccountResolverTest extends WC_Unit_Test_Case {
 			 * @var bool
 			 */
 			private bool $connected;
-
-			/**
-			 * Provider onboarding URL.
-			 *
-			 * @var string
-			 */
-			private string $onboarding_url;
 
 			/**
 			 * Whether account methods should throw.
@@ -80,14 +69,12 @@ class MultiCurrencyProviderAccountResolverTest extends WC_Unit_Test_Case {
 			/**
 			 * Constructor.
 			 *
-			 * @param bool   $connected      Whether the provider account is connected.
-			 * @param string $onboarding_url Provider onboarding URL.
-			 * @param bool   $throws         Whether account methods should throw.
+			 * @param bool $connected Whether the provider account is connected.
+			 * @param bool $throws    Whether account methods should throw.
 			 */
-			public function __construct( bool $connected, string $onboarding_url, bool $throws ) {
-				$this->connected      = $connected;
-				$this->onboarding_url = $onboarding_url;
-				$this->throws         = $throws;
+			public function __construct( bool $connected, bool $throws ) {
+				$this->connected = $connected;
+				$this->throws    = $throws;
 			}
 
 			/**
@@ -130,28 +117,6 @@ class MultiCurrencyProviderAccountResolverTest extends WC_Unit_Test_Case {
 			 */
 			public function get_account_customer_supported_currencies(): array {
 				return array();
-			}
-
-			/**
-			 * Get provider-supported countries.
-			 *
-			 * @return string[]
-			 */
-			public function get_supported_countries(): array {
-				return array();
-			}
-
-			/**
-			 * Get the provider onboarding URL.
-			 *
-			 * @return string
-			 */
-			public function get_provider_onboarding_page_url(): string {
-				if ( $this->throws ) {
-					throw new \RuntimeException( 'Provider onboarding unavailable.' );
-				}
-
-				return $this->onboarding_url;
 			}
 		};
 	}

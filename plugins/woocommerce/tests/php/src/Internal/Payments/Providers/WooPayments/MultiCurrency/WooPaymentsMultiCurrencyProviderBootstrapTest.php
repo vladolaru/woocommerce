@@ -45,7 +45,6 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 		$context['bootstrap']->register();
 
 		$this->assertTrue( $context['account_resolver']->is_provider_connected(), 'Resolver should delegate plugin-owned connection checks to the legacy adapter.' );
-		$this->assertSame( 'https://example.test/onboarding', $context['account_resolver']->get_provider_onboarding_page_url(), 'Resolver should delegate plugin-owned onboarding URL lookups to the legacy adapter.' );
 		$this->assertSame(
 			array( 'eur' => 0.82 ),
 			$context['provider_registry_factory']->create()->get_provider( WooPaymentsCurrencyRateProvider::PROVIDER_ID )->get_currency_rates( 'usd', array( 'eur' ) ),
@@ -62,7 +61,6 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 		$context['bootstrap']->register();
 
 		$this->assertTrue( $context['account_resolver']->is_provider_connected(), 'Resolver should delegate native-owned connection checks to the native adapter.' );
-		$this->assertStringContainsString( '/woopayments/onboarding', rawurldecode( $context['account_resolver']->get_provider_onboarding_page_url() ) );
 		$this->assertSame(
 			array( 'eur' => 0.91 ),
 			$context['provider_registry_factory']->create()->get_provider( WooPaymentsCurrencyRateProvider::PROVIDER_ID )->get_currency_rates( 'usd', array( 'eur' ) ),
@@ -79,7 +77,6 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 		$context['bootstrap']->register();
 
 		$this->assertFalse( $context['account_resolver']->is_provider_connected(), 'Resolver should stay disconnected without a runtime owner.' );
-		$this->assertSame( '', $context['account_resolver']->get_provider_onboarding_page_url(), 'Resolver should stay unconfigured without a runtime owner.' );
 		$this->assertSame( array(), $context['provider_registry_factory']->create()->get_providers(), 'Provider registry should stay empty without a runtime owner.' );
 	}
 
@@ -283,15 +280,6 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 				unset( $on_error );
 
 				return true;
-			}
-
-			/**
-			 * Get the provider onboarding URL.
-			 *
-			 * @return string
-			 */
-			public function get_provider_onboarding_page_url(): string {
-				return 'https://example.test/onboarding';
 			}
 
 			/**

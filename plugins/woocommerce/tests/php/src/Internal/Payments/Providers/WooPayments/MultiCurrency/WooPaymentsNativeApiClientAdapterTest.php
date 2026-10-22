@@ -262,23 +262,5 @@ class ConnectedMultiCurrencyAccount implements MultiCurrencyAccountInterface {
 	public function get_account_customer_supported_currencies(): array {
 		return array();
 	}
-
-	/**
-	 * Return no supported countries.
-	 *
-	 * @return array<string,string>
-	 */
-	public function get_supported_countries(): array {
-		return array();
-	}
-
-	/**
-	 * Return no onboarding URL.
-	 *
-	 * @return string
-	 */
-	public function get_provider_onboarding_page_url(): string {
-		return '';
-	}
 }
 	// phpcs:enable Generic.Files.OneObjectStructurePerFile.MultipleFound, Squiz.Classes.ClassFileName.NoMatch, SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName

@@ -51,21 +51,4 @@ class MultiCurrencyProviderAccountResolver {
 			return false;
 		}
 	}
-
-	/**
-	 * Get the active provider onboarding URL.
-	 *
-	 * @return string
-	 */
-	public function get_provider_onboarding_page_url(): string {
-		if ( null === $this->account ) {
-			return '';
-		}
-
-		try {
-			return $this->account->get_provider_onboarding_page_url();
-		} catch ( \Throwable $e ) {
-			return '';
-		}
-	}
 }

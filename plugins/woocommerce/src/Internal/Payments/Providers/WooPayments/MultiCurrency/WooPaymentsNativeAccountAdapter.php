@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyAccountInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 
@@ -88,32 +87,6 @@ class WooPaymentsNativeAccountAdapter implements MultiCurrencyAccountInterface {
 			return $this->account_service->get_customer_supported_currencies();
 		} catch ( \Throwable $e ) {
 			return array();
-		}
-	}
-
-	/**
-	 * Get provider-supported countries.
-	 *
-	 * @return array<string,string>
-	 */
-	public function get_supported_countries(): array {
-		try {
-			return $this->account_service->get_supported_countries();
-		} catch ( \Throwable $e ) {
-			return array();
-		}
-	}
-
-	/**
-	 * Get the provider onboarding URL.
-	 *
-	 * @return string
-	 */
-	public function get_provider_onboarding_page_url(): string {
-		try {
-			return Utils::wc_payments_settings_url( '/woopayments/onboarding' );
-		} catch ( \Throwable $e ) {
-			return '';
 		}
 	}
 }

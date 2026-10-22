@@ -44,18 +44,4 @@ interface MultiCurrencyAccountInterface {
 	 * @return string[]
 	 */
 	public function get_account_customer_supported_currencies(): array;
-
-	/**
-	 * Get provider-supported countries.
-	 *
-	 * @return array<string,string> Country labels keyed by ISO country code.
-	 */
-	public function get_supported_countries(): array;
-
-	/**
-	 * Get the provider onboarding URL.
-	 *
-	 * @return string
-	 */
-	public function get_provider_onboarding_page_url(): string;
 }

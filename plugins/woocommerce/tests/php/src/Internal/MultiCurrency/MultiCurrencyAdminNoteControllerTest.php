@@ -258,24 +258,6 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 			public function get_account_customer_supported_currencies(): array {
 				return array();
 			}
-
-			/**
-			 * Get provider-supported countries.
-			 *
-			 * @return string[]
-			 */
-			public function get_supported_countries(): array {
-				return array();
-			}
-
-			/**
-			 * Get the provider onboarding URL.
-			 *
-			 * @return string
-			 */
-			public function get_provider_onboarding_page_url(): string {
-				return '';
-			}
 		};
 	}
 

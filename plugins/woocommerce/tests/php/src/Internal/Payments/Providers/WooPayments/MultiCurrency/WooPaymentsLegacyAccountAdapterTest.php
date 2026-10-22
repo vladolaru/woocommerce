@@ -32,8 +32,6 @@ class WooPaymentsLegacyAccountAdapterTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $sut->is_account_rejected() );
 		$this->assertFalse( $sut->get_cached_account_data() );
 		$this->assertSame( array(), $sut->get_account_customer_supported_currencies() );
-		$this->assertSame( array(), $sut->get_supported_countries() );
-		$this->assertSame( '', $sut->get_provider_onboarding_page_url() );
 	}
 
 	/**
@@ -48,8 +46,6 @@ class WooPaymentsLegacyAccountAdapterTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $sut->is_account_rejected() );
 		$this->assertSame( array( 'account_id' => 'acct_123' ), $sut->get_cached_account_data( true ) );
 		$this->assertSame( array( 'GBP', 'EUR' ), $sut->get_account_customer_supported_currencies() );
-		$this->assertSame( array( 'US', 'GB' ), $sut->get_supported_countries() );
-		$this->assertSame( 'https://example.test/onboarding', $sut->get_provider_onboarding_page_url() );
 		$this->assertTrue( $account->forced_refresh );
 	}
 
@@ -159,24 +155,6 @@ class WooPaymentsLegacyAccountAdapterTest extends WC_Unit_Test_Case {
 			 */
 			public function get_account_customer_supported_currencies(): array {
 				return array( 'GBP', 'EUR' );
-			}
-
-			/**
-			 * Get supported countries.
-			 *
-			 * @return string[]
-			 */
-			public function get_supported_countries(): array {
-				return array( 'US', 'GB' );
-			}
-
-			/**
-			 * Get the onboarding URL.
-			 *
-			 * @return string
-			 */
-			public function get_provider_onboarding_page_url(): string {
-				return 'https://example.test/onboarding';
 			}
 		};
 	}

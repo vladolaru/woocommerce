@@ -104,33 +104,6 @@ class WooPaymentsLegacyAccountAdapter implements MultiCurrencyAccountInterface {
 	}
 
 	/**
-	 * Get provider-supported countries.
-	 *
-	 * @return string[]
-	 */
-	public function get_supported_countries(): array {
-		return $this->call_legacy_array_method( 'get_supported_countries' );
-	}
-
-	/**
-	 * Get the provider onboarding URL.
-	 *
-	 * @return string
-	 */
-	public function get_provider_onboarding_page_url(): string {
-		$account = $this->get_legacy_account();
-		if ( ! $account || ! is_callable( array( $account, 'get_provider_onboarding_page_url' ) ) ) {
-			return '';
-		}
-
-		try {
-			return (string) $account->get_provider_onboarding_page_url();
-		} catch ( \Throwable $e ) {
-			return '';
-		}
-	}
-
-	/**
 	 * Call a legacy account method expected to return an array.
 	 *
 	 * @param string $method_name Method name.
