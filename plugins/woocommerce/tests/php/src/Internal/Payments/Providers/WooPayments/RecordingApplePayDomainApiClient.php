@@ -21,6 +21,9 @@ class RecordingApplePayDomainApiClient extends WooPaymentsApiClient {
 	/**
 	 * Response returned by register_apple_pay_domain().
 	 *
+	 * The default is the client's own synthetic success case (tests/unit/test-class-wc-payments-apple-pay-registration.php:114),
+	 * not a recorded platform response.
+	 *
 	 * @var array<string,mixed>
 	 */
 	public array $response = array(
