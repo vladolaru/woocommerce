@@ -106,6 +106,29 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		foreach ( $this->cache_invalidation_hooks as $hook ) {
 			$this->assertSame( 10, has_action( $hook, array( $sut, 'clear_subscription_type_cache' ) ), $hook );
 		}
+
+		$this->assertSame(
+			array(
+				'option_woocommerce_subscriptions_multiple_purchase' => array( 'maybe_disable_mixed_cart' => array( 50, 1 ) ),
+				'wc_price'                                => array( 'maybe_get_explicit_format_for_subscription_total' => array( 50, 1 ) ),
+				'wcpay_multi_currency_override_selected_currency' => array( 'override_selected_currency' => array( 50, 1 ) ),
+				'wcpay_multi_currency_should_convert_coupon_amount' => array( 'should_convert_coupon_amount' => array( 50, 2 ) ),
+				'wcpay_multi_currency_should_convert_product_price' => array( 'should_convert_product_price' => array( 50, 2 ) ),
+				'wcpay_multi_currency_should_disable_currency_switching' => array( 'should_disable_currency_switching' => array( 50, 1 ) ),
+				'woocommerce_add_to_cart'                 => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
+				'woocommerce_cart_emptied'                => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
+				'woocommerce_cart_item_removed'           => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
+				'woocommerce_cart_item_restored'          => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
+				'woocommerce_cart_loaded_from_session'    => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
+				'woocommerce_cart_updated'                => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
+				'woocommerce_get_formatted_subscription_total' => array( 'maybe_clear_current_my_account_subscription' => array( 50, 2 ) ),
+				'woocommerce_product_get__subscription_sign_up_fee' => array( 'get_subscription_product_signup_fee' => array( 50, 2 ) ),
+				'woocommerce_product_variation_get__subscription_sign_up_fee' => array( 'get_subscription_product_signup_fee' => array( 50, 2 ) ),
+				'woocommerce_subscription_price_string_details' => array( 'maybe_set_current_my_account_subscription' => array( 50, 2 ) ),
+				'woocommerce_subscriptions_product_price' => array( 'get_subscription_product_price' => array( 50, 2 ) ),
+			),
+			RegisteredHooks::of( $sut )
+		);
 	}
 
 	/**
@@ -278,6 +301,25 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
+	 * @testdox Should leave subscription totals unchanged for a subscription without a currency code.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_leaves_subscription_totals_unchanged_without_a_currency_code(): void {
+		$sut          = $this->create_controller();
+		$subscription = $this->create_subscription( ' ' );
+		CallStack::run(
+			array( 'WC_Subscription->get_formatted_order_total' ),
+			function () use ( $sut, $subscription ): void {
+				$sut->maybe_set_current_my_account_subscription( array(), $subscription );
+
+				$this->assertSame( '<span>$10.00</span>', $sut->maybe_get_explicit_format_for_subscription_total( '<span>$10.00</span>' ) );
+				$this->assertFalse( $sut->override_selected_currency( false ), 'A blank currency code is no currency to switch to.' );
+			}
+		);
+	}
+
+	/**
 	 * @testdox Should disable switching for subscription cart or switch request contexts.
 	 */
 	public function test_disables_switching_for_subscription_contexts(): void {
@@ -311,6 +353,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		$renewal = $this->create_controller();
 		$renewal->set_subscription_cart_item( 'renewal', $this->create_subscription( 'EUR' ) );
 		$this->assertFalse( CallStack::run( array( 'WC_Cart_Totals->calculate_item_totals' ), fn() => $renewal->should_convert_product_price( true, $product ) ) );
+		$this->assertTrue( $renewal->should_convert_product_price( true, $product ), 'Outside a price calculation the renewal cart converts.' );
 
 		$renewal_setup = $this->create_controller();
 		$renewal_setup->set_subscription_cart_item( 'renewal', $this->create_subscription( 'EUR' ) );

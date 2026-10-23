@@ -10,7 +10,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySubscriptionsCompatibilityProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -40,6 +39,20 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 		'woocommerce_add_to_cart',
 		'woocommerce_cart_item_removed',
 		'woocommerce_cart_item_restored',
+	);
+
+	private const SUBSCRIPTION_PERCENT_COUPON_TYPES = array(
+		'recurring_percent',
+		'sign_up_fee_percent',
+		'renewal_percent',
+	);
+
+	private const SUBSCRIPTION_RECURRING_COUPON_TYPES = array(
+		'recurring_fee',
+		'recurring_percent',
+		'renewal_fee',
+		'renewal_percent',
+		'renewal_cart',
 	);
 
 	private const PRODUCT_PRICE_CALCULATION_CALLS = array(
@@ -216,11 +229,14 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 			return;
 		}
 
-		$this->add_action_once( 'plugins_loaded', array( $this, 'register_subscription_filters' ), 20 );
+		add_action( 'plugins_loaded', array( $this, 'register_subscription_filters' ), 20 );
 	}
 
 	/**
 	 * Register Subscriptions compatibility filters after supported runtimes have loaded.
+	 *
+	 * The cart-lifecycle hooks fire whenever the cart membership can change within a request, so the
+	 * subscription cart-type cache is only served while the cart is stable.
 	 *
 	 * @internal
 	 */
@@ -234,37 +250,20 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 			return;
 		}
 
-		foreach ( MultiCurrencySubscriptionsCompatibilityProjectionService::get_hook_manifest()['filters'] as $filter ) {
-			$callback = array( $this, (string) $filter['callback'] );
-			if ( ! is_callable( $callback ) ) {
-				continue;
-			}
-
-			$this->add_filter_once(
-				(string) $filter['hook'],
-				$callback,
-				(int) $filter['priority'],
-				(int) $filter['accepted_args']
-			);
-		}
-
-		$this->register_subscription_type_cache_invalidation();
-	}
-
-	/**
-	 * Register the cart-lifecycle hooks that invalidate the subscription cart-type cache.
-	 *
-	 * These fire whenever the cart membership can change within a request, so the cache is
-	 * only ever served while the cart is stable. Over-invalidation is safe: the next lookup
-	 * simply recomputes from the current cart/session state.
-	 *
-	 * @internal
-	 */
-	private function register_subscription_type_cache_invalidation(): void {
-		$callback = array( $this, 'clear_subscription_type_cache' );
+		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'override_selected_currency', array( $this, 'override_selected_currency' ), 50 );
+		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_disable_currency_switching', array( $this, 'should_disable_currency_switching' ), 50 );
+		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_convert_product_price', array( $this, 'should_convert_product_price' ), 50, 2 );
+		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_convert_coupon_amount', array( $this, 'should_convert_coupon_amount' ), 50, 2 );
+		add_filter( 'woocommerce_subscriptions_product_price', array( $this, 'get_subscription_product_price' ), 50, 2 );
+		add_filter( 'woocommerce_product_get__subscription_sign_up_fee', array( $this, 'get_subscription_product_signup_fee' ), 50, 2 );
+		add_filter( 'woocommerce_product_variation_get__subscription_sign_up_fee', array( $this, 'get_subscription_product_signup_fee' ), 50, 2 );
+		add_filter( 'woocommerce_subscription_price_string_details', array( $this, 'maybe_set_current_my_account_subscription' ), 50, 2 );
+		add_filter( 'woocommerce_get_formatted_subscription_total', array( $this, 'maybe_clear_current_my_account_subscription' ), 50, 2 );
+		add_filter( 'wc_price', array( $this, 'maybe_get_explicit_format_for_subscription_total' ), 50 );
+		add_filter( 'option_woocommerce_subscriptions_multiple_purchase', array( $this, 'maybe_disable_mixed_cart' ), 50 );
 
 		foreach ( self::SUBSCRIPTION_TYPE_CACHE_INVALIDATION_HOOKS as $hook ) {
-			$this->add_action_once( $hook, $callback );
+			add_action( $hook, array( $this, 'clear_subscription_type_cache' ) );
 		}
 	}
 
@@ -316,11 +315,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	 * @return bool
 	 */
 	public function should_disable_currency_switching( bool $should_disable ): bool {
-		return MultiCurrencySubscriptionsCompatibilityProjectionService::should_disable_currency_switching(
-			$should_disable,
-			$this->has_subscription_cart_context(),
-			null !== $this->get_subscription_from_switch_request()
-		);
+		return $should_disable || $this->has_subscription_cart_context() || null !== $this->get_subscription_from_switch_request();
 	}
 
 	/**
@@ -333,13 +328,14 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	public function should_convert_product_price( bool $should_convert, $product ): bool {
 		unset( $product );
 
-		return MultiCurrencySubscriptionsCompatibilityProjectionService::should_convert_product_price(
-			$should_convert,
-			null !== $this->get_subscription_type_from_cart( 'renewal' ),
-			null !== $this->get_subscription_type_from_cart( 'resubscribe' ),
-			MultiCurrencyRequestContext::is_call_in_backtrace( self::RENEWAL_SETUP_CALLS ),
-			MultiCurrencyRequestContext::is_call_in_backtrace( self::PRODUCT_PRICE_CALCULATION_CALLS )
-		);
+		// Renewal and resubscribe carts already hold the subscription's prices while totals calculate,
+		// except while Subscriptions sets up the renewal cart.
+		return $should_convert
+			&& ! (
+				( null !== $this->get_subscription_type_from_cart( 'renewal' ) || null !== $this->get_subscription_type_from_cart( 'resubscribe' ) )
+				&& ! MultiCurrencyRequestContext::is_call_in_backtrace( self::RENEWAL_SETUP_CALLS )
+				&& MultiCurrencyRequestContext::is_call_in_backtrace( self::PRODUCT_PRICE_CALCULATION_CALLS )
+			);
 	}
 
 	/**
@@ -350,12 +346,18 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	 * @return bool
 	 */
 	public function should_convert_coupon_amount( bool $should_convert, $coupon ): bool {
-		return MultiCurrencySubscriptionsCompatibilityProjectionService::should_convert_coupon_amount(
-			$should_convert,
-			$this->get_coupon_discount_type( $coupon ),
-			null !== $this->get_subscription_type_from_cart( 'renewal' ),
-			MultiCurrencyRequestContext::is_call_in_backtrace( self::EARLY_RENEWAL_SETUP_CALLS ),
-			MultiCurrencyRequestContext::is_call_in_backtrace( self::APPLY_COUPON_CALLS )
+		$discount_type = strtolower( trim( $this->get_coupon_discount_type( $coupon ) ) );
+
+		if ( ! $should_convert || in_array( $discount_type, self::SUBSCRIPTION_PERCENT_COUPON_TYPES, true ) ) {
+			return false;
+		}
+
+		// In a renewal cart a recurring coupon already holds its converted amount when applied; an early renewal's setup reads the original amount.
+		return ! (
+			null !== $this->get_subscription_type_from_cart( 'renewal' )
+			&& ! MultiCurrencyRequestContext::is_call_in_backtrace( self::EARLY_RENEWAL_SETUP_CALLS )
+			&& MultiCurrencyRequestContext::is_call_in_backtrace( self::APPLY_COUPON_CALLS )
+			&& in_array( $discount_type, self::SUBSCRIPTION_RECURRING_COUPON_TYPES, true )
 		);
 	}
 
@@ -367,12 +369,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	 * @return mixed
 	 */
 	public function get_subscription_product_price( $price, $product ) {
-		if (
-			! MultiCurrencySubscriptionsCompatibilityProjectionService::should_convert_subscription_product_price(
-				$price,
-				$this->should_convert_product_price( true, $product )
-			)
-		) {
+		if ( ! $price || ! $this->should_convert_product_price( true, $product ) ) {
 			return $price;
 		}
 
@@ -387,38 +384,26 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	 * @return mixed
 	 */
 	public function get_subscription_product_signup_fee( $price, $product ) {
-		$is_switch_product                   = false;
-		$is_subscription_price_setup_context = false;
-		$is_switch_proration_context         = false;
-		$has_changed_signup_fee_meta         = false;
-
 		$cart_item = $this->get_subscription_type_from_cart( 'switch' );
 		if ( null !== $cart_item ) {
-			$product_id                = $this->get_product_id( $product );
-			$switch_product_id         = $this->get_switch_cart_item_product_id( $cart_item );
 			$previous_switch_cart_item = $this->switch_cart_item;
-			$current_switch_cart_item  = $this->get_switch_cart_item_key( $cart_item );
+			$this->switch_cart_item    = $this->get_switch_cart_item_key( $cart_item );
 
-			$this->switch_cart_item = $current_switch_cart_item;
-
-			$is_switch_product = $product_id === $switch_product_id;
-
-			if ( $is_switch_product ) {
-				$is_subscription_price_setup_context = MultiCurrencyRequestContext::is_call_in_backtrace( self::SUBSCRIPTION_PRICE_SETUP_CALLS );
-				$is_switch_proration_context         = $this->is_subscription_switch_proration_context( $current_switch_cart_item, $previous_switch_cart_item );
-				$has_changed_signup_fee_meta         = $this->has_changed_subscription_signup_fee_meta( $product, $current_switch_cart_item, $previous_switch_cart_item );
+			// A switch reads its product's sign-up fee several times while it prorates, and not every read converts.
+			if (
+				$price
+				&& $this->get_product_id( $product ) === $this->get_switch_cart_item_product_id( $cart_item )
+				&& (
+					MultiCurrencyRequestContext::is_call_in_backtrace( self::SUBSCRIPTION_PRICE_SETUP_CALLS )
+					|| $this->is_subscription_switch_proration_context( $this->switch_cart_item, $previous_switch_cart_item )
+					|| $this->has_changed_subscription_signup_fee_meta( $product, $this->switch_cart_item, $previous_switch_cart_item )
+				)
+			) {
+				return $price;
 			}
 		}
 
-		if (
-			! MultiCurrencySubscriptionsCompatibilityProjectionService::should_convert_subscription_signup_fee(
-				$price,
-				$is_switch_product,
-				$is_subscription_price_setup_context,
-				$is_switch_proration_context,
-				$has_changed_signup_fee_meta
-			)
-		) {
+		if ( ! $price ) {
 			return $price;
 		}
 
@@ -434,9 +419,9 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	 */
 	public function maybe_set_current_my_account_subscription( $subscription_details, $subscription ): array {
 		if (
-			MultiCurrencySubscriptionsCompatibilityProjectionService::should_set_current_my_account_subscription(
-				MultiCurrencyRequestContext::is_call_in_backtrace( self::MY_ACCOUNT_SUBSCRIPTIONS_TEMPLATE_CALLS ),
-				MultiCurrencyRequestContext::is_call_in_backtrace( self::FORMATTED_SUBSCRIPTION_TOTAL_CALLS )
+			(
+				MultiCurrencyRequestContext::is_call_in_backtrace( self::MY_ACCOUNT_SUBSCRIPTIONS_TEMPLATE_CALLS )
+				|| MultiCurrencyRequestContext::is_call_in_backtrace( self::FORMATTED_SUBSCRIPTION_TOTAL_CALLS )
 			)
 			&& null !== $this->get_subscription_currency( is_object( $subscription ) ? $subscription : null )
 		) {
@@ -470,16 +455,15 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	 * @return string
 	 */
 	public function maybe_get_explicit_format_for_subscription_total( $html_price ): string {
+		$html_price    = (string) $html_price;
 		$currency_code = $this->get_subscription_currency( $this->current_my_account_subscription );
-		if ( null === $currency_code ) {
-			return (string) $html_price;
+		if ( null === $currency_code || ! $this->get_state_builder()->build()->has_additional_currencies_enabled() ) {
+			return $html_price;
 		}
 
-		return MultiCurrencySubscriptionsCompatibilityProjectionService::get_explicit_subscription_total_price_html(
-			(string) $html_price,
-			$currency_code,
-			$this->get_state_builder()->build()->has_additional_currencies_enabled()
-		);
+		$price_to_check = html_entity_decode( wp_strip_all_tags( $html_price ), ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401 );
+
+		return false === strpos( $price_to_check, $currency_code ) ? $html_price . ' ' . $currency_code : $html_price;
 	}
 
 	/**
@@ -489,10 +473,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	 * @return mixed
 	 */
 	public function maybe_disable_mixed_cart( $value ) {
-		return MultiCurrencySubscriptionsCompatibilityProjectionService::maybe_disable_mixed_cart(
-			$value,
-			null !== $this->get_subscription_type_from_cart( 'switch' )
-		);
+		return null !== $this->get_subscription_type_from_cart( 'switch' ) ? 'no' : $value;
 	}
 
 	/**
@@ -838,33 +819,5 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 		}
 
 		return $this->state_builder;
-	}
-
-	/**
-	 * Register a filter only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_filter_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_filter( $hook, $callback ) ) {
-			add_filter( $hook, $callback, $priority, $accepted_args );
-		}
-	}
-
-	/**
-	 * Register an action only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_action_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_action( $hook, $callback ) ) {
-			add_action( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }
