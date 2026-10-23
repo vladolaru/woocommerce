@@ -437,6 +437,27 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should leave the selected currency unchanged when a sanitizer filter returns false for the currency argument.
+	 */
+	public function test_leaves_selected_currency_unchanged_when_the_sanitizer_returns_false(): void {
+		$service          = $this->create_persistence_service();
+		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
+		$_GET['currency'] = 'gbp';
+		add_filter(
+			'sanitize_text_field',
+			static function ( $filtered, $str ) {
+				return 'gbp' === $str ? false : $filtered;
+			},
+			10,
+			2
+		);
+
+		$sut->handle_init();
+
+		$this->assertSame( array(), $service->updated_currencies );
+	}
+
+	/**
 	 * @testdox Should update currency from geolocation when automatic switching is enabled.
 	 */
 	public function test_updates_currency_from_geolocation_when_auto_currency_is_enabled(): void {

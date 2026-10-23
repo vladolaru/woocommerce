@@ -338,9 +338,19 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 	 */
 	public function test_appends_percentage_cart_item_display_prices(): void {
 		add_filter( 'woocommerce_addons_add_cart_price_to_value', '__return_true' );
+		// The cart's own price filter marks the output, so the value shows the price came through WC()->cart.
+		add_filter(
+			'woocommerce_cart_product_price',
+			static function ( $price_html, $product ) {
+				unset( $price_html );
+				return 'cart:' . $product->get_price();
+			},
+			10,
+			2
+		);
 
 		$sut     = $this->create_controller();
-		$product = $this->create_product( 33 );
+		$product = new \WC_Product_Simple();
 		$sut->set_product( 33, $product );
 
 		$result = $sut->get_item_data(
@@ -554,16 +564,6 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 				unset( $product );
 
 				return 'formatted:' . $price;
-			}
-
-			/**
-			 * Get a formatted cart product price.
-			 *
-			 * @param mixed $product Product.
-			 * @return string
-			 */
-			protected function get_cart_product_price( $product ): string {
-				return 'cart:' . $product->get_price();
 			}
 
 			/**

@@ -204,8 +204,10 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 					$product->update_meta_data( self::ADDONS_CONVERTED_META_KEY, 1 );
 				}
 
+				// @phpstan-ignore argument.type (get_product_by_id() returns wc_get_product()'s product; the seam is typed object for the test doubles)
+				$cart_price = WC()->cart->get_product_price( $product );
 				/* translators: %1$s addon price in cart */
-				$value .= sprintf( _x( ' (%1$s)', 'percentage based addon price in cart', 'woocommerce' ), $this->get_cart_product_price( $product ) );
+				$value .= sprintf( _x( ' (%1$s)', 'percentage based addon price in cart', 'woocommerce' ), $cart_price );
 			}
 		}
 
@@ -386,16 +388,6 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 		}
 
 		return wc_price( $display_price );
-	}
-
-	/**
-	 * Get a formatted cart product price.
-	 *
-	 * @param mixed $product Product.
-	 * @return string
-	 */
-	protected function get_cart_product_price( $product ): string {
-		return WC()->cart->get_product_price( $product );
 	}
 
 	/**
