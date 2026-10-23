@@ -99,22 +99,81 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 
 		$sut->register();
 		$sut->register();
-		/**
-		 * Fires REST API route registration for the controller under test.
-		 *
-		 * @since 11.0.0
-		 */
-		do_action( 'rest_api_init' );
-
-		$routes = rest_get_server()->get_routes();
+		// Building the REST server fires rest_api_init once.
+		rest_get_server();
 
 		$this->assertSame( 10, has_action( 'rest_api_init', array( $sut, 'handle_rest_api_init' ) ) );
-		$this->assertArrayHasKey( '/wc/v3/payments/multi-currency/public/config', $routes );
-		$this->assertArrayHasKey( '/wc/v3/payments/multi-currency/currencies', $routes );
-		$this->assertArrayHasKey( '/wc/v3/payments/multi-currency/update-enabled-currencies', $routes );
-		$this->assertArrayHasKey( '/wc/v3/payments/multi-currency/currencies/(?P<currency_code>[A-Za-z]{3})', $routes );
-		$this->assertArrayHasKey( '/wc/v3/payments/multi-currency/get-settings', $routes );
-		$this->assertArrayHasKey( '/wc/v3/payments/multi-currency/update-settings', $routes );
+		$text_field = array(
+			'type'     => 'string',
+			'format'   => 'text-field',
+			'required' => true,
+		);
+		$this->assertSame(
+			array(
+				'/wc/v3/payments/multi-currency/public/config' => array( array( array( 'GET' ), 'get_public_config', '__return_true', array() ) ),
+				'/wc/v3/payments/multi-currency/currencies' => array( array( array( 'GET' ), 'get_store_currencies', 'check_permission', array() ) ),
+				'/wc/v3/payments/multi-currency/update-enabled-currencies' => array(
+					array(
+						array( 'POST' ),
+						'update_enabled_currencies',
+						'check_permission',
+						array(
+							'enabled' => array(
+								'type'     => 'array',
+								'required' => true,
+							),
+						),
+					),
+				),
+				'/wc/v3/payments/multi-currency/currencies/(?P<currency_code>[A-Za-z]{3})' => array(
+					array( array( 'GET' ), 'get_single_currency_settings', 'check_permission', array( 'currency_code' => $text_field ) ),
+					array(
+						array( 'POST' ),
+						'update_single_currency_settings',
+						'check_permission',
+						array(
+							'currency_code'      => $text_field,
+							'exchange_rate_type' => $text_field,
+							'manual_rate'        => array(
+								'type'     => 'number',
+								'required' => false,
+							),
+							'price_rounding'     => array(
+								'type'     => 'number',
+								'required' => true,
+							),
+							'price_charm'        => array(
+								'type'     => 'number',
+								'required' => true,
+							),
+						),
+					),
+				),
+				'/wc/v3/payments/multi-currency/get-settings' => array( array( array( 'GET' ), 'get_settings', 'check_permission', array() ) ),
+				'/wc/v3/payments/multi-currency/update-settings' => array(
+					array(
+						array( 'POST' ),
+						'update_settings',
+						'check_permission',
+						array(
+							'wcpay_multi_currency_enable_auto_currency' => $text_field,
+							'wcpay_multi_currency_enable_storefront_switcher' => $text_field,
+							'wcpay_multi_currency_rendering_mode' => array(
+								'type'     => 'string',
+								'required' => false,
+								'enum'     => array( 'speed', 'cache' ),
+							),
+							'wcpay_multi_currency_cache_recommendation_dismissed' => array(
+								'type'     => 'string',
+								'required' => false,
+								'enum'     => array( 'yes', 'no' ),
+							),
+						),
+					),
+				),
+			),
+			$this->get_route_table()
+		);
 	}
 
 	/**
@@ -124,17 +183,46 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, null, false );
 
 		$sut->register();
-		/**
-		 * Fires REST API route registration for the controller under test.
-		 *
-		 * @since 11.0.0
-		 */
-		do_action( 'rest_api_init' );
+		// Building the REST server fires rest_api_init once.
+		rest_get_server();
 
-		$routes = rest_get_server()->get_routes();
+		$this->assertSame(
+			array(
+				'/wc/v3/payments/multi-currency/currencies',
+				'/wc/v3/payments/multi-currency/update-enabled-currencies',
+				'/wc/v3/payments/multi-currency/currencies/(?P<currency_code>[A-Za-z]{3})',
+				'/wc/v3/payments/multi-currency/get-settings',
+				'/wc/v3/payments/multi-currency/update-settings',
+			),
+			array_keys( $this->get_route_table() )
+		);
+	}
 
-		$this->assertArrayNotHasKey( '/wc/v3/payments/multi-currency/public/config', $routes );
-		$this->assertArrayHasKey( '/wc/v3/payments/multi-currency/currencies', $routes );
+	/**
+	 * The Multi-Currency routes on the REST server, in registration order: per route, each endpoint's methods,
+	 * callback method, permission callback (function or method name) and argument schema.
+	 *
+	 * @return array<string,array<int,array{0:string[],1:string,2:string,3:array<string,mixed>}>>
+	 */
+	private function get_route_table(): array {
+		$table = array();
+		foreach ( rest_get_server()->get_routes() as $route => $endpoints ) {
+			if ( 0 !== strpos( $route, '/wc/v3/payments/multi-currency/' ) ) {
+				continue;
+			}
+
+			foreach ( $endpoints as $endpoint ) {
+				$permission        = $endpoint['permission_callback'];
+				$table[ $route ][] = array(
+					array_keys( $endpoint['methods'] ),
+					$endpoint['callback'][1],
+					is_array( $permission ) ? $permission[1] : $permission,
+					$endpoint['args'],
+				);
+			}
+		}
+
+		return $table;
 	}
 
 	/**

@@ -14,7 +14,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRen
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRestProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySettingsCurrencyCatalog;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
@@ -35,6 +34,8 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 
 	public const REST_NAMESPACE = 'wc/v3';
 	public const REST_BASE      = 'payments/multi-currency';
+
+	private const PUBLIC_CONFIG_CACHE_CONTROL = 'private, max-age=300';
 
 	/**
 	 * Runtime owner arbiter.
@@ -145,7 +146,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 			return;
 		}
 
-		$this->add_action_once( 'rest_api_init', array( $this, 'handle_rest_api_init' ) );
+		add_action( 'rest_api_init', array( $this, 'handle_rest_api_init' ) );
 	}
 
 	/**
@@ -154,23 +155,112 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	 * @internal
 	 */
 	public function handle_rest_api_init(): void {
-		$manifest = MultiCurrencyRestProjectionService::get_route_manifest(
-			$this->get_frontend_projection_service()->is_cache_optimized_mode()
-		);
+		$base  = '/' . self::REST_BASE;
+		$admin = array( $this, 'check_permission' );
 
-		foreach ( $manifest['routes'] as $route ) {
-			$args = array(
-				'methods'             => $route['methods'],
-				'callback'            => $this->get_route_callback( (string) $route['callback'] ),
-				'permission_callback' => 'public' === $route['permission'] ? '__return_true' : array( $this, 'check_permission' ),
+		// The async renderer reads the public config only in cache-optimized rendering mode.
+		if ( $this->get_frontend_projection_service()->is_cache_optimized_mode() ) {
+			register_rest_route(
+				self::REST_NAMESPACE,
+				$base . '/public/config',
+				array(
+					'methods'             => array( 'GET' ),
+					'callback'            => array( $this, 'get_public_config' ),
+					'permission_callback' => '__return_true',
+				)
 			);
-
-			if ( ! empty( $route['args'] ) ) {
-				$args['args'] = $route['args'];
-			}
-
-			register_rest_route( (string) $manifest['namespace'], (string) $route['path'], $args );
 		}
+
+		register_rest_route(
+			self::REST_NAMESPACE,
+			$base . '/currencies',
+			array(
+				'methods'             => array( 'GET' ),
+				'callback'            => array( $this, 'get_store_currencies' ),
+				'permission_callback' => $admin,
+			)
+		);
+		register_rest_route(
+			self::REST_NAMESPACE,
+			$base . '/update-enabled-currencies',
+			array(
+				'methods'             => array( 'POST' ),
+				'callback'            => array( $this, 'update_enabled_currencies' ),
+				'permission_callback' => $admin,
+				'args'                => array(
+					'enabled' => array(
+						'type'     => 'array',
+						'required' => true,
+					),
+				),
+			)
+		);
+		register_rest_route(
+			self::REST_NAMESPACE,
+			$base . '/currencies/(?P<currency_code>[A-Za-z]{3})',
+			array(
+				array(
+					'methods'             => array( 'GET' ),
+					'callback'            => array( $this, 'get_single_currency_settings' ),
+					'permission_callback' => $admin,
+					'args'                => array(
+						'currency_code' => array(
+							'type'     => 'string',
+							'format'   => 'text-field',
+							'required' => true,
+						),
+					),
+				),
+				array(
+					'methods'             => array( 'POST' ),
+					'callback'            => array( $this, 'update_single_currency_settings' ),
+					'permission_callback' => $admin,
+					'args'                => array(
+						'currency_code'      => array(
+							'type'     => 'string',
+							'format'   => 'text-field',
+							'required' => true,
+						),
+						'exchange_rate_type' => array(
+							'type'     => 'string',
+							'format'   => 'text-field',
+							'required' => true,
+						),
+						'manual_rate'        => array(
+							'type'     => 'number',
+							'required' => false,
+						),
+						'price_rounding'     => array(
+							'type'     => 'number',
+							'required' => true,
+						),
+						'price_charm'        => array(
+							'type'     => 'number',
+							'required' => true,
+						),
+					),
+				),
+			)
+		);
+		register_rest_route(
+			self::REST_NAMESPACE,
+			$base . '/get-settings',
+			array(
+				'methods'             => array( 'GET' ),
+				'callback'            => array( $this, 'get_settings' ),
+				'permission_callback' => $admin,
+			)
+		);
+		register_rest_route(
+			self::REST_NAMESPACE,
+			$base . '/update-settings',
+			array(
+				'methods'             => array( 'POST' ),
+				'callback'            => array( $this, 'update_settings' ),
+				'permission_callback' => $admin,
+				'args'                => $this->get_updatable_settings(),
+			)
+		);
 	}
 
 	/**
@@ -295,7 +385,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	public function update_settings( WP_REST_Request $request ): WP_REST_Response {
 		$params = $request->get_params();
 
-		foreach ( $this->get_updateable_settings() as $option_name ) {
+		foreach ( array_keys( $this->get_updatable_settings() ) as $option_name ) {
 			if ( ! isset( $params[ $option_name ] ) ) {
 				continue;
 			}
@@ -332,32 +422,9 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	 */
 	public function get_public_config(): WP_REST_Response {
 		$response = rest_ensure_response( $this->get_frontend_projection_service()->get_public_config() );
-
-		foreach ( MultiCurrencyRestProjectionService::get_public_config_headers() as $name => $value ) {
-			$response->header( $name, $value );
-		}
+		$response->header( 'Cache-Control', self::PUBLIC_CONFIG_CACHE_CONTROL );
 
 		return $response;
-	}
-
-	/**
-	 * Get a route callback from a manifest callback marker.
-	 *
-	 * @param string $callback Callback marker.
-	 * @return callable
-	 */
-	private function get_route_callback( string $callback ): callable {
-		$callbacks = array(
-			'get_public_config'               => array( $this, 'get_public_config' ),
-			'get_store_currencies'            => array( $this, 'get_store_currencies' ),
-			'update_enabled_currencies'       => array( $this, 'update_enabled_currencies' ),
-			'get_single_currency_settings'    => array( $this, 'get_single_currency_settings' ),
-			'get_settings'                    => array( $this, 'get_settings' ),
-			'update_single_currency_settings' => array( $this, 'update_single_currency_settings' ),
-			'update_settings'                 => array( $this, 'update_settings' ),
-		);
-
-		return $callbacks[ $callback ] ?? array( $this, 'get_store_currencies' );
 	}
 
 	/**
@@ -475,16 +542,32 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	}
 
 	/**
-	 * Get updateable store settings.
+	 * Get the store settings the update-settings route writes, by option name, with each one's route argument schema.
 	 *
-	 * @return string[]
+	 * @return array<string,array<string,mixed>>
 	 */
-	private function get_updateable_settings(): array {
+	private function get_updatable_settings(): array {
 		return array(
-			MultiCurrencyStateBuilder::OPTION_PREFIX . '_enable_auto_currency',
-			MultiCurrencyStateBuilder::OPTION_PREFIX . '_enable_storefront_switcher',
-			MultiCurrencyFrontendProjectionService::RENDERING_MODE_OPTION,
-			MultiCurrencyCacheRenderingService::DISMISSED_OPTION,
+			MultiCurrencyStateBuilder::OPTION_PREFIX . '_enable_auto_currency' => array(
+				'type'     => 'string',
+				'format'   => 'text-field',
+				'required' => true,
+			),
+			MultiCurrencyStateBuilder::OPTION_PREFIX . '_enable_storefront_switcher' => array(
+				'type'     => 'string',
+				'format'   => 'text-field',
+				'required' => true,
+			),
+			MultiCurrencyFrontendProjectionService::RENDERING_MODE_OPTION => array(
+				'type'     => 'string',
+				'required' => false,
+				'enum'     => array( MultiCurrencyFrontendProjectionService::RENDERING_MODE_SPEED, MultiCurrencyFrontendProjectionService::RENDERING_MODE_CACHE ),
+			),
+			MultiCurrencyCacheRenderingService::DISMISSED_OPTION => array(
+				'type'     => 'string',
+				'required' => false,
+				'enum'     => array( 'yes', 'no' ),
+			),
 		);
 	}
 
@@ -545,19 +628,5 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 		}
 
 		return $this->settings_currency_catalog;
-	}
-
-	/**
-	 * Register an action only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_action_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_action( $hook, $callback ) ) {
-			add_action( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }
