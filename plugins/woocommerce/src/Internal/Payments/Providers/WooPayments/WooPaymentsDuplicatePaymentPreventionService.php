@@ -334,11 +334,11 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 	}
 
 	/**
-	 * Tell the merchant, once for each intent, that the order's payment is disputed, without ever failing the refusal.
+	 * Tell the merchant, once for each intent, that the order's payment is disputed, without failing the refusal.
 	 *
 	 * The note is secondary to the refusal: a failure taking the lock, reading the order, writing the note or releasing the
 	 * lock is logged, and the submit is still refused. Otherwise the gateway's catch would answer as paid for a succeeded
-	 * intent, or fail the order. Logging that failure is best-effort too, since a logger or log filter can throw.
+	 * intent, or fail the order.
 	 *
 	 * @since 11.2.0
 	 *

@@ -1023,14 +1023,7 @@ class WooPaymentsExpressCheckoutService {
 	 * @return string
 	 */
 	private function get_store_base_country(): string {
-		$country = (string) WC()->countries->get_base_country();
-
-		if ( false !== strpos( $country, ':' ) ) {
-			$base_country = strtok( $country, ':' );
-			$country      = is_string( $base_country ) ? $base_country : '';
-		}
-
-		$country = strtoupper( $country );
+		$country = strtoupper( (string) WC()->countries->get_base_country() );
 
 		return '' !== $country ? $country : 'US';
 	}
