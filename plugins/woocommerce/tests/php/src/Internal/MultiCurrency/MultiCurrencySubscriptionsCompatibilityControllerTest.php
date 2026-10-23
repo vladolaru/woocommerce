@@ -479,13 +479,13 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 *
-	 * @param bool         $has_stored_fee Whether the product stores a sign-up fee of 5.
-	 * @param array<mixed> $steps          Reads (`read`, calls, raw fee, expected fee) and meta writes (`write`, key, value) in order.
+	 * @param array<string,string> $stored_meta Meta the product stores before the switch.
+	 * @param array<mixed>         $steps       Reads (`read`, calls, raw fee, expected fee) and meta writes (`write`, key, value) in order.
 	 */
-	public function test_charges_a_switch_sign_up_fee_converted_once( bool $has_stored_fee, array $steps ): void {
+	public function test_charges_a_switch_sign_up_fee_converted_once( array $stored_meta, array $steps ): void {
 		$product = new \WC_Product_Simple();
-		if ( $has_stored_fee ) {
-			$product->add_meta_data( '_subscription_sign_up_fee', '5', true );
+		foreach ( $stored_meta as $key => $value ) {
+			$product->add_meta_data( $key, $value, true );
 		}
 		// Set after the meta, so the product reads no meta from the database.
 		$product->set_id( 10 );
@@ -505,23 +505,25 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	/**
 	 * Sign-up fee read sequences of a switch from a $10 to a $20 plan with a $5 fee, per setting.
 	 *
-	 * @return array<string,array{0:bool,1:array<mixed>}>
+	 * @return array<string,array{0:array<string,string>,1:array<mixed>}>
 	 */
 	public function switch_sign_up_fee_read_sequences(): array {
 		$set_prices = array( 'WC_Cart->calculate_totals', 'WC_Subscriptions_Cart::set_subscription_prices_for_calculation', 'WC_Subscriptions_Product::get_sign_up_fee' );
 		$fee_read   = array( 'WC_Cart->calculate_totals', 'WC_Subscriptions_Product::get_sign_up_fee' );
+		$apportion  = array( 'WC_Cart->calculate_totals', 'WCS_Switch_Totals_Calculator->apportion_sign_up_fees', 'WC_Subscriptions_Product::get_sign_up_fee' );
+		$stored_fee = array( '_subscription_sign_up_fee' => '5' );
 
 		return array(
-			'full fee, no proration'               => array(
-				true,
+			'full fee, no proration'                     => array(
+				$stored_fee,
 				array(
 					array( 'read', $set_prices, '5', 10.0 ),
 					array( 'read', $set_prices, '5', 10.0 ),
 					array( 'read', $fee_read, '5', 10.0 ),
 				),
 			),
-			'full fee, prorated upgrade'           => array(
-				true,
+			'full fee, prorated upgrade'                 => array(
+				$stored_fee,
 				array(
 					array( 'read', $fee_read, '5', 10.0 ),
 					array( 'write', '_subscription_sign_up_fee_prorated', 10.0 ),
@@ -535,16 +537,16 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 					array( 'read', $set_prices, 17.5, 17.5 ),
 				),
 			),
-			'no fee, no proration'                 => array(
-				true,
+			'no fee, no proration'                       => array(
+				$stored_fee,
 				array(
 					array( 'write', '_subscription_sign_up_fee', 0 ),
 					array( 'read', $set_prices, 0, 0 ),
 					array( 'read', $fee_read, 0, 0 ),
 				),
 			),
-			'no fee, prorated upgrade'             => array(
-				true,
+			'no fee, prorated upgrade'                   => array(
+				$stored_fee,
 				array(
 					array( 'write', '_subscription_sign_up_fee', 0 ),
 					array( 'read', $fee_read, 0, 0 ),
@@ -555,14 +557,38 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 					array( 'read', $fee_read, 7.5, 7.5 ),
 				),
 			),
-			'prorated upgrade, no stored fee meta' => array(
-				false,
+			'prorated upgrade, no stored fee meta'       => array(
+				array(),
+				// Without fee meta, Subscriptions' get_sign_up_fee() returns its default without calling the product's meta getter, so
+				// the filter sees no read before the calculator writes (Subscriptions 9.3.0 `class-wc-subscriptions-product.php:671,1342-1369`).
 				array(
-					array( 'read', $fee_read, '', '' ),
 					array( 'write', '_subscription_sign_up_fee_prorated', 0 ),
 					array( 'write', '_subscription_price_prorated', 7.5 ),
 					array( 'write', '_subscription_sign_up_fee', 7.5 ),
 					array( 'read', $set_prices, 7.5, 7.5 ),
+				),
+			),
+			'prorated fee'                               => array(
+				$stored_fee,
+				// "Prorate the sign up fee": the calculator reads the fee, writes the remaining part from that converted read, then
+				// reads it back as the prorated fee (`class-wcs-switch-totals-calculator.php:306-328`).
+				array(
+					array( 'read', $apportion, '5', 10.0 ),
+					array( 'write', '_subscription_sign_up_fee', 6.0 ),
+					array( 'read', $apportion, 6.0, 6.0 ),
+					array( 'write', '_subscription_sign_up_fee_prorated', 6.0 ),
+					array( 'read', $fee_read, 6.0, 6.0 ),
+					array( 'read', $set_prices, 6.0, 6.0 ),
+				),
+			),
+			'full fee, no proration, length apportioned' => array(
+				$stored_fee + array( '_subscription_length' => '12' ),
+				// Apportioning the length rewrites the length meta, not the fee (`class-wcs-switch-totals-calculator.php:442-465`).
+				array(
+					array( 'write', '_subscription_length', 11 ),
+					array( 'read', $set_prices, '5', 10.0 ),
+					array( 'read', $set_prices, '5', 10.0 ),
+					array( 'read', $fee_read, '5', 10.0 ),
 				),
 			),
 		);
