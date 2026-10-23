@@ -59,6 +59,13 @@ class MultiCurrencyFedExCompatibilityControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 10, has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'should_convert_product_price' ) ) );
 		$this->assertSame( 10, has_filter( 'wcpay_multi_currency_should_return_store_currency', array( $sut, 'should_return_store_currency' ) ) );
+		$this->assertSame(
+			array(
+				'wcpay_multi_currency_should_convert_product_price' => array( 'should_convert_product_price' => array( 10, 1 ) ),
+				'wcpay_multi_currency_should_return_store_currency' => array( 'should_return_store_currency' => array( 10, 1 ) ),
+			),
+			RegisteredHooks::of( $sut )
+		);
 	}
 
 	/**
@@ -107,6 +114,7 @@ class MultiCurrencyFedExCompatibilityControllerTest extends WC_Unit_Test_Case {
 		foreach ( $this->fedex_calls as $fedex_call ) {
 			$this->assertFalse( CallStack::run( array( $fedex_call ), fn() => $sut->should_convert_product_price( true ) ), "Expected {$fedex_call} to suppress conversion." );
 		}
+		$this->assertFalse( CallStack::run( array( $this->fedex_calls[0] ), fn() => $sut->should_convert_product_price( false ) ) );
 	}
 
 	/**
