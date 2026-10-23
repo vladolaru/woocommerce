@@ -463,7 +463,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 		$removed_codes = array_diff( $previous_enabled_codes, $enabled_codes );
 
 		foreach ( $removed_codes as $currency_code ) {
-			$currency_code = strtoupper( (string) $currency_code );
+			$currency_code = strtoupper( $currency_code );
 			if ( 3 !== strlen( $currency_code ) || in_array( $currency_code, $enabled_codes, true ) ) {
 				continue;
 			}

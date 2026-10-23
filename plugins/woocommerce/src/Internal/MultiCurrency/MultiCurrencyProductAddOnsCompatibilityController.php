@@ -395,13 +395,7 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 	 * @return string
 	 */
 	protected function get_cart_product_price( $product ): string {
-		if ( WC()->cart && is_callable( array( WC()->cart, 'get_product_price' ) ) ) {
-			return WC()->cart->get_product_price( $product );
-		}
-
-		return is_object( $product ) && is_callable( array( $product, 'get_price' ) )
-			? wc_price( $product->get_price() )
-			: '';
+		return WC()->cart->get_product_price( $product );
 	}
 
 	/**

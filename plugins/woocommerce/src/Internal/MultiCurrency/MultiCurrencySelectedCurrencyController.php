@@ -219,7 +219,7 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 			return;
 		}
 
-		$this->get_persistence_service()->update_selected_currency( strtoupper( trim( (string) $currency_code ) ) );
+		$this->get_persistence_service()->update_selected_currency( strtoupper( trim( $currency_code ) ) );
 		$this->clear_url_price_params();
 	}
 
@@ -275,9 +275,7 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 		}
 
 		$country_code          = $this->get_geolocation_service()->get_country_by_customer_location();
-		$countries             = WC()->countries instanceof \WC_Countries
-			? WC()->countries->get_countries()
-			: array();
+		$countries             = WC()->countries->get_countries();
 		$currencies            = get_woocommerce_currencies();
 		$country_name          = $countries[ $country_code ] ?? $country_code;
 		$current_currency_name = $currencies[ $current_currency_code ] ?? $current_currency_code;
@@ -337,7 +335,7 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 		}
 
 		$simulation_currency = 'USD' === strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) ) ? 'GBP' : 'USD';
-		$countries           = WC()->countries instanceof \WC_Countries ? WC()->countries->get_countries() : array();
+		$countries           = WC()->countries->get_countries();
 		$country_code        = 'GBP' === $simulation_currency ? 'GB' : 'US';
 		$country_name        = (string) ( $countries[ $country_code ] ?? $country_code );
 		$currency_name       = (string) ( get_woocommerce_currencies()[ $simulation_currency ] ?? $simulation_currency );

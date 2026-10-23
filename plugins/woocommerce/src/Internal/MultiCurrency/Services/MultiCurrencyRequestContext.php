@@ -65,7 +65,7 @@ class MultiCurrencyRequestContext {
 			$rest_route = sanitize_text_field( wp_unslash( $_REQUEST['rest_route'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		} else {
 			$url_parts    = wp_parse_url( esc_url_raw( wp_unslash( $_SERVER['REQUEST_URI'] ?? '' ) ) );
-			$request_path = ! empty( $url_parts['path'] ) ? rtrim( (string) $url_parts['path'], '/' ) : '';
+			$request_path = ! empty( $url_parts['path'] ) ? rtrim( $url_parts['path'], '/' ) : '';
 			$rest_route   = str_replace( trailingslashit( rest_get_url_prefix() ), '', $request_path );
 		}
 
@@ -160,9 +160,7 @@ class MultiCurrencyRequestContext {
 				continue;
 			}
 
-			$call = isset( $frame['class'] )
-				? (string) $frame['class'] . (string) ( $frame['type'] ?? '::' ) . (string) $frame['function']
-				: (string) $frame['function'];
+			$call = isset( $frame['class'] ) ? $frame['class'] . ( $frame['type'] ?? '::' ) . $frame['function'] : $frame['function'];
 
 			if ( isset( $expected_lookup[ $call ] ) ) {
 				return true;

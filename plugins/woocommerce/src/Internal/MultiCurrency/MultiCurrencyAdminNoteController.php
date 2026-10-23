@@ -256,11 +256,7 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 
 		$note_manifest = MultiCurrencyAdminNoteProjectionService::get_note_manifest();
 
-		try {
-			return false === Notes::get_note_by_name( (string) $note_manifest['name'] );
-		} catch ( \Throwable $e ) {
-			return false;
-		}
+		return false === Notes::get_note_by_name( (string) $note_manifest['name'] );
 	}
 
 	/**

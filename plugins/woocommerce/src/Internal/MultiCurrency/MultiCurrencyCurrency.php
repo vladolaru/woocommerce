@@ -161,7 +161,7 @@ class MultiCurrencyCurrency implements \JsonSerializable {
 	 * @return string
 	 */
 	public function get_rounding_decimal(): string {
-		return (string) wc_float_to_string( (float) $this->get_rounding() );
+		return wc_float_to_string( (float) $this->get_rounding() );
 	}
 
 	/**
@@ -170,7 +170,7 @@ class MultiCurrencyCurrency implements \JsonSerializable {
 	 * @param mixed $rate Conversion rate.
 	 */
 	public function set_rate( $rate ): void {
-		$this->rate_decimal = (string) wc_float_to_string( (float) $rate );
+		$this->rate_decimal = wc_float_to_string( (float) $rate );
 		$this->rate         = (float) $this->rate_decimal;
 	}
 
