@@ -6,8 +6,6 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySelectedCurrencyController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyAccountInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\MultiCurrencyProviderAccountResolver;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
@@ -207,37 +205,26 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not write selected-currency customer meta while the provider is disconnected.
+	 * @testdox Should keep a guest's selected currency on the account created at checkout when no payments provider is connected.
+	 *
+	 * Client 11.1.0 copies the session currency to the new customer unconditionally (includes/multi-currency/MultiCurrency.php:269,
+	 * :1123-1128), and Multi-Currency runs on manual rates without a provider. Without the copy, the checkout's login leaves the new
+	 * customer with no stored currency and the order is placed in the store currency.
 	 */
-	public function test_does_not_write_selected_currency_customer_meta_when_provider_is_disconnected(): void {
-		$service = $this->create_persistence_service();
-		$sut     = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
-			$service,
-			$this->create_request_context( true, false ),
-			$this->create_account_resolver( false )
-		);
+	public function test_keeps_a_guest_selected_currency_on_the_account_created_at_checkout(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		WC()->session = new \WC_Mock_Session_Handler();
+		WC()->session->set( 'wcpay_currency', 'EUR' );
+		$customer_id = self::factory()->user->create( array( 'role' => 'customer' ) );
+		$service     = wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )->create_selected_currency_persistence_service();
+		$sut         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, $this->create_request_context( true, false ) );
 
-		$sut->handle_woocommerce_created_customer( 123 );
+		$sut->handle_woocommerce_created_customer( $customer_id );
 
-		$this->assertSame( array(), $service->new_customer_ids, 'A dormant provider must not write selected-currency customer meta.' );
-	}
-
-	/**
-	 * @testdox Should write selected-currency customer meta while the provider is connected.
-	 */
-	public function test_writes_selected_currency_customer_meta_when_provider_is_connected(): void {
-		$service = $this->create_persistence_service();
-		$sut     = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
-			$service,
-			$this->create_request_context( true, false ),
-			$this->create_account_resolver( true )
-		);
-
-		$sut->handle_woocommerce_created_customer( 123 );
-
-		$this->assertSame( array( 123 ), $service->new_customer_ids );
+		$this->assertSame( 'EUR', get_user_meta( $customer_id, 'wcpay_currency', true ) );
 	}
 
 	/**
@@ -1060,17 +1047,15 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a selected currency controller with a static runtime owner.
 	 *
-	 * @param string                                    $owner            Runtime owner.
-	 * @param object                                    $service          Persistence service test double.
-	 * @param MultiCurrencyRequestContext|null          $request_context  Request context.
-	 * @param MultiCurrencyProviderAccountResolver|null $account_resolver Provider account resolver.
+	 * @param string                           $owner           Runtime owner.
+	 * @param object                           $service         Persistence service test double.
+	 * @param MultiCurrencyRequestContext|null $request_context Request context.
 	 * @return MultiCurrencySelectedCurrencyController
 	 */
 	private function create_controller(
 		string $owner,
 		object $service,
-		?MultiCurrencyRequestContext $request_context = null,
-		?MultiCurrencyProviderAccountResolver $account_resolver = null
+		?MultiCurrencyRequestContext $request_context = null
 	): MultiCurrencySelectedCurrencyController {
 		$controller = new MultiCurrencySelectedCurrencyController();
 		$controller->init(
@@ -1079,30 +1064,11 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( MultiCurrencyCompatibilityController::class )
 		);
 		$controller->set_persistence_service( $service );
-		if ( null !== $account_resolver ) {
-			$controller->set_account_resolver( $account_resolver );
-		}
 		if ( null !== $request_context && method_exists( $controller, 'set_request_context' ) ) {
 			$controller->set_request_context( $request_context );
 		}
 
 		return $controller;
-	}
-
-	/**
-	 * Create a deterministic provider account resolver.
-	 *
-	 * @param bool $connected Whether the provider account is connected.
-	 * @return MultiCurrencyProviderAccountResolver
-	 */
-	private function create_account_resolver( bool $connected ): MultiCurrencyProviderAccountResolver {
-		$account = $this->createMock( MultiCurrencyAccountInterface::class );
-		$account->method( 'is_provider_connected' )->willReturn( $connected );
-
-		$resolver = new MultiCurrencyProviderAccountResolver();
-		$resolver->set_account( $account );
-
-		return $resolver;
 	}
 
 	/**

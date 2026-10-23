@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\MultiCurrencyProviderAccountResolver;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
@@ -37,13 +36,6 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	 * @var MultiCurrencyRuntimeArbiter
 	 */
 	private MultiCurrencyRuntimeArbiter $arbiter;
-
-	/**
-	 * Provider account resolver.
-	 *
-	 * @var MultiCurrencyProviderAccountResolver|null
-	 */
-	private ?MultiCurrencyProviderAccountResolver $account_resolver = null;
 
 	/**
 	 * Selected currency persistence service.
@@ -118,17 +110,6 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	 */
 	public function set_persistence_service( MultiCurrencySelectedCurrencyPersistenceService $persistence_service ): void {
 		$this->persistence_service = $persistence_service;
-	}
-
-	/**
-	 * Set the provider account resolver.
-	 *
-	 * @internal Used by tests and future explicit provider bootstrap.
-	 *
-	 * @param MultiCurrencyProviderAccountResolver $account_resolver Provider account resolver.
-	 */
-	public function set_account_resolver( MultiCurrencyProviderAccountResolver $account_resolver ): void {
-		$this->account_resolver = $account_resolver;
 	}
 
 	/**
@@ -407,10 +388,6 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	 * @param mixed $customer_id Customer ID.
 	 */
 	public function handle_woocommerce_created_customer( $customer_id ): void {
-		if ( ! $this->get_account_resolver()->is_provider_connected() ) {
-			return;
-		}
-
 		$this->get_persistence_service()->set_new_customer_currency_meta( absint( $customer_id ) );
 	}
 
@@ -534,19 +511,6 @@ document.addEventListener( 'DOMContentLoaded', () => {
 		}
 
 		return $this->persistence_service;
-	}
-
-	/**
-	 * Get the provider account resolver.
-	 *
-	 * @return MultiCurrencyProviderAccountResolver
-	 */
-	private function get_account_resolver(): MultiCurrencyProviderAccountResolver {
-		if ( null === $this->account_resolver ) {
-			$this->account_resolver = wc_get_container()->get( MultiCurrencyProviderAccountResolver::class );
-		}
-
-		return $this->account_resolver;
 	}
 
 	/**
