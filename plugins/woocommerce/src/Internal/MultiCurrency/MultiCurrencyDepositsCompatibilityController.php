@@ -8,11 +8,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Compat\LegacyMultiCurrencyFacadeLoader;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDepositsCompatibilityProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 
 /**
  * Registers native multi-currency Deposits compatibility hooks when core owns multi-currency.
@@ -88,40 +88,31 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 			return;
 		}
 
-		$this->add_action_once( 'plugins_loaded', array( $this, 'register_deposits_hooks' ), 20 );
+		add_action( 'plugins_loaded', array( $this, 'register_deposits_hooks' ), 20 );
 	}
 
 	/**
 	 * Register Deposits compatibility hooks after supported runtimes have loaded.
 	 *
+	 * Deposits 2.0.1 and later convert their own amounts, so the hooks register only for earlier versions.
+	 *
 	 * @internal
 	 */
 	public function register_deposits_hooks(): void {
+		$deposits_version = $this->get_deposits_version();
+
 		if (
 			! $this->arbiter->should_core_register()
-			|| ! MultiCurrencyDepositsCompatibilityProjectionService::should_register(
-				$this->is_deposits_runtime_available(),
-				$this->get_deposits_version()
-			)
+			|| ! $this->is_deposits_runtime_available()
+			|| ( null !== $deposits_version && version_compare( $deposits_version, '2.0.1', '>=' ) )
 		) {
 			return;
 		}
 
-		$manifest = MultiCurrencyDepositsCompatibilityProjectionService::get_hook_manifest();
-
-		foreach ( $manifest['filters'] as $filter ) {
-			$callback = array( $this, (string) $filter['callback'] );
-			if ( is_callable( $callback ) ) {
-				$this->add_filter_once( (string) $filter['hook'], $callback, (int) $filter['priority'], (int) $filter['accepted_args'] );
-			}
-		}
-
-		foreach ( $manifest['actions'] as $action ) {
-			$callback = array( $this, (string) $action['callback'] );
-			if ( is_callable( $callback ) ) {
-				$this->add_action_once( (string) $action['hook'], $callback, (int) $action['priority'], (int) $action['accepted_args'] );
-			}
-		}
+		add_filter( 'woocommerce_get_cart_contents', array( $this, 'modify_cart_item_deposit_amounts' ) );
+		add_filter( 'woocommerce_product_get__wc_deposit_amount', array( $this, 'modify_cart_item_deposit_amount_meta' ), 10, 2 );
+		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_convert_product_price', array( $this, 'maybe_convert_product_prices_for_deposits' ), 10, 2 );
+		add_action( 'woocommerce_deposits_create_order', array( $this, 'modify_order_currency' ) );
 	}
 
 	/**
@@ -136,10 +127,7 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 		}
 
 		foreach ( $cart_contents as $cart_item_key => $cart_item ) {
-			if (
-				is_array( $cart_item )
-				&& MultiCurrencyDepositsCompatibilityProjectionService::should_convert_cart_item_deposit_amount( $cart_item )
-			) {
+			if ( is_array( $cart_item ) && ! empty( $cart_item['is_deposit'] ) && array_key_exists( 'deposit_amount', $cart_item ) ) {
 				$cart_contents[ $cart_item_key ]['deposit_amount'] = $this->get_price_projection_service()->get_price(
 					(float) $cart_item['deposit_amount'],
 					'product'
@@ -159,10 +147,8 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 	 */
 	public function modify_cart_item_deposit_amount_meta( $amount, $product ) {
 		if (
-			! MultiCurrencyDepositsCompatibilityProjectionService::should_convert_deposit_amount_meta(
-				$this->get_product_deposit_type( $product ),
-				MultiCurrencyRequestContext::is_call_in_backtrace( self::DEPOSITS_FORM_OUTPUT_CALLS )
-			)
+			'percent' !== $this->get_product_deposit_type( $product )
+			|| ! MultiCurrencyRequestContext::is_call_in_backtrace( self::DEPOSITS_FORM_OUTPUT_CALLS )
 		) {
 			return $amount;
 		}
@@ -178,11 +164,12 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 	 * @return bool
 	 */
 	public function maybe_convert_product_prices_for_deposits( bool $result, $product ): bool {
-		return MultiCurrencyDepositsCompatibilityProjectionService::should_convert_product_price(
-			$result,
-			$this->get_product_deposit_type( $product ),
-			MultiCurrencyRequestContext::is_call_in_backtrace( self::CART_TOTALS_CALLS )
-		);
+		if ( ! $result ) {
+			return false;
+		}
+
+		return 'plan' !== $this->get_product_deposit_type( $product )
+			|| ! MultiCurrencyRequestContext::is_call_in_backtrace( self::CART_TOTALS_CALLS );
 	}
 
 	/**
@@ -219,7 +206,7 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 		$saved_currency    = $order->get_currency( 'view' );
 		$original_currency = $original_order->get_currency( 'view' );
 
-		if ( MultiCurrencyDepositsCompatibilityProjectionService::should_align_order_currency( $saved_currency, $original_currency ) ) {
+		if ( '' !== $saved_currency && '' !== $original_currency && $saved_currency !== $original_currency ) {
 			$order->set_currency( $original_currency );
 			$order->save();
 		}
@@ -279,33 +266,5 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 		}
 
 		return $this->price_projection_service;
-	}
-
-	/**
-	 * Register a filter only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_filter_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_filter( $hook, $callback ) ) {
-			add_filter( $hook, $callback, $priority, $accepted_args );
-		}
-	}
-
-	/**
-	 * Register an action only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_action_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_action( $hook, $callback ) ) {
-			add_action( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }

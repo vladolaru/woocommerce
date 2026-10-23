@@ -30,6 +30,8 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 		'woocommerce_get_cart_contents',
 		'woocommerce_product_get__wc_deposit_amount',
 		'wcpay_multi_currency_should_convert_product_price',
+		'woocommerce_before_order_object_save',
+		'woocommerce_order_get_currency',
 	);
 
 	/**
@@ -56,6 +58,33 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 		$this->assertSame( 10, has_filter( 'woocommerce_get_cart_contents', array( $sut, 'modify_cart_item_deposit_amounts' ) ) );
 		$this->assertSame( 10, has_filter( 'woocommerce_product_get__wc_deposit_amount', array( $sut, 'modify_cart_item_deposit_amount_meta' ) ) );
 		$this->assertSame( 10, has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'maybe_convert_product_prices_for_deposits' ) ) );
+		$this->assertSame(
+			array(
+				'wcpay_multi_currency_should_convert_product_price' => array( 'maybe_convert_product_prices_for_deposits' => array( 10, 2 ) ),
+				'woocommerce_deposits_create_order' => array( 'modify_order_currency' => array( 10, 1 ) ),
+				'woocommerce_get_cart_contents'     => array( 'modify_cart_item_deposit_amounts' => array( 10, 1 ) ),
+				'woocommerce_product_get__wc_deposit_amount' => array( 'modify_cart_item_deposit_amount_meta' => array( 10, 2 ) ),
+			),
+			RegisteredHooks::of( $sut )
+		);
+	}
+
+	/**
+	 * @testdox Should register Deposits hooks only while Deposits is active and older than 2.0.1.
+	 * @testWith [null, true, true]
+	 *           ["2.1.0", true, false]
+	 *           ["1.9.9", false, false]
+	 *
+	 * @param string|null $deposits_version   Deposits version.
+	 * @param bool        $deposits_available Whether Deposits runtime is available.
+	 * @param bool        $registers          Whether the hooks register.
+	 */
+	public function test_registers_deposits_hooks_by_runtime_and_version( ?string $deposits_version, bool $deposits_available, bool $registers ): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $deposits_available, $deposits_version );
+
+		$sut->register();
+
+		$this->assertSame( $registers ? 10 : false, has_filter( 'woocommerce_get_cart_contents', array( $sut, 'modify_cart_item_deposit_amounts' ) ) );
 	}
 
 	/**
@@ -101,18 +130,27 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 
 		$cart_contents = $sut->modify_cart_item_deposit_amounts(
 			array(
-				'deposit' => array(
+				'deposit'     => array(
 					'is_deposit'     => true,
 					'deposit_amount' => '10.00',
 				),
-				'regular' => array(
+				'regular'     => array(
 					'deposit_amount' => '10.00',
+				),
+				'not_deposit' => array(
+					'is_deposit'     => false,
+					'deposit_amount' => '10.00',
+				),
+				'no_amount'   => array(
+					'is_deposit' => true,
 				),
 			)
 		);
 
 		$this->assertSame( 8.4, $cart_contents['deposit']['deposit_amount'] );
 		$this->assertSame( '10.00', $cart_contents['regular']['deposit_amount'] );
+		$this->assertSame( '10.00', $cart_contents['not_deposit']['deposit_amount'] );
+		$this->assertSame( array( 'is_deposit' => true ), $cart_contents['no_amount'] );
 	}
 
 	/**
@@ -127,6 +165,7 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 			function () use ( $sut ): void {
 				$this->assertSame( 8.4, $sut->modify_cart_item_deposit_amount_meta( '10.00', $this->create_deposit_product( 'percent' ) ) );
 				$this->assertSame( '10.00', $sut->modify_cart_item_deposit_amount_meta( '10.00', $this->create_deposit_product( 'plan' ) ) );
+				$this->assertSame( '10.00', $sut->modify_cart_item_deposit_amount_meta( '10.00', new \stdClass() ) );
 			}
 		);
 
@@ -146,6 +185,8 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 				$this->assertFalse( $sut->maybe_convert_product_prices_for_deposits( false, $this->create_deposit_product( 'plan' ) ) );
 			}
 		);
+
+		$this->assertTrue( $sut->maybe_convert_product_prices_for_deposits( true, $this->create_deposit_product( 'plan' ) ) );
 	}
 
 	/**
@@ -175,6 +216,47 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 
 		$updated = wc_get_order( $remaining->get_id() );
 		$this->assertSame( 'USD', $updated->get_currency( 'view' ) );
+	}
+
+	/**
+	 * @testdox Should leave the remaining payment order unsaved when either currency is empty or both match.
+	 * @testWith ["GBP", "GBP"]
+	 *           ["", "GBP"]
+	 *           ["USD", ""]
+	 *
+	 * @param string $remaining_currency Remaining payment order currency.
+	 * @param string $original_currency  Original deposited order currency.
+	 */
+	public function test_leaves_remaining_payment_order_unsaved_without_two_different_currencies( string $remaining_currency, string $original_currency ): void {
+		$sut      = $this->create_controller();
+		$original = wc_create_order();
+		$original->set_currency( '' === $original_currency ? 'EUR' : $original_currency );
+		$original->save();
+		$remaining = $this->create_order_with_first_item( '' === $remaining_currency ? 'EUR' : $remaining_currency, $original->get_id() );
+		// An order read back from the store always has a currency, so an empty one can only come from a filter.
+		$currencies               = array(
+			$original->get_id()  => $original_currency,
+			$remaining->get_id() => $remaining_currency,
+		);
+		$empty_currency_order_ids = array_keys( array_filter( $currencies, fn( $currency ) => '' === $currency ) );
+		add_filter(
+			'woocommerce_order_get_currency',
+			fn( $currency, $order ) => in_array( $order->get_id(), $empty_currency_order_ids, true ) ? '' : $currency,
+			10,
+			2
+		);
+		$saves = 0;
+		add_action(
+			'woocommerce_before_order_object_save',
+			function () use ( &$saves ): void {
+				++$saves;
+			}
+		);
+
+		$sut->modify_order_currency( $remaining->get_id() );
+
+		$this->assertSame( 0, $saves );
+		$this->assertSame( $remaining_currency, wc_get_order( $remaining->get_id() )->get_currency( 'view' ) );
 	}
 
 	/**
