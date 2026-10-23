@@ -71,23 +71,21 @@ class MultiCurrencyTrackingProjectionService {
 		$total_count = 0;
 
 		foreach ( is_array( $rows ) ? $rows : array() as $row ) {
-			$currency = (string) $row->currency;
-			$counts   = (int) $row->counts;
-			$totals   = (float) $row->totals;
-			$gateway  = (string) $row->gateway;
-			$gateway  = '' === $gateway ? 'unknown' : $gateway;
+			$currency = $row->currency;
 
 			$current_counts = $currencies[ $currency ]['counts'] ?? 0;
 			$current_totals = $currencies[ $currency ]['totals'] ?? 0;
 
-			$currencies[ $currency ]['counts']               = $current_counts + $counts;
-			$currencies[ $currency ]['totals']               = $current_totals + $totals;
-			$currencies[ $currency ]['gateways'][ $gateway ] = array(
-				'counts' => $counts,
-				'totals' => $totals,
+			$currencies[ $currency ]['counts'] = $current_counts + $row->counts;
+			$currencies[ $currency ]['totals'] = $current_totals + $row->totals;
+
+			// Only an order with no stored payment method has a NULL gateway; the buckets keep the query's own strings.
+			$currencies[ $currency ]['gateways'][ $row->gateway ?? 'unknown' ] = array(
+				'counts' => $row->counts,
+				'totals' => $row->totals,
 			);
 
-			$total_count += $counts;
+			$total_count += $row->counts;
 		}
 
 		return array(

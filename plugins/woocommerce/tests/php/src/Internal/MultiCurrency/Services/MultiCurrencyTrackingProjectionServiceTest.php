@@ -7,6 +7,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocali
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyTrackingProjectionService;
 use Automattic\WooCommerce\RestApi\UnitTests\HPOSToggleTrait;
 use Automattic\WooCommerce\Utilities\OrderUtil;
@@ -152,18 +153,31 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should count and total completed, processing and refunded Multi-Currency orders by currency and gateway (HPOS: $hpos_enabled).
-	 * @testWith [true]
-	 *           [false]
+	 * @testdox Should count and total completed, processing and refunded Multi-Currency orders by currency and gateway, as the client does (HPOS: $hpos_enabled).
 	 *
-	 * @param bool $hpos_enabled Whether HPOS is authoritative.
+	 * Client 11.1.0 `includes/multi-currency/Tracking.php:177-197`: the currency counts and totals add the query's values to 0
+	 * (so a whole-number posts total stays an int), only a NULL gateway becomes 'unknown', and each gateway bucket keeps the
+	 * query's strings. The strings are how MySQL returns COUNT() and SUM() for each store: the HPOS total is DECIMAL(26,8),
+	 * the posts total a meta string. An order saved with an empty payment method keeps '' in the HPOS column but stores no
+	 * `_payment_method` meta in the posts store, where the query then reads NULL.
+	 *
+	 * @testWith [true, "20.50000000", "5.00000000", "", "8.00000000", "300.00000000"]
+	 *           [false, "20.5", "5", "unknown", "8", "300"]
+	 *
+	 * @param bool   $hpos_enabled Whether HPOS is authoritative.
+	 * @param string $gbp_card     The GBP woocommerce_payments bucket total, as the query returns it.
+	 * @param string $gbp_cod      The GBP cod bucket total, as the query returns it.
+	 * @param string $eur_gateway  The EUR bucket of the order saved with an empty payment method.
+	 * @param string $eur_none     The EUR bucket total, as the query returns it.
+	 * @param string $jpy_null     The JPY NULL-gateway bucket total, as the query returns it.
 	 */
-	public function test_counts_multi_currency_orders_by_currency_and_gateway( bool $hpos_enabled ): void {
+	public function test_counts_multi_currency_orders_by_currency_and_gateway( bool $hpos_enabled, string $gbp_card, string $gbp_cod, string $eur_gateway, string $eur_none, string $jpy_null ): void {
 		$this->toggle_cot_authoritative( $hpos_enabled );
 		$this->create_order( 'GBP', 'woocommerce_payments', '10.50', 'completed' );
 		$this->create_order( 'GBP', 'woocommerce_payments', '10.00', 'processing' );
 		$this->create_order( 'GBP', 'cod', '5.00', 'completed' );
 		$this->create_order( 'EUR', '', '8.00', 'refunded' );
+		$this->clear_payment_method( $this->create_order( 'JPY', 'cod', '300', 'completed' ), $hpos_enabled );
 		$this->create_order( 'GBP', 'woocommerce_payments', '99.00', 'pending' );
 		$this->create_order( 'GBP', 'woocommerce_payments', '77.00', 'completed', false );
 		$sut = $this->create_service( $this->create_state() );
@@ -175,15 +189,15 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			array(
-				'counts'     => 4,
+				'counts'     => 5,
 				'currencies' => array(
 					'EUR' => array(
 						'counts'   => 1,
-						'totals'   => 8.0,
+						'totals'   => 0 + $eur_none,
 						'gateways' => array(
-							'unknown' => array(
-								'counts' => 1,
-								'totals' => 8.0,
+							$eur_gateway => array(
+								'counts' => '1',
+								'totals' => $eur_none,
 							),
 						),
 					),
@@ -192,12 +206,22 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 						'totals'   => 25.5,
 						'gateways' => array(
 							'cod'                  => array(
-								'counts' => 1,
-								'totals' => 5.0,
+								'counts' => '1',
+								'totals' => $gbp_cod,
 							),
 							'woocommerce_payments' => array(
-								'counts' => 2,
-								'totals' => 20.5,
+								'counts' => '2',
+								'totals' => $gbp_card,
+							),
+						),
+					),
+					'JPY' => array(
+						'counts'   => 1,
+						'totals'   => 0 + $jpy_null,
+						'gateways' => array(
+							'unknown' => array(
+								'counts' => '1',
+								'totals' => $jpy_null,
 							),
 						),
 					),
@@ -208,6 +232,23 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Leave an order with no stored payment method, as an order from before WooCommerce stored one has: no
+	 * `_payment_method` meta in the posts store, a NULL `payment_method` column in the HPOS store.
+	 *
+	 * @param int  $order_id     Order id.
+	 * @param bool $hpos_enabled Whether HPOS is authoritative.
+	 */
+	private function clear_payment_method( int $order_id, bool $hpos_enabled ): void {
+		global $wpdb;
+
+		if ( $hpos_enabled ) {
+			$wpdb->update( OrdersTableDataStore::get_orders_table_name(), array( 'payment_method' => null ), array( 'id' => $order_id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Test fixture.
+		} else {
+			delete_post_meta( $order_id, '_payment_method' );
+		}
+	}
+
+	/**
 	 * Create and save an order, with the Multi-Currency exchange-rate meta unless told otherwise.
 	 *
 	 * @param string $currency       Order currency.
@@ -215,8 +256,9 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 	 * @param string $total          Order total.
 	 * @param string $status         Order status.
 	 * @param bool   $with_rate      Whether to record an exchange rate.
+	 * @return int The order id.
 	 */
-	private function create_order( string $currency, string $payment_method, string $total, string $status, bool $with_rate = true ): void {
+	private function create_order( string $currency, string $payment_method, string $total, string $status, bool $with_rate = true ): int {
 		$order = new \WC_Order();
 		$order->set_currency( $currency );
 		$order->set_payment_method( $payment_method );
@@ -225,7 +267,8 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 		if ( $with_rate ) {
 			$order->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', '0.8' );
 		}
-		$order->save();
+
+		return $order->save();
 	}
 
 	/**
