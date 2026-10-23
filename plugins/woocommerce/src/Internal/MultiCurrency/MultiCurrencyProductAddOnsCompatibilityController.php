@@ -191,7 +191,7 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 			$value .= sprintf( _x( ' (%1$s)', 'quantity based addon price in cart', 'woocommerce' ), $formatted_price );
 		} elseif ( 'percentage_based' === $addon_price_type && $addon_price && $add_price_to_value ) {
 			$product = $this->get_product_by_id( (int) ( $cart_item['product_id'] ?? 0 ) );
-			if ( $product instanceof \WC_Product ) {
+			if ( null !== $product ) {
 				$converted_price = $this->get_price_projection_service()->get_price( $price, 'product' );
 				// @phpstan-ignore argument.type (set_price() formats a float price itself, through wc_format_decimal())
 				$product->set_price( $converted_price * ( (float) $addon_price / 100 ) );
@@ -359,9 +359,9 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 	 * Get a product by ID.
 	 *
 	 * @param int $product_id Product ID.
-	 * @return object|null
+	 * @return \WC_Product|null
 	 */
-	protected function get_product_by_id( int $product_id ): ?object {
+	protected function get_product_by_id( int $product_id ): ?\WC_Product {
 		$product = wc_get_product( $product_id );
 
 		return $product ? $product : null;

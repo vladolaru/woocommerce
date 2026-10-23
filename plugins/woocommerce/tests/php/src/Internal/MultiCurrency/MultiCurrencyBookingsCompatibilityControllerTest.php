@@ -504,7 +504,9 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * Create a product of a given type, as an extension's product class reports it.
+	 * Create a product of a given type, as an extension's product class reports it: WooCommerce Bookings 3.12.1's
+	 * `WC_Product_Booking` extends `WC_Product` and its `get_type()` returns 'booking'
+	 * (`includes/data-objects/class-wc-product-booking.php:15,220-222`).
 	 *
 	 * @param string $type Product type.
 	 * @return \WC_Product

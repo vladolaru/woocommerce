@@ -278,6 +278,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 
 				$this->assertSame( '<span>$10.00 EUR</span>', $sut->maybe_get_explicit_format_for_subscription_total( '<span>$10.00 EUR</span>' ) );
 				$this->assertSame( 'GBP', $sut->override_selected_currency( 'GBP' ) );
+				$this->assertSame( 'EUR', $sut->override_selected_currency( false ), 'The template sets the subscription the row formats.' );
 			}
 		);
 	}
@@ -336,6 +337,23 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		$switch_request->set_switch_request_subscription( $this->create_subscription( 'AUD' ) );
 
 		$this->assertTrue( $switch_request->should_disable_currency_switching( false ) );
+	}
+
+	/**
+	 * @testdox Should keep a resubscribe cart's prices while Subscriptions sets up the cart.
+	 *
+	 * Subscriptions sets up a resubscribe cart through the setup_cart() it inherits from the renewal cart
+	 * (Subscriptions 9.3.0 `includes/core/class-wcs-cart-resubscribe.php:16,110`, `class-wcs-cart-renewal.php:298,370`), so the
+	 * renewal setup call is on the stack; client 11.1.0 lets only renewal carts convert there
+	 * (`includes/multi-currency/Compatibility/WooCommerceSubscriptions.php:226-243`).
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_keeps_resubscribe_cart_prices_while_the_cart_is_set_up(): void {
+		$resubscribe = $this->create_controller();
+		$resubscribe->set_subscription_cart_item( 'resubscribe', $this->create_subscription( 'GBP' ) );
+
+		$this->assertFalse( CallStack::run( array( 'WCS_Cart_Renewal->setup_cart', 'WC_Cart_Totals->calculate_item_totals' ), fn() => $resubscribe->should_convert_product_price( true, (object) array( 'id' => 1 ) ) ) );
 	}
 
 	/**
@@ -942,7 +960,8 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
-	 * Create a subscription: WooCommerce Subscriptions' subscription extends WC_Order, and the double reports any currency
+	 * Create a subscription: WooCommerce Subscriptions 9.3.0's `WC_Subscription` extends `WC_Order`
+	 * (`includes/core/class-wc-subscription.php:15`), and the double reports any currency
 	 * code, an empty one included, which WC_Order::set_currency() would refuse.
 	 *
 	 * @param string $currency_code Currency code.
@@ -982,7 +1001,8 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
-	 * Create a coupon of a discount type, including the types WooCommerce Subscriptions registers.
+	 * Create a coupon of a discount type, including the types WooCommerce Subscriptions 9.3.0 registers
+	 * (`includes/core/class-wc-subscriptions-coupon.php:136-147`, renewal types from `:60`).
 	 *
 	 * @param string $discount_type Discount type.
 	 * @return \WC_Coupon
@@ -1021,7 +1041,8 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
-	 * Create an unsaved subscription product with a sign-up fee in its meta.
+	 * Create an unsaved subscription product with a sign-up fee in its meta, the key WooCommerce Subscriptions 9.3.0
+	 * stores it under (`includes/core/class-wc-subscriptions-product.php:26`).
 	 *
 	 * @param int  $product_id                  Product ID.
 	 * @param bool $has_changed_signup_fee_meta Whether the sign-up fee meta has changed since it was read.

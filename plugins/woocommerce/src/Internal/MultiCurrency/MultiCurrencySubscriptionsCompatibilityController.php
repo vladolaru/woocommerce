@@ -328,14 +328,21 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	public function should_convert_product_price( bool $should_convert, $product ): bool {
 		unset( $product );
 
-		// Renewal and resubscribe carts already hold the subscription's prices while totals calculate,
-		// except while Subscriptions sets up the renewal cart.
-		return $should_convert
-			&& ! (
-				( null !== $this->get_subscription_type_from_cart( 'renewal' ) || null !== $this->get_subscription_type_from_cart( 'resubscribe' ) )
-				&& ! MultiCurrencyRequestContext::is_call_in_backtrace( self::RENEWAL_SETUP_CALLS )
-				&& MultiCurrencyRequestContext::is_call_in_backtrace( self::PRODUCT_PRICE_CALCULATION_CALLS )
-			);
+		if ( ! $should_convert ) {
+			return false;
+		}
+
+		// Renewal and resubscribe carts already hold the subscription's prices while totals calculate; a renewal
+		// cart converts while Subscriptions sets it up, so the shopper lands at checkout with the converted price.
+		$has_renewal = null !== $this->get_subscription_type_from_cart( 'renewal' );
+		if ( $has_renewal && MultiCurrencyRequestContext::is_call_in_backtrace( self::RENEWAL_SETUP_CALLS ) ) {
+			return true;
+		}
+
+		return ! (
+			( $has_renewal || null !== $this->get_subscription_type_from_cart( 'resubscribe' ) )
+			&& MultiCurrencyRequestContext::is_call_in_backtrace( self::PRODUCT_PRICE_CALCULATION_CALLS )
+		);
 	}
 
 	/**
@@ -602,11 +609,8 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 			$this->running_override_selected_currency_filters = false;
 		}
 
-		if ( null === $subscription ) {
-			return null;
-		}
-
-		return $this->get_subscription_customer_id( $subscription ) === $this->get_current_user_id() ? $subscription : null;
+		// The customer id comes through a getter filter, so it is cast before the strict comparison.
+		return $subscription instanceof \WC_Order && absint( $subscription->get_customer_id() ) === get_current_user_id() ? $subscription : null;
 	}
 
 	/**
@@ -691,25 +695,6 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 		$currency_code = $subscription->get_currency();
 
 		return is_scalar( $currency_code ) && '' !== trim( (string) $currency_code ) ? strtoupper( trim( (string) $currency_code ) ) : null;
-	}
-
-	/**
-	 * Get a subscription customer ID.
-	 *
-	 * @param object $subscription Subscription, which extends WC_Order.
-	 * @return int
-	 */
-	private function get_subscription_customer_id( object $subscription ): int {
-		return $subscription instanceof \WC_Order ? absint( $subscription->get_customer_id() ) : 0;
-	}
-
-	/**
-	 * Get the current user ID.
-	 *
-	 * @return int
-	 */
-	private function get_current_user_id(): int {
-		return get_current_user_id();
 	}
 
 	/**

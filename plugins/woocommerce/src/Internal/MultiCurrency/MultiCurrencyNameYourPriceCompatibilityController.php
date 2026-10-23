@@ -296,7 +296,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 		$raw_price_key       = 'nyp_raw' . $suffix;
 		$has_raw_price       = $this->has_request_value( $raw_price_key );
 		$has_source_currency = $this->has_request_value( 'nyp_currency' );
-		$source_currency     = $has_source_currency ? $this->get_sanitized_request_value( 'nyp_currency' ) : '';
+		$source_currency     = $this->get_sanitized_request_value( 'nyp_currency' );
 		$selected_currency   = $this->get_selected_currency_code();
 
 		if ( ! $has_raw_price || ! $has_source_currency || $source_currency === $selected_currency ) {

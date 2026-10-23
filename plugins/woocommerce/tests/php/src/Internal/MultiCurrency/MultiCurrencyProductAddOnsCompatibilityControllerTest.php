@@ -261,11 +261,13 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 						'field_type' => 'input_multiplier',
 						'value'      => 2,
 					),
+					// A select stores the chosen option's label as its value (Product Add-Ons 8.4.3
+					// `includes/fields/class-wc-product-addons-field-list.php:117`); a numeric label must not split the price.
 					array(
 						'price'      => 5,
 						'price_type' => 'quantity_based',
 						'field_type' => 'select',
-						'value'      => 1,
+						'value'      => 2,
 					),
 					array(
 						'price'      => 3,
@@ -353,7 +355,8 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 			$result
 		);
 
-		// A quantity of zero cannot split the price, so the whole price converts.
+		// Synthetic boundary case: a quantity of zero cannot split the price, so the whole price converts (client 11.1.0
+		// `includes/multi-currency/Compatibility/WooCommerceProductAddOns.php:139-142` has no zero guard and would divide by zero).
 		$this->assertSame(
 			array(
 				'name'    => 'Gift wrap',
@@ -543,7 +546,7 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 			/**
 			 * Products keyed by ID.
 			 *
-			 * @var array<int,object>
+			 * @var array<int,\WC_Product>
 			 */
 			private array $products = array();
 
@@ -576,10 +579,10 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 			/**
 			 * Set a product lookup fixture.
 			 *
-			 * @param int    $product_id Product ID.
-			 * @param object $product    Product.
+			 * @param int         $product_id Product ID.
+			 * @param \WC_Product $product    Product.
 			 */
-			public function set_product( int $product_id, object $product ): void {
+			public function set_product( int $product_id, \WC_Product $product ): void {
 				$this->products[ $product_id ] = $product;
 			}
 
@@ -596,9 +599,9 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 			 * Get a product by ID.
 			 *
 			 * @param int $product_id Product ID.
-			 * @return object|null
+			 * @return \WC_Product|null
 			 */
-			protected function get_product_by_id( int $product_id ): ?object {
+			protected function get_product_by_id( int $product_id ): ?\WC_Product {
 				return $this->products[ $product_id ] ?? null;
 			}
 
