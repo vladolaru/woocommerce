@@ -594,7 +594,10 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			return strtoupper( $billing_country );
 		}
 
-		return strtoupper( WC()->countries->get_base_country() );
+		// The getter ends in the woocommerce_countries_base_country filter, which can return a non-string.
+		$base_country = WC()->countries->get_base_country();
+
+		return is_string( $base_country ) ? strtoupper( $base_country ) : '';
 	}
 
 	/**

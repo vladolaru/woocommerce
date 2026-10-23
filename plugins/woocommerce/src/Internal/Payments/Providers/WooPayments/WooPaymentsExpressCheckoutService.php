@@ -1024,7 +1024,9 @@ class WooPaymentsExpressCheckoutService {
 	 * @return string
 	 */
 	private function get_store_base_country(): string {
-		$country = strtoupper( (string) WC()->countries->get_base_country() );
+		// The getter ends in the woocommerce_countries_base_country filter, which can return a non-string.
+		$country = WC()->countries->get_base_country();
+		$country = is_string( $country ) ? strtoupper( $country ) : '';
 
 		return '' !== $country ? $country : 'US';
 	}

@@ -321,6 +321,54 @@ class WooPaymentsPaymentMethodMessagingTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A base country that its filter returns as $_dataName localizes no country instead of failing the page.
+	 *
+	 * @dataProvider provide_non_string_base_countries
+	 *
+	 * @param mixed $filtered What the woocommerce_countries_base_country filter returns.
+	 */
+	public function test_localizes_no_country_when_the_base_country_is_not_a_string( $filtered ): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_currency', 'USD' );
+		$product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'regular_price' => '50.00',
+				'price'         => '50.00',
+			)
+		);
+		$this->set_current_product( $product );
+		if ( WC()->customer ) {
+			WC()->customer->set_billing_country( '' );
+		}
+		$controller   = $this->create_controller( true, array( 'card', 'affirm' ), array( 'affirm_payments' => 'active' ) );
+		$base_country = static fn() => $filtered;
+		add_filter( 'woocommerce_countries_base_country', $base_country );
+
+		try {
+			ob_start();
+			$controller->render_site_messaging();
+			ob_end_clean();
+		} finally {
+			remove_filter( 'woocommerce_countries_base_country', $base_country );
+		}
+
+		$this->assertSame( '', $this->get_localized_script_data()['country'] );
+	}
+
+	/**
+	 * Values a woocommerce_countries_base_country callback can return that are not a country code string.
+	 *
+	 * @return array<string,array{mixed}>
+	 */
+	public function provide_non_string_base_countries(): array {
+		return array(
+			'an array' => array( array( 'DE' ) ),
+			'null'     => array( null ),
+		);
+	}
+
+	/**
 	 * @testdox Should enqueue the Blocks cart BNPL plugin on the cart-block surface.
 	 */
 	public function test_enqueues_blocks_cart_bnpl_plugin_on_cart_block_surface(): void {

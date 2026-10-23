@@ -407,6 +407,49 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A base country that its filter returns as $_dataName falls back to US in the express checkout params.
+	 *
+	 * @dataProvider provide_non_string_base_countries
+	 *
+	 * @param mixed $filtered What the woocommerce_countries_base_country filter returns.
+	 */
+	public function test_product_page_country_code_falls_back_when_the_base_country_is_not_a_string( $filtered ): void {
+		update_option( 'woocommerce_default_country', 'US:CA' );
+		update_option( 'woocommerce_currency', 'USD' );
+		$product = \WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'regular_price' => '12.34',
+				'virtual'       => true,
+				'price'         => '12.34',
+			)
+		);
+		$this->set_current_product( $product );
+		$base_country = static fn() => $filtered;
+		add_filter( 'woocommerce_countries_base_country', $base_country );
+
+		try {
+			$params = $this->create_service()->get_express_checkout_params( 'product' );
+		} finally {
+			remove_filter( 'woocommerce_countries_base_country', $base_country );
+		}
+
+		$this->assertSame( 'US', $params['product']['country_code'] );
+	}
+
+	/**
+	 * Values a woocommerce_countries_base_country callback can return that are not a country code string.
+	 *
+	 * @return array<string,array{mixed}>
+	 */
+	public function provide_non_string_base_countries(): array {
+		return array(
+			'an array' => array( array( 'DE' ) ),
+			'null'     => array( null ),
+		);
+	}
+
+	/**
 	 * @testdox Should prepare product-page amounts in Stripe minor units, not WooCommerce price decimals.
 	 */
 	public function test_product_page_amounts_use_stripe_minor_units_for_zero_decimal_currency(): void {
