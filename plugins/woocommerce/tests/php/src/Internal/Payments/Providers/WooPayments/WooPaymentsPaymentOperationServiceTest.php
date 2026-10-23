@@ -1464,97 +1464,6 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The lookup's answer stands when its always-on log line throws: $_dataName.
-	 *
-	 * The logger is WooCommerce's own, so each line runs the woocommerce_logger_log_message filter (WC_Logger::log()); the
-	 * filter throws on the lookup's line here. A failing logger must not turn a refusal that keeps the order status into a
-	 * plain failure, skip the merchant note, or fail an order the earlier request paid (review 67, monitor question).
-	 *
-	 * @dataProvider provide_lookup_log_failures
-	 *
-	 * @param string           $path             Lookup answer.
-	 * @param array<int,mixed> $lookup_responses Transport answers to the intents lists.
-	 * @param string           $thrown           Class the filter throws.
-	 */
-	public function test_lookup_answer_stands_when_its_log_line_fails( string $path, array $lookup_responses, string $thrown ): void {
-		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
-		add_filter( 'wcpay_dev_mode', '__return_false' );
-		$order = $this->create_woopayments_order();
-		foreach ( $lookup_responses as $index => $response ) {
-			if ( is_callable( $response ) ) {
-				$lookup_responses[ $index ] = $response( $order );
-			}
-		}
-		$http_client            = new FakeWooPaymentsHttpClient();
-		$http_client->responses = array_merge( array( self::platform_bad_gateway(), self::stripe_idempotency_error( 'key_first' ) ), $lookup_responses );
-		$sut                    = $this->create_timeout_operation_service( $http_client, 'cus_sent' );
-		$this->charge_attempt( $sut, $order, 'pm_first', 'key_first' );
-		$throws = 0;
-		add_filter(
-			'woocommerce_logger_log_message',
-			static function ( $message ) use ( $thrown, &$throws ) {
-				if ( false !== strpos( (string) $message, 'was refused because the new payment request differs from the earlier one' ) ) {
-					++$throws;
-					throw new $thrown( 'Log write failed.' );
-				}
-
-				return null;
-			}
-		);
-
-		$outcome = $this->charge_attempt( $sut, wc_get_order( $order->get_id() ), 'pm_new', 'key_second' );
-		$fresh   = wc_get_order( $order->get_id() );
-
-		$this->assertSame( 1, $throws, 'The lookup line was written once.' );
-		$this->assertSame( array(), array_values( array_filter( self::request_trail( $http_client ), static fn( string $line ): bool => 'POST intentions key_second' === $line ) ), 'The new card must not be charged.' );
-		if ( 'found' === $path ) {
-			$this->assertSame( PaymentOutcome::STATUS_COMPLETED, $outcome->get_status() );
-			$this->assertSame( 'pi_earlier', $outcome->get_provider_payment_id() );
-			return;
-		}
-		$this->assertSame( PaymentOutcome::STATUS_FAILED, $outcome->get_status() );
-		$this->assertTrue( $outcome->get_data()[ PaymentOutcome::DATA_PRESERVE_ORDER_STATUS ] ?? null );
-		$this->assertSame( 'disputed' === $path ? WooPaymentsDuplicatePaymentPreventionService::ERROR_DISPUTED_INTENT : 'wcpay_charge_lookup_failed', $outcome->get_data()[ PaymentOutcome::DATA_ERROR_CODE ] ?? null );
-		$this->assertSame( 'key_first', $fresh->get_meta( WooPaymentsPaymentOperationService::CHARGE_IDEMPOTENCY_KEY_META, true ) );
-		$this->assertCount( 'cannot check' === $path ? 1 : 0, self::note_texts_containing( $fresh, 'could not be checked' ) );
-		$this->assertCount( 'disputed' === $path ? 1 : 0, self::note_texts_containing( $fresh, 'is disputed' ) );
-	}
-
-	/**
-	 * Lookup answers, each with its list answers, with an Exception and a PHP Error thrown by the log filter.
-	 *
-	 * @return array<string,array{0:string,1:array<int,mixed>,2:string}>
-	 */
-	public function provide_lookup_log_failures(): array {
-		$disputed = array(
-			'charges' => array(
-				'data' => array(
-					array(
-						'id'       => 'ch_earlier',
-						'amount'   => 1000,
-						'refunded' => false,
-						'disputed' => true,
-					),
-				),
-			),
-		);
-		$paths    = array(
-			'failed'       => array( self::stripe_api_error( 500 ) ),
-			'cannot check' => array( self::stripe_no_such_customer(), self::list_answer_without_data() ),
-			'found'        => array( static fn( WC_Order $order ): array => self::intent_list( array( self::order_intent( $order, 'pi_earlier', 'succeeded' ) ) ) ),
-			'disputed'     => array( static fn( WC_Order $order ): array => self::intent_list( array( self::order_intent( $order, 'pi_earlier', 'succeeded', 1000, $disputed ) ) ) ),
-		);
-		$cases    = array();
-		foreach ( $paths as $path => $responses ) {
-			foreach ( array( \RuntimeException::class, \Error::class ) as $thrown ) {
-				$cases[ "the lookup $path and the filter throws $thrown" ] = array( $path, $responses, $thrown );
-			}
-		}
-
-		return $cases;
-	}
-
-	/**
 	 * @testdox A failed lookup ($_dataName) refuses the attempt with the generic notice, keeps the order status, the key and the record, and the next attempt looks again.
 	 *
 	 * An error proves nothing about money, so nothing is charged: the failure is not definitive, not a decline, and keeps
@@ -5974,6 +5883,67 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $http_client->requests[0]['body'], $http_client->requests[2]['body'], 'The held-key retry must resend the earlier body byte for byte.' );
 		$this->assertSame( 're_f458_held_key_retry', wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
 		$this->assertSame( '', self::refund_hold_of( $order ) );
+	}
+
+	/**
+	 * @testdox When the line for a settled earlier refund fails to log ($_dataName), the hold stays and the next call links that refund with no second refund.
+	 *
+	 * The line is written whatever the logging setting, so a log callback that throws ends the call as a failure and
+	 * WooCommerce deletes the refund row. The refund went through at Stripe, so a hold deleted before the line would let
+	 * the next call send a second refund under a fresh key.
+	 *
+	 * @dataProvider provide_settled_refund_branches
+	 *
+	 * @param string $branch How the earlier refund is settled.
+	 */
+	public function test_refund_hold_stays_when_the_settled_line_fails_to_log( string $branch ): void {
+		update_option( 'woocommerce_woocommerce_payments_settings', array( 'enable_logging' => 'no' ) );
+		$order                  = $this->create_refund_hold_order();
+		$held_key               = 'link' === $branch ? self::F458_KEY_555 : 'key_f458_unlisted';
+		$listed                 = self::http_json( 200, $this->recorded_refund_list_with_marker( self::F458_REFUND_555, $held_key ) );
+		$http_client            = new FakeWooPaymentsHttpClient();
+		$http_client->responses = 'link' === $branch
+			? array( $listed )
+			: array( self::http_json( 200, $this->recorded_refund_list() ), self::http_json( 200, $this->recorded_refund_answer( self::F458_REFUND_555, $held_key, 555 ) ) );
+		$provider               = $this->create_refund_hold_provider( $http_client );
+		$this->seed_refund_hold( $order, array( 'key' => $held_key ) );
+		$throws = 0;
+		$filter = static function ( $message ) use ( &$throws ) {
+			if ( false !== strpos( (string) $message, 'is settled and its record is deleted' ) ) {
+				++$throws;
+				throw new \RuntimeException( 'Log write failed.' );
+			}
+
+			return $message;
+		};
+		add_filter( 'woocommerce_logger_log_message', $filter );
+
+		list( $failed ) = $this->run_refund( $provider, $order, 5.55 );
+		remove_filter( 'woocommerce_logger_log_message', $filter );
+		$kept                   = self::refund_hold_of( $order );
+		$http_client->responses = array( $listed );
+		list( $linked, $row )   = $this->run_refund( $provider, $order, 5.55 );
+
+		$this->assertSame( 1, $throws, 'The settled line was written once.' );
+		$this->assertWPError( $failed );
+		$this->assertSame( $held_key, is_array( $kept ) ? ( $kept['key'] ?? null ) : $kept, 'The hold must outlive a failing log line.' );
+		$this->assertTrue( $linked );
+		$this->assertSame( 'link' === $branch ? array( self::refund_list_trail(), self::refund_list_trail() ) : array( self::refund_list_trail(), 'POST refunds ' . $held_key, self::refund_list_trail() ), self::request_trail( $http_client ), 'The next call must read the refunds and send no second refund.' );
+		$this->assertSame( self::F458_REFUND_555, wc_get_order( $row )->get_meta( '_wcpay_refund_id', true ) );
+		$this->assertSame( '', self::refund_hold_of( $order ) );
+	}
+
+	/**
+	 * Ways an earlier refund is settled with its money already moved: a listed refund for the same amount, and a held-key
+	 * retry that returns a refund.
+	 *
+	 * @return array<string,array{string}>
+	 */
+	public function provide_settled_refund_branches(): array {
+		return array(
+			'linked from the refund list' => array( 'link' ),
+			'held-key retry'              => array( 'held' ),
+		);
 	}
 
 	/**

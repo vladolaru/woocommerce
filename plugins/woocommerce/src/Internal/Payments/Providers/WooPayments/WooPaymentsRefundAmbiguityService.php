@@ -231,10 +231,11 @@ class WooPaymentsRefundAmbiguityService {
 	public function settle_held_key_answer( WC_Order $order, array $refund ): ?array {
 		$record = $order->get_meta( WooPaymentsPaymentOperationService::REFUND_AMBIGUITY_META, true );
 		$key    = is_array( $record ) ? (string) ( $record['key'] ?? '' ) : '';
-		$this->clear_record( $order );
 
+		// Log before clearing: the refund went through, so a log callback that throws must leave the record for the next call.
 		$refund_id = (string) ( $refund['id'] ?? '' );
 		$this->log_cleared( $order, array( 'key' => $key ), sprintf( 'resending its request under the held key returned refund %s', $refund_id ) );
+		$this->clear_record( $order );
 		if ( '' === $refund_id || ! $this->is_recorded_on_order( $order, $refund_id ) ) {
 			return null;
 		}
@@ -359,8 +360,9 @@ class WooPaymentsRefundAmbiguityService {
 			}
 
 			if ( $is_same_amount ) {
-				$this->clear_record( $order );
+				// Log before clearing, as in settle_held_key_answer().
 				$this->log_cleared( $order, $record, sprintf( 'its refund %s went through for this amount and is not recorded on the order, so it answers this call with no new refund', $refund_id ) );
+				$this->clear_record( $order );
 
 				return array(
 					'action' => self::ACTION_LINK,
