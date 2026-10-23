@@ -1008,6 +1008,41 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox A product_page SKU that a sanitize_text_field callback turns into null resolves no product, not one without a SKU.
+	 *
+	 * The filter's value reaches the SKU lookup, and the database escapes null to '', which matches a product with no SKU.
+	 */
+	public function test_product_page_shortcode_sku_sanitized_to_null_resolves_no_product(): void {
+		\WC_Helper_Product::create_simple_product(
+			true,
+			array(
+				'name'          => 'Product Without SKU',
+				'sku'           => '',
+				'regular_price' => '4.56',
+				'virtual'       => true,
+				'price'         => '4.56',
+			)
+		);
+		$this->set_current_page_with_content( '[product_page sku="null-sku-widget"]' );
+		unset( $GLOBALS['product'] );
+		$to_null = static function ( $filtered, $raw ) {
+			return 'null-sku-widget' === $raw ? null : $filtered;
+		};
+		add_filter( 'sanitize_text_field', $to_null, 10, 2 );
+
+		try {
+			$service = $this->create_service();
+			$shown   = $service->should_show_payment_request_button( 'product' );
+			$params  = $service->get_express_checkout_params( 'product' );
+		} finally {
+			remove_filter( 'sanitize_text_field', $to_null, 10 );
+		}
+
+		$this->assertFalse( $shown );
+		$this->assertStringNotContainsString( 'Product Without SKU', (string) wp_json_encode( $params ) );
+	}
+
+	/**
 	 * @testdox Should ignore an unrelated global product on product_page shortcode hosts.
 	 */
 	public function test_product_page_shortcode_ignores_unrelated_global_product(): void {

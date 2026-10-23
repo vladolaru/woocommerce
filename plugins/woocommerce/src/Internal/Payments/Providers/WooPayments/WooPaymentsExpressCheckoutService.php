@@ -693,6 +693,7 @@ class WooPaymentsExpressCheckoutService {
 			$product_id = isset( $atts['id'] ) ? absint( $atts['id'] ) : 0;
 			if ( ! $product_id && isset( $atts['sku'] ) && is_scalar( $atts['sku'] ) ) {
 				$sku        = sanitize_text_field( wp_unslash( (string) $atts['sku'] ) );
+				$sku        = is_scalar( $sku ) ? (string) $sku : '';
 				$product_id = '' !== $sku ? wc_get_product_id_by_sku( $sku ) : 0;
 			}
 
