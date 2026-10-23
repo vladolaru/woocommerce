@@ -8,6 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin;
 
 use Automattic\Jetpack\Identity_Crisis;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
@@ -224,16 +225,11 @@ class WooPaymentsAdminSharedSettings implements RegisterHooksInterface {
 
 		$provider_settings = $settings['woopaymentsSettings'];
 
-		/**
-		 * Filters the WooPayments pages' data, so Multi-Currency can add its own.
-		 *
-		 * @since 11.2.0
-		 *
-		 * @param array<string,mixed> $settings The WooPayments pages' data.
-		 */
-		$core_settings_candidate = apply_filters( 'woocommerce_multi_currency_js_settings', $provider_settings );
-		if ( is_array( $core_settings_candidate ) ) {
-			$provider_settings = $core_settings_candidate;
+		// While WooCommerce runs Multi-Currency, the pages' data carries its flag, as the WooPayments extension's admin data does
+		// (class-wc-payments-admin.php:1039).
+		$multi_currency_arbiter = wc_get_container()->get( MultiCurrencyRuntimeArbiter::class );
+		if ( $multi_currency_arbiter->should_core_register() ) {
+			$provider_settings['isMultiCurrencyEnabled'] = true;
 		}
 
 		/**

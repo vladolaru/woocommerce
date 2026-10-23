@@ -196,7 +196,6 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 		}
 
 		add_filter( 'woocommerce_get_settings_pages', array( $this, 'handle_woocommerce_get_settings_pages' ) );
-		add_filter( 'woocommerce_multi_currency_js_settings', array( $this, 'add_multi_currency_settings_config' ) );
 		add_action( 'admin_print_scripts', array( $this, 'handle_admin_print_scripts' ) );
 		add_action( 'woocommerce_admin_field_wcpay_multi_currency_settings_page', array( $this, 'render_settings_container' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) );
@@ -290,25 +289,6 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 		$this->register_admin_assets();
 		$this->enqueue_admin_asset( self::ADMIN_ASSETS['script']['handle'] );
 		$this->enqueue_admin_asset( self::ADMIN_ASSETS['style']['handle'] );
-	}
-
-	/**
-	 * Add the multi-currency flag to the Core JS config when it remains an array.
-	 *
-	 * Filter callbacks can return any value. Preserve a non-array value so the
-	 * provider payload boundary can reject it without breaking the filter chain.
-	 *
-	 * @param mixed $config Existing config.
-	 * @return mixed Existing config when it is not an array, otherwise the updated config.
-	 */
-	public function add_multi_currency_settings_config( $config ) {
-		if ( ! is_array( $config ) ) {
-			return $config;
-		}
-
-		$config['isMultiCurrencyEnabled'] = true;
-
-		return $config;
 	}
 
 	/**

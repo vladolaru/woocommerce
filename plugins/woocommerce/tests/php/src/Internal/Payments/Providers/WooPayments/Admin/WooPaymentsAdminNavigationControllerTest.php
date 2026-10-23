@@ -69,7 +69,6 @@ class WooPaymentsAdminNavigationControllerTest extends WC_Unit_Test_Case {
 		$this->intercepted_redirect = '';
 		remove_filter( 'wp_redirect', array( $this, 'intercept_redirect' ), 10 );
 		remove_filter( 'wp_doing_ajax', '__return_true' );
-		remove_all_filters( 'woocommerce_multi_currency_js_settings' );
 		remove_all_filters( 'wcpay_js_settings' );
 		unset( $_GET['page'], $_GET['tab'], $_GET['path'], $_GET['from'], $_SERVER['HTTP_REFERER'] );
 		delete_option( 'wcpay_account_data' );

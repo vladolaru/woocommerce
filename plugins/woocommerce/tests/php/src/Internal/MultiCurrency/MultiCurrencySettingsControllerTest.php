@@ -22,9 +22,6 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	 */
 	private array $hooks = array(
 		'woocommerce_get_settings_pages',
-		'wcpay_settings',
-		'woocommerce_multi_currency_js_settings',
-		'wcpay_js_settings',
 		'admin_print_scripts',
 		'woocommerce_admin_field_wcpay_multi_currency_settings_page',
 		'admin_enqueue_scripts',
@@ -57,9 +54,6 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 		$sut->register();
 
 		$this->assertFalse( has_filter( 'woocommerce_get_settings_pages', array( $sut, 'handle_woocommerce_get_settings_pages' ) ) );
-		$this->assertFalse( has_filter( 'wcpay_settings', array( $sut, 'add_multi_currency_settings_config' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_multi_currency_js_settings', array( $sut, 'add_multi_currency_settings_config' ) ) );
-		$this->assertFalse( has_filter( 'wcpay_js_settings', array( $sut, 'add_multi_currency_settings_config' ) ) );
 		$this->assertFalse( has_action( 'admin_print_scripts', array( $sut, 'handle_admin_print_scripts' ) ) );
 		$this->assertFalse( has_action( 'woocommerce_admin_field_wcpay_multi_currency_settings_page', array( $sut, 'render_settings_container' ) ) );
 		$this->assertFalse( has_action( 'admin_enqueue_scripts', array( $sut, 'handle_admin_enqueue_scripts' ) ) );
@@ -76,9 +70,6 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 		$sut->register();
 
 		$this->assertSame( 10, has_filter( 'woocommerce_get_settings_pages', array( $sut, 'handle_woocommerce_get_settings_pages' ) ) );
-		$this->assertFalse( has_filter( 'wcpay_settings', array( $sut, 'add_multi_currency_settings_config' ) ) );
-		$this->assertSame( 10, has_filter( 'woocommerce_multi_currency_js_settings', array( $sut, 'add_multi_currency_settings_config' ) ) );
-		$this->assertFalse( has_filter( 'wcpay_js_settings', array( $sut, 'add_multi_currency_settings_config' ) ) );
 		$this->assertSame( 10, has_action( 'admin_print_scripts', array( $sut, 'handle_admin_print_scripts' ) ) );
 		$this->assertSame( 10, has_action( 'woocommerce_admin_field_wcpay_multi_currency_settings_page', array( $sut, 'render_settings_container' ) ) );
 		$this->assertFalse( has_action( 'woocommerce_admin_field_wcpay_currencies_settings_onboarding_cta', array( $sut, 'render_onboarding_cta' ) ) );
@@ -155,19 +146,6 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 		$sut->register();
 
 		$this->assertFalse( has_action( 'admin_init', array( $sut, 'handle_admin_init' ) ) );
-	}
-
-	/**
-	 * @testdox Should preserve invalid settings returned by an earlier Core filter callback.
-	 */
-	public function test_preserves_invalid_settings_from_an_earlier_core_filter_callback(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		add_filter( 'woocommerce_multi_currency_js_settings', '__return_null', 5 );
-		$sut->register();
-
-		$config = apply_filters( 'woocommerce_multi_currency_js_settings', array( 'existingSetting' => true ) );
-
-		$this->assertNull( $config );
 	}
 
 	/**
@@ -375,21 +353,6 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array(), $registered_assets );
 		$this->assertSame( array(), $enqueued_assets );
-	}
-
-	/**
-	 * @testdox Should add multi-currency flag to WCPay JS config.
-	 */
-	public function test_adds_multi_currency_flag_to_wcpay_js_config(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-
-		$this->assertSame(
-			array(
-				'foo'                    => 'bar',
-				'isMultiCurrencyEnabled' => true,
-			),
-			$sut->add_multi_currency_settings_config( array( 'foo' => 'bar' ) )
-		);
 	}
 
 	/**

@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\A
 use Automattic\Jetpack\Connection\Manager as JetpackConnectionManager;
 use Automattic\Jetpack\Identity_Crisis;
 use Automattic\Jetpack\Status\Cache as StatusCache;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminNavigationController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminSharedSettings;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsOnboardingRedirect;
@@ -64,7 +65,6 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 		$this->intercepted_redirect = '';
 		remove_filter( 'wp_redirect', array( $this, 'intercept_redirect' ), 10 );
 		remove_filter( 'wp_doing_ajax', '__return_true' );
-		remove_all_filters( 'woocommerce_multi_currency_js_settings' );
 		remove_all_filters( 'wcpay_js_settings' );
 		unset( $_GET['page'], $_GET['tab'], $_GET['path'], $_GET['section'], $_GET['from'], $_SERVER['HTTP_REFERER'] );
 		delete_option( 'wcpay_account_data' );
@@ -889,9 +889,13 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should apply Core Multi-Currency settings before WooPayments extension settings.
+	 * @testdox While WooCommerce runs Multi-Currency ($multi_currency), the pages' data carries its flag before wcpay_js_settings callbacks see it.
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $multi_currency Whether WooCommerce runs Multi-Currency.
 	 */
-	public function test_preloads_core_multi_currency_settings_before_woopayments_extension_settings(): void {
+	public function test_preloads_the_multi_currency_flag_before_woopayments_extension_settings( bool $multi_currency ): void {
 		$_GET['page'] = 'wc-settings';
 		$_GET['tab']  = 'checkout';
 		$sut          = $this->create_shared_settings(
@@ -900,25 +904,18 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 				'is_reports_enabled' => true,
 			)
 		);
+		$arbiter      = $this->getMockBuilder( MultiCurrencyRuntimeArbiter::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'should_core_register' ) )
+			->getMock();
+		$arbiter->method( 'should_core_register' )->willReturn( $multi_currency );
+		wc_get_container()->replace( MultiCurrencyRuntimeArbiter::class, $arbiter );
 		$filter_calls = array();
 
 		add_filter(
-			'woocommerce_multi_currency_js_settings',
-			static function ( array $settings ) use ( &$filter_calls ): array {
-				$filter_calls[] = array(
-					'hook'     => 'woocommerce_multi_currency_js_settings',
-					'settings' => $settings,
-				);
-				return array_merge( $settings, array( 'multiCurrency' => array( 'enabled' => true ) ) );
-			}
-		);
-		add_filter(
 			'wcpay_js_settings',
 			static function ( array $settings ) use ( &$filter_calls ): array {
-				$filter_calls[] = array(
-					'hook'     => 'wcpay_js_settings',
-					'settings' => $settings,
-				);
+				$filter_calls[] = $settings;
 				return array_merge( $settings, array( 'legacyWooPayments' => true ) );
 			}
 		);
@@ -935,31 +932,27 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$this->assertSame(
-			array(
-				'woocommerce_multi_currency_js_settings',
-				'wcpay_js_settings',
-			),
-			wp_list_pluck( $filter_calls, 'hook' )
-		);
-		$this->assertSame( 'provider value', $filter_calls[0]['settings']['preservedProviderSetting'] );
-		$this->assertTrue( $filter_calls[0]['settings']['featureFlags']['reportsArea'] );
-		$this->assertSame( array( 'enabled' => true ), $filter_calls[1]['settings']['multiCurrency'] );
+		$this->assertCount( 1, $filter_calls );
+		$this->assertSame( 'provider value', $filter_calls[0]['preservedProviderSetting'] );
+		$this->assertTrue( $filter_calls[0]['featureFlags']['reportsArea'] );
+		if ( $multi_currency ) {
+			$this->assertTrue( $filter_calls[0]['isMultiCurrencyEnabled'] );
+			$this->assertTrue( $settings['woopaymentsSettings']['isMultiCurrencyEnabled'] );
+		} else {
+			$this->assertArrayNotHasKey( 'isMultiCurrencyEnabled', $filter_calls[0] );
+			$this->assertArrayNotHasKey( 'isMultiCurrencyEnabled', $settings['woopaymentsSettings'] );
+		}
 		$this->assertSame( 'shared value', $settings['preservedSharedSetting'] );
 		$this->assertSame( 'provider value', $settings['woopaymentsSettings']['preservedProviderSetting'] );
 		$this->assertTrue( $settings['woopaymentsSettings']['featureFlags']['existingFlag'] );
 		$this->assertTrue( $settings['woopaymentsSettings']['featureFlags']['reportsArea'] );
-		$this->assertSame( array( 'enabled' => true ), $settings['woopaymentsSettings']['multiCurrency'] );
 		$this->assertTrue( $settings['woopaymentsSettings']['legacyWooPayments'] );
 	}
 
 	/**
-	 * @testdox Should keep the last valid settings when the $null_filter filter returns an invalid value.
-	 * @dataProvider provide_invalid_settings_filters
-	 *
-	 * @param string $null_filter The filter that returns null: `core` (Multi-Currency) or `extension` (WooPayments extension).
+	 * @testdox Should keep the last valid settings when the wcpay_js_settings filter returns an invalid value.
 	 */
-	public function test_preserves_settings_when_a_settings_filter_returns_an_invalid_value( string $null_filter ): void {
+	public function test_preserves_settings_when_the_settings_filter_returns_an_invalid_value(): void {
 		$_GET['page']                   = 'wc-settings';
 		$_GET['tab']                    = 'checkout';
 		$sut                            = $this->create_shared_settings(
@@ -968,23 +961,14 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 				'is_reports_enabled' => true,
 			)
 		);
-		$core_settings                  = null;
 		$woopayments_extension_settings = null;
 
 		add_filter(
-			'woocommerce_multi_currency_js_settings',
-			static function ( array $settings ) use ( &$core_settings, $null_filter ) {
-				$core_settings = $settings;
-
-				return 'core' === $null_filter ? null : array_merge( $settings, array( 'multiCurrency' => array( 'enabled' => true ) ) );
-			}
-		);
-		add_filter(
 			'wcpay_js_settings',
-			static function ( array $settings ) use ( &$woopayments_extension_settings, $null_filter ) {
+			static function ( array $settings ) use ( &$woopayments_extension_settings ) {
 				$woopayments_extension_settings = $settings;
 
-				return 'extension' === $null_filter ? null : $settings;
+				return null;
 			}
 		);
 
@@ -1000,30 +984,12 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		if ( 'core' === $null_filter ) {
-			$this->assertSame( $core_settings, $woopayments_extension_settings );
-			$this->assertSame( $core_settings, $settings['woopaymentsSettings'] );
-		} else {
-			$this->assertSame( $woopayments_extension_settings, $settings['woopaymentsSettings'] );
-			$this->assertSame( array( 'enabled' => true ), $settings['woopaymentsSettings']['multiCurrency'] );
-		}
+		$this->assertSame( $woopayments_extension_settings, $settings['woopaymentsSettings'] );
 		$this->assertSame( 'shared value', $settings['preservedSharedSetting'] );
 		$this->assertSame( 'provider value', $settings['woopaymentsSettings']['preservedProviderSetting'] );
 		$this->assertTrue( $settings['woopaymentsSettings']['featureFlags']['existingFlag'] );
 		$this->assertTrue( $settings['woopaymentsSettings']['featureFlags']['reportsArea'] );
 		$this->assertArrayHasKey( 'adminRouteAvailability', $settings['woopaymentsSettings'] );
-	}
-
-	/**
-	 * The settings filter that returns null.
-	 *
-	 * @return array<string,array{0:string}>
-	 */
-	public function provide_invalid_settings_filters(): array {
-		return array(
-			'core filter returns null'      => array( 'core' ),
-			'extension filter returns null' => array( 'extension' ),
-		);
 	}
 
 	/**
