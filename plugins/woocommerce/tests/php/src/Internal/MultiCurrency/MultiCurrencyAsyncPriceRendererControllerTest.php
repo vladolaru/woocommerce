@@ -88,13 +88,13 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @dataProvider registration_blocker_data
 	 *
-	 * @param bool $cache_optimized_mode Whether cache-optimized mode is active.
-	 * @param bool $frontend_request     Whether this is a frontend request.
-	 * @param bool $store_api_request    Whether this is a Store API request.
-	 * @param bool $admin_api_request    Whether this is an admin API request.
-	 * @param bool $active_session       Whether a WooCommerce session is active.
-	 * @param bool $auto_enabled         Whether automatic currency switching is enabled.
-	 * @param bool $pending_currency     Whether the request has a pending explicit currency switch.
+	 * @param bool        $cache_optimized_mode Whether cache-optimized mode is active.
+	 * @param bool        $frontend_request     Whether this is a frontend request.
+	 * @param bool        $store_api_request    Whether this is a Store API request.
+	 * @param bool        $admin_api_request    Whether this is an admin API request.
+	 * @param bool        $active_session       Whether a WooCommerce session is active.
+	 * @param bool        $auto_enabled         Whether automatic currency switching is enabled.
+	 * @param string|null $query_currency       The request's currency query argument, null when absent.
 	 */
 	public function test_does_not_register_hooks_when_activation_is_blocked(
 		bool $cache_optimized_mode,
@@ -103,12 +103,12 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 		bool $admin_api_request,
 		bool $active_session,
 		bool $auto_enabled,
-		bool $pending_currency
+		?string $query_currency
 	): void {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', $auto_enabled ? 'yes' : 'no' );
 
-		if ( $pending_currency ) {
-			$_GET['currency'] = 'EUR';
+		if ( null !== $query_currency ) {
+			$_GET['currency'] = $query_currency;
 		}
 
 		$sut = $this->create_controller(
@@ -275,17 +275,21 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Data provider for registration blockers.
 	 *
-	 * @return array<string,array{bool,bool,bool,bool,bool,bool,bool}>
+	 * Client 11.1.0 counts any `?currency=` argument, empty included, as a pending switch
+	 * (`includes/multi-currency/MultiCurrency.php:360`).
+	 *
+	 * @return array<string,array{bool,bool,bool,bool,bool,bool,string|null}>
 	 */
 	public function registration_blocker_data(): array {
 		return array(
-			'inactive cache mode'     => array( false, true, false, false, false, true, false ),
-			'non-frontend request'    => array( true, false, false, false, false, true, false ),
-			'Store API request'       => array( true, true, true, false, false, true, false ),
-			'admin API request'       => array( true, true, false, true, false, true, false ),
-			'active session'          => array( true, true, false, false, true, true, false ),
-			'auto switching disabled' => array( true, true, false, false, false, false, false ),
-			'pending currency switch' => array( true, true, false, false, false, true, true ),
+			'inactive cache mode'           => array( false, true, false, false, false, true, null ),
+			'non-frontend request'          => array( true, false, false, false, false, true, null ),
+			'Store API request'             => array( true, true, true, false, false, true, null ),
+			'admin API request'             => array( true, true, false, true, false, true, null ),
+			'active session'                => array( true, true, false, false, true, true, null ),
+			'auto switching disabled'       => array( true, true, false, false, false, false, null ),
+			'pending currency switch'       => array( true, true, false, false, false, true, 'EUR' ),
+			'empty currency query argument' => array( true, true, false, false, false, true, '' ),
 		);
 	}
 

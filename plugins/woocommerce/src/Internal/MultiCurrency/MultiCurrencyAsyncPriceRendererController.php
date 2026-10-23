@@ -387,12 +387,13 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Tell whether this request is explicitly switching currencies.
+	 * Tell whether this request is explicitly switching currencies: any `currency` query argument counts, an empty one
+	 * included (client 11.1.0 `includes/multi-currency/MultiCurrency.php:360`).
 	 *
 	 * @return bool
 	 */
 	private function has_pending_currency_switch(): bool {
-		return isset( $_GET['currency'] ) && is_string( $_GET['currency'] ) && '' !== sanitize_text_field( wp_unslash( $_GET['currency'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		return isset( $_GET['currency'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 	}
 
 	/**
