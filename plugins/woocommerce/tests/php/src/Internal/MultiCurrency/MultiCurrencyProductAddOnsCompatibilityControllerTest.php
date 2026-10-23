@@ -87,6 +87,18 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 		$this->assertSame( 50, has_filter( 'woocommerce_product_addons_order_line_item_meta', array( $sut, 'order_line_item_meta' ) ) );
 		$this->assertSame( 50, has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'should_convert_product_price' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_product_addons_ajax_get_product_price_including_tax', array( $sut, 'get_product_calculation_price' ) ) );
+		$this->assertSame(
+			array(
+				'wcpay_multi_currency_should_convert_product_price' => array( 'should_convert_product_price' => array( 50, 2 ) ),
+				'woocommerce_product_addons_get_item_data' => array( 'get_item_data' => array( 50, 3 ) ),
+				'woocommerce_product_addons_option_price_raw' => array( 'get_addons_price' => array( 50, 2 ) ),
+				'woocommerce_product_addons_order_line_item_meta' => array( 'order_line_item_meta' => array( 50, 4 ) ),
+				'woocommerce_product_addons_params'        => array( 'product_addons_params' => array( 50, 1 ) ),
+				'woocommerce_product_addons_price_raw'     => array( 'get_addons_price' => array( 50, 2 ) ),
+				'woocommerce_product_addons_update_product_price' => array( 'update_product_price' => array( 50, 4 ) ),
+			),
+			RegisteredHooks::of( $sut )
+		);
 	}
 
 	/**
@@ -102,6 +114,13 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 		$this->assertSame( 50, has_filter( 'woocommerce_product_addons_ajax_get_product_price_excluding_tax', array( $sut, 'get_product_calculation_price' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_product_addons_option_price_raw', array( $sut, 'get_addons_price' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_product_addons_update_product_price', array( $sut, 'update_product_price' ) ) );
+		$this->assertSame(
+			array(
+				'woocommerce_product_addons_ajax_get_product_price_excluding_tax' => array( 'get_product_calculation_price' => array( 50, 3 ) ),
+				'woocommerce_product_addons_ajax_get_product_price_including_tax' => array( 'get_product_calculation_price' => array( 50, 3 ) ),
+			),
+			RegisteredHooks::of( $sut )
+		);
 	}
 
 	/**
@@ -149,6 +168,8 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 		$sut = $this->create_controller();
 
 		$this->assertSame( 8.4, $sut->get_addons_price( '10.00', array( 'price_type' => 'flat_fee' ) ) );
+		$this->assertSame( 8.4, $sut->get_addons_price( '10.00', array( 'price_type' => 'quantity_based' ) ) );
+		$this->assertSame( 8.4, $sut->get_addons_price( '10.00', array() ) );
 		$this->assertSame( '10.00', $sut->get_addons_price( '10.00', array( 'price_type' => 'percentage_based' ) ) );
 	}
 
@@ -330,6 +351,29 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 				'display' => '',
 			),
 			$result
+		);
+
+		// A quantity of zero cannot split the price, so the whole price converts.
+		$this->assertSame(
+			array(
+				'name'    => 'Gift wrap',
+				'value'   => '0 (+ formatted:' . $this->converted_price( 10 ) . ')',
+				'display' => '',
+			),
+			$sut->get_item_data(
+				array(),
+				array(
+					'name'       => 'Gift wrap',
+					'value'      => '0',
+					'price'      => 10,
+					'price_type' => 'flat_fee',
+					'field_type' => 'input_multiplier',
+				),
+				array(
+					'data'       => $this->create_product(),
+					'product_id' => 33,
+				)
+			)
 		);
 	}
 

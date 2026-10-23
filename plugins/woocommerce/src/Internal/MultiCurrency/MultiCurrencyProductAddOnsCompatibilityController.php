@@ -8,8 +8,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProductAddOnsCompatibilityProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -80,37 +80,34 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 			return;
 		}
 
-		$this->add_action_once( 'plugins_loaded', array( $this, 'register_product_addons_hooks' ), 20 );
+		add_action( 'plugins_loaded', array( $this, 'register_product_addons_hooks' ), 20 );
 	}
 
 	/**
 	 * Register Product Add-ons compatibility hooks after supported runtimes have loaded.
 	 *
+	 * Add-on prices convert on the storefront outside cron; the product page's price calculation converts in Ajax requests.
+	 *
 	 * @internal
 	 */
 	public function register_product_addons_hooks(): void {
-		$is_admin = is_admin();
-		$is_ajax  = wp_doing_ajax();
-		$is_cron  = wp_doing_cron();
-
-		if (
-			! $this->arbiter->should_core_register()
-			|| ! MultiCurrencyProductAddOnsCompatibilityProjectionService::should_register(
-				$this->is_product_addons_runtime_available(),
-				$is_admin,
-				$is_ajax,
-				$is_cron
-			)
-		) {
+		if ( ! $this->arbiter->should_core_register() || ! $this->is_product_addons_runtime_available() ) {
 			return;
 		}
 
-		if ( MultiCurrencyProductAddOnsCompatibilityProjectionService::should_register_frontend_filters( $is_admin, $is_cron ) ) {
-			$this->register_filter_manifest( MultiCurrencyProductAddOnsCompatibilityProjectionService::get_frontend_filter_manifest() );
+		if ( ! is_admin() && ! wp_doing_cron() ) {
+			add_filter( 'woocommerce_product_addons_option_price_raw', array( $this, 'get_addons_price' ), 50, 2 );
+			add_filter( 'woocommerce_product_addons_price_raw', array( $this, 'get_addons_price' ), 50, 2 );
+			add_filter( 'woocommerce_product_addons_params', array( $this, 'product_addons_params' ), 50 );
+			add_filter( 'woocommerce_product_addons_get_item_data', array( $this, 'get_item_data' ), 50, 3 );
+			add_filter( 'woocommerce_product_addons_update_product_price', array( $this, 'update_product_price' ), 50, 4 );
+			add_filter( 'woocommerce_product_addons_order_line_item_meta', array( $this, 'order_line_item_meta' ), 50, 4 );
+			add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_convert_product_price', array( $this, 'should_convert_product_price' ), 50, 2 );
 		}
 
-		if ( $is_ajax ) {
-			$this->register_filter_manifest( MultiCurrencyProductAddOnsCompatibilityProjectionService::get_ajax_filter_manifest() );
+		if ( wp_doing_ajax() ) {
+			add_filter( 'woocommerce_product_addons_ajax_get_product_price_including_tax', array( $this, 'get_product_calculation_price' ), 50, 3 );
+			add_filter( 'woocommerce_product_addons_ajax_get_product_price_excluding_tax', array( $this, 'get_product_calculation_price' ), 50, 3 );
 		}
 	}
 
@@ -126,7 +123,7 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 			? 1 === (int) $product->get_meta( self::ADDONS_CONVERTED_META_KEY )
 			: false;
 
-		return MultiCurrencyProductAddOnsCompatibilityProjectionService::should_convert_product_price( $should_convert, $addons_were_converted );
+		return $should_convert && ! $addons_were_converted;
 	}
 
 	/**
@@ -139,7 +136,8 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 	public function get_addons_price( $price, $type ) {
 		$price_type = is_array( $type ) ? (string) ( $type['price_type'] ?? '' ) : '';
 
-		if ( ! MultiCurrencyProductAddOnsCompatibilityProjectionService::should_convert_addon_price( $price_type ) ) {
+		// A percentage-based add-on's price is a percentage, not an amount.
+		if ( 'percentage_based' === $price_type ) {
 			return $price;
 		}
 
@@ -427,36 +425,22 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 	}
 
 	/**
-	 * Register projected filters.
-	 *
-	 * @param array<int,array<string,mixed>> $filters Filter manifest.
-	 */
-	private function register_filter_manifest( array $filters ): void {
-		foreach ( $filters as $filter ) {
-			$callback = array( $this, (string) $filter['callback'] );
-			if ( is_callable( $callback ) ) {
-				$this->add_filter_once( (string) $filter['hook'], $callback, (int) $filter['priority'], (int) $filter['accepted_args'] );
-			}
-		}
-	}
-
-	/**
 	 * Get a converted add-on display price.
+	 *
+	 * A quantity add-on's price is split per unit, converted, then multiplied back by the entered quantity.
 	 *
 	 * @param array<mixed> $addon Add-on data.
 	 * @return float
 	 */
 	private function get_addon_display_price( array $addon ): float {
-		$field_type = (string) ( $addon['field_type'] ?? '' );
-		$value      = (float) ( $addon['value'] ?? 0 );
-		$amount     = MultiCurrencyProductAddOnsCompatibilityProjectionService::get_addon_conversion_amount(
-			$addon['price'] ?? 0,
-			$value,
-			$field_type
-		);
-		$converted  = $this->get_price_projection_service()->get_price( $amount, 'product' );
+		$price = (float) ( $addon['price'] ?? 0 );
+		$value = (float) ( $addon['value'] ?? 0 );
 
-		return 'input_multiplier' === $field_type && 0.0 !== $value ? $converted * $value : $converted;
+		if ( 'input_multiplier' === (string) ( $addon['field_type'] ?? '' ) && 0.0 !== $value ) {
+			return $this->get_price_projection_service()->get_price( $price / $value, 'product' ) * $value;
+		}
+
+		return $this->get_price_projection_service()->get_price( $price, 'product' );
 	}
 
 	/**
@@ -550,33 +534,5 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 		}
 
 		return $this->price_projection_service;
-	}
-
-	/**
-	 * Register a filter only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_filter_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_filter( $hook, $callback ) ) {
-			add_filter( $hook, $callback, $priority, $accepted_args );
-		}
-	}
-
-	/**
-	 * Register an action only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_action_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_action( $hook, $callback ) ) {
-			add_action( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }
