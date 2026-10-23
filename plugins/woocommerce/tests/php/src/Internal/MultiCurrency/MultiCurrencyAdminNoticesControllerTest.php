@@ -149,7 +149,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		$this->set_current_user_can_manage_woocommerce();
 		update_option( self::NOTICE_OPTION, array( 'Canadian dollar' ) );
 		$original_request_uri   = isset( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) ? esc_url_raw( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : null;
-		$_SERVER['REQUEST_URI'] = '/wp-admin/?unrelated=preserved&wcpay-multi-currency-hide-notice=currency_changed&_wcpay_multi_currency_notice_nonce=legacy-nonce&wc-multi-currency-hide-notice=old-notice&wc-multi-currency-notice-nonce=old-nonce';
+		$_SERVER['REQUEST_URI'] = '/wp-admin/?unrelated=preserved&wc-multi-currency-hide-notice=old-notice&wc-multi-currency-notice-nonce=old-nonce';
 		$sut                    = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		try {
@@ -161,8 +161,6 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 			$this->assertStringContainsString( 'unrelated=preserved', $markup );
 			$this->assertStringContainsString( self::CANONICAL_NOTICE_QUERY . '=currency_changed', $markup );
 			$this->assertStringContainsString( self::CANONICAL_NONCE_QUERY, $markup );
-			$this->assertStringNotContainsString( self::LEGACY_NOTICE_QUERY, $markup );
-			$this->assertStringNotContainsString( self::LEGACY_NONCE_QUERY, $markup );
 			$this->assertSame( 1, substr_count( $markup, self::CANONICAL_NOTICE_QUERY ) );
 			$this->assertSame( 1, substr_count( $markup, self::CANONICAL_NONCE_QUERY ) );
 		} finally {
@@ -289,6 +287,13 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 					self::LEGACY_NONCE_QUERY     => 'VALID',
 				),
 			),
+			'extension query keys'   => array(
+				'extension query keys',
+				array(
+					self::LEGACY_NOTICE_QUERY => 'currency_changed',
+					self::LEGACY_NONCE_QUERY  => 'VALID',
+				),
+			),
 			'empty canonical nonce'  => array(
 				'empty canonical nonce',
 				array(
@@ -317,83 +322,18 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should hide currency changed notices for valid canonical and legacy dismissal requests.
-	 *
-	 * @dataProvider valid_currency_changed_dismissal_request_provider
-	 *
-	 * @param string $notice_query_key Notice query key.
-	 * @param string $nonce_query_key  Nonce query key.
+	 * @testdox Should hide the currency changed notice for a valid dismissal request.
 	 */
-	public function test_hides_currency_changed_notice_for_valid_dismissal_request( string $notice_query_key, string $nonce_query_key ): void {
-		$this->set_current_user_can_manage_woocommerce();
-		update_option( self::NOTICE_OPTION, array( 'Canadian dollar' ) );
-		$_GET[ $notice_query_key ] = 'currency_changed';
-		$_GET[ $nonce_query_key ]  = wp_create_nonce( self::NONCE_ACTION );
-		$sut                       = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-
-		$sut->handle_wp_loaded();
-
-		$this->assertSame( 'no', get_option( self::NOTICE_OPTION ) );
-	}
-
-	/**
-	 * Provide canonical and legacy request keys for currency-changed dismissal.
-	 *
-	 * @return array<string,array{notice_query_key:string,nonce_query_key:string}>
-	 */
-	public function valid_currency_changed_dismissal_request_provider(): array {
-		return array(
-			'canonical query keys' => array(
-				'notice_query_key' => self::CANONICAL_NOTICE_QUERY,
-				'nonce_query_key'  => self::CANONICAL_NONCE_QUERY,
-			),
-			'legacy query keys'    => array(
-				'notice_query_key' => self::LEGACY_NOTICE_QUERY,
-				'nonce_query_key'  => self::LEGACY_NONCE_QUERY,
-			),
-		);
-	}
-
-	/**
-	 * @testdox Should prefer canonical notice query values when legacy values conflict.
-	 */
-	public function test_hides_notice_selected_by_canonical_query_values_when_legacy_values_conflict(): void {
+	public function test_hides_currency_changed_notice_for_valid_dismissal_request(): void {
 		$this->set_current_user_can_manage_woocommerce();
 		update_option( self::NOTICE_OPTION, array( 'Canadian dollar' ) );
 		$_GET[ self::CANONICAL_NOTICE_QUERY ] = 'currency_changed';
 		$_GET[ self::CANONICAL_NONCE_QUERY ]  = wp_create_nonce( self::NONCE_ACTION );
-		$_GET[ self::LEGACY_NOTICE_QUERY ]    = 'unknown_notice';
-		$_GET[ self::LEGACY_NONCE_QUERY ]     = 'legacy-nonce';
 		$sut                                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$sut->handle_wp_loaded();
 
-		$this->assertSame( 'no', get_option( self::NOTICE_OPTION ), 'The canonical currency-changed key is the one acted on.' );
-	}
-
-	/**
-	 * @testdox Should not fall back to a legacy nonce when a canonical nonce is invalid.
-	 */
-	public function test_does_not_fall_back_to_legacy_nonce_when_canonical_nonce_is_invalid(): void {
-		$this->set_current_user_can_manage_woocommerce();
-		update_option( self::NOTICE_OPTION, array( 'Canadian dollar' ) );
-		$_GET[ self::CANONICAL_NOTICE_QUERY ] = 'currency_changed';
-		$_GET[ self::CANONICAL_NONCE_QUERY ]  = 'invalid';
-		$_GET[ self::LEGACY_NOTICE_QUERY ]    = self::RATE_NOTICE_KEY;
-		$_GET[ self::LEGACY_NONCE_QUERY ]     = wp_create_nonce( self::NONCE_ACTION );
-		$messages                             = array();
-		$sut                                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		$sut->set_die_handler( $this->create_die_handler( $messages ) );
-
-		$this->expectException( \RuntimeException::class );
-
-		try {
-			$sut->handle_wp_loaded();
-		} finally {
-			$this->assertSame( array( self::NONCE_ERROR ), $messages );
-			$this->assertSame( array( 'Canadian dollar' ), get_option( self::NOTICE_OPTION ) );
-			$this->assertFalse( get_option( self::RATE_NOTICE_DISMISSED_OPTION, false ) );
-		}
+		$this->assertSame( 'no', get_option( self::NOTICE_OPTION ) );
 	}
 
 	/**

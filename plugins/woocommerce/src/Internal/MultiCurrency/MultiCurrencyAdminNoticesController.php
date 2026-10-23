@@ -24,9 +24,7 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	private const ADMIN_NOTICES_HOOK                   = 'admin_notices';
 	private const WP_LOADED_HOOK                       = 'wp_loaded';
 	public const CANONICAL_NOTICE_QUERY                = 'wc-multi-currency-hide-notice';
-	public const LEGACY_NOTICE_QUERY                   = 'wcpay-multi-currency-hide-notice';
 	public const CANONICAL_NONCE_QUERY                 = 'wc-multi-currency-notice-nonce';
-	public const LEGACY_NONCE_QUERY                    = '_wcpay_multi_currency_notice_nonce';
 	private const NONCE_ACTION                         = 'wcpay_multi_currency_hide_notices_nonce';
 	private const RATE_PROVIDER_UNAVAILABLE_NOTICE_KEY = 'rate_provider_unavailable';
 	private const CURRENCY_CHANGED_NOTICE_KEY          = 'currency_changed';
@@ -118,8 +116,8 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function handle_wp_loaded(): void {
-		$notice_key = $this->get_clean_query_arg( self::CANONICAL_NOTICE_QUERY, self::LEGACY_NOTICE_QUERY );
-		$nonce      = $this->get_clean_query_arg( self::CANONICAL_NONCE_QUERY, self::LEGACY_NONCE_QUERY );
+		$notice_key = $this->get_clean_query_arg( self::CANONICAL_NOTICE_QUERY );
+		$nonce      = $this->get_clean_query_arg( self::CANONICAL_NONCE_QUERY );
 		if ( null === $notice_key || null === $nonce ) {
 			return;
 		}
@@ -216,15 +214,7 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	 */
 	private function get_dismiss_url( string $notice_key ): string {
 		$request_uri = isset( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) ? esc_url_raw( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
-		$dismiss_url = remove_query_arg(
-			array(
-				self::CANONICAL_NOTICE_QUERY,
-				self::LEGACY_NOTICE_QUERY,
-				self::CANONICAL_NONCE_QUERY,
-				self::LEGACY_NONCE_QUERY,
-			),
-			$request_uri
-		);
+		$dismiss_url = remove_query_arg( array( self::CANONICAL_NOTICE_QUERY, self::CANONICAL_NONCE_QUERY ), $request_uri );
 
 		return wp_nonce_url(
 			add_query_arg( self::CANONICAL_NOTICE_QUERY, $notice_key, $dismiss_url ),
@@ -234,19 +224,13 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get a sanitized query argument: the canonical key when it holds a scalar (an empty one included), else the legacy key.
+	 * Get a sanitized query argument.
 	 *
-	 * @param string $canonical_key Canonical query argument key.
-	 * @param string $legacy_key    Legacy query argument key.
-	 * @return string|null Null when neither key holds a scalar or the cleaned value is empty.
+	 * @param string $key Query argument key.
+	 * @return string|null Null when the argument is not a scalar or the cleaned value is empty.
 	 */
-	private function get_clean_query_arg( string $canonical_key, string $legacy_key ): ?string {
-		// phpcs:disable WordPress.Security.NonceVerification.Recommended,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- The caller verifies the nonce; the value is unslashed and cleaned below.
-		$raw_value = $_GET[ $canonical_key ] ?? null;
-		if ( ! is_scalar( $raw_value ) ) {
-			$raw_value = $_GET[ $legacy_key ] ?? null;
-		}
-		// phpcs:enable WordPress.Security.NonceVerification.Recommended,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,WordPress.Security.ValidatedSanitizedInput.MissingUnslash
+	private function get_clean_query_arg( string $key ): ?string {
+		$raw_value = $_GET[ $key ] ?? null; // phpcs:ignore WordPress.Security.NonceVerification.Recommended,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- The caller verifies the nonce; the value is unslashed and cleaned below.
 
 		if ( ! is_scalar( $raw_value ) ) {
 			return null;
