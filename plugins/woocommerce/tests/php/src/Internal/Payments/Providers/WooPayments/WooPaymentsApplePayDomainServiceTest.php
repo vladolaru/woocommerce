@@ -118,6 +118,7 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $this->expected_domain, $stored['apple_pay_verified_domain'] );
 		$this->assertSame( 'yes', $stored['apple_pay_domain_set'] );
 		$this->assertFalse( get_option( self::ERROR_OPTION ) );
+		$this->assertSame( array(), $this->scheduler->scheduled_jobs );
 	}
 
 	/**
@@ -333,6 +334,32 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 		$this->service->flush_registration_events();
 
 		$this->assertSame( 'dev', $recorded_properties['mode'] ?? null );
+	}
+
+	/**
+	 * @testdox Should store the error and schedule one retry when the platform reports a failed registration.
+	 */
+	public function test_failed_registration_stores_the_error_and_schedules_a_retry(): void {
+		$error_message              = 'Domain verification failed before telemetry';
+		$this->api_client->response = array(
+			'id'        => 'domain_123',
+			'apple_pay' => array(
+				'status'         => 'failed',
+				'status_details' => array( 'error_message' => $error_message ),
+			),
+		);
+		$this->service              = $this->create_service();
+
+		$result = $this->service->register_domain();
+		$stored = get_option( self::SETTINGS_OPTION );
+
+		$this->assertFalse( $result );
+		$this->assertIsArray( $stored );
+		$this->assertSame( $this->expected_domain, $stored['apple_pay_verified_domain'] );
+		$this->assertSame( 'no', $stored['apple_pay_domain_set'] );
+		$this->assertSame( $error_message, get_option( self::ERROR_OPTION ) );
+		$this->assertCount( 1, $this->scheduler->scheduled_jobs );
+		$this->assertSame( self::RETRY_ACTION, $this->scheduler->scheduled_jobs[0]['hook'] );
 	}
 
 	/**

@@ -206,15 +206,13 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the site can reach the WooPayments platform: the API client resolves and is connected.
+	 * Tell whether the site can reach the WooPayments platform: the API client is connected.
 	 *
 	 * @since 11.2.0
 	 * @return bool
 	 */
 	public function is_platform_connected(): bool {
-		$api_client = $this->get_api_client();
-
-		return null !== $api_client && $api_client->is_available();
+		return $this->get_api_client()->is_available();
 	}
 
 	/**
@@ -264,9 +262,6 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 */
 	private function fetch_onboarding_fields_data( string $locale ): ?array {
 		$api_client = $this->get_api_client();
-		if ( null === $api_client ) {
-			return null;
-		}
 
 		try {
 			$fields_data = $api_client->get_onboarding_fields_data( $locale );
@@ -302,7 +297,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 */
 	private function fetch_account_data() {
 		$api_client = $this->get_api_client();
-		if ( ! $api_client || ! $api_client->is_available() ) {
+		if ( ! $api_client->is_available() ) {
 			return false;
 		}
 
@@ -442,7 +437,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * Write account data with cache metadata.
 	 *
 	 * Writing reads the stored option again, so a third-party option filter that makes the account cache read throw makes
-	 * this write throw too. The failure is logged and the read goes on with the account it has, as a throwing read does.
+	 * this write throw too. The failure is logged and the read goes on with the account it has.
 	 *
 	 * @param mixed $account_data Account data.
 	 * @param bool  $errored      Whether the refresh that produced this write errored.
@@ -1353,12 +1348,11 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * Get the WooPayments API client, resolved from the container on first use.
 	 *
 	 * The API client takes this service in its `init()` (test mode, the store ID, the account refresh after VAT details
-	 * are saved), so it is not injected here; it is resolved when a read checks the platform connection or fetches. A
-	 * subclass that returns null reads as not connected: no platform call can be made without a client.
+	 * are saved), so it is not injected here; it is resolved when a read checks the platform connection or fetches.
 	 *
-	 * @return WooPaymentsApiClient|null
+	 * @return WooPaymentsApiClient
 	 */
-	protected function get_api_client(): ?WooPaymentsApiClient {
+	protected function get_api_client(): WooPaymentsApiClient {
 		return wc_get_container()->get( WooPaymentsApiClient::class );
 	}
 

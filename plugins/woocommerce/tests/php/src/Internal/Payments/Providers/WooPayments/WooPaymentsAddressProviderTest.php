@@ -220,9 +220,9 @@ class WooPaymentsAddressProviderTest extends WC_Unit_Test_Case {
 			/**
 			 * Get the fake native API client.
 			 *
-			 * @return WooPaymentsApiClient|null
+			 * @return WooPaymentsApiClient
 			 */
-			protected function get_api_client(): ?WooPaymentsApiClient {
+			protected function get_api_client(): WooPaymentsApiClient {
 				return $this->api_client;
 			}
 		};

@@ -1507,9 +1507,9 @@ class WooPaymentsFrontendTrackingControllerTest extends WC_Unit_Test_Case {
 			/**
 			 * Get the fake platform transport.
 			 *
-			 * @return WooPaymentsApiClient|null
+			 * @return WooPaymentsApiClient
 			 */
-			protected function get_api_client(): ?WooPaymentsApiClient {
+			protected function get_api_client(): WooPaymentsApiClient {
 				return $this->api_client;
 			}
 		};

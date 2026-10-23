@@ -269,16 +269,15 @@ class WooPaymentsDepositsRestController extends RestApiControllerBase {
 		}
 
 		$log_context = $this->get_manual_deposit_log_context( $type, $currency );
-		$this->log_manual_deposit( 'info', 'Manual payout initiation requested.', $log_context );
+		wc_get_logger()->info( 'Manual payout initiation requested.', $log_context );
 
 		try {
 			$response = $this->api_client->manual_deposit( $type, $currency );
-			$this->log_manual_deposit( 'info', 'Manual payout initiation completed.', $log_context );
+			wc_get_logger()->info( 'Manual payout initiation completed.', $log_context );
 
 			return new WP_REST_Response( $response );
 		} catch ( WooPaymentsApiException $exception ) {
-			$this->log_manual_deposit(
-				'error',
+			wc_get_logger()->error(
 				'Manual payout initiation failed.',
 				array_merge(
 					$log_context,
@@ -354,21 +353,5 @@ class WooPaymentsDepositsRestController extends RestApiControllerBase {
 			'type'     => $type,
 			'currency' => $currency,
 		);
-	}
-
-	/**
-	 * Log manual payout events without letting logger failures replace the REST response.
-	 *
-	 * @param string              $level   Log level.
-	 * @param string              $message Log message.
-	 * @param array<string,mixed> $context Log context.
-	 */
-	private function log_manual_deposit( string $level, string $message, array $context ): void {
-		if ( 'error' === $level ) {
-			wc_get_logger()->error( $message, $context );
-			return;
-		}
-
-		wc_get_logger()->info( $message, $context );
 	}
 }

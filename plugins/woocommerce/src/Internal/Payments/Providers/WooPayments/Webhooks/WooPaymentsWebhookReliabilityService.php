@@ -277,7 +277,7 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 	private function schedule_retry_or_give_up( string $event_id, array $event, int $attempts, \Throwable $exception ): void {
 		if ( $attempts >= count( self::RETRY_DELAYS_SECONDS ) ) {
 			$this->delete_failed_event( $event_id );
-			// The note goes first: it contains its own failures, so a throwing logger cannot cost the merchant the trail.
+			// The note goes first: it contains its own failures.
 			if ( $exception instanceof OrderPaymentLockRefusedException ) {
 				$this->add_lock_refusal_note( $exception->get_order_id(), $event_id );
 			}

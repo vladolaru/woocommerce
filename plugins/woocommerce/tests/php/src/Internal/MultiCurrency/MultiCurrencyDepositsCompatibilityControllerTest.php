@@ -128,6 +128,9 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 	public function test_converts_deposit_cart_item_amounts_as_product_prices(): void {
 		$sut = $this->create_controller();
 
+		// `is_deposit` and `deposit_amount` are the cart item fields client 11.1.0 reads
+		// (includes/multi-currency/Compatibility/WooCommerceDeposits.php:53-58); `regular`, `not_deposit` and `no_amount`
+		// are synthetic negative cases.
 		$cart_contents = $sut->modify_cart_item_deposit_amounts(
 			array(
 				'deposit'     => array(

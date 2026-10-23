@@ -1056,7 +1056,7 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			 *
 			 * @return WooPaymentsApiClient
 			 */
-			protected function get_api_client(): ?WooPaymentsApiClient {
+			protected function get_api_client(): WooPaymentsApiClient {
 				return $this->api_client;
 			}
 		};

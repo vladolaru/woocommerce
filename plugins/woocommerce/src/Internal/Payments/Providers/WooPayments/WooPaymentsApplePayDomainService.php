@@ -292,7 +292,7 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	 * @param array<string,mixed> $properties Event properties.
 	 */
 	private function record_registration_event( string $event_name, array $properties ): void {
-		$properties                                       = array_merge(
+		$this->pending_registration_events[ $event_name ] = array_merge(
 			$properties,
 			array(
 				'mode'              => $this->get_tracking_mode(),
@@ -302,7 +302,6 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 				),
 			)
 		);
-		$this->pending_registration_events[ $event_name ] = $properties;
 	}
 
 	/**

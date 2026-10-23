@@ -54,7 +54,7 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 	 *
 	 * Mirrors client 11.1.0's non-strict `account.updated` handling
 	 * (`includes/class-wc-payments-webhook-processing-service.php:205-208`), which never
-	 * fails the webhook on a refresh failure. See C25 (verification-ledger.md V435).
+	 * fails the webhook on a refresh failure.
 	 * The caches are cleared whatever the refresh returns, so the refresh here returns nothing.
 	 */
 	public function test_account_updated_refreshes_account_data_and_clears_payment_method_caches(): void {
@@ -251,9 +251,9 @@ class WooPaymentsAccountEventHandlerTest extends WC_Unit_Test_Case {
 			/**
 			 * Get the API client double.
 			 *
-			 * @return WooPaymentsApiClient|null
+			 * @return WooPaymentsApiClient
 			 */
-			protected function get_api_client(): ?WooPaymentsApiClient {
+			protected function get_api_client(): WooPaymentsApiClient {
 				return $this->api_client;
 			}
 		};

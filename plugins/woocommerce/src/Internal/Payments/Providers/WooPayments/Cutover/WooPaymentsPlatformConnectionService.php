@@ -64,7 +64,7 @@ class WooPaymentsPlatformConnectionService {
 			$failures[] = self::FAILURE_BLOG_ID_UNAVAILABLE;
 		}
 
-		if ( $this->get_connection_owner_id( $manager ) <= 0 ) {
+		if ( (int) $manager->get_connection_owner_id() <= 0 ) {
 			$failures[] = self::FAILURE_CONNECTION_OWNER_UNAVAILABLE;
 		}
 
@@ -78,15 +78,5 @@ class WooPaymentsPlatformConnectionService {
 	 */
 	protected function get_connection_manager(): JetpackConnectionManager {
 		return JetpackConnection::get_manager();
-	}
-
-	/**
-	 * Get the connection owner ID.
-	 *
-	 * @param JetpackConnectionManager $manager Jetpack connection manager.
-	 * @return int
-	 */
-	private function get_connection_owner_id( JetpackConnectionManager $manager ): int {
-		return (int) $manager->get_connection_owner_id();
 	}
 }

@@ -363,8 +363,6 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 	/**
 	 * Log the payment method gateways whose settings changed although the stored gateway settings did not.
 	 *
-	 * Logging is best-effort and must not affect settings persistence.
-	 *
 	 * @param string[] $drifted_option_names Drifted split gateway option names.
 	 * @param string[] $failed_option_names  Drifted option names that could not be healed.
 	 */

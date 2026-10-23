@@ -635,9 +635,9 @@ class WooPaymentsDocumentsRestControllerTest extends WC_REST_Unit_Test_Case {
 			/**
 			 * Get the platform API client.
 			 *
-			 * @return WooPaymentsApiClient|null
+			 * @return WooPaymentsApiClient
 			 */
-			protected function get_api_client(): ?WooPaymentsApiClient {
+			protected function get_api_client(): WooPaymentsApiClient {
 				return $this->platform;
 			}
 		};
