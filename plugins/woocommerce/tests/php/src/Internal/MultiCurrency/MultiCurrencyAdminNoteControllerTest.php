@@ -90,9 +90,9 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should save the projected multi-currency availability note when eligible.
+	 * @testdox Should save the multi-currency availability note, with its setup link on the Multi-currency settings tab, when eligible.
 	 */
-	public function test_saves_projected_multi_currency_availability_note_when_eligible(): void {
+	public function test_saves_multi_currency_availability_note_when_eligible(): void {
 		$saved_notes = array();
 		$sut         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 		$sut->set_ajax_request_resolver( static fn(): bool => false );
@@ -105,14 +105,28 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 
 		$sut->handle_admin_init();
 
-		$this->assertCount( 1, $saved_notes );
-		$this->assertSame( 'wc-payments-notes-multi-currency-available', $saved_notes[0]['name'] );
-		$this->assertSame( 'Sell worldwide in multiple currencies', $saved_notes[0]['title'] );
-		$this->assertSame( 'woocommerce-payments', $saved_notes[0]['source'] );
-		$this->assertSame( 'Set up now', $saved_notes[0]['actions'][0]['label'] );
-		$this->assertSame( admin_url( 'admin.php?page=wc-settings&tab=wcpay_multi_currency' ), $saved_notes[0]['actions'][0]['query'] );
-		$this->assertSame( 'unactioned', $saved_notes[0]['actions'][0]['status'] );
-		$this->assertTrue( $saved_notes[0]['actions'][0]['primary'] );
+		$this->assertSame(
+			array(
+				array(
+					'name'         => 'wc-payments-notes-multi-currency-available',
+					'title'        => 'Sell worldwide in multiple currencies',
+					'content'      => 'Boost your international sales by allowing your customers to shop and pay in their local currency.',
+					'content_data' => array(),
+					'type'         => 'info',
+					'source'       => 'woocommerce-payments',
+					'actions'      => array(
+						array(
+							'name'    => 'wc-payments-notes-multi-currency-available',
+							'label'   => 'Set up now',
+							'query'   => admin_url( 'admin.php?page=wc-settings&tab=wcpay_multi_currency' ),
+							'status'  => 'unactioned',
+							'primary' => true,
+						),
+					),
+				),
+			),
+			$saved_notes
+		);
 	}
 
 	/**

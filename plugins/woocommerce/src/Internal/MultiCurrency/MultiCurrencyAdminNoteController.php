@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\MultiCurrencyProviderAccountResolver;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAdminNoteProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySettingsProjectionService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -22,6 +22,8 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 
 	private const ADMIN_INIT_HOOK = 'admin_init';
+	private const NOTE_NAME       = 'wc-payments-notes-multi-currency-available';
+	private const NOTE_SOURCE     = 'woocommerce-payments';
 
 	/**
 	 * Runtime owner arbiter.
@@ -134,7 +136,7 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 	 *
 	 * @internal Used by tests.
 	 *
-	 * @param callable $note_saver Note saver accepting a projected note manifest.
+	 * @param callable $note_saver Note saver accepting the note's fields.
 	 */
 	public function set_note_saver( callable $note_saver ): void {
 		$this->note_saver = $note_saver;
@@ -148,7 +150,7 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 			return;
 		}
 
-		$this->add_action_once( self::ADMIN_INIT_HOOK, array( $this, 'handle_admin_init' ) );
+		add_action( self::ADMIN_INIT_HOOK, array( $this, 'handle_admin_init' ) );
 	}
 
 	/**
@@ -157,20 +159,12 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function handle_admin_init(): void {
-		$is_ajax            = $this->is_ajax_request();
-		$provider_connected = ! $is_ajax && $this->is_provider_connected();
 		// Like the client, look up the stored note only for a connected provider (NoteMultiCurrencyAvailable.php:64-72).
-		$add_note_manifest = MultiCurrencyAdminNoteProjectionService::get_add_note_manifest(
-			$is_ajax,
-			$provider_connected,
-			$provider_connected && $this->can_note_be_added()
-		);
-
-		if ( ! $add_note_manifest['should_add'] || ! is_array( $add_note_manifest['note'] ) ) {
+		if ( $this->is_ajax_request() || ! $this->is_provider_connected() || ! $this->can_note_be_added() ) {
 			return;
 		}
 
-		$this->save_note( $add_note_manifest['note'] );
+		$this->save_note( $this->get_note_fields() );
 	}
 
 	/**
@@ -222,15 +216,38 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 			return (bool) call_user_func( $this->note_can_be_added_resolver );
 		}
 
-		$note_manifest = MultiCurrencyAdminNoteProjectionService::get_note_manifest();
-
-		return false === Notes::get_note_by_name( (string) $note_manifest['name'] );
+		return false === Notes::get_note_by_name( self::NOTE_NAME );
 	}
 
 	/**
-	 * Save a WC Admin note from a projected manifest.
+	 * Get the fields of the Multi-Currency availability note.
 	 *
-	 * @param array<string,mixed> $note_manifest Projected note manifest.
+	 * @return array<string,mixed>
+	 */
+	private function get_note_fields(): array {
+		return array(
+			'name'         => self::NOTE_NAME,
+			'title'        => __( 'Sell worldwide in multiple currencies', 'woocommerce' ),
+			'content'      => __( 'Boost your international sales by allowing your customers to shop and pay in their local currency.', 'woocommerce' ),
+			'content_data' => array(),
+			'type'         => Note::E_WC_ADMIN_NOTE_INFORMATIONAL,
+			'source'       => self::NOTE_SOURCE,
+			'actions'      => array(
+				array(
+					'name'    => self::NOTE_NAME,
+					'label'   => __( 'Set up now', 'woocommerce' ),
+					'query'   => MultiCurrencySettingsProjectionService::get_settings_page_url(),
+					'status'  => Note::E_WC_ADMIN_NOTE_UNACTIONED,
+					'primary' => true,
+				),
+			),
+		);
+	}
+
+	/**
+	 * Save a WC Admin note from its fields.
+	 *
+	 * @param array<string,mixed> $note_manifest The note's fields.
 	 */
 	private function save_note( array $note_manifest ): void {
 		if ( null !== $this->note_saver ) {
@@ -261,19 +278,5 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 		}
 
 		$note->save();
-	}
-
-	/**
-	 * Register an action only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_action_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_action( $hook, $callback ) ) {
-			add_action( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }
