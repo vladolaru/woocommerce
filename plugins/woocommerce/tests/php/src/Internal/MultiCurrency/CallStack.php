@@ -34,7 +34,6 @@ final class CallStack {
 		'WC_Subscriptions_Cart'        => array( '::set_subscription_prices_for_calculation' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:122.
 		'WC_Subscriptions_Product'     => array( '::get_sign_up_fee' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:127.
 		'WCS_Switch_Totals_Calculator' => array( 'apportion_sign_up_fees' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:130.
-		'Automattic\WooCommerce\Admin\Notes\NewSalesRecord' => array( '::sum_sales_for_date', '::possibly_add_note' ), // Client 11.1.0 Compatibility.php:263-264.
 	);
 
 	/**
@@ -76,6 +75,9 @@ final class CallStack {
 						return new \WC_Cart_Totals( $cart );
 					}
 				);
+			case 'Automattic\WooCommerce\Internal\Admin\Notes\NewSalesRecord::sum_sales_for_date':
+				// The order query applies its results filter inside the sum.
+				return self::inside_hook( 'woocommerce_order_query', $inner, static fn() => \Automattic\WooCommerce\Internal\Admin\Notes\NewSalesRecord::sum_sales_for_date( '2000-01-01' ) );
 			case 'WC_Discounts->apply_coupon':
 				// A coupon that does not exist fails validation, whose error message is filtered inside apply_coupon().
 				return self::inside_hook( 'woocommerce_coupon_error', $inner, static fn() => ( new \WC_Discounts() )->apply_coupon( new \WC_Coupon() ) );

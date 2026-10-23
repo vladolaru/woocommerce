@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Caches\OrderCache;
+use Automattic\WooCommerce\Internal\Admin\Notes\NewSalesRecord;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
@@ -20,7 +21,7 @@ use WC_Unit_Test_Case;
 class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 
 	/** The WooCommerce Admin new sales record call the conversion runs inside. */
-	private const SALES_RECORD_CALL = 'Automattic\WooCommerce\Admin\Notes\NewSalesRecord::sum_sales_for_date';
+	private const SALES_RECORD_CALL = NewSalesRecord::class . '::sum_sales_for_date';
 
 	/**
 	 * Hooks touched by the compatibility controller.
@@ -138,8 +139,6 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should convert sales record order totals to default currency.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_converts_sales_record_order_totals_to_default_currency(): void {
 		$sut   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
@@ -165,8 +164,6 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should skip sales record conversion when context or meta do not match.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
 	 */
 	public function test_skips_sales_record_conversion_when_context_or_meta_do_not_match(): void {
 		$wrong_context = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
@@ -181,6 +178,19 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( $order ), CallStack::run( array( self::SALES_RECORD_CALL ), fn() => $missing_meta->convert_order_prices( array( $order ) ) ) );
 		$this->assertSame( $object_results, CallStack::run( array( self::SALES_RECORD_CALL ), fn() => $missing_meta->convert_order_prices( $object_results ) ) );
 		$this->assertSame( 1000.0, (float) $order->get_total() );
+	}
+
+	/**
+	 * @testdox Should name only methods that exist on WooCommerce's new sales record note in the sales-record backtrace check.
+	 */
+	public function test_sales_record_backtrace_calls_name_existing_methods(): void {
+		$calls = ( new \ReflectionClass( MultiCurrencyCompatibilityController::class ) )->getConstant( 'NEW_SALES_RECORD_BACKTRACE_CALLS' );
+
+		$this->assertNotEmpty( $calls );
+		foreach ( $calls as $call ) {
+			list( $class_name, $method ) = explode( '::', $call, 2 );
+			$this->assertTrue( method_exists( $class_name, $method ), "{$call} does not exist." );
+		}
 	}
 
 	/**

@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Internal\Admin\Notes\NewSalesRecord;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
@@ -22,9 +23,14 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestC
  */
 class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 
+	/**
+	 * WooCommerce's best sales day note methods whose order totals are converted to the store currency. Client 11.1.0
+	 * (`includes/multi-currency/Compatibility.php:263-264`) names `Automattic\WooCommerce\Admin\Notes\NewSalesRecord`,
+	 * which no frame carries, so its conversion never runs.
+	 */
 	private const NEW_SALES_RECORD_BACKTRACE_CALLS = array(
-		'Automattic\WooCommerce\Admin\Notes\NewSalesRecord::sum_sales_for_date',
-		'Automattic\WooCommerce\Admin\Notes\NewSalesRecord::possibly_add_note',
+		NewSalesRecord::class . '::sum_sales_for_date',
+		NewSalesRecord::class . '::possibly_add_note',
 	);
 
 	/**
