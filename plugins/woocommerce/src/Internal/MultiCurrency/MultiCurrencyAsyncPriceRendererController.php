@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAsyncPriceProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
@@ -29,6 +28,7 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	public const LEGACY_SCRIPT_HANDLE = 'wcpay-multi-currency-async-renderer';
 	private const SCRIPT_PATH         = 'assets/js/frontend/multi-currency-async-renderer';
 	private const STYLE_PATH          = 'assets/css/multi-currency-async-renderer.css';
+	private const LOCALIZED_OBJECT    = 'wcpayAsyncPriceConfig';
 
 	/**
 	 * Runtime owner arbiter.
@@ -174,7 +174,7 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	 * below still fires long afterwards.
 	 */
 	public function register() {
-		$this->add_action_once( 'woocommerce_init', array( $this, 'maybe_register_async_hooks' ) );
+		add_action( 'woocommerce_init', array( $this, 'maybe_register_async_hooks' ) );
 	}
 
 	/**
@@ -198,21 +198,19 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 		}
 
 		if (
-			! MultiCurrencyAsyncPriceProjectionService::should_activate(
-				$this->get_frontend_projection_service()->is_cache_optimized_mode(),
-				is_admin(),
-				wp_doing_cron(),
-				$request_context->is_admin_api_request(),
-				$this->has_active_session()
-			)
+			! $this->get_frontend_projection_service()->is_cache_optimized_mode()
+			|| is_admin()
+			|| wp_doing_cron()
+			|| $request_context->is_admin_api_request()
+			|| $this->has_active_session()
 		) {
 			return;
 		}
 
-		$this->add_filter_once( 'wc_price', array( $this, 'handle_wc_price' ), 999, 5 );
-		$this->add_filter_once( 'woocommerce_format_sale_price', array( $this, 'handle_woocommerce_format_sale_price' ), 999, 3 );
-		$this->add_filter_once( 'woocommerce_format_price_range', array( $this, 'handle_woocommerce_format_price_range' ), 999, 3 );
-		$this->add_action_once( 'wp_enqueue_scripts', array( $this, 'handle_wp_enqueue_scripts' ) );
+		add_filter( 'wc_price', array( $this, 'handle_wc_price' ), 999, 5 );
+		add_filter( 'woocommerce_format_sale_price', array( $this, 'handle_woocommerce_format_sale_price' ), 999, 3 );
+		add_filter( 'woocommerce_format_price_range', array( $this, 'handle_woocommerce_format_price_range' ), 999, 3 );
+		add_action( 'wp_enqueue_scripts', array( $this, 'handle_wp_enqueue_scripts' ) );
 	}
 
 	/**
@@ -242,10 +240,11 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 		$price_type = apply_filters( self::PRICE_TYPE_FILTER, 'product', $price, $args );
 		$price_type = is_string( $price_type ) ? $price_type : 'product';
 
-		return MultiCurrencyAsyncPriceProjectionService::wrap_price_with_skeleton(
-			$price_html,
-			$unformatted_price,
-			$price_type
+		return sprintf(
+			'<span class="woocommerce-Price-amount amount wcpay-async-price" data-wcpay-price="%s" data-wcpay-price-type="%s"><bdi class="wcpay-price-skeleton"></bdi><span class="screen-reader-text wcpay-price-placeholder">%s</span></span>',
+			$this->escape_price_attribute( $unformatted_price ),
+			esc_attr( $price_type ),
+			wp_kses_post( $price_html )
 		);
 	}
 
@@ -260,11 +259,33 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	 * @return string
 	 */
 	public function handle_woocommerce_format_sale_price( string $price_html, $regular_price, $sale_price ): string {
-		return MultiCurrencyAsyncPriceProjectionService::annotate_sale_price_screen_reader_text(
+		if ( ! is_numeric( $regular_price ) || ! is_numeric( $sale_price ) ) {
+			return $price_html;
+		}
+
+		$count  = 0;
+		$result = preg_replace_callback(
+			'/<span class="screen-reader-text">/',
+			function () use ( $regular_price, $sale_price, &$count ): string {
+				++$count;
+
+				if ( 1 === $count ) {
+					return sprintf(
+						'<span class="screen-reader-text" data-wcpay-sr-type="sale_original" data-wcpay-sr-price="%s">',
+						$this->escape_price_attribute( $regular_price )
+					);
+				}
+
+				return sprintf(
+					'<span class="screen-reader-text" data-wcpay-sr-type="sale_current" data-wcpay-sr-price="%s">',
+					$this->escape_price_attribute( $sale_price )
+				);
+			},
 			$price_html,
-			$regular_price,
-			$sale_price
+			2
 		);
+
+		return is_string( $result ) ? $result : $price_html;
 	}
 
 	/**
@@ -278,11 +299,22 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	 * @return string
 	 */
 	public function handle_woocommerce_format_price_range( string $price_html, $from, $to ): string {
-		return MultiCurrencyAsyncPriceProjectionService::annotate_price_range_screen_reader_text(
+		if ( ! is_numeric( $from ) || ! is_numeric( $to ) ) {
+			return $price_html;
+		}
+
+		$result = preg_replace(
+			'/<span class="screen-reader-text">/',
+			sprintf(
+				'<span class="screen-reader-text" data-wcpay-sr-type="range" data-wcpay-sr-price-from="%s" data-wcpay-sr-price-to="%s">',
+				$this->escape_price_attribute( $from ),
+				$this->escape_price_attribute( $to )
+			),
 			$price_html,
-			$from,
-			$to
+			1
 		);
+
+		return is_string( $result ) ? $result : $price_html;
 	}
 
 	/**
@@ -291,46 +323,54 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	 * @internal
 	 */
 	public function handle_wp_enqueue_scripts(): void {
-		$manifest = MultiCurrencyAsyncPriceProjectionService::get_asset_manifest(
-			rest_url( 'wc/v3/payments/multi-currency/public/config' ),
-			MultiCurrencyAsyncPriceProjectionService::get_default_currency_config(
-				get_woocommerce_currency_symbol(),
-				wc_get_price_decimals(),
-				wc_get_price_decimal_separator(),
-				wc_get_price_thousand_separator(),
-				(string) get_option( 'woocommerce_currency_pos', 'left' )
-			),
-			$this->get_asset_url( self::STYLE_PATH ),
-			$this->get_asset_version( self::STYLE_PATH )
-		);
-
-		$script_handle        = self::SCRIPT_HANDLE;
-		$legacy_script_handle = self::LEGACY_SCRIPT_HANDLE;
-		$script_version       = $this->get_asset_version( self::SCRIPT_PATH . '.js' );
+		$script_version = $this->get_asset_version( self::SCRIPT_PATH . '.js' );
+		$style_version  = $this->get_asset_version( self::STYLE_PATH );
 
 		wp_register_script(
-			$script_handle,
+			self::SCRIPT_HANDLE,
 			$this->get_asset_url( self::SCRIPT_PATH . $this->get_script_suffix() . '.js' ),
 			array( 'wp-polyfill' ),
 			$script_version,
 			array( 'in_footer' => true )
 		);
-		wp_register_script( $legacy_script_handle, false, array( $script_handle ), $script_version, array( 'in_footer' => true ) );
+		wp_register_script( self::LEGACY_SCRIPT_HANDLE, false, array( self::SCRIPT_HANDLE ), $script_version, array( 'in_footer' => true ) );
 		wp_localize_script(
-			$script_handle,
-			$manifest['script']['localized_object'],
-			$manifest['script']['config']
+			self::SCRIPT_HANDLE,
+			self::LOCALIZED_OBJECT,
+			array(
+				'apiUrl'          => rest_url( 'wc/v3/payments/multi-currency/public/config' ),
+				'defaultCurrency' => array(
+					'symbol'       => html_entity_decode( get_woocommerce_currency_symbol(), ENT_QUOTES | ENT_HTML5, 'UTF-8' ),
+					'decimals'     => wc_get_price_decimals(),
+					'decimal_sep'  => wc_get_price_decimal_separator(),
+					'thousand_sep' => wc_get_price_thousand_separator(),
+					'symbol_pos'   => (string) get_option( 'woocommerce_currency_pos', 'left' ),
+				),
+				'srText'          => array(
+					/* translators: %s: formatted price. */
+					'sale_original' => __( 'Original price was: %s.', 'woocommerce' ),
+					/* translators: %s: formatted price. */
+					'sale_current'  => __( 'Current price is: %s.', 'woocommerce' ),
+					/* translators: %1$s: minimum price, %2$s: maximum price. */
+					'range'         => __( 'Price range: %1$s through %2$s', 'woocommerce' ),
+				),
+			)
 		);
-		wp_enqueue_script( $script_handle );
+		wp_enqueue_script( self::SCRIPT_HANDLE );
 
-		wp_register_style(
-			$manifest['style']['handle'],
-			$manifest['style']['url'],
-			array(),
-			$manifest['style']['version']
-		);
-		wp_register_style( $manifest['style']['legacy_handle'], false, array( $manifest['style']['handle'] ), $manifest['style']['version'] );
-		wp_enqueue_style( $manifest['style']['handle'] );
+		wp_register_style( self::SCRIPT_HANDLE, $this->get_asset_url( self::STYLE_PATH ), array(), $style_version );
+		wp_register_style( self::LEGACY_SCRIPT_HANDLE, false, array( self::SCRIPT_HANDLE ), $style_version );
+		wp_enqueue_style( self::SCRIPT_HANDLE );
+	}
+
+	/**
+	 * Escape a raw price for an HTML attribute, with a dot decimal separator.
+	 *
+	 * @param int|float|string $price Raw price.
+	 * @return string
+	 */
+	private function escape_price_attribute( $price ): string {
+		return esc_attr( is_float( $price ) ? wc_float_to_string( $price ) : (string) $price );
 	}
 
 	/**
@@ -433,33 +473,5 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	 */
 	private function get_script_suffix(): string {
 		return Constants::is_true( 'SCRIPT_DEBUG' ) ? '' : '.min';
-	}
-
-	/**
-	 * Register a filter only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_filter_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_filter( $hook, $callback ) ) {
-			add_filter( $hook, $callback, $priority, $accepted_args );
-		}
-	}
-
-	/**
-	 * Register an action only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_action_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_action( $hook, $callback ) ) {
-			add_action( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }

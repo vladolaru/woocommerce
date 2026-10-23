@@ -20,6 +20,13 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 	private const LEGACY_SCRIPT_HANDLE = 'wcpay-multi-currency-async-renderer';
 
 	/**
+	 * Store price-format options a test changed, with their values before the change.
+	 *
+	 * @var array<string,mixed>
+	 */
+	private array $store_format_options = array();
+
+	/**
 	 * Hooks touched by the controller.
 	 *
 	 * @var string[]
@@ -42,6 +49,10 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 
 		unset( $_GET['currency'] );
 		delete_option( 'wcpay_multi_currency_enable_auto_currency' );
+		foreach ( $this->store_format_options as $option => $value ) {
+			update_option( $option, $value );
+		}
+		$this->store_format_options = array();
 
 		wp_dequeue_script( self::SCRIPT_HANDLE );
 		wp_deregister_script( self::SCRIPT_HANDLE );
@@ -123,6 +134,32 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 		$sut->maybe_register_async_hooks();
 
 		$this->assert_hooks_not_registered( $sut );
+	}
+
+	/**
+	 * @testdox Should not register async renderer hooks in a $label request.
+	 * @testWith ["wp-admin"]
+	 *           ["cron"]
+	 *
+	 * @param string $label The request kind.
+	 */
+	public function test_does_not_register_hooks_in_admin_or_cron_requests( string $label ): void {
+		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
+		if ( 'wp-admin' === $label ) {
+			set_current_screen( 'dashboard' );
+		} else {
+			add_filter( 'wp_doing_cron', '__return_true' );
+		}
+		$sut = $this->create_controller();
+
+		try {
+			$sut->maybe_register_async_hooks();
+
+			$this->assert_hooks_not_registered( $sut );
+		} finally {
+			unset( $GLOBALS['current_screen'] );
+			remove_filter( 'wp_doing_cron', '__return_true' );
+		}
 	}
 
 	/**
@@ -208,6 +245,65 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should escape the price type and strip scripts from the placeholder markup.
+	 */
+	public function test_escapes_the_price_type_and_strips_scripts_from_the_placeholder(): void {
+		$sut = $this->create_controller();
+		add_filter(
+			'wcpay_multi_currency_async_price_type',
+			static fn(): string => 'shipping" data-bad="1'
+		);
+
+		$result = $sut->handle_wc_price(
+			'<span class="woocommerce-Price-amount amount"><bdi><script>alert(1)</script>$25.99</bdi></span>',
+			'25.99',
+			array(),
+			'25.99',
+			'25.99'
+		);
+
+		$this->assertStringContainsString( 'data-wcpay-price-type="shipping&quot; data-bad=&quot;1"', $result );
+		$this->assertStringContainsString( '$25.99', $result );
+		$this->assertStringNotContainsString( '<script>', $result );
+	}
+
+	/**
+	 * @testdox Should write float prices with a dot decimal separator in the placeholder and the sale and range annotations.
+	 */
+	public function test_writes_float_prices_with_a_dot(): void {
+		$sut = $this->create_controller();
+
+		$placeholder = $sut->handle_wc_price( '<span>$12.50</span>', 12.5, array(), 12.5, 12.5 );
+		$sale        = $sut->handle_woocommerce_format_sale_price(
+			'<span class="screen-reader-text">Original price was: $12.50.</span> <span class="screen-reader-text">Current price is: $9.50.</span>',
+			12.5,
+			9.5
+		);
+		$range       = $sut->handle_woocommerce_format_price_range( '<span class="screen-reader-text">Price range: $10.50 through $30.25</span>', 10.5, 30.25 );
+
+		$this->assertStringContainsString( 'data-wcpay-price="12.5"', $placeholder );
+		$this->assertStringContainsString( 'data-wcpay-sr-price="12.5"', $sale );
+		$this->assertStringContainsString( 'data-wcpay-sr-price="9.5"', $sale );
+		$this->assertStringContainsString( 'data-wcpay-sr-price-from="10.5"', $range );
+		$this->assertStringContainsString( 'data-wcpay-sr-price-to="30.25"', $range );
+	}
+
+	/**
+	 * @testdox Should leave sale and range markup unchanged for a non-numeric price, and never touch the placeholder span.
+	 */
+	public function test_leaves_non_numeric_prices_and_the_placeholder_alone(): void {
+		$sut        = $this->create_controller();
+		$sale_html  = '<span class="screen-reader-text wcpay-price-placeholder">$50.00</span>'
+			. ' <span class="screen-reader-text">Original price was: $50.00.</span>'
+			. ' <span class="screen-reader-text">Current price is: $35.00.</span>';
+		$range_html = '<span class="screen-reader-text">Price range: $10.00 through $30.00</span>';
+
+		$this->assertStringContainsString( '<span class="screen-reader-text wcpay-price-placeholder">', $sut->handle_woocommerce_format_sale_price( $sale_html, '50', '35' ) );
+		$this->assertSame( $sale_html, $sut->handle_woocommerce_format_sale_price( $sale_html, 'Free', '35' ) );
+		$this->assertSame( $range_html, $sut->handle_woocommerce_format_price_range( $range_html, 'Free', '30' ) );
+	}
+
+	/**
 	 * @testdox Should annotate sale and range screen reader text.
 	 */
 	public function test_annotates_sale_and_range_screen_reader_text(): void {
@@ -232,6 +328,17 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should enqueue async renderer assets and localized config.
 	 */
 	public function test_enqueues_async_renderer_assets_and_localized_config(): void {
+		$format = array(
+			'woocommerce_currency'           => 'EUR',
+			'woocommerce_price_num_decimals' => '3',
+			'woocommerce_price_decimal_sep'  => ',',
+			'woocommerce_price_thousand_sep' => '.',
+			'woocommerce_currency_pos'       => 'right_space',
+		);
+		foreach ( $format as $option => $value ) {
+			$this->store_format_options[ $option ] = get_option( $option );
+			update_option( $option, $value );
+		}
 		$sut = $this->create_controller();
 		$sut->set_asset_url_resolver(
 			static function ( string $path ): string {
@@ -256,8 +363,25 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'https://example.test/wp-content/plugins/woocommerce/assets/js/frontend/multi-currency-async-renderer.min.js', $script->src );
 		$this->assertTrue( wp_script_is( self::SCRIPT_HANDLE, 'enqueued' ) );
 		$this->assertIsString( $data );
-		$this->assertStringContainsString( 'wcpayAsyncPriceConfig', $data );
-		$this->assertStringContainsString( 'wc/v3/payments/multi-currency/public/config', $data );
+		$this->assertStringStartsWith( 'var wcpayAsyncPriceConfig = ', $data );
+		$this->assertSame(
+			array(
+				'apiUrl'          => rest_url( 'wc/v3/payments/multi-currency/public/config' ),
+				'defaultCurrency' => array(
+					'symbol'       => '€',
+					'decimals'     => 3,
+					'decimal_sep'  => ',',
+					'thousand_sep' => '.',
+					'symbol_pos'   => 'right_space',
+				),
+				'srText'          => array(
+					'sale_original' => 'Original price was: %s.',
+					'sale_current'  => 'Current price is: %s.',
+					'range'         => 'Price range: %1$s through %2$s',
+				),
+			),
+			json_decode( substr( $data, strlen( 'var wcpayAsyncPriceConfig = ' ), -1 ), true )
+		);
 		$this->assertInstanceOf( \_WP_Dependency::class, $legacy_script );
 		$this->assertFalse( $legacy_script->src );
 		$this->assertSame( array( self::SCRIPT_HANDLE ), $legacy_script->deps );
