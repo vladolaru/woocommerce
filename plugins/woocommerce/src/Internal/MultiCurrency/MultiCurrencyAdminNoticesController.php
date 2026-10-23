@@ -9,7 +9,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAdminNoticeProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStoreCurrencyLifecycleService;
@@ -29,9 +28,9 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	public const CANONICAL_NONCE_QUERY                 = 'wc-multi-currency-notice-nonce';
 	public const LEGACY_NONCE_QUERY                    = '_wcpay_multi_currency_notice_nonce';
 	private const NONCE_ACTION                         = 'wcpay_multi_currency_hide_notices_nonce';
-	private const ERROR_INVALID_NONCE                  = 'invalid_nonce';
-	private const ERROR_FORBIDDEN                      = 'forbidden';
 	private const RATE_PROVIDER_UNAVAILABLE_NOTICE_KEY = 'rate_provider_unavailable';
+	private const CURRENCY_CHANGED_NOTICE_KEY          = 'currency_changed';
+	private const NOTICE_OPTION_HIDDEN_VALUE           = 'no';
 
 	/**
 	 * Runtime owner arbiter.
@@ -86,8 +85,8 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 			return;
 		}
 
-		$this->add_action_once( self::ADMIN_NOTICES_HOOK, array( $this, 'handle_admin_notices' ) );
-		$this->add_action_once( self::WP_LOADED_HOOK, array( $this, 'handle_wp_loaded' ) );
+		add_action( self::ADMIN_NOTICES_HOOK, array( $this, 'handle_admin_notices' ) );
+		add_action( self::WP_LOADED_HOOK, array( $this, 'handle_wp_loaded' ) );
 	}
 
 	/**
@@ -96,18 +95,20 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function handle_admin_notices(): void {
-		$notices              = MultiCurrencyAdminNoticeProjectionService::get_notices_for_user(
-			current_user_can( 'manage_woocommerce' ),
-			get_option( MultiCurrencyStoreCurrencyLifecycleService::NOTICE_OPTION, false )
-		);
-		$rate_provider_notice = $this->get_rate_provider_unavailable_notice( current_user_can( 'manage_woocommerce' ) );
-		if ( null !== $rate_provider_notice ) {
-			$notices[] = $rate_provider_notice;
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			return;
 		}
 
+		$notices = array_filter(
+			array(
+				$this->get_manual_rate_notice( get_option( MultiCurrencyStoreCurrencyLifecycleService::NOTICE_OPTION, false ) ),
+				$this->get_rate_provider_unavailable_notice(),
+			)
+		);
+
 		foreach ( $notices as $notice ) {
-			// Projection markup escapes the individual attributes and message HTML while preserving WooPayments-compatible notice HTML.
-			echo MultiCurrencyAdminNoticeProjectionService::get_notice_markup( $notice, $this->get_dismiss_url( $notice ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			// The markup escapes each attribute and the message HTML while keeping WooPayments-compatible notice HTML.
+			echo $this->get_notice_markup( $notice, $this->get_dismiss_url( $notice ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 		}
 	}
 
@@ -117,29 +118,94 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function handle_wp_loaded(): void {
-		$intent = MultiCurrencyAdminNoticeProjectionService::get_hide_notice_intent(
-			$_GET, // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			$this->is_notice_nonce_valid(),
-			current_user_can( 'manage_woocommerce' )
-		);
+		$notice_key = $this->get_clean_query_arg( self::CANONICAL_NOTICE_QUERY, self::LEGACY_NOTICE_QUERY );
+		$nonce      = $this->get_clean_query_arg( self::CANONICAL_NONCE_QUERY, self::LEGACY_NONCE_QUERY );
+		if ( null === $notice_key || null === $nonce ) {
+			return;
+		}
 
-		if ( self::ERROR_INVALID_NONCE === $intent['error'] ) {
+		if ( ! wp_verify_nonce( $nonce, self::NONCE_ACTION ) ) {
 			$this->die_with_message( __( 'Action failed. Please refresh the page and retry.', 'woocommerce' ) );
 			return;
 		}
 
-		if ( self::ERROR_FORBIDDEN === $intent['error'] ) {
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
 			$this->die_with_message( __( 'Sorry, you are not allowed to do that.', 'woocommerce' ) );
 			return;
 		}
 
-		if (
-			$intent['should_hide']
-			&& is_string( $intent['option_name'] )
-			&& is_string( $intent['option_value'] )
-		) {
-			update_option( $intent['option_name'], $intent['option_value'] );
+		if ( self::CURRENCY_CHANGED_NOTICE_KEY === $notice_key ) {
+			update_option( MultiCurrencyStoreCurrencyLifecycleService::NOTICE_OPTION, self::NOTICE_OPTION_HIDDEN_VALUE );
 		}
+	}
+
+	/**
+	 * Build the notice for currencies left on manual rates after a store currency change.
+	 *
+	 * @param mixed $manual_rate_currencies Names of the manual-rate currencies, as stored.
+	 * @return array{key:string,class:string,message:string,dismissible:bool}|null
+	 */
+	private function get_manual_rate_notice( $manual_rate_currencies ): ?array {
+		if ( ! is_array( $manual_rate_currencies ) ) {
+			return null;
+		}
+
+		$currency_names = array();
+		foreach ( $manual_rate_currencies as $currency_name ) {
+			if ( is_scalar( $currency_name ) && '' !== (string) $currency_name ) {
+				$currency_names[] = (string) $currency_name;
+			}
+		}
+
+		if ( empty( $currency_names ) ) {
+			return null;
+		}
+
+		return array(
+			'key'         => self::CURRENCY_CHANGED_NOTICE_KEY,
+			'class'       => 'notice notice-warning',
+			'message'     => sprintf(
+				/* translators: %s: List of currencies set to manual rates. */
+				__( 'The store currency was recently changed. The following currencies are set to manual rates and may need updates: %s', 'woocommerce' ),
+				implode( ', ', $currency_names )
+			),
+			'dismissible' => true,
+		);
+	}
+
+	/**
+	 * Build a notice's markup.
+	 *
+	 * @param array{key:string,class:string,message:string,dismissible:bool} $notice      Notice metadata.
+	 * @param string                                                         $dismiss_url Dismiss URL, empty for none.
+	 * @return string
+	 */
+	private function get_notice_markup( array $notice, string $dismiss_url ): string {
+		$dismiss_link = '';
+		if ( $notice['dismissible'] && '' !== $dismiss_url ) {
+			// Core's dismiss placement (top right, aligned with the first line) instead of client 11.1.0's floated link, which
+			// WooCommerce's `.woocommerce-message-close` rule pushes 12px down. The `is-dismissible`
+			// class is left off so WordPress does not add its own JavaScript-only dismiss button next to this nonce link.
+			$dismiss_link = '<a href="' . esc_url( $dismiss_url ) . '" class="notice-dismiss" style="text-decoration:none;"><span class="screen-reader-text">' . esc_html__( 'Dismiss this notice.', 'woocommerce' ) . '</span></a>';
+		}
+
+		// A dismissible notice keeps core's 38px on the right for the dismiss control, as `.notice.is-dismissible` does.
+		$style   = '' === $dismiss_link ? 'position:relative;' : 'position:relative;padding-right:38px;';
+		$markup  = '<div class="' . esc_attr( $notice['class'] ) . '" style="' . $style . '">';
+		$markup .= $dismiss_link;
+		$markup .= '<p>';
+		$markup .= wp_kses(
+			$notice['message'],
+			array(
+				'a' => array(
+					'href'   => array(),
+					'target' => array(),
+				),
+			)
+		);
+		$markup .= '</p></div>';
+
+		return $markup;
 	}
 
 	/**
@@ -169,17 +235,6 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 			self::NONCE_ACTION,
 			self::CANONICAL_NONCE_QUERY
 		);
-	}
-
-	/**
-	 * Tell whether the current notice dismissal nonce is valid.
-	 *
-	 * @return bool
-	 */
-	private function is_notice_nonce_valid(): bool {
-		$nonce = $this->get_clean_query_arg( self::CANONICAL_NONCE_QUERY, self::LEGACY_NONCE_QUERY );
-
-		return is_string( $nonce ) && (bool) wp_verify_nonce( $nonce, self::NONCE_ACTION );
 	}
 
 	/**
@@ -222,14 +277,9 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	 *
 	 * The notice cannot be dismissed: it stays while an automatic-rate currency has no available provider.
 	 *
-	 * @param bool $can_manage_woocommerce Whether the user can manage WooCommerce.
 	 * @return array{key:string,class:string,message:string,dismissible:bool}|null
 	 */
-	private function get_rate_provider_unavailable_notice( bool $can_manage_woocommerce ): ?array {
-		if ( ! $can_manage_woocommerce ) {
-			return null;
-		}
-
+	private function get_rate_provider_unavailable_notice(): ?array {
 		if ( ! $this->has_automatic_multi_currency_rate_currencies() || $this->has_available_rate_provider() ) {
 			return null;
 		}
@@ -324,19 +374,5 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 		}
 
 		wp_die( esc_html( $message ) );
-	}
-
-	/**
-	 * Register an action only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_action_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_action( $hook, $callback ) ) {
-			add_action( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }

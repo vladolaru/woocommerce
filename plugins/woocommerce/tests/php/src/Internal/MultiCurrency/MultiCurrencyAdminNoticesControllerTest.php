@@ -94,6 +94,52 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		$this->assertStringNotContainsString( self::LEGACY_NOTICE_QUERY, $markup );
 		$this->assertStringNotContainsString( self::LEGACY_NONCE_QUERY, $markup );
 		$this->assertStringContainsString( 'class="notice-dismiss" style="text-decoration:none;"', $markup );
+		$this->assertSame( 1, substr_count( $markup, '<div class=' ), 'One notice.' );
+		// Core's dismiss placement (top right, aligned with the text, room kept on the right) instead of the client's
+		// floated link; the dismissal still goes through the nonce link.
+		$this->assertStringContainsString( '<div class="notice notice-warning" style="position:relative;padding-right:38px;">', $markup );
+		$this->assertMatchesRegularExpression( '#<a href="[^"]+" class="notice-dismiss" style="text-decoration:none;"><span class="screen-reader-text">Dismiss this notice\.</span></a><p>#', $markup );
+		$this->assertStringNotContainsString( 'woocommerce-message-close', $markup );
+		$this->assertStringNotContainsString( 'float:right', $markup );
+		$this->assertStringContainsString( '<p>' . self::NOTICE_MESSAGE . '</p>', $markup );
+	}
+
+	/**
+	 * @testdox The manual-rate notice keeps links in the stored currency names and strips anything else.
+	 */
+	public function test_manual_rate_notice_keeps_only_links_in_its_message(): void {
+		$this->set_current_user_can_manage_woocommerce();
+		update_option( self::NOTICE_OPTION, array( '<a href="https://example.test" target="_blank">Allowed</a><script>Blocked</script>' ) );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+
+		ob_start();
+		$sut->handle_admin_notices();
+		$markup = ob_get_clean();
+
+		$this->assertIsString( $markup );
+		$this->assertStringContainsString( '<a href="https://example.test" target="_blank">Allowed</a>', $markup );
+		$this->assertStringNotContainsString( '<script>', $markup );
+	}
+
+	/**
+	 * @testdox With no manual-rate currency names stored ($label), no notice shows.
+	 * @testWith ["no option"]
+	 *           ["empty list"]
+	 *
+	 * @param string $label Readable case name.
+	 */
+	public function test_does_not_render_manual_rate_notice_without_currency_names( string $label ): void {
+		$this->set_current_user_can_manage_woocommerce();
+		if ( 'empty list' === $label ) {
+			update_option( self::NOTICE_OPTION, array() );
+		}
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+
+		ob_start();
+		$sut->handle_admin_notices();
+		$markup = ob_get_clean();
+
+		$this->assertSame( '', $markup );
 	}
 
 	/**
@@ -153,6 +199,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( '. Manual rates keep working. Set a manual rate for each affected currency in Multi-currency settings, or connect a rate provider.', $markup );
 		$this->assertStringNotContainsString( 'notice-dismiss', $markup, 'The notice has no dismiss control.' );
 		$this->assertStringNotContainsString( self::RATE_NOTICE_KEY, $markup, 'No dismissal link for the notice.' );
+		$this->assertStringContainsString( '<div class="notice notice-warning" style="position:relative;"><p>', $markup );
 	}
 
 	/**
@@ -187,6 +234,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_dismissal_request_for_rate_provider_unavailable_notice_stores_nothing(): void {
 		$this->set_current_user_can_manage_woocommerce();
+		update_option( self::NOTICE_OPTION, array( 'Canadian dollar' ) );
 		$_GET[ self::CANONICAL_NOTICE_QUERY ] = self::RATE_NOTICE_KEY;
 		$_GET[ self::CANONICAL_NONCE_QUERY ]  = wp_create_nonce( self::NONCE_ACTION );
 		$sut                                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
@@ -194,6 +242,63 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		$sut->handle_wp_loaded();
 
 		$this->assertFalse( get_option( self::RATE_NOTICE_DISMISSED_OPTION ) );
+		$this->assertSame( array( 'Canadian dollar' ), get_option( self::NOTICE_OPTION ) );
+	}
+
+	/**
+	 * @testdox A request without a usable notice key and nonce does nothing ($label); an empty canonical value never falls back to the legacy one.
+	 *
+	 * @dataProvider incomplete_dismissal_request_provider
+	 *
+	 * @param string               $label Readable case name.
+	 * @param array<string,string> $query Query arguments; VALID stands for a valid nonce.
+	 */
+	public function test_incomplete_dismissal_request_does_nothing( string $label, array $query ): void {
+		unset( $label );
+		$this->set_current_user_can_manage_woocommerce();
+		update_option( self::NOTICE_OPTION, array( 'Canadian dollar' ) );
+		foreach ( $query as $key => $value ) {
+			$_GET[ $key ] = 'VALID' === $value ? wp_create_nonce( self::NONCE_ACTION ) : $value;
+		}
+		$messages = array();
+		$sut      = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+		$sut->set_die_handler( $this->create_die_handler( $messages ) );
+
+		$sut->handle_wp_loaded();
+
+		$this->assertSame( array(), $messages );
+		$this->assertSame( array( 'Canadian dollar' ), get_option( self::NOTICE_OPTION ) );
+	}
+
+	/**
+	 * Requests that name no notice or carry no nonce.
+	 *
+	 * @return array<string,array{0:string,1:array<string,string>}>
+	 */
+	public function incomplete_dismissal_request_provider(): array {
+		return array(
+			'no arguments'           => array( 'no arguments', array() ),
+			'notice without nonce'   => array( 'notice without nonce', array( self::CANONICAL_NOTICE_QUERY => 'currency_changed' ) ),
+			'nonce without notice'   => array( 'nonce without notice', array( self::CANONICAL_NONCE_QUERY => 'VALID' ) ),
+			'empty canonical notice' => array(
+				'empty canonical notice',
+				array(
+					self::CANONICAL_NOTICE_QUERY => '',
+					self::CANONICAL_NONCE_QUERY  => 'VALID',
+					self::LEGACY_NOTICE_QUERY    => 'currency_changed',
+					self::LEGACY_NONCE_QUERY     => 'VALID',
+				),
+			),
+			'empty canonical nonce'  => array(
+				'empty canonical nonce',
+				array(
+					self::CANONICAL_NOTICE_QUERY => 'currency_changed',
+					self::CANONICAL_NONCE_QUERY  => '',
+					self::LEGACY_NOTICE_QUERY    => self::RATE_NOTICE_KEY,
+					self::LEGACY_NONCE_QUERY     => 'VALID',
+				),
+			),
+		);
 	}
 
 	/**
