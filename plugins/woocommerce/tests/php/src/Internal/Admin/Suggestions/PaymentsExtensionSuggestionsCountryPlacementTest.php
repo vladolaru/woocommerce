@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\Payments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Settings\Utils;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\PaymentsExtensionSuggestions;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Utilities\ArrayUtil;
 use Automattic\WooCommerce\RestApi\UnitTests\CorePayPalGatewayTrait;
 use ReflectionClass;
@@ -97,10 +98,13 @@ class PaymentsExtensionSuggestionsCountryPlacementTest extends WC_Unit_Test_Case
 	 *
 	 * Baseline means: an admin who may install plugins, an enabled ecommerce
 	 * gateway so Express/BNPL/Crypto suggestions are not suppressed, the
-	 * online-equivalent profiler state, nothing hidden, and no saved order.
+	 * online-equivalent profiler state, nothing hidden, no saved order, and the
+	 * PayPal wallet owned by the extension, not core: the fixtures describe the
+	 * catalog, which core trims while it owns the wallet (tested separately).
 	 *
 	 * Everything written here lands inside the per-test transaction that
 	 * WP_UnitTestCase opens, so no option or user meta needs restoring by hand.
+	 * The wallet owner is cached outside it, so tearDown() resets that.
 	 */
 	public function setUp(): void {
 		parent::setUp();
@@ -111,6 +115,8 @@ class PaymentsExtensionSuggestionsCountryPlacementTest extends WC_Unit_Test_Case
 		// The online-equivalent profiler state.
 		delete_option( OnboardingProfile::DATA_OPTION );
 
+		$this->pin_native_paypal_wallet( false );
+
 		$this->suggestions = wc_get_container()->get( PaymentsExtensionSuggestions::class );
 		$this->sut         = wc_get_container()->get( PaymentsProviders::class );
 
@@ -118,6 +124,27 @@ class PaymentsExtensionSuggestionsCountryPlacementTest extends WC_Unit_Test_Case
 		// Express/BNPL/Crypto suggestions. Core PayPal is not a suggested extension,
 		// so it does not suppress the PayPal suggestions. This also clears the cache.
 		$this->enable_core_paypal_pg();
+	}
+
+	/**
+	 * Reset the cached PayPal wallet owner, so the next test decides it afresh.
+	 */
+	public function tearDown(): void {
+		remove_all_filters( PayPalWalletRuntimeArbiter::FILTER_ENABLED );
+		wc_get_container()->get( PayPalWalletRuntimeArbiter::class )->invalidate();
+
+		parent::tearDown();
+	}
+
+	/**
+	 * Make core own the PayPal wallet, or leave it to the extension.
+	 *
+	 * @param bool $native Whether core owns the wallet.
+	 */
+	private function pin_native_paypal_wallet( bool $native ): void {
+		remove_all_filters( PayPalWalletRuntimeArbiter::FILTER_ENABLED );
+		add_filter( PayPalWalletRuntimeArbiter::FILTER_ENABLED, $native ? '__return_true' : '__return_false' );
+		wc_get_container()->get( PayPalWalletRuntimeArbiter::class )->invalidate();
 	}
 
 	/**
@@ -396,6 +423,43 @@ class PaymentsExtensionSuggestionsCountryPlacementTest extends WC_Unit_Test_Case
 			$this->normalise( self::baseline_of( $expected ) ),
 			$this->normalise( $projected ),
 			$this->describe_mismatch( $country, $expected, $projected )
+		);
+	}
+
+	/**
+	 * While core owns the PayPal wallet, the Payments settings list suggests neither PayPal extension: core already
+	 * provides the wallet. Every other suggestion keeps its baseline place.
+	 *
+	 * @testdox Each country's placement under core's PayPal wallet is the baseline without the PayPal suggestions.
+	 *
+	 * @dataProvider data_provider_country_placements
+	 *
+	 * @param string $country  The country code.
+	 * @param array  $expected The expected section map.
+	 */
+	public function test_country_placement_under_native_paypal_wallet( string $country, array $expected ): void {
+		$this->pin_native_paypal_wallet( true );
+		$this->sut->clear_cache();
+
+		$projected = $this->project_sections( $this->sut->get_extension_suggestions( $country ), $country );
+
+		$paypal_ids = array( PaymentsExtensionSuggestions::PAYPAL_WALLET, PaymentsExtensionSuggestions::PAYPAL_FULL_STACK );
+		$derived    = array();
+		foreach ( self::baseline_of( $expected ) as $section => $ids ) {
+			if ( is_array( $ids ) ) {
+				$kept = array_values( array_diff( $ids, $paypal_ids ) );
+				if ( array() !== $kept ) {
+					$derived[ $section ] = $kept;
+				}
+			} elseif ( ! in_array( $ids, $paypal_ids, true ) ) {
+				$derived[ $section ] = $ids;
+			}
+		}
+
+		$this->assertSame(
+			$this->normalise( $derived ),
+			$this->normalise( $projected ),
+			"Under core's PayPal wallet, $country's placement must be its baseline without the PayPal suggestions."
 		);
 	}
 

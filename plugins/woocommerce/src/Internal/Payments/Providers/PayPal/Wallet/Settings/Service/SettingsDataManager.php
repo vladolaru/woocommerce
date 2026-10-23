@@ -1,0 +1,364 @@
+<?php
+/**
+ * Provides functionality for general settings-data management.
+ *
+ * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Service;
+
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\AbstractDataModel;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\OnboardingProfile;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO\ConfigurationFlagsDTO;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\DTO\LocationStylingDTO;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Enum\ProductChoicesEnum;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\WcGateway\Gateway\PayPalGateway;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\StylingSettings;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\GeneralSettings;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\SettingsModel;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\PaymentSettings;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Settings\Data\Definition\PaymentMethodsDefinition;
+
+/**
+ * Class SettingsDataManager
+ *
+ * Manages operations related to plugin settings, primarily focusing on reset functionality.
+ * This service can be expanded in the future to include other settings management operations.
+ */
+class SettingsDataManager {
+
+	/**
+	 * The payment methods definition.
+	 *
+	 * @var PaymentMethodsDefinition
+	 */
+	private PaymentMethodsDefinition $methods_definition;
+
+	/**
+	 * The onboarding profile.
+	 *
+	 * @var OnboardingProfile
+	 */
+	private OnboardingProfile $onboarding_profile;
+
+	/**
+	 * The settings tab model.
+	 *
+	 * @var SettingsModel
+	 */
+	private SettingsModel $payment_settings;
+
+	/**
+	 * The styling settings.
+	 *
+	 * @var StylingSettings
+	 */
+	private StylingSettings $styling_settings;
+
+	/**
+	 * The payment settings.
+	 *
+	 * @var PaymentSettings
+	 */
+	private PaymentSettings $payment_methods;
+
+	/**
+	 * Data accessors for pay later messaging settings.
+	 *
+	 * @var array
+	 *
+	 * phpcs:ignore Generic.Commenting.Todo.CommentFound -- Existing follow-up note kept as written.
+	 * @todo This should be a proper class!
+	 */
+	private array $paylater_messaging;
+
+	/**
+	 * Stores a list of all AbstractDataModel instances that are managed by
+	 * this service.
+	 *
+	 * @var AbstractDataModel[]
+	 */
+	private array $models_to_reset = array();
+
+	/**
+	 * Constructor.
+	 *
+	 * @param PaymentMethodsDefinition $methods_definition The payment methods definition.
+	 * @param OnboardingProfile        $onboarding_profile The onboarding profile.
+	 * @param GeneralSettings          $general_settings The general settings.
+	 * @param SettingsModel            $payment_settings The settings tab model.
+	 * @param StylingSettings          $styling_settings The styling settings.
+	 * @param PaymentSettings          $payment_methods The payment settings.
+	 * @param array                    $paylater_messaging The data accessors for the Pay Later messaging settings.
+	 * @param AbstractDataModel        ...$data_models More data models to reset.
+	 */
+	public function __construct(
+		PaymentMethodsDefinition $methods_definition,
+		OnboardingProfile $onboarding_profile,
+		GeneralSettings $general_settings,
+		SettingsModel $payment_settings,
+		StylingSettings $styling_settings,
+		PaymentSettings $payment_methods,
+		// phpcs:ignore Generic.Commenting.Todo.TaskFound -- Existing follow-up note kept as written.
+		array $paylater_messaging, // TODO should be migrated to an AbstractDataModel.
+		AbstractDataModel ...$data_models
+	) {
+		foreach ( $data_models as $data_model ) {
+			$this->models_to_reset[] = $data_model;
+		}
+
+		$this->models_to_reset[] = $onboarding_profile;
+		$this->models_to_reset[] = $general_settings;
+		$this->models_to_reset[] = $payment_settings;
+		$this->models_to_reset[] = $styling_settings;
+		$this->models_to_reset[] = $payment_methods;
+
+		$this->methods_definition = $methods_definition;
+		$this->onboarding_profile = $onboarding_profile;
+		$this->payment_settings   = $payment_settings;
+		$this->styling_settings   = $styling_settings;
+		$this->payment_methods    = $payment_methods;
+		$this->paylater_messaging = $paylater_messaging;
+	}
+
+	/**
+	 * Completely purges all settings from the DB.
+	 *
+	 * @return void
+	 */
+	public function reset_all_settings(): void {
+		/**
+		 * Broadcast the settings-reset event to allow other modules to perform
+		 * cleanup tasks, if needed.
+		 *
+		 * @since 11.3.0
+		 */
+		do_action( 'woocommerce_paypal_payments_reset_settings' );
+
+		foreach ( $this->models_to_reset as $model ) {
+			$model->purge();
+		}
+
+		// Clear any caches.
+		wp_cache_flush();
+	}
+
+	/**
+	 * Applies a default configuration to the plugin for a new merchant.
+	 *
+	 * This method checks the onboarding "setup_done" flag to determine if
+	 * the defaults should be applied. At the end of this method, the
+	 * "setup_done" flag is set, so future calls to the method have no effect.
+	 *
+	 * @param ConfigurationFlagsDTO $flags The configuration flags.
+	 * @return void
+	 */
+	public function set_defaults_for_new_merchant( ConfigurationFlagsDTO $flags ): void {
+		if ( $this->onboarding_profile->is_setup_done() ) {
+			return;
+		}
+
+		$this->apply_configuration( $flags );
+
+		$this->onboarding_profile->set_setup_done( true );
+		$this->onboarding_profile->save();
+
+		/**
+		 * Fires after the core merchant configuration was applied.
+		 *
+		 * This action indicates that a merchant completed the onboarding wizard.
+		 * The flags contain several choices which the merchant took during the
+		 * onboarding wizard, and provide additional context on which defaults
+		 * should be applied for the new merchant.
+		 *
+		 * Other modules or integrations can use this hook to initialize
+		 * additional plugin settings on first merchant login.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param ConfigurationFlagsDTO $flags The configuration flags.
+		 */
+		do_action( 'woocommerce_paypal_payments_apply_default_configuration', $flags );
+	}
+
+	/**
+	 * Applies a default configuration to the plugin, without any condition.
+	 *
+	 * @param ConfigurationFlagsDTO $flags The configuration flags.
+	 * @return void
+	 */
+	protected function apply_configuration( ConfigurationFlagsDTO $flags ): void {
+		// Apply defaults for the "Settings" tab.
+		$this->apply_payment_settings( $flags );
+
+		// Assign defaults for the "Payment Methods" tab.
+		$this->apply_payment_methods( $flags );
+
+		// Assign defaults for the "Styling" tab.
+		$this->apply_location_styles( $flags );
+
+		// Assign defaults for the "Pay Later Messaging" tab.
+		$this->apply_pay_later_messaging( $flags );
+	}
+
+	/**
+	 * Synchronize gateway settings with merchant onboarding choices.
+	 *
+	 * @return void
+	 */
+	public function sync_gateway_settings(): void {
+		$flags = new ConfigurationFlagsDTO();
+
+		$profile_data = $this->onboarding_profile->to_array();
+
+		$flags->is_business_seller  = ! ( $profile_data['is_casual_seller'] ?? false );
+		$flags->use_card_payments   = $profile_data['accept_card_payments'] ?? false;
+		$flags->use_digital_wallets = $profile_data['accept_card_payments'] ?? false;
+		$flags->use_subscriptions   = in_array( ProductChoicesEnum::SUBSCRIPTIONS, $profile_data['products'] ?? array(), true );
+
+		$this->toggle_payment_gateways( $flags );
+	}
+
+	/**
+	 * Enables or disables payment gateways depending on the provided
+	 * configuration flags.
+	 *
+	 * @param ConfigurationFlagsDTO $flags Shop configuration flags.
+	 * @return void
+	 */
+	protected function toggle_payment_gateways( ConfigurationFlagsDTO $flags ): void {
+		// First, disable all payment methods.
+		$methods_paypal = $this->methods_definition->group_paypal_methods();
+		$methods_cards  = $this->methods_definition->group_card_methods();
+		$methods_apm    = $this->methods_definition->group_apms();
+		$all_methods    = array_merge( $methods_paypal, $methods_cards, $methods_apm );
+
+		// Keep the extension's Fastlane watermark switched on for a new connection.
+		$this->payment_methods->set_fastlane_display_watermark( true );
+
+		foreach ( $all_methods as $method ) {
+			// Pay Later is set once by apply_payment_methods(), so a reconnect keeps the merchant's choice.
+			if ( 'pay-later' === $method['id'] ) {
+				continue;
+			}
+
+			$this->payment_methods->toggle_method_state( $method['id'], false );
+		}
+
+		// Always enable PayPal and Venmo.
+		$this->payment_methods->toggle_method_state( PayPalGateway::ID, true );
+		$this->payment_methods->toggle_method_state( 'venmo', true );
+
+		if ( $flags->is_business_seller ) {
+			/**
+			 * Allow plugins to modify apm payment gateway states before saving.
+			 *
+			 * @since 11.3.0
+			 *
+			 * @param PaymentSettings $payment_methods The payment methods object.
+			 * @param array $methods_apm List of APM methods.
+			 * @param ConfigurationFlagsDTO $flags Configuration flags that determine which gateways to enable.
+			 */
+			do_action( 'woocommerce_paypal_payments_toggle_payment_gateways_apms', $this->payment_methods, $methods_apm, $flags );
+		}
+
+		/**
+		 * Allow plugins to modify payment gateway states before saving.
+		 *
+		 * @since 11.3.0
+		 *
+		 * @param PaymentSettings $payment_methods The payment methods object.
+		 * @param ConfigurationFlagsDTO $flags Configuration flags that determine which gateways to enable.
+		 */
+		do_action( 'woocommerce_paypal_payments_toggle_payment_gateways', $this->payment_methods, $flags );
+
+		$this->payment_methods->save();
+	}
+
+	/**
+	 * Applies the default payment settings that are relevant for the provided
+	 * configuration flags.
+	 *
+	 * @param ConfigurationFlagsDTO $flags Shop configuration flags.
+	 * @return void
+	 */
+	protected function apply_payment_settings( ConfigurationFlagsDTO $flags ): void {
+		// Enable Pay-Now experience for all merchants.
+		$this->payment_settings->set_enable_pay_now( true );
+
+		if ( $flags->is_business_seller && $flags->use_subscriptions ) {
+			$this->payment_settings->set_save_paypal_and_venmo( true );
+		}
+
+		$this->payment_settings->save();
+	}
+
+	/**
+	 * Applies the payment method defaults that a reconnect must not reset.
+	 *
+	 * @param ConfigurationFlagsDTO $flags Shop configuration flags.
+	 */
+	protected function apply_payment_methods( ConfigurationFlagsDTO $flags ): void { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Protected step kept with the signature shared by the apply_* methods.
+		$this->payment_methods->toggle_method_state( 'pay-later', true );
+		$this->payment_methods->save();
+	}
+
+	/**
+	 * Applies the default styling details for the shop.
+	 *
+	 * @param ConfigurationFlagsDTO $flags Shop configuration flags.
+	 * @return void
+	 */
+	protected function apply_location_styles( ConfigurationFlagsDTO $flags ): void { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Protected step kept with the signature shared by the apply_* methods.
+		$methods = array(
+			PayPalGateway::ID,
+			'venmo',
+			'pay-later',
+		);
+
+		/**
+		 * Initialize the styling options using the defaults.
+		 *
+		 * - Cart: Enabled, display PayPal, Venmo, Pay Later.
+		 * - Classic Checkout: Display PayPal, Venmo, Pay Later.
+		 * - Express Checkout: Display PayPal, Venmo, Pay Later.
+		 * - Mini Cart: Display PayPal, Venmo, Pay Later.
+		 * - Product Page: Display PayPal, Venmo, Pay Later.
+		 */
+		$location_styles = array(
+			'cart'             => new LocationStylingDTO( 'cart', true, $methods ),
+			'classic_checkout' => new LocationStylingDTO( 'classic_checkout', true, $methods ),
+			'express_checkout' => new LocationStylingDTO( 'express_checkout', true, $methods ),
+			'mini_cart'        => new LocationStylingDTO( 'mini_cart', false, $methods ),
+			'product'          => new LocationStylingDTO( 'product', true, $methods ),
+		);
+
+		// Apply the settings and persist them to the DB. All merchants use the same options.
+		$this->styling_settings->from_array( $location_styles );
+		$this->styling_settings->save();
+	}
+
+	/**
+	 * Applies the default pay later messaging details for the shop.
+	 *
+	 * @param ConfigurationFlagsDTO $flags Shop configuration flags.
+	 * @return void
+	 */
+	protected function apply_pay_later_messaging( ConfigurationFlagsDTO $flags ): void { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found -- Protected step kept with the signature shared by the apply_* methods.
+		$config = $this->paylater_messaging['read'];
+
+		$config['cart']['status']     = 'enabled';
+		$config['checkout']['status'] = 'enabled';
+		$config['product']['status']  = 'enabled';
+		$config['shop']['status']     = 'disabled';
+		$config['home']['status']     = 'disabled';
+
+		foreach ( $config['custom_placement'] as $key => $placement ) {
+			$config['custom_placement'][ $key ]['status'] = 'disabled';
+		}
+
+		$this->paylater_messaging['save']->save_config( $config );
+	}
+}

@@ -29,6 +29,7 @@ import {
 import { ReactivateLivePaymentsButton } from '~/settings-payments/components/buttons/reactivate-live-payments-button';
 import { IncentiveStatusBadge } from '~/settings-payments/components/incentive-status-badge';
 import { OfficialBadge } from '~/settings-payments/components/official-badge';
+import { ProviderNotice } from './provider-notice';
 
 type PaymentGatewayItemProps = {
 	gateway: PaymentGatewayProvider;
@@ -128,7 +129,7 @@ export const PaymentGatewayListItem = ( {
 				hasIncentive( gateway ) && shouldHighlightIncentive
 					? `has-incentive`
 					: ''
-			}` }
+			} ${ gateway._notice ? 'has-notice' : '' }` }
 			{ ...props }
 		>
 			<div className="woocommerce-list__item-inner">
@@ -329,6 +330,8 @@ export const PaymentGatewayListItem = ( {
 					</div>
 				</div>
 			</div>
+			{ /* The proof of concept slot for a notice the provider reports under its row. */ }
+			{ gateway._notice && <ProviderNotice notice={ gateway._notice } /> }
 		</div>
 	);
 };

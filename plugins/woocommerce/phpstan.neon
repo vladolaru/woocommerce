@@ -15,19 +15,18 @@ parameters:
 			# Matches the prior test implementation; GeoIP relies on data files.
 			- includes/class-wc-geo-ip.php
 			- includes/react-admin/feature-config.php (?)
-		analyse:
-			- src/Internal/Payments/Providers/PayPal/woocommerce-paypal-payments
 	bootstrapFiles:
 		- vendor/autoload.php
 	scanDirectories:
 		- vendor/wordpress/abilities-api
 		- packages/action-scheduler
 		- ../../packages/php/woocommerce-analytics/src
-		- src/Internal/Payments/Providers/PayPal/woocommerce-paypal-payments/lib/packages
-		- src/Internal/Payments/Providers/PayPal/woocommerce-paypal-payments/src
 	scanFiles:
 		- php-stubs/wc-admin-feature-config.php
 		- php-stubs/wc-constants.php
+		- php-stubs/wc-subscriptions.php
+		- php-stubs/paypal-wallet-serialized-dtos.php
+		- php-stubs/paypal-wallet-constants.php
 	treatPhpDocTypesAsCertain: false
 	dynamicConstantNames:
 		# WC_TAX_ROUNDING_MODE can be 1, 2 (ints) or 'auto' (string in tests).

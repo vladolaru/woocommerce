@@ -1,0 +1,133 @@
+<?php
+/**
+ * The Token object.
+ *
+ * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity
+ */
+
+declare(strict_types=1);
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity;
+
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Exception\RuntimeException;
+
+/**
+ * Class Token
+ */
+class Token {
+
+	/**
+	 * Safety margin (in seconds) subtracted from the real expiry, so a token that
+	 * is about to expire is refreshed proactively instead of being used for a
+	 * request that would race the expiry and fail with a 401.
+	 */
+	const EXPIRATION_SAFETY_MARGIN = 60;
+
+	/**
+	 * The Token data.
+	 *
+	 * @var \stdClass
+	 */
+	private $json;
+
+	/**
+	 * The timestamp when the Token was created.
+	 *
+	 * @var int
+	 */
+	private $created; // @phpstan-ignore property.unused (never read or written, kept as it is in the extension)
+
+	/**
+	 * Token constructor.
+	 *
+	 * @param \stdClass $json The JSON object.
+	 * @throws RuntimeException When The JSON object is not valid.
+	 */
+	public function __construct( $json ) {
+		if ( ! isset( $json->created ) ) {
+			$json->created = time();
+		}
+		if ( ! $this->validate( $json ) ) {
+			throw new RuntimeException( 'Token not valid' );
+		}
+		$this->json = $json;
+	}
+
+	/**
+	 * Returns the timestamp when the Token is expired.
+	 *
+	 * @return int
+	 */
+	public function expiration_timestamp(): int {
+
+		return $this->json->created + $this->json->expires_in;
+	}
+
+	/**
+	 * Returns the token.
+	 *
+	 * @return string
+	 */
+	public function token(): string {
+		return (string) $this->json->token;
+	}
+
+	/**
+	 * Returns whether the Token is still valid.
+	 *
+	 * @return bool
+	 */
+	public function is_valid(): bool {
+		return time() < $this->json->created + $this->json->expires_in - self::EXPIRATION_SAFETY_MARGIN;
+	}
+
+	/**
+	 * Returns the Token as JSON string.
+	 *
+	 * @return string
+	 */
+	public function as_json(): string {
+		return (string) wp_json_encode( $this->json );
+	}
+
+	/**
+	 * Returns a Token based off a JSON string.
+	 *
+	 * @param string $json The JSON string.
+	 */
+	public static function from_json( string $json ): Token {
+		/**
+		 * The decoded token response.
+		 *
+		 * @var \stdClass $json
+		 */
+		$json = (object) json_decode( $json );
+		if ( isset( $json->access_token ) || isset( $json->client_token ) ) {
+			$json->token = $json->access_token ?? $json->client_token;
+		}
+
+		return new Token( $json );
+	}
+
+	/**
+	 * Validates whether a JSON object can be transformed to a Token object.
+	 *
+	 * @param \stdClass $json The JSON object.
+	 *
+	 * @return bool
+	 */
+	private function validate( $json ): bool {
+		$property_map = array(
+			'created'    => 'is_int',
+			'expires_in' => 'is_int',
+			'token'      => 'is_string',
+		);
+
+		foreach ( $property_map as $property => $validator ) {
+			if ( ! isset( $json->{$property} ) || ! $validator( $json->{$property} ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+}

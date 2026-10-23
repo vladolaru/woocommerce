@@ -42,6 +42,7 @@ export type {
 	SuggestedPaymentsExtension,
 	SuggestedPaymentsExtensionCategory,
 	PaymentsProviderIncentive,
+	PaymentsProviderNotice,
 	EnableGatewayResponse,
 	PaymentsProviderLink,
 	RecommendedPaymentMethod,

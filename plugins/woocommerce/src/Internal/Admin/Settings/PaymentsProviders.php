@@ -38,6 +38,7 @@ use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WCCore;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders\WooPayments\WooPaymentsService;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\PaymentsExtensionSuggestions as ExtensionSuggestions;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\PayPalWalletRuntimeArbiter;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Exception;
 use WC_Payment_Gateway;
@@ -703,10 +704,18 @@ class PaymentsProviders {
 
 		$has_enabled_ecommerce_gateways = $this->has_enabled_ecommerce_gateways();
 
+		// When core provides the PayPal wallet, no PayPal suggestion is shown: core already offers PayPal.
+		$core_provides_paypal_wallet = wc_get_container()->get( PayPalWalletRuntimeArbiter::class )->should_native_register();
+		$paypal_suggestion_ids       = array( ExtensionSuggestions::PAYPAL_WALLET, ExtensionSuggestions::PAYPAL_FULL_STACK );
+
 		// Keep track of the active extensions.
 		$active_extensions = array();
 
 		foreach ( $extensions as $extension ) {
+			if ( $core_provides_paypal_wallet && in_array( $extension['id'], $paypal_suggestion_ids, true ) ) {
+				continue;
+			}
+
 			$extension = $this->enhance_extension_suggestion( $extension );
 
 			if ( self::EXTENSION_ACTIVE === $extension['plugin']['status'] ) {

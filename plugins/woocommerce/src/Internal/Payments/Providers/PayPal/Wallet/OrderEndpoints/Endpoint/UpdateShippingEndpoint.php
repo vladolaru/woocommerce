@@ -1,0 +1,154 @@
+<?php
+/**
+ * Updates PayPal order with the current shipping methods.
+ *
+ * @package Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint
+ */
+
+declare(strict_types=1);
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\OrderEndpoints\Endpoint;
+
+use Exception;
+use Automattic\WooCommerce\Vendor\Psr\Log\LoggerInterface;
+use RuntimeException;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Endpoint\OrderEndpoint;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\Patch;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Entity\PatchCollection;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\ApiClient\Factory\PurchaseUnitFactory;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Endpoint\EndpointInterface;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Button\Exception\NonceValidationException;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Wallet\Session\SessionHandler;
+
+/**
+ * Patches the PayPal order with the cart's current shipping methods.
+ */
+class UpdateShippingEndpoint implements EndpointInterface {
+	const ENDPOINT           = 'ppc-update-shipping';
+	const WC_STORE_API_ROUTE = 'wc/store/v1/cart/';
+
+	/**
+	 * The request data.
+	 *
+	 * @var RequestData
+	 */
+	private RequestData $request_data;
+	/**
+	 * The order endpoint.
+	 *
+	 * @var OrderEndpoint
+	 */
+	private OrderEndpoint $order_endpoint;
+	/**
+	 * The purchase unit factory.
+	 *
+	 * @var PurchaseUnitFactory
+	 */
+	private PurchaseUnitFactory $purchase_unit_factory;
+	/**
+	 * The session handler.
+	 *
+	 * @var SessionHandler
+	 */
+	private SessionHandler $session_handler;
+	/**
+	 * The logger.
+	 *
+	 * @var LoggerInterface
+	 */
+	protected LoggerInterface $logger;
+
+	/**
+	 * UpdateShippingEndpoint constructor.
+	 *
+	 * @param RequestData         $request_data          The request data.
+	 * @param OrderEndpoint       $order_endpoint        The order endpoint.
+	 * @param PurchaseUnitFactory $purchase_unit_factory The purchase unit factory.
+	 * @param SessionHandler      $session_handler       The session handler.
+	 * @param LoggerInterface     $logger                The logger.
+	 */
+	public function __construct(
+		RequestData $request_data,
+		OrderEndpoint $order_endpoint,
+		PurchaseUnitFactory $purchase_unit_factory,
+		SessionHandler $session_handler,
+		LoggerInterface $logger
+	) {
+
+		$this->request_data          = $request_data;
+		$this->order_endpoint        = $order_endpoint;
+		$this->purchase_unit_factory = $purchase_unit_factory;
+		$this->session_handler       = $session_handler;
+		$this->logger                = $logger;
+	}
+
+	/**
+	 * The Store API cart URLs the v5 shipping callbacks call from the browser.
+	 *
+	 * Built with rest_url(), so plain permalinks (?rest_route=) and a moved REST prefix work.
+	 *
+	 * @return array{select_shipping_rate: string, cart: string, update_customer: string}
+	 */
+	public static function store_api_urls(): array {
+		return array(
+			'select_shipping_rate' => rest_url( self::WC_STORE_API_ROUTE . 'select-shipping-rate' ),
+			'cart'                 => rest_url( self::WC_STORE_API_ROUTE ),
+			'update_customer'      => rest_url( self::WC_STORE_API_ROUTE . 'update-customer' ),
+		);
+	}
+
+	/**
+	 * Returns the nonce.
+	 *
+	 * @return string
+	 */
+	public static function nonce(): string {
+		return self::ENDPOINT;
+	}
+
+	/**
+	 * Handles the request.
+	 *
+	 * @throws RuntimeException When ownership validation fails.
+	 */
+	public function handle_request(): void {
+		try {
+			$data = $this->request_data->read_request( $this->nonce() );
+
+			$order_id = $data['order_id'];
+
+			$session_order = $this->session_handler->order();
+			if ( ! $session_order || $session_order->id() !== $order_id ) {
+				throw new RuntimeException( __( 'Order validation failed.', 'woocommerce' ) );
+			}
+
+			$pu      = $this->purchase_unit_factory->from_wc_cart( null, true );
+			$pu_data = $pu->to_array();
+
+			// phpcs:ignore Generic.Commenting.Todo.TaskFound -- Existing follow-up note kept as written.
+			// TODO: maybe should patch only if methods changed.
+			// But it seems a bit difficult to detect,
+			// e.g. ->order($id) may not have Shipping because we drop it when address or name are missing.
+			// Also may consider patching only amount and options instead of the whole PU, though not sure if it makes any difference.
+			$patches = new PatchCollection(
+				new Patch(
+					'replace',
+					"/purchase_units/@reference_id=='{$pu->reference_id()}'",
+					$pu_data
+				)
+			);
+
+			$this->order_endpoint->patch( $order_id, $patches );
+
+			wp_send_json_success();
+		} catch ( NonceValidationException $error ) {
+			wp_send_json_error( array( 'message' => $error->getMessage() ), 400 );
+		} catch ( Exception $error ) {
+			wp_send_json_error(
+				array(
+					'message' => $error->getMessage(),
+				)
+			);
+		}
+	}
+}

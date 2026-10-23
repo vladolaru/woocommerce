@@ -1,0 +1,97 @@
+import { loadScript } from '@paypal/paypal-js';
+import merge from 'deepmerge';
+import widgetBuilder from '../Renderer/WidgetBuilder';
+import { keysToCamelCase } from './Utils';
+import { getUserIdToken } from './ConfigProcessor';
+
+// This component may be used by multiple modules. This assures that options are shared between all instances.
+const scriptOptionsMap = {};
+
+const getNamespaceOptions = ( namespace ) => {
+	if ( ! scriptOptionsMap[ namespace ] ) {
+		scriptOptionsMap[ namespace ] = {
+			isLoading: false,
+			onLoadedCallbacks: [],
+			onErrorCallbacks: [],
+		};
+	}
+	return scriptOptionsMap[ namespace ];
+};
+
+export const loadPaypalScript = ( config, onLoaded, onError = null ) => {
+	const dataNamespace = config?.data_namespace || '';
+
+	// If PayPal is already loaded for this namespace, call the onLoaded callback and return.
+	if ( typeof window.paypal !== 'undefined' && ! dataNamespace ) {
+		onLoaded();
+		return;
+	}
+
+	const options = getNamespaceOptions( dataNamespace );
+
+	// Add the onLoaded callback to the onLoadedCallbacks stack.
+	options.onLoadedCallbacks.push( onLoaded );
+	if ( onError ) {
+		options.onErrorCallbacks.push( onError );
+	}
+
+	// Return if it's still loading.
+	if ( options.isLoading ) {
+		return;
+	}
+	options.isLoading = true;
+
+	const resetState = () => {
+		options.isLoading = false;
+		options.onLoadedCallbacks = [];
+		options.onErrorCallbacks = [];
+	};
+
+	// Callback to be called once the PayPal script is loaded.
+	const callback = ( paypal ) => {
+		widgetBuilder.setPaypal( paypal );
+
+		for ( const onLoadedCallback of options.onLoadedCallbacks ) {
+			onLoadedCallback();
+		}
+
+		resetState();
+	};
+	const errorCallback = ( err ) => {
+		for ( const onErrorCallback of options.onErrorCallbacks ) {
+			onErrorCallback( err );
+		}
+
+		resetState();
+	};
+
+	// Build the PayPal script options.
+	let scriptOptions = keysToCamelCase( config.url_params );
+	if ( config.script_attributes ) {
+		scriptOptions = merge( scriptOptions, config.script_attributes );
+	}
+
+	// Legacy save-payment-methods fallback: attach data-user-id-token so the old
+	// vaulting flow keeps working. The token is omitted only on contexts where the
+	// vault component renders and loads its own data-sdk-client-token SDK
+	// (checkout); on express contexts (product, cart, mini-cart) it must stay.
+	// See getUserIdToken in ConfigProcessor for the shared rule.
+	const userIdToken = getUserIdToken( config );
+	if ( userIdToken ) {
+		scriptOptions[ 'data-user-id-token' ] = userIdToken;
+	}
+
+	// Adds data-namespace to script options.
+	if ( dataNamespace ) {
+		scriptOptions.dataNamespace = dataNamespace;
+	}
+
+	// Load PayPal script
+	loadScript( scriptOptions ).then( callback ).catch( errorCallback );
+};
+
+export const loadPaypalScriptPromise = ( config ) => {
+	return new Promise( ( resolve, reject ) => {
+		loadPaypalScript( config, resolve, reject );
+	} );
+};

@@ -1,0 +1,295 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting;
+
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Cli\CollectCommand;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\CollectingModule;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\ConnectionState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\Gating\PlatformServedGates;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\CollectingState;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\HeldOrders;
+use Automattic\WooCommerce\Internal\Payments\Providers\PayPal\Collecting\State\Options;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\FakePlatformTransport;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Collecting\Doubles\FixedHeldOrders;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\Doubles\ContainerDouble;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\PayPal\Wallet\WalletTestCase;
+use InvalidArgumentException;
+use RuntimeException;
+
+/**
+ * Tests for the CollectingModule skeleton and the collect command.
+ *
+ * @group paypal-wallet
+ */
+class CollectingModuleTest extends WalletTestCase {
+
+	/**
+	 * A collect command over a state with no held orders.
+	 *
+	 * @return CollectCommand
+	 */
+	private function command(): CollectCommand {
+		return new CollectCommand( new CollectingState( new Options(), new FixedHeldOrders( 0 ) ) );
+	}
+
+	/**
+	 * @testdox Should expose the collecting services, build them from the container, and extend the wallet services a platform-served store changes.
+	 */
+	public function test_services_and_extensions(): void {
+		$sut      = new CollectingModule();
+		$services = $sut->services();
+
+		$this->assertSame(
+			array(
+				'collecting.options',
+				'collecting.held-orders',
+				'collecting.state',
+				'collecting.connection-state',
+				'collecting.transport',
+				'collecting.order-app-context',
+				'collecting.context-bearer',
+				'collecting.context-host-resolver',
+				'collecting.refund-lock',
+				'collecting.held-capture',
+				'collecting.capture-reader',
+				'collecting.held-settlement',
+				'collecting.webhook.guards',
+				'collecting.webhook.foreign-guard',
+				'collecting.webhook.held-completed',
+				'collecting.webhook.held-returned',
+				'collecting.webhook.held-pending',
+				'collecting.webhook.onboarding-completed',
+				'collecting.pwc-check-marker',
+				'collecting.crypto-check',
+				'collecting.reconciler',
+			),
+			array_keys( $services )
+		);
+		$this->assertSame(
+			array(
+				'woocommerce.logger.woocommerce',
+				'settings.flag.is-connected',
+				'settings.environment',
+				'webhook.is-registered',
+				'sdk-v6.buttons-available',
+				'wcgateway.settings.wc-tasks.task-config-services',
+				'paylater-configurator.is-available',
+				'settings.settings-provider',
+				'settings.rest.settings',
+				'settings.rest.onboarding',
+				'settings.rest.common',
+				'settings.rest.authentication',
+				'api.bearer',
+				'api.host-resolver',
+				'api.host',
+				'api.merchant_email',
+				'api.merchant_id',
+				'api.partner_merchant_id',
+				'button.client_id',
+				'api.endpoint.partners',
+				'api.endpoint.partner-referrals',
+				'api.endpoint.partner-referrals-sandbox',
+				'api.endpoint.partner-referrals-production',
+				'webhook.last-webhook-storage.key',
+				'webhook.endpoint.controller',
+				'webhook.registrar',
+				'settings.rest.webhooks',
+				'webhook.endpoint.handler',
+				'wcgateway.pwc-product-status',
+				'wcgateway.processor.refunds',
+			),
+			array_keys( $sut->extensions() )
+		);
+		$this->assertSame( CollectingModule::class, $sut->id() );
+
+		$container = new ContainerDouble(
+			array(
+				'collecting.options'     => new Options(),
+				'collecting.held-orders' => new HeldOrders(),
+			)
+		);
+		$this->assertInstanceOf( Options::class, $services['collecting.options']() );
+		$this->assertInstanceOf( CollectingState::class, $services['collecting.state']( $container ) );
+		$this->assertInstanceOf( ConnectionState::class, $services['collecting.connection-state']( $container ) );
+	}
+
+	/**
+	 * @testdox Should report success from run, add the intent, merchant-features, features-list and to-dos-list filters late, and add nothing to WooCommerce's gateway list.
+	 */
+	public function test_run_adds_the_gate_filters(): void {
+		$container = new ContainerDouble(
+			array( 'collecting.connection-state' => new ConnectionState() )
+		);
+
+		$this->assertTrue( ( new CollectingModule() )->run( $container ) );
+
+		$this->assertSame( 100, $this->priority_of( 'woocommerce_paypal_payments_order_intent', 'handle_woocommerce_paypal_payments_order_intent' ) );
+		$this->assertSame( 100, $this->priority_of( 'woocommerce_paypal_payments_rest_common_merchant_features', 'handle_woocommerce_paypal_payments_rest_common_merchant_features' ) );
+		$this->assertSame( 100, $this->priority_of( 'woocommerce_paypal_payments_features_list', 'handle_woocommerce_paypal_payments_features_list' ) );
+		$this->assertSame( 100, $this->priority_of( 'woocommerce_paypal_payments_todos_list', 'handle_woocommerce_paypal_payments_todos_list' ) );
+		$this->assertSame( array(), $this->collecting_callbacks_on( 'woocommerce_payment_gateways' ), 'Pay with Crypto is kept off a collecting store by its capability, so the wallet module\'s own registration is the only path' );
+	}
+
+	/**
+	 * The priority at which a method of a gate class is hooked, or null when it is not.
+	 *
+	 * @param string $hook   The hook.
+	 * @param string $method The method name.
+	 * @param string $owner  The class of the callback's object; the platform-served gates by default.
+	 * @return int|null
+	 */
+	private function priority_of( string $hook, string $method, string $owner = PlatformServedGates::class ): ?int {
+		foreach ( $GLOBALS['wp_filter'][ $hook ]->callbacks ?? array() as $priority => $callbacks ) {
+			foreach ( $callbacks as $callback ) {
+				if ( is_array( $callback['function'] ) && $callback['function'][0] instanceof $owner && $method === $callback['function'][1] ) {
+					return (int) $priority;
+				}
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * The callbacks on a hook whose object or class belongs to the collecting module's namespace.
+	 *
+	 * @param string $hook The hook.
+	 * @return array<int, string> The owning class of each such callback.
+	 */
+	private function collecting_callbacks_on( string $hook ): array {
+		$owners = array();
+		foreach ( $GLOBALS['wp_filter'][ $hook ]->callbacks ?? array() as $callbacks ) {
+			foreach ( $callbacks as $callback ) {
+				$function = $callback['function'];
+				if ( is_array( $function ) ) {
+					$owner = is_object( $function[0] ) ? get_class( $function[0] ) : (string) $function[0];
+				} elseif ( $function instanceof \Closure ) {
+					$scope = ( new \ReflectionFunction( $function ) )->getClosureScopeClass();
+					$owner = $scope ? $scope->getName() : '';
+				} else {
+					$owner = is_object( $function ) ? get_class( $function ) : (string) $function;
+				}
+				if ( 0 === strpos( $owner, 'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\PayPal\\Collecting\\' ) ) {
+					$owners[] = $owner;
+				}
+			}
+		}
+
+		return $owners;
+	}
+
+	/**
+	 * @testdox Should enter the collecting state from the collect command and describe it.
+	 */
+	public function test_collect_command_enters_the_state(): void {
+		$summary = ( $this->command() )->enter_collecting( 'payee@example.com', true );
+
+		$data = get_option( Options::COLLECTING );
+		$this->assertSame( 'payee@example.com', $data['payee_email'] );
+		$this->assertSame( 'sandbox', $data['environment'] );
+		$this->assertSame(
+			array(
+				'Payee'       => 'payee@example.com',
+				'Tracking ID' => $data['tracking_id'],
+				'Environment' => 'sandbox',
+			),
+			$summary
+		);
+	}
+
+	/**
+	 * @testdox Should turn the wallet gateway on from the collect command, on a store whose wallet has not booted.
+	 */
+	public function test_collect_command_turns_the_gateway_on(): void {
+		$this->assertFalse( get_option( 'woocommerce_ppcp-gateway_settings' ), 'The store starts with no gateway row' );
+
+		( $this->command() )->enter_collecting( 'payee@example.com', true );
+
+		$settings = get_option( 'woocommerce_ppcp-gateway_settings' );
+		$this->assertIsArray( $settings );
+		$this->assertSame( 'yes', $settings['enabled'] );
+		$this->assertIsArray( get_option( Options::COLLECTING ), 'Turning the gateway on keeps the store collecting' );
+	}
+
+	/**
+	 * @testdox Should use production without the sandbox flag when no transport is configured.
+	 */
+	public function test_collect_command_defaults_to_production(): void {
+		( $this->command() )->enter_collecting( 'payee@example.com', null );
+
+		$this->assertSame( 'production', get_option( Options::COLLECTING )['environment'] );
+	}
+
+	/**
+	 * A collect command over a state with no held orders and a ready transport in an environment.
+	 *
+	 * @param string $environment The transport's environment.
+	 * @return CollectCommand
+	 */
+	private function command_with_transport( string $environment ): CollectCommand {
+		return new CollectCommand(
+			new CollectingState( new Options(), new FixedHeldOrders( 0 ) ),
+			static function () use ( $environment ): FakePlatformTransport {
+				return new FakePlatformTransport( array( 'environment' => $environment ) );
+			}
+		);
+	}
+
+	/**
+	 * @testdox Should take the transport's environment when no sandbox flag is given.
+	 * @testWith ["sandbox"]
+	 *           ["production"]
+	 *
+	 * @param string $environment The transport's environment.
+	 */
+	public function test_collect_command_defaults_to_the_transport_environment( string $environment ): void {
+		$this->command_with_transport( $environment )->enter_collecting( 'payee@example.com', null );
+
+		$this->assertSame( $environment, get_option( Options::COLLECTING )['environment'] );
+	}
+
+	/**
+	 * @testdox Should refuse a sandbox flag that does not match the transport's environment and write nothing.
+	 * @testWith ["sandbox", false]
+	 *           ["production", true]
+	 *
+	 * @param string $environment The transport's environment.
+	 * @param bool   $sandbox     The flag given.
+	 */
+	public function test_collect_command_refuses_an_environment_the_transport_does_not_serve( string $environment, bool $sandbox ): void {
+		try {
+			$this->command_with_transport( $environment )->enter_collecting( 'payee@example.com', $sandbox );
+			$this->fail( 'A mismatched environment must be refused' );
+		} catch ( RuntimeException $exception ) {
+			$this->assertFalse( get_option( Options::COLLECTING ) );
+		}
+	}
+
+	/**
+	 * @testdox Should refuse an invalid email from the collect command and write nothing.
+	 */
+	public function test_collect_command_rejects_an_invalid_email(): void {
+		try {
+			( $this->command() )->enter_collecting( 'nope', false );
+			$this->fail( 'An invalid email must be refused' );
+		} catch ( InvalidArgumentException $exception ) {
+			$this->assertFalse( get_option( Options::COLLECTING ) );
+		}
+	}
+
+	/**
+	 * @testdox Should refuse the collect command on a platform-connected store and leave the platform option alone.
+	 */
+	public function test_collect_command_refuses_a_platform_connected_store(): void {
+		$this->set_wallet_option( Options::PLATFORM, array( 'merchant_id' => 'M2' ) );
+
+		try {
+			$this->command()->enter_collecting( 'payee@example.com', false );
+			$this->fail( 'A platform-connected store must not collect' );
+		} catch ( RuntimeException $exception ) {
+			$this->assertFalse( get_option( Options::COLLECTING ) );
+			$this->assertSame( array( 'merchant_id' => 'M2' ), get_option( Options::PLATFORM ) );
+		}
+	}
+}

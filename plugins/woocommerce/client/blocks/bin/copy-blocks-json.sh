@@ -70,9 +70,13 @@ for ( const sourceManifest of sourceManifests ) {
 		throw new Error( `Invalid block name in ${ sourceManifest }` );
 	}
 
+	// The PayPal wallet's blocks go with the rest of its build output, in paypal-wallet/.
+	const isPayPalWalletBlock = path.relative( sourceDirectory, sourceManifest ).startsWith( path.join( 'blocks', 'paypal-wallet', path.sep ) );
 	const targetManifest = path.join(
 		targetDirectory,
-		metadata.parent && ! genericBlocks.has( blockName ) ? path.join( 'inner-blocks', blockName ) : blockName,
+		isPayPalWalletBlock
+			? path.join( 'paypal-wallet', blockName )
+			: metadata.parent && ! genericBlocks.has( blockName ) ? path.join( 'inner-blocks', blockName ) : blockName,
 		'block.json'
 	);
 

@@ -147,6 +147,98 @@ describe( 'Plugins Component', () => {
 		} );
 	} );
 
+	describe( 'an included entry (POC hack: PayPal Wallet in core)', () => {
+		const includedCard = {
+			slug: 'paypal-wallet',
+			name: 'PayPal Wallet',
+			label: 'Give shoppers a variety of ways to pay',
+			description: 'Offer additional payment options with PayPal Wallet',
+			key: 'paypal-wallet',
+			image_url: '',
+			manage_url: '',
+			is_built_by_wc: true,
+			is_visible: true,
+			is_installed: true,
+			is_activated: true,
+			is_included: true,
+		};
+
+		it( 'shows the entry as an "Included" card with no checkbox', () => {
+			render(
+				<Plugins
+					context={ {
+						...mockContext,
+						pluginsAvailable: [
+							mockContext.pluginsAvailable[ 0 ],
+							includedCard,
+						],
+					} }
+					sendEvent={ mockSendEvent }
+					navigationProgress={ navigationProgress }
+				/>
+			);
+
+			const card = screen
+				.getByText( 'Give shoppers a variety of ways to pay' )
+				.closest( '.woocommerce-profiler-plugins-plugin-card' );
+			expect( card ).toHaveTextContent( 'Included' );
+			expect( card ).toHaveTextContent(
+				'Offer additional payment options with PayPal Wallet'
+			);
+			expect( card?.querySelector( 'input' ) ).toBeNull();
+			expect( screen.getAllByRole( 'checkbox' ) ).toHaveLength( 1 );
+		} );
+
+		it( 'never selects the entry for installation', () => {
+			render(
+				<Plugins
+					context={ {
+						...mockContext,
+						pluginsAvailable: [
+							mockContext.pluginsAvailable[ 0 ],
+							includedCard,
+						],
+					} }
+					sendEvent={ mockSendEvent }
+					navigationProgress={ navigationProgress }
+				/>
+			);
+
+			fireEvent.click(
+				screen.getByText( 'Give shoppers a variety of ways to pay' )
+			);
+			fireEvent.click( screen.getByText( 'Continue' ) );
+
+			expect( mockSendEvent ).toHaveBeenLastCalledWith( {
+				type: 'PLUGINS_INSTALLATION_REQUESTED',
+				payload: {
+					pluginsSelected: [ 'plugin1' ],
+					pluginsShown: [ 'plugin1', 'paypal-wallet' ],
+					pluginsUnselected: [],
+				},
+			} );
+		} );
+
+		it( 'continues without an installation when the entry is the only one left', () => {
+			render(
+				<Plugins
+					context={ {
+						...mockContext,
+						pluginsAvailable: [ includedCard ],
+					} }
+					sendEvent={ mockSendEvent }
+					navigationProgress={ navigationProgress }
+				/>
+			);
+
+			fireEvent.click( screen.getByText( 'Continue' ) );
+
+			expect( mockSendEvent ).toHaveBeenLastCalledWith( {
+				type: 'PLUGINS_PAGE_COMPLETED_WITHOUT_SELECTING_PLUGINS',
+			} );
+		} );
+	} );
+
 	it( 'initialises with all plugins selected when there were no errors previously', () => {
 		render(
 			<Plugins

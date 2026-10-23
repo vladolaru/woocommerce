@@ -1,0 +1,14 @@
+@import "variables.scss";
+@import "mixins.scss";
+
+#ppcp-settings-container {
+	@import "./global.scss";
+	@import "./components/reusable.scss";
+	@import "./components/screens/onboarding.scss";
+	@import "./components/screens/settings.scss";
+	@import "./components/app.scss";
+}
+
+@import "./components/reusable-components/payment-method-modal.scss";
+@import "./components/screens/fullscreen.scss";
+@import "./components/screens/modals.scss";

@@ -1,0 +1,89 @@
+export const countryPriceInfo = {
+	US: {
+		fixedFee: {
+			USD: 0.49,
+			GBP: 0.39,
+			CAD: 0.59,
+			AUD: 0.59,
+			EUR: 0.39,
+		},
+		checkout: 3.49,
+		plater: 4.99,
+	},
+	GB: {
+		fixedFee: {
+			GBP: 0.3,
+			USD: 0.3,
+			CAD: 0.3,
+			AUD: 0.3,
+			EUR: 0.35,
+		},
+		checkout: 2.9,
+		plater: 2.9,
+	},
+	CA: {
+		fixedFee: {
+			CAD: 0.3,
+			USD: 0.3,
+			GBP: 0.2,
+			AUD: 0.3,
+			EUR: 0.35,
+		},
+		checkout: 2.9,
+	},
+	AU: {
+		fixedFee: {
+			AUD: 0.3,
+			USD: 0.3,
+			GBP: 0.2,
+			CAD: 0.3,
+			EUR: 0.35,
+		},
+		checkout: 2.6,
+		plater: 2.6,
+	},
+	FR: {
+		fixedFee: {
+			EUR: 0.35,
+			USD: 0.3,
+			GBP: 0.3,
+			CAD: 0.3,
+			AUD: 0.3,
+		},
+		checkout: 2.9,
+		plater: 2.9,
+	},
+	IT: {
+		fixedFee: {
+			EUR: 0.35,
+			USD: 0.3,
+			GBP: 0.3,
+			CAD: 0.3,
+			AUD: 0.3,
+		},
+		checkout: 3.4,
+		plater: 3.4,
+	},
+	DE: {
+		fixedFee: {
+			EUR: 0.39,
+			USD: 0.49,
+			GBP: 0.29,
+			CAD: 0.59,
+			AUD: 0.59,
+		},
+		checkout: 2.99,
+		plater: 2.99,
+	},
+	ES: {
+		fixedFee: {
+			EUR: 0.35,
+			USD: 0.3,
+			GBP: 0.3,
+			CAD: 0.3,
+			AUD: 0.3,
+		},
+		checkout: 2.9,
+		plater: 2.9,
+	},
+};

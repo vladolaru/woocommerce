@@ -10,7 +10,9 @@
 		"mobiledetect/mobiledetectlib": "^3.74",
 		"psr/container": "^1.1",
 		"pelago/emogrifier": "7.3.0",
-		"league/iso3166": "^4.3.3"
+		"league/iso3166": "^4.3.3",
+		"inpsyde/modularity": "1.12.0",
+		"psr/log": "1.1.4"
 	},
 	"config": {
 		"platform": {
@@ -19,10 +21,12 @@
 	},
 	"scripts": {
 		"post-install-cmd": [
-			"\"../vendor/bin/mozart\" compose"
+			"\"../vendor/bin/mozart\" compose",
+			"rm -rf packages/Psr/Log/Test"
 		],
 		"post-update-cmd": [
-			"\"../vendor/bin/mozart\" compose"
+			"\"../vendor/bin/mozart\" compose",
+			"rm -rf packages/Psr/Log/Test"
 		]
 	},
 	"extra": {
@@ -33,7 +37,9 @@
 				"psr/container",
 				"mobiledetect/mobiledetectlib",
 				"pelago/emogrifier",
-				"league/iso3166"
+				"league/iso3166",
+				"inpsyde/modularity",
+				"psr/log"
 			],
 			"excluded_packages": [
 			],
