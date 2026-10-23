@@ -194,6 +194,39 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should sum yesterday's orders in two currencies in the store currency for the best sales day note.
+	 *
+	 * Client 11.1.0 converts the order totals the note sums back to the store currency
+	 * (`includes/multi-currency/Compatibility.php:245-300`).
+	 */
+	public function test_sales_record_sums_orders_in_two_currencies_in_the_store_currency(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		delete_option( NewSalesRecord::RECORD_DATE_OPTION_KEY );
+		delete_option( NewSalesRecord::RECORD_AMOUNT_OPTION_KEY );
+		$sut       = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
+		$yesterday = strtotime( gmdate( 'Y-m-d', current_time( 'timestamp', 0 ) - DAY_IN_SECONDS ) . ' 12:00:00' ); // phpcs:ignore WordPress.DateTime.CurrentTimeTimestamp.Requested -- The note reads the same clock.
+
+		$store_currency_order = wc_create_order();
+		$store_currency_order->set_currency( 'USD' );
+		$store_currency_order->set_total( 10 );
+		$store_currency_order->set_date_created( $yesterday );
+		$store_currency_order->save();
+
+		$pound_order = wc_create_order();
+		$pound_order->set_currency( 'GBP' );
+		$pound_order->set_total( 20 );
+		$pound_order->set_date_created( $yesterday );
+		$pound_order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE, 0.5 );
+		$pound_order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$pound_order->save();
+
+		$sut->register();
+		NewSalesRecord::possibly_add_note();
+
+		$this->assertSame( 50.0, (float) get_option( NewSalesRecord::RECORD_AMOUNT_OPTION_KEY ) );
+	}
+
+	/**
 	 * Create a compatibility controller with deterministic runtime context.
 	 *
 	 * @param string $owner                 Runtime owner.

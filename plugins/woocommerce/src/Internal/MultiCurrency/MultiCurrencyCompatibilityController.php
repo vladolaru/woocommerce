@@ -215,7 +215,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 	 * @return mixed
 	 */
 	public function attach_order_modifier( $enabled ) {
-		$this->add_filter_once( 'woocommerce_order_query', array( $this, 'convert_order_prices' ) );
+		$this->add_filter_once( 'woocommerce_order_query', array( $this, 'convert_order_prices' ), 10, 2 );
 
 		return $enabled;
 	}
@@ -223,11 +223,19 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 	/**
 	 * Convert sales-record order totals back to the default store currency.
 	 *
-	 * @param mixed $results Order query results.
+	 * The order query inside the note's sum first primes the orders' refund caches through a refund query; that query is
+	 * left alone, so the conversion runs on, and detaches after, the orders the note sums.
+	 *
+	 * @param mixed $results    Order query results.
+	 * @param mixed $query_vars Order query variables.
 	 * @return mixed
 	 */
-	public function convert_order_prices( $results ) {
-		if ( ! is_array( $results ) || ! MultiCurrencyRequestContext::is_call_in_backtrace( self::NEW_SALES_RECORD_BACKTRACE_CALLS ) ) {
+	public function convert_order_prices( $results, $query_vars = array() ) {
+		if (
+			! is_array( $results )
+			|| ( is_array( $query_vars ) && 'shop_order_refund' === ( $query_vars['type'] ?? null ) )
+			|| ! MultiCurrencyRequestContext::is_call_in_backtrace( self::NEW_SALES_RECORD_BACKTRACE_CALLS )
+		) {
 			return $results;
 		}
 
