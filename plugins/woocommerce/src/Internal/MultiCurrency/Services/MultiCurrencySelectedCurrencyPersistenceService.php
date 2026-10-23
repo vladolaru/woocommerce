@@ -143,7 +143,10 @@ class MultiCurrencySelectedCurrencyPersistenceService {
 	/**
 	 * Tell whether the current customer has a stored selected currency.
 	 *
-	 * @return bool True when user meta or the active session stores a currency.
+	 * A guest's session is loaded first: a Store API request loads it only inside the route, after this check runs
+	 * (client 11.1.0 includes/multi-currency/MultiCurrency.php:1813-1824).
+	 *
+	 * @return bool True when user meta or the guest's session stores a currency.
 	 *
 	 * @since 11.0.0
 	 */
@@ -155,13 +158,13 @@ class MultiCurrencySelectedCurrencyPersistenceService {
 			return is_string( $currency_code ) && '' !== $currency_code;
 		}
 
-		if ( WC()->session ) {
-			$currency_code = WC()->session->get( MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY );
-
-			return is_string( $currency_code ) && '' !== $currency_code;
+		if ( ! WC()->session ) {
+			WC()->initialize_session();
 		}
 
-		return false;
+		$currency_code = WC()->session->get( MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY );
+
+		return is_string( $currency_code ) && '' !== $currency_code;
 	}
 
 	/**

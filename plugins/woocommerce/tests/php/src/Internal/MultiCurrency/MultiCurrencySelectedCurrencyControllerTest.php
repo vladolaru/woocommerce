@@ -104,7 +104,8 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 			$_GET['enable_auto_currency'],
 			$_GET['enable_storefront_switcher'],
 			$_SERVER['HTTP_REFERER'],
-			$_POST['wcpay_selected_currency']
+			$_POST['wcpay_selected_currency'],
+			$_COOKIE[ 'wp_woocommerce_session_' . COOKIEHASH ]
 		);
 		remove_all_filters( 'wcpay_multi_currency_override_notice_country' );
 		remove_all_filters( 'wcpay_multi_currency_override_notice_currency_name' );
@@ -580,6 +581,77 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array( 'CAD' ), $service->updated_currencies );
 		$this->assertSame( array( false ), $service->persist_flags );
+	}
+
+	/**
+	 * @testdox Should keep a guest's chosen currency against geolocation when $scenario.
+	 *
+	 * A guest picks EUR on a shop page; the session row holds it and the browser sends its cookie back. WooCommerce loads
+	 * no session at init on a Store API request, so geolocation runs (init 12) before the route loads the session. Client
+	 * 11.1.0 reads the stored choice through `get_stored_currency_code()`, which loads the session first
+	 * (includes/multi-currency/MultiCurrency.php:888-911, :1813-1824), and keeps EUR.
+	 *
+	 * @dataProvider provider_guest_session_state_at_geolocation
+	 *
+	 * @param string $scenario       Scenario label.
+	 * @param bool   $session_loaded Whether the session is loaded before geolocation runs.
+	 */
+	public function test_keeps_a_guest_chosen_currency_against_geolocation( string $scenario, bool $session_loaded ): void {
+		unset( $scenario );
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR', 'CAD' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		update_option( 'wcpay_multi_currency_exchange_rate_cad', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_cad', '1.37' );
+		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
+		wp_set_current_user( 0 );
+		// The real cookie-backed handler, as a store runs it.
+		remove_filter( 'woocommerce_session_handler', array( $this, 'set_mock_session_handler' ) );
+		$cookie = array();
+		add_filter(
+			'woocommerce_set_cookie_enabled',
+			static function ( $enabled, $name, $value ) use ( &$cookie ) {
+				unset( $enabled );
+				$cookie = array( $name => $value );
+
+				return false;
+			},
+			10,
+			3
+		);
+		$shop_page_session = new \WC_Session_Handler();
+		$shop_page_session->init();
+		$shop_page_session->set( 'wcpay_currency', 'EUR' );
+		$shop_page_session->set_customer_session_cookie( true );
+		$shop_page_session->save_data();
+		$_COOKIE      = array_merge( $_COOKIE, $cookie );
+		WC()->session = null;
+		if ( $session_loaded ) {
+			WC()->initialize_session();
+		}
+		$service = wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )->create_selected_currency_persistence_service();
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, $this->create_request_context( true, true ) );
+		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD' ) );
+
+		$sut->handle_init();
+		$sut->handle_geolocation_init();
+		$sut->handle_store_api_rest_pre_dispatch( null, null, new \WP_REST_Request( 'POST', '/wc/store/v1/cart/add-item' ) );
+
+		$this->assertSame( 'EUR', WC()->session->get( 'wcpay_currency' ), 'The session must keep the chosen EUR.' );
+		$this->assertSame( 'EUR', $service->get_selected_currency_code(), 'The Store API request must price in the chosen EUR.' );
+	}
+
+	/**
+	 * Session states at geolocation time.
+	 *
+	 * @return array<string,array{0:string,1:bool}>
+	 */
+	public function provider_guest_session_state_at_geolocation(): array {
+		return array(
+			'the Store API request has not loaded the session yet' => array( 'the Store API request has not loaded the session yet', false ),
+			'a classic page request has loaded the session'        => array( 'a classic page request has loaded the session', true ),
+		);
 	}
 
 	/**
