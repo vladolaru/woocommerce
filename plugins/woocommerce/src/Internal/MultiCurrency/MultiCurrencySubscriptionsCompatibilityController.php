@@ -396,10 +396,12 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 			$previous_switch_cart_item = $this->switch_cart_item;
 			$this->switch_cart_item    = $this->get_switch_cart_item_key( $cart_item );
 
-			// A switch reads its product's sign-up fee several times while it prorates, and not every read converts.
+			// A switch reads its product's sign-up fee several times while it prorates, and not every read converts: once
+			// Subscriptions has rewritten the fee from converted reads, the later reads already hold the selected currency.
 			if (
 				$price
 				&& $this->get_product_id( $product ) === $this->get_switch_cart_item_product_id( $cart_item )
+				&& $this->has_rewritten_subscription_signup_fee( $product )
 				&& (
 					MultiCurrencyRequestContext::is_call_in_backtrace( self::SUBSCRIPTION_PRICE_SETUP_CALLS )
 					|| $this->is_subscription_switch_proration_context( $this->switch_cart_item, $previous_switch_cart_item )
@@ -641,6 +643,31 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 			return false;
 		}
 
+		return $this->has_unsaved_subscription_signup_fee_change( $product );
+	}
+
+	/**
+	 * Tell whether Subscriptions rewrote the product's sign-up fee in this request.
+	 *
+	 * The switch totals calculator writes a dropped fee, or the fee plus the prorated upgrade cost together with the prorated
+	 * fee, from converted reads (Subscriptions 9.3.0 `includes/switching/class-wcs-switch-totals-calculator.php:306-333,510-530`).
+	 * Under the full fee without proration it writes nothing, and the meta still holds the store-currency fee.
+	 *
+	 * @param mixed $product Product object.
+	 * @return bool
+	 */
+	private function has_rewritten_subscription_signup_fee( $product ): bool {
+		return $product instanceof \WC_Product
+			&& ( $product->meta_exists( '_subscription_sign_up_fee_prorated' ) || $this->has_unsaved_subscription_signup_fee_change( $product ) );
+	}
+
+	/**
+	 * Tell whether the product's sign-up fee meta holds a change not yet saved.
+	 *
+	 * @param \WC_Product $product Product object.
+	 * @return bool
+	 */
+	private function has_unsaved_subscription_signup_fee_change( \WC_Product $product ): bool {
 		foreach ( $product->get_meta_data() as $meta ) {
 			if ( $meta instanceof \WC_Meta_Data && '_subscription_sign_up_fee' === $meta->get_data()['key'] && ! empty( $meta->get_changes() ) ) {
 				return true;

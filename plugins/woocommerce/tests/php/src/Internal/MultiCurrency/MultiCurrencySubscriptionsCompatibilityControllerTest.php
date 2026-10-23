@@ -416,7 +416,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * @preserveGlobalState disabled
 	 */
 	public function test_preserves_switch_subscription_signup_fees_during_price_setup(): void {
-		$product = $this->create_product( 10 );
+		$product = $this->create_product( 10, false, true );
 		$sut     = $this->create_controller();
 		$sut->set_switch_cart_item( 10, 0, 'switch-item' );
 		$this->assertSame( '10.00', CallStack::run( array( 'WC_Subscriptions_Cart::set_subscription_prices_for_calculation' ), fn() => $sut->get_subscription_product_signup_fee( '10.00', $product ) ) );
@@ -428,7 +428,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * @preserveGlobalState disabled
 	 */
 	public function test_preserves_repeated_switch_signup_fees_during_proration_total_calculation(): void {
-		$product = $this->create_product( 10 );
+		$product = $this->create_product( 10, false, true );
 		$sut     = $this->create_controller();
 		$sut->set_switch_cart_item( 10, 0, 'switch-item' );
 
@@ -443,7 +443,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * @preserveGlobalState disabled
 	 */
 	public function test_converts_repeated_switch_signup_fees_while_apportioning_switch_totals(): void {
-		$product = $this->create_product( 10 );
+		$product = $this->create_product( 10, false, true );
 		$sut     = $this->create_controller();
 		$sut->set_switch_cart_item( 10, 0, 'switch-item' );
 
@@ -463,6 +463,109 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		$this->assertSame( 20.0, $sut->get_subscription_product_signup_fee( '10.00', $product ) );
 
 		$this->assertSame( '10.00', $sut->get_subscription_product_signup_fee( '10.00', $product ) );
+	}
+
+	/**
+	 * @testdox Should charge a switch's sign-up fee converted once, for each sign-up fee and proration setting.
+	 *
+	 * Each row replays the sign-up fee reads WooCommerce Subscriptions 9.3.0 makes while a switch cart calculates, with the
+	 * calls on the stack at each read and the fee meta writes in between: the price setup adds the fee to the line price
+	 * (`includes/core/class-wc-subscriptions-cart.php:215-236`), the totals calculator writes a dropped fee or the fee plus the
+	 * prorated upgrade cost, both from converted reads (`includes/switching/class-wcs-switch-totals-calculator.php:306-333,510-530`).
+	 * The fixture converts by doubling, so a fee of 5 converts to 10.0. Under the full fee without proration the calculator writes
+	 * nothing, so every read holds the stored fee and must convert; where it wrote, the reads that follow hold a converted amount.
+	 *
+	 * @dataProvider switch_sign_up_fee_read_sequences
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param bool         $has_stored_fee Whether the product stores a sign-up fee of 5.
+	 * @param array<mixed> $steps          Reads (`read`, calls, raw fee, expected fee) and meta writes (`write`, key, value) in order.
+	 */
+	public function test_charges_a_switch_sign_up_fee_converted_once( bool $has_stored_fee, array $steps ): void {
+		$product = new \WC_Product_Simple();
+		if ( $has_stored_fee ) {
+			$product->add_meta_data( '_subscription_sign_up_fee', '5', true );
+		}
+		// Set after the meta, so the product reads no meta from the database.
+		$product->set_id( 10 );
+		$sut = $this->create_controller();
+		$sut->set_switch_cart_item( 10, 0, 'switch-item' );
+
+		foreach ( $steps as $index => $step ) {
+			if ( 'write' === $step[0] ) {
+				$product->update_meta_data( $step[1], $step[2] );
+				continue;
+			}
+
+			$this->assertSame( $step[3], CallStack::run( $step[1], fn() => $sut->get_subscription_product_signup_fee( $step[2], $product ) ), 'Read ' . $index );
+		}
+	}
+
+	/**
+	 * Sign-up fee read sequences of a switch from a $10 to a $20 plan with a $5 fee, per setting.
+	 *
+	 * @return array<string,array{0:bool,1:array<mixed>}>
+	 */
+	public function switch_sign_up_fee_read_sequences(): array {
+		$set_prices = array( 'WC_Cart->calculate_totals', 'WC_Subscriptions_Cart::set_subscription_prices_for_calculation', 'WC_Subscriptions_Product::get_sign_up_fee' );
+		$fee_read   = array( 'WC_Cart->calculate_totals', 'WC_Subscriptions_Product::get_sign_up_fee' );
+
+		return array(
+			'full fee, no proration'               => array(
+				true,
+				array(
+					array( 'read', $set_prices, '5', 10.0 ),
+					array( 'read', $set_prices, '5', 10.0 ),
+					array( 'read', $fee_read, '5', 10.0 ),
+				),
+			),
+			'full fee, prorated upgrade'           => array(
+				true,
+				array(
+					array( 'read', $fee_read, '5', 10.0 ),
+					array( 'write', '_subscription_sign_up_fee_prorated', 10.0 ),
+					array( 'write', '_subscription_price_prorated', 7.5 ),
+					array( 'write', '_subscription_sign_up_fee', 17.5 ),
+					array( 'read', $set_prices, 17.5, 17.5 ),
+					array( 'read', $fee_read, 17.5, 17.5 ),
+					array( 'write', '_subscription_sign_up_fee', 10.0 ),
+					array( 'read', $fee_read, 10.0, 10.0 ),
+					array( 'write', '_subscription_sign_up_fee', 17.5 ),
+					array( 'read', $set_prices, 17.5, 17.5 ),
+				),
+			),
+			'no fee, no proration'                 => array(
+				true,
+				array(
+					array( 'write', '_subscription_sign_up_fee', 0 ),
+					array( 'read', $set_prices, 0, 0 ),
+					array( 'read', $fee_read, 0, 0 ),
+				),
+			),
+			'no fee, prorated upgrade'             => array(
+				true,
+				array(
+					array( 'write', '_subscription_sign_up_fee', 0 ),
+					array( 'read', $fee_read, 0, 0 ),
+					array( 'write', '_subscription_sign_up_fee_prorated', 0 ),
+					array( 'write', '_subscription_price_prorated', 7.5 ),
+					array( 'write', '_subscription_sign_up_fee', 7.5 ),
+					array( 'read', $set_prices, 7.5, 7.5 ),
+					array( 'read', $fee_read, 7.5, 7.5 ),
+				),
+			),
+			'prorated upgrade, no stored fee meta' => array(
+				false,
+				array(
+					array( 'read', $fee_read, '', '' ),
+					array( 'write', '_subscription_sign_up_fee_prorated', 0 ),
+					array( 'write', '_subscription_price_prorated', 7.5 ),
+					array( 'write', '_subscription_sign_up_fee', 7.5 ),
+					array( 'read', $set_prices, 7.5, 7.5 ),
+				),
+			),
+		);
 	}
 
 	/**
@@ -1046,13 +1149,18 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 *
 	 * @param int  $product_id                  Product ID.
 	 * @param bool $has_changed_signup_fee_meta Whether the sign-up fee meta has changed since it was read.
+	 * @param bool $has_prorated_signup_fee     Whether the switch totals calculator stored the prorated fee, as it does when it
+	 *                                          rewrites the fee (Subscriptions 9.3.0 `class-wcs-switch-totals-calculator.php:527`).
 	 * @return \WC_Product
 	 */
-	private function create_product( int $product_id, bool $has_changed_signup_fee_meta = false ): \WC_Product {
+	private function create_product( int $product_id, bool $has_changed_signup_fee_meta = false, bool $has_prorated_signup_fee = false ): \WC_Product {
 		$product = new \WC_Product_Simple();
 		$product->add_meta_data( '_subscription_sign_up_fee', '10.00', true );
 		if ( $has_changed_signup_fee_meta ) {
 			$product->update_meta_data( '_subscription_sign_up_fee', '12.00' );
+		}
+		if ( $has_prorated_signup_fee ) {
+			$product->add_meta_data( '_subscription_sign_up_fee_prorated', '10.00', true );
 		}
 		// Set after the meta, so the product reads no meta from the database.
 		$product->set_id( $product_id );
