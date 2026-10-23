@@ -1533,10 +1533,6 @@ final class WooPaymentsExpressCheckoutAddressNormalizer {
 	 * @return bool
 	 */
 	private function is_normalized_state( string $state, string $country ): bool {
-		if ( ! WC()->countries ) {
-			return false;
-		}
-
 		$wc_states = WC()->countries->get_states( $country );
 
 		return is_array( $wc_states ) && array_key_exists( $state, $wc_states );
@@ -1555,7 +1551,7 @@ final class WooPaymentsExpressCheckoutAddressNormalizer {
 		foreach ( self::EXPRESS_CHECKOUT_STATES[ $country ] ?? array() as $wc_state_key => $wallet_values ) {
 			foreach ( $wallet_values as $wallet_value ) {
 				if ( null !== $wallet_value && $normalized_state === $this->normalize_address_candidate( $wallet_value ) ) {
-					return (string) $wc_state_key;
+					return $wc_state_key;
 				}
 			}
 		}
@@ -1571,10 +1567,6 @@ final class WooPaymentsExpressCheckoutAddressNormalizer {
 	 * @return string
 	 */
 	private function get_normalized_state_from_wc_states( string $state, string $country ): string {
-		if ( ! WC()->countries ) {
-			return $state;
-		}
-
 		$wc_states        = WC()->countries->get_states( $country );
 		$normalized_state = $this->normalize_address_candidate( $state );
 		if ( ! is_array( $wc_states ) || '' === $normalized_state ) {

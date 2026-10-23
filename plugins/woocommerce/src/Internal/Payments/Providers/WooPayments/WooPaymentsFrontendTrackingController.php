@@ -558,7 +558,7 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 
 		$user = wp_get_current_user();
 
-		return ! ( $user instanceof WP_User && is_user_logged_in() && in_array( 'administrator', $user->roles, true ) );
+		return ! ( is_user_logged_in() && in_array( 'administrator', $user->roles, true ) );
 	}
 
 	/**
@@ -883,13 +883,9 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_user_connected( int $user_id ): bool {
-		try {
-			$manager = new JetpackConnectionManager( 'woocommerce' );
+		$manager = new JetpackConnectionManager( 'woocommerce' );
 
-			return (bool) $manager->is_user_connected( $user_id );
-		} catch ( Throwable $e ) {
-			return false;
-		}
+		return $manager->is_user_connected( $user_id );
 	}
 
 	/**
@@ -899,14 +895,10 @@ class WooPaymentsFrontendTrackingController implements RegisterHooksInterface {
 	 * @return array<string,mixed>|null
 	 */
 	private function get_connected_user_data( int $user_id ): ?array {
-		try {
-			$manager = new JetpackConnectionManager( 'woocommerce' );
-			$data    = $manager->get_connected_user_data( $user_id );
+		$manager = new JetpackConnectionManager( 'woocommerce' );
+		$data    = $manager->get_connected_user_data( $user_id );
 
-			return is_array( $data ) ? $data : null;
-		} catch ( Throwable $e ) {
-			return null;
-		}
+		return is_array( $data ) ? $data : null;
 	}
 
 	/**

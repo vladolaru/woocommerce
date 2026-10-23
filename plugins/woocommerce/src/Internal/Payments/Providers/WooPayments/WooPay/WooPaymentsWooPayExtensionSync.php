@@ -286,7 +286,7 @@ class WooPaymentsWooPayExtensionSync implements RegisterHooksInterface {
 	 */
 	private function format_extension_name( string $plugin ): string {
 		$plugin_parts = explode( '/', $plugin );
-		$plugin       = (string) end( $plugin_parts );
+		$plugin       = end( $plugin_parts );
 
 		return str_replace( '.php', '', $plugin );
 	}

@@ -15,7 +15,6 @@ use Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils;
 use WC_Order;
 use WP_Error;
 use WP_REST_Request;
-use WP_REST_Response;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsClientVersion;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
@@ -205,7 +204,7 @@ class WooPaymentsWooPaySessionService {
 
 		$user = wp_get_current_user();
 		if ( $user->exists() ) {
-			return (string) $user->user_email;
+			return $user->user_email;
 		}
 
 		return '';
@@ -916,7 +915,7 @@ class WooPaymentsWooPaySessionService {
 	 */
 	private function get_posted_or_session_value( string $key, $fallback ) {
 		$post_data = wp_unslash( $_POST ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
-		if ( is_array( $post_data ) && array_key_exists( $key, $post_data ) ) {
+		if ( array_key_exists( $key, $post_data ) ) {
 			return $post_data[ $key ];
 		}
 
@@ -1147,18 +1146,6 @@ class WooPaymentsWooPaySessionService {
 	 */
 	private function get_store_api_response_data( WP_REST_Request $request ): array {
 		$response = rest_do_request( $request );
-		if ( $response instanceof WP_Error ) {
-			return array();
-		}
-
-		if ( ! $response instanceof WP_REST_Response ) {
-			$response = rest_ensure_response( $response );
-		}
-
-		if ( ! $response instanceof WP_REST_Response ) {
-			return array();
-		}
-
 		if ( $response->is_error() ) {
 			return array();
 		}

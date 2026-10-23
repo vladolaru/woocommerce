@@ -577,7 +577,7 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			return self::PAYMENT_METHOD_TYPE_CARD;
 		}
 
-		$token_type = (string) $token->get_type();
+		$token_type = $token->get_type();
 
 		return self::PAYMENT_METHOD_TYPES_BY_TOKEN_TYPE[ $token_type ] ?? '';
 	}

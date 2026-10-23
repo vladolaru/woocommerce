@@ -146,7 +146,7 @@ class WooPaymentsExpressCheckoutService {
 				'country_code'               => $this->get_store_base_country(),
 				'needs_shipping'             => WC()->cart ? WC()->cart->needs_shipping() : false,
 				'needs_payer_phone'          => 'required' === get_option( 'woocommerce_checkout_phone_field', 'required' ),
-				'allowed_shipping_countries' => WC()->countries ? array_keys( WC()->countries->get_shipping_countries() ?? array() ) : array(),
+				'allowed_shipping_countries' => array_keys( WC()->countries->get_shipping_countries() ?? array() ),
 				'display_prices_with_tax'    => 'incl' === get_option( 'woocommerce_tax_display_cart' ),
 			),
 			'has_subscription'            => $this->context_has_subscription( $context ),
@@ -371,8 +371,7 @@ class WooPaymentsExpressCheckoutService {
 	 * @return bool
 	 */
 	private function is_cart_supported(): bool {
-		$woocommerce = WC();
-		$cart        = is_object( $woocommerce ) ? $woocommerce->cart : null;
+		$cart = WC()->cart;
 		if ( ! $cart instanceof \WC_Cart ) {
 			return false;
 		}
@@ -441,8 +440,7 @@ class WooPaymentsExpressCheckoutService {
 			return $product instanceof \WC_Product && ! $this->product_needs_shipping( $product );
 		}
 
-		$woocommerce = WC();
-		$cart        = is_object( $woocommerce ) ? $woocommerce->cart : null;
+		$cart = WC()->cart;
 
 		return $cart instanceof \WC_Cart && ! $cart->needs_shipping();
 	}
@@ -463,8 +461,7 @@ class WooPaymentsExpressCheckoutService {
 			return $product instanceof \WC_Product && 0.0 === (float) $product->get_price();
 		}
 
-		$woocommerce = WC();
-		$cart        = is_object( $woocommerce ) ? $woocommerce->cart : null;
+		$cart = WC()->cart;
 
 		return $cart instanceof \WC_Cart && 0.0 === (float) $cart->get_total( 'edit' );
 	}
@@ -695,8 +692,7 @@ class WooPaymentsExpressCheckoutService {
 
 			$product_id = isset( $atts['id'] ) ? absint( $atts['id'] ) : 0;
 			if ( ! $product_id && isset( $atts['sku'] ) && is_scalar( $atts['sku'] ) ) {
-				$sku        = wc_clean( wp_unslash( (string) $atts['sku'] ) );
-				$sku        = is_scalar( $sku ) ? (string) $sku : '';
+				$sku        = sanitize_text_field( wp_unslash( (string) $atts['sku'] ) );
 				$product_id = '' !== $sku ? wc_get_product_id_by_sku( $sku ) : 0;
 			}
 
@@ -1027,10 +1023,7 @@ class WooPaymentsExpressCheckoutService {
 	 * @return string
 	 */
 	private function get_store_base_country(): string {
-		$country = (string) get_option( 'woocommerce_default_country', 'US' );
-		if ( WC()->countries ) {
-			$country = (string) WC()->countries->get_base_country();
-		}
+		$country = (string) WC()->countries->get_base_country();
 
 		if ( false !== strpos( $country, ':' ) ) {
 			$base_country = strtok( $country, ':' );

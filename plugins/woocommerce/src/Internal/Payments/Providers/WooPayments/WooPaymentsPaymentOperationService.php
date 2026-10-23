@@ -289,7 +289,7 @@ class WooPaymentsPaymentOperationService {
 
 						return WooPaymentsIntentCodec::outcome_from_refund_result( $refund )->with_effect_plan( WooPaymentsOrderEffectPlan::for_refund( $refund ) );
 					case WooPaymentsRefundAmbiguityService::ACTION_RETRY_HELD_KEY:
-						return $this->send_refund( $order, $decision['request'] ?? $request, (string) ( $decision['key'] ?? '' ), true, $own_row_id );
+						return $this->send_refund( $order, $decision['request'] ?? $request, $decision['key'] ?? '', true, $own_row_id );
 					default:
 						return $this->send_refund( $order, $request, $idempotency_key, false, $own_row_id );
 				}
@@ -425,8 +425,8 @@ class WooPaymentsPaymentOperationService {
 			'',
 			'',
 			array(
-				PaymentOutcome::DATA_ERROR_CODE    => (string) ( $decision['code'] ?? '' ),
-				PaymentOutcome::DATA_ERROR_MESSAGE => (string) ( $decision['message'] ?? '' ),
+				PaymentOutcome::DATA_ERROR_CODE    => $decision['code'] ?? '',
+				PaymentOutcome::DATA_ERROR_MESSAGE => $decision['message'] ?? '',
 			)
 		);
 	}
@@ -758,7 +758,7 @@ class WooPaymentsPaymentOperationService {
 		);
 
 		// A clock stepped back never lowers the end of the account lookup window.
-		$record['last_failed_at'] = max( (int) ( $record['last_failed_at'] ?? 0 ), $now );
+		$record['last_failed_at'] = max( $record['last_failed_at'] ?? 0, $now );
 		if ( ! in_array( $customer_id, $record['customers'], true ) ) {
 			$record['customers'][] = $customer_id;
 		}

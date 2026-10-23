@@ -142,7 +142,7 @@ class WooPaymentsIntentRequestBuilder {
 			'capture_method'       => ! $is_scheduled_renewal && 'yes' === $this->account_service->get_gateway_setting( 'manual_capture', 'no' ) ? 'manual' : 'automatic',
 			'currency'             => strtolower( (string) $order->get_currency() ),
 			'customer'             => $customer_id,
-			'description'          => self::intent_description( (string) $order->get_order_number() ),
+			'description'          => self::intent_description( $order->get_order_number() ),
 			'metadata'             => array_merge(
 				self::metadata_from_order( $order, $payment_type, $subscription_payment ),
 				self::fingerprint_metadata( $context )
@@ -325,7 +325,7 @@ class WooPaymentsIntentRequestBuilder {
 
 		$request_data = array(
 			'customer'             => $customer_id,
-			'description'          => self::intent_description( (string) $order->get_order_number() ),
+			'description'          => self::intent_description( $order->get_order_number() ),
 			'metadata'             => $metadata,
 			'payment_method_types' => $payment_method_types,
 		);
@@ -731,7 +731,7 @@ class WooPaymentsIntentRequestBuilder {
 	private static function mandate_data( WC_Order $order ): ?array {
 		$ip_address = (string) $order->get_customer_ip_address();
 		if ( false === filter_var( $ip_address, FILTER_VALIDATE_IP ) ) {
-			$ip_address = (string) \WC_Geolocation::get_ip_address();
+			$ip_address = \WC_Geolocation::get_ip_address();
 		}
 		if ( false === filter_var( $ip_address, FILTER_VALIDATE_IP ) ) {
 			return null;

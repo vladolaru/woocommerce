@@ -138,18 +138,14 @@ class WooPaymentsOrderCardInfo implements RegisterHooksInterface {
 	 * @param Throwable $exception         Fetch failure.
 	 */
 	private static function log_fetch_failure( WC_Order $order, $payment_method_id, Throwable $exception ): void {
-		try {
-			wc_get_logger()->error(
-				sprintf(
-					'WooPaymentsOrderCardInfo - retrieving info for payment method %1$s for order %2$d.',
-					is_scalar( $payment_method_id ) ? (string) $payment_method_id : gettype( $payment_method_id ),
-					$order->get_id()
-				),
-				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'payment-info' ) )
-			);
-		} catch ( Throwable $logger_exception ) {
-			unset( $logger_exception );
-		}
+		wc_get_logger()->error(
+			sprintf(
+				'WooPaymentsOrderCardInfo - retrieving info for payment method %1$s for order %2$d.',
+				is_scalar( $payment_method_id ) ? (string) $payment_method_id : gettype( $payment_method_id ),
+				$order->get_id()
+			),
+			array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => 'payment-info' ) )
+		);
 	}
 
 	/**

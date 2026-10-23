@@ -199,7 +199,6 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 			|| 'order-received' !== $context
 			|| ! $order instanceof WC_Order
 			|| WooPaymentsPersistenceVocabulary::GATEWAY_ID !== $order->get_payment_method()
-			|| ! WC()
 			|| ! WC()->session
 		) {
 			return $required;
@@ -523,7 +522,7 @@ class WooPaymentsOrderSuccessPage implements RegisterHooksInterface {
 			return;
 		}
 
-		$expiry_timestamp      = (int) $multibanco_info['expiry'];
+		$expiry_timestamp      = $multibanco_info['expiry'];
 		$expiry_date           = date_i18n( wc_date_format() . ' ' . wc_time_format(), $expiry_timestamp );
 		$days_remaining        = max( 0, (int) floor( ( $expiry_timestamp - time() ) / DAY_IN_SECONDS ) );
 		$formatted_order_total = wp_strip_all_tags( $order->get_formatted_order_total() );

@@ -263,7 +263,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 
 		// A requires_action intent stays on order-received until the webhook settles it: client 11.1.0's next-action redirect
 		// (gw:2409-2426) cannot complete there.
-		if ( WooPaymentsIntentCodec::holds_money( $intent_status ) && null !== WC()->cart ) {
+		if ( WooPaymentsIntentCodec::holds_money( $intent_status ) ) {
 			WC()->cart->empty_cart();
 		}
 	}
@@ -301,9 +301,7 @@ class WooPaymentsRedirectReturnController implements RegisterHooksInterface {
 				'intent_id' => $intent_id,
 			)
 		);
-		if ( null !== WC()->cart ) {
-			WC()->cart->empty_cart();
-		}
+		WC()->cart->empty_cart();
 
 		return true;
 	}

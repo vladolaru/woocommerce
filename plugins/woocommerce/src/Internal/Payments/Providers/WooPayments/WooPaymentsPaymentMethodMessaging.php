@@ -155,11 +155,9 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 		check_ajax_referer( 'wcpay-get-cart-total', 'security' );
 
 		// Recalculate before answering so the widget never receives a stale session figure.
-		if ( WC()->cart ) {
-			wc_maybe_define_constant( 'WOOCOMMERCE_CART', true );
-			wc_maybe_define_constant( 'WOOCOMMERCE_CHECKOUT', true );
-			WC()->cart->calculate_totals();
-		}
+		wc_maybe_define_constant( 'WOOCOMMERCE_CART', true );
+		wc_maybe_define_constant( 'WOOCOMMERCE_CHECKOUT', true );
+		WC()->cart->calculate_totals();
 
 		wp_send_json( $this->get_cart_total_response() );
 	}
@@ -249,7 +247,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 
 		if ( $product instanceof WC_Product ) {
 			$product_variations = $this->get_product_variations( $product, $currency_code );
-			$product_price      = (int) ( $product_variations['base_product']['amount'] ?? 0 );
+			$product_price      = $product_variations['base_product']['amount'];
 		}
 
 		$payment_methods = $this->get_active_bnpl_payment_method_ids();
@@ -263,7 +261,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			'publishableKey'       => $this->account_service->get_publishable_key(),
 			'paymentMethods'       => array_values( $payment_methods ),
 			'currencyCode'         => $currency_code,
-			'isCart'               => (bool) ( ! $is_product_surface && is_cart() ),
+			'isCart'               => ! $is_product_surface && is_cart(),
 			'isCartBlock'          => $is_cart_block,
 			'cartTotal'            => $this->get_cart_total(),
 			'nonce'                => array(
@@ -596,15 +594,7 @@ class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
 			return strtoupper( $billing_country );
 		}
 
-		if ( WC()->countries ) {
-			return strtoupper( WC()->countries->get_base_country() );
-		}
-
-		$default_country = (string) get_option( 'woocommerce_default_country', '' );
-
-		$country = strtok( $default_country, ':' );
-
-		return strtoupper( is_string( $country ) ? $country : '' );
+		return strtoupper( WC()->countries->get_base_country() );
 	}
 
 	/**

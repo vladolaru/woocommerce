@@ -460,7 +460,7 @@ class WooPaymentsCheckoutAssets {
 		return array(
 			'config'              => $config,
 			'saved_cards_enabled' => $saved_cards_enabled,
-			'currency'            => (string) $payment_context['currency'],
+			'currency'            => $payment_context['currency'],
 		);
 	}
 

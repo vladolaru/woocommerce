@@ -356,9 +356,6 @@ class WooPaymentsWooPayEligibility {
 			}
 
 			$atts = shortcode_parse_atts( $shortcode[3] );
-			if ( ! is_array( $atts ) ) {
-				continue;
-			}
 
 			$product_id = isset( $atts['id'] ) ? absint( $atts['id'] ) : 0;
 			if ( ! $product_id && isset( $atts['sku'] ) && is_scalar( $atts['sku'] ) ) {

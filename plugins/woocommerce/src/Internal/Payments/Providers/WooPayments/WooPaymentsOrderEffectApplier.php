@@ -939,7 +939,7 @@ class WooPaymentsOrderEffectApplier {
 				return $payment_method_details;
 			}
 		} catch ( Throwable $exception ) {
-			$this->log_token_save_error( $order, $payment_method_id, $exception );
+			$this->token_service->log_token_save_error( $order, $payment_method_id, $exception );
 		}
 
 		return null;
@@ -1049,20 +1049,5 @@ class WooPaymentsOrderEffectApplier {
 				'is_test_mode'   => $this->account_service->is_test_mode_enabled(),
 			)
 		);
-	}
-
-	/**
-	 * Log a token-save failure without losing the provider outcome: a logger that throws is ignored.
-	 *
-	 * @param WC_Order  $order             Order being paid.
-	 * @param string    $payment_method_id Provider payment method ID.
-	 * @param Throwable $exception         Token-save exception.
-	 */
-	private function log_token_save_error( WC_Order $order, string $payment_method_id, Throwable $exception ): void {
-		try {
-			$this->token_service->log_token_save_error( $order, $payment_method_id, $exception );
-		} catch ( Throwable $logging_exception ) {
-			return;
-		}
 	}
 }

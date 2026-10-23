@@ -350,18 +350,14 @@ class WooPaymentsDuplicatePaymentPreventionService implements RegisterHooksInter
 		try {
 			$this->write_disputed_intent_note_once( $order, $intent_id, $lock_held );
 		} catch ( Throwable $failure ) {
-			try {
-				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
-					'Failed to note the disputed payment attached to the order.',
-					$failure,
-					array(
-						'order_id'  => $order->get_id(),
-						'intent_id' => $intent_id,
-					)
-				);
-			} catch ( Throwable $log_failure ) {
-				unset( $log_failure );
-			}
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
+				'Failed to note the disputed payment attached to the order.',
+				$failure,
+				array(
+					'order_id'  => $order->get_id(),
+					'intent_id' => $intent_id,
+				)
+			);
 		}
 	}
 

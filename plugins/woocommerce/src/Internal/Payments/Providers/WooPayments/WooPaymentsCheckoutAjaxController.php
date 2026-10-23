@@ -324,7 +324,7 @@ class WooPaymentsCheckoutAjaxController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function current_user_can_act_on_order( WC_Order $order ): bool {
-		return (bool) current_user_can( 'pay_for_order', $order->get_id() );
+		return current_user_can( 'pay_for_order', $order->get_id() );
 	}
 
 	/**

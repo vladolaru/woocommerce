@@ -72,7 +72,7 @@ class WooPaymentsHtmlUtils {
 
 		$result = '';
 		while ( ! empty( $token_queue ) ) {
-			$result .= esc_html( (string) array_shift( $string_queue ) ) . (string) array_shift( $token_queue );
+			$result .= esc_html( (string) array_shift( $string_queue ) ) . array_shift( $token_queue );
 		}
 
 		return $result . esc_html( $processed );

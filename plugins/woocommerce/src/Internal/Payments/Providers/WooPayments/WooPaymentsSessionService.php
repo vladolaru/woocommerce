@@ -76,7 +76,7 @@ class WooPaymentsSessionService {
 		WC()->initialize_session();
 		$session_handler = WC()->session;
 		// Some session handlers (e.g. the Store API one) do not expose the cookie.
-		if ( ! $session_handler || ! method_exists( $session_handler, 'get_session_cookie' ) ) {
+		if ( ! method_exists( $session_handler, 'get_session_cookie' ) ) {
 			return false;
 		}
 		$cookie = $session_handler->get_session_cookie();

@@ -629,10 +629,6 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return string Transaction details URL, or an empty string when there is nothing to link.
 	 */
 	public function get_transaction_url( $order ): string {
-		if ( ! $order instanceof WC_Order ) {
-			return '';
-		}
-
 		$intention_status = (string) $order->get_meta( '_intention_status', true );
 		if ( ! in_array( $intention_status, self::AUTHORIZED_INTENTION_STATUSES, true ) ) {
 			return '';
@@ -1309,9 +1305,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return false;
 		}
 
-		$country_locale = WC()->countries
-			? WC()->countries->get_country_locale()
-			: array();
+		$country_locale = WC()->countries->get_country_locale();
 		$fields         = array( 'state', 'city', 'postcode', 'address_1' );
 
 		foreach ( $fields as $field ) {
@@ -1338,7 +1332,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return true;
 		}
 
-		$total = (float) $this->get_order_total();
+		$total = $this->get_order_total();
 		if ( 0.0 >= $total ) {
 			return true;
 		}
@@ -1348,12 +1342,8 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			return false;
 		}
 
-		$amount  = WooPaymentsCurrencyUtils::amount_to_minor_units( $total, $currency );
-		$minimum = $range['min'] ?? null;
-		$maximum = $range['max'] ?? null;
-
-		return ( null === $minimum || $amount >= $minimum )
-			&& ( null === $maximum || $amount <= $maximum );
+		$amount = WooPaymentsCurrencyUtils::amount_to_minor_units( $total, $currency );
+		return $amount >= $range['min'] && $amount <= $range['max'];
 	}
 
 	/**
@@ -1579,7 +1569,6 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		if (
 			PaymentOutcome::STATUS_COMPLETED !== $outcome->get_status()
 			|| '' === $intent_id
-			|| ! WC()
 			|| ! WC()->session
 		) {
 			return;
@@ -2780,18 +2769,13 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		}
 
 		// The refusal's code names it; the message is not logged, because a payment method error's message is Stripe.js text.
-		try {
-			$this->get_logger()->error(
-				'Error occurred during the payment process.',
-				array(
-					'order_id'  => $order->get_id(),
-					'exception' => $code,
-				)
-			);
-		} catch ( Throwable $log_failure ) {
-			// Every refusal outlives a failing logger or log filter: the gateway's catch would drop its notice and note.
-			unset( $log_failure );
-		}
+		$this->get_logger()->error(
+			'Error occurred during the payment process.',
+			array(
+				'order_id'  => $order->get_id(),
+				'exception' => $code,
+			)
+		);
 
 		if ( $fail_order ) {
 			$order->update_status( OrderStatus::FAILED, $status_note );

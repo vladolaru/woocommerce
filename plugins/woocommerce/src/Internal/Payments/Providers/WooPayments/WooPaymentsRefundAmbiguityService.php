@@ -10,7 +10,6 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
-use Throwable;
 use WC_Cache_Helper;
 use WC_Order;
 use WC_Order_Refund;
@@ -768,24 +767,18 @@ class WooPaymentsRefundAmbiguityService {
 	/**
 	 * Write an always-on warning about a held refund key, since support needs it to reconcile the order.
 	 *
-	 * Best-effort: a failing logger or log filter never changes what was decided for the refund.
-	 *
 	 * @param string   $message         Log line.
 	 * @param WC_Order $order           Order being refunded.
 	 * @param string   $idempotency_key Held refund key.
 	 */
 	private function log( string $message, WC_Order $order, string $idempotency_key ): void {
-		try {
-			$this->logger->log_always(
-				$message,
-				'warning',
-				array(
-					'order_id'        => $order->get_id(),
-					'idempotency_key' => $idempotency_key,
-				)
-			);
-		} catch ( Throwable $log_failure ) {
-			unset( $log_failure );
-		}
+		$this->logger->log_always(
+			$message,
+			'warning',
+			array(
+				'order_id'        => $order->get_id(),
+				'idempotency_key' => $idempotency_key,
+			)
+		);
 	}
 }

@@ -163,7 +163,7 @@ class WooPaymentsTokenizedCartSessionHandler extends \WC_Session_Handler {
 		}
 
 		$parts   = JsonWebToken::get_parts( $token );
-		$payload = is_object( $parts ) && isset( $parts->payload ) ? $parts->payload : null;
+		$payload = isset( $parts->payload ) ? $parts->payload : null;
 		if ( ! is_object( $payload ) || ! isset( $payload->session_id, $payload->iss ) || WooPaymentsTokenizedCartSessionController::TOKEN_ISSUER !== $payload->iss ) {
 			return '';
 		}

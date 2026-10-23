@@ -121,7 +121,7 @@ class WooPaymentsChargeAmbiguityService {
 		}
 
 		try {
-			$list = $this->api_client->list_payment_intentions( (string) reset( $customer_ids ), self::LIST_LIMIT );
+			$list = $this->api_client->list_payment_intentions( reset( $customer_ids ), self::LIST_LIMIT );
 		} catch ( WooPaymentsApiException $exception ) {
 			return $exception->has_ambiguous_outcome()
 				? self::lookup( self::LOOKUP_FAILED )

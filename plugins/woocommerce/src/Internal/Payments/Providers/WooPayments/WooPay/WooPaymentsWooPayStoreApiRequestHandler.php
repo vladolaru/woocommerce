@@ -214,7 +214,7 @@ class WooPaymentsWooPayStoreApiRequestHandler {
 				// Remove the Gift Cards session cache so account gift cards load.
 				add_filter( 'woocommerce_gc_account_session_timeout_minutes', '__return_false' );
 
-				return (int) $user->ID;
+				return $user->ID;
 			}
 		}
 
@@ -416,7 +416,7 @@ class WooPaymentsWooPayStoreApiRequestHandler {
 		wc_get_logger()->error(
 			'WooPay checkout fatal error.',
 			array(
-				'error_type' => (int) $error['type'],
+				'error_type' => $error['type'],
 				'file'       => (string) ( $error['file'] ?? '' ),
 				'line'       => (int) ( $error['line'] ?? 0 ),
 				'order_id'   => $this->checkout_error_order_id,
