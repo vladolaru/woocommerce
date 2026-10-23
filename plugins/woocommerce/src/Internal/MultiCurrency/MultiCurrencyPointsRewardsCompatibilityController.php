@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPointsRewardsCompatibilityProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -83,33 +82,23 @@ class MultiCurrencyPointsRewardsCompatibilityController implements RegisterHooks
 			return;
 		}
 
-		$this->add_action_once( 'plugins_loaded', array( $this, 'register_points_rewards_filters' ), 20 );
+		add_action( 'plugins_loaded', array( $this, 'register_points_rewards_filters' ), 20 );
 	}
 
 	/**
 	 * Register Points and Rewards compatibility filters after supported runtimes have loaded.
 	 *
+	 * The ratios convert outside wp-admin only.
+	 *
 	 * @internal
 	 */
 	public function register_points_rewards_filters(): void {
-		if (
-			! $this->arbiter->should_core_register()
-			|| ! MultiCurrencyPointsRewardsCompatibilityProjectionService::should_register(
-				$this->is_points_rewards_runtime_available(),
-				is_admin()
-			)
-		) {
+		if ( ! $this->arbiter->should_core_register() || ! $this->is_points_rewards_runtime_available() || is_admin() ) {
 			return;
 		}
 
-		$manifest = MultiCurrencyPointsRewardsCompatibilityProjectionService::get_hook_manifest();
-
-		foreach ( $manifest['filters'] as $filter ) {
-			$callback = array( $this, (string) $filter['callback'] );
-			if ( is_callable( $callback ) ) {
-				$this->add_filter_once( (string) $filter['hook'], $callback, (int) $filter['priority'], (int) $filter['accepted_args'] );
-			}
-		}
+		add_filter( 'option_wc_points_rewards_earn_points_ratio', array( $this, 'convert_points_ratio' ), 50 );
+		add_filter( 'option_wc_points_rewards_redeem_points_ratio', array( $this, 'convert_points_ratio' ), 50 );
 	}
 
 	/**
@@ -124,18 +113,18 @@ class MultiCurrencyPointsRewardsCompatibilityController implements RegisterHooks
 		$default_currency  = $state->get_default_currency();
 
 		if (
-			! MultiCurrencyPointsRewardsCompatibilityProjectionService::should_convert_ratio(
-				$selected_currency->get_code() !== $default_currency->get_code(),
-				MultiCurrencyRequestContext::is_call_in_backtrace( self::POINTS_REWARDS_DISCOUNT_DATA_CALLS )
-			)
+			$selected_currency->get_code() === $default_currency->get_code()
+			|| MultiCurrencyRequestContext::is_call_in_backtrace( self::POINTS_REWARDS_DISCOUNT_DATA_CALLS )
 		) {
 			return $ratio;
 		}
 
-		return MultiCurrencyPointsRewardsCompatibilityProjectionService::convert_ratio_value(
-			$ratio,
-			$selected_currency->get_rate()
-		);
+		// The ratio is the extension's option text, which may lack a ':' part; a missing part reads as 0.
+		$parts  = explode( ':', $ratio );
+		$points = (float) ( $parts[0] ?? 0 );
+		$value  = (float) ( $parts[1] ?? 0 );
+
+		return $points . ':' . ( $value * $selected_currency->get_rate() );
 	}
 
 	/**
@@ -158,33 +147,5 @@ class MultiCurrencyPointsRewardsCompatibilityController implements RegisterHooks
 		}
 
 		return $this->state_builder;
-	}
-
-	/**
-	 * Register a filter only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_filter_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_filter( $hook, $callback ) ) {
-			add_filter( $hook, $callback, $priority, $accepted_args );
-		}
-	}
-
-	/**
-	 * Register an action only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_action_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_action( $hook, $callback ) ) {
-			add_action( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }

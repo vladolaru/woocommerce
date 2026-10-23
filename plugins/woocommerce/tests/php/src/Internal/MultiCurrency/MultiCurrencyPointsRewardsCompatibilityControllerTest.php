@@ -50,6 +50,13 @@ class MultiCurrencyPointsRewardsCompatibilityControllerTest extends WC_Unit_Test
 
 		$this->assertSame( 50, has_filter( 'option_wc_points_rewards_earn_points_ratio', array( $sut, 'convert_points_ratio' ) ) );
 		$this->assertSame( 50, has_filter( 'option_wc_points_rewards_redeem_points_ratio', array( $sut, 'convert_points_ratio' ) ) );
+		$this->assertSame(
+			array(
+				'option_wc_points_rewards_earn_points_ratio'   => array( 'convert_points_ratio' => array( 50, 1 ) ),
+				'option_wc_points_rewards_redeem_points_ratio' => array( 'convert_points_ratio' => array( 50, 1 ) ),
+			),
+			RegisteredHooks::of( $sut )
+		);
 	}
 
 	/**
@@ -94,6 +101,8 @@ class MultiCurrencyPointsRewardsCompatibilityControllerTest extends WC_Unit_Test
 		$sut = $this->create_controller();
 
 		$this->assertSame( '10:1.6', $sut->convert_points_ratio( '10:2' ) );
+		$this->assertSame( '0:0', $sut->convert_points_ratio( '' ) );
+		$this->assertSame( '0:0', $sut->convert_points_ratio( 'bad' ) );
 	}
 
 	/**
