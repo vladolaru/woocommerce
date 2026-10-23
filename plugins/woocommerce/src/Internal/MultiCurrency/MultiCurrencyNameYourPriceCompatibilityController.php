@@ -9,7 +9,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyRateException;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyNameYourPriceCompatibilityProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
@@ -111,7 +110,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 			return;
 		}
 
-		$this->add_action_once( 'plugins_loaded', array( $this, 'register_name_your_price_hooks' ), 20 );
+		add_action( 'plugins_loaded', array( $this, 'register_name_your_price_hooks' ), 20 );
 	}
 
 	/**
@@ -120,30 +119,19 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	 * @internal
 	 */
 	public function register_name_your_price_hooks(): void {
-		if (
-			! $this->arbiter->should_core_register()
-			|| ! MultiCurrencyNameYourPriceCompatibilityProjectionService::should_register(
-				$this->is_name_your_price_runtime_available()
-			)
-		) {
+		if ( ! $this->arbiter->should_core_register() || ! $this->is_name_your_price_runtime_available() ) {
 			return;
 		}
 
-		$manifest = MultiCurrencyNameYourPriceCompatibilityProjectionService::get_hook_manifest();
-
-		foreach ( $manifest['filters'] as $filter ) {
-			$callback = array( $this, (string) $filter['callback'] );
-			if ( is_callable( $callback ) ) {
-				$this->add_filter_once( (string) $filter['hook'], $callback, (int) $filter['priority'], (int) $filter['accepted_args'] );
-			}
-		}
-
-		foreach ( $manifest['actions'] as $action ) {
-			$callback = array( $this, (string) $action['callback'] );
-			if ( is_callable( $callback ) ) {
-				$this->add_action_once( (string) $action['hook'], $callback, (int) $action['priority'], (int) $action['accepted_args'] );
-			}
-		}
+		add_filter( 'wc_nyp_raw_minimum_price', array( $this, 'get_nyp_prices' ) );
+		add_filter( 'wc_nyp_raw_maximum_price', array( $this, 'get_nyp_prices' ) );
+		add_filter( 'wc_nyp_raw_suggested_price', array( $this, 'get_nyp_prices' ) );
+		add_filter( 'woocommerce_add_cart_item_data', array( $this, 'add_initial_currency' ), 20, 3 );
+		add_filter( 'woocommerce_get_cart_item_from_session', array( $this, 'convert_cart_currency' ), 20, 2 );
+		add_filter( 'woocommerce_pre_remove_cart_item_from_session', array( $this, 'remove_unconvertible_cart_item' ), 10, 4 );
+		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_convert_product_price', array( $this, 'should_convert_product_price' ), 50, 2 );
+		add_filter( 'wc_nyp_edit_in_cart_args', array( $this, 'edit_in_cart_args' ), 10, 2 );
+		add_filter( 'wc_nyp_get_initial_price', array( $this, 'get_initial_price' ), 10, 3 );
 	}
 
 	/**
@@ -153,7 +141,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	 * @return mixed
 	 */
 	public function get_nyp_prices( $price ) {
-		if ( ! MultiCurrencyNameYourPriceCompatibilityProjectionService::should_convert_raw_price( $price ) ) {
+		if ( ! $price ) {
 			return $price;
 		}
 
@@ -171,12 +159,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	public function add_initial_currency( array $cart_item, int $product_id, int $variation_id ): array {
 		$nyp_id = $variation_id ? $variation_id : $product_id;
 
-		if (
-			! MultiCurrencyNameYourPriceCompatibilityProjectionService::should_store_initial_currency(
-				$this->is_name_your_price_product( $nyp_id ),
-				isset( $cart_item['nyp'] )
-			)
-		) {
+		if ( ! $this->is_name_your_price_product( $nyp_id ) || ! isset( $cart_item['nyp'] ) ) {
 			return $cart_item;
 		}
 
@@ -196,13 +179,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	public function convert_cart_currency( array $cart_item, array $values ): array {
 		unset( $values );
 
-		if (
-			! MultiCurrencyNameYourPriceCompatibilityProjectionService::should_convert_cart_currency(
-				$this->is_name_your_price_function_available(),
-				isset( $cart_item['nyp_original'] ),
-				isset( $cart_item['nyp_currency'] )
-			)
-		) {
+		if ( ! $this->is_name_your_price_function_available() || ! isset( $cart_item['nyp_original'], $cart_item['nyp_currency'] ) ) {
 			return $cart_item;
 		}
 
@@ -285,11 +262,10 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 			? (string) $product->get_meta( self::NYP_CURRENCY_META_KEY )
 			: '';
 
-		return MultiCurrencyNameYourPriceCompatibilityProjectionService::should_convert_product_price(
-			$should_convert,
-			'' !== $product_currency && $product_currency === $this->get_selected_currency_code(),
-			$this->is_name_your_price_product( $product )
-		);
+		// Skip cart items still in the currency their price was entered in, and NYP products.
+		return $should_convert
+			&& $product_currency !== $this->get_selected_currency_code()
+			&& ! $this->is_name_your_price_product( $product );
 	}
 
 	/**
@@ -324,14 +300,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 		$source_currency     = $has_source_currency ? $this->get_sanitized_request_value( 'nyp_currency' ) : '';
 		$selected_currency   = $this->get_selected_currency_code();
 
-		if (
-			! MultiCurrencyNameYourPriceCompatibilityProjectionService::should_convert_initial_price(
-				$has_raw_price,
-				$has_source_currency,
-				$source_currency,
-				$selected_currency
-			)
-		) {
+		if ( ! $has_raw_price || ! $has_source_currency || $source_currency === $selected_currency ) {
 			return $initial_price;
 		}
 
@@ -466,33 +435,5 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 		}
 
 		return $this->state_builder;
-	}
-
-	/**
-	 * Register a filter only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_filter_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_filter( $hook, $callback ) ) {
-			add_filter( $hook, $callback, $priority, $accepted_args );
-		}
-	}
-
-	/**
-	 * Register an action only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_action_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_action( $hook, $callback ) ) {
-			add_action( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }

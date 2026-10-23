@@ -86,6 +86,20 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 		$this->assertSame( 50, has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'should_convert_product_price' ) ) );
 		$this->assertSame( 10, has_filter( 'wc_nyp_edit_in_cart_args', array( $sut, 'edit_in_cart_args' ) ) );
 		$this->assertSame( 10, has_filter( 'wc_nyp_get_initial_price', array( $sut, 'get_initial_price' ) ) );
+		$this->assertSame(
+			array(
+				'wc_nyp_edit_in_cart_args'               => array( 'edit_in_cart_args' => array( 10, 2 ) ),
+				'wc_nyp_get_initial_price'               => array( 'get_initial_price' => array( 10, 3 ) ),
+				'wc_nyp_raw_maximum_price'               => array( 'get_nyp_prices' => array( 10, 1 ) ),
+				'wc_nyp_raw_minimum_price'               => array( 'get_nyp_prices' => array( 10, 1 ) ),
+				'wc_nyp_raw_suggested_price'             => array( 'get_nyp_prices' => array( 10, 1 ) ),
+				'wcpay_multi_currency_should_convert_product_price' => array( 'should_convert_product_price' => array( 50, 2 ) ),
+				'woocommerce_add_cart_item_data'         => array( 'add_initial_currency' => array( 20, 3 ) ),
+				'woocommerce_get_cart_item_from_session' => array( 'convert_cart_currency' => array( 20, 2 ) ),
+				'woocommerce_pre_remove_cart_item_from_session' => array( 'remove_unconvertible_cart_item' => array( 10, 4 ) ),
+			),
+			RegisteredHooks::of( $sut )
+		);
 	}
 
 	/**
@@ -127,6 +141,7 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 		$sut = $this->create_controller();
 
 		$this->assertSame( 8.4, $sut->get_nyp_prices( '10.00' ) );
+		$this->assertSame( '0', $sut->get_nyp_prices( '0' ) );
 		$this->assertSame( 0, $sut->get_nyp_prices( 0 ) );
 		$this->assertSame( '', $sut->get_nyp_prices( '' ) );
 	}
@@ -326,6 +341,16 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
+	 * @testdox Should leave a cart item without both the entered NYP price and its currency unchanged.
+	 */
+	public function test_leaves_cart_item_without_entered_price_and_currency_unchanged(): void {
+		$sut = $this->create_controller();
+
+		$this->assertSame( array( 'nyp_currency' => 'USD' ), $sut->convert_cart_currency( array( 'nyp_currency' => 'USD' ), array() ) );
+		$this->assertSame( array( 'nyp_original' => '10.00' ), $sut->convert_cart_currency( array( 'nyp_original' => '10.00' ), array() ) );
+	}
+
+	/**
 	 * @testdox Should suppress product price conversion for NYP product contexts.
 	 */
 	public function test_suppresses_product_price_conversion_for_nyp_product_contexts(): void {
@@ -337,6 +362,7 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 		$this->assertFalse( $sut->should_convert_product_price( true, $nyp_product ) );
 		$this->assertFalse( $sut->should_convert_product_price( false, $this->create_product() ) );
 		$this->assertTrue( $sut->should_convert_product_price( true, $this->create_product() ) );
+		$this->assertTrue( $sut->should_convert_product_price( true, $this->create_product( 'USD' ) ), 'An entry currency other than the selected one does not stop conversion.' );
 	}
 
 	/**
@@ -365,6 +391,16 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 		$this->assertSame( 8.2, $sut->get_initial_price( '99.00', $this->create_product(), '_bundle' ) );
 
 		$_REQUEST['nyp_currency'] = 'GBP';
+
+		$this->assertSame( '99.00', $sut->get_initial_price( '99.00', $this->create_product(), '_bundle' ) );
+
+		$_REQUEST['nyp_currency'] = 'USD';
+		unset( $_REQUEST['nyp_raw_bundle'] );
+
+		$this->assertSame( '99.00', $sut->get_initial_price( '99.00', $this->create_product(), '_bundle' ) );
+
+		$_REQUEST['nyp_raw_bundle'] = '10.00';
+		unset( $_REQUEST['nyp_currency'] );
 
 		$this->assertSame( '99.00', $sut->get_initial_price( '99.00', $this->create_product(), '_bundle' ) );
 	}
