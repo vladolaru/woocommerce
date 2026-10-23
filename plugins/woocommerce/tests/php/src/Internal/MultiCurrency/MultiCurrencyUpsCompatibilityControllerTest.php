@@ -43,6 +43,10 @@ class MultiCurrencyUpsCompatibilityControllerTest extends WC_Unit_Test_Case {
 		$sut->register();
 
 		$this->assertSame( 10, has_filter( 'wcpay_multi_currency_should_return_store_currency', array( $sut, 'should_return_store_currency' ) ) );
+		$this->assertSame(
+			array( 'wcpay_multi_currency_should_return_store_currency' => array( 'should_return_store_currency' => array( 10, 1 ) ) ),
+			RegisteredHooks::of( $sut )
+		);
 	}
 
 	/**

@@ -7,9 +7,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUpsCompatibilityProjectionService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 
 /**
  * Registers native multi-currency UPS compatibility hooks when core owns multi-currency.
@@ -56,7 +56,7 @@ class MultiCurrencyUpsCompatibilityController implements RegisterHooksInterface 
 			return;
 		}
 
-		$this->add_action_once( 'plugins_loaded', array( $this, 'register_ups_filters' ), 20 );
+		add_action( 'plugins_loaded', array( $this, 'register_ups_filters' ), 20 );
 	}
 
 	/**
@@ -65,23 +65,11 @@ class MultiCurrencyUpsCompatibilityController implements RegisterHooksInterface 
 	 * @internal
 	 */
 	public function register_ups_filters(): void {
-		if (
-			! $this->arbiter->should_core_register()
-			|| ! MultiCurrencyUpsCompatibilityProjectionService::should_register(
-				$this->is_ups_runtime_available()
-			)
-		) {
+		if ( ! $this->arbiter->should_core_register() || ! $this->is_ups_runtime_available() ) {
 			return;
 		}
 
-		$manifest = MultiCurrencyUpsCompatibilityProjectionService::get_hook_manifest();
-
-		foreach ( $manifest['filters'] as $filter ) {
-			$callback = array( $this, (string) $filter['callback'] );
-			if ( is_callable( $callback ) ) {
-				$this->add_filter_once( (string) $filter['hook'], $callback, (int) $filter['priority'], (int) $filter['accepted_args'] );
-			}
-		}
+		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_return_store_currency', array( $this, 'should_return_store_currency' ) );
 	}
 
 	/**
@@ -91,10 +79,7 @@ class MultiCurrencyUpsCompatibilityController implements RegisterHooksInterface 
 	 * @return bool
 	 */
 	public function should_return_store_currency( bool $should_return ): bool {
-		return MultiCurrencyUpsCompatibilityProjectionService::should_return_store_currency(
-			$should_return,
-			MultiCurrencyRequestContext::is_call_in_backtrace( self::UPS_SHIPPING_CALLS )
-		);
+		return $should_return || MultiCurrencyRequestContext::is_call_in_backtrace( self::UPS_SHIPPING_CALLS );
 	}
 
 	/**
@@ -104,33 +89,5 @@ class MultiCurrencyUpsCompatibilityController implements RegisterHooksInterface 
 	 */
 	protected function is_ups_runtime_available(): bool {
 		return class_exists( 'WC_Shipping_UPS_Init' );
-	}
-
-	/**
-	 * Register a filter only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_filter_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_filter( $hook, $callback ) ) {
-			add_filter( $hook, $callback, $priority, $accepted_args );
-		}
-	}
-
-	/**
-	 * Register an action only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_action_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_action( $hook, $callback ) ) {
-			add_action( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }
