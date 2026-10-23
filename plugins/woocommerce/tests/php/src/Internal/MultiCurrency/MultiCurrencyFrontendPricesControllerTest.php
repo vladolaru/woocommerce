@@ -168,6 +168,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 		$this->assertSame( 20.0, $sut->get_coupon_amount( '5.00', $this->create_coupon() ) );
+		$this->assertSame( '5.00', $sut->get_coupon_amount( '5.00', $this->create_coupon( true ) ), 'A percentage coupon amount is a percentage, never converted.' );
 		$this->assertSame( 20.0, $sut->get_coupon_min_max_amount( '10.00' ) );
 	}
 
@@ -606,38 +607,15 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a coupon test double.
+	 * Create an unsaved coupon.
 	 *
 	 * @param bool $is_percent Whether this is a percentage coupon.
-	 * @return object
+	 * @return \WC_Coupon
 	 */
-	private function create_coupon( bool $is_percent = false ): object {
-		return new class( $is_percent ) {
-			/**
-			 * Whether this is a percentage coupon.
-			 *
-			 * @var bool
-			 */
-			private bool $is_percent;
+	private function create_coupon( bool $is_percent = false ): \WC_Coupon {
+		$coupon = new \WC_Coupon();
+		$coupon->set_discount_type( $is_percent ? 'percent' : 'fixed_cart' );
 
-			/**
-			 * Constructor.
-			 *
-			 * @param bool $is_percent Whether this is a percentage coupon.
-			 */
-			public function __construct( bool $is_percent ) {
-				$this->is_percent = $is_percent;
-			}
-
-			/**
-			 * Tell whether the coupon belongs to the given type set.
-			 *
-			 * @param string[] $types Coupon types.
-			 * @return bool
-			 */
-			public function is_type( array $types ): bool {
-				return $this->is_percent && in_array( 'percent', $types, true );
-			}
-		};
+		return $coupon;
 	}
 }

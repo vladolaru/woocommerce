@@ -524,12 +524,10 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	/**
 	 * Tell whether the coupon is percentage-based.
 	 *
-	 * @param mixed $coupon Coupon object.
+	 * @param mixed $coupon The coupon woocommerce_coupon_get_amount passes, a WC_Coupon.
 	 * @return bool
 	 */
 	private function is_percentage_coupon( $coupon ): bool {
-		return is_object( $coupon ) &&
-			is_callable( array( $coupon, 'is_type' ) ) &&
-			(bool) call_user_func( array( $coupon, 'is_type' ), array( 'percent' ) );
+		return $coupon instanceof \WC_Coupon && $coupon->is_type( array( 'percent' ) );
 	}
 }
