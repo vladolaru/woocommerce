@@ -87,7 +87,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 		}
 
 		if ( Constants::is_defined( 'DOING_CRON' ) ) {
-			$this->add_filter_once( 'woocommerce_admin_sales_record_milestone_enabled', array( $this, 'attach_order_modifier' ) );
+			add_filter( 'woocommerce_admin_sales_record_milestone_enabled', array( $this, 'attach_order_modifier' ) );
 		}
 	}
 
@@ -104,7 +104,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 		 *
 		 * @since 11.0.0
 		 */
-		return apply_filters( self::filter_name( 'override_selected_currency' ), false );
+		return apply_filters( MultiCurrencyStateBuilder::FILTER_PREFIX . 'override_selected_currency', false );
 	}
 
 	/**
@@ -126,8 +126,8 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 	public function should_disable_currency_switching(): bool {
 		$should_disable = array_key_exists( 'pay_for_order', $_GET ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only compatibility flag matching WooPayments behavior.
 
-		if ( has_filter( self::filter_name( 'should_hide_widgets' ) ) ) {
-			wc_deprecated_hook( self::filter_name( 'should_hide_widgets' ), '6.5.0', self::filter_name( 'should_disable_currency_switching' ) );
+		if ( has_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_hide_widgets' ) ) {
+			wc_deprecated_hook( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_hide_widgets', '6.5.0', MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_disable_currency_switching' );
 			/**
 			 * Filters whether native multi-currency widgets should be hidden.
 			 *
@@ -135,7 +135,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 			 *
 			 * @since 11.0.0
 			 */
-			$should_disable = (bool) apply_filters( self::filter_name( 'should_hide_widgets' ), $should_disable );
+			$should_disable = (bool) apply_filters( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_hide_widgets', $should_disable );
 		}
 
 		/**
@@ -145,7 +145,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 		 *
 		 * @since 11.0.0
 		 */
-		return (bool) apply_filters( self::filter_name( 'should_disable_currency_switching' ), $should_disable );
+		return (bool) apply_filters( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_disable_currency_switching', $should_disable );
 	}
 
 	/**
@@ -167,7 +167,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 		 *
 		 * @since 11.0.0
 		 */
-		return (bool) apply_filters( self::filter_name( 'should_convert_coupon_amount' ), true, $coupon );
+		return (bool) apply_filters( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_convert_coupon_amount', true, $coupon );
 	}
 
 	/**
@@ -189,7 +189,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 		 *
 		 * @since 11.0.0
 		 */
-		return (bool) apply_filters( self::filter_name( 'should_convert_product_price' ), true, $product );
+		return (bool) apply_filters( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_convert_product_price', true, $product );
 	}
 
 	/**
@@ -205,7 +205,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 		 *
 		 * @since 11.0.0
 		 */
-		return (bool) apply_filters( self::filter_name( 'should_return_store_currency' ), false );
+		return (bool) apply_filters( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_return_store_currency', false );
 	}
 
 	/**
@@ -215,7 +215,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 	 * @return mixed
 	 */
 	public function attach_order_modifier( $enabled ) {
-		$this->add_filter_once( 'woocommerce_order_query', array( $this, 'convert_order_prices' ), 10, 2 );
+		add_filter( 'woocommerce_order_query', array( $this, 'convert_order_prices' ), 10, 2 );
 
 		return $enabled;
 	}
@@ -275,29 +275,5 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 		}
 
 		return $this->state_builder;
-	}
-
-	/**
-	 * Register a filter only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_filter_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_filter( $hook, $callback ) ) {
-			add_filter( $hook, $callback, $priority, $accepted_args );
-		}
-	}
-
-	/**
-	 * Build a multi-currency filter name.
-	 *
-	 * @param string $suffix Filter suffix.
-	 * @return string
-	 */
-	private static function filter_name( string $suffix ): string {
-		return MultiCurrencyStateBuilder::FILTER_PREFIX . $suffix;
 	}
 }
