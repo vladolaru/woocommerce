@@ -1195,8 +1195,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * Get the gateway settings, a key never saved reading as its form default.
 	 *
 	 * A store onboarded through the built-in WooPayments stores only the keys onboarding writes until the settings page is
-	 * saved; the gateway answers every other key with its form default (WC_Settings_API::get_option()). A settings read
-	 * that throws is logged and read as no stored settings.
+	 * saved; the gateway answers every other key with its form default (WC_Settings_API::get_option()).
 	 *
 	 * @since 11.2.0
 	 *

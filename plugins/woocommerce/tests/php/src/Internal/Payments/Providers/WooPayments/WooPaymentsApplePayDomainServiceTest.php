@@ -340,7 +340,8 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should store the error and schedule one retry when the platform reports a failed registration.
 	 */
 	public function test_failed_registration_stores_the_error_and_schedules_a_retry(): void {
-		$error_message              = 'Domain verification failed before telemetry';
+		$error_message = 'Domain verification failed before telemetry';
+		// The client's own synthetic failure case (tests/unit/test-class-wc-payments-apple-pay-registration.php:211), not a recorded platform response.
 		$this->api_client->response = array(
 			'id'        => 'domain_123',
 			'apple_pay' => array(
