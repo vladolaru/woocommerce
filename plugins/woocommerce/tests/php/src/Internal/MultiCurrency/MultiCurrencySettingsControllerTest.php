@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySettingsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySettingsPage;
@@ -39,6 +40,10 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 		}
 
 		unset( $GLOBALS['hide_save_button'] );
+		Constants::clear_single_constant( 'WP_CLI' );
+		Constants::clear_single_constant( 'WPCOM_JOBS' );
+		global $wp_actions;
+		unset( $wp_actions['upgrader_process_complete'] );
 
 		parent::tearDown();
 	}
@@ -190,6 +195,28 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not add the settings page on a $label request.
+	 * @testWith ["WP-CLI"]
+	 *           ["WordPress.com jobs"]
+	 *           ["upgrader"]
+	 *
+	 * @param string $label The request kind.
+	 */
+	public function test_does_not_add_the_settings_page_on_cli_jobs_or_upgrader_requests( string $label ): void {
+		global $wp_actions;
+		if ( 'WP-CLI' === $label ) {
+			Constants::set_constant( 'WP_CLI', true );
+		} elseif ( 'WordPress.com jobs' === $label ) {
+			Constants::set_constant( 'WPCOM_JOBS', true );
+		} else {
+			$wp_actions['upgrader_process_complete'] = 1; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Marks this request as one where the upgrader ran.
+		}
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+
+		$this->assertSame( array( 'existing' ), $sut->handle_woocommerce_get_settings_pages( array( 'existing' ) ) );
+	}
+
+	/**
 	 * @testdox Should register the settings page when no provider is connected.
 	 */
 	public function test_registers_the_settings_page_when_no_provider_is_connected(): void {
@@ -303,12 +330,22 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 
 		$sut->handle_admin_enqueue_scripts();
 
-		$this->assertCount( 1, $registered_assets );
-		$this->assertSame( 'multi-currency-settings', $registered_assets[0]['script']['entry'] );
-		$this->assertSame( 'wc-admin-multi-currency-settings', $registered_assets[0]['script']['handle'] );
-		$this->assertSame( 'multi-currency-settings', $registered_assets[0]['style']['entry'] );
-		$this->assertSame( 'style', $registered_assets[0]['style']['file'] );
-		$this->assertSame( 'wc-admin-multi-currency-settings', $registered_assets[0]['style']['handle'] );
+		$this->assertSame(
+			array(
+				array(
+					'script' => array(
+						'entry'  => 'multi-currency-settings',
+						'handle' => 'wc-admin-multi-currency-settings',
+					),
+					'style'  => array(
+						'entry'  => 'multi-currency-settings',
+						'file'   => 'style',
+						'handle' => 'wc-admin-multi-currency-settings',
+					),
+				),
+			),
+			$registered_assets
+		);
 		$this->assertSame(
 			array(
 				'wc-admin-multi-currency-settings',
@@ -316,6 +353,28 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 			),
 			$enqueued_assets
 		);
+	}
+
+	/**
+	 * @testdox Should not enqueue admin assets on another settings tab.
+	 */
+	public function test_does_not_enqueue_admin_assets_on_another_settings_tab(): void {
+		$registered_assets = array();
+		$enqueued_assets   = array();
+		$sut               = $this->create_controller(
+			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
+			array(
+				'current_tab'       => 'checkout',
+				'asset_available'   => true,
+				'registered_assets' => &$registered_assets,
+				'enqueued_assets'   => &$enqueued_assets,
+			)
+		);
+
+		$sut->handle_admin_enqueue_scripts();
+
+		$this->assertSame( array(), $registered_assets );
+		$this->assertSame( array(), $enqueued_assets );
 	}
 
 	/**

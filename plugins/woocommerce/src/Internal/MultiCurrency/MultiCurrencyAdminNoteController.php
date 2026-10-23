@@ -10,7 +10,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\MultiCurrencyProviderAccountResolver;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySettingsProjectionService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -236,7 +235,7 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 				array(
 					'name'    => self::NOTE_NAME,
 					'label'   => __( 'Set up now', 'woocommerce' ),
-					'query'   => MultiCurrencySettingsProjectionService::get_settings_page_url(),
+					'query'   => MultiCurrencySettingsPage::get_settings_page_url(),
 					'status'  => Note::E_WC_ADMIN_NOTE_UNACTIONED,
 					'primary' => true,
 				),

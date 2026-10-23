@@ -7,9 +7,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Admin\WCAdminAssets;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySettingsProjectionService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -19,6 +19,20 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  * @internal Transitional internal component for the native multi-currency runtime.
  */
 class MultiCurrencySettingsController implements RegisterHooksInterface {
+
+	private const SETTINGS_FIELD_TYPE   = 'wcpay_multi_currency_settings_page';
+	private const SETTINGS_CONTAINER_ID = 'wcpay_multi_currency_settings_container';
+	private const ADMIN_ASSETS          = array(
+		'script' => array(
+			'entry'  => 'multi-currency-settings',
+			'handle' => 'wc-admin-multi-currency-settings',
+		),
+		'style'  => array(
+			'entry'  => 'multi-currency-settings',
+			'file'   => 'style',
+			'handle' => 'wc-admin-multi-currency-settings',
+		),
+	);
 
 	/**
 	 * Runtime owner arbiter.
@@ -181,12 +195,12 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 			return;
 		}
 
-		$this->add_filter_once( 'woocommerce_get_settings_pages', array( $this, 'handle_woocommerce_get_settings_pages' ) );
-		$this->add_filter_once( 'woocommerce_multi_currency_js_settings', array( $this, 'add_multi_currency_settings_config' ) );
-		$this->add_action_once( 'admin_print_scripts', array( $this, 'handle_admin_print_scripts' ) );
-		$this->add_action_once( 'woocommerce_admin_field_wcpay_multi_currency_settings_page', array( $this, 'render_settings_container' ) );
-		$this->add_action_once( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) );
-		$this->add_action_once( 'admin_init', array( $this, 'handle_admin_init' ) );
+		add_filter( 'woocommerce_get_settings_pages', array( $this, 'handle_woocommerce_get_settings_pages' ) );
+		add_filter( 'woocommerce_multi_currency_js_settings', array( $this, 'add_multi_currency_settings_config' ) );
+		add_action( 'admin_print_scripts', array( $this, 'handle_admin_print_scripts' ) );
+		add_action( 'woocommerce_admin_field_wcpay_multi_currency_settings_page', array( $this, 'render_settings_container' ) );
+		add_action( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) );
+		add_action( 'admin_init', array( $this, 'handle_admin_init' ) );
 	}
 
 	/**
@@ -204,23 +218,26 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Add the native multi-currency settings page.
+	 * Add the native multi-currency settings page, except on WP-CLI, WordPress.com jobs and upgrader requests.
 	 *
 	 * @param array<int,mixed> $settings_pages Existing settings pages.
 	 * @return array<int,mixed>
 	 */
 	public function handle_woocommerce_get_settings_pages( array $settings_pages ): array {
-		$manifest = MultiCurrencySettingsProjectionService::get_settings_page_manifest(
-			$this->is_cli_request(),
-			$this->is_wpcom_jobs_request(),
-			did_action( 'upgrader_process_complete' ) > 0
-		);
-
-		if ( empty( $manifest ) ) {
+		if ( Constants::is_true( 'WP_CLI' ) || Constants::is_true( 'WPCOM_JOBS' ) || did_action( 'upgrader_process_complete' ) > 0 ) {
 			return $settings_pages;
 		}
 
-		$settings_pages[] = new MultiCurrencySettingsPage( $manifest );
+		$settings_pages[] = new MultiCurrencySettingsPage(
+			MultiCurrencySettingsPage::TAB_ID,
+			_x( 'Multi-currency', 'Settings tab label', 'woocommerce' ),
+			true,
+			array(
+				array(
+					'type' => self::SETTINGS_FIELD_TYPE,
+				),
+			)
+		);
 
 		return $settings_pages;
 	}
@@ -233,7 +250,13 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	public function render_settings_container(): void {
 		$GLOBALS['hide_save_button'] = true;
 
-		echo wp_kses_post( MultiCurrencySettingsProjectionService::get_settings_container_markup() );
+		echo wp_kses_post(
+			sprintf(
+				'<div id="%s" class="wc-settings-prevent-change-event" aria-describedby="%s-description"></div>',
+				esc_attr( self::SETTINGS_CONTAINER_ID ),
+				esc_attr( self::SETTINGS_CONTAINER_ID )
+			)
+		);
 	}
 
 	/**
@@ -260,21 +283,13 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function handle_admin_enqueue_scripts(): void {
-		if ( ! MultiCurrencySettingsProjectionService::should_enqueue_admin_assets( $this->get_current_tab() ) ) {
+		if ( MultiCurrencySettingsPage::TAB_ID !== $this->get_current_tab() || ! $this->is_settings_asset_available() ) {
 			return;
 		}
 
-		if ( ! $this->is_settings_asset_available() ) {
-			return;
-		}
-
-		$manifest = MultiCurrencySettingsProjectionService::get_admin_asset_manifest();
-		$this->register_admin_assets( $manifest );
-
-		$script = is_array( $manifest['script'] ?? null ) ? $manifest['script'] : array();
-		$style  = is_array( $manifest['style'] ?? null ) ? $manifest['style'] : array();
-		$this->enqueue_admin_asset( (string) ( $script['handle'] ?? '' ) );
-		$this->enqueue_admin_asset( (string) ( $style['handle'] ?? '' ) );
+		$this->register_admin_assets();
+		$this->enqueue_admin_asset( self::ADMIN_ASSETS['script']['handle'] );
+		$this->enqueue_admin_asset( self::ADMIN_ASSETS['style']['handle'] );
 	}
 
 	/**
@@ -291,7 +306,9 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 			return $config;
 		}
 
-		return MultiCurrencySettingsProjectionService::add_props_to_wcpay_js_config( $config );
+		$config['isMultiCurrencyEnabled'] = true;
+
+		return $config;
 	}
 
 	/**
@@ -351,29 +368,11 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_multi_currency_settings_page(): bool {
-		return MultiCurrencySettingsProjectionService::is_multi_currency_settings_page(
+		return MultiCurrencySettingsPage::is_multi_currency_settings_page(
 			$this->is_admin_request(),
 			$this->get_current_tab(),
 			$this->get_current_screen_base()
 		);
-	}
-
-	/**
-	 * Tell whether the current request is WP-CLI.
-	 *
-	 * @return bool
-	 */
-	private function is_cli_request(): bool {
-		return defined( 'WP_CLI' ) && WP_CLI;
-	}
-
-	/**
-	 * Tell whether the current request is a WPCOM jobs request.
-	 *
-	 * @return bool
-	 */
-	private function is_wpcom_jobs_request(): bool {
-		return defined( 'WPCOM_JOBS' ) && WPCOM_JOBS;
 	}
 
 	/**
@@ -386,66 +385,27 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 			return (bool) call_user_func( $this->asset_available_resolver );
 		}
 
-		$manifest    = MultiCurrencySettingsProjectionService::get_admin_asset_manifest();
-		$script      = is_array( $manifest['script'] ?? null ) ? $manifest['script'] : array();
-		$style       = is_array( $manifest['style'] ?? null ) ? $manifest['style'] : array();
-		$entry       = (string) ( $script['entry'] ?? '' );
-		$style_entry = (string) ( $style['entry'] ?? '' );
-		$style_file  = (string) ( $style['file'] ?? 'style' );
+		$script = self::ADMIN_ASSETS['script'];
+		$style  = self::ADMIN_ASSETS['style'];
 
-		return '' !== $entry
-			&& file_exists( WC_ADMIN_ABSPATH . WC_ADMIN_DIST_JS_FOLDER . 'wp-admin-scripts/' . $entry . '.asset.php' )
-			&& '' !== $style_entry
-			&& '' !== $style_file
-			&& file_exists( WC_ADMIN_ABSPATH . WC_ADMIN_DIST_CSS_FOLDER . $style_entry . '/' . $style_file . '.asset.php' );
+		return file_exists( WC_ADMIN_ABSPATH . WC_ADMIN_DIST_JS_FOLDER . 'wp-admin-scripts/' . $script['entry'] . '.asset.php' )
+			&& file_exists( WC_ADMIN_ABSPATH . WC_ADMIN_DIST_CSS_FOLDER . $style['entry'] . '/' . $style['file'] . '.asset.php' );
 	}
 
 	/**
-	 * Register admin assets.
-	 *
-	 * @param array<string,mixed> $manifest Admin asset manifest.
+	 * Register the admin script, and register and enqueue the admin stylesheet.
 	 */
-	private function register_admin_assets( array $manifest ): void {
+	private function register_admin_assets(): void {
 		if ( null !== $this->asset_registrar ) {
-			call_user_func( $this->asset_registrar, $manifest );
+			call_user_func( $this->asset_registrar, self::ADMIN_ASSETS );
 			return;
 		}
 
-		$script = is_array( $manifest['script'] ?? null ) ? $manifest['script'] : array();
-		$entry  = (string) ( $script['entry'] ?? '' );
-		if ( '' !== $entry ) {
-			WCAdminAssets::register_script( 'wp-admin-scripts', $entry, true );
-		}
+		WCAdminAssets::register_script( 'wp-admin-scripts', self::ADMIN_ASSETS['script']['entry'], true );
 
-		$style       = is_array( $manifest['style'] ?? null ) ? $manifest['style'] : array();
-		$style_entry = (string) ( $style['entry'] ?? '' );
-		if ( '' !== $style_entry ) {
-			$style_file         = (string) ( $style['file'] ?? 'style' );
-			$style_handle       = (string) ( $style['handle'] ?? '' );
-			$style_dependencies = (array) ( $style['dependencies'] ?? array() );
-
-			$this->register_admin_style( $style_entry, $style_file, $style_handle, $style_dependencies );
-		}
-	}
-
-	/**
-	 * Register and enqueue the admin stylesheet with the provider-specific handle.
-	 *
-	 * @param string       $style_entry        Style asset directory.
-	 * @param string       $style_file         Style asset filename without extension.
-	 * @param string       $style_handle       Style handle.
-	 * @param array<mixed> $style_dependencies Style dependencies.
-	 */
-	private function register_admin_style(
-		string $style_entry,
-		string $style_file,
-		string $style_handle,
-		array $style_dependencies
-	): void {
-		if ( '' === $style_entry || '' === $style_file || '' === $style_handle ) {
-			return;
-		}
-
+		$style_entry           = self::ADMIN_ASSETS['style']['entry'];
+		$style_file            = self::ADMIN_ASSETS['style']['file'];
+		$style_handle          = self::ADMIN_ASSETS['style']['handle'];
 		$style_assets_filename = WCAdminAssets::get_script_asset_filename( $style_entry, $style_file );
 		$style_assets          = require WC_ADMIN_ABSPATH
 			. WC_ADMIN_DIST_CSS_FOLDER
@@ -456,7 +416,7 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 		wp_enqueue_style(
 			$style_handle,
 			WCAdminAssets::get_url( $style_entry . '/' . $style_file, 'css' ),
-			$style_dependencies,
+			array(),
 			WCAdminAssets::get_file_version( 'css', $style_assets['version'] )
 		);
 		wp_style_add_data( $style_handle, 'rtl', 'replace' );
@@ -468,43 +428,11 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	 * @param string $handle Asset handle.
 	 */
 	private function enqueue_admin_asset( string $handle ): void {
-		if ( '' === $handle ) {
-			return;
-		}
-
 		if ( null !== $this->asset_enqueuer ) {
 			call_user_func( $this->asset_enqueuer, $handle );
 			return;
 		}
 
 		// WCAdminAssets::register_script() enqueues production assets directly.
-	}
-
-	/**
-	 * Register a filter only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_filter_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_filter( $hook, $callback ) ) {
-			add_filter( $hook, $callback, $priority, $accepted_args );
-		}
-	}
-
-	/**
-	 * Register an action only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_action_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_action( $hook, $callback ) ) {
-			add_action( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }
