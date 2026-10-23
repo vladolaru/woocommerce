@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
@@ -45,7 +46,8 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 			$_GET['currency'],
 			$_GET['s'],
 			$_GET['is_mc_onboarding_simulation'],
-			$_GET['enable_storefront_switcher']
+			$_GET['enable_storefront_switcher'],
+			$_GET['pay_for_order']
 		);
 		delete_option( 'wcpay_multi_currency_enable_storefront_switcher' );
 		wp_dequeue_style( 'storefront-style' );
@@ -233,6 +235,32 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	}
 
 	/**
+	 * @testdox Should show the switcher on the order-pay page when a callback turns the switching decision off.
+	 *
+	 * Client 11.1.0 seeds the decision with true on the order-pay page and returns the filter's answer
+	 * (`includes/multi-currency/Compatibility.php:109-146`), read by the widget Storefront renders (`CurrencySwitcherWidget.php:80`).
+	 */
+	public function test_order_pay_page_switcher_follows_the_switching_decision_filter(): void {
+		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
+		$_GET['pay_for_order'] = 'true';
+		$switcher              = $this->create_switcher_service( '<div>Switcher</div>' );
+		$sut                   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 2, 'storefront', 'storefront', $switcher );
+		$seen                  = array();
+		add_filter(
+			'wcpay_multi_currency_should_disable_currency_switching',
+			static function ( $should_disable ) use ( &$seen ) {
+				$seen[] = $should_disable;
+				return false;
+			}
+		);
+
+		$result = $sut->handle_woocommerce_breadcrumb_defaults( array( 'wrap_before' => '<div class="storefront-breadcrumb"><nav class="woocommerce-breadcrumb">' ) );
+
+		$this->assertSame( array( true ), $seen );
+		$this->assertSame( '<div class="storefront-breadcrumb"><div>Switcher</div><nav class="woocommerce-breadcrumb">', $result['wrap_before'] );
+	}
+
+	/**
 	 * @testdox Should enqueue filtered Storefront inline CSS.
 	 */
 	public function test_enqueues_filtered_storefront_inline_css(): void {
@@ -275,7 +303,8 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 		$controller->init(
 			$this->create_arbiter( $owner ),
 			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ),
-			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
+			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class ),
+			wc_get_container()->get( MultiCurrencyCompatibilityController::class )
 		);
 		$controller->set_state_builder( $this->create_state_builder( $enabled_currency_count ) );
 		$controller->set_theme_resolver(

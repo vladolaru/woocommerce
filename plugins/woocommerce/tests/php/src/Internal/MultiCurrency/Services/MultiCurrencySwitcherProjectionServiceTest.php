@@ -6,7 +6,6 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCompatibilityProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherProjectionService;
 use WC_Unit_Test_Case;
@@ -99,7 +98,7 @@ class MultiCurrencySwitcherProjectionServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project block markup with the currency symbol and a solid border.
 	 *
-	 * N-085: client 11.1.0 CurrencySwitcherBlock.php:165-178 prefixes the option text with the
+	 * Client 11.1.0 CurrencySwitcherBlock.php:165-178 prefixes the option text with the
 	 * currency symbol when `with_symbol` is true and the symbol differs from the code (USD "$ USD"),
 	 * and :211 renders a "1px solid" select border when the block attribute `border` is true.
 	 * `test_projects_block_markup_with_styles_and_default_accessible_label` only exercises the
@@ -200,15 +199,13 @@ class MultiCurrencySwitcherProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should suppress switcher markup for pay-for-order.
+	 * @testdox Should suppress switcher markup when switching is disabled.
 	 */
-	public function test_suppresses_switcher_for_pay_for_order(): void {
-		$sut                = $this->create_service( $this->create_state( 'GBP' ) );
-		$switching_disabled = MultiCurrencyCompatibilityProjectionService::should_disable_currency_switching( array( 'pay_for_order' => '1' ) );
+	public function test_suppresses_switcher_when_switching_is_disabled(): void {
+		$sut = $this->create_service( $this->create_state( 'GBP' ) );
 
-		$this->assertTrue( $switching_disabled );
-		$this->assertSame( '', $sut->get_widget_markup( array(), array(), array(), $switching_disabled ) );
-		$this->assertSame( '', $sut->get_block_markup( array(), array(), $switching_disabled ) );
+		$this->assertSame( '', $sut->get_widget_markup( array(), array(), array(), true ) );
+		$this->assertSame( '', $sut->get_block_markup( array(), array(), true ) );
 	}
 
 	/**

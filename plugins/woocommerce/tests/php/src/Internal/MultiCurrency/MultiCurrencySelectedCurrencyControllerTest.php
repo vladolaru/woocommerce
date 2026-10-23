@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySelectedCurrencyController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyAccountInterface;
@@ -479,6 +480,33 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should switch currency by geolocation on the order-pay page when a callback turns the switching decision off.
+	 *
+	 * Client 11.1.0 seeds the decision with true on the order-pay page and returns the filter's answer
+	 * (`includes/multi-currency/Compatibility.php:109-146`), read before the geolocation switch (`MultiCurrency.php:888`).
+	 */
+	public function test_order_pay_page_geolocation_switch_follows_the_switching_decision_filter(): void {
+		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
+		$_GET['pay_for_order'] = 'true';
+		$service               = $this->create_persistence_service();
+		$sut                   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
+		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD' ) );
+		$seen = array();
+		add_filter(
+			'wcpay_multi_currency_should_disable_currency_switching',
+			static function ( $should_disable ) use ( &$seen ) {
+				$seen[] = $should_disable;
+				return false;
+			}
+		);
+
+		$sut->handle_geolocation_init();
+
+		$this->assertSame( array( true ), $seen );
+		$this->assertSame( array( 'CAD' ), $service->updated_currencies );
+	}
+
+	/**
 	 * @testdox Should not overwrite stored currency with geolocation currency.
 	 */
 	public function test_does_not_overwrite_stored_currency_with_geolocation_currency(): void {
@@ -908,7 +936,8 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		$controller = new MultiCurrencySelectedCurrencyController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
+			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class ),
+			wc_get_container()->get( MultiCurrencyCompatibilityController::class )
 		);
 		$controller->set_persistence_service( $service );
 		if ( null !== $account_resolver ) {

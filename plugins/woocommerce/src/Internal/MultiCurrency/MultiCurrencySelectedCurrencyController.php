@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\MultiCurrencyProviderAccountResolver;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCompatibilityProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
@@ -25,8 +24,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBui
  * @internal Transitional internal component for the native multi-currency runtime.
  */
 class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface {
-
-	private const DISABLE_SWITCHING_FILTER = 'wcpay_multi_currency_should_disable_currency_switching';
 
 	private const FILTER_OVERRIDE_NOTICE_COUNTRY       = 'wcpay_multi_currency_override_notice_country';
 	private const FILTER_OVERRIDE_NOTICE_CURRENCY_NAME = 'wcpay_multi_currency_override_notice_currency_name';
@@ -90,16 +87,25 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	private MultiCurrencyRuntimeServiceFactory $runtime_service_factory;
 
 	/**
+	 * Compatibility controller.
+	 *
+	 * @var MultiCurrencyCompatibilityController
+	 */
+	private MultiCurrencyCompatibilityController $compatibility_controller;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter        $arbiter                 Runtime owner arbiter.
-	 * @param MultiCurrencyRuntimeServiceFactory $runtime_service_factory Runtime service factory.
+	 * @param MultiCurrencyRuntimeArbiter          $arbiter                  Runtime owner arbiter.
+	 * @param MultiCurrencyRuntimeServiceFactory   $runtime_service_factory  Runtime service factory.
+	 * @param MultiCurrencyCompatibilityController $compatibility_controller Compatibility controller.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyRuntimeServiceFactory $runtime_service_factory ): void {
-		$this->arbiter                 = $arbiter;
-		$this->runtime_service_factory = $runtime_service_factory;
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyRuntimeServiceFactory $runtime_service_factory, MultiCurrencyCompatibilityController $compatibility_controller ): void {
+		$this->arbiter                  = $arbiter;
+		$this->runtime_service_factory  = $runtime_service_factory;
+		$this->compatibility_controller = $compatibility_controller;
 	}
 
 	/**
@@ -231,7 +237,7 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	public function handle_geolocation_init(): void {
 		if (
 			! $this->is_using_auto_currency_switching()
-			|| $this->should_disable_currency_switching()
+			|| $this->compatibility_controller->should_disable_currency_switching()
 			|| $this->should_use_async_rendering()
 		) {
 			return;
@@ -589,29 +595,6 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	 */
 	private function is_using_auto_currency_switching(): bool {
 		return 'yes' === get_option( MultiCurrencyStateBuilder::OPTION_PREFIX . '_enable_auto_currency', 'no' );
-	}
-
-	/**
-	 * Tell whether compatibility rules disable switching.
-	 *
-	 * @return bool
-	 */
-	private function should_disable_currency_switching(): bool {
-		$query_args = array();
-		if ( isset( $_GET['pay_for_order'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			$query_args['pay_for_order'] = wc_clean( wp_unslash( $_GET['pay_for_order'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		}
-
-		/**
-		 * Filters whether native multi-currency switching should be disabled.
-		 *
-		 * @param bool $should_disable Whether switching should be disabled.
-		 *
-		 * @since 11.0.0
-		 */
-		$external_filter_disabled = (bool) apply_filters( self::DISABLE_SWITCHING_FILTER, false );
-
-		return MultiCurrencyCompatibilityProjectionService::should_disable_currency_switching( $query_args, false, $external_filter_disabled );
 	}
 
 	/**
