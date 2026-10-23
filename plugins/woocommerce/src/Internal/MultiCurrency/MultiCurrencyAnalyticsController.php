@@ -308,7 +308,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	 */
 	public function handle_woocommerce_analytics_clauses_select( array $clauses, $context = null ): array {
 		// The client leaves the clauses alone without a context, before its disable filter, and in a context that is neither
-		// stats nor a subquery, after it (client 11.1.0 `includes/multi-currency/Analytics.php:236-260`).
+		// stats nor a subquery, after it (client 11.1.0 `includes/multi-currency/Analytics.php:233-260`).
 		if ( ! is_string( $context ) || $this->is_clause_filter_disabled( self::DISABLE_SELECT_FILTER ) ) {
 			return $clauses;
 		}

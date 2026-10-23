@@ -276,7 +276,7 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 	 * Data provider for registration blockers.
 	 *
 	 * Client 11.1.0 counts any `?currency=` argument, empty included, as a pending switch
-	 * (`includes/multi-currency/MultiCurrency.php:360`).
+	 * (`includes/multi-currency/MultiCurrency.php:357-360`).
 	 *
 	 * @return array<string,array{bool,bool,bool,bool,bool,bool,string|null}>
 	 */

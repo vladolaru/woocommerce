@@ -422,7 +422,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should return SELECT clauses before the extension filter when the context is $label.
 	 *
 	 * Client 11.1.0 returns before its disable filter without a context, and before its extension filter when the
-	 * context is not a stats or subquery one (`includes/multi-currency/Analytics.php:236-299`).
+	 * context is not a stats or subquery one (`includes/multi-currency/Analytics.php:233-299`).
 	 *
 	 * @dataProvider unsupported_select_context_data
 	 *

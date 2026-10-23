@@ -196,8 +196,9 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should sum yesterday's orders in two currencies in the store currency for the best sales day note.
 	 *
-	 * Client 11.1.0 converts the order totals the note sums back to the store currency
-	 * (`includes/multi-currency/Compatibility.php:245-300`).
+	 * Client 11.1.0 contains the intended conversion of the order totals the note sums back to the store currency
+	 * (`includes/multi-currency/Compatibility.php:245-292`). The refund makes the order query's refund-cache priming return
+	 * a refund (`includes/data-stores/abstract-wc-order-data-store-cpt.php:745`), which the conversion must leave alone.
 	 */
 	public function test_sales_record_sums_orders_in_two_currencies_in_the_store_currency(): void {
 		update_option( 'woocommerce_currency', 'USD' );
@@ -219,6 +220,12 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 		$pound_order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE, 0.5 );
 		$pound_order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
 		$pound_order->save();
+		wc_create_refund(
+			array(
+				'order_id' => $pound_order->get_id(),
+				'amount'   => 5,
+			)
+		);
 
 		$sut->register();
 		NewSalesRecord::possibly_add_note();

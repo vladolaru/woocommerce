@@ -388,7 +388,7 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 
 	/**
 	 * Tell whether this request is explicitly switching currencies: any `currency` query argument counts, an empty one
-	 * included (client 11.1.0 `includes/multi-currency/MultiCurrency.php:360`).
+	 * included (client 11.1.0 `includes/multi-currency/MultiCurrency.php:357-360`).
 	 *
 	 * @return bool
 	 */

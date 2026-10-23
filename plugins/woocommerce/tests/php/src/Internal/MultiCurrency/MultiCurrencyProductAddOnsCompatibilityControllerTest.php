@@ -335,6 +335,10 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 
 	/**
 	 * @testdox Should append percentage cart item display prices.
+	 *
+	 * The add-on and cart item shapes are the ones Product Add-Ons passes to its cart item data filter
+	 * (Product Add-Ons 8.4.3 `includes/class-wc-product-addons-cart.php:1516-1581`), as WooPayments 11.1.0 reads them
+	 * (`includes/multi-currency/Compatibility/WooCommerceProductAddOns.php:112-171`).
 	 */
 	public function test_appends_percentage_cart_item_display_prices(): void {
 		add_filter( 'woocommerce_addons_add_cart_price_to_value', '__return_true' );
