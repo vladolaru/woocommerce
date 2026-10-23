@@ -121,6 +121,42 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	}
 
 	/**
+	 * @testdox Should register Storefront switcher hooks for a Storefront child theme.
+	 */
+	public function test_registers_hooks_for_a_storefront_child_theme(): void {
+		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 2, 'child-theme', 'storefront' );
+
+		$sut->handle_init();
+
+		$this->assertSame( 9999, has_filter( 'woocommerce_breadcrumb_defaults', array( $sut, 'handle_woocommerce_breadcrumb_defaults' ) ) );
+	}
+
+	/**
+	 * @testdox Should not register Storefront switcher hooks when $label.
+	 * @testWith ["the saved setting is off", "no", null]
+	 *           ["the settings preview hides the switcher", "yes", "false"]
+	 *
+	 * @param string      $label   Readable case name.
+	 * @param string      $setting The saved Storefront switcher setting.
+	 * @param string|null $preview The preview's enable_storefront_switcher argument, or null outside a preview.
+	 */
+	public function test_does_not_register_hooks_when_the_switcher_is_off( string $label, string $setting, ?string $preview ): void {
+		unset( $label );
+		update_option( 'wcpay_multi_currency_enable_storefront_switcher', $setting );
+		if ( null !== $preview ) {
+			$_GET['is_mc_onboarding_simulation'] = 'true';
+			$_GET['enable_storefront_switcher']  = $preview;
+		}
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+
+		$sut->handle_init();
+
+		$this->assertFalse( has_filter( 'woocommerce_breadcrumb_defaults', array( $sut, 'handle_woocommerce_breadcrumb_defaults' ) ) );
+		$this->assertFalse( has_action( 'wp_enqueue_scripts', array( $sut, 'handle_wp_enqueue_scripts' ) ) );
+	}
+
+	/**
 	 * @testdox Should not register Storefront switcher hooks for non-Storefront themes.
 	 */
 	public function test_does_not_register_hooks_for_non_storefront_theme(): void {
@@ -197,6 +233,7 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 			'<div class="storefront-breadcrumb"><div id="woocommerce-payments-multi-currency-storefront-widget">Switcher</div><nav class="woocommerce-breadcrumb">',
 			$result['wrap_before']
 		);
+		$this->assertSame( '</nav></div>', $result['wrap_after'] );
 		$this->assertSame( array( 'title' => 'Header currency' ), $switcher->last_instance );
 		$this->assertSame(
 			array(
@@ -258,6 +295,42 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 
 		$this->assertSame( array( true ), $seen );
 		$this->assertSame( '<div class="storefront-breadcrumb"><div>Switcher</div><nav class="woocommerce-breadcrumb">', $result['wrap_before'] );
+	}
+
+	/**
+	 * @testdox Should pass the default widget args to the switcher and leave a breadcrumb without a nav unchanged.
+	 */
+	public function test_uses_default_widget_args_and_leaves_a_breadcrumb_without_a_nav(): void {
+		$switcher = $this->create_switcher_service( '<div>Switcher</div>' );
+		$sut      = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 2, 'storefront', 'storefront', $switcher );
+
+		$result = $sut->handle_woocommerce_breadcrumb_defaults( array( 'wrap_before' => '<span class="trail">Home</span>' ) );
+
+		$this->assertSame( array( 'wrap_before' => '<span class="trail">Home</span>' ), $result );
+		$this->assertSame(
+			array(
+				'before_widget' => '<div id="woocommerce-payments-multi-currency-storefront-widget" class="woocommerce-breadcrumb">',
+				'after_widget'  => '</div>',
+			),
+			$switcher->last_args
+		);
+	}
+
+	/**
+	 * @testdox Should add the default Storefront inline CSS to the Storefront stylesheet.
+	 */
+	public function test_enqueues_default_storefront_inline_css(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+		wp_register_style( 'storefront-style', false, array(), '1.0.0' );
+
+		$sut->handle_wp_enqueue_scripts();
+
+		$style_data = wp_styles()->get_data( 'storefront-style', 'after' );
+		$this->assertIsArray( $style_data );
+		$this->assertStringContainsString( '#woocommerce-payments-multi-currency-storefront-widget {', $style_data[0] );
+		$this->assertStringContainsString( 'float: right;', $style_data[0] );
+		$this->assertStringContainsString( '#woocommerce-payments-multi-currency-storefront-widget form {', $style_data[0] );
+		$this->assertStringContainsString( 'margin: 0;', $style_data[0] );
 	}
 
 	/**

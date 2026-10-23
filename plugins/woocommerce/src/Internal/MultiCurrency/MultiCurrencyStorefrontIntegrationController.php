@@ -10,7 +10,6 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStorefrontProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherProjectionService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
@@ -22,6 +21,18 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestC
  * @internal Transitional internal component for the native multi-currency runtime.
  */
 class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInterface {
+
+	private const THEME_STOREFRONT = 'storefront';
+	private const STYLE_HANDLE     = 'storefront-style';
+	private const WIDGET_ID        = 'woocommerce-payments-multi-currency-storefront-widget';
+	private const WIDGET_CSS       = '
+			#' . self::WIDGET_ID . ' {
+				float: right;
+			}
+			#' . self::WIDGET_ID . ' form {
+				margin: 0;
+			}
+		';
 
 	/**
 	 * Runtime owner arbiter.
@@ -137,7 +148,7 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 			return;
 		}
 
-		$this->add_action_once( 'init', array( $this, 'handle_init' ) );
+		add_action( 'init', array( $this, 'handle_init' ) );
 	}
 
 	/**
@@ -147,23 +158,22 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	 */
 	public function handle_init(): void {
 		$theme = $this->get_theme_data();
-		if ( ! MultiCurrencyStorefrontProjectionService::is_storefront_theme( $theme['stylesheet'], $theme['template'] ) ) {
+		if ( self::THEME_STOREFRONT !== $theme['stylesheet'] && self::THEME_STOREFRONT !== $theme['template'] ) {
 			return;
 		}
 
-		$enabled_currency_count = count( $this->get_state_builder()->build()->get_enabled_currencies() );
-		if (
-			! MultiCurrencyStorefrontProjectionService::should_activate(
-				$enabled_currency_count,
-				$this->is_using_storefront_switcher(),
-				$this->get_simulation_variables()
-			)
-		) {
+		if ( 1 >= count( $this->get_state_builder()->build()->get_enabled_currencies() ) ) {
 			return;
 		}
 
-		$this->add_filter_once( 'woocommerce_breadcrumb_defaults', array( $this, 'handle_woocommerce_breadcrumb_defaults' ), 9999 );
-		$this->add_action_once( 'wp_enqueue_scripts', array( $this, 'handle_wp_enqueue_scripts' ), 50 );
+		// The settings preview's choice wins over the saved setting.
+		$simulated_choice = $this->get_simulated_storefront_switcher_choice();
+		if ( ! ( $simulated_choice ?? $this->is_using_storefront_switcher() ) ) {
+			return;
+		}
+
+		add_filter( 'woocommerce_breadcrumb_defaults', array( $this, 'handle_woocommerce_breadcrumb_defaults' ), 9999 );
+		add_action( 'wp_enqueue_scripts', array( $this, 'handle_wp_enqueue_scripts' ), 50 );
 	}
 
 	/**
@@ -183,10 +193,13 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 		 *
 		 * @since 11.0.0
 		 */
-		$instance = apply_filters( self::filter_name( 'storefront_widget_instance' ), $instance );
+		$instance = apply_filters( MultiCurrencyStateBuilder::FILTER_PREFIX . 'storefront_widget_instance', $instance );
 		$instance = is_array( $instance ) ? $instance : array();
 
-		$args = MultiCurrencyStorefrontProjectionService::get_default_widget_args();
+		$default_args = array(
+			'before_widget' => '<div id="' . self::WIDGET_ID . '" class="woocommerce-breadcrumb">',
+			'after_widget'  => '</div>',
+		);
 		/**
 		 * Filters the native multi-currency Storefront widget args.
 		 *
@@ -194,8 +207,8 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 		 *
 		 * @since 11.0.0
 		 */
-		$args = apply_filters( self::filter_name( 'storefront_widget_args' ), $args );
-		$args = is_array( $args ) ? $args : MultiCurrencyStorefrontProjectionService::get_default_widget_args();
+		$args = apply_filters( MultiCurrencyStateBuilder::FILTER_PREFIX . 'storefront_widget_args', $default_args );
+		$args = is_array( $args ) ? $args : $default_args;
 
 		$widget_markup = $this->get_switcher_projection_service()->get_widget_markup(
 			$instance,
@@ -204,7 +217,13 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 			$this->compatibility_controller->should_disable_currency_switching()
 		);
 
-		return MultiCurrencyStorefrontProjectionService::inject_switcher_into_breadcrumb( $defaults, $widget_markup );
+		if ( ! isset( $defaults['wrap_before'] ) || ! is_string( $defaults['wrap_before'] ) ) {
+			return $defaults;
+		}
+
+		$defaults['wrap_before'] = str_replace( '<nav', $widget_markup . '<nav', $defaults['wrap_before'] );
+
+		return $defaults;
 	}
 
 	/**
@@ -213,8 +232,6 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	 * @internal
 	 */
 	public function handle_wp_enqueue_scripts(): void {
-		$style_manifest = MultiCurrencyStorefrontProjectionService::get_inline_style_manifest();
-
 		/**
 		 * Filters the native multi-currency Storefront widget CSS.
 		 *
@@ -222,12 +239,12 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 		 *
 		 * @since 11.0.0
 		 */
-		$css = apply_filters( $style_manifest['filter'], $style_manifest['css'] );
+		$css = apply_filters( MultiCurrencyStateBuilder::FILTER_PREFIX . 'storefront_widget_css', self::WIDGET_CSS );
 		if ( ! is_string( $css ) ) {
 			return;
 		}
 
-		wp_add_inline_style( $style_manifest['handle'], $css );
+		wp_add_inline_style( self::STYLE_HANDLE, $css );
 	}
 
 	/**
@@ -294,58 +311,18 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	}
 
 	/**
-	 * Get onboarding simulation variables from the query string.
+	 * Get the settings preview's Storefront switcher choice from the query string.
 	 *
-	 * @return array<string,mixed>
+	 * @return bool|null The previewed choice, or null outside a preview that sets one.
 	 */
-	private function get_simulation_variables(): array {
+	private function get_simulated_storefront_switcher_choice(): ?bool {
 		$query_args    = MultiCurrencyRequestContext::get_current_query_args();
 		$is_simulation = filter_var( $query_args['is_mc_onboarding_simulation'] ?? false, FILTER_VALIDATE_BOOLEAN );
 
 		if ( ! $is_simulation || ! array_key_exists( 'enable_storefront_switcher', $query_args ) ) {
-			return array();
+			return null;
 		}
 
-		return array(
-			'enable_storefront_switcher' => filter_var( $query_args['enable_storefront_switcher'], FILTER_VALIDATE_BOOLEAN ),
-		);
-	}
-
-	/**
-	 * Register a filter only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_filter_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_filter( $hook, $callback ) ) {
-			add_filter( $hook, $callback, $priority, $accepted_args );
-		}
-	}
-
-	/**
-	 * Register an action only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_action_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_action( $hook, $callback ) ) {
-			add_action( $hook, $callback, $priority, $accepted_args );
-		}
-	}
-
-	/**
-	 * Build a multi-currency filter name.
-	 *
-	 * @param string $suffix Filter suffix.
-	 * @return string
-	 */
-	private static function filter_name( string $suffix ): string {
-		return MultiCurrencyStateBuilder::OPTION_PREFIX . '_' . $suffix;
+		return filter_var( $query_args['enable_storefront_switcher'], FILTER_VALIDATE_BOOLEAN );
 	}
 }
