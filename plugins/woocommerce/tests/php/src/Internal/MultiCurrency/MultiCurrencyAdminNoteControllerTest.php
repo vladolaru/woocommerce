@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyAccountInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoteController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
@@ -79,7 +80,7 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 		$sut->set_provider_connected_resolver( static fn(): bool => $provider_connected );
 		$sut->set_note_can_be_added_resolver( static fn(): bool => $can_be_added );
 		$sut->set_note_saver(
-			static function ( array $note ) use ( &$saved_notes ): void {
+			static function ( Note $note ) use ( &$saved_notes ): void {
 				$saved_notes[] = $note;
 			}
 		);
@@ -98,34 +99,52 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 		$sut->set_ajax_request_resolver( static fn(): bool => false );
 		$sut->set_note_can_be_added_resolver( static fn(): bool => true );
 		$sut->set_note_saver(
-			static function ( array $note ) use ( &$saved_notes ): void {
+			static function ( Note $note ) use ( &$saved_notes ): void {
 				$saved_notes[] = $note;
 			}
 		);
 
 		$sut->handle_admin_init();
 
+		$this->assertCount( 1, $saved_notes );
+		$note    = $saved_notes[0];
+		$actions = $note->get_actions();
 		$this->assertSame(
 			array(
-				array(
-					'name'         => 'wc-payments-notes-multi-currency-available',
-					'title'        => 'Sell worldwide in multiple currencies',
-					'content'      => 'Boost your international sales by allowing your customers to shop and pay in their local currency.',
-					'content_data' => array(),
-					'type'         => 'info',
-					'source'       => 'woocommerce-payments',
-					'actions'      => array(
-						array(
-							'name'    => 'wc-payments-notes-multi-currency-available',
-							'label'   => 'Set up now',
-							'query'   => admin_url( 'admin.php?page=wc-settings&tab=wcpay_multi_currency' ),
-							'status'  => 'unactioned',
-							'primary' => true,
-						),
+				'name'         => 'wc-payments-notes-multi-currency-available',
+				'title'        => 'Sell worldwide in multiple currencies',
+				'content'      => 'Boost your international sales by allowing your customers to shop and pay in their local currency.',
+				'content_data' => array(),
+				'type'         => 'info',
+				'source'       => 'woocommerce-payments',
+				'actions'      => array(
+					array(
+						'name'          => 'wc-payments-notes-multi-currency-available',
+						'label'         => 'Set up now',
+						'query'         => admin_url( 'admin.php?page=wc-settings&tab=wcpay_multi_currency' ),
+						'status'        => 'unactioned',
+						'actioned_text' => '',
 					),
 				),
 			),
-			$saved_notes
+			array(
+				'name'         => $note->get_name(),
+				'title'        => $note->get_title(),
+				'content'      => $note->get_content(),
+				'content_data' => (array) $note->get_content_data(),
+				'type'         => $note->get_type(),
+				'source'       => $note->get_source(),
+				'actions'      => array_map(
+					static fn( $action ): array => array(
+						'name'          => $action->name,
+						'label'         => $action->label,
+						'query'         => $action->query,
+						'status'        => $action->status,
+						'actioned_text' => $action->actioned_text,
+					),
+					$actions
+				),
+			)
 		);
 	}
 
@@ -158,7 +177,7 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 		$sut->set_ajax_request_resolver( static fn(): bool => false );
 		$sut->set_note_can_be_added_resolver( static fn(): bool => true );
 		$sut->set_note_saver(
-			static function ( array $note ) use ( &$saved_notes ): void {
+			static function ( Note $note ) use ( &$saved_notes ): void {
 				$saved_notes[] = $note;
 			}
 		);

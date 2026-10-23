@@ -99,29 +99,16 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not run cache auto-detection outside an admin request.
+	 * @testdox Should not run cache auto-detection for a $role $label.
+	 * @testWith ["administrator", "outside an admin request", false]
+	 *           ["subscriber", "in an admin request", true]
+	 *
+	 * @param string $role     The current user's role.
+	 * @param string $label    Readable case name.
+	 * @param bool   $is_admin Whether the request is an admin request.
 	 */
-	public function test_does_not_run_cache_auto_detection_outside_an_admin_request(): void {
-		$service = $this->getMockBuilder( MultiCurrencyCacheRenderingService::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'maybe_auto_enable_cache_rendering_mode' ) )
-			->getMock();
-		$service->expects( $this->never() )->method( 'maybe_auto_enable_cache_rendering_mode' );
-		$sut = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
-			array(
-				'cache_rendering_service' => $service,
-				'is_admin'                => false,
-			)
-		);
-
-		$sut->handle_admin_init();
-	}
-
-	/**
-	 * @testdox Should not run cache auto-detection without the WooCommerce capability.
-	 */
-	public function test_does_not_run_cache_auto_detection_without_the_woocommerce_capability(): void {
+	public function test_does_not_run_cache_auto_detection_outside_an_authorized_admin_request( string $role, string $label, bool $is_admin ): void {
+		unset( $label );
 		$service = $this->getMockBuilder( MultiCurrencyCacheRenderingService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'maybe_auto_enable_cache_rendering_mode' ) )
@@ -129,9 +116,12 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 		$service->expects( $this->never() )->method( 'maybe_auto_enable_cache_rendering_mode' );
 		$sut     = $this->create_controller(
 			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
-			array( 'cache_rendering_service' => $service )
+			array(
+				'cache_rendering_service' => $service,
+				'is_admin'                => $is_admin,
+			)
 		);
-		$user_id = $this->factory()->user->create( array( 'role' => 'subscriber' ) );
+		$user_id = $this->factory()->user->create( array( 'role' => $role ) );
 		wp_set_current_user( $user_id );
 
 		$sut->handle_admin_init();
@@ -271,24 +261,29 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should skip admin asset enqueue when bundle is missing.
+	 * @testdox Should not register admin assets when $label.
+	 * @testWith ["the bundle is missing", "wcpay_multi_currency", false]
+	 *           ["another settings tab is open", "checkout", true]
+	 *
+	 * @param string $label           Readable case name.
+	 * @param string $current_tab     The settings tab.
+	 * @param bool   $asset_available Whether the built bundle exists.
 	 */
-	public function test_skips_admin_asset_enqueue_when_bundle_is_missing(): void {
+	public function test_does_not_register_admin_assets_off_the_tab_or_without_the_bundle( string $label, string $current_tab, bool $asset_available ): void {
+		unset( $label );
 		$registered_assets = array();
-		$enqueued_assets   = array();
 		$sut               = $this->create_controller(
 			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			array(
-				'asset_available'   => false,
+				'current_tab'       => $current_tab,
+				'asset_available'   => $asset_available,
 				'registered_assets' => &$registered_assets,
-				'enqueued_assets'   => &$enqueued_assets,
 			)
 		);
 
 		$sut->handle_admin_enqueue_scripts();
 
 		$this->assertSame( array(), $registered_assets );
-		$this->assertSame( array(), $enqueued_assets );
 	}
 
 	/**
@@ -296,13 +291,11 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_enqueues_admin_assets_when_bundle_is_available(): void {
 		$registered_assets = array();
-		$enqueued_assets   = array();
 		$sut               = $this->create_controller(
 			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			array(
 				'asset_available'   => true,
 				'registered_assets' => &$registered_assets,
-				'enqueued_assets'   => &$enqueued_assets,
 			)
 		);
 
@@ -324,35 +317,23 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 			),
 			$registered_assets
 		);
-		$this->assertSame(
-			array(
-				'wc-admin-multi-currency-settings',
-				'wc-admin-multi-currency-settings',
-			),
-			$enqueued_assets
-		);
 	}
 
 	/**
-	 * @testdox Should not enqueue admin assets on another settings tab.
+	 * @testdox Only the Multi-currency tab of the WooCommerce settings screen is the settings page: $label.
+	 * @testWith ["Multi-currency tab", "wcpay_multi_currency", "woocommerce_page_wc-settings", true]
+	 *           ["another tab", "checkout", "woocommerce_page_wc-settings", false]
+	 *           ["another screen", "wcpay_multi_currency", "dashboard", false]
+	 *
+	 * @param string $label       Readable case name.
+	 * @param string $current_tab The settings tab.
+	 * @param string $screen_base The screen base.
+	 * @param bool   $expected    Whether it is the settings page.
 	 */
-	public function test_does_not_enqueue_admin_assets_on_another_settings_tab(): void {
-		$registered_assets = array();
-		$enqueued_assets   = array();
-		$sut               = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
-			array(
-				'current_tab'       => 'checkout',
-				'asset_available'   => true,
-				'registered_assets' => &$registered_assets,
-				'enqueued_assets'   => &$enqueued_assets,
-			)
-		);
+	public function test_tells_the_multi_currency_settings_page( string $label, string $current_tab, string $screen_base, bool $expected ): void {
+		unset( $label );
 
-		$sut->handle_admin_enqueue_scripts();
-
-		$this->assertSame( array(), $registered_assets );
-		$this->assertSame( array(), $enqueued_assets );
+		$this->assertSame( $expected, MultiCurrencySettingsController::is_multi_currency_settings_page( $current_tab, $screen_base ) );
 	}
 
 	/**
@@ -386,14 +367,6 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 				}
 			}
 		);
-		$controller->set_asset_enqueuer(
-			static function ( string $handle ) use ( &$options ): void {
-				if ( isset( $options['enqueued_assets'] ) && is_array( $options['enqueued_assets'] ) ) {
-					$options['enqueued_assets'][] = $handle;
-				}
-			}
-		);
-
 		return $controller;
 	}
 

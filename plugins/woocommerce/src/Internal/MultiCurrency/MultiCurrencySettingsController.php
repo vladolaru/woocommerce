@@ -20,6 +20,12 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  */
 class MultiCurrencySettingsController implements RegisterHooksInterface {
 
+	/**
+	 * The Multi-currency settings tab id, the WooPayments extension's.
+	 */
+	public const TAB_ID = 'wcpay_multi_currency';
+
+	private const SETTINGS_SCREEN_BASE  = 'woocommerce_page_wc-settings';
 	private const SETTINGS_FIELD_TYPE   = 'wcpay_multi_currency_settings_page';
 	private const SETTINGS_CONTAINER_ID = 'wcpay_multi_currency_settings_container';
 	private const ADMIN_ASSETS          = array(
@@ -82,13 +88,6 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	 * @var callable|null
 	 */
 	private $asset_registrar = null;
-
-	/**
-	 * Admin asset enqueuer.
-	 *
-	 * @var callable|null
-	 */
-	private $asset_enqueuer = null;
 
 	/**
 	 * Emoji detection script printer.
@@ -166,17 +165,6 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Set the admin asset enqueuer.
-	 *
-	 * @internal Used by tests and future explicit asset bootstrap.
-	 *
-	 * @param callable $asset_enqueuer Admin asset enqueuer.
-	 */
-	public function set_asset_enqueuer( callable $asset_enqueuer ): void {
-		$this->asset_enqueuer = $asset_enqueuer;
-	}
-
-	/**
 	 * Set the emoji detection script printer.
 	 *
 	 * @internal Used by tests.
@@ -185,6 +173,26 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	 */
 	public function set_emoji_detection_script_printer( callable $emoji_detection_script_printer ): void {
 		$this->emoji_detection_script_printer = $emoji_detection_script_printer;
+	}
+
+	/**
+	 * Get the URL of the Multi-currency settings tab.
+	 *
+	 * @return string
+	 */
+	public static function get_settings_page_url(): string {
+		return admin_url( 'admin.php?page=wc-settings&tab=' . self::TAB_ID );
+	}
+
+	/**
+	 * Tell whether the given admin screen is the Multi-currency settings tab.
+	 *
+	 * @param string|null $current_tab Current settings tab.
+	 * @param string|null $screen_base Current screen base.
+	 * @return bool
+	 */
+	public static function is_multi_currency_settings_page( ?string $current_tab, ?string $screen_base ): bool {
+		return self::TAB_ID === $current_tab && self::SETTINGS_SCREEN_BASE === $screen_base;
 	}
 
 	/**
@@ -227,8 +235,8 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 			return $settings_pages;
 		}
 
+		// The page class extends WC_Settings_Page, which WooCommerce loads only for this filter.
 		$settings_pages[] = new MultiCurrencySettingsPage(
-			MultiCurrencySettingsPage::TAB_ID,
 			_x( 'Multi-currency', 'Settings tab label', 'woocommerce' ),
 			true,
 			array(
@@ -264,7 +272,7 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function handle_admin_print_scripts(): void {
-		if ( ! $this->is_multi_currency_settings_page() ) {
+		if ( ! self::is_multi_currency_settings_page( $this->get_current_tab(), $this->get_current_screen_base() ) ) {
 			return;
 		}
 
@@ -282,13 +290,11 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function handle_admin_enqueue_scripts(): void {
-		if ( MultiCurrencySettingsPage::TAB_ID !== $this->get_current_tab() || ! $this->is_settings_asset_available() ) {
+		if ( self::TAB_ID !== $this->get_current_tab() || ! $this->is_settings_asset_available() ) {
 			return;
 		}
 
 		$this->register_admin_assets();
-		$this->enqueue_admin_asset( self::ADMIN_ASSETS['script']['handle'] );
-		$this->enqueue_admin_asset( self::ADMIN_ASSETS['style']['handle'] );
 	}
 
 	/**
@@ -343,19 +349,6 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the current admin screen is the multi-currency settings page.
-	 *
-	 * @return bool
-	 */
-	private function is_multi_currency_settings_page(): bool {
-		return MultiCurrencySettingsPage::is_multi_currency_settings_page(
-			$this->is_admin_request(),
-			$this->get_current_tab(),
-			$this->get_current_screen_base()
-		);
-	}
-
-	/**
 	 * Tell whether the migrated settings asset bundle exists.
 	 *
 	 * @return bool
@@ -400,19 +393,5 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 			WCAdminAssets::get_file_version( 'css', $style_assets['version'] )
 		);
 		wp_style_add_data( $style_handle, 'rtl', 'replace' );
-	}
-
-	/**
-	 * Enqueue an admin asset handle.
-	 *
-	 * @param string $handle Asset handle.
-	 */
-	private function enqueue_admin_asset( string $handle ): void {
-		if ( null !== $this->asset_enqueuer ) {
-			call_user_func( $this->asset_enqueuer, $handle );
-			return;
-		}
-
-		// WCAdminAssets::register_script() enqueues production assets directly.
 	}
 }

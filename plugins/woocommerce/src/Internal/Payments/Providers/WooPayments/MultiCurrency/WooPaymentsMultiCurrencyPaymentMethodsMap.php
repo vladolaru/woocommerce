@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySettingsPage;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySettingsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
@@ -89,7 +89,7 @@ class WooPaymentsMultiCurrencyPaymentMethodsMap implements RegisterHooksInterfac
 
 		// Admin requests only: get_current_screen() comes from wp-admin/includes/screen.php.
 		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
-		if ( ! MultiCurrencySettingsPage::is_multi_currency_settings_page( is_admin(), is_string( $current_tab ) ? $current_tab : null, $screen ? $screen->base : null ) ) {
+		if ( ! MultiCurrencySettingsController::is_multi_currency_settings_page( is_string( $current_tab ) ? $current_tab : null, $screen ? $screen->base : null ) ) {
 			return;
 		}
 

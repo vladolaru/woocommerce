@@ -947,6 +947,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 
 		$sut->handle_woocommerce_save_account_details();
 
+		$this->assertSame( array( 'jpy' ), $service->requested_currencies );
 		$this->assertSame( array( 'JPY' ), $service->updated_currencies );
 	}
 

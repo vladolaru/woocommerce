@@ -135,7 +135,7 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 	 *
 	 * @internal Used by tests.
 	 *
-	 * @param callable $note_saver Note saver accepting the note's fields.
+	 * @param callable $note_saver Note saver accepting the built note.
 	 */
 	public function set_note_saver( callable $note_saver ): void {
 		$this->note_saver = $note_saver;
@@ -163,7 +163,21 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 			return;
 		}
 
-		$this->save_note( $this->get_note_fields() );
+		$note = new Note();
+		$note->set_name( self::NOTE_NAME );
+		$note->set_title( __( 'Sell worldwide in multiple currencies', 'woocommerce' ) );
+		$note->set_content( __( 'Boost your international sales by allowing your customers to shop and pay in their local currency.', 'woocommerce' ) );
+		$note->set_content_data( (object) array() );
+		$note->set_type( Note::E_WC_ADMIN_NOTE_INFORMATIONAL );
+		$note->set_source( self::NOTE_SOURCE );
+		$note->add_action( self::NOTE_NAME, __( 'Set up now', 'woocommerce' ), MultiCurrencySettingsController::get_settings_page_url(), Note::E_WC_ADMIN_NOTE_UNACTIONED, true );
+
+		if ( null !== $this->note_saver ) {
+			call_user_func( $this->note_saver, $note );
+			return;
+		}
+
+		$note->save();
 	}
 
 	/**
@@ -216,66 +230,5 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 		}
 
 		return false === Notes::get_note_by_name( self::NOTE_NAME );
-	}
-
-	/**
-	 * Get the fields of the Multi-Currency availability note.
-	 *
-	 * @return array<string,mixed>
-	 */
-	private function get_note_fields(): array {
-		return array(
-			'name'         => self::NOTE_NAME,
-			'title'        => __( 'Sell worldwide in multiple currencies', 'woocommerce' ),
-			'content'      => __( 'Boost your international sales by allowing your customers to shop and pay in their local currency.', 'woocommerce' ),
-			'content_data' => array(),
-			'type'         => Note::E_WC_ADMIN_NOTE_INFORMATIONAL,
-			'source'       => self::NOTE_SOURCE,
-			'actions'      => array(
-				array(
-					'name'    => self::NOTE_NAME,
-					'label'   => __( 'Set up now', 'woocommerce' ),
-					'query'   => MultiCurrencySettingsPage::get_settings_page_url(),
-					'status'  => Note::E_WC_ADMIN_NOTE_UNACTIONED,
-					'primary' => true,
-				),
-			),
-		);
-	}
-
-	/**
-	 * Save a WC Admin note from its fields.
-	 *
-	 * @param array<string,mixed> $note_manifest The note's fields.
-	 */
-	private function save_note( array $note_manifest ): void {
-		if ( null !== $this->note_saver ) {
-			call_user_func( $this->note_saver, $note_manifest );
-			return;
-		}
-
-		$note = new Note();
-		$note->set_name( (string) $note_manifest['name'] );
-		$note->set_title( (string) $note_manifest['title'] );
-		$note->set_content( (string) $note_manifest['content'] );
-		$note->set_content_data( (object) ( $note_manifest['content_data'] ?? array() ) );
-		$note->set_type( (string) $note_manifest['type'] );
-		$note->set_source( (string) $note_manifest['source'] );
-
-		foreach ( (array) ( $note_manifest['actions'] ?? array() ) as $action ) {
-			if ( ! is_array( $action ) ) {
-				continue;
-			}
-
-			$note->add_action(
-				(string) ( $action['name'] ?? '' ),
-				(string) ( $action['label'] ?? '' ),
-				(string) ( $action['query'] ?? '' ),
-				(string) ( $action['status'] ?? Note::E_WC_ADMIN_NOTE_ACTIONED ),
-				(bool) ( $action['primary'] ?? false )
-			);
-		}
-
-		$note->save();
 	}
 }

@@ -108,7 +108,7 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 
 		foreach ( $notices as $notice ) {
 			// The markup escapes each attribute and the message HTML while keeping WooPayments-compatible notice HTML.
-			echo $this->get_notice_markup( $notice, $this->get_dismiss_url( $notice ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			echo $this->get_notice_markup( $notice ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 		}
 	}
 
@@ -176,13 +176,13 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	/**
 	 * Build a notice's markup.
 	 *
-	 * @param array{key:string,class:string,message:string,dismissible:bool} $notice      Notice metadata.
-	 * @param string                                                         $dismiss_url Dismiss URL, empty for none.
+	 * @param array{key:string,class:string,message:string,dismissible:bool} $notice Notice metadata.
 	 * @return string
 	 */
-	private function get_notice_markup( array $notice, string $dismiss_url ): string {
+	private function get_notice_markup( array $notice ): string {
 		$dismiss_link = '';
-		if ( $notice['dismissible'] && '' !== $dismiss_url ) {
+		if ( $notice['dismissible'] ) {
+			$dismiss_url = $this->get_dismiss_url( $notice['key'] );
 			// Core's dismiss placement (top right, aligned with the first line) instead of client 11.1.0's floated link, which
 			// WooCommerce's `.woocommerce-message-close` rule pushes 12px down. The `is-dismissible`
 			// class is left off so WordPress does not add its own JavaScript-only dismiss button next to this nonce link.
@@ -209,16 +209,12 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Build a dismiss URL for the notice.
+	 * Build the nonce-protected dismiss URL for a notice.
 	 *
-	 * @param array<string,mixed> $notice Notice metadata.
+	 * @param string $notice_key Notice key.
 	 * @return string
 	 */
-	private function get_dismiss_url( array $notice ): string {
-		if ( empty( $notice['key'] ) || ! is_scalar( $notice['key'] ) ) {
-			return '';
-		}
-
+	private function get_dismiss_url( string $notice_key ): string {
 		$request_uri = isset( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) ? esc_url_raw( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
 		$dismiss_url = remove_query_arg(
 			array(
@@ -231,43 +227,32 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 		);
 
 		return wp_nonce_url(
-			add_query_arg( self::CANONICAL_NOTICE_QUERY, (string) $notice['key'], $dismiss_url ),
+			add_query_arg( self::CANONICAL_NOTICE_QUERY, $notice_key, $dismiss_url ),
 			self::NONCE_ACTION,
 			self::CANONICAL_NONCE_QUERY
 		);
 	}
 
 	/**
-	 * Get a sanitized canonical query argument or its legacy fallback.
+	 * Get a sanitized query argument: the canonical key when it holds a scalar (an empty one included), else the legacy key.
 	 *
 	 * @param string $canonical_key Canonical query argument key.
 	 * @param string $legacy_key    Legacy query argument key.
-	 * @return string|null
+	 * @return string|null Null when neither key holds a scalar or the cleaned value is empty.
 	 */
 	private function get_clean_query_arg( string $canonical_key, string $legacy_key ): ?string {
-		$query_args = wc_clean( wp_unslash( $_GET ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- The caller verifies the nonce; the value is unslashed and cleaned below.
+		$raw_value = $_GET[ $canonical_key ] ?? null;
+		if ( ! is_scalar( $raw_value ) ) {
+			$raw_value = $_GET[ $legacy_key ] ?? null;
+		}
+		// phpcs:enable WordPress.Security.NonceVerification.Recommended,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,WordPress.Security.ValidatedSanitizedInput.MissingUnslash
 
-		$raw_value = $query_args[ $canonical_key ] ?? null;
-		if ( is_scalar( $raw_value ) ) {
-			return $this->clean_query_arg( $raw_value );
+		if ( ! is_scalar( $raw_value ) ) {
+			return null;
 		}
 
-		$raw_value = $query_args[ $legacy_key ] ?? null;
-		if ( is_scalar( $raw_value ) ) {
-			return $this->clean_query_arg( $raw_value );
-		}
-
-		return null;
-	}
-
-	/**
-	 * Sanitize a scalar query argument.
-	 *
-	 * @param scalar $raw_value Query argument value.
-	 * @return string|null
-	 */
-	private function clean_query_arg( $raw_value ): ?string {
-		$clean_value = wc_clean( (string) $raw_value );
+		$clean_value = wc_clean( wp_unslash( (string) $raw_value ) );
 
 		return is_string( $clean_value ) && '' !== $clean_value ? $clean_value : null;
 	}

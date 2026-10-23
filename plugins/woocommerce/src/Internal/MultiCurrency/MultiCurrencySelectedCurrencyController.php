@@ -484,17 +484,14 @@ document.addEventListener( 'DOMContentLoaded', () => {
 			return;
 		}
 
-		$selected_code = strtoupper( $service->get_selected_currency_code() );
+		$selected_code = $service->get_selected_currency_code();
 		$markup        = '<p class="woocommerce-form-row woocommerce-form-row--first form-row form-row-first">';
 		$markup       .= '<label for="' . esc_attr( self::ACCOUNT_CURRENCY_FIELD ) . '">' . esc_html__( 'Default currency', 'woocommerce' ) . '</label>';
 		$markup       .= '<select name="' . esc_attr( self::ACCOUNT_CURRENCY_FIELD ) . '" id="' . esc_attr( self::ACCOUNT_CURRENCY_FIELD ) . '">';
 
+		// Both codes come from MultiCurrencyCurrency::get_code(), upper-cased when the currency is built.
 		foreach ( $service->get_enabled_currency_options() as $currency ) {
-			$code = strtoupper( $currency['code'] );
-			if ( '' === $code ) {
-				continue;
-			}
-
+			$code     = $currency['code'];
 			$selected = $selected_code === $code ? ' selected' : '';
 			$markup  .= '<option value="' . esc_attr( $code ) . '"' . $selected . '>' . wp_kses_post( trim( $currency['symbol'] . ' ' . $code ) ) . '</option>';
 		}
