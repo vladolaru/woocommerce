@@ -140,24 +140,25 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 		}
 
 		if ( $this->get_request_context()->should_register_frontend_hooks() ) {
-			$this->add_filter_once( 'woocommerce_currency', array( $this, 'get_woocommerce_currency' ), 900 );
-			$this->add_filter_once( 'wc_get_price_decimals', array( $this, 'get_price_decimals' ), 900 );
-			$this->add_filter_once( 'wc_get_price_decimal_separator', array( $this, 'get_price_decimal_separator' ), 900 );
-			$this->add_filter_once( 'wc_get_price_thousand_separator', array( $this, 'get_price_thousand_separator' ), 900 );
-			$this->add_filter_once( 'woocommerce_price_format', array( $this, 'get_woocommerce_price_format' ), 900 );
-			$this->add_filter_once( 'option_woocommerce_currency_pos', array( $this, 'get_woocommerce_currency_pos' ), 900 );
-			$this->add_filter_once( 'woocommerce_order_get_total', array( $this, 'maybe_init_order_currency_from_order_total_prop' ), 900, 2 );
-			$this->add_filter_once( 'woocommerce_get_formatted_order_total', array( $this, 'maybe_clear_order_currency_after_formatted_order_total' ), 900, 4 );
+			add_filter( 'woocommerce_currency', array( $this, 'get_woocommerce_currency' ), 900 );
+			add_filter( 'wc_get_price_decimals', array( $this, 'get_price_decimals' ), 900 );
+			add_filter( 'wc_get_price_decimal_separator', array( $this, 'get_price_decimal_separator' ), 900 );
+			add_filter( 'wc_get_price_thousand_separator', array( $this, 'get_price_thousand_separator' ), 900 );
+			add_filter( 'woocommerce_price_format', array( $this, 'get_woocommerce_price_format' ), 900 );
+			add_filter( 'option_woocommerce_currency_pos', array( $this, 'get_woocommerce_currency_pos' ), 900 );
+			add_filter( 'woocommerce_order_get_total', array( $this, 'maybe_init_order_currency_from_order_total_prop' ), 900, 2 );
+			add_filter( 'woocommerce_get_formatted_order_total', array( $this, 'maybe_clear_order_currency_after_formatted_order_total' ), 900, 4 );
 
-			$this->add_action_once( 'before_woocommerce_pay', array( $this, 'init_order_currency_from_query_vars' ) );
-			$this->add_action_once( 'woocommerce_blocks_enqueue_cart_block_scripts_after', array( $this, 'enqueue_blocks_totals_script' ) );
-			$this->add_action_once( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $this, 'enqueue_blocks_totals_script' ) );
+			add_action( 'before_woocommerce_pay', array( $this, 'init_order_currency_from_query_vars' ) );
+			add_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after', array( $this, 'enqueue_blocks_totals_script' ) );
+			add_action( 'woocommerce_blocks_enqueue_checkout_block_scripts_after', array( $this, 'enqueue_blocks_totals_script' ) );
 		}
 
-		$this->add_filter_once( 'woocommerce_thankyou_order_id', array( $this, 'init_order_currency' ) );
-		$this->add_action_once( 'woocommerce_account_view-order_endpoint', array( $this, 'init_order_currency' ), 9 );
-		$this->add_filter_once( 'woocommerce_cart_hash', array( $this, 'add_currency_to_cart_hash' ), 900 );
-		$this->add_filter_once( 'woocommerce_shipping_method_add_rate_args', array( $this, 'fix_price_decimals_for_shipping_rates' ), 900, 2 );
+		add_filter( 'woocommerce_thankyou_order_id', array( $this, 'init_order_currency' ) );
+		// @phpstan-ignore return.void (the same method is the woocommerce_thankyou_order_id filter's callback; the action discards its return)
+		add_action( 'woocommerce_account_view-order_endpoint', array( $this, 'init_order_currency' ), 9 );
+		add_filter( 'woocommerce_cart_hash', array( $this, 'add_currency_to_cart_hash' ), 900 );
+		add_filter( 'woocommerce_shipping_method_add_rate_args', array( $this, 'fix_price_decimals_for_shipping_rates' ), 900, 2 );
 	}
 
 	/**
@@ -466,33 +467,5 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 		}
 
 		return $this->order_context_service;
-	}
-
-	/**
-	 * Register a filter only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_filter_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_filter( $hook, $callback ) ) {
-			add_filter( $hook, $callback, $priority, $accepted_args );
-		}
-	}
-
-	/**
-	 * Register an action only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_action_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_action( $hook, $callback ) ) {
-			add_action( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }

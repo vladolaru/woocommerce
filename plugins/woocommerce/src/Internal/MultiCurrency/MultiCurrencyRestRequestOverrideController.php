@@ -76,13 +76,13 @@ class MultiCurrencyRestRequestOverrideController implements RegisterHooksInterfa
 		}
 
 		if ( isset( $_GET['currency'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			$this->add_filter_once( MultiCurrencyStateBuilder::FILTER_OVERRIDE_SELECTED_CURRENCY, array( $this, 'get_currency_from_query_param' ) );
+			add_filter( MultiCurrencyStateBuilder::FILTER_OVERRIDE_SELECTED_CURRENCY, array( $this, 'get_currency_from_query_param' ) );
 			return;
 		}
 
 		add_filter( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, '__return_true' );
 		add_filter( MultiCurrencyFrontendPricesController::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, '__return_false' );
-		$this->add_filter_once( MultiCurrencyStateBuilder::FILTER_OVERRIDE_SELECTED_CURRENCY, array( $this, 'get_store_currency_code' ) );
+		add_filter( MultiCurrencyStateBuilder::FILTER_OVERRIDE_SELECTED_CURRENCY, array( $this, 'get_store_currency_code' ) );
 	}
 
 	/**
@@ -130,19 +130,5 @@ class MultiCurrencyRestRequestOverrideController implements RegisterHooksInterfa
 		}
 
 		return $this->request_context;
-	}
-
-	/**
-	 * Register a filter only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_filter_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_filter( $hook, $callback ) ) {
-			add_filter( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }

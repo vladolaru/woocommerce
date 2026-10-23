@@ -92,7 +92,7 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 			return;
 		}
 
-		$this->add_action_once( 'widgets_init', array( $this, 'handle_widgets_init' ) );
+		add_action( 'widgets_init', array( $this, 'handle_widgets_init' ) );
 	}
 
 	/**
@@ -187,19 +187,5 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 		}
 
 		return $this->switcher_projection_service;
-	}
-
-	/**
-	 * Register an action only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_action_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_action( $hook, $callback ) ) {
-			add_action( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }

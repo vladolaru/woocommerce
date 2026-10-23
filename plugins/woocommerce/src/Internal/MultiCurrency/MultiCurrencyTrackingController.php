@@ -112,7 +112,7 @@ class MultiCurrencyTrackingController implements RegisterHooksInterface {
 			return;
 		}
 
-		$this->add_filter_once( self::TRACKER_HOOK, array( $this, 'add_tracker_data' ), 50 );
+		add_filter( self::TRACKER_HOOK, array( $this, 'add_tracker_data' ), 50 );
 	}
 
 	/**
@@ -171,19 +171,5 @@ class MultiCurrencyTrackingController implements RegisterHooksInterface {
 		}
 
 		return OrderUtil::custom_orders_table_usage_is_enabled();
-	}
-
-	/**
-	 * Register a filter only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_filter_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_filter( $hook, $callback ) ) {
-			add_filter( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }

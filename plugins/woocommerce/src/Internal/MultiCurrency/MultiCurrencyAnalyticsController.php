@@ -189,11 +189,11 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 
 		// The client adds the Analytics filter on admin requests (client 11.1.0 `includes/multi-currency/Analytics.php:69-72`).
 		if ( is_admin() ) {
-			$this->add_filter_once( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) );
+			add_action( 'admin_enqueue_scripts', array( $this, 'handle_admin_enqueue_scripts' ) );
 		}
 
-		$this->add_filter_once( 'woocommerce_analytics_orders_query_args', array( $this, 'handle_woocommerce_analytics_orders_query_args' ) );
-		$this->add_filter_once( 'woocommerce_analytics_orders_stats_query_args', array( $this, 'handle_woocommerce_analytics_orders_query_args' ) );
+		add_filter( 'woocommerce_analytics_orders_query_args', array( $this, 'handle_woocommerce_analytics_orders_query_args' ) );
+		add_filter( 'woocommerce_analytics_orders_stats_query_args', array( $this, 'handle_woocommerce_analytics_orders_query_args' ) );
 
 		if ( ! $this->is_rest_api_request() ) {
 			return;
@@ -207,14 +207,14 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			return;
 		}
 
-		$this->add_filter_once( 'woocommerce_analytics_clauses_select', array( $this, 'handle_woocommerce_analytics_clauses_select' ), 20, 2 );
-		$this->add_filter_once( 'woocommerce_analytics_clauses_join', array( $this, 'handle_woocommerce_analytics_clauses_join' ), 20, 2 );
-		$this->add_filter_once( 'woocommerce_analytics_clauses_where_orders_subquery', array( $this, 'handle_woocommerce_analytics_clauses_where' ) );
-		$this->add_filter_once( 'woocommerce_analytics_clauses_where_orders_stats_total', array( $this, 'handle_woocommerce_analytics_clauses_where' ) );
-		$this->add_filter_once( 'woocommerce_analytics_clauses_where_orders_stats_interval', array( $this, 'handle_woocommerce_analytics_clauses_where' ) );
+		add_filter( 'woocommerce_analytics_clauses_select', array( $this, 'handle_woocommerce_analytics_clauses_select' ), 20, 2 );
+		add_filter( 'woocommerce_analytics_clauses_join', array( $this, 'handle_woocommerce_analytics_clauses_join' ), 20, 2 );
+		add_filter( 'woocommerce_analytics_clauses_where_orders_subquery', array( $this, 'handle_woocommerce_analytics_clauses_where' ) );
+		add_filter( 'woocommerce_analytics_clauses_where_orders_stats_total', array( $this, 'handle_woocommerce_analytics_clauses_where' ) );
+		add_filter( 'woocommerce_analytics_clauses_where_orders_stats_interval', array( $this, 'handle_woocommerce_analytics_clauses_where' ) );
 
-		$this->add_filter_once( 'woocommerce_analytics_clauses_select_orders_subquery', array( $this, 'handle_woocommerce_analytics_clauses_select_orders' ) );
-		$this->add_filter_once( 'woocommerce_analytics_clauses_select_orders_stats_total', array( $this, 'handle_woocommerce_analytics_clauses_select_orders' ) );
+		add_filter( 'woocommerce_analytics_clauses_select_orders_subquery', array( $this, 'handle_woocommerce_analytics_clauses_select_orders' ) );
+		add_filter( 'woocommerce_analytics_clauses_select_orders_stats_total', array( $this, 'handle_woocommerce_analytics_clauses_select_orders' ) );
 	}
 
 	/**
@@ -510,19 +510,5 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 		$filtered = apply_filters( $hook, $clauses );
 
 		return is_array( $filtered ) ? $filtered : $clauses;
-	}
-
-	/**
-	 * Register a filter only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_filter_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_filter( $hook, $callback ) ) {
-			add_filter( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }

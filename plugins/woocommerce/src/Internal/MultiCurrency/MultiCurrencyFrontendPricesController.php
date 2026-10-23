@@ -110,22 +110,22 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 			return;
 		}
 
-		$this->add_filter_once( 'woocommerce_product_get_price', array( $this, 'get_product_price_string' ), 99, 2 );
-		$this->add_filter_once( 'woocommerce_product_get_regular_price', array( $this, 'get_product_price_string' ), 99, 2 );
-		$this->add_filter_once( 'woocommerce_product_get_sale_price', array( $this, 'get_product_price_string' ), 99, 2 );
-		$this->add_filter_once( 'woocommerce_product_variation_get_price', array( $this, 'get_product_price_string' ), 99, 2 );
-		$this->add_filter_once( 'woocommerce_product_variation_get_regular_price', array( $this, 'get_product_price_string' ), 99, 2 );
-		$this->add_filter_once( 'woocommerce_product_variation_get_sale_price', array( $this, 'get_product_price_string' ), 99, 2 );
-		$this->add_filter_once( 'woocommerce_variation_prices', array( $this, 'get_variation_price_range' ), 99 );
-		$this->add_filter_once( 'woocommerce_get_variation_prices_hash', array( $this, 'add_exchange_rate_to_variation_prices_hash' ), 99 );
-		$this->add_filter_once( 'woocommerce_shipping_zone_shipping_methods', array( $this, 'convert_free_shipping_method_min_amount' ), 99 );
-		$this->add_filter_once( 'woocommerce_shipping_method_add_rate_args', array( $this, 'convert_shipping_method_rate_cost' ), 99, 2 );
-		$this->add_filter_once( 'woocommerce_coupon_get_amount', array( $this, 'get_coupon_amount' ), 99, 2 );
-		$this->add_filter_once( 'woocommerce_coupon_get_minimum_amount', array( $this, 'get_coupon_min_max_amount' ), 99 );
-		$this->add_filter_once( 'woocommerce_coupon_get_maximum_amount', array( $this, 'get_coupon_min_max_amount' ), 99 );
-		$this->add_filter_once( 'woocommerce_new_order', array( $this, 'add_order_meta' ), 99, 2 );
-		$this->add_filter_once( 'rest_post_dispatch', array( $this, 'maybe_modify_price_ranges_rest_response' ), 10, 3 );
-		$this->add_filter_once( 'query_loop_block_query_vars', array( $this, 'maybe_modify_price_ranges_query_var' ), 10, 3 );
+		add_filter( 'woocommerce_product_get_price', array( $this, 'get_product_price_string' ), 99, 2 );
+		add_filter( 'woocommerce_product_get_regular_price', array( $this, 'get_product_price_string' ), 99, 2 );
+		add_filter( 'woocommerce_product_get_sale_price', array( $this, 'get_product_price_string' ), 99, 2 );
+		add_filter( 'woocommerce_product_variation_get_price', array( $this, 'get_product_price_string' ), 99, 2 );
+		add_filter( 'woocommerce_product_variation_get_regular_price', array( $this, 'get_product_price_string' ), 99, 2 );
+		add_filter( 'woocommerce_product_variation_get_sale_price', array( $this, 'get_product_price_string' ), 99, 2 );
+		add_filter( 'woocommerce_variation_prices', array( $this, 'get_variation_price_range' ), 99 );
+		add_filter( 'woocommerce_get_variation_prices_hash', array( $this, 'add_exchange_rate_to_variation_prices_hash' ), 99 );
+		add_filter( 'woocommerce_shipping_zone_shipping_methods', array( $this, 'convert_free_shipping_method_min_amount' ), 99 );
+		add_filter( 'woocommerce_shipping_method_add_rate_args', array( $this, 'convert_shipping_method_rate_cost' ), 99, 2 );
+		add_filter( 'woocommerce_coupon_get_amount', array( $this, 'get_coupon_amount' ), 99, 2 );
+		add_filter( 'woocommerce_coupon_get_minimum_amount', array( $this, 'get_coupon_min_max_amount' ), 99 );
+		add_filter( 'woocommerce_coupon_get_maximum_amount', array( $this, 'get_coupon_min_max_amount' ), 99 );
+		add_action( 'woocommerce_new_order', array( $this, 'add_order_meta' ), 99, 2 );
+		add_filter( 'rest_post_dispatch', array( $this, 'maybe_modify_price_ranges_rest_response' ), 10, 3 );
+		add_filter( 'query_loop_block_query_vars', array( $this, 'maybe_modify_price_ranges_query_var' ), 10, 3 );
 	}
 
 	/**
@@ -531,19 +531,5 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 		return is_object( $coupon ) &&
 			is_callable( array( $coupon, 'is_type' ) ) &&
 			(bool) call_user_func( array( $coupon, 'is_type' ), array( 'percent' ) );
-	}
-
-	/**
-	 * Register a filter only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_filter_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_filter( $hook, $callback ) ) {
-			add_filter( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }
