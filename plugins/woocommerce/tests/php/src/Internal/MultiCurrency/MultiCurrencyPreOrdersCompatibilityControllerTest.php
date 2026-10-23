@@ -50,6 +50,10 @@ class MultiCurrencyPreOrdersCompatibilityControllerTest extends WC_Unit_Test_Cas
 		$sut->register();
 
 		$this->assertSame( 10, has_filter( 'wc_pre_orders_fee', array( $sut, 'convert_pre_orders_fee' ) ) );
+		$this->assertSame(
+			array( 'wc_pre_orders_fee' => array( 'convert_pre_orders_fee' => array( 10, 1 ) ) ),
+			RegisteredHooks::of( $sut )
+		);
 	}
 
 	/**

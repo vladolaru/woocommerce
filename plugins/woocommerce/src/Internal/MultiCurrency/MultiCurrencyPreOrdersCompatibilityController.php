@@ -7,7 +7,6 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPreOrdersCompatibilityProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -78,7 +77,7 @@ class MultiCurrencyPreOrdersCompatibilityController implements RegisterHooksInte
 			return;
 		}
 
-		$this->add_action_once( 'plugins_loaded', array( $this, 'register_pre_orders_filters' ), 20 );
+		add_action( 'plugins_loaded', array( $this, 'register_pre_orders_filters' ), 20 );
 	}
 
 	/**
@@ -87,23 +86,11 @@ class MultiCurrencyPreOrdersCompatibilityController implements RegisterHooksInte
 	 * @internal
 	 */
 	public function register_pre_orders_filters(): void {
-		if (
-			! $this->arbiter->should_core_register()
-			|| ! MultiCurrencyPreOrdersCompatibilityProjectionService::should_register(
-				$this->is_pre_orders_runtime_available()
-			)
-		) {
+		if ( ! $this->arbiter->should_core_register() || ! $this->is_pre_orders_runtime_available() ) {
 			return;
 		}
 
-		$manifest = MultiCurrencyPreOrdersCompatibilityProjectionService::get_hook_manifest();
-
-		foreach ( $manifest['filters'] as $filter ) {
-			$callback = array( $this, (string) $filter['callback'] );
-			if ( is_callable( $callback ) ) {
-				$this->add_filter_once( (string) $filter['hook'], $callback, (int) $filter['priority'], (int) $filter['accepted_args'] );
-			}
-		}
+		add_filter( 'wc_pre_orders_fee', array( $this, 'convert_pre_orders_fee' ) );
 	}
 
 	/**
@@ -113,7 +100,7 @@ class MultiCurrencyPreOrdersCompatibilityController implements RegisterHooksInte
 	 * @return array<mixed>
 	 */
 	public function convert_pre_orders_fee( array $args ): array {
-		if ( ! MultiCurrencyPreOrdersCompatibilityProjectionService::should_convert_fee_amount( $args ) ) {
+		if ( ! array_key_exists( 'amount', $args ) ) {
 			return $args;
 		}
 
@@ -142,33 +129,5 @@ class MultiCurrencyPreOrdersCompatibilityController implements RegisterHooksInte
 		}
 
 		return $this->price_projection_service;
-	}
-
-	/**
-	 * Register a filter only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_filter_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_filter( $hook, $callback ) ) {
-			add_filter( $hook, $callback, $priority, $accepted_args );
-		}
-	}
-
-	/**
-	 * Register an action only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_action_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_action( $hook, $callback ) ) {
-			add_action( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }
