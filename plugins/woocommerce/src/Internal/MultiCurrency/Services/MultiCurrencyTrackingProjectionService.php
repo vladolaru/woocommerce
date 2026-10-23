@@ -71,14 +71,14 @@ class MultiCurrencyTrackingProjectionService {
 		$total_count = 0;
 
 		foreach ( is_array( $rows ) ? $rows : array() as $row ) {
-			$currency = (string) $this->get_row_value( $row, 'currency' );
-			$counts   = (int) $this->get_row_value( $row, 'counts' );
-			$totals   = (float) $this->get_row_value( $row, 'totals' );
-			$gateway  = (string) $this->get_row_value( $row, 'gateway' );
+			$currency = (string) $row->currency;
+			$counts   = (int) $row->counts;
+			$totals   = (float) $row->totals;
+			$gateway  = (string) $row->gateway;
 			$gateway  = '' === $gateway ? 'unknown' : $gateway;
 
 			$current_counts = $currencies[ $currency ]['counts'] ?? 0;
-			$current_totals = (float) ( $currencies[ $currency ]['totals'] ?? 0 );
+			$current_totals = $currencies[ $currency ]['totals'] ?? 0;
 
 			$currencies[ $currency ]['counts']               = $current_counts + $counts;
 			$currencies[ $currency ]['totals']               = $current_totals + $totals;
@@ -154,25 +154,6 @@ class MultiCurrencyTrackingProjectionService {
 			) order_gateways
 			GROUP BY currency, gateway
 		";
-	}
-
-	/**
-	 * Get a value from a query result row.
-	 *
-	 * @param array<string,mixed>|object $row Row.
-	 * @param string                     $key Key.
-	 * @return mixed
-	 */
-	private function get_row_value( $row, string $key ) {
-		if ( is_array( $row ) ) {
-			return $row[ $key ] ?? null;
-		}
-
-		if ( isset( $row->$key ) ) {
-			return $row->$key;
-		}
-
-		return null;
 	}
 
 	/**

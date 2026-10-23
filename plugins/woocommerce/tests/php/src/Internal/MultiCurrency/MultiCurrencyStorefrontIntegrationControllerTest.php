@@ -107,11 +107,18 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox Should register Storefront switcher hooks when enabled for a Storefront theme.
+	 * @testdox Should register Storefront switcher hooks for $label.
+	 * @dataProvider registering_storefront_provider
+	 *
+	 * @param string      $label      Readable case name.
+	 * @param string      $stylesheet Theme stylesheet.
+	 * @param string      $template   Theme template.
+	 * @param string      $setting    The saved Storefront switcher setting.
+	 * @param string|null $preview    The preview's enable_storefront_switcher argument, or null outside a preview.
 	 */
-	public function test_registers_hooks_when_storefront_switcher_is_enabled(): void {
-		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+	public function test_registers_storefront_switcher_hooks( string $label, string $stylesheet, string $template, string $setting, ?string $preview ): void {
+		unset( $label );
+		$sut = $this->prepare_storefront_decision( $stylesheet, $template, 2, $setting, $preview );
 
 		$sut->handle_init();
 		$sut->handle_init();
@@ -121,79 +128,71 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * @testdox Should register Storefront switcher hooks for a Storefront child theme.
+	 * Requests that show the Storefront switcher.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string,3:string,4:string|null}>
 	 */
-	public function test_registers_hooks_for_a_storefront_child_theme(): void {
-		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 2, 'child-theme', 'storefront' );
-
-		$sut->handle_init();
-
-		$this->assertSame( 9999, has_filter( 'woocommerce_breadcrumb_defaults', array( $sut, 'handle_woocommerce_breadcrumb_defaults' ) ) );
+	public function registering_storefront_provider(): array {
+		return array(
+			'Storefront with the setting on'           => array( 'Storefront with the setting on', 'storefront', 'storefront', 'yes', null ),
+			'a Storefront child theme'                 => array( 'a Storefront child theme', 'child-theme', 'storefront', 'yes', null ),
+			'a preview that shows it, the setting off' => array( 'a preview that shows it, the setting off', 'storefront', 'storefront', 'no', 'true' ),
+		);
 	}
 
 	/**
 	 * @testdox Should not register Storefront switcher hooks when $label.
-	 * @testWith ["the saved setting is off", "no", null]
-	 *           ["the settings preview hides the switcher", "yes", "false"]
+	 * @dataProvider non_registering_storefront_provider
 	 *
-	 * @param string      $label   Readable case name.
-	 * @param string      $setting The saved Storefront switcher setting.
-	 * @param string|null $preview The preview's enable_storefront_switcher argument, or null outside a preview.
+	 * @param string      $label      Readable case name.
+	 * @param string      $stylesheet Theme stylesheet.
+	 * @param string      $template   Theme template.
+	 * @param int         $currencies Enabled currency count.
+	 * @param string      $setting    The saved Storefront switcher setting.
+	 * @param string|null $preview    The preview's enable_storefront_switcher argument, or null outside a preview.
 	 */
-	public function test_does_not_register_hooks_when_the_switcher_is_off( string $label, string $setting, ?string $preview ): void {
+	public function test_does_not_register_storefront_switcher_hooks( string $label, string $stylesheet, string $template, int $currencies, string $setting, ?string $preview ): void {
 		unset( $label );
+		$sut = $this->prepare_storefront_decision( $stylesheet, $template, $currencies, $setting, $preview );
+
+		$sut->handle_init();
+
+		$this->assertFalse( has_filter( 'woocommerce_breadcrumb_defaults', array( $sut, 'handle_woocommerce_breadcrumb_defaults' ) ) );
+		$this->assertFalse( has_action( 'wp_enqueue_scripts', array( $sut, 'handle_wp_enqueue_scripts' ) ) );
+	}
+
+	/**
+	 * Requests that do not show the Storefront switcher.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string,3:int,4:string,5:string|null}>
+	 */
+	public function non_registering_storefront_provider(): array {
+		return array(
+			'the saved setting is off'                => array( 'the saved setting is off', 'storefront', 'storefront', 2, 'no', null ),
+			'the settings preview hides the switcher' => array( 'the settings preview hides the switcher', 'storefront', 'storefront', 2, 'yes', 'false' ),
+			'the theme is not Storefront'             => array( 'the theme is not Storefront', 'twentytwentyfive', 'twentytwentyfive', 2, 'yes', null ),
+			'one currency is enabled'                 => array( 'one currency is enabled', 'storefront', 'storefront', 1, 'yes', null ),
+		);
+	}
+
+	/**
+	 * Store the switcher setting and the preview arguments, and build the controller.
+	 *
+	 * @param string      $stylesheet Theme stylesheet.
+	 * @param string      $template   Theme template.
+	 * @param int         $currencies Enabled currency count.
+	 * @param string      $setting    The saved Storefront switcher setting.
+	 * @param string|null $preview    The preview's enable_storefront_switcher argument, or null outside a preview.
+	 * @return MultiCurrencyStorefrontIntegrationController
+	 */
+	private function prepare_storefront_decision( string $stylesheet, string $template, int $currencies, string $setting, ?string $preview ): MultiCurrencyStorefrontIntegrationController {
 		update_option( 'wcpay_multi_currency_enable_storefront_switcher', $setting );
 		if ( null !== $preview ) {
 			$_GET['is_mc_onboarding_simulation'] = 'true';
 			$_GET['enable_storefront_switcher']  = $preview;
 		}
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
-		$sut->handle_init();
-
-		$this->assertFalse( has_filter( 'woocommerce_breadcrumb_defaults', array( $sut, 'handle_woocommerce_breadcrumb_defaults' ) ) );
-		$this->assertFalse( has_action( 'wp_enqueue_scripts', array( $sut, 'handle_wp_enqueue_scripts' ) ) );
-	}
-
-	/**
-	 * @testdox Should not register Storefront switcher hooks for non-Storefront themes.
-	 */
-	public function test_does_not_register_hooks_for_non_storefront_theme(): void {
-		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 2, 'twentytwentyfive', 'twentytwentyfive' );
-
-		$sut->handle_init();
-
-		$this->assertFalse( has_filter( 'woocommerce_breadcrumb_defaults', array( $sut, 'handle_woocommerce_breadcrumb_defaults' ) ) );
-		$this->assertFalse( has_action( 'wp_enqueue_scripts', array( $sut, 'handle_wp_enqueue_scripts' ) ) );
-	}
-
-	/**
-	 * @testdox Should not register Storefront switcher hooks with one enabled currency.
-	 */
-	public function test_does_not_register_hooks_with_one_enabled_currency(): void {
-		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 1 );
-
-		$sut->handle_init();
-
-		$this->assertFalse( has_filter( 'woocommerce_breadcrumb_defaults', array( $sut, 'handle_woocommerce_breadcrumb_defaults' ) ) );
-		$this->assertFalse( has_action( 'wp_enqueue_scripts', array( $sut, 'handle_wp_enqueue_scripts' ) ) );
-	}
-
-	/**
-	 * @testdox Should allow simulation to enable Storefront switcher hooks.
-	 */
-	public function test_allows_simulation_to_enable_storefront_switcher_hooks(): void {
-		$_GET['is_mc_onboarding_simulation'] = 'true';
-		$_GET['enable_storefront_switcher']  = 'true';
-		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-
-		$sut->handle_init();
-
-		$this->assertSame( 9999, has_filter( 'woocommerce_breadcrumb_defaults', array( $sut, 'handle_woocommerce_breadcrumb_defaults' ) ) );
-		$this->assertSame( 50, has_action( 'wp_enqueue_scripts', array( $sut, 'handle_wp_enqueue_scripts' ) ) );
+		return $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $currencies, $stylesheet, $template );
 	}
 
 	/**

@@ -505,11 +505,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	 * @param mixed $coupon Coupon object.
 	 * @return bool
 	 */
-	private function should_convert_coupon_amount( $coupon = null ): bool {
-		if ( ! $coupon ) {
-			return true;
-		}
-
+	private function should_convert_coupon_amount( $coupon ): bool {
 		/**
 		 * Filters whether a coupon amount should be converted.
 		 *

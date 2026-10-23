@@ -244,7 +244,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A request without a usable notice key and nonce does nothing ($label); an empty canonical value never falls back to the legacy one.
+	 * @testdox A request without a usable notice key and nonce does nothing ($label).
 	 *
 	 * @dataProvider incomplete_dismissal_request_provider
 	 *
@@ -283,10 +283,9 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 				array(
 					self::CANONICAL_NOTICE_QUERY => '',
 					self::CANONICAL_NONCE_QUERY  => 'VALID',
-					self::LEGACY_NOTICE_QUERY    => 'currency_changed',
-					self::LEGACY_NONCE_QUERY     => 'VALID',
 				),
 			),
+			// The dismiss link WooPayments 11.1.0 renders (includes/multi-currency/AdminNotices.php:48,70-79).
 			'extension query keys'   => array(
 				'extension query keys',
 				array(
@@ -299,8 +298,6 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 				array(
 					self::CANONICAL_NOTICE_QUERY => 'currency_changed',
 					self::CANONICAL_NONCE_QUERY  => '',
-					self::LEGACY_NOTICE_QUERY    => self::RATE_NOTICE_KEY,
-					self::LEGACY_NONCE_QUERY     => 'VALID',
 				),
 			),
 		);
@@ -341,6 +338,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_dies_for_invalid_dismissal_nonce(): void {
 		$this->set_current_user_can_manage_woocommerce();
+		update_option( self::NOTICE_OPTION, array( 'Canadian dollar' ) );
 		$_GET[ self::CANONICAL_NOTICE_QUERY ] = 'currency_changed';
 		$_GET[ self::CANONICAL_NONCE_QUERY ]  = 'invalid';
 		$messages                             = array();
@@ -353,6 +351,8 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 			$sut->handle_wp_loaded();
 		} finally {
 			$this->assertSame( array( self::NONCE_ERROR ), $messages );
+			$this->assertSame( array( 'Canadian dollar' ), get_option( self::NOTICE_OPTION ) );
+			$this->assertFalse( get_option( self::RATE_NOTICE_DISMISSED_OPTION, false ) );
 		}
 	}
 

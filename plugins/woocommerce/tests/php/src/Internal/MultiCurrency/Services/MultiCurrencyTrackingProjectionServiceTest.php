@@ -162,6 +162,7 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 		$this->toggle_cot_authoritative( $hpos_enabled );
 		$this->create_order( 'GBP', 'woocommerce_payments', '10.50', 'completed' );
 		$this->create_order( 'GBP', 'woocommerce_payments', '10.00', 'processing' );
+		$this->create_order( 'GBP', 'cod', '5.00', 'completed' );
 		$this->create_order( 'EUR', '', '8.00', 'refunded' );
 		$this->create_order( 'GBP', 'woocommerce_payments', '99.00', 'pending' );
 		$this->create_order( 'GBP', 'woocommerce_payments', '77.00', 'completed', false );
@@ -170,10 +171,11 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 		$result       = $sut->project_tracker_data( array(), $hpos_enabled );
 		$order_counts = $result[ MultiCurrencyTrackingProjectionService::TRACKER_KEY ]['order_counts'];
 		ksort( $order_counts['currencies'] );
+		ksort( $order_counts['currencies']['GBP']['gateways'] );
 
 		$this->assertSame(
 			array(
-				'counts'     => 3,
+				'counts'     => 4,
 				'currencies' => array(
 					'EUR' => array(
 						'counts'   => 1,
@@ -186,9 +188,13 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 						),
 					),
 					'GBP' => array(
-						'counts'   => 2,
-						'totals'   => 20.5,
+						'counts'   => 3,
+						'totals'   => 25.5,
 						'gateways' => array(
+							'cod'                  => array(
+								'counts' => 1,
+								'totals' => 5.0,
+							),
 							'woocommerce_payments' => array(
 								'counts' => 2,
 								'totals' => 20.5,
