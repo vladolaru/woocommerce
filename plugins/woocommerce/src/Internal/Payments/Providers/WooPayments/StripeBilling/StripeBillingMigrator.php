@@ -214,7 +214,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 		if ( is_array( $error ) && ! empty( $error['type'] ) && in_array( $error['type'], array( E_ERROR, E_PARSE, E_COMPILE_ERROR, E_USER_ERROR, E_RECOVERABLE_ERROR ), true ) ) {
 			// Client 11.1.0 logs the fatal's message (class-wc-payments-subscriptions-migrator.php:504); this line leaves it out,
 			// since an uncaught exception's message can be the platform's text.
-			$this->migration_log->log( sprintf( '---- ERROR: Unexpected shutdown while migrating subscription #%1$d: PHP error type %2$d in %3$s on line %4$s.', $migration_args['migrate_subscription'], (int) $error['type'], $error['file'] ?? 'no file found', $error['line'] ?? '0' ) );
+			$this->migration_log->log( sprintf( '---- ERROR: Unexpected shutdown while migrating subscription #%1$d: PHP error type %2$d in %3$s on line %4$s.', $migration_args['migrate_subscription'], $error['type'], $error['file'] ?? 'no file found', $error['line'] ?? '0' ) );
 		}
 
 		$this->maybe_reschedule_migration( $migration_args['migrate_subscription'], $migration_args['attempt'] );

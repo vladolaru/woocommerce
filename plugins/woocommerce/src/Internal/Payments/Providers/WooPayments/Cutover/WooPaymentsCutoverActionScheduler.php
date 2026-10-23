@@ -58,7 +58,7 @@ class WooPaymentsCutoverActionScheduler {
 			true
 		);
 
-		return is_int( $action_id ) && $action_id > 0 ? $action_id : 0;
+		return $action_id > 0 ? $action_id : 0;
 	}
 
 	/**

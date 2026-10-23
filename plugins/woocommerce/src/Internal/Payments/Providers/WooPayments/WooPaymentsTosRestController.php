@@ -161,7 +161,7 @@ class WooPaymentsTosRestController extends RestApiControllerBase {
 		$this->set_gateway_enabled( true );
 
 		$current_user = wp_get_current_user();
-		$this->api_client->add_account_tos_agreement( 'settings-popup', (string) $current_user->user_login );
+		$this->api_client->add_account_tos_agreement( 'settings-popup', $current_user->user_login );
 		$this->account_service->refresh_account_data();
 	}
 

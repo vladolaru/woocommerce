@@ -292,21 +292,17 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	 * @param array<string,mixed> $properties Event properties.
 	 */
 	private function record_registration_event( string $event_name, array $properties ): void {
-		try {
-			$properties                                       = array_merge(
-				$properties,
-				array(
-					'mode'              => $this->get_tracking_mode(),
-					'record_event_data' => array(
-						'is_admin_event'      => true,
-						'track_on_all_stores' => true,
-					),
-				)
-			);
-			$this->pending_registration_events[ $event_name ] = $properties;
-		} catch ( Throwable $throwable ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
-			// Tracking must never change the registration result or retry lifecycle.
-		}
+		$properties                                       = array_merge(
+			$properties,
+			array(
+				'mode'              => $this->get_tracking_mode(),
+				'record_event_data' => array(
+					'is_admin_event'      => true,
+					'track_on_all_stores' => true,
+				),
+			)
+		);
+		$this->pending_registration_events[ $event_name ] = $properties;
 	}
 
 	/**

@@ -336,59 +336,6 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should preserve successful registration when dev-mode telemetry lookup throws.
-	 */
-	public function test_successful_registration_contains_throwing_dev_mode_telemetry(): void {
-		$tracker = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'record_user_event' ) )
-			->getMock();
-		$tracker->expects( $this->never() )->method( 'record_user_event' );
-		$this->service = $this->create_service( false, $tracker, false, 'is_dev_mode_enabled' );
-
-		$result = $this->service->register_domain();
-		$stored = get_option( self::SETTINGS_OPTION );
-
-		$this->assertTrue( $result );
-		$this->assertIsArray( $stored );
-		$this->assertSame( $this->expected_domain, $stored['apple_pay_verified_domain'] );
-		$this->assertSame( 'yes', $stored['apple_pay_domain_set'] );
-		$this->assertFalse( get_option( self::ERROR_OPTION ) );
-		$this->assertSame( array(), $this->scheduler->scheduled_jobs );
-	}
-
-	/**
-	 * @testdox Should preserve failed registration and retry when mode telemetry lookup throws.
-	 */
-	public function test_failed_registration_contains_throwing_mode_telemetry(): void {
-		$error_message              = 'Domain verification failed before telemetry';
-		$this->api_client->response = array(
-			'id'        => 'domain_123',
-			'apple_pay' => array(
-				'status'         => 'failed',
-				'status_details' => array( 'error_message' => $error_message ),
-			),
-		);
-		$tracker                    = $this->getMockBuilder( WooPaymentsFrontendTrackingController::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'record_user_event' ) )
-			->getMock();
-		$tracker->expects( $this->never() )->method( 'record_user_event' );
-		$this->service = $this->create_service( false, $tracker, false, 'get_mode' );
-
-		$result = $this->service->register_domain();
-		$stored = get_option( self::SETTINGS_OPTION );
-
-		$this->assertFalse( $result );
-		$this->assertIsArray( $stored );
-		$this->assertSame( $this->expected_domain, $stored['apple_pay_verified_domain'] );
-		$this->assertSame( 'no', $stored['apple_pay_domain_set'] );
-		$this->assertSame( $error_message, get_option( self::ERROR_OPTION ) );
-		$this->assertCount( 1, $this->scheduler->scheduled_jobs );
-		$this->assertSame( self::RETRY_ACTION, $this->scheduler->scheduled_jobs[0]['hook'] );
-	}
-
-	/**
 	 * @testdox Should display and clear the Apple Pay domain failure notice for live accounts.
 	 */
 	public function test_display_error_notice_shows_the_stored_error_and_clears_it(): void {
@@ -698,26 +645,17 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	 * @param bool                                       $live_account    Whether the account should be treated as live.
 	 * @param WooPaymentsFrontendTrackingController|null $tracker         Optional tracking controller.
 	 * @param bool                                       $dev_mode        Whether WooPayments dev mode is active.
-	 * @param string|null                                $throwing_mode_method Account mode method that should throw.
 	 * @return WooPaymentsApplePayDomainService
 	 */
-	private function create_service( bool $live_account = false, ?WooPaymentsFrontendTrackingController $tracker = null, bool $dev_mode = false, ?string $throwing_mode_method = null ): WooPaymentsApplePayDomainService {
+	private function create_service( bool $live_account = false, ?WooPaymentsFrontendTrackingController $tracker = null, bool $dev_mode = false ): WooPaymentsApplePayDomainService {
 		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'has_live_account', 'get_mode', 'is_dev_mode_enabled', 'is_payment_request_method_enabled' ) )
 			->getMock();
 		$account_service->init( wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsDatabaseCache::class ) );
 		$account_service->method( 'has_live_account' )->willReturn( $live_account );
-		if ( 'get_mode' === $throwing_mode_method ) {
-			$account_service->method( 'get_mode' )->willThrowException( new \RuntimeException( 'Mode lookup failed.' ) );
-		} else {
-			$account_service->method( 'get_mode' )->willReturn( 'live' );
-		}
-		if ( 'is_dev_mode_enabled' === $throwing_mode_method ) {
-			$account_service->method( 'is_dev_mode_enabled' )->willThrowException( new \RuntimeException( 'Dev mode lookup failed.' ) );
-		} else {
-			$account_service->method( 'is_dev_mode_enabled' )->willReturn( $dev_mode );
-		}
+		$account_service->method( 'get_mode' )->willReturn( 'live' );
+		$account_service->method( 'is_dev_mode_enabled' )->willReturn( $dev_mode );
 		$account_service->method( 'is_payment_request_method_enabled' )->willReturnCallback(
 			static function ( string $method_id ): bool {
 				$settings = get_option( self::APPLE_PAY_SETTINGS_OPTION, array() );

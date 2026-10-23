@@ -482,7 +482,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 	private function get_filtered_fees_list_params( WP_REST_Request $request ): array {
 		$fees_request = new WooPaymentsTransactionsListRequest();
 		foreach ( $this->get_fees_list_params( $request ) as $key => $value ) {
-			$fees_request->set_param( (string) $key, $value );
+			$fees_request->set_param( $key, $value );
 		}
 
 		$filtered_request = $fees_request->get_filtered_request();
@@ -583,7 +583,7 @@ class WooPaymentsReportsRestController extends RestApiControllerBase {
 
 		$transactions_request = new WooPaymentsTransactionsListRequest();
 		foreach ( $params as $key => $value ) {
-			$transactions_request->set_param( (string) $key, $value );
+			$transactions_request->set_param( $key, $value );
 		}
 
 		$filtered_request = $transactions_request->get_filtered_request();

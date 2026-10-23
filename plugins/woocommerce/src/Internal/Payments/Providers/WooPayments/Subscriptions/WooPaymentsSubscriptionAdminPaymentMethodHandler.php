@@ -639,7 +639,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 		}
 
 		if ( $token instanceof WooPaymentsAmazonPayToken ) {
-			$email = (string) $token->get_email();
+			$email = $token->get_email();
 			if ( '' !== $email && false === strpos( $fallback, $email ) ) {
 				/* translators: 1: payment method (Amazon Pay), 2: redacted customer email. */
 				return sprintf( __( '%1$s (%2$s)', 'woocommerce' ), $fallback, $email );
@@ -647,7 +647,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 		}
 
 		if ( $token instanceof WooPaymentsLinkToken ) {
-			$email = (string) $token->get_redacted_email();
+			$email = $token->get_redacted_email();
 			if ( '' !== $email && false === strpos( $fallback, $email ) ) {
 				/* translators: 1: payment method (Stripe Link), 2: redacted customer email. */
 				return sprintf( __( '%1$s (%2$s)', 'woocommerce' ), __( 'Stripe Link', 'woocommerce' ), $email );
@@ -671,13 +671,13 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandler {
 			/* translators: 1: payment method likely credit card, 2: last 4 digit. */
 			return sprintf( __( '%1$s ending in %2$s', 'woocommerce' ), $fallback, $token->get_last4() );
 		}
-		if ( $token instanceof WooPaymentsAmazonPayToken && '' !== (string) $token->get_email() ) {
+		if ( $token instanceof WooPaymentsAmazonPayToken && '' !== $token->get_email() ) {
 			/* translators: 1: payment method (Amazon Pay), 2: redacted customer email. */
-			return sprintf( __( '%1$s (%2$s)', 'woocommerce' ), $fallback, (string) $token->get_email() );
+			return sprintf( __( '%1$s (%2$s)', 'woocommerce' ), $fallback, $token->get_email() );
 		}
-		if ( $token instanceof WooPaymentsLinkToken && '' !== (string) $token->get_email() ) {
+		if ( $token instanceof WooPaymentsLinkToken && '' !== $token->get_email() ) {
 			/* translators: 1: payment method (Stripe Link), 2: customer email. */
-			return sprintf( __( '%1$s (%2$s)', 'woocommerce' ), __( 'Stripe Link', 'woocommerce' ), (string) $token->get_email() );
+			return sprintf( __( '%1$s (%2$s)', 'woocommerce' ), __( 'Stripe Link', 'woocommerce' ), $token->get_email() );
 		}
 
 		return $fallback;

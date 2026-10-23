@@ -118,7 +118,10 @@ class WooPaymentsActionSchedulerService {
 		$this->deferred_jobs = array();
 
 		foreach ( $jobs as $job ) {
-			$switched = is_multisite() && get_current_blog_id() !== $job['blog_id'] && switch_to_blog( $job['blog_id'] );
+			$switched = is_multisite() && get_current_blog_id() !== $job['blog_id'];
+			if ( $switched ) {
+				switch_to_blog( $job['blog_id'] );
+			}
 			try {
 				$this->schedule_job( $job['hook'], $job['args'], $job['timestamp'], $job['group'] );
 			} finally {

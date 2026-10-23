@@ -31,7 +31,7 @@ class WooPaymentsAuthorizationsListRequest extends WooPaymentsPaginatedListReque
 		$request = new self();
 
 		foreach ( $params as $key => $value ) {
-			$request->set_param( (string) $key, $value );
+			$request->set_param( $key, $value );
 		}
 
 		return $request;

@@ -469,7 +469,7 @@ class WooPaymentsPaymentDetailsRestController extends RestApiControllerBase {
 		}
 
 		$order = array_search( $type, self::EVENTS_ORDER, true );
-		return false === $order ? -1 : (int) $order;
+		return false === $order ? -1 : $order;
 	}
 
 	/**

@@ -741,11 +741,7 @@ class WooPaymentsOnboardingService {
 	 * @param array<string,mixed> $context Log context.
 	 */
 	private function log_onboarding_error( string $message, array $context = array() ): void {
-		try {
-			wc_get_container()->get( WooPaymentsLogger::class )->log_always( $message, 'error', $context );
-		} catch ( \Throwable $e ) {
-			return;
-		}
+		wc_get_container()->get( WooPaymentsLogger::class )->log_always( $message, 'error', $context );
 	}
 
 	/**
@@ -886,12 +882,8 @@ class WooPaymentsOnboardingService {
 				remove_filter( 'woocommerce_note_where_clauses', $add_like_clause );
 			}
 		} catch ( \Throwable $e ) {
-			try {
-				// Logged only while WooPayments logging is on (client 11.1.0 `includes/class-wc-payments-onboarding-service.php:1029-1032`); a PHP Error is always logged.
-				wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'WooPayments could not read the actioned promotion notes for onboarding.', $e );
-			} catch ( \Throwable $logging_error ) {
-				unset( $logging_error );
-			}
+			// Logged only while WooPayments logging is on (client 11.1.0 `includes/class-wc-payments-onboarding-service.php:1029-1032`); a PHP Error is always logged.
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( 'WooPayments could not read the actioned promotion notes for onboarding.', $e );
 
 			return array();
 		}

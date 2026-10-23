@@ -330,13 +330,9 @@ class WooPaymentsAdminSharedSettings implements RegisterHooksInterface {
 	/**
 	 * The store address as WooCommerce formats it on one line, for the dispute cover letter.
 	 *
-	 * @return string The formatted address, or an empty string when WooCommerce's countries are not loaded.
+	 * @return string The formatted address.
 	 */
 	private function get_formatted_store_address(): string {
-		if ( ! WC()->countries instanceof \WC_Countries ) {
-			return '';
-		}
-
 		return WC()->countries->get_formatted_address(
 			array(
 				'address_1' => get_option( 'woocommerce_store_address', '' ),

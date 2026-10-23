@@ -133,11 +133,7 @@ class WooPaymentsPaymentsSettingsAdapter {
 			return false;
 		}
 
-		try {
-			return $this->get_provider()->can_manage_onboarding();
-		} catch ( Throwable $e ) {
-			return false;
-		}
+		return $this->get_provider()->can_manage_onboarding();
 	}
 
 	/**

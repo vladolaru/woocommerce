@@ -18,16 +18,16 @@ class TestableWooPaymentsPlatformConnectionService extends WooPaymentsPlatformCo
 	/**
 	 * Jetpack connection manager.
 	 *
-	 * @var JetpackConnectionManager|null
+	 * @var JetpackConnectionManager
 	 */
-	public ?JetpackConnectionManager $manager = null;
+	public JetpackConnectionManager $manager;
 
 	/**
 	 * Get the test Jetpack connection manager.
 	 *
-	 * @return JetpackConnectionManager|null
+	 * @return JetpackConnectionManager
 	 */
-	protected function get_connection_manager(): ?JetpackConnectionManager {
+	protected function get_connection_manager(): JetpackConnectionManager {
 		return $this->manager;
 	}
 }

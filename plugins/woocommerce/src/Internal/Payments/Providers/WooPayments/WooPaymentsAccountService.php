@@ -336,11 +336,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return void
 	 */
 	public function clear_cache(): void {
-		try {
-			$this->database_cache->delete( WooPaymentsDatabaseCache::ACCOUNT_KEY );
-		} catch ( \Throwable $e ) {
-			return;
-		}
+		$this->database_cache->delete( WooPaymentsDatabaseCache::ACCOUNT_KEY );
 	}
 
 	/**
@@ -364,13 +360,9 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return void
 	 */
 	public function cache_account_data_until_refreshed( array $account_data ): void {
-		try {
-			$cache_contents            = $this->build_account_cache_contents( $account_data, false );
-			$cache_contents['fetched'] = 0;
-			$this->persist_account_cache( $cache_contents );
-		} catch ( \Throwable $e ) {
-			return;
-		}
+		$cache_contents            = $this->build_account_cache_contents( $account_data, false );
+		$cache_contents['fetched'] = 0;
+		$this->persist_account_cache( $cache_contents );
 	}
 
 	/**
@@ -443,12 +435,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return array<string,mixed>|false
 	 */
 	private function get_account_cache() {
-		return $this->database_cache->get_contents(
-			WooPaymentsDatabaseCache::ACCOUNT_KEY,
-			function ( \Throwable $e ): void {
-				$this->log_read_failure( 'the account cache', $e );
-			}
-		);
+		return $this->database_cache->get_contents( WooPaymentsDatabaseCache::ACCOUNT_KEY );
 	}
 
 	/**
@@ -517,12 +504,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			return;
 		}
 
-		try {
-			$cache_contents = $this->legacy_proxy->call_function( 'get_option', WooPaymentsDatabaseCache::ACCOUNT_KEY );
-		} catch ( \Throwable $e ) {
-			$this->log_read_failure( 'the account cache', $e );
-			return;
-		}
+		$cache_contents = $this->legacy_proxy->call_function( 'get_option', WooPaymentsDatabaseCache::ACCOUNT_KEY );
 
 		$this->sync_setup_tier( is_array( $cache_contents ) ? ( $cache_contents['data'] ?? null ) : null, $extension_owns_payments );
 	}
@@ -1372,16 +1354,12 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 *
 	 * The API client takes this service in its `init()` (test mode, the store ID, the account refresh after VAT details
 	 * are saved), so it is not injected here; it is resolved when a read checks the platform connection or fetches. A
-	 * failed resolution returns null, which reads as not connected: no platform call can be made without it.
+	 * subclass that returns null reads as not connected: no platform call can be made without a client.
 	 *
 	 * @return WooPaymentsApiClient|null
 	 */
 	protected function get_api_client(): ?WooPaymentsApiClient {
-		try {
-			return wc_get_container()->get( WooPaymentsApiClient::class );
-		} catch ( \Throwable $e ) {
-			return null;
-		}
+		return wc_get_container()->get( WooPaymentsApiClient::class );
 	}
 
 	/**
@@ -1392,12 +1370,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return string
 	 */
 	public function get_woocommerce_store_id(): string {
-		try {
-			$store_id = $this->legacy_proxy->call_function( 'get_option', \WC_Install::STORE_ID_OPTION, '' );
-		} catch ( \Throwable $e ) {
-			$this->log_read_failure( 'the store ID', $e );
-			return '';
-		}
+		$store_id = $this->legacy_proxy->call_function( 'get_option', \WC_Install::STORE_ID_OPTION, '' );
 
 		return is_scalar( $store_id ) ? (string) $store_id : '';
 	}
@@ -1408,12 +1381,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	private function get_stored_gateway_settings(): array {
-		try {
-			$settings = $this->legacy_proxy->call_function( 'get_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
-		} catch ( \Throwable $e ) {
-			$this->log_read_failure( 'the gateway settings', $e );
-			return array();
-		}
+		$settings = $this->legacy_proxy->call_function( 'get_option', WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
 
 		return is_array( $settings ) ? $settings : array();
 	}
@@ -1424,12 +1392,7 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function get_onboarding_test_mode_option(): bool {
-		try {
-			$value = $this->legacy_proxy->call_function( 'get_option', self::ONBOARDING_TEST_MODE_OPTION, 'no' );
-		} catch ( \Throwable $e ) {
-			$this->log_read_failure( 'the onboarding test mode setting', $e );
-			return false;
-		}
+		$value = $this->legacy_proxy->call_function( 'get_option', self::ONBOARDING_TEST_MODE_OPTION, 'no' );
 
 		return in_array( $value, array( 'yes', '1' ), true );
 	}
@@ -1444,14 +1407,10 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @param \Throwable $throwable Caught throwable.
 	 */
 	private function log_read_failure( string $what, \Throwable $throwable ): void {
-		try {
-			wc_get_logger()->error(
-				'WooPayments could not read ' . $what . '; treating it as missing.',
-				array_merge( WooPaymentsLogger::get_failure_context( $throwable ), array( 'source' => WooPaymentsLogger::SOURCE ) )
-			);
-		} catch ( \Throwable $logging_error ) {
-			unset( $logging_error );
-		}
+		wc_get_logger()->error(
+			'WooPayments could not read ' . $what . '; treating it as missing.',
+			array_merge( WooPaymentsLogger::get_failure_context( $throwable ), array( 'source' => WooPaymentsLogger::SOURCE ) )
+		);
 	}
 
 	/**
@@ -1463,14 +1422,10 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 	 * @param \Throwable $throwable Caught throwable.
 	 */
 	private function log_write_failure( \Throwable $throwable ): void {
-		try {
-			wc_get_logger()->error(
-				'WooPayments could not write the account cache or sync the setup tier; the fetched account was returned.',
-				array_merge( WooPaymentsLogger::get_failure_context( $throwable ), array( 'source' => WooPaymentsLogger::SOURCE ) )
-			);
-		} catch ( \Throwable $logging_error ) {
-			unset( $logging_error );
-		}
+		wc_get_logger()->error(
+			'WooPayments could not write the account cache or sync the setup tier; the fetched account was returned.',
+			array_merge( WooPaymentsLogger::get_failure_context( $throwable ), array( 'source' => WooPaymentsLogger::SOURCE ) )
+		);
 	}
 
 	/**
@@ -1490,13 +1445,9 @@ class WooPaymentsAccountService implements RegisterHooksInterface {
 			return;
 		}
 
-		try {
-			// Autoloaded: storefront renders read it through is_test_mode_enabled().
-			$this->legacy_proxy->call_function( 'update_option', self::ONBOARDING_TEST_MODE_OPTION, 'yes', true );
-			$this->legacy_proxy->call_function( 'wp_cache_delete', self::ONBOARDING_TEST_MODE_OPTION, 'options' );
-		} catch ( \Throwable $e ) {
-			unset( $e );
-		}
+		// Autoloaded: storefront renders read it through is_test_mode_enabled().
+		$this->legacy_proxy->call_function( 'update_option', self::ONBOARDING_TEST_MODE_OPTION, 'yes', true );
+		$this->legacy_proxy->call_function( 'wp_cache_delete', self::ONBOARDING_TEST_MODE_OPTION, 'options' );
 	}
 
 	/**

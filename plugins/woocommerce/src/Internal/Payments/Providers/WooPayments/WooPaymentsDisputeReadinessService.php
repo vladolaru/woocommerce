@@ -280,7 +280,7 @@ class WooPaymentsDisputeReadinessService {
 			return false;
 		}
 
-		$content = strip_shortcodes( (string) $page->post_content );
+		$content = strip_shortcodes( $page->post_content );
 		$content = wp_strip_all_tags( $content );
 		$content = preg_replace( '/\s+/', '', $content );
 

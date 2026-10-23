@@ -166,30 +166,18 @@ class WooPaymentsDatabaseCache {
 	/**
 	 * Get the stored cache contents, read once per request and blog.
 	 *
-	 * With an error handler, a read that throws is handed to it and treated as no contents. Without one, it propagates.
-	 *
 	 * @since 11.2.0
 	 *
-	 * @param string        $key           Cache key.
-	 * @param callable|null $on_read_error Receives the throwable of a failed read.
+	 * @param string $key Cache key.
 	 * @return array<string,mixed>|false The stored contents, or false when there are none.
-	 * @throws \Throwable When the read throws and there is no error handler.
 	 */
-	public function get_contents( string $key, ?callable $on_read_error = null ) {
+	public function get_contents( string $key ) {
 		$blog_id = get_current_blog_id();
 		if ( isset( $this->contents[ $blog_id ] ) && array_key_exists( $key, $this->contents[ $blog_id ] ) ) {
 			return $this->contents[ $blog_id ][ $key ];
 		}
 
-		try {
-			$cache_contents = $this->legacy_proxy->call_function( 'get_option', $key );
-		} catch ( \Throwable $e ) {
-			if ( null === $on_read_error ) {
-				throw $e;
-			}
-			$on_read_error( $e );
-			$cache_contents = false;
-		}
+		$cache_contents = $this->legacy_proxy->call_function( 'get_option', $key );
 
 		$this->contents[ $blog_id ][ $key ] = is_array( $cache_contents ) ? $cache_contents : false;
 

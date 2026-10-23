@@ -135,17 +135,13 @@ class WooPaymentsWebhookRestController implements RegisterHooksInterface {
 	 * @param bool      $refused   Whether the ingestor refused the event (an InvalidArgumentException).
 	 */
 	private function log_webhook_exception( Throwable $exception, string $event_id = '', bool $refused = false ): void {
-		try {
-			wc_get_logger()->error(
-				sprintf(
-					'' === $event_id ? 'Failed processing a WooPayments webhook event.%2$s' : 'Failed processing event %1$s.%2$s',
-					$event_id,
-					$refused ? WooPaymentsEventIngestor::get_refusal_reason_for_log( $exception ) : ''
-				),
-				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => WooPaymentsLogger::SOURCE ) )
-			);
-		} catch ( Throwable $logger_exception ) {
-			unset( $logger_exception );
-		}
+		wc_get_logger()->error(
+			sprintf(
+				'' === $event_id ? 'Failed processing a WooPayments webhook event.%2$s' : 'Failed processing event %1$s.%2$s',
+				$event_id,
+				$refused ? WooPaymentsEventIngestor::get_refusal_reason_for_log( $exception ) : ''
+			),
+			array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => WooPaymentsLogger::SOURCE ) )
+		);
 	}
 }

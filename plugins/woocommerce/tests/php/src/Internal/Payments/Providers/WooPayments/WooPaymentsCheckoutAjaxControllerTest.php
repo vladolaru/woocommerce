@@ -14,6 +14,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAjaxController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
@@ -188,6 +190,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_gateway_setting', 'get_account_country' ) )
 			->getMock();
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsDatabaseCache::class ) );
 		$account_service->method( 'get_gateway_setting' )->willReturn( array( 'card', 'sepa_debit' ) );
 		$account_service->method( 'get_account_country' )->willReturn( 'DE' );
 		$token_service   = $this->create_token_service(
@@ -2154,7 +2157,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Order-status callbacks keep excluded charge card shapes on the established post-lifecycle display path.
-	 * Card-network precedence follows the pinned WooPayments 11.1.0 CardDefinition; HTTP 200 for a malformed display brand is the N-104 correctness decision.
+	 * Card-network precedence follows the pinned WooPayments 11.1.0 CardDefinition; a malformed display brand still answers HTTP 200.
 	 *
 	 * @dataProvider excluded_charge_card_shapes
 	 *

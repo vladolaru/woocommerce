@@ -409,7 +409,7 @@ class WooPaymentsCanceledAuthorizationFeeRemediationService implements RegisterH
 					$woopayments_refund_count,
 					$woopayments_refund_count > 1 ? 's' : '',
 					implode( ', ', $woopayments_refund_ids ),
-					WooPaymentsCurrencyUtils::format_price_in_currency( (float) $woopayments_refund_total, $order->get_currency() )
+					WooPaymentsCurrencyUtils::format_price_in_currency( $woopayments_refund_total, $order->get_currency() )
 				);
 			}
 

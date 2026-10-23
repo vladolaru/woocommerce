@@ -355,9 +355,8 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	 * own identity, so a replay writes neither a second note nor a second
 	 * `on-hold` transition.
 	 *
-	 * T.3 Task 2 (`plan-task-t3.md`): fed the REC-DC recorded dispute object
-	 * (`Fixtures/platform-dispute-created-events.json`, pair `accept_case_created`) instead of the
-	 * hand-built `get_created_event_object()` fixture.
+	 * Fed the recorded dispute object (`Fixtures/platform-dispute-created-events.json`, pair
+	 * `accept_case_created`).
 	 */
 	public function test_replayed_created_webhook_does_not_duplicate_record(): void {
 		$dispute = $this->load_recorded_dispute_object( 'accept_case_created' );
@@ -577,17 +576,15 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A lost partial $currency dispute whose summary cannot be fetched refunds the disputed amount from the event ($expected), not the whole order, even when the logger cannot be obtained ($logger_fails).
-	 * @testWith ["USD", 300, "3.00", false]
-	 *           ["JPY", 300, "300.00", false]
-	 *           ["USD", 300, "3.00", true]
+	 * @testdox A lost partial $currency dispute whose summary cannot be fetched refunds the disputed amount from the event ($expected), not the whole order.
+	 * @testWith ["USD", 300, "3.00"]
+	 *           ["JPY", 300, "300.00"]
 	 *
-	 * @param string $currency     Order and dispute currency.
-	 * @param int    $amount       Dispute amount in the currency's minor units, as Stripe sends it.
-	 * @param string $expected     Refund amount.
-	 * @param bool   $logger_fails Whether obtaining the WooCommerce logger throws.
+	 * @param string $currency Order and dispute currency.
+	 * @param int    $amount   Dispute amount in the currency's minor units, as Stripe sends it.
+	 * @param string $expected Refund amount.
 	 */
-	public function test_lost_partial_dispute_refunds_the_event_amount_when_the_summary_fetch_fails( string $currency, int $amount, string $expected, bool $logger_fails ): void {
+	public function test_lost_partial_dispute_refunds_the_event_amount_when_the_summary_fetch_fails( string $currency, int $amount, string $expected ): void {
 		$order = $this->create_disputable_order();
 		$order->set_currency( $currency );
 		$order->set_total( 'JPY' === $currency ? '1000' : '10.00' );
@@ -621,15 +618,6 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( WooPaymentsEventOrderResolver::class ),
 			wc_get_container()->get( WooPaymentsOtherChargeRecorder::class )
 		);
-
-		if ( $logger_fails ) {
-			add_filter(
-				'woocommerce_logging_class',
-				static function () {
-					throw new \RuntimeException( 'Logger unavailable.' );
-				}
-			);
-		}
 
 		// A Stripe Dispute object, the charge.dispute.closed event's data.object: amount and currency are the fields the
 		// platform's summary copies into disputed_amount and currency (wpcom class-dispute-service.php:454-455).

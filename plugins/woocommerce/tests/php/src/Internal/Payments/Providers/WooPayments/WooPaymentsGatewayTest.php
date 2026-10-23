@@ -23,6 +23,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\WooPaymentsOnboardingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCheckoutAssets;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicatePaymentPreventionService;
@@ -230,6 +231,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
 			->getMock();
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsDatabaseCache::class ) );
 		$account_service->method( 'get_cached_account_data' )->willReturnCallback(
 			static function () use ( &$supported_currencies ): array {
 				return array(
@@ -406,6 +408,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
 			->getMock();
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsDatabaseCache::class ) );
 		// Account fields as recorded in Providers/WooPayments/Fixtures/platform-test-drive-account.json `account` (`country`, capability statuses keyed by
 		// capability); varied: a Belgian account holding only the two capabilities this test needs.
 		$account_service->method( 'get_cached_account_data' )->willReturn(
@@ -477,6 +480,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
 			->getMock();
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsDatabaseCache::class ) );
 		// Account fields as recorded in Providers/WooPayments/Fixtures/platform-test-drive-account.json `account` (`country`, capability statuses keyed by
 		// capability); varied: a Dutch account holding only the two capabilities this test needs.
 		$account_service->method( 'get_cached_account_data' )->willReturn(
@@ -976,6 +980,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_cached_account_data', 'is_gateway_enabled', 'is_test_mode_enabled' ) )
 			->getMock();
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsDatabaseCache::class ) );
 		$account_service->method( 'get_cached_account_data' )->willReturnCallback(
 			static function () use ( &$account_data ): array {
 				return $account_data;

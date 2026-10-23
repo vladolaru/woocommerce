@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
-use Throwable;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -157,7 +156,7 @@ class WooPaymentsTransportLog {
 	 *
 	 * The received-event line of the webhook path uses it: client 11.1.0 writes 'WEBHOOK RECEIVED: <type> <id>' with the
 	 * redacted body for every event it receives (class-wc-payments-webhook-processing-service.php:155-160), through its
-	 * logger, which writes only when logging is on. A failure to write the line never reaches the caller.
+	 * logger, which writes only when logging is on.
 	 *
 	 * @since 11.2.0
 	 *
@@ -165,15 +164,11 @@ class WooPaymentsTransportLog {
 	 * @param array<string,mixed> $payload Payload, redacted here before it is written.
 	 */
 	public function debug_payload( string $label, array $payload ): void {
-		try {
-			if ( ! $this->is_enabled() ) {
-				return;
-			}
-
-			$this->write( 'debug', $label, array( 'body' => $this->redact( $payload ) ) );
-		} catch ( Throwable $exception ) {
-			unset( $exception );
+		if ( ! $this->is_enabled() ) {
+			return;
 		}
+
+		$this->write( 'debug', $label, array( 'body' => $this->redact( $payload ) ) );
 	}
 
 	/**
@@ -207,23 +202,16 @@ class WooPaymentsTransportLog {
 	/**
 	 * Write a line through the WooPayments logger, which adds the request context and the source.
 	 *
-	 * A line that fails to write, from a throwing log handler or a hook the request context runs, is dropped without
-	 * another logger call: it must never reach a platform request, where it would make an answered request look failed.
-	 *
 	 * @param string              $level   Log level.
 	 * @param string              $message Line text.
 	 * @param array<string,mixed> $context Context, already redacted.
 	 * @param bool                $always  Whether to write whatever the logging setting.
 	 */
 	private function write( string $level, string $message, array $context = array(), bool $always = false ): void {
-		try {
-			if ( $always ) {
-				$this->logger->log_always( $message, $level, $context );
-			} else {
-				$this->logger->log( $message, $level, $context );
-			}
-		} catch ( Throwable $exception ) {
-			unset( $exception );
+		if ( $always ) {
+			$this->logger->log_always( $message, $level, $context );
+		} else {
+			$this->logger->log( $message, $level, $context );
 		}
 	}
 

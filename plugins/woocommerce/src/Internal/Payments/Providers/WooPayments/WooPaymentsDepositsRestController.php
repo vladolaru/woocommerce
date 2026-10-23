@@ -15,7 +15,6 @@ use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_REST_Server;
-use Throwable;
 
 /**
  * Serves the payouts overview, list, summary and export, one payout, and manual payouts.
@@ -365,15 +364,11 @@ class WooPaymentsDepositsRestController extends RestApiControllerBase {
 	 * @param array<string,mixed> $context Log context.
 	 */
 	private function log_manual_deposit( string $level, string $message, array $context ): void {
-		try {
-			if ( 'error' === $level ) {
-				wc_get_logger()->error( $message, $context );
-				return;
-			}
-
-			wc_get_logger()->info( $message, $context );
-		} catch ( Throwable $exception ) {
-			unset( $exception );
+		if ( 'error' === $level ) {
+			wc_get_logger()->error( $message, $context );
+			return;
 		}
+
+		wc_get_logger()->info( $message, $context );
 	}
 }

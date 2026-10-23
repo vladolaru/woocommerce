@@ -27,6 +27,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsHtmlUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
@@ -4626,7 +4628,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A $operation that releases the authorization of an order already paid leaves the order paid, with one note and one warning naming the event and the amount.
 	 *
-	 * Register row 459 (owner, N-356 item 2): the late-failure guard keeps skipping the status change on a paid order, as
+	 * The late-failure guard keeps skipping the status change on a paid order, as
 	 * client 11.1.0 does through order_prepared_for_processing() (includes/class-wc-payments-order-service.php:2747-2754,
 	 * capture expiry at :522-525), but the skipped event is now recorded. The cancel comes from the payment details REST
 	 * route, and the expired capture from the completed transition, on an order the merchant already marked paid; the
@@ -5491,6 +5493,7 @@ class PaymentProcessingServiceTest extends WC_Unit_Test_Case {
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'get_account_country', 'get_mode' ) )
 			->getMock();
+		$account_service->init( wc_get_container()->get( LegacyProxy::class ), wc_get_container()->get( WooPaymentsDatabaseCache::class ) );
 		$account_service->method( 'get_account_country' )->willReturn( 'US' );
 		$account_service->method( 'get_mode' )->willReturn( 'test' );
 		$effect_applier = new WooPaymentsOrderEffectApplier();

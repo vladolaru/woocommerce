@@ -375,19 +375,15 @@ final class WooPaymentsGatewaySettingsSynchronizer implements RegisterHooksInter
 
 		sort( $drifted_option_names );
 		sort( $failed_option_names );
-		try {
-			wc_get_container()->get( WooPaymentsLogger::class )->log_always(
-				'WooPayments split gateway settings drifted from the unchanged stored settings.',
-				'warning',
-				array(
-					'event'                => 'split_gateway_settings_drift',
-					'drifted_option_names' => $drifted_option_names,
-					'failed_option_names'  => $failed_option_names,
-				)
-			);
-		} catch ( \Throwable $logging_exception ) {
-			return;
-		}
+		wc_get_container()->get( WooPaymentsLogger::class )->log_always(
+			'WooPayments split gateway settings drifted from the unchanged stored settings.',
+			'warning',
+			array(
+				'event'                => 'split_gateway_settings_drift',
+				'drifted_option_names' => $drifted_option_names,
+				'failed_option_names'  => $failed_option_names,
+			)
+		);
 	}
 
 	/**

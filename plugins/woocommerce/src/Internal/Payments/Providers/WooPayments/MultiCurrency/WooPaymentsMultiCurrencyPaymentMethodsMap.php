@@ -147,7 +147,7 @@ class WooPaymentsMultiCurrencyPaymentMethodsMap implements RegisterHooksInterfac
 				: $definition->get_supported_currencies( $country );
 
 			foreach ( $currencies as $currency_code ) {
-				$map[ strtoupper( (string) $currency_code ) ][ $payment_method_id ] = $definition->get_title( $title_country );
+				$map[ strtoupper( $currency_code ) ][ $payment_method_id ] = $definition->get_title( $title_country );
 			}
 		}
 

@@ -56,15 +56,7 @@ class WooPaymentsPlatformConnectionService {
 		$failures = array();
 		$manager  = $this->get_connection_manager();
 
-		if ( null === $manager ) {
-			return array( self::FAILURE_CONNECTION_UNAVAILABLE );
-		}
-
-		try {
-			if ( ! $manager->is_connected() ) {
-				$failures[] = self::FAILURE_CONNECTION_UNAVAILABLE;
-			}
-		} catch ( \Throwable $e ) {
+		if ( ! $manager->is_connected() ) {
 			$failures[] = self::FAILURE_CONNECTION_UNAVAILABLE;
 		}
 
@@ -82,14 +74,10 @@ class WooPaymentsPlatformConnectionService {
 	/**
 	 * Get the Jetpack connection manager.
 	 *
-	 * @return JetpackConnectionManager|null
+	 * @return JetpackConnectionManager
 	 */
-	protected function get_connection_manager(): ?JetpackConnectionManager {
-		try {
-			return JetpackConnection::get_manager();
-		} catch ( \Throwable $e ) {
-			return null;
-		}
+	protected function get_connection_manager(): JetpackConnectionManager {
+		return JetpackConnection::get_manager();
 	}
 
 	/**
@@ -99,10 +87,6 @@ class WooPaymentsPlatformConnectionService {
 	 * @return int
 	 */
 	private function get_connection_owner_id( JetpackConnectionManager $manager ): int {
-		try {
-			return (int) $manager->get_connection_owner_id();
-		} catch ( \Throwable $e ) {
-			return 0;
-		}
+		return (int) $manager->get_connection_owner_id();
 	}
 }

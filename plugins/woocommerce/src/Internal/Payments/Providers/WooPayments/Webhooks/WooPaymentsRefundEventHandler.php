@@ -24,7 +24,6 @@ use InvalidArgumentException;
 use RuntimeException;
 use WC_Order;
 use WC_Order_Refund;
-use Throwable;
 
 /**
  * Applies WooPayments refund events to their orders: the local refund, its note and the refund status; an event on a
@@ -597,7 +596,7 @@ class WooPaymentsRefundEventHandler {
 	 */
 	private function get_refund_by_provider_refund_id( WC_Order $order, string $refund_id ): ?WC_Order_Refund {
 		foreach ( $order->get_refunds() as $refund ) {
-			if ( $refund instanceof WC_Order_Refund && $refund_id === (string) $refund->get_meta( '_wcpay_refund_id', true ) ) {
+			if ( $refund_id === (string) $refund->get_meta( '_wcpay_refund_id', true ) ) {
 				return $refund;
 			}
 		}
@@ -830,18 +829,13 @@ class WooPaymentsRefundEventHandler {
 	 * @param string   $message Error message.
 	 */
 	private function log_refund_failure( WC_Order $order, string $message ): void {
-		// Logging is best-effort: a logger that cannot be obtained or written must not fail the event.
-		try {
-			wc_get_logger()->error(
-				$message,
-				array(
-					'source'   => WooPaymentsLogger::SOURCE,
-					'order_id' => $order->get_id(),
-				)
-			);
-		} catch ( Throwable $logger_exception ) {
-			unset( $logger_exception );
-		}
+		wc_get_logger()->error(
+			$message,
+			array(
+				'source'   => WooPaymentsLogger::SOURCE,
+				'order_id' => $order->get_id(),
+			)
+		);
 	}
 
 	/**
@@ -851,17 +845,12 @@ class WooPaymentsRefundEventHandler {
 	 * @param int    $order_id  ID of the deleted order.
 	 */
 	private function log_deleted_order( string $charge_id, int $order_id ): void {
-		// Logging is best-effort: a logger that cannot be obtained or written must not fail the event.
-		try {
-			wc_get_logger()->info(
-				sprintf( 'charge.refunded event for charge %1$s names order %2$d, which no longer exists; nothing to record.', $charge_id, $order_id ),
-				array(
-					'source'   => WooPaymentsLogger::SOURCE,
-					'order_id' => $order_id,
-				)
-			);
-		} catch ( Throwable $logger_exception ) {
-			unset( $logger_exception );
-		}
+		wc_get_logger()->info(
+			sprintf( 'charge.refunded event for charge %1$s names order %2$d, which no longer exists; nothing to record.', $charge_id, $order_id ),
+			array(
+				'source'   => WooPaymentsLogger::SOURCE,
+				'order_id' => $order_id,
+			)
+		);
 	}
 }

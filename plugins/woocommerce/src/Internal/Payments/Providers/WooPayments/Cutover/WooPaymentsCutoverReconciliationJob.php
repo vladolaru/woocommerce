@@ -1204,7 +1204,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 		}
 		$plugin_data = get_plugin_data( $plugin_path, false, false );
 
-		return is_string( $plugin_data['Version'] ?? null ) ? trim( $plugin_data['Version'] ) : '';
+		return trim( $plugin_data['Version'] );
 	}
 
 	/**
@@ -1474,13 +1474,7 @@ class WooPaymentsCutoverReconciliationJob implements RegisterHooksInterface {
 			return false === $this->refresh_admin_classification( $record );
 		}
 
-		try {
-			$failures = $this->preflight_service->get_failures();
-		} catch ( \Throwable $error ) {
-			return false;
-		}
-
-		return ! in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $failures, true );
+		return ! in_array( WooPaymentsCutoverPreflightService::FAILURE_BUNDLED_SUBSCRIPTIONS, $this->preflight_service->get_failures(), true );
 	}
 
 	/**

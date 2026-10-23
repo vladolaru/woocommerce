@@ -327,14 +327,10 @@ class WooPaymentsWebhookReliabilityService implements RegisterHooksInterface {
 				'woopayments_lock_refused_event:' . $event_id
 			);
 		} catch ( \Throwable $exception ) {
-			try {
-				wc_get_logger()->error(
-					sprintf( 'Could not note the lock-refused WooPayments webhook event %s on its order.', $event_id ),
-					array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => WooPaymentsLogger::SOURCE ) )
-				);
-			} catch ( \Throwable $logger_exception ) {
-				unset( $logger_exception );
-			}
+			wc_get_logger()->error(
+				sprintf( 'Could not note the lock-refused WooPayments webhook event %s on its order.', $event_id ),
+				array_merge( WooPaymentsLogger::get_failure_context( $exception ), array( 'source' => WooPaymentsLogger::SOURCE ) )
+			);
 		}
 	}
 

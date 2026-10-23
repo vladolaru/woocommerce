@@ -394,16 +394,23 @@ class WooPaymentsExtensionRuntimeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should swallow extension runtime lookup exceptions.
+	 * @testdox Should answer null when the loaded extension's own lookups throw.
 	 */
 	public function test_swallows_runtime_lookup_exceptions(): void {
 		$proxy = $this->createMock( LegacyProxy::class );
-		$proxy->method( 'call_function' )->willThrowException( new RuntimeException( 'Runtime lookup failed.' ) );
+		$proxy->method( 'call_function' )->willReturnCallback(
+			static function ( string $function_name ) {
+				if ( 'class_exists' === $function_name ) {
+					return true;
+				}
+
+				throw new RuntimeException( 'Runtime lookup failed.' );
+			}
+		);
 		$proxy->method( 'call_static' )->willThrowException( new RuntimeException( 'Runtime lookup failed.' ) );
 		$sut = new WooPaymentsExtensionRuntime();
 		$sut->init( $proxy );
 
-		$this->assertFalse( $sut->is_loaded() );
 		$this->assertNull( $sut->get_gateway() );
 		$this->assertNull( $sut->get_account_service() );
 		$this->assertNull( $sut->get_payments_api_client() );

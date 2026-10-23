@@ -515,7 +515,7 @@ class WooPaymentsCardReadersRestController extends RestApiControllerBase {
 				'currency'            => $order->get_currency(),
 				'subtotal'            => (float) $order->get_subtotal(),
 				'total'               => (float) $order->get_total(),
-				'total_fees'          => (float) $order->get_total_fees(),
+				'total_fees'          => $order->get_total_fees(),
 				'shipping_tax'        => 0 < count( $order->get_shipping_methods() ) ? (float) $order->get_shipping_total() : 0,
 				'line_items'          => $this->get_receipt_line_items( $order ),
 				'coupon_lines'        => $this->get_receipt_coupon_lines( $order ),

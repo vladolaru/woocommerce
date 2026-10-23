@@ -54,7 +54,7 @@ class WooPaymentsOtherChargeRecorder {
 	 * @throws RuntimeException When the note cannot be saved.
 	 */
 	public function record( WC_Order $order, string $event_type, array $facts ): void {
-		$charge_id = (string) ( $facts['charge_id'] ?? '' );
+		$charge_id = $facts['charge_id'] ?? '';
 		if ( 'payment_intent.succeeded' === $event_type && '' !== $charge_id && '' === (string) $order->get_meta( '_charge_id', true ) ) {
 			// The transactions and disputes lists find a charge's order by `_charge_id`. Only a charge that took money is
 			// linked: a later event on it then finds this order, and is still recorded because it is not the order's payment.
@@ -63,11 +63,11 @@ class WooPaymentsOtherChargeRecorder {
 		}
 
 		$note     = $this->note_service->format_other_charge_note( $event_type, $facts );
-		$identity = implode( '|', array( 'other_charge', $event_type, (string) $facts['object_id'], (string) ( $facts['status'] ?? '' ) ) );
+		$identity = implode( '|', array( 'other_charge', $event_type, $facts['object_id'], $facts['status'] ?? '' ) );
 		if ( ! $this->note_service->add_note_once( $order, $note, $identity ) && 0 === $this->note_service->find_note( $order, $note, $identity ) ) {
 			// The note is the record: an event whose note was not saved fails, so the event is retried or refused, not acknowledged.
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is built from an event type, an object ID and an order ID, not HTML output.
-			throw new RuntimeException( sprintf( 'Could not save the other-charge note for %1$s %2$s on order %3$d.', $event_type, (string) $facts['object_id'], $order->get_id() ) );
+			throw new RuntimeException( sprintf( 'Could not save the other-charge note for %1$s %2$s on order %3$d.', $event_type, $facts['object_id'], $order->get_id() ) );
 		}
 
 		$payment_method = (string) $order->get_payment_method();

@@ -1034,44 +1034,6 @@ class WooPaymentsAccountServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should log a gateway settings read that a third-party option filter makes throw, and serve the defaults.
-	 */
-	public function test_throwing_gateway_settings_read_is_logged_and_read_as_defaults(): void {
-		add_filter(
-			'pre_option_woocommerce_woocommerce_payments_settings',
-			static function () {
-				throw new \RuntimeException( 'Filter failed for acct_secret.' );
-			}
-		);
-		$logger = RecordingWcLogger::install();
-
-		$this->assertSame( WooPaymentsSettingsDefaults::all(), $this->create_service()->get_gateway_settings() );
-		$this->assertNotEmpty( $logger->get_errors() );
-		$this->assertSame( array( 'woopayments' ), array_unique( array_column( $logger->get_errors(), 2 ) ) );
-		$this->assertStringNotContainsString( 'acct_secret', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
-	}
-
-	/**
-	 * @testdox Should log, not hide, an account cache read that a third-party option filter makes throw.
-	 */
-	public function test_throwing_account_cache_read_is_logged_and_read_as_missing(): void {
-		add_filter(
-			'pre_option_wcpay_account_data',
-			static function () {
-				throw new \RuntimeException( 'Filter failed for acct_secret.' );
-			}
-		);
-		$logger = RecordingWcLogger::install();
-		$sut    = $this->create_service();
-
-		$this->assertSame( '', $sut->get_account_id() );
-		$errors = $logger->get_errors();
-		$this->assertNotEmpty( $errors );
-		$this->assertSame( array( 'woopayments' ), array_unique( array_column( $errors, 2 ) ) );
-		$this->assertStringNotContainsString( 'acct_secret', (string) wp_json_encode( array( $logger->lines, $logger->contexts ) ) );
-	}
-
-	/**
 	 * Capability statuses are the platform's vocabulary (client 11.1.0 `includes/class-wc-payment-gateway-wcpay.php:908-913`
 	 * offers a method only on `active`); with none reported, card payments count as active (`:4696-4717`).
 	 *

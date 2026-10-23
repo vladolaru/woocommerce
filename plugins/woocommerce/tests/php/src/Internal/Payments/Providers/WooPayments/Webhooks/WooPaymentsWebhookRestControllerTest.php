@@ -899,43 +899,6 @@ class WooPaymentsWebhookRestControllerTest extends WC_REST_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Logger failures do not replace the webhook error envelope.
-	 */
-	public function test_logger_failures_do_not_replace_webhook_error_envelope(): void {
-		$controller = $this->create_controller_with_ingestor(
-			new class() extends WooPaymentsEventIngestor {
-				/**
-				 * Process a payload.
-				 *
-				 * @param array<string,mixed> $event Event payload.
-				 */
-				public function process( array $event ): void {
-					throw new RuntimeException( 'server failed' );
-				}
-			},
-			new class() extends RecordingWcLogger {
-				/**
-				 * Fail to record an error log entry.
-				 *
-				 * @param string              $message Log message.
-				 * @param array<string,mixed> $context Log context.
-				 * @throws RuntimeException Always.
-				 */
-				public function error( $message, $context = array() ) {
-					unset( $message, $context );
-
-					throw new RuntimeException( 'logger failed' );
-				}
-			}
-		);
-
-		$response = $controller->handle_webhook( $this->create_post_request( array( 'type' => 'bad' ) ) );
-
-		$this->assertSame( 500, $response->get_status() );
-		$this->assertSame( array( 'result' => 'error' ), $response->get_data() );
-	}
-
-	/**
 	 * Register the webhook route and return its actual permission callback.
 	 *
 	 * Reads the callback off the live route registration so the assertion exercises the

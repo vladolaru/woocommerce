@@ -355,14 +355,10 @@ class WooPaymentsEventIngestor {
 			return false;
 		}
 
-		try {
-			wc_get_logger()->error(
-				sprintf( 'Webhook event mode did not match the gateway mode (event ID: %s)', $this->get_event_id( $event ) ),
-				array( 'source' => WooPaymentsLogger::SOURCE )
-			);
-		} catch ( Throwable $exception ) {
-			unset( $exception );
-		}
+		wc_get_logger()->error(
+			sprintf( 'Webhook event mode did not match the gateway mode (event ID: %s)', $this->get_event_id( $event ) ),
+			array( 'source' => WooPaymentsLogger::SOURCE )
+		);
 
 		return true;
 	}
@@ -449,22 +445,17 @@ class WooPaymentsEventIngestor {
 			// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Each hook is documented where dispatch() names it.
 			do_action( $hook, $event_type, $event );
 		} catch ( Throwable $exception ) {
-			// Logging is best-effort: a failing log handler must not turn an isolated hook failure into a failed event.
-			try {
-				// A callback can let a platform error out, directly or wrapped, so its message is not logged.
-				wc_get_logger()->error(
-					'A WooPayments webhook delivery hook callback failed.',
-					array_merge(
-						WooPaymentsLogger::get_failure_context( $exception ),
-						array(
-							'source' => WooPaymentsLogger::SOURCE,
-							'hook'   => $hook,
-						)
+			// A callback can let a platform error out, directly or wrapped, so its message is not logged.
+			wc_get_logger()->error(
+				'A WooPayments webhook delivery hook callback failed.',
+				array_merge(
+					WooPaymentsLogger::get_failure_context( $exception ),
+					array(
+						'source' => WooPaymentsLogger::SOURCE,
+						'hook'   => $hook,
 					)
-				);
-			} catch ( Throwable $logger_exception ) {
-				unset( $logger_exception );
-			}
+				)
+			);
 		}
 	}
 }

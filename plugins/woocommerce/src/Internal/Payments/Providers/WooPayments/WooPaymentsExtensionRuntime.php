@@ -71,15 +71,11 @@ class WooPaymentsExtensionRuntime {
 	 * @return bool
 	 */
 	public function is_loaded(): bool {
-		try {
-			if ( null !== $this->arbiter && ! $this->arbiter->is_extension_owner() ) {
-				return false;
-			}
-
-			return (bool) $this->legacy_proxy->call_function( 'class_exists', 'WC_Payments' );
-		} catch ( \Throwable $e ) {
+		if ( null !== $this->arbiter && ! $this->arbiter->is_extension_owner() ) {
 			return false;
 		}
+
+		return (bool) $this->legacy_proxy->call_function( 'class_exists', 'WC_Payments' );
 	}
 
 	/**
@@ -269,20 +265,16 @@ class WooPaymentsExtensionRuntime {
 	 * @return void
 	 */
 	public function reset_onboarding_test_mode_option(): void {
-		try {
-			if ( ! $this->legacy_proxy->call_function( 'class_exists', 'WC_Payments_Onboarding_Service' ) ||
-				! Constants::is_defined( 'WC_Payments_Onboarding_Service::TEST_MODE_OPTION' ) ) {
-				return;
-			}
-
-			$this->legacy_proxy->call_function(
-				'update_option',
-				Constants::get_constant( 'WC_Payments_Onboarding_Service::TEST_MODE_OPTION' ),
-				'no'
-			);
-		} catch ( \Throwable $e ) {
+		if ( ! $this->legacy_proxy->call_function( 'class_exists', 'WC_Payments_Onboarding_Service' ) ||
+			! Constants::is_defined( 'WC_Payments_Onboarding_Service::TEST_MODE_OPTION' ) ) {
 			return;
 		}
+
+		$this->legacy_proxy->call_function(
+			'update_option',
+			Constants::get_constant( 'WC_Payments_Onboarding_Service::TEST_MODE_OPTION' ),
+			'no'
+		);
 	}
 
 	/**
@@ -388,11 +380,7 @@ class WooPaymentsExtensionRuntime {
 	 * @return array<string,mixed>
 	 */
 	private function get_cached_account_data(): array {
-		try {
-			$account_data = $this->legacy_proxy->call_function( 'get_option', WooPaymentsDatabaseCache::ACCOUNT_KEY, array() );
-		} catch ( \Throwable $e ) {
-			return array();
-		}
+		$account_data = $this->legacy_proxy->call_function( 'get_option', WooPaymentsDatabaseCache::ACCOUNT_KEY, array() );
 
 		if ( ! is_array( $account_data ) || empty( $account_data['data'] ) || ! is_array( $account_data['data'] ) ) {
 			return array();

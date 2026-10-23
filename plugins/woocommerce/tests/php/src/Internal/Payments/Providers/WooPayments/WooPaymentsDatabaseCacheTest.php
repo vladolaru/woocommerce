@@ -358,22 +358,13 @@ class WooPaymentsDatabaseCacheTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should hand a throwing read to the error handler once and treat it as nothing stored, or let it propagate without one.
+	 * @testdox Should let a throwing read propagate.
 	 */
 	public function test_get_contents_read_errors(): void {
 		$throw = static function () {
 			throw new RuntimeException( 'Filter failed.' );
 		};
-		add_filter( 'pre_option_' . WooPaymentsDatabaseCache::ACCOUNT_KEY, $throw );
 		add_filter( 'pre_option_' . WooPaymentsDatabaseCache::ONBOARDING_FIELDS_DATA_KEY, $throw );
-		$errors  = 0;
-		$handler = static function () use ( &$errors ): void {
-			++$errors;
-		};
-
-		$this->assertFalse( $this->sut->get_contents( WooPaymentsDatabaseCache::ACCOUNT_KEY, $handler ) );
-		$this->assertFalse( $this->sut->get_contents( WooPaymentsDatabaseCache::ACCOUNT_KEY, $handler ) );
-		$this->assertSame( 1, $errors );
 
 		$this->expectException( RuntimeException::class );
 		$this->sut->get_contents( WooPaymentsDatabaseCache::ONBOARDING_FIELDS_DATA_KEY );

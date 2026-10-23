@@ -281,7 +281,7 @@ class WooPaymentsTerminalPaymentsRestController extends RestApiControllerBase {
 			$request_data    = array(
 				'amount'               => WooPaymentsCurrencyUtils::amount_to_minor_units( (float) $order->get_total(), $currency ),
 				'currency'             => $currency,
-				'description'          => WooPaymentsIntentRequestBuilder::intent_description( (string) $order->get_order_number() ),
+				'description'          => WooPaymentsIntentRequestBuilder::intent_description( $order->get_order_number() ),
 				'metadata'             => array_merge(
 					$metadata,
 					array(
