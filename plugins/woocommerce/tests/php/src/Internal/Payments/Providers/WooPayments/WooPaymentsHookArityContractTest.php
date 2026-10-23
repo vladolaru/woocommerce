@@ -20,6 +20,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocaliza
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelectedCurrencyPersistenceService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
+use Automattic\WooCommerce\Internal\Payments\TransientRowLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
@@ -33,6 +34,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymen
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayOrderStatusSync;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsAuthorizationsListRequest;
@@ -894,7 +896,12 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( 'is_woopay', true );
 		$order->save();
 
-		$sync = wc_get_container()->get( WooPaymentsWooPayOrderStatusSync::class );
+		// The action fires only while WooPay is on.
+		$woopay_eligibility = $this->createStub( WooPaymentsWooPayEligibility::class );
+		$woopay_eligibility->method( 'is_woopay_enabled' )->willReturn( true );
+		$container = wc_get_container();
+		$sync      = new WooPaymentsWooPayOrderStatusSync();
+		$sync->init( $container->get( WooPaymentsRuntimeArbiter::class ), $woopay_eligibility, $container->get( WooPaymentsApiClient::class ), $container->get( TransientRowLock::class ), $container->get( WooPaymentsAccountService::class ) );
 		$sync->send_webhook( $order->get_id(), 'pending', 'processing' );
 	}
 

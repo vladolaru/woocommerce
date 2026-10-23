@@ -620,10 +620,19 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox WooPay status changes fire the delivery action only for WooPay orders.
+	 * @testdox WooPay status changes fire the delivery action only for WooPay orders while WooPay is $label.
+	 *
+	 * Client 11.1.0 hooks send_webhook() only while WooPay is eligible and on (`includes/class-wc-payments.php:1711-1715,1761`).
+	 *
+	 * @dataProvider woopay_state_data
+	 *
+	 * @param string $label          Case label.
+	 * @param bool   $woopay_enabled Whether WooPay is on in the gateway settings.
+	 * @param bool   $delivers       Whether the WooPay order's status change fires the delivery action.
 	 */
-	public function test_status_change_fires_the_delivery_action_only_for_woopay_orders(): void {
-		$sync = $this->create_sync( true );
+	public function test_status_change_fires_the_delivery_action_only_for_woopay_orders( string $label, bool $woopay_enabled, bool $delivers ): void {
+		unset( $label );
+		$sync = $this->create_sync( true, $woopay_enabled );
 		$sync->register();
 
 		$woopay_order = WC_Helper_Order::create_order();
@@ -645,7 +654,19 @@ class WooPaymentsWooPayOrderStatusSyncTest extends WC_Unit_Test_Case {
 		$sync->send_webhook( $woopay_order->get_id(), 'pending', 'processing' );
 		$sync->send_webhook( $regular_order->get_id(), 'pending', 'processing' );
 
-		$this->assertSame( array( array( $woopay_order->get_id(), 'processing' ) ), $observed );
+		$this->assertSame( $delivers ? array( array( $woopay_order->get_id(), 'processing' ) ) : array(), $observed );
+	}
+
+	/**
+	 * WooPay states for the delivery action.
+	 *
+	 * @return array<string,array{string,bool,bool}>
+	 */
+	public function woopay_state_data(): array {
+		return array(
+			'on'  => array( 'on', true, true ),
+			'off' => array( 'off', false, false ),
+		);
 	}
 
 	/**

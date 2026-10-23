@@ -279,7 +279,7 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Trigger WooPay order-status webhook delivery for WooPay orders.
+	 * Trigger WooPay order-status webhook delivery for WooPay orders while WooPay is on.
 	 *
 	 * @param mixed $order_id        Order ID.
 	 * @param mixed $previous_status Previous order status.
@@ -289,7 +289,8 @@ class WooPaymentsWooPayOrderStatusSync implements RegisterHooksInterface {
 		unset( $previous_status );
 
 		$order = wc_get_order( $order_id );
-		if ( ! $order instanceof WC_Order || ! $order->get_meta( 'is_woopay' ) ) {
+		// Client 11.1.0 hooks this only while WooPay is eligible and on (includes/class-wc-payments.php:1711-1715,1761).
+		if ( ! $order instanceof WC_Order || ! $order->get_meta( 'is_woopay' ) || ! $this->woopay_eligibility->is_woopay_enabled() ) {
 			return;
 		}
 
