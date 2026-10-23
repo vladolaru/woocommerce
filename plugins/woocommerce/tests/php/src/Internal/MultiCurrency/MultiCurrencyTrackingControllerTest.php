@@ -6,7 +6,6 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyTrackingController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyTrackingOrderCountProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyTrackingProjectionService;
 use WC_Unit_Test_Case;
 
@@ -50,83 +49,40 @@ class MultiCurrencyTrackingControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should project tracker data with aggregated multi-currency order counts.
+	 * @testdox Should hand the tracker data and the resolved storage mode to the tracking service and return its result.
 	 */
-	public function test_projects_tracker_data_with_aggregated_multi_currency_order_counts(): void {
-		$projection_service  = $this->create_projection_service();
-		$order_count_service = $this->create_order_count_service();
-		$sut                 = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
-			$projection_service,
-			$order_count_service
-		);
+	public function test_passes_tracker_data_and_storage_mode_to_the_tracking_service(): void {
+		$hpos_service   = $this->create_projection_service();
+		$legacy_service = $this->create_projection_service();
+		$hpos           = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $hpos_service, static fn(): bool => true );
+		$legacy         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $legacy_service, static fn(): bool => false );
 
-		$result = $sut->add_tracker_data( array( 'existing' => 'value' ) );
+		$result = $hpos->add_tracker_data( array( 'existing' => 'value' ) );
+		$legacy->add_tracker_data( array() );
 
 		$this->assertSame(
 			array(
 				'existing'             => 'value',
-				'wcpay_multi_currency' => array(
-					'counts'     => 2,
-					'currencies' => array(
-						'GBP' => array(
-							'counts'   => 2,
-							'totals'   => 20.5,
-							'gateways' => array(
-								'woocommerce_payments' => array(
-									'counts' => 2,
-									'totals' => 20.5,
-								),
-							),
-						),
-					),
-				),
+				'wcpay_multi_currency' => array( 'hpos' => true ),
 			),
 			$result
 		);
-		$this->assertSame( array( 'existing' => 'value' ), $projection_service->last_data );
-		$this->assertSame( $result['wcpay_multi_currency'], $projection_service->last_order_counts );
-	}
-
-	/**
-	 * @testdox Should pass the resolved storage mode to the order count service.
-	 */
-	public function test_passes_resolved_storage_mode_to_order_count_service(): void {
-		$hpos_order_count_service   = $this->create_order_count_service();
-		$legacy_order_count_service = $this->create_order_count_service();
-		$hpos_controller            = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
-			$this->create_projection_service(),
-			$hpos_order_count_service,
-			static fn(): bool => true
-		);
-		$legacy_controller          = $this->create_controller(
-			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
-			$this->create_projection_service(),
-			$legacy_order_count_service,
-			static fn(): bool => false
-		);
-
-		$hpos_controller->add_tracker_data( array() );
-		$legacy_controller->add_tracker_data( array() );
-
-		$this->assertTrue( $hpos_order_count_service->last_is_hpos_enabled );
-		$this->assertFalse( $legacy_order_count_service->last_is_hpos_enabled );
+		$this->assertSame( array( 'existing' => 'value' ), $hpos_service->last_data );
+		$this->assertTrue( $hpos_service->last_is_hpos_enabled );
+		$this->assertFalse( $legacy_service->last_is_hpos_enabled );
 	}
 
 	/**
 	 * Create a tracking controller.
 	 *
-	 * @param string                                                $owner               Runtime owner.
-	 * @param MultiCurrencyTrackingProjectionService|null           $projection_service  Projection service.
-	 * @param MultiCurrencyTrackingOrderCountProjectionService|null $order_count_service Order count service.
-	 * @param callable|null                                         $storage_resolver    Storage mode resolver.
+	 * @param string                                      $owner              Runtime owner.
+	 * @param MultiCurrencyTrackingProjectionService|null $projection_service Projection service.
+	 * @param callable|null                               $storage_resolver   Storage mode resolver.
 	 * @return MultiCurrencyTrackingController
 	 */
 	private function create_controller(
 		string $owner,
 		?MultiCurrencyTrackingProjectionService $projection_service = null,
-		?MultiCurrencyTrackingOrderCountProjectionService $order_count_service = null,
 		?callable $storage_resolver = null
 	): MultiCurrencyTrackingController {
 		$controller = new MultiCurrencyTrackingController();
@@ -139,10 +95,6 @@ class MultiCurrencyTrackingControllerTest extends WC_Unit_Test_Case {
 			$controller->set_tracking_projection_service( $projection_service );
 		}
 
-		if ( null !== $order_count_service ) {
-			$controller->set_order_count_projection_service( $order_count_service );
-		}
-
 		if ( null !== $storage_resolver ) {
 			$controller->set_hpos_enabled_resolver( $storage_resolver );
 		}
@@ -153,7 +105,7 @@ class MultiCurrencyTrackingControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a projection service test double.
 	 *
-	 * @return MultiCurrencyTrackingProjectionService&object{last_data: array<string,mixed>, last_order_counts: array<string,mixed>}
+	 * @return MultiCurrencyTrackingProjectionService&object{last_data: array<string,mixed>, last_is_hpos_enabled: bool|null}
 	 */
 	private function create_projection_service(): MultiCurrencyTrackingProjectionService {
 		return new class() extends MultiCurrencyTrackingProjectionService {
@@ -165,11 +117,11 @@ class MultiCurrencyTrackingControllerTest extends WC_Unit_Test_Case {
 			public array $last_data = array();
 
 			/**
-			 * Last order counts received by the projection.
+			 * Last storage mode received by the projection.
 			 *
-			 * @var array<string,mixed>
+			 * @var bool|null
 			 */
-			public array $last_order_counts = array();
+			public ?bool $last_is_hpos_enabled = null;
 
 			/**
 			 * Constructor.
@@ -179,45 +131,17 @@ class MultiCurrencyTrackingControllerTest extends WC_Unit_Test_Case {
 			/**
 			 * Project multi-currency tracker data.
 			 *
-			 * @param array<string,mixed> $data         Existing tracker data.
-			 * @param array<string,mixed> $order_counts Precomputed order-count payload.
+			 * @param array<string,mixed> $data            Existing tracker data.
+			 * @param bool                $is_hpos_enabled Whether HPOS order storage is enabled.
 			 * @return array<string,mixed>
 			 */
-			public function project_tracker_data( array $data, array $order_counts = array() ): array {
-				$this->last_data         = $data;
-				$this->last_order_counts = $order_counts;
-
-				$data['wcpay_multi_currency'] = $order_counts;
-
-				return $data;
-			}
-		};
-	}
-
-	/**
-	 * Create an order count projection service test double.
-	 *
-	 * @return MultiCurrencyTrackingOrderCountProjectionService&object{last_is_hpos_enabled: bool|null}
-	 */
-	private function create_order_count_service(): MultiCurrencyTrackingOrderCountProjectionService {
-		return new class() extends MultiCurrencyTrackingOrderCountProjectionService {
-			/**
-			 * Last storage mode received by the service.
-			 *
-			 * @var bool|null
-			 */
-			public ?bool $last_is_hpos_enabled = null;
-
-			/**
-			 * Get the order-count query for the active order storage mode.
-			 *
-			 * @param bool $is_hpos_enabled Whether HPOS order storage is enabled.
-			 * @return string
-			 */
-			public function get_order_count_query( bool $is_hpos_enabled ): string {
+			public function project_tracker_data( array $data, bool $is_hpos_enabled ): array {
+				$this->last_data            = $data;
 				$this->last_is_hpos_enabled = $is_hpos_enabled;
 
-				return "SELECT 'woocommerce_payments' AS gateway, 'GBP' AS currency, 20.5 AS totals, 2 AS counts";
+				$data['wcpay_multi_currency'] = array( 'hpos' => $is_hpos_enabled );
+
+				return $data;
 			}
 		};
 	}

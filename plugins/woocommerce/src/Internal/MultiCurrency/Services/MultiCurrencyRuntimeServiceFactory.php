@@ -113,15 +113,6 @@ class MultiCurrencyRuntimeServiceFactory {
 	}
 
 	/**
-	 * Create a tracking order-count projection service.
-	 *
-	 * @return MultiCurrencyTrackingOrderCountProjectionService
-	 */
-	public function create_tracking_order_count_projection_service(): MultiCurrencyTrackingOrderCountProjectionService {
-		return new MultiCurrencyTrackingOrderCountProjectionService();
-	}
-
-	/**
 	 * Create a store-currency lifecycle service.
 	 *
 	 * @return MultiCurrencyStoreCurrencyLifecycleService

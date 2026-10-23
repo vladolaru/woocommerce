@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyTrackingOrderCountProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyTrackingProjectionService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Utilities\OrderUtil;
@@ -36,13 +35,6 @@ class MultiCurrencyTrackingController implements RegisterHooksInterface {
 	 * @var MultiCurrencyTrackingProjectionService|null
 	 */
 	private ?MultiCurrencyTrackingProjectionService $tracking_projection_service = null;
-
-	/**
-	 * Tracking order-count projection service.
-	 *
-	 * @var MultiCurrencyTrackingOrderCountProjectionService|null
-	 */
-	private ?MultiCurrencyTrackingOrderCountProjectionService $order_count_projection_service = null;
 
 	/**
 	 * HPOS enabled resolver.
@@ -83,17 +75,6 @@ class MultiCurrencyTrackingController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Set the tracking order-count projection service.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyTrackingOrderCountProjectionService $order_count_projection_service Order-count projection service.
-	 */
-	public function set_order_count_projection_service( MultiCurrencyTrackingOrderCountProjectionService $order_count_projection_service ): void {
-		$this->order_count_projection_service = $order_count_projection_service;
-	}
-
-	/**
 	 * Set the HPOS enabled resolver.
 	 *
 	 * @internal Used by tests and future explicit bootstrap definitions.
@@ -124,14 +105,7 @@ class MultiCurrencyTrackingController implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	public function add_tracker_data( array $data ): array {
-		global $wpdb;
-
-		$order_count_service = $this->get_order_count_projection_service();
-		$query               = $order_count_service->get_order_count_query( $this->is_hpos_enabled() );
-		$rows                = $wpdb->get_results( $query ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		$order_counts        = $order_count_service->aggregate_order_count_rows( is_array( $rows ) ? $rows : array() );
-
-		return $this->get_tracking_projection_service()->project_tracker_data( $data, $order_counts );
+		return $this->get_tracking_projection_service()->project_tracker_data( $data, $this->is_hpos_enabled() );
 	}
 
 	/**
@@ -145,19 +119,6 @@ class MultiCurrencyTrackingController implements RegisterHooksInterface {
 		}
 
 		return $this->tracking_projection_service;
-	}
-
-	/**
-	 * Get the tracking order-count projection service.
-	 *
-	 * @return MultiCurrencyTrackingOrderCountProjectionService
-	 */
-	private function get_order_count_projection_service(): MultiCurrencyTrackingOrderCountProjectionService {
-		if ( null === $this->order_count_projection_service ) {
-			$this->order_count_projection_service = $this->runtime_service_factory->create_tracking_order_count_projection_service();
-		}
-
-		return $this->order_count_projection_service;
 	}
 
 	/**

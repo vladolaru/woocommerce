@@ -37,27 +37,142 @@ class MultiCurrencyTrackingProjectionService {
 	}
 
 	/**
-	 * Project multi-currency tracker data.
+	 * Project multi-currency tracker data, with the counts and totals of Multi-Currency orders by currency and gateway.
 	 *
-	 * @param array<string,mixed> $data         Existing tracker data.
-	 * @param array<string,mixed> $order_counts Precomputed order-count payload.
+	 * @param array<string,mixed> $data            Existing tracker data.
+	 * @param bool                $is_hpos_enabled Whether HPOS order storage is enabled.
 	 * @return array<string,mixed>
 	 */
-	public function project_tracker_data( array $data, array $order_counts = array() ): array {
+	public function project_tracker_data( array $data, bool $is_hpos_enabled ): array {
 		$state = $this->state_builder->build();
 
 		$data[ self::TRACKER_KEY ] = array(
 			'enabled_currencies' => $this->get_enabled_currencies_data( $state ),
 			'default_currency'   => $this->get_currency_data_array( $state->get_default_currency(), $state->get_default_currency() ),
-			'order_counts'       => array() === $order_counts
-				? array(
-					'counts'     => 0,
-					'currencies' => array(),
-				)
-				: $order_counts,
+			'order_counts'       => $this->get_order_counts( $is_hpos_enabled ),
 		);
 
 		return $data;
+	}
+
+	/**
+	 * Count and total the completed, processing and refunded orders that recorded an exchange rate.
+	 *
+	 * @param bool $is_hpos_enabled Whether HPOS order storage is enabled.
+	 * @return array<string,mixed>
+	 */
+	private function get_order_counts( bool $is_hpos_enabled ): array {
+		global $wpdb;
+
+		$query = $is_hpos_enabled ? $this->get_hpos_order_count_query() : $this->get_legacy_order_count_query();
+		$rows  = $wpdb->get_results( $query ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+
+		$currencies  = array();
+		$total_count = 0;
+
+		foreach ( is_array( $rows ) ? $rows : array() as $row ) {
+			$currency = (string) $this->get_row_value( $row, 'currency' );
+			$counts   = (int) $this->get_row_value( $row, 'counts' );
+			$totals   = (float) $this->get_row_value( $row, 'totals' );
+			$gateway  = (string) $this->get_row_value( $row, 'gateway' );
+			$gateway  = '' === $gateway ? 'unknown' : $gateway;
+
+			$current_counts = (int) ( $currencies[ $currency ]['counts'] ?? 0 );
+			$current_totals = (float) ( $currencies[ $currency ]['totals'] ?? 0 );
+
+			$currencies[ $currency ]['counts']               = $current_counts + $counts;
+			$currencies[ $currency ]['totals']               = $current_totals + $totals;
+			$currencies[ $currency ]['gateways'][ $gateway ] = array(
+				'counts' => $counts,
+				'totals' => $totals,
+			);
+
+			$total_count += $counts;
+		}
+
+		return array(
+			'counts'     => $total_count,
+			'currencies' => $currencies,
+		);
+	}
+
+	/**
+	 * Build the HPOS order-count query.
+	 *
+	 * @return string
+	 */
+	private function get_hpos_order_count_query(): string {
+		global $wpdb;
+
+		return "
+			SELECT
+				gateway, currency, SUM(total) AS totals, COUNT(order_id) AS counts
+			FROM (
+				SELECT
+					orders.id AS order_id, orders.payment_method as gateway, orders.total_amount as total, orders.currency as currency
+				FROM
+					{$wpdb->prefix}wc_orders orders
+				INNER JOIN
+					{$wpdb->prefix}wc_orders_meta mc_meta ON mc_meta.order_id = orders.id
+					AND mc_meta.meta_key = '_wcpay_multi_currency_order_exchange_rate'
+				WHERE orders.type = 'shop_order'
+					AND orders.status in ( 'wc-completed', 'wc-processing', 'wc-refunded' )
+				GROUP BY orders.id
+			) order_gateways
+			GROUP BY currency, gateway
+		";
+	}
+
+	/**
+	 * Build the legacy post table order-count query.
+	 *
+	 * @return string
+	 */
+	private function get_legacy_order_count_query(): string {
+		global $wpdb;
+
+		return "
+			SELECT
+				gateway, currency, SUM(total) AS totals, COUNT(order_id) AS counts
+			FROM (
+				SELECT
+					orders.id AS order_id,
+					MAX(CASE WHEN order_meta.meta_key = '_payment_method' THEN order_meta.meta_value END) gateway,
+					MAX(CASE WHEN order_meta.meta_key = '_order_total' THEN order_meta.meta_value END) total,
+					MAX(CASE WHEN order_meta.meta_key = '_order_currency' THEN order_meta.meta_value END) currency
+				FROM
+					{$wpdb->prefix}posts orders
+				LEFT JOIN
+					{$wpdb->postmeta} order_meta ON order_meta.post_id = orders.id
+				INNER JOIN
+					{$wpdb->postmeta} mc_meta ON mc_meta.post_id = orders.id
+					AND mc_meta.meta_key = '_wcpay_multi_currency_order_exchange_rate'
+				WHERE orders.post_type = 'shop_order'
+					AND orders.post_status in ( 'wc-completed', 'wc-processing', 'wc-refunded' )
+					AND order_meta.meta_key in ( '_payment_method', '_order_total', '_order_currency' )
+				GROUP BY orders.id
+			) order_gateways
+			GROUP BY currency, gateway
+		";
+	}
+
+	/**
+	 * Get a value from a query result row.
+	 *
+	 * @param array<string,mixed>|object $row Row.
+	 * @param string                     $key Key.
+	 * @return mixed
+	 */
+	private function get_row_value( $row, string $key ) {
+		if ( is_array( $row ) ) {
+			return $row[ $key ] ?? null;
+		}
+
+		if ( is_object( $row ) && isset( $row->$key ) ) {
+			return $row->$key;
+		}
+
+		return null;
 	}
 
 	/**

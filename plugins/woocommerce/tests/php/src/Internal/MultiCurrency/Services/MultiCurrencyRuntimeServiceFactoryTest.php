@@ -12,7 +12,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeS
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelectedCurrencyPersistenceService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStoreCurrencyLifecycleService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherProjectionService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyTrackingOrderCountProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyTrackingProjectionService;
 use WC_Unit_Test_Case;
 
@@ -73,7 +72,6 @@ class MultiCurrencyRuntimeServiceFactoryTest extends WC_Unit_Test_Case {
 	 */
 	public function test_creates_tracking_projection_services(): void {
 		$this->assertInstanceOf( MultiCurrencyTrackingProjectionService::class, $this->sut->create_tracking_projection_service(), 'Factory should create tracking projection services.' );
-		$this->assertInstanceOf( MultiCurrencyTrackingOrderCountProjectionService::class, $this->sut->create_tracking_order_count_projection_service(), 'Factory should create tracking order-count projection services.' );
 	}
 
 	/**

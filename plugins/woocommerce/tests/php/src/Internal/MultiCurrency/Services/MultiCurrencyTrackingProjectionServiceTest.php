@@ -8,12 +8,16 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyTrackingProjectionService;
+use Automattic\WooCommerce\RestApi\UnitTests\HPOSToggleTrait;
+use Automattic\WooCommerce\Utilities\OrderUtil;
 use WC_Unit_Test_Case;
 
 /**
  * Tests for the MultiCurrencyTrackingProjectionService class.
  */
 class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
+
+	use HPOSToggleTrait;
 
 	/**
 	 * Original store currency.
@@ -23,19 +27,37 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 	private string $original_currency;
 
 	/**
+	 * Whether HPOS was authoritative before the test.
+	 *
+	 * @var bool
+	 */
+	private bool $original_hpos_enabled;
+
+	/**
+	 * Ensure the permanent HPOS tables exist before per-test transactions start.
+	 */
+	public static function wpSetUpBeforeClass(): void {
+		self::setup_cot_tables();
+	}
+
+	/**
 	 * Set up test fixtures.
 	 */
 	public function set_up(): void {
 		parent::set_up();
 
-		$this->original_currency = get_option( 'woocommerce_currency', 'USD' );
+		$this->original_currency     = get_option( 'woocommerce_currency', 'USD' );
+		$this->original_hpos_enabled = OrderUtil::custom_orders_table_usage_is_enabled();
 		update_option( 'woocommerce_currency', 'USD' );
+		add_filter( 'wc_allow_changing_orders_storage_while_sync_is_pending', '__return_true' );
 	}
 
 	/**
 	 * Tear down test fixtures.
 	 */
 	public function tear_down(): void {
+		$this->toggle_cot_authoritative( $this->original_hpos_enabled );
+		remove_filter( 'wc_allow_changing_orders_storage_while_sync_is_pending', '__return_true' );
 		update_option( 'woocommerce_currency', $this->original_currency );
 		delete_option( 'wcpay_multi_currency_exchange_rate_gbp' );
 		delete_option( 'wcpay_multi_currency_exchange_rate_jpy' );
@@ -50,16 +72,9 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
 		update_option( 'wcpay_multi_currency_exchange_rate_jpy', 'manual' );
 
-		$order_counts = array(
-			'counts'     => 3,
-			'currencies' => array(
-				'GBP' => array( 'counts' => 2 ),
-				'JPY' => array( 'counts' => 1 ),
-			),
-		);
-		$sut          = $this->create_service( $this->create_state() );
+		$sut = $this->create_service( $this->create_state() );
 
-		$result  = $sut->project_tracker_data( array( 'existing' => 'value' ), $order_counts );
+		$result  = $sut->project_tracker_data( array( 'existing' => 'value' ), OrderUtil::custom_orders_table_usage_is_enabled() );
 		$payload = $result[ MultiCurrencyTrackingProjectionService::TRACKER_KEY ];
 
 		$this->assertSame( 'value', $result['existing'] );
@@ -71,7 +86,6 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 			$payload['default_currency']
 		);
 		$this->assertSame( array( 'GBP', 'JPY' ), array_keys( $payload['enabled_currencies'] ) );
-		$this->assertSame( $order_counts, $payload['order_counts'] );
 		$this->assertSame( 'automatic (default)', $payload['enabled_currencies']['GBP']['rate_type'] );
 		$this->assertSame( 'manual', $payload['enabled_currencies']['JPY']['rate_type'] );
 		$this->assertFalse( $payload['enabled_currencies']['GBP']['is_zero_decimal'] );
@@ -84,7 +98,7 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 	public function test_marks_default_rate_rounding_and_charm_values(): void {
 		$sut = $this->create_service( $this->create_state() );
 
-		$result  = $sut->project_tracker_data( array() );
+		$result  = $sut->project_tracker_data( array(), OrderUtil::custom_orders_table_usage_is_enabled() );
 		$payload = $result[ MultiCurrencyTrackingProjectionService::TRACKER_KEY ];
 
 		$this->assertSame( '1.00 (default)', $payload['enabled_currencies']['GBP']['price_rounding'] );
@@ -106,7 +120,7 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 		);
 		$sut   = $this->create_service( $state );
 
-		$result  = $sut->project_tracker_data( array() );
+		$result  = $sut->project_tracker_data( array(), OrderUtil::custom_orders_table_usage_is_enabled() );
 		$payload = $result[ MultiCurrencyTrackingProjectionService::TRACKER_KEY ];
 
 		$this->assertSame( '0.50', $payload['enabled_currencies']['GBP']['price_rounding'] );
@@ -114,12 +128,18 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should default order counts when none are supplied.
+	 * @testdox Should report zero order counts without Multi-Currency orders (HPOS: $hpos_enabled).
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $hpos_enabled Whether HPOS is authoritative.
 	 */
-	public function test_defaults_order_counts_when_none_are_supplied(): void {
+	public function test_reports_zero_order_counts_without_multi_currency_orders( bool $hpos_enabled ): void {
+		$this->toggle_cot_authoritative( $hpos_enabled );
+		$this->create_order( 'GBP', 'woocommerce_payments', '10.00', 'completed', false );
 		$sut = $this->create_service( $this->create_state() );
 
-		$result  = $sut->project_tracker_data( array() );
+		$result  = $sut->project_tracker_data( array(), $hpos_enabled );
 		$payload = $result[ MultiCurrencyTrackingProjectionService::TRACKER_KEY ];
 
 		$this->assertSame(
@@ -129,6 +149,77 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 			),
 			$payload['order_counts']
 		);
+	}
+
+	/**
+	 * @testdox Should count and total completed, processing and refunded Multi-Currency orders by currency and gateway (HPOS: $hpos_enabled).
+	 * @testWith [true]
+	 *           [false]
+	 *
+	 * @param bool $hpos_enabled Whether HPOS is authoritative.
+	 */
+	public function test_counts_multi_currency_orders_by_currency_and_gateway( bool $hpos_enabled ): void {
+		$this->toggle_cot_authoritative( $hpos_enabled );
+		$this->create_order( 'GBP', 'woocommerce_payments', '10.50', 'completed' );
+		$this->create_order( 'GBP', 'woocommerce_payments', '10.00', 'processing' );
+		$this->create_order( 'EUR', '', '8.00', 'refunded' );
+		$this->create_order( 'GBP', 'woocommerce_payments', '99.00', 'pending' );
+		$this->create_order( 'GBP', 'woocommerce_payments', '77.00', 'completed', false );
+		$sut = $this->create_service( $this->create_state() );
+
+		$result       = $sut->project_tracker_data( array(), $hpos_enabled );
+		$order_counts = $result[ MultiCurrencyTrackingProjectionService::TRACKER_KEY ]['order_counts'];
+		ksort( $order_counts['currencies'] );
+
+		$this->assertSame(
+			array(
+				'counts'     => 3,
+				'currencies' => array(
+					'EUR' => array(
+						'counts'   => 1,
+						'totals'   => 8.0,
+						'gateways' => array(
+							'unknown' => array(
+								'counts' => 1,
+								'totals' => 8.0,
+							),
+						),
+					),
+					'GBP' => array(
+						'counts'   => 2,
+						'totals'   => 20.5,
+						'gateways' => array(
+							'woocommerce_payments' => array(
+								'counts' => 2,
+								'totals' => 20.5,
+							),
+						),
+					),
+				),
+			),
+			$order_counts
+		);
+	}
+
+	/**
+	 * Create and save an order, with the Multi-Currency exchange-rate meta unless told otherwise.
+	 *
+	 * @param string $currency       Order currency.
+	 * @param string $payment_method Payment method id, empty for none.
+	 * @param string $total          Order total.
+	 * @param string $status         Order status.
+	 * @param bool   $with_rate      Whether to record an exchange rate.
+	 */
+	private function create_order( string $currency, string $payment_method, string $total, string $status, bool $with_rate = true ): void {
+		$order = new \WC_Order();
+		$order->set_currency( $currency );
+		$order->set_payment_method( $payment_method );
+		$order->set_total( $total );
+		$order->set_status( $status );
+		if ( $with_rate ) {
+			$order->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', '0.8' );
+		}
+		$order->save();
 	}
 
 	/**
