@@ -146,7 +146,7 @@ final class MultiCurrencyBootstrap {
 		// Before the arbiter reads the feature option, so the first request after the extension stops owning payments runs on the handed-over value.
 		MultiCurrencyFeatureController::track_payments_owner( $arbiter->is_payments_extension_owner(), $arbiter->is_payments_builtin_owner() );
 		// Whenever the Features page decides Multi-Currency, also while it is off, so an enable reaches the extension's flag too.
-		if ( ! $arbiter->is_payments_extension_owner() && false === has_action( FeaturesController::FEATURE_ENABLED_CHANGED_ACTION, array( MultiCurrencyFeatureController::class, 'mirror_extension_flag' ) ) ) {
+		if ( ! $arbiter->is_payments_extension_owner() ) {
 			add_action( FeaturesController::FEATURE_ENABLED_CHANGED_ACTION, array( MultiCurrencyFeatureController::class, 'mirror_extension_flag' ), 10, 2 );
 		}
 		$owner = $arbiter->get_runtime_owner();
@@ -174,19 +174,15 @@ final class MultiCurrencyBootstrap {
 		// The client copies the order's exchange rates to refunds, records the customer currency and converts Analytics order stats
 		// on every request (client 11.1.0 `includes/multi-currency/MultiCurrency.php:371`, `:384`, `Analytics.php:79-80`), so an
 		// order created or imported on any request is handled, including a synchronous Analytics import on ?wc-ajax=checkout.
-		if ( false === has_action( 'woocommerce_order_refunded', array( $this, 'handle_woocommerce_order_refunded' ) ) ) {
-			add_action( 'woocommerce_order_refunded', array( $this, 'handle_woocommerce_order_refunded' ), 50, 2 );
-			add_action( 'woocommerce_order_status_changed', array( $this, 'handle_woocommerce_order_status_changed' ) );
-			add_filter( 'woocommerce_analytics_update_order_stats_data', array( $this, 'handle_woocommerce_analytics_update_order_stats_data' ), 99999, 2 );
-		}
+		add_action( 'woocommerce_order_refunded', array( $this, 'handle_woocommerce_order_refunded' ), 50, 2 );
+		add_action( 'woocommerce_order_status_changed', array( $this, 'handle_woocommerce_order_status_changed' ) );
+		add_filter( 'woocommerce_analytics_update_order_stats_data', array( $this, 'handle_woocommerce_analytics_update_order_stats_data' ), 99999, 2 );
 
 		$classes = $this->get_module_classes_for_request( $container, $request_type );
 		if ( ! empty( $classes ) ) {
 			if ( RequestTypeUtil::ADMIN === $request_type ) {
 				$this->admin_rest_container = $container;
-				if ( false === has_action( 'rest_api_init', array( $this, 'register_admin_rest_controller' ) ) ) {
-					add_action( 'rest_api_init', array( $this, 'register_admin_rest_controller' ), 0 );
-				}
+				add_action( 'rest_api_init', array( $this, 'register_admin_rest_controller' ), 0 );
 			}
 
 			if ( array( MultiCurrencyExplicitPriceController::class ) !== $classes ) {

@@ -100,17 +100,13 @@ class WooPaymentsMultiCurrencyProviderBootstrap implements RegisterHooksInterfac
 	 */
 	public function register(): void {
 		// The Blocks totals show the currency code while Multi-Currency runs (client 11.1.0 `includes/multi-currency/MultiCurrency.php:290`).
-		if ( false === has_filter( 'wcpay_payment_fields_js_config', array( $this, 'add_multi_currency_config' ) ) ) {
-			add_filter( 'wcpay_payment_fields_js_config', array( $this, 'add_multi_currency_config' ) );
-		}
+		add_filter( 'wcpay_payment_fields_js_config', array( $this, 'add_multi_currency_config' ) );
 
 		if ( $this->arbiter->is_builtin_owner() ) {
 			// Resolved here, so a store that runs Multi-Currency without the built-in WooPayments loads no WooPayments account service or API client.
 			$container = wc_get_container();
 			$this->register_adapters( $container->get( WooPaymentsNativeAccountAdapter::class ), $container->get( WooPaymentsNativeApiClientAdapter::class ) );
-			if ( false === has_filter( 'woocommerce_analytics_report_should_use_cache', array( $this, 'skip_analytics_report_cache_in_dev_mode' ) ) ) {
-				add_filter( 'woocommerce_analytics_report_should_use_cache', array( $this, 'skip_analytics_report_cache_in_dev_mode' ) );
-			}
+			add_filter( 'woocommerce_analytics_report_should_use_cache', array( $this, 'skip_analytics_report_cache_in_dev_mode' ) );
 			return;
 		}
 
