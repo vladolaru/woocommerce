@@ -64,20 +64,10 @@ class MultiCurrencyExplicitPriceController implements RegisterHooksInterface {
 			return;
 		}
 
-		$manifest = MultiCurrencyExplicitPriceProjectionService::get_hook_manifest();
-		foreach ( $manifest['filters'] as $filter ) {
-			$callback = array( $this, (string) $filter['callback'] );
-			if ( is_callable( $callback ) ) {
-				$this->add_filter_once( (string) $filter['hook'], $callback, (int) $filter['priority'], (int) $filter['accepted_args'] );
-			}
-		}
-
-		foreach ( $manifest['actions'] as $action ) {
-			$callback = array( $this, (string) $action['callback'] );
-			if ( is_callable( $callback ) ) {
-				$this->add_action_once( (string) $action['hook'], $callback, (int) $action['priority'], (int) $action['accepted_args'] );
-			}
-		}
+		add_filter( 'woocommerce_cart_total', array( $this, 'get_explicit_price' ), 100 );
+		add_filter( 'woocommerce_get_formatted_order_total', array( $this, 'get_explicit_price' ), 100, 2 );
+		add_action( 'woocommerce_admin_order_totals_after_tax', array( $this, 'register_formatted_woocommerce_price_filter' ) );
+		add_action( 'woocommerce_admin_order_totals_after_total', array( $this, 'unregister_formatted_woocommerce_price_filter' ) );
 	}
 
 	/**
@@ -108,7 +98,7 @@ class MultiCurrencyExplicitPriceController implements RegisterHooksInterface {
 	public function register_formatted_woocommerce_price_filter( $order_id = null ): void {
 		unset( $order_id );
 
-		$this->add_filter_once( 'wc_price_args', array( $this, 'get_explicit_price_args' ), 100 );
+		add_filter( 'wc_price_args', array( $this, 'get_explicit_price_args' ), 100 );
 	}
 
 	/**
@@ -156,33 +146,5 @@ class MultiCurrencyExplicitPriceController implements RegisterHooksInterface {
 		}
 
 		return MultiCurrencyExplicitPriceProjectionService::should_output_explicit_price( $default );
-	}
-
-	/**
-	 * Register a filter only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_filter_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_filter( $hook, $callback ) ) {
-			add_filter( $hook, $callback, $priority, $accepted_args );
-		}
-	}
-
-	/**
-	 * Register an action only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_action_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_action( $hook, $callback ) ) {
-			add_action( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }

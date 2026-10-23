@@ -66,46 +66,6 @@ class MultiCurrencyExplicitPriceProjectionService {
 	}
 
 	/**
-	 * Project the explicit price hook/filter manifest.
-	 *
-	 * @return array{filters: array<int,array<string,mixed>>, actions: array<int,array<string,mixed>>}
-	 *
-	 * @since 11.0.0
-	 */
-	public static function get_hook_manifest(): array {
-		return array(
-			'filters' => array(
-				array(
-					'hook'          => 'woocommerce_cart_total',
-					'callback'      => 'get_explicit_price',
-					'priority'      => 100,
-					'accepted_args' => 1,
-				),
-				array(
-					'hook'          => 'woocommerce_get_formatted_order_total',
-					'callback'      => 'get_explicit_price',
-					'priority'      => 100,
-					'accepted_args' => 2,
-				),
-			),
-			'actions' => array(
-				array(
-					'hook'          => 'woocommerce_admin_order_totals_after_tax',
-					'callback'      => 'register_formatted_woocommerce_price_filter',
-					'priority'      => 10,
-					'accepted_args' => 1,
-				),
-				array(
-					'hook'          => 'woocommerce_admin_order_totals_after_total',
-					'callback'      => 'unregister_formatted_woocommerce_price_filter',
-					'priority'      => 10,
-					'accepted_args' => 1,
-				),
-			),
-		);
-	}
-
-	/**
 	 * Project an explicit price string using either order or store currency.
 	 *
 	 * @param string                  $price                         Formatted price.

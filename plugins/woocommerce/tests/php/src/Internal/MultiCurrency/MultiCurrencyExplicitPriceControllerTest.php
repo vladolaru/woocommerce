@@ -50,10 +50,15 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 		$sut->register();
 		$sut->register();
 
-		$this->assertSame( 100, has_filter( 'woocommerce_cart_total', array( $sut, 'get_explicit_price' ) ) );
-		$this->assertSame( 100, has_filter( 'woocommerce_get_formatted_order_total', array( $sut, 'get_explicit_price' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_admin_order_totals_after_tax', array( $sut, 'register_formatted_woocommerce_price_filter' ) ) );
-		$this->assertSame( 10, has_action( 'woocommerce_admin_order_totals_after_total', array( $sut, 'unregister_formatted_woocommerce_price_filter' ) ) );
+		$this->assertSame(
+			array(
+				'woocommerce_admin_order_totals_after_tax' => array( 'register_formatted_woocommerce_price_filter' => array( 10, 1 ) ),
+				'woocommerce_admin_order_totals_after_total' => array( 'unregister_formatted_woocommerce_price_filter' => array( 10, 1 ) ),
+				'woocommerce_cart_total'                   => array( 'get_explicit_price' => array( 100, 1 ) ),
+				'woocommerce_get_formatted_order_total'    => array( 'get_explicit_price' => array( 100, 2 ) ),
+			),
+			RegisteredHooks::of( $sut )
+		);
 	}
 
 	/**

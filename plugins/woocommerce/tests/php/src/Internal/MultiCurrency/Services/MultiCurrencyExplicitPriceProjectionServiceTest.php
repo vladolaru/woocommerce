@@ -63,48 +63,6 @@ class MultiCurrencyExplicitPriceProjectionServiceTest extends WC_Unit_Test_Case 
 	}
 
 	/**
-	 * @testdox Should project explicit price hook manifest.
-	 */
-	public function test_projects_explicit_price_hook_manifest(): void {
-		$manifest = MultiCurrencyExplicitPriceProjectionService::get_hook_manifest();
-
-		$this->assertSame(
-			array(
-				array(
-					'hook'          => 'woocommerce_cart_total',
-					'callback'      => 'get_explicit_price',
-					'priority'      => 100,
-					'accepted_args' => 1,
-				),
-				array(
-					'hook'          => 'woocommerce_get_formatted_order_total',
-					'callback'      => 'get_explicit_price',
-					'priority'      => 100,
-					'accepted_args' => 2,
-				),
-			),
-			$manifest['filters']
-		);
-		$this->assertSame(
-			array(
-				array(
-					'hook'          => 'woocommerce_admin_order_totals_after_tax',
-					'callback'      => 'register_formatted_woocommerce_price_filter',
-					'priority'      => 10,
-					'accepted_args' => 1,
-				),
-				array(
-					'hook'          => 'woocommerce_admin_order_totals_after_total',
-					'callback'      => 'unregister_formatted_woocommerce_price_filter',
-					'priority'      => 10,
-					'accepted_args' => 1,
-				),
-			),
-			$manifest['actions']
-		);
-	}
-
-	/**
 	 * @testdox Should append currency code when additional currencies are enabled.
 	 */
 	public function test_appends_currency_code_when_additional_currencies_are_enabled(): void {
