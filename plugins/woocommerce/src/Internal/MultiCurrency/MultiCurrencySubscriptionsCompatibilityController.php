@@ -423,7 +423,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 				MultiCurrencyRequestContext::is_call_in_backtrace( self::MY_ACCOUNT_SUBSCRIPTIONS_TEMPLATE_CALLS )
 				|| MultiCurrencyRequestContext::is_call_in_backtrace( self::FORMATTED_SUBSCRIPTION_TOTAL_CALLS )
 			)
-			&& null !== $this->get_subscription_currency( is_object( $subscription ) ? $subscription : null )
+			&& null !== $this->get_subscription_currency( $subscription )
 		) {
 			$this->current_my_account_subscription = $subscription;
 		}
@@ -633,35 +633,12 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	 * @return bool
 	 */
 	private function has_changed_subscription_signup_fee_meta( $product, string $current_switch_cart_item, string $previous_switch_cart_item ): bool {
-		if (
-			'' === $current_switch_cart_item ||
-			$current_switch_cart_item !== $previous_switch_cart_item ||
-			! is_object( $product ) ||
-			! is_callable( array( $product, 'get_meta_data' ) )
-		) {
+		if ( '' === $current_switch_cart_item || $current_switch_cart_item !== $previous_switch_cart_item || ! $product instanceof \WC_Product ) {
 			return false;
 		}
 
-		$meta_data = call_user_func( array( $product, 'get_meta_data' ) );
-		if ( ! is_iterable( $meta_data ) ) {
-			return false;
-		}
-
-		foreach ( $meta_data as $meta ) {
-			if (
-				! is_object( $meta ) ||
-				! is_callable( array( $meta, 'get_data' ) ) ||
-				! is_callable( array( $meta, 'get_changes' ) )
-			) {
-				continue;
-			}
-
-			$data = call_user_func( array( $meta, 'get_data' ) );
-			if ( ! is_array( $data ) || '_subscription_sign_up_fee' !== ( $data['key'] ?? null ) ) {
-				continue;
-			}
-
-			if ( ! empty( call_user_func( array( $meta, 'get_changes' ) ) ) ) {
+		foreach ( $product->get_meta_data() as $meta ) {
+			if ( $meta instanceof \WC_Meta_Data && '_subscription_sign_up_fee' === $meta->get_data()['key'] && ! empty( $meta->get_changes() ) ) {
 				return true;
 			}
 		}
@@ -703,15 +680,15 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	/**
 	 * Get a subscription currency code.
 	 *
-	 * @param object|null $subscription Subscription object.
+	 * @param mixed $subscription Subscription, which extends WC_Order.
 	 * @return string|null
 	 */
-	private function get_subscription_currency( ?object $subscription ): ?string {
-		if ( null === $subscription || ! is_callable( array( $subscription, 'get_currency' ) ) ) {
+	private function get_subscription_currency( $subscription ): ?string {
+		if ( ! $subscription instanceof \WC_Order ) {
 			return null;
 		}
 
-		$currency_code = call_user_func( array( $subscription, 'get_currency' ) );
+		$currency_code = $subscription->get_currency();
 
 		return is_scalar( $currency_code ) && '' !== trim( (string) $currency_code ) ? strtoupper( trim( (string) $currency_code ) ) : null;
 	}
@@ -719,19 +696,11 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	/**
 	 * Get a subscription customer ID.
 	 *
-	 * @param object $subscription Subscription object.
+	 * @param object $subscription Subscription, which extends WC_Order.
 	 * @return int
 	 */
 	private function get_subscription_customer_id( object $subscription ): int {
-		if ( is_callable( array( $subscription, 'get_customer_id' ) ) ) {
-			return absint( call_user_func( array( $subscription, 'get_customer_id' ) ) );
-		}
-
-		if ( is_callable( array( $subscription, 'get_user_id' ) ) ) {
-			return absint( call_user_func( array( $subscription, 'get_user_id' ) ) );
-		}
-
-		return 0;
+		return $subscription instanceof \WC_Order ? absint( $subscription->get_customer_id() ) : 0;
 	}
 
 	/**
@@ -750,27 +719,23 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	 * @return string
 	 */
 	private function get_coupon_discount_type( $coupon ): string {
-		if ( ! is_object( $coupon ) || ! is_callable( array( $coupon, 'get_discount_type' ) ) ) {
+		if ( ! $coupon instanceof \WC_Coupon ) {
 			return '';
 		}
 
-		$discount_type = call_user_func( array( $coupon, 'get_discount_type' ) );
+		$discount_type = $coupon->get_discount_type();
 
 		return is_scalar( $discount_type ) ? (string) $discount_type : '';
 	}
 
 	/**
-	 * Get the product ID from a product-like object.
+	 * Get the product ID.
 	 *
 	 * @param mixed $product Product object.
 	 * @return int
 	 */
 	private function get_product_id( $product ): int {
-		if ( ! is_object( $product ) || ! is_callable( array( $product, 'get_id' ) ) ) {
-			return 0;
-		}
-
-		return absint( call_user_func( array( $product, 'get_id' ) ) );
+		return $product instanceof \WC_Product ? $product->get_id() : 0;
 	}
 
 	/**

@@ -119,11 +119,8 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 	 * @return bool
 	 */
 	public function should_convert_product_price( bool $should_convert, $product ): bool {
-		$addons_were_converted = is_object( $product ) && is_callable( array( $product, 'get_meta' ) )
-			? 1 === (int) $product->get_meta( self::ADDONS_CONVERTED_META_KEY )
-			: false;
-
-		return $should_convert && ! $addons_were_converted;
+		return $should_convert
+			&& ! ( $product instanceof \WC_Product && 1 === (int) $product->get_meta( self::ADDONS_CONVERTED_META_KEY ) );
 	}
 
 	/**
@@ -194,15 +191,13 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 			$value .= sprintf( _x( ' (%1$s)', 'quantity based addon price in cart', 'woocommerce' ), $formatted_price );
 		} elseif ( 'percentage_based' === $addon_price_type && $addon_price && $add_price_to_value ) {
 			$product = $this->get_product_by_id( (int) ( $cart_item['product_id'] ?? 0 ) );
-			if ( is_object( $product ) && is_callable( array( $product, 'set_price' ) ) ) {
+			if ( $product instanceof \WC_Product ) {
 				$converted_price = $this->get_price_projection_service()->get_price( $price, 'product' );
+				// @phpstan-ignore argument.type (set_price() formats a float price itself, through wc_format_decimal())
 				$product->set_price( $converted_price * ( (float) $addon_price / 100 ) );
+				// @phpstan-ignore argument.type (the extension writes the integer 1, client WooCommerceProductAddOns.php:163; meta keeps any scalar)
+				$product->update_meta_data( self::ADDONS_CONVERTED_META_KEY, 1 );
 
-				if ( is_callable( array( $product, 'update_meta_data' ) ) ) {
-					$product->update_meta_data( self::ADDONS_CONVERTED_META_KEY, 1 );
-				}
-
-				// @phpstan-ignore argument.type (get_product_by_id() returns wc_get_product()'s product; the seam is typed object for the test doubles)
 				$cart_price = WC()->cart->get_product_price( $product );
 				/* translators: %1$s addon price in cart */
 				$value .= sprintf( _x( ' (%1$s)', 'percentage based addon price in cart', 'woocommerce' ), $cart_price );
@@ -275,8 +270,10 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 			}
 		}
 
-		if ( isset( $cart_item['data'] ) && is_object( $cart_item['data'] ) && is_callable( array( $cart_item['data'], 'update_meta_data' ) ) ) {
-			$cart_item['data']->update_meta_data( self::ADDONS_CONVERTED_META_KEY, 1 );
+		$cart_product = $cart_item['data'] ?? null;
+		if ( $cart_product instanceof \WC_Product ) {
+			// @phpstan-ignore argument.type (the extension writes the integer 1, client WooCommerceProductAddOns.php:245; meta keeps any scalar)
+			$cart_product->update_meta_data( self::ADDONS_CONVERTED_META_KEY, 1 );
 		}
 
 		return array(
@@ -304,7 +301,7 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 		$addon_field_type   = (string) ( $addon['field_type'] ?? '' );
 
 		if ( $addon_price && $add_price_to_value ) {
-			$product          = is_object( $item ) && is_callable( array( $item, 'get_product' ) ) ? $item->get_product() : null;
+			$product          = $item instanceof \WC_Order_Item_Product ? $item->get_product() : null;
 			$calculated_price = $this->get_order_line_item_addon_price( $addon, $product );
 			$formatted_price  = html_entity_decode(
 				wp_strip_all_tags( $this->format_addon_price( $calculated_price, $values['data'] ?? null ) ),
@@ -473,7 +470,7 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 		$field_type = (string) ( $addon['field_type'] ?? '' );
 		$price_type = (string) ( $addon['price_type'] ?? '' );
 
-		if ( 'percentage_based' === $price_type && is_object( $product ) && is_callable( array( $product, 'get_price' ) ) && 0.0 !== (float) $product->get_price() ) {
+		if ( 'percentage_based' === $price_type && $product instanceof \WC_Product && 0.0 !== (float) $product->get_price() ) {
 			return (float) $product->get_price() * ( $price / 100 );
 		}
 
@@ -516,11 +513,9 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 	 * @return int|null
 	 */
 	private function get_cart_item_product_id( array $cart_item ): ?int {
-		if ( ! isset( $cart_item['data'] ) || ! is_object( $cart_item['data'] ) || ! is_callable( array( $cart_item['data'], 'get_id' ) ) ) {
-			return null;
-		}
+		$product = $cart_item['data'] ?? null;
 
-		return (int) $cart_item['data']->get_id();
+		return $product instanceof \WC_Product ? $product->get_id() : null;
 	}
 
 	/**

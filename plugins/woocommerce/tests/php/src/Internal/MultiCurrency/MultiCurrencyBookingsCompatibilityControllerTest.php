@@ -504,27 +504,28 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 	}
 
 	/**
-	 * Create a product type test double.
+	 * Create a product of a given type, as an extension's product class reports it.
 	 *
 	 * @param string $type Product type.
-	 * @return object
+	 * @return \WC_Product
 	 */
-	private function create_product_type( string $type ): object {
-		return new class( $type ) {
+	private function create_product_type( string $type ): \WC_Product {
+		return new class( $type ) extends \WC_Product_Simple {
 			/**
-			 * Product type.
+			 * Product type, unset while the parent constructor picks the simple product data store.
 			 *
-			 * @var string
+			 * @var string|null
 			 */
-			private string $type;
+			private ?string $product_type = null;
 
 			/**
 			 * Constructor.
 			 *
-			 * @param string $type Product type.
+			 * @param string $product_type Product type.
 			 */
-			public function __construct( string $type ) {
-				$this->type = $type;
+			public function __construct( string $product_type ) {
+				parent::__construct();
+				$this->product_type = $product_type;
 			}
 
 			/**
@@ -532,8 +533,8 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 			 *
 			 * @return string
 			 */
-			public function get_type(): string {
-				return $this->type;
+			public function get_type() {
+				return $this->product_type ?? parent::get_type();
 			}
 		};
 	}

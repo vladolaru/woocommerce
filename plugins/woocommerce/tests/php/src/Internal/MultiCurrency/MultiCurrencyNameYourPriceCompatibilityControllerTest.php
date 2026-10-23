@@ -718,60 +718,27 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
-	 * Create a product test double.
+	 * Create a product, flagged for the controller double's NYP check.
 	 *
 	 * @param string $nyp_currency             Stored NYP currency.
 	 * @param bool   $name_your_price_enabled Whether the product is NYP-enabled.
-	 * @return object
+	 * @return \WC_Product
 	 */
-	private function create_product( string $nyp_currency = '', bool $name_your_price_enabled = false ): object {
-		return new class( $nyp_currency, $name_your_price_enabled ) {
+	private function create_product( string $nyp_currency = '', bool $name_your_price_enabled = false ): \WC_Product {
+		$product = new class() extends \WC_Product_Simple {
 			/**
 			 * Whether the product is NYP-enabled.
 			 *
 			 * @var bool
 			 */
-			public bool $name_your_price_enabled;
-
-			/**
-			 * Product meta data.
-			 *
-			 * @var array<string,mixed>
-			 */
-			private array $meta = array();
-
-			/**
-			 * Constructor.
-			 *
-			 * @param string $nyp_currency             Stored NYP currency.
-			 * @param bool   $name_your_price_enabled Whether the product is NYP-enabled.
-			 */
-			public function __construct( string $nyp_currency, bool $name_your_price_enabled ) {
-				$this->name_your_price_enabled = $name_your_price_enabled;
-				if ( '' !== $nyp_currency ) {
-					$this->meta['_wcpay_multi_currency_nyp_currency'] = $nyp_currency;
-				}
-			}
-
-			/**
-			 * Update product meta.
-			 *
-			 * @param string $key   Meta key.
-			 * @param mixed  $value Meta value.
-			 */
-			public function update_meta_data( string $key, $value ): void {
-				$this->meta[ $key ] = $value;
-			}
-
-			/**
-			 * Get product meta.
-			 *
-			 * @param string $key Meta key.
-			 * @return mixed
-			 */
-			public function get_meta( string $key ) {
-				return $this->meta[ $key ] ?? '';
-			}
+			public bool $name_your_price_enabled = false;
 		};
+
+		$product->name_your_price_enabled = $name_your_price_enabled;
+		if ( '' !== $nyp_currency ) {
+			$product->update_meta_data( '_wcpay_multi_currency_nyp_currency', $nyp_currency );
+		}
+
+		return $product;
 	}
 }

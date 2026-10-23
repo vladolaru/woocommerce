@@ -183,8 +183,9 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 			return $cart_item;
 		}
 
-		if ( isset( $cart_item['data'] ) && is_object( $cart_item['data'] ) && is_callable( array( $cart_item['data'], 'update_meta_data' ) ) ) {
-			$cart_item['data']->update_meta_data( self::NYP_CURRENCY_META_KEY, $cart_item['nyp_currency'] );
+		$product = $cart_item['data'] ?? null;
+		if ( $product instanceof \WC_Product ) {
+			$product->update_meta_data( self::NYP_CURRENCY_META_KEY, $cart_item['nyp_currency'] );
 		}
 
 		$selected_currency_code = $this->get_selected_currency_code();
@@ -258,9 +259,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	 * @return bool
 	 */
 	public function should_convert_product_price( bool $should_convert, $product ): bool {
-		$product_currency = is_object( $product ) && is_callable( array( $product, 'get_meta' ) )
-			? (string) $product->get_meta( self::NYP_CURRENCY_META_KEY )
-			: '';
+		$product_currency = $product instanceof \WC_Product ? (string) $product->get_meta( self::NYP_CURRENCY_META_KEY ) : '';
 
 		// Skip cart items still in the currency their price was entered in, and NYP products.
 		return $should_convert

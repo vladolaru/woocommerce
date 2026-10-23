@@ -207,7 +207,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	 * @return bool
 	 */
 	public function should_convert_product_price( bool $should_convert, $product ): bool {
-		if ( ! $should_convert || 'booking' !== $this->get_product_type( $product ) ) {
+		if ( ! $should_convert || ! $product instanceof \WC_Product || 'booking' !== $product->get_type() ) {
 			return $should_convert;
 		}
 
@@ -249,18 +249,6 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	 */
 	protected function is_bookings_runtime_available(): bool {
 		return class_exists( 'WC_Bookings' );
-	}
-
-	/**
-	 * Get the product type.
-	 *
-	 * @param mixed $product Product object.
-	 * @return string
-	 */
-	private function get_product_type( $product ): string {
-		return is_object( $product ) && is_callable( array( $product, 'get_type' ) )
-			? (string) $product->get_type()
-			: '';
 	}
 
 	/**

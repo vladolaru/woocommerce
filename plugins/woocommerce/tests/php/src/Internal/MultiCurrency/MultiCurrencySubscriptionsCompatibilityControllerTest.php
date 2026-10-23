@@ -942,13 +942,14 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
-	 * Create a fake subscription object.
+	 * Create a subscription: WooCommerce Subscriptions' subscription extends WC_Order, and the double reports any currency
+	 * code, an empty one included, which WC_Order::set_currency() would refuse.
 	 *
 	 * @param string $currency_code Currency code.
-	 * @return object
+	 * @return \WC_Order
 	 */
-	private function create_subscription( string $currency_code ): object {
-		return new class( $currency_code ) {
+	private function create_subscription( string $currency_code ): \WC_Order {
+		return new class( $currency_code ) extends \WC_Order {
 			/**
 			 * Currency code.
 			 *
@@ -962,142 +963,79 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 			 * @param string $currency_code Currency code.
 			 */
 			public function __construct( string $currency_code ) {
+				parent::__construct();
 				$this->currency_code = $currency_code;
 			}
 
 			/**
-			 * Get subscription currency.
+			 * Get the subscription currency.
 			 *
+			 * @param string $context View or edit context.
 			 * @return string
 			 */
-			public function get_currency(): string {
+			public function get_currency( $context = 'view' ) {
+				unset( $context );
+
 				return $this->currency_code;
 			}
 		};
 	}
 
 	/**
-	 * Create a fake coupon object.
+	 * Create a coupon of a discount type, including the types WooCommerce Subscriptions registers.
 	 *
 	 * @param string $discount_type Discount type.
-	 * @return object
+	 * @return \WC_Coupon
 	 */
-	private function create_coupon( string $discount_type ): object {
-		return new class( $discount_type ) {
+	private function create_coupon( string $discount_type ): \WC_Coupon {
+		return new class( $discount_type ) extends \WC_Coupon {
 			/**
 			 * Discount type.
 			 *
 			 * @var string
 			 */
-			private string $discount_type;
+			private string $coupon_discount_type;
 
 			/**
 			 * Constructor.
 			 *
-			 * @param string $discount_type Discount type.
+			 * @param string $coupon_discount_type Discount type.
 			 */
-			public function __construct( string $discount_type ) {
-				$this->discount_type = $discount_type;
+			public function __construct( string $coupon_discount_type ) {
+				parent::__construct();
+				$this->coupon_discount_type = $coupon_discount_type;
 			}
 
 			/**
-			 * Get coupon discount type.
+			 * Get the coupon discount type.
 			 *
+			 * @param string $context View or edit context.
 			 * @return string
 			 */
-			public function get_discount_type(): string {
-				return $this->discount_type;
+			public function get_discount_type( $context = 'view' ) {
+				unset( $context );
+
+				return $this->coupon_discount_type;
 			}
 		};
 	}
 
 	/**
-	 * Create a fake subscription product.
+	 * Create an unsaved subscription product with a sign-up fee in its meta.
 	 *
-	 * @param int  $product_id                 Product ID.
-	 * @param bool $has_changed_signup_fee_meta Whether the sign-up fee meta has changes.
-	 * @return object
+	 * @param int  $product_id                  Product ID.
+	 * @param bool $has_changed_signup_fee_meta Whether the sign-up fee meta has changed since it was read.
+	 * @return \WC_Product
 	 */
-	private function create_product( int $product_id, bool $has_changed_signup_fee_meta = false ): object {
-		return new class( $product_id, $has_changed_signup_fee_meta ) {
-			/**
-			 * Product ID.
-			 *
-			 * @var int
-			 */
-			private int $product_id;
+	private function create_product( int $product_id, bool $has_changed_signup_fee_meta = false ): \WC_Product {
+		$product = new \WC_Product_Simple();
+		$product->add_meta_data( '_subscription_sign_up_fee', '10.00', true );
+		if ( $has_changed_signup_fee_meta ) {
+			$product->update_meta_data( '_subscription_sign_up_fee', '12.00' );
+		}
+		// Set after the meta, so the product reads no meta from the database.
+		$product->set_id( $product_id );
 
-			/**
-			 * Whether the sign-up fee meta has changes.
-			 *
-			 * @var bool
-			 */
-			private bool $has_changed_signup_fee_meta;
-
-			/**
-			 * Constructor.
-			 *
-			 * @param int  $product_id                 Product ID.
-			 * @param bool $has_changed_signup_fee_meta Whether the sign-up fee meta has changes.
-			 */
-			public function __construct( int $product_id, bool $has_changed_signup_fee_meta ) {
-				$this->product_id                  = $product_id;
-				$this->has_changed_signup_fee_meta = $has_changed_signup_fee_meta;
-			}
-
-			/**
-			 * Get product ID.
-			 *
-			 * @return int
-			 */
-			public function get_id(): int {
-				return $this->product_id;
-			}
-
-			/**
-			 * Get product meta data.
-			 *
-			 * @return object[]
-			 */
-			public function get_meta_data(): array {
-				return array(
-					new class( $this->has_changed_signup_fee_meta ) {
-						/**
-						 * Whether the meta has changes.
-						 *
-						 * @var bool
-						 */
-						private bool $has_changes;
-
-						/**
-						 * Constructor.
-						 *
-						 * @param bool $has_changes Whether the meta has changes.
-						 */
-						public function __construct( bool $has_changes ) {
-							$this->has_changes = $has_changes;
-						}
-
-						/**
-						 * Get meta data payload.
-						 *
-						 * @return array<string,string>
-						 */
-						public function get_data(): array {
-							return array( 'key' => '_subscription_sign_up_fee' );
-						}
-
-						/**
-						 * Get meta changes.
-						 *
-						 * @return array<string,string>
-						 */
-						public function get_changes(): array {
-							return $this->has_changes ? array( 'value' => '12.00' ) : array();
-						}
-					},
-				);
-			}
-		};
+		return $product;
 	}
 }

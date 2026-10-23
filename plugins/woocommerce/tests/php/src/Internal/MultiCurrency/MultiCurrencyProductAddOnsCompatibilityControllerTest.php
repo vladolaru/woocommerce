@@ -430,30 +430,31 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 		$sut     = $this->create_controller();
 		$product = $this->create_product();
 		$product->set_price( 20 );
-		$item = new class( $product ) {
+		$item = new class( $product ) extends \WC_Order_Item_Product {
 			/**
-			 * Product.
+			 * Product the item was ordered for.
 			 *
-			 * @var object
+			 * @var \WC_Product
 			 */
-			private object $product;
+			private \WC_Product $ordered_product;
 
 			/**
 			 * Constructor.
 			 *
-			 * @param object $product Product.
+			 * @param \WC_Product $ordered_product Product the item was ordered for.
 			 */
-			public function __construct( object $product ) {
-				$this->product = $product;
+			public function __construct( \WC_Product $ordered_product ) {
+				parent::__construct();
+				$this->ordered_product = $ordered_product;
 			}
 
 			/**
-			 * Get the order item product.
+			 * Get the order item product, without a database read.
 			 *
-			 * @return object
+			 * @return \WC_Product
 			 */
-			public function get_product(): object {
-				return $this->product;
+			public function get_product() {
+				return $this->ordered_product;
 			}
 		};
 
@@ -811,89 +812,15 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
-	 * Create a product test double.
+	 * Create an unsaved product.
 	 *
 	 * @param int $product_id Product ID.
-	 * @return object
+	 * @return \WC_Product
 	 */
-	private function create_product( int $product_id = 0 ): object {
-		return new class( $product_id ) {
-			/**
-			 * Product ID.
-			 *
-			 * @var int
-			 */
-			private int $product_id;
+	private function create_product( int $product_id = 0 ): \WC_Product {
+		$product = new \WC_Product_Simple();
+		$product->set_id( $product_id );
 
-			/**
-			 * Product price.
-			 *
-			 * @var mixed
-			 */
-			private $price = 0;
-
-			/**
-			 * Product meta data.
-			 *
-			 * @var array<string,mixed>
-			 */
-			private array $meta = array();
-
-			/**
-			 * Constructor.
-			 *
-			 * @param int $product_id Product ID.
-			 */
-			public function __construct( int $product_id ) {
-				$this->product_id = $product_id;
-			}
-
-			/**
-			 * Get product ID.
-			 *
-			 * @return int
-			 */
-			public function get_id(): int {
-				return $this->product_id;
-			}
-
-			/**
-			 * Set product price.
-			 *
-			 * @param mixed $price Product price.
-			 */
-			public function set_price( $price ): void {
-				$this->price = $price;
-			}
-
-			/**
-			 * Get product price.
-			 *
-			 * @return mixed
-			 */
-			public function get_price() {
-				return $this->price;
-			}
-
-			/**
-			 * Update product meta.
-			 *
-			 * @param string $key   Meta key.
-			 * @param mixed  $value Meta value.
-			 */
-			public function update_meta_data( string $key, $value ): void {
-				$this->meta[ $key ] = $value;
-			}
-
-			/**
-			 * Get product meta.
-			 *
-			 * @param string $key Meta key.
-			 * @return mixed
-			 */
-			public function get_meta( string $key ) {
-				return $this->meta[ $key ] ?? '';
-			}
-		};
+		return $product;
 	}
 }
