@@ -75,19 +75,6 @@ class MultiCurrencyAnalyticsSqlProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should leave unsupported select contexts unchanged.
-	 */
-	public function test_leaves_unsupported_select_contexts_unchanged(): void {
-		$sut     = new MultiCurrencyAnalyticsSqlProjectionService();
-		$clauses = array( ', product_id' );
-
-		$this->assertSame(
-			$clauses,
-			$sut->project_select_clauses( $clauses, 'products', false )
-		);
-	}
-
-	/**
 	 * @testdox Should project join clauses for legacy order storage.
 	 */
 	public function test_projects_join_clauses_for_legacy_order_storage(): void {

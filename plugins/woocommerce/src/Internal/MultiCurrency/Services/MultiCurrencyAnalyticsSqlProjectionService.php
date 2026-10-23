@@ -18,25 +18,15 @@ class MultiCurrencyAnalyticsSqlProjectionService {
 	private const SUPPORTED_CONTEXTS = array( 'orders', 'products', 'variations', 'categories', 'coupons', 'taxes' );
 
 	/**
-	 * Project analytics SELECT clauses.
+	 * Project analytics SELECT clauses for a stats or subquery context.
 	 *
-	 * @param string[]    $clauses         SELECT clauses.
-	 * @param string|null $context         Analytics context.
-	 * @param bool        $is_hpos_enabled Whether HPOS order storage is enabled.
+	 * @param string[] $clauses         SELECT clauses.
+	 * @param string   $context         Analytics context, a stats or subquery one.
+	 * @param bool     $is_hpos_enabled Whether HPOS order storage is enabled.
 	 * @return string[]
 	 */
-	public function project_select_clauses( array $clauses, ?string $context, bool $is_hpos_enabled ): array {
-		if ( null === $context ) {
-			return $clauses;
-		}
-
-		$context_parts = explode( '_', $context );
-		$context_page  = $context_parts[0] ?? 'generic';
-		$context_type  = $context_parts[1] ?? null;
-
-		if ( ! in_array( $context_type, array( 'stats', 'subquery' ), true ) ) {
-			return $clauses;
-		}
+	public function project_select_clauses( array $clauses, string $context, bool $is_hpos_enabled ): array {
+		$context_page = explode( '_', $context )[0];
 
 		$new_clauses      = array();
 		$sql_replacements = $this->get_sql_replacements();

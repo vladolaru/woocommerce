@@ -307,15 +307,18 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	 * @return string[]
 	 */
 	public function handle_woocommerce_analytics_clauses_select( array $clauses, $context = null ): array {
-		if ( $this->is_clause_filter_disabled( self::DISABLE_SELECT_FILTER ) ) {
+		// The client leaves the clauses alone without a context, before its disable filter, and in a context that is neither
+		// stats nor a subquery, after it (client 11.1.0 `includes/multi-currency/Analytics.php:236-260`).
+		if ( ! is_string( $context ) || $this->is_clause_filter_disabled( self::DISABLE_SELECT_FILTER ) ) {
 			return $clauses;
 		}
 
-		$projected = $this->get_sql_projection_service()->project_select_clauses(
-			$clauses,
-			is_string( $context ) ? $context : null,
-			$this->is_hpos_enabled()
-		);
+		$context_type = explode( '_', $context )[1] ?? null;
+		if ( ! in_array( $context_type, array( 'stats', 'subquery' ), true ) ) {
+			return $clauses;
+		}
+
+		$projected = $this->get_sql_projection_service()->project_select_clauses( $clauses, $context, $this->is_hpos_enabled() );
 
 		return $this->apply_clause_filter( self::EXTEND_SELECT_FILTER, $projected );
 	}
@@ -366,11 +369,8 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	 * @return string[]
 	 */
 	public function handle_woocommerce_analytics_clauses_select_orders( array $clauses ): array {
-		if ( $this->is_clause_filter_disabled( self::DISABLE_ORDER_SELECT_FILTER ) ) {
-			return $clauses;
-		}
-
-		if ( ! $this->has_selected_non_default_currency() ) {
+		// The client adds this handler only when a non-default currency is selected (client 11.1.0 `includes/multi-currency/Analytics.php:105-108`).
+		if ( ! $this->has_selected_non_default_currency() || $this->is_clause_filter_disabled( self::DISABLE_ORDER_SELECT_FILTER ) ) {
 			return $clauses;
 		}
 

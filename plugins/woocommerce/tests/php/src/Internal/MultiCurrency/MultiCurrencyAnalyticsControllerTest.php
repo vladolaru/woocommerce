@@ -419,6 +419,80 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should return SELECT clauses before the extension filter when the context is $label.
+	 *
+	 * Client 11.1.0 returns before its disable filter without a context, and before its extension filter when the
+	 * context is not a stats or subquery one (`includes/multi-currency/Analytics.php:236-299`).
+	 *
+	 * @dataProvider unsupported_select_context_data
+	 *
+	 * @param string      $label                  Case label.
+	 * @param string|null $context                Analytics context.
+	 * @param int         $expected_disable_calls Times the disable filter is applied.
+	 */
+	public function test_returns_select_clauses_before_the_extension_filter_for_an_unsupported_context( string $label, ?string $context, int $expected_disable_calls ): void {
+		unset( $label );
+		$sut           = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+		$clauses       = array( ', product_id' );
+		$disable_calls = 0;
+		$extend_calls  = 0;
+		add_filter(
+			'wcpay_multi_currency_disable_filter_select_clauses',
+			static function ( $disable ) use ( &$disable_calls ) {
+				++$disable_calls;
+				return $disable;
+			}
+		);
+		add_filter(
+			'wcpay_multi_currency_filter_select_clauses',
+			static function () use ( &$extend_calls ): array {
+				++$extend_calls;
+				return array( 'filtered' );
+			}
+		);
+
+		$this->assertSame( $clauses, $sut->handle_woocommerce_analytics_clauses_select( $clauses, $context ) );
+		$this->assertSame( $expected_disable_calls, $disable_calls );
+		$this->assertSame( 0, $extend_calls );
+	}
+
+	/**
+	 * Contexts the SELECT clause handler leaves alone.
+	 *
+	 * @return array<string,array{string,string|null,int}>
+	 */
+	public function unsupported_select_context_data(): array {
+		return array(
+			'missing'                    => array( 'missing', null, 0 ),
+			'neither stats nor subquery' => array( 'neither stats nor subquery', 'products', 1 ),
+		);
+	}
+
+	/**
+	 * @testdox Should not apply the order SELECT disable filter when the report shows the store currency.
+	 *
+	 * Client 11.1.0 adds the order SELECT handlers only when a non-default currency is selected
+	 * (`includes/multi-currency/Analytics.php:105-108`), so its disable filter is not applied otherwise (`:425-436`).
+	 */
+	public function test_does_not_apply_the_order_select_disable_filter_for_the_store_currency(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+		$sut->set_default_currency_resolver( static fn(): string => 'USD' );
+		$sut->set_request_args_resolver( static fn(): array => array( 'currency' => 'USD' ) );
+		$disable_calls = 0;
+		add_filter(
+			'wcpay_multi_currency_disable_filter_select_orders_clauses',
+			static function ( $disable ) use ( &$disable_calls ) {
+				++$disable_calls;
+				return $disable;
+			}
+		);
+
+		$sut->handle_woocommerce_analytics_clauses_select_orders( array( 'net_total' ) );
+
+		$this->assertSame( 0, $disable_calls );
+	}
+
+	/**
 	 * @testdox Should register SQL hooks from the cached multi-currency orders transient without querying.
 	 */
 	public function test_registers_sql_hooks_from_cached_multi_currency_orders_transient(): void {
