@@ -32,11 +32,6 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	private const ERROR_OPTION = 'wcpay_apple_pay_domain_error';
 
 	/**
-	 * Retry action hook.
-	 */
-	private const RETRY_ACTION = 'wcpay_register_apple_pay_domain';
-
-	/**
 	 * Site host expected during tests.
 	 *
 	 * @var string
@@ -49,13 +44,6 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	 * @var RecordingApplePayDomainApiClient
 	 */
 	private RecordingApplePayDomainApiClient $api_client;
-
-	/**
-	 * Recording scheduler.
-	 *
-	 * @var RecordingApplePayDomainScheduler
-	 */
-	private RecordingApplePayDomainScheduler $scheduler;
 
 	/**
 	 * System under test.
@@ -72,7 +60,6 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 
 		$this->expected_domain = (string) wp_parse_url( get_site_url(), PHP_URL_HOST );
 		$this->api_client      = new RecordingApplePayDomainApiClient();
-		$this->scheduler       = new RecordingApplePayDomainScheduler();
 	}
 
 	/**
@@ -93,7 +80,6 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 			remove_action( 'add_option_' . self::SETTINGS_OPTION, array( $this->service, 'verify_domain_on_new_gateway_settings' ) );
 			remove_action( 'update_option_' . self::APPLE_PAY_SETTINGS_OPTION, array( $this->service, 'verify_domain_on_updated_apple_pay_settings' ) );
 			remove_action( 'add_option_' . self::APPLE_PAY_SETTINGS_OPTION, array( $this->service, 'verify_domain_on_new_apple_pay_settings' ) );
-			remove_action( self::RETRY_ACTION, array( $this->service, 'handle_domain_registration_retry' ) );
 			remove_action( 'shutdown', array( $this->service, 'flush_registration_events' ) );
 		}
 
@@ -118,7 +104,6 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $this->expected_domain, $stored['apple_pay_verified_domain'] );
 		$this->assertSame( 'yes', $stored['apple_pay_domain_set'] );
 		$this->assertFalse( get_option( self::ERROR_OPTION ) );
-		$this->assertSame( array(), $this->scheduler->scheduled_jobs );
 	}
 
 	/**
@@ -337,9 +322,9 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should store the error and schedule one retry when the platform reports a failed registration.
+	 * @testdox Should store the error for the merchant's notice when the platform reports a failed registration.
 	 */
-	public function test_failed_registration_stores_the_error_and_schedules_a_retry(): void {
+	public function test_failed_registration_stores_the_error_for_the_notice(): void {
 		$error_message = 'Domain verification failed before telemetry';
 		// The client's own synthetic failure case (tests/unit/test-class-wc-payments-apple-pay-registration.php:211), not a recorded platform response.
 		$this->api_client->response = array(
@@ -359,8 +344,6 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( $this->expected_domain, $stored['apple_pay_verified_domain'] );
 		$this->assertSame( 'no', $stored['apple_pay_domain_set'] );
 		$this->assertSame( $error_message, get_option( self::ERROR_OPTION ) );
-		$this->assertCount( 1, $this->scheduler->scheduled_jobs );
-		$this->assertSame( self::RETRY_ACTION, $this->scheduler->scheduled_jobs[0]['hook'] );
 	}
 
 	/**
@@ -597,11 +580,11 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'Test error message', $notice['error'] ?? null );
 		$this->assertSame( 'Test error message', get_option( self::ERROR_OPTION ) );
 
-		update_option( self::ERROR_OPTION, 'Newer error from a retry' );
+		update_option( self::ERROR_OPTION, 'Newer error from another request' );
 		$this->assertFalse( $this->service->clear_displayed_error_notice_if_unchanged( $notice['errorId'] ?? '' ) );
-		$this->assertSame( 'Newer error from a retry', get_option( self::ERROR_OPTION ), 'An error replaced after the page load stays for the next display.' );
+		$this->assertSame( 'Newer error from another request', get_option( self::ERROR_OPTION ), 'An error replaced after the page load stays for the next display.' );
 
-		$this->assertTrue( $this->service->clear_displayed_error_notice_if_unchanged( hash( 'sha256', 'Newer error from a retry' ) ) );
+		$this->assertTrue( $this->service->clear_displayed_error_notice_if_unchanged( hash( 'sha256', 'Newer error from another request' ) ) );
 		$this->assertFalse( get_option( self::ERROR_OPTION ) );
 	}
 
@@ -638,9 +621,9 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Registers the settings and retry listeners, so a settings write and a scheduled retry reach the domain registration.
+	 * @testdox Registers the settings listeners, so a first settings write reaches the domain registration.
 	 */
-	public function test_register_hooks_the_settings_and_retry_listeners(): void {
+	public function test_register_hooks_the_settings_listeners(): void {
 		$this->service = $this->create_service();
 		update_option( self::APPLE_PAY_SETTINGS_OPTION, array( 'enabled' => 'yes' ) );
 		$this->service->register();
@@ -654,17 +637,6 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$this->assertSame( array( $this->expected_domain ), $this->api_client->registered_domains );
-
-		$this->api_client->registered_domains = array();
-		/**
-		 * Fires a pending Apple Pay domain registration retry.
-		 *
-		 * @since 11.0.0
-		 */
-		do_action( self::RETRY_ACTION );
-
-		$this->assertSame( array( $this->expected_domain ), $this->api_client->registered_domains );
-		$this->assertSame( 10, has_action( self::RETRY_ACTION, array( $this->service, 'handle_domain_registration_retry' ) ) );
 	}
 
 	/**
@@ -693,7 +665,7 @@ class WooPaymentsApplePayDomainServiceTest extends WC_Unit_Test_Case {
 		);
 
 		$service = new WooPaymentsApplePayDomainService();
-		$service->init( $this->api_client, $account_service, $this->scheduler, $tracker );
+		$service->init( $this->api_client, $account_service, $tracker );
 
 		return $service;
 	}

@@ -15,7 +15,7 @@ use Throwable;
 /**
  * Registers the site's domain with Apple Pay through the platform, and shows the merchant why a registration failed.
  *
- * It registers when Apple Pay is turned on, when the site's host changes, and again an hour after a failure.
+ * It registers when Apple Pay is turned on and when the site's host changes; a failure is stored for the merchant's notice.
  *
  * @since 11.0.0
  * @internal
@@ -25,10 +25,6 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	private const APPLE_PAY_SETTINGS_OPTION = 'woocommerce_woocommerce_payments_apple_pay_settings';
 
 	private const ERROR_OPTION = 'wcpay_apple_pay_domain_error';
-
-	const RETRY_ACTION = 'wcpay_register_apple_pay_domain';
-
-	private const RETRY_DELAY_SECONDS = HOUR_IN_SECONDS;
 
 	/**
 	 * Failure reason logged when the platform answered with a domain whose Apple Pay status is not active.
@@ -65,13 +61,6 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	private WooPaymentsAccountService $account_service;
 
 	/**
-	 * Action Scheduler wrapper.
-	 *
-	 * @var WooPaymentsActionSchedulerService
-	 */
-	private WooPaymentsActionSchedulerService $scheduler;
-
-	/**
 	 * Frontend tracking controller.
 	 *
 	 * @var WooPaymentsFrontendTrackingController|null
@@ -99,18 +88,15 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	 *
 	 * @param WooPaymentsApiClient                       $api_client      WooPayments API client.
 	 * @param WooPaymentsAccountService                  $account_service WooPayments account service.
-	 * @param WooPaymentsActionSchedulerService          $scheduler                   Action Scheduler wrapper.
 	 * @param WooPaymentsFrontendTrackingController|null $frontend_tracking_controller Optional frontend tracking controller.
 	 */
 	final public function init(
 		WooPaymentsApiClient $api_client,
 		WooPaymentsAccountService $account_service,
-		WooPaymentsActionSchedulerService $scheduler,
 		?WooPaymentsFrontendTrackingController $frontend_tracking_controller = null
 	): void {
 		$this->api_client                   = $api_client;
 		$this->account_service              = $account_service;
-		$this->scheduler                    = $scheduler;
 		$this->frontend_tracking_controller = $frontend_tracking_controller;
 	}
 
@@ -126,7 +112,6 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 		add_action( 'update_option_' . WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( $this, 'verify_domain_on_updated_gateway_settings' ), 10, 2 );
 		add_action( 'update_option_home', array( $this, 'verify_domain_on_site_url_change' ), 10, 2 );
 		add_action( 'update_option_siteurl', array( $this, 'verify_domain_on_site_url_change' ), 10, 2 );
-		add_action( self::RETRY_ACTION, array( $this, 'handle_domain_registration_retry' ) );
 		add_action( 'shutdown', array( $this, 'flush_registration_events' ) );
 	}
 
@@ -214,13 +199,6 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Retry Apple Pay domain registration from Action Scheduler.
-	 */
-	public function handle_domain_registration_retry(): void {
-		$this->verify_domain_if_configured();
-	}
-
-	/**
 	 * Register the current site domain with Apple Pay.
 	 *
 	 * @return bool True when the domain was verified.
@@ -270,7 +248,6 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 			)
 		);
 		update_option( self::ERROR_OPTION, $error );
-		$this->schedule_retry();
 		// The log line says why the registration failed (Stripe's documented status, or the platform's status and code), not
 		// the error text Apple or the platform wrote; that text is stored for the merchant's notice.
 		$this->log( 'Error registering domain with Apple.', 'error', $error_context );
@@ -317,7 +294,7 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 			try {
 				$this->get_frontend_tracking_controller()->record_user_event( $event_name, $properties );
 			} catch ( Throwable $throwable ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
-				// Tracking must never change the registration result or retry lifecycle.
+				// Tracking must never change the registration result.
 			}
 		}
 	}
@@ -434,7 +411,8 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 	/**
 	 * Clear the detailed domain error only if it is still the one a notice showed.
 	 *
-	 * A retry can store a newer error between page load and display; that one stays for the next display.
+	 * Another request (a settings save or a domain change) can store a newer error between page load and display; that one
+	 * stays for the next display.
 	 *
 	 * @param string $error_id Identifier of the displayed error, from the settings bootstrap.
 	 * @return bool Whether the stored error matched and was cleared.
@@ -564,13 +542,6 @@ class WooPaymentsApplePayDomainService implements RegisterHooksInterface {
 		$error_message  = $status_details['error_message'] ?? '';
 
 		return is_scalar( $error_message ) ? (string) $error_message : '';
-	}
-
-	/**
-	 * Schedule a domain-registration retry.
-	 */
-	private function schedule_retry(): void {
-		$this->scheduler->schedule_job( self::RETRY_ACTION, array(), time() + self::RETRY_DELAY_SECONDS );
 	}
 
 	/**

@@ -86,7 +86,6 @@ class WooPaymentsCutoverPreflightService {
 		WooPaymentsAccountMilestonesController::POST_KYC_ACTIVATION_EMAIL_SEND_ACTION,
 		WooPaymentsFraudOrderTrackingService::TRACK_NEW_ORDER_ACTION,
 		WooPaymentsFraudOrderTrackingService::TRACK_UPDATE_ORDER_ACTION,
-		WooPaymentsApplePayDomainService::RETRY_ACTION,
 		WooPaymentsCanceledAuthorizationFeeRemediationService::ACTION_HOOK,
 		WooPaymentsCanceledAuthorizationFeeRemediationService::DRY_RUN_ACTION_HOOK,
 		WooPaymentsCanceledAuthorizationFeeRemediationService::CHECK_AFFECTED_ORDERS_HOOK,

@@ -14,7 +14,6 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAdminMenuBadgeService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsApplePayDomainService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTrackingInfoService;
@@ -1085,8 +1084,7 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 		$service = new WooPaymentsApplePayDomainService();
 		$service->init(
 			$this->createMock( WooPaymentsApiClient::class ),
-			$account_service,
-			$this->createMock( WooPaymentsActionSchedulerService::class )
+			$account_service
 		);
 
 		return $service;

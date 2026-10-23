@@ -519,7 +519,6 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 			'post-KYC activation email'             => array( 'wcpay_post_kyc_activation_email_send' ),
 			'new-order tracking'                    => array( 'wcpay_track_new_order' ),
 			'updated-order tracking'                => array( 'wcpay_track_update_order' ),
-			'Apple Pay domain retry'                => array( 'wcpay_register_apple_pay_domain' ),
 			'authorization-fee remediation'         => array( 'wcpay_remediate_canceled_authorization_fees' ),
 			'authorization-fee dry run'             => array( 'wcpay_remediate_canceled_authorization_fees_dry_run' ),
 			'authorization-fee affected-order scan' => array( 'wcpay_check_affected_auth_fee_orders' ),
