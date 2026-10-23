@@ -52,13 +52,6 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 	private $ajax_request_resolver = null;
 
 	/**
-	 * WooCommerce version resolver.
-	 *
-	 * @var callable|null
-	 */
-	private $wc_version_resolver = null;
-
-	/**
 	 * Provider connected resolver.
 	 *
 	 * @var callable|null
@@ -112,17 +105,6 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 	 */
 	public function set_ajax_request_resolver( callable $ajax_request_resolver ): void {
 		$this->ajax_request_resolver = $ajax_request_resolver;
-	}
-
-	/**
-	 * Set the WooCommerce version resolver.
-	 *
-	 * @internal Used by tests.
-	 *
-	 * @param callable $wc_version_resolver Resolver returning the WooCommerce version.
-	 */
-	public function set_wc_version_resolver( callable $wc_version_resolver ): void {
-		$this->wc_version_resolver = $wc_version_resolver;
 	}
 
 	/**
@@ -180,7 +162,6 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 		// Like the client, look up the stored note only for a connected provider (NoteMultiCurrencyAvailable.php:64-72).
 		$add_note_manifest = MultiCurrencyAdminNoteProjectionService::get_add_note_manifest(
 			$is_ajax,
-			$this->get_wc_version(),
 			$provider_connected,
 			$provider_connected && $this->can_note_be_added()
 		);
@@ -216,19 +197,6 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 		}
 
 		return wp_doing_ajax();
-	}
-
-	/**
-	 * Get the WooCommerce version.
-	 *
-	 * @return string
-	 */
-	private function get_wc_version(): string {
-		if ( null !== $this->wc_version_resolver ) {
-			return (string) call_user_func( $this->wc_version_resolver );
-		}
-
-		return WC_VERSION;
 	}
 
 	/**

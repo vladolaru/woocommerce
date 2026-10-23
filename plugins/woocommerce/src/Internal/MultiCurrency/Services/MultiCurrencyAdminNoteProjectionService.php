@@ -17,7 +17,6 @@ class MultiCurrencyAdminNoteProjectionService {
 
 	private const NOTE_NAME      = 'wc-payments-notes-multi-currency-available';
 	private const NOTE_SOURCE    = 'woocommerce-payments';
-	private const MIN_WC_VERSION = '4.4.0';
 	private const NOTE_TYPE_INFO = 'info';
 	private const ACTION_STATUS  = 'unactioned';
 
@@ -49,31 +48,17 @@ class MultiCurrencyAdminNoteProjectionService {
 	}
 
 	/**
-	 * Project whether WC Admin notes are supported.
-	 *
-	 * @param string $wc_version WooCommerce version.
-	 * @return bool
-	 *
-	 * @since 11.0.0
-	 */
-	public static function supports_wc_admin_notes( string $wc_version ): bool {
-		return '' !== $wc_version && version_compare( $wc_version, self::MIN_WC_VERSION, '>=' );
-	}
-
-	/**
 	 * Project add-note eligibility and note metadata.
 	 *
-	 * @param bool   $is_ajax            Whether the current request is Ajax.
-	 * @param string $wc_version         WooCommerce version.
-	 * @param bool   $provider_connected Whether the provider account is connected.
-	 * @param bool   $can_be_added       Whether note traits say the note can be added.
+	 * @param bool $is_ajax            Whether the current request is Ajax.
+	 * @param bool $provider_connected Whether the provider account is connected.
+	 * @param bool $can_be_added       Whether note traits say the note can be added.
 	 * @return array{should_add: bool, note: array<string,mixed>|null, blockers: array<int,string>}
 	 *
 	 * @since 11.0.0
 	 */
 	public static function get_add_note_manifest(
 		bool $is_ajax,
-		string $wc_version,
 		bool $provider_connected,
 		bool $can_be_added
 	): array {
@@ -81,10 +66,6 @@ class MultiCurrencyAdminNoteProjectionService {
 
 		if ( $is_ajax ) {
 			$blockers[] = 'ajax_request';
-		}
-
-		if ( ! self::supports_wc_admin_notes( $wc_version ) ) {
-			$blockers[] = 'unsupported_wc_version';
 		}
 
 		if ( ! $provider_connected ) {

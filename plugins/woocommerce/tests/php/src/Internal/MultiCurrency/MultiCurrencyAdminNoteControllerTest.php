@@ -64,21 +64,18 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @dataProvider add_note_blocker_provider
 	 *
-	 * @param bool   $is_ajax            Whether the request is Ajax.
-	 * @param string $wc_version         WooCommerce version.
-	 * @param bool   $provider_connected Whether the provider is connected.
-	 * @param bool   $can_be_added       Whether the note can be added.
+	 * @param bool $is_ajax            Whether the request is Ajax.
+	 * @param bool $provider_connected Whether the provider is connected.
+	 * @param bool $can_be_added       Whether the note can be added.
 	 */
 	public function test_does_not_save_admin_note_when_blockers_are_present(
 		bool $is_ajax,
-		string $wc_version,
 		bool $provider_connected,
 		bool $can_be_added
 	): void {
 		$saved_notes = array();
 		$sut         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 		$sut->set_ajax_request_resolver( static fn(): bool => $is_ajax );
-		$sut->set_wc_version_resolver( static fn(): string => $wc_version );
 		$sut->set_provider_connected_resolver( static fn(): bool => $provider_connected );
 		$sut->set_note_can_be_added_resolver( static fn(): bool => $can_be_added );
 		$sut->set_note_saver(
@@ -99,7 +96,6 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 		$saved_notes = array();
 		$sut         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 		$sut->set_ajax_request_resolver( static fn(): bool => false );
-		$sut->set_wc_version_resolver( static fn(): string => '11.0.0' );
 		$sut->set_note_can_be_added_resolver( static fn(): bool => true );
 		$sut->set_note_saver(
 			static function ( array $note ) use ( &$saved_notes ): void {
@@ -126,7 +122,6 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 		$lookups = 0;
 		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 		$sut->set_ajax_request_resolver( static fn(): bool => false );
-		$sut->set_wc_version_resolver( static fn(): string => '11.0.0' );
 		$sut->set_provider_connected_resolver( static fn(): bool => false );
 		$sut->set_note_can_be_added_resolver(
 			static function () use ( &$lookups ): bool {
@@ -147,7 +142,6 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 		$saved_notes = array();
 		$sut         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false );
 		$sut->set_ajax_request_resolver( static fn(): bool => false );
-		$sut->set_wc_version_resolver( static fn(): string => '11.0.0' );
 		$sut->set_note_can_be_added_resolver( static fn(): bool => true );
 		$sut->set_note_saver(
 			static function ( array $note ) use ( &$saved_notes ): void {
@@ -163,14 +157,13 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Data provider for add-note blockers.
 	 *
-	 * @return array<string,array{0: bool, 1: string, 2: bool, 3: bool}>
+	 * @return array<string,array{0: bool, 1: bool, 2: bool}>
 	 */
 	public function add_note_blocker_provider(): array {
 		return array(
-			'ajax request'           => array( true, '11.0.0', true, true ),
-			'unsupported WC version' => array( false, '4.3.9', true, true ),
-			'provider disconnected'  => array( false, '11.0.0', false, true ),
-			'note cannot be added'   => array( false, '11.0.0', true, false ),
+			'ajax request'          => array( true, true, true ),
+			'provider disconnected' => array( false, false, true ),
+			'note cannot be added'  => array( false, true, false ),
 		);
 	}
 

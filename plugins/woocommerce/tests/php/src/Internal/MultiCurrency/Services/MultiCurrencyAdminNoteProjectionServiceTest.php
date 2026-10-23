@@ -53,16 +53,6 @@ class MultiCurrencyAdminNoteProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should project WC Admin note version support.
-	 */
-	public function test_projects_wc_admin_note_version_support(): void {
-		$this->assertFalse( MultiCurrencyAdminNoteProjectionService::supports_wc_admin_notes( '' ) );
-		$this->assertFalse( MultiCurrencyAdminNoteProjectionService::supports_wc_admin_notes( '4.3.9' ) );
-		$this->assertTrue( MultiCurrencyAdminNoteProjectionService::supports_wc_admin_notes( '4.4.0' ) );
-		$this->assertTrue( MultiCurrencyAdminNoteProjectionService::supports_wc_admin_notes( '11.0.0' ) );
-	}
-
-	/**
 	 * @testdox Should project add note blockers.
 	 */
 	public function test_projects_add_note_blockers(): void {
@@ -72,15 +62,7 @@ class MultiCurrencyAdminNoteProjectionServiceTest extends WC_Unit_Test_Case {
 				'note'       => null,
 				'blockers'   => array( 'ajax_request' ),
 			),
-			MultiCurrencyAdminNoteProjectionService::get_add_note_manifest( true, '11.0.0', true, true )
-		);
-		$this->assertSame(
-			array(
-				'should_add' => false,
-				'note'       => null,
-				'blockers'   => array( 'unsupported_wc_version' ),
-			),
-			MultiCurrencyAdminNoteProjectionService::get_add_note_manifest( false, '4.3.9', true, true )
+			MultiCurrencyAdminNoteProjectionService::get_add_note_manifest( true, true, true )
 		);
 		$this->assertSame(
 			array(
@@ -88,7 +70,7 @@ class MultiCurrencyAdminNoteProjectionServiceTest extends WC_Unit_Test_Case {
 				'note'       => null,
 				'blockers'   => array( 'provider_not_connected' ),
 			),
-			MultiCurrencyAdminNoteProjectionService::get_add_note_manifest( false, '11.0.0', false, true )
+			MultiCurrencyAdminNoteProjectionService::get_add_note_manifest( false, false, true )
 		);
 		$this->assertSame(
 			array(
@@ -96,7 +78,7 @@ class MultiCurrencyAdminNoteProjectionServiceTest extends WC_Unit_Test_Case {
 				'note'       => null,
 				'blockers'   => array( 'note_cannot_be_added' ),
 			),
-			MultiCurrencyAdminNoteProjectionService::get_add_note_manifest( false, '11.0.0', true, false )
+			MultiCurrencyAdminNoteProjectionService::get_add_note_manifest( false, true, false )
 		);
 	}
 
@@ -104,7 +86,7 @@ class MultiCurrencyAdminNoteProjectionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should project add note manifest when eligible.
 	 */
 	public function test_projects_add_note_manifest_when_eligible(): void {
-		$manifest = MultiCurrencyAdminNoteProjectionService::get_add_note_manifest( false, '11.0.0', true, true );
+		$manifest = MultiCurrencyAdminNoteProjectionService::get_add_note_manifest( false, true, true );
 
 		$this->assertTrue( $manifest['should_add'] );
 		$this->assertSame( array(), $manifest['blockers'] );
