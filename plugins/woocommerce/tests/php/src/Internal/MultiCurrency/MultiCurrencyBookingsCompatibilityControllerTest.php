@@ -71,6 +71,35 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 		$this->assertSame( 50, has_filter( 'woocommerce_bookings_process_cost_rules_base_cost', array( $sut, 'get_price' ) ) );
 		$this->assertSame( 9, has_action( 'wp_ajax_wc_bookings_calculate_costs', array( $sut, 'add_wc_price_args_filter_for_ajax' ) ) );
 		$this->assertSame( 9, has_action( 'wp_ajax_nopriv_wc_bookings_calculate_costs', array( $sut, 'add_wc_price_args_filter_for_ajax' ) ) );
+		$this->assertSame(
+			array(
+				'wcpay_multi_currency_should_convert_product_price' => array( 'should_convert_product_price' => array( 50, 2 ) ),
+				'woocommerce_bookings_calculated_booking_cost' => array( 'adjust_amount_for_calculated_booking_cost' => array( 50, 1 ) ),
+				'woocommerce_bookings_process_cost_rules_base_cost' => array( 'get_price' => array( 50, 1 ) ),
+				'woocommerce_bookings_process_cost_rules_cost' => array( 'get_price' => array( 50, 1 ) ),
+				'woocommerce_product_booking_person_type_get_block_cost' => array( 'get_price' => array( 50, 1 ) ),
+				'woocommerce_product_booking_person_type_get_cost' => array( 'get_price' => array( 50, 1 ) ),
+				'woocommerce_product_get_block_cost'   => array( 'get_price' => array( 50, 1 ) ),
+				'woocommerce_product_get_cost'         => array( 'get_price' => array( 50, 1 ) ),
+				'woocommerce_product_get_display_cost' => array( 'get_price' => array( 50, 1 ) ),
+				'woocommerce_product_get_resource_base_costs' => array( 'get_resource_prices' => array( 50, 1 ) ),
+				'woocommerce_product_get_resource_block_costs' => array( 'get_resource_prices' => array( 50, 1 ) ),
+				'wp_ajax_nopriv_wc_bookings_calculate_costs' => array( 'add_wc_price_args_filter_for_ajax' => array( 9, 1 ) ),
+				'wp_ajax_wc_bookings_calculate_costs'  => array( 'add_wc_price_args_filter_for_ajax' => array( 9, 1 ) ),
+			),
+			RegisteredHooks::of( $sut )
+		);
+	}
+
+	/**
+	 * @testdox Should register Bookings compatibility hooks for Ajax requests from wp-admin.
+	 */
+	public function test_registers_bookings_compatibility_hooks_for_admin_ajax_requests(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, true );
+
+		$sut->register();
+
+		$this->assertSame( 50, has_filter( 'woocommerce_bookings_calculated_booking_cost', array( $sut, 'adjust_amount_for_calculated_booking_cost' ) ) );
 	}
 
 	/**

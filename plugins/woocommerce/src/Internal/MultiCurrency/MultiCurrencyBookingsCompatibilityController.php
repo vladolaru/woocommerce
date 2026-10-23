@@ -7,12 +7,12 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyBookingsCompatibilityProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 
 /**
  * Registers native multi-currency Bookings compatibility hooks when core owns multi-currency.
@@ -110,41 +110,38 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 			return;
 		}
 
-		$this->add_action_once( 'plugins_loaded', array( $this, 'register_bookings_filters' ), 20 );
+		add_action( 'plugins_loaded', array( $this, 'register_bookings_filters' ), 20 );
 	}
 
 	/**
 	 * Register Bookings compatibility filters after supported runtimes have loaded.
+	 *
+	 * Bookings prices convert on the storefront and in Ajax requests, not in wp-admin.
 	 *
 	 * @internal
 	 */
 	public function register_bookings_filters(): void {
 		if (
 			! $this->arbiter->should_core_register()
-			|| ! MultiCurrencyBookingsCompatibilityProjectionService::should_register(
-				$this->is_bookings_runtime_available(),
-				is_admin(),
-				wp_doing_ajax()
-			)
+			|| ! $this->is_bookings_runtime_available()
+			|| ( is_admin() && ! wp_doing_ajax() )
 		) {
 			return;
 		}
 
-		$manifest = MultiCurrencyBookingsCompatibilityProjectionService::get_hook_manifest();
-
-		foreach ( $manifest['filters'] as $filter ) {
-			$callback = array( $this, (string) $filter['callback'] );
-			if ( is_callable( $callback ) ) {
-				$this->add_filter_once( (string) $filter['hook'], $callback, (int) $filter['priority'], (int) $filter['accepted_args'] );
-			}
-		}
-
-		foreach ( $manifest['actions'] as $action ) {
-			$callback = array( $this, (string) $action['callback'] );
-			if ( is_callable( $callback ) ) {
-				$this->add_action_once( (string) $action['hook'], $callback, (int) $action['priority'], (int) $action['accepted_args'] );
-			}
-		}
+		add_filter( 'woocommerce_bookings_calculated_booking_cost', array( $this, 'adjust_amount_for_calculated_booking_cost' ), 50 );
+		add_filter( 'woocommerce_product_get_block_cost', array( $this, 'get_price' ), 50 );
+		add_filter( 'woocommerce_product_get_cost', array( $this, 'get_price' ), 50 );
+		add_filter( 'woocommerce_product_get_display_cost', array( $this, 'get_price' ), 50 );
+		add_filter( 'woocommerce_product_booking_person_type_get_block_cost', array( $this, 'get_price' ), 50 );
+		add_filter( 'woocommerce_product_booking_person_type_get_cost', array( $this, 'get_price' ), 50 );
+		add_filter( 'woocommerce_product_get_resource_base_costs', array( $this, 'get_resource_prices' ), 50 );
+		add_filter( 'woocommerce_product_get_resource_block_costs', array( $this, 'get_resource_prices' ), 50 );
+		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_convert_product_price', array( $this, 'should_convert_product_price' ), 50, 2 );
+		add_filter( 'woocommerce_bookings_process_cost_rules_cost', array( $this, 'get_price' ), 50 );
+		add_filter( 'woocommerce_bookings_process_cost_rules_base_cost', array( $this, 'get_price' ), 50 );
+		add_action( 'wp_ajax_wc_bookings_calculate_costs', array( $this, 'add_wc_price_args_filter_for_ajax' ), 9 );
+		add_action( 'wp_ajax_nopriv_wc_bookings_calculate_costs', array( $this, 'add_wc_price_args_filter_for_ajax' ), 9 );
 	}
 
 	/**
@@ -154,11 +151,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	 * @return mixed
 	 */
 	public function adjust_amount_for_calculated_booking_cost( $costs ) {
-		if (
-			! MultiCurrencyBookingsCompatibilityProjectionService::should_adjust_calculated_booking_cost(
-				MultiCurrencyRequestContext::is_call_in_backtrace( self::CART_ADD_TO_CART_CALLS )
-			)
-		) {
+		if ( MultiCurrencyRequestContext::is_call_in_backtrace( self::CART_ADD_TO_CART_CALLS ) ) {
 			return $costs;
 		}
 
@@ -173,10 +166,10 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	 */
 	public function get_price( $price ) {
 		if (
-			! MultiCurrencyBookingsCompatibilityProjectionService::should_convert_booking_price(
-				$price,
+			! $price
+			|| (
 				MultiCurrencyRequestContext::is_call_in_backtrace( self::CART_ADD_TO_CART_CALLS )
-					&& MultiCurrencyRequestContext::is_call_in_backtrace( self::BOOKINGS_COST_CALCULATION_CALLS )
+				&& MultiCurrencyRequestContext::is_call_in_backtrace( self::BOOKINGS_COST_CALCULATION_CALLS )
 			)
 		) {
 			return $price;
@@ -184,9 +177,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 
 		return $this->get_price_projection_service()->get_price(
 			$price,
-			MultiCurrencyBookingsCompatibilityProjectionService::get_booking_price_type(
-				MultiCurrencyRequestContext::is_call_in_backtrace( self::BOOKING_PRICE_HTML_CALLS )
-			)
+			MultiCurrencyRequestContext::is_call_in_backtrace( self::BOOKING_PRICE_HTML_CALLS ) ? 'product' : 'exchange_rate'
 		);
 	}
 
@@ -216,18 +207,18 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	 * @return bool
 	 */
 	public function should_convert_product_price( bool $should_convert, $product ): bool {
-		return MultiCurrencyBookingsCompatibilityProjectionService::should_convert_booking_product_price(
-			$should_convert,
-			$this->get_product_type( $product ),
-			MultiCurrencyRequestContext::is_call_in_backtrace( self::BOOKING_PRICE_HTML_CALLS )
-		);
+		if ( ! $should_convert || 'booking' !== $this->get_product_type( $product ) ) {
+			return $should_convert;
+		}
+
+		return ! MultiCurrencyRequestContext::is_call_in_backtrace( self::BOOKING_PRICE_HTML_CALLS );
 	}
 
 	/**
 	 * Add selected-currency price args while Bookings Ajax calculates costs.
 	 */
 	public function add_wc_price_args_filter_for_ajax(): void {
-		$this->add_filter_once( 'wc_price_args', array( $this, 'filter_wc_price_args' ), 100 );
+		add_filter( 'wc_price_args', array( $this, 'filter_wc_price_args' ), 100 );
 	}
 
 	/**
@@ -296,33 +287,5 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 		}
 
 		return $this->frontend_projection_service;
-	}
-
-	/**
-	 * Register a filter only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_filter_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_filter( $hook, $callback ) ) {
-			add_filter( $hook, $callback, $priority, $accepted_args );
-		}
-	}
-
-	/**
-	 * Register an action only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_action_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_action( $hook, $callback ) ) {
-			add_action( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }
