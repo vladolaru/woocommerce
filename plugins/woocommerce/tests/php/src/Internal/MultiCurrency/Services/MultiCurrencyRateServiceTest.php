@@ -132,8 +132,8 @@ class MultiCurrencyRateServiceTest extends WC_Unit_Test_Case {
 		$this->assertTrue( $service->has_available_provider() );
 		$this->assertSame(
 			array(
-				'eur' => 1.2,
-				'gbp' => 0.82,
+				'EUR' => 1.2,
+				'GBP' => 0.82,
 			),
 			$service->get_rates( 'USD' )
 		);

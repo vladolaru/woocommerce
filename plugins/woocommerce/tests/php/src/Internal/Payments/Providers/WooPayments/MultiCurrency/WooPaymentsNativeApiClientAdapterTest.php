@@ -59,7 +59,7 @@ class WooPaymentsNativeApiClientAdapterTest extends WC_Unit_Test_Case {
 			MultiCurrencyCacheInterface::CURRENCIES_KEY,
 			array(
 				'data'               => array(
-					'currencies' => array( 'gbp' => 0.82 ),
+					'currencies' => array( 'GBP' => 0.82 ),
 					'updated'    => 123456,
 				),
 				'fetched'            => time() - 2 * DAY_IN_SECONDS,
@@ -79,7 +79,7 @@ class WooPaymentsNativeApiClientAdapterTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $enabled ) );
 		$this->assertSame( 0.82, $enabled['GBP']->get_rate() );
-		$this->assertSame( array( 'gbp' => 0.82 ), $stored['data']['currencies'] );
+		$this->assertSame( array( 'GBP' => 0.82 ), $stored['data']['currencies'] );
 		$this->assertTrue( $stored['errored'] );
 		$this->assertSame( 1, $stored['consecutive_errors'] );
 	}

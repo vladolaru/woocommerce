@@ -196,7 +196,10 @@ class MultiCurrencyRateService {
 	}
 
 	/**
-	 * Normalize provider rates.
+	 * Normalize provider rates, keyed by upper-case currency code.
+	 *
+	 * The rates land in the cache the WooPayments extension shares, and it reads them by upper-case code
+	 * (client 11.1.0 includes/multi-currency/MultiCurrency.php:1719).
 	 *
 	 * @param array<string,mixed> $rates Provider rates.
 	 * @return array<string,float>
@@ -210,7 +213,7 @@ class MultiCurrencyRateService {
 				continue;
 			}
 
-			$normalized_rates[ strtolower( (string) $currency_code ) ] = $normalized_rate;
+			$normalized_rates[ strtoupper( (string) $currency_code ) ] = $normalized_rate;
 		}
 
 		return $normalized_rates;

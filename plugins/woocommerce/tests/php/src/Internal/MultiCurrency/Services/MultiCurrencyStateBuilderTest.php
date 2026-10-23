@@ -190,11 +190,14 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should refresh automatic currencies from the available provider.
+	 * @testdox Should refresh automatic currencies from the available provider and cache them under the codes the WooPayments extension reads.
+	 *
+	 * The extension shares the rates cache and reads a rate as `$cache_data['currencies'][ $currency_code ] ?? 1.0` with an
+	 * upper-case code, so a miss prices the currency at 1.0 (client 11.1.0 includes/multi-currency/MultiCurrency.php:1719).
 	 */
 	public function test_refreshes_automatic_currencies_from_available_provider(): void {
 		$registry = new CurrencyRateProviderRegistry();
-		$registry->register( $this->create_available_rate_provider() );
+		$registry->register( $this->create_available_rate_provider( array( 'GBP' => 0.82 ) ) );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
 
@@ -204,7 +207,8 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $state->get_enabled_currencies() ) );
 		$this->assertSame( 0.82, $state->get_enabled_currencies()['GBP']->get_rate() );
 		$this->assertIsArray( $cached );
-		$this->assertSame( array( 'gbp' => 0.82 ), $cached['data']['currencies'] );
+		$this->assertSame( array( 'GBP' => 0.82 ), $cached['data']['currencies'] );
+		$this->assertSame( 0.82, $cached['data']['currencies']['GBP'] ?? 1.0, 'The extension must find the cached GBP rate, not fall back to 1.0.' );
 		$this->assertIsInt( $cached['data']['updated'] );
 	}
 
