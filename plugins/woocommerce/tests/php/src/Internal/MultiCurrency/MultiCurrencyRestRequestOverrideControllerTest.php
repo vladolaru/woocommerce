@@ -127,6 +127,35 @@ class MultiCurrencyRestRequestOverrideControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should add the store-currency guards when another plugin already added the same callbacks at another priority.
+	 *
+	 * Client 11.1.0 adds both callbacks with a plain add_filter() (`includes/multi-currency/MultiCurrency.php:281-282`), so
+	 * its entries run at priority 10 whatever other plugins added before.
+	 */
+	public function test_adds_store_currency_guards_beside_the_same_callbacks_at_another_priority(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
+		add_filter( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, '__return_true', 5 );
+		add_filter( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, '__return_false', 7 );
+		add_filter( self::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, '__return_false', 5 );
+		add_filter( self::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, '__return_true', 7 );
+
+		$sut->register();
+
+		/**
+		 * Apply the request-local store-currency guard filter registered by the controller.
+		 *
+		 * @since 11.0.0
+		 */
+		$this->assertTrue( apply_filters( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, false ) );
+		/**
+		 * Apply the request-local product price conversion guard filter registered by the controller.
+		 *
+		 * @since 11.0.0
+		 */
+		$this->assertFalse( apply_filters( self::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, true, new \stdClass() ) );
+	}
+
+	/**
 	 * Create a REST request override controller with a static runtime owner.
 	 *
 	 * @param string $owner                             Runtime owner.

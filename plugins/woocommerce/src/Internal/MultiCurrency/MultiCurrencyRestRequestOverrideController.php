@@ -80,8 +80,8 @@ class MultiCurrencyRestRequestOverrideController implements RegisterHooksInterfa
 			return;
 		}
 
-		$this->add_filter_once( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, '__return_true' );
-		$this->add_filter_once( MultiCurrencyFrontendPricesController::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, '__return_false' );
+		add_filter( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, '__return_true' );
+		add_filter( MultiCurrencyFrontendPricesController::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, '__return_false' );
 		$this->add_filter_once( MultiCurrencyStateBuilder::FILTER_OVERRIDE_SELECTED_CURRENCY, array( $this, 'get_store_currency_code' ) );
 	}
 
