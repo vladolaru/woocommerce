@@ -13,7 +13,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocat
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelectedCurrencyPersistenceService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUserSettingsProjectionService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 
@@ -29,6 +28,8 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	private const FILTER_OVERRIDE_NOTICE_CURRENCY_NAME = 'wcpay_multi_currency_override_notice_currency_name';
 
 	private const SIMULATION_FLAG = 'is_mc_onboarding_simulation';
+
+	private const ACCOUNT_CURRENCY_FIELD = 'wcpay_selected_currency';
 
 	/**
 	 * Runtime owner arbiter.
@@ -160,23 +161,23 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 			return;
 		}
 
-		$this->add_filter_once( 'woocommerce_rest_prepare_customer', array( $this, 'handle_woocommerce_rest_prepare_customer' ), 10, 3 );
+		add_filter( 'woocommerce_rest_prepare_customer', array( $this, 'handle_woocommerce_rest_prepare_customer' ), 10, 3 );
 
 		if ( $this->get_request_context()->should_register_selected_currency_entry_hooks() ) {
 			if ( $this->get_request_context()->is_store_api_request() ) {
-				$this->add_filter_once( 'rest_pre_dispatch', array( $this, 'handle_store_api_rest_pre_dispatch' ), 10, 3 );
+				add_filter( 'rest_pre_dispatch', array( $this, 'handle_store_api_rest_pre_dispatch' ), 10, 3 );
 			} else {
-				$this->add_action_once( 'woocommerce_load_cart_from_session', array( $this, 'handle_woocommerce_load_cart_from_session' ), 10, 0 );
+				add_action( 'woocommerce_load_cart_from_session', array( $this, 'handle_woocommerce_load_cart_from_session' ), 10, 0 );
 			}
 
-			$this->add_action_once( 'init', array( $this, 'handle_init' ), 11 );
-			$this->add_action_once( 'init', array( $this, 'handle_geolocation_init' ), 12 );
-			$this->add_action_once( 'init', array( $this, 'handle_simulation_init' ), 13 );
-			$this->add_action_once( 'woocommerce_created_customer', array( $this, 'handle_woocommerce_created_customer' ) );
+			add_action( 'init', array( $this, 'handle_init' ), 11 );
+			add_action( 'init', array( $this, 'handle_geolocation_init' ), 12 );
+			add_action( 'init', array( $this, 'handle_simulation_init' ), 13 );
+			add_action( 'woocommerce_created_customer', array( $this, 'handle_woocommerce_created_customer' ) );
 		}
 
-		$this->add_action_once( 'woocommerce_edit_account_form', array( $this, 'handle_woocommerce_edit_account_form' ) );
-		$this->add_action_once( 'woocommerce_save_account_details', array( $this, 'handle_woocommerce_save_account_details' ) );
+		add_action( 'woocommerce_edit_account_form', array( $this, 'handle_woocommerce_edit_account_form' ) );
+		add_action( 'woocommerce_save_account_details', array( $this, 'handle_woocommerce_save_account_details' ) );
 	}
 
 	/**
@@ -243,7 +244,7 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 			return;
 		}
 
-		$this->add_action_once( 'wp_footer', array( $this, 'handle_wp_footer' ) );
+		add_action( 'wp_footer', array( $this, 'handle_wp_footer' ) );
 
 		if ( $this->get_persistence_service()->has_stored_currency_code() ) {
 			return;
@@ -334,7 +335,7 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 			return;
 		}
 
-		$this->add_action_once( 'wp_footer', array( $this, 'handle_simulation_wp_footer' ) );
+		add_action( 'wp_footer', array( $this, 'handle_simulation_wp_footer' ) );
 
 		if ( ! $this->simulation_params['enable_auto_currency'] ) {
 			return;
@@ -359,7 +360,7 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 			}
 		);
 
-		$this->add_action_once( 'wp_footer', array( $this, 'handle_wp_footer' ) );
+		add_action( 'wp_footer', array( $this, 'handle_wp_footer' ) );
 	}
 
 	/**
@@ -483,12 +484,27 @@ document.addEventListener( 'DOMContentLoaded', () => {
 			return;
 		}
 
-		$markup = MultiCurrencyUserSettingsProjectionService::get_presentment_currency_field_markup(
-			$service->get_enabled_currency_options(),
-			$service->get_selected_currency_code()
-		);
+		$selected_code = strtoupper( $service->get_selected_currency_code() );
+		$markup        = '<p class="woocommerce-form-row woocommerce-form-row--first form-row form-row-first">';
+		$markup       .= '<label for="' . esc_attr( self::ACCOUNT_CURRENCY_FIELD ) . '">' . esc_html__( 'Default currency', 'woocommerce' ) . '</label>';
+		$markup       .= '<select name="' . esc_attr( self::ACCOUNT_CURRENCY_FIELD ) . '" id="' . esc_attr( self::ACCOUNT_CURRENCY_FIELD ) . '">';
 
-		// Projection markup escapes the individual attributes and text while preserving WooPayments-compatible form HTML.
+		foreach ( $service->get_enabled_currency_options() as $currency ) {
+			$code = strtoupper( $currency['code'] );
+			if ( '' === $code ) {
+				continue;
+			}
+
+			$selected = $selected_code === $code ? ' selected' : '';
+			$markup  .= '<option value="' . esc_attr( $code ) . '"' . $selected . '>' . wp_kses_post( trim( $currency['symbol'] . ' ' . $code ) ) . '</option>';
+		}
+
+		$markup .= '</select>';
+		$markup .= '<span><em>' . esc_html__( 'Select your preferred currency for shopping and payments.', 'woocommerce' ) . '</em></span>';
+		$markup .= '</p>';
+		$markup .= '<div class="clear"></div>';
+
+		// The markup escapes each attribute and text while keeping WooPayments-compatible form HTML.
 		echo $markup; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 	}
 
@@ -498,11 +514,15 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	 * @internal
 	 */
 	public function handle_woocommerce_save_account_details(): void {
-		$posted_data = $_POST; // phpcs:ignore WordPress.Security.NonceVerification.Missing
-		$intent      = MultiCurrencyUserSettingsProjectionService::get_save_presentment_currency_intent( $posted_data );
+		$raw_currency_code = $_POST[ self::ACCOUNT_CURRENCY_FIELD ] ?? null; // phpcs:ignore WordPress.Security.NonceVerification.Missing,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized,WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- WooCommerce verified the account details nonce; the value is unslashed and cleaned below.
+		if ( ! is_scalar( $raw_currency_code ) ) {
+			return;
+		}
 
-		if ( $intent['should_update'] && is_string( $intent['currency_code'] ) ) {
-			$this->get_persistence_service()->update_selected_currency( $intent['currency_code'] );
+		$cleaned_currency_code = wc_clean( wp_unslash( (string) $raw_currency_code ) );
+		$currency_code         = is_string( $cleaned_currency_code ) ? trim( $cleaned_currency_code ) : '';
+		if ( '' !== $currency_code ) {
+			$this->get_persistence_service()->update_selected_currency( $currency_code );
 		}
 	}
 
@@ -650,33 +670,5 @@ document.addEventListener( 'DOMContentLoaded', () => {
 
 		$this->get_persistence_service()->reset_selected_currency_state();
 		$this->selected_currency_state_is_session_ready = true;
-	}
-
-	/**
-	 * Register an action only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_action_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_action( $hook, $callback ) ) {
-			add_action( $hook, $callback, $priority, $accepted_args );
-		}
-	}
-
-	/**
-	 * Register a filter only once for this controller instance.
-	 *
-	 * @param string   $hook          Hook name.
-	 * @param callable $callback      Hook callback.
-	 * @param int      $priority      Hook priority.
-	 * @param int      $accepted_args Accepted argument count.
-	 */
-	private function add_filter_once( string $hook, callable $callback, int $priority = 10, int $accepted_args = 1 ): void {
-		if ( false === has_filter( $hook, $callback ) ) {
-			add_filter( $hook, $callback, $priority, $accepted_args );
-		}
 	}
 }

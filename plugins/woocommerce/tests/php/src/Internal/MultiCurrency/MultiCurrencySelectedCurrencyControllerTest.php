@@ -922,8 +922,19 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		$sut->handle_woocommerce_edit_account_form();
 		$markup = (string) ob_get_clean();
 
-		$this->assertStringContainsString( '<label for="wcpay_selected_currency">Default currency</label>', $markup );
-		$this->assertStringContainsString( '<option value="GBP" selected>', $markup );
+		$this->assertSame(
+			'<p class="woocommerce-form-row woocommerce-form-row--first form-row form-row-first">'
+				. '<label for="wcpay_selected_currency">Default currency</label>'
+				. '<select name="wcpay_selected_currency" id="wcpay_selected_currency">'
+				. '<option value="USD">' . wp_kses_post( get_woocommerce_currency_symbol( 'USD' ) . ' USD' ) . '</option>'
+				. '<option value="GBP" selected>' . wp_kses_post( get_woocommerce_currency_symbol( 'GBP' ) . ' GBP' ) . '</option>'
+				. '<option value="JPY">' . wp_kses_post( get_woocommerce_currency_symbol( 'JPY' ) . ' JPY' ) . '</option>'
+				. '</select>'
+				. '<span><em>Select your preferred currency for shopping and payments.</em></span>'
+				. '</p>'
+				. '<div class="clear"></div>',
+			$markup
+		);
 	}
 
 	/**
@@ -937,6 +948,40 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		$sut->handle_woocommerce_save_account_details();
 
 		$this->assertSame( array( 'JPY' ), $service->updated_currencies );
+	}
+
+	/**
+	 * @testdox Should not save the account currency field when the posted value is $label.
+	 * @dataProvider unusable_account_currency_provider
+	 *
+	 * @param string     $label  Readable case name.
+	 * @param mixed|null $posted The posted field value, or null for none.
+	 */
+	public function test_does_not_save_an_unusable_account_currency_field( string $label, $posted ): void {
+		unset( $label );
+		$service = $this->create_persistence_service();
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
+		if ( null !== $posted ) {
+			$_POST['wcpay_selected_currency'] = $posted;
+		}
+
+		$sut->handle_woocommerce_save_account_details();
+
+		$this->assertSame( array(), $service->requested_currencies );
+	}
+
+	/**
+	 * Posted account currency values that save nothing.
+	 *
+	 * @return array<string,array{0:string,1:mixed}>
+	 */
+	public function unusable_account_currency_provider(): array {
+		return array(
+			'absent'      => array( 'absent', null ),
+			'empty'       => array( 'empty', '' ),
+			'an array'    => array( 'an array', array( 'GBP' ) ),
+			'only markup' => array( 'only markup', '<script>GBP</script>' ),
+		);
 	}
 
 	/**
@@ -1055,6 +1100,13 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 			public array $updated_currencies = array();
 
 			/**
+			 * Every code passed to update_selected_currency(), accepted or not.
+			 *
+			 * @var string[]
+			 */
+			public array $requested_currencies = array();
+
+			/**
 			 * Persist-change flags.
 			 *
 			 * @var bool[]
@@ -1131,7 +1183,8 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function update_selected_currency( string $currency_code, bool $persist_change = true ): bool {
-				$currency_code = strtoupper( trim( $currency_code ) );
+				$this->requested_currencies[] = $currency_code;
+				$currency_code                = strtoupper( trim( $currency_code ) );
 
 				if ( ! isset( $this->enabled_currency_lookup[ $currency_code ] ) ) {
 					return false;
