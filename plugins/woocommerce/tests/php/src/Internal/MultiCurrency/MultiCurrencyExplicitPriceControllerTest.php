@@ -204,31 +204,6 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should let the public filter force explicit output after state construction fails.
-	 */
-	public function test_public_filter_can_force_explicit_output_after_state_construction_fails(): void {
-		$controller = new MultiCurrencyExplicitPriceController();
-		$factory    = $this->getMockBuilder( MultiCurrencyStateBuilderFactory::class )
-			->disableOriginalConstructor()
-			->onlyMethods( array( 'create' ) )
-			->getMock();
-		$factory->method( 'create' )->willThrowException( new \RuntimeException( 'State failed.' ) );
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
-		$controller->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), $factory, new MultiCurrencyUsageDetector() );
-		$defaults = array();
-		add_filter(
-			'wcpay_multi_currency_should_output_explicit_price',
-			static function ( bool $current_default ) use ( &$defaults ): bool {
-				$defaults[] = $current_default;
-				return true;
-			}
-		);
-
-		$this->assertSame( '$10.30 USD', $controller->get_explicit_price( '$10.30' ) );
-		$this->assertSame( array( false ), $defaults );
-	}
-
-	/**
 	 * @testdox Should run the public filter once before empty-currency and existing-suffix guards.
 	 */
 	public function test_public_filter_runs_once_before_output_guards(): void {

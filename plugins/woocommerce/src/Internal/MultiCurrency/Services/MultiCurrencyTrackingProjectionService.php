@@ -77,7 +77,7 @@ class MultiCurrencyTrackingProjectionService {
 			$gateway  = (string) $this->get_row_value( $row, 'gateway' );
 			$gateway  = '' === $gateway ? 'unknown' : $gateway;
 
-			$current_counts = (int) ( $currencies[ $currency ]['counts'] ?? 0 );
+			$current_counts = $currencies[ $currency ]['counts'] ?? 0;
 			$current_totals = (float) ( $currencies[ $currency ]['totals'] ?? 0 );
 
 			$currencies[ $currency ]['counts']               = $current_counts + $counts;
@@ -168,7 +168,7 @@ class MultiCurrencyTrackingProjectionService {
 			return $row[ $key ] ?? null;
 		}
 
-		if ( is_object( $row ) && isset( $row->$key ) ) {
+		if ( isset( $row->$key ) ) {
 			return $row->$key;
 		}
 

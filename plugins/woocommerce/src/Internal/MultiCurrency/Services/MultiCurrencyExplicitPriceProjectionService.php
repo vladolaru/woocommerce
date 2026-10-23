@@ -55,11 +55,7 @@ class MultiCurrencyExplicitPriceProjectionService {
 			$container->get( MultiCurrencyRuntimeArbiter::class )->should_core_register()
 			&& $container->get( MultiCurrencyUsageDetector::class )->has_additional_enabled_currencies()
 		) {
-			try {
-				$default = $container->get( MultiCurrencyStateBuilderFactory::class )->create()->build()->has_additional_currencies_enabled();
-			} catch ( \Throwable $e ) {
-				$default = false;
-			}
+			$default = $container->get( MultiCurrencyStateBuilderFactory::class )->create()->build()->has_additional_currencies_enabled();
 		}
 
 		return self::should_output_explicit_price( $default );
