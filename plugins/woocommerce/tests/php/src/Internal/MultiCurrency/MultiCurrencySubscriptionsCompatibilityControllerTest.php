@@ -457,13 +457,19 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * @testdox Should find every resubscribed item in the cart, or in the session cart before the cart loads.
 	 *
 	 * A resubscribe cart holds one item per line of the old subscription, each keyed `subscription_resubscribe` (Subscriptions
-	 * 9.3.0 `includes/core/class-wcs-cart-renewal.php:298-370`, `class-wcs-cart-resubscribe.php:19`).
+	 * 9.3.0 `includes/core/class-wcs-cart-renewal.php:298-370`, `class-wcs-cart-resubscribe.php:19`). Totals read each line
+	 * through its own product object, so a plain line of the same product, which a cart merged at login can hold
+	 * (`includes/core/class-wc-subscriptions-cart-validator.php:409-415`), converts; the session cart holds only ids.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
 	 */
 	public function test_finds_every_resubscribed_item_in_the_cart_or_the_session_cart(): void {
-		$resubscribe = array( 'subscription_resubscribe' => array( 'subscription_id' => 31 ) );
-		$cart_items  = array(
+		$resubscribe   = array( 'subscription_resubscribe' => array( 'subscription_id' => 31 ) );
+		$resubscribed  = $this->create_priced_product( 21, '10' );
+		$variation     = $this->create_priced_product( 25, '10' );
+		$other         = $this->create_priced_product( 22, '10' );
+		$plain_line    = $this->create_priced_product( 21, '10' );
+		$session_items = array(
 			'a' => array(
 				'product_id'   => 21,
 				'variation_id' => 0,
@@ -477,8 +483,14 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 				'variation_id' => 0,
 			),
 		);
-		$products    = array( $this->create_priced_product( 21, '10' ), $this->create_priced_product( 25, '10' ), $this->create_priced_product( 22, '10' ) );
-		$decisions   = function () use ( $products ): array {
+		$cart_items    = array(
+			'a' => array( 'data' => $resubscribed ) + $session_items['a'],
+			'b' => array( 'data' => $variation ) + $session_items['b'],
+			'c' => array( 'data' => $other ) + $session_items['c'],
+			'd' => array( 'data' => $plain_line ) + $session_items['c'],
+		);
+		$products      = array( $resubscribed, $variation, $other, $plain_line );
+		$decisions     = function () use ( $products ): array {
 			$sut = new MultiCurrencySubscriptionsCompatibilityController();
 			$sut->init(
 				$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
@@ -491,11 +503,11 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		};
 
 		WC()->cart->set_cart_contents( $cart_items );
-		$this->assertSame( array( false, false, true ), $decisions(), 'Cart' );
+		$this->assertSame( array( false, false, true, true ), $decisions(), 'Cart' );
 
 		WC()->cart->set_cart_contents( array() );
-		WC()->session->set( 'cart', $cart_items );
-		$this->assertSame( array( false, false, true ), $decisions(), 'Session cart' );
+		WC()->session->set( 'cart', $session_items );
+		$this->assertSame( array( false, false, true, false ), $decisions(), 'Session cart' );
 	}
 
 	/**

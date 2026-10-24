@@ -644,6 +644,9 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	/**
 	 * Tell whether the product is the product of a resubscribe cart item.
 	 *
+	 * Totals read a cart line through its own product object, so a loaded cart item is matched by that object; a session cart
+	 * item holds only ids.
+	 *
 	 * @param mixed $product Product object.
 	 * @return bool
 	 */
@@ -653,7 +656,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 		}
 
 		foreach ( $this->get_subscription_cart_items( 'resubscribe' ) as $cart_item ) {
-			if ( $this->get_cart_item_product_id( $cart_item ) === $product->get_id() ) {
+			if ( isset( $cart_item['data'] ) ? $cart_item['data'] === $product : $this->get_cart_item_product_id( $cart_item ) === $product->get_id() ) {
 				return true;
 			}
 		}
