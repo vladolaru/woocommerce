@@ -603,4 +603,30 @@ class WC_Order_Functions_Test extends \WC_Unit_Test_Case {
 			$this->assertSame( $expected_remaining, wc_get_order( $order->get_id() )->get_remaining_refund_amount(), "The remaining amount after the {$amount} refund should use the order currency's decimals." );
 		}
 	}
+
+	/**
+	 * @testdox The remaining refund amount uses the store's decimals when a currency filter returns something other than a string.
+	 *
+	 * @testWith [null]
+	 *           [["USD"]]
+	 *
+	 * @param mixed $filtered_currency Value the order currency filter returns.
+	 */
+	public function test_remaining_refund_amount_with_non_string_filtered_currency( $filtered_currency ): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'woocommerce_price_num_decimals', 1 );
+
+		$order = wc_create_order();
+		$order->set_currency( 'USD' );
+		$order->set_total( '18.3' );
+		$order->save();
+		add_filter(
+			'woocommerce_order_get_currency',
+			static function () use ( $filtered_currency ) {
+				return $filtered_currency;
+			}
+		);
+
+		$this->assertSame( '18.3', wc_get_order( $order->get_id() )->get_remaining_refund_amount(), 'A non-string filtered currency should fall back to the store decimals.' );
+	}
 }

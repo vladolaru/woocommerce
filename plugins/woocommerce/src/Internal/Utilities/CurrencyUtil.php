@@ -22,16 +22,17 @@ class CurrencyUtil {
 	 *
 	 * The store currency uses the store's price decimals. Another currency uses its own decimals when
 	 * it has more, so an order placed in it is never rounded more coarsely than the store rounds its own.
+	 * A value that is not a string, which a currency filter can return, uses the store's decimals.
 	 *
-	 * @param string $currency Currency code, for example the order's currency.
+	 * @param mixed $currency Currency code, for example the order's filtered currency.
 	 * @return int
 	 *
 	 * @since 11.2.0
 	 */
-	public static function get_price_decimals( string $currency ): int {
+	public static function get_price_decimals( $currency ): int {
 		$store_decimals = wc_get_price_decimals();
 
-		if ( get_woocommerce_currency() === $currency ) {
+		if ( ! is_string( $currency ) || get_woocommerce_currency() === $currency ) {
 			return $store_decimals;
 		}
 
