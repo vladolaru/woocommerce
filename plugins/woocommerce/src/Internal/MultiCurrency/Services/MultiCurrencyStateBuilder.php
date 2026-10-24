@@ -80,6 +80,13 @@ class MultiCurrencyStateBuilder {
 	private array $rate_cache = array();
 
 	/**
+	 * Per-build memo of the currencies made for overriding codes that are not enabled, keyed by currency code.
+	 *
+	 * @var array<string,MultiCurrencyCurrency|null>
+	 */
+	private array $disabled_override_currencies = array();
+
+	/**
 	 * Request-local invalidation coordinator.
 	 *
 	 * @var MultiCurrencyStateInvalidator
@@ -146,8 +153,9 @@ class MultiCurrencyStateBuilder {
 			return $this->cached_state;
 		}
 
-		$this->uses_manual_rate_cache = array();
-		$this->rate_cache             = array();
+		$this->uses_manual_rate_cache       = array();
+		$this->rate_cache                   = array();
+		$this->disabled_override_currencies = array();
 
 		$default_code = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
 		$default      = new MultiCurrencyCurrency( $this->localization_service, $default_code, 1.0, true );
@@ -196,10 +204,23 @@ class MultiCurrencyStateBuilder {
 		$stored_code = $this->get_stored_currency_code();
 		$stored      = $stored_code && isset( $enabled[ $stored_code ] ) ? $enabled[ $stored_code ] : $default;
 		// The override filter is asked on every read, as compatibility code changes it mid-request (client 11.1.0 `MultiCurrency.php:802-810`).
-		$selected = static function () use ( $enabled, $default, $stored ): MultiCurrencyCurrency {
+		// An override names the currency of an existing order, such as a subscription's, so it holds even after the merchant
+		// disabled that currency, as long as its rate is known; otherwise the store currency is used.
+		$selected = function () use ( $default_code, $available, $enabled, $default, $stored ): MultiCurrencyCurrency {
 			$override_code = self::get_override_currency_code();
+			if ( null === $override_code ) {
+				return $stored;
+			}
 
-			return null === $override_code ? $stored : ( $enabled[ $override_code ] ?? $default );
+			if ( isset( $enabled[ $override_code ] ) ) {
+				return $enabled[ $override_code ];
+			}
+
+			if ( ! array_key_exists( $override_code, $this->disabled_override_currencies ) ) {
+				$this->disabled_override_currencies[ $override_code ] = $this->create_disabled_currency( $default_code, $override_code, $available );
+			}
+
+			return $this->disabled_override_currencies[ $override_code ] ?? $default;
 		};
 
 		$this->cached_state            = new MultiCurrencyState( $available, $enabled, $default, $selected, fn(): array => $this->get_customer_currencies( array_keys( $available ) ) );
@@ -248,6 +269,34 @@ class MultiCurrencyStateBuilder {
 			false,
 			$available_currency->get_last_updated()
 		);
+	}
+
+	/**
+	 * Create a currency that is not enabled, the way an enabled one is made: at its manual rate while its settings remain, or
+	 * at the provider's cached rate, with its rounding and charm.
+	 *
+	 * @param string                              $default_code  Default currency code.
+	 * @param string                              $currency_code Currency code.
+	 * @param array<string,MultiCurrencyCurrency> $available     Available currencies, by code.
+	 * @return MultiCurrencyCurrency|null Null when the code is unknown or no rate is known.
+	 */
+	private function create_disabled_currency( string $default_code, string $currency_code, array $available ): ?MultiCurrencyCurrency {
+		if ( ! $this->is_valid_currency_code( $currency_code ) ) {
+			return null;
+		}
+
+		$available_currency = $available[ $currency_code ] ?? null;
+		if ( null === $available_currency && $this->uses_manual_rate( $currency_code ) ) {
+			$rate               = $this->resolve_rate( $default_code, $currency_code );
+			$available_currency = null === $rate ? null : new MultiCurrencyCurrency( $this->localization_service, $currency_code, $rate );
+		}
+
+		$currency = null === $available_currency ? null : $this->create_enabled_currency( $default_code, $available_currency );
+		if ( null !== $currency ) {
+			$this->apply_currency_settings( $currency );
+		}
+
+		return $currency;
 	}
 
 	/**

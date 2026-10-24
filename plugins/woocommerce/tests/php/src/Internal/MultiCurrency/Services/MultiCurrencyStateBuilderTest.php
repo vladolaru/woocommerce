@@ -496,6 +496,76 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should select an overriding currency the merchant disabled, at the rate it is known by.
+	 *
+	 * A renewal, resubscribe or switch cart overrides the selection with its subscription's currency, which holds the
+	 * subscription's stored amounts. A recorded store run with GBP disabled charged a 7.45 GBP renewal as 7.45 USD.
+	 * Disabling a currency in the settings deletes its rate settings, which leaves the provider's cached rate; a merchant who
+	 * only edited the enabled list keeps them.
+	 *
+	 * @dataProvider disabled_override_currencies
+	 *
+	 * @param array<string,mixed> $options  Options the store holds.
+	 * @param float               $rate     Expected rate.
+	 * @param float               $charm    Expected charm.
+	 * @param string              $rounding Expected rounding.
+	 */
+	public function test_selects_an_overriding_currency_the_merchant_disabled( array $options, float $rate, float $charm, string $rounding ): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'JPY' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_jpy', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_jpy', '150' );
+		foreach ( $options as $name => $value ) {
+			update_option( $name, $value );
+		}
+		add_filter( 'wcpay_multi_currency_override_selected_currency', static fn() => 'GBP' );
+		// A registered provider that cannot be reached keeps serving its cached rates.
+		$registry = new CurrencyRateProviderRegistry();
+		$registry->register( $this->create_unavailable_rate_provider() );
+
+		$selected = $this->create_builder( $registry )->build()->get_selected_currency();
+
+		$this->assertSame( 'GBP', $selected->get_code() );
+		$this->assertSame( array( $rate, $charm, $rounding ), array( $selected->get_rate(), $selected->get_charm(), $selected->get_rounding() ) );
+	}
+
+	/**
+	 * Rate sources left for GBP after it was disabled.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:float,2:float,3:string}>
+	 */
+	public function disabled_override_currencies(): array {
+		return array(
+			'cached provider rate' => array(
+				array(
+					MultiCurrencyCacheInterface::CURRENCIES_KEY => array(
+						'data'               => array(
+							'currencies' => array( 'gbp' => 0.79 ),
+							'updated'    => 123456,
+						),
+						'fetched'            => time(),
+						'errored'            => false,
+						'consecutive_errors' => 0,
+					),
+				),
+				0.79,
+				0.0,
+				'1.00',
+			),
+			'manual rate kept'     => array(
+				array(
+					'wcpay_multi_currency_exchange_rate_gbp' => 'manual',
+					'wcpay_multi_currency_manual_rate_gbp' => '0.73',
+					'wcpay_multi_currency_price_rounding_gbp' => '0.50',
+					'wcpay_multi_currency_price_charm_gbp' => '-0.05',
+				),
+				0.73,
+				-0.05,
+				'0.50',
+			),
+		);
+	}
+
+	/**
 	 * @testdox Should fall back to default when stored currency is not enabled.
 	 */
 	public function test_falls_back_to_default_when_stored_currency_is_not_enabled(): void {
