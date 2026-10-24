@@ -119,6 +119,7 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 		$this->delete_options();
 		$this->reset_rate_provider_registry_factory();
 		$this->reset_legacy_proxy_mocks();
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		update_option( 'woocommerce_currency', $this->original_currency );
 
 		parent::tearDown();
@@ -603,6 +604,8 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 				),
 			)
 		);
+		// The payments owner is memoized for the request, and earlier code in this process may have resolved it already.
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 	}
 
 	/**
