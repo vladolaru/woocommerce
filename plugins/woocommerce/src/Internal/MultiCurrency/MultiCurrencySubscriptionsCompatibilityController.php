@@ -336,21 +336,20 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	 * @return bool
 	 */
 	public function should_convert_product_price( bool $should_convert, $product ): bool {
-		unset( $product );
-
 		if ( ! $should_convert ) {
 			return false;
 		}
 
-		// Renewal and resubscribe carts already hold the subscription's prices while totals calculate; a renewal
-		// cart converts while Subscriptions sets it up, so the shopper lands at checkout with the converted price.
+		// Renewal carts and resubscribed items already hold the subscription's prices while totals calculate; a renewal
+		// cart converts while Subscriptions sets it up, so the shopper lands at checkout with the converted price. Other
+		// products in a resubscribe cart convert.
 		$has_renewal = null !== $this->get_subscription_type_from_cart( 'renewal' );
 		if ( $has_renewal && MultiCurrencyRequestContext::is_call_in_backtrace( self::RENEWAL_SETUP_CALLS ) ) {
 			return true;
 		}
 
 		return ! (
-			( $has_renewal || null !== $this->get_subscription_type_from_cart( 'resubscribe' ) )
+			( $has_renewal || $this->is_resubscribed_product( $product ) )
 			&& MultiCurrencyRequestContext::is_call_in_backtrace( self::PRODUCT_PRICE_CALCULATION_CALLS )
 		);
 	}
@@ -433,7 +432,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 			// Subscriptions has rewritten the fee from converted reads, the later reads already hold the selected currency.
 			if (
 				$price
-				&& $this->get_product_id( $product ) === $this->get_switch_cart_item_product_id( $cart_item )
+				&& $this->get_product_id( $product ) === $this->get_cart_item_product_id( $cart_item )
 				&& $this->has_rewritten_subscription_signup_fee( $product )
 				&& (
 					MultiCurrencyRequestContext::is_call_in_backtrace( self::SUBSCRIPTION_PRICE_SETUP_CALLS )
@@ -567,35 +566,57 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	 * @return array<string,mixed>|null
 	 */
 	protected function resolve_subscription_type_from_cart( string $type ): ?array {
+		return $this->get_subscription_cart_items( $type )[0] ?? null;
+	}
+
+	/**
+	 * Get the cart items of a Subscriptions cart type from the cart, or from the session cart while the cart is not loaded.
+	 *
+	 * @param string $type Subscription cart type.
+	 * @return array<int,array<string,mixed>>
+	 */
+	protected function get_subscription_cart_items( string $type ): array {
 		if ( ! in_array( $type, self::SUBSCRIPTION_TYPES, true ) ) {
-			return null;
+			return array();
 		}
 
 		$woocommerce      = WC();
 		$subscription_key = 'subscription_' . $type;
 		$cart             = $woocommerce->cart;
+		$session          = $woocommerce->session;
+		$sources          = array(
+			$cart instanceof \WC_Cart ? $cart->cart_contents : null,
+			$session instanceof \WC_Session ? $session->get( 'cart' ) : null,
+		);
 
-		if ( $cart instanceof \WC_Cart && is_array( $cart->cart_contents ) ) {
-			foreach ( $cart->cart_contents as $cart_item ) {
-				if ( is_array( $cart_item ) && isset( $cart_item[ $subscription_key ] ) ) {
-					return $cart_item;
-				}
+		foreach ( $sources as $cart_items ) {
+			$items = is_array( $cart_items ) ? array_values( array_filter( $cart_items, static fn( $cart_item ) => is_array( $cart_item ) && isset( $cart_item[ $subscription_key ] ) ) ) : array();
+			if ( array() !== $items ) {
+				return $items;
 			}
 		}
 
-		$session = $woocommerce->session;
-		if ( $session instanceof \WC_Session ) {
-			$session_cart = $session->get( 'cart' );
-			if ( is_array( $session_cart ) ) {
-				foreach ( $session_cart as $cart_item ) {
-					if ( is_array( $cart_item ) && isset( $cart_item[ $subscription_key ] ) ) {
-						return $cart_item;
-					}
-				}
+		return array();
+	}
+
+	/**
+	 * Tell whether the product is the product of a resubscribe cart item.
+	 *
+	 * @param mixed $product Product object.
+	 * @return bool
+	 */
+	private function is_resubscribed_product( $product ): bool {
+		if ( ! $product instanceof \WC_Product || null === $this->get_subscription_type_from_cart( 'resubscribe' ) ) {
+			return false;
+		}
+
+		foreach ( $this->get_subscription_cart_items( 'resubscribe' ) as $cart_item ) {
+			if ( $this->get_cart_item_product_id( $cart_item ) === $product->get_id() ) {
+				return true;
 			}
 		}
 
-		return null;
+		return false;
 	}
 
 	/**
@@ -814,12 +835,12 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	}
 
 	/**
-	 * Get the product or variation ID from a switch cart item.
+	 * Get the product or variation ID from a cart item.
 	 *
-	 * @param array<string,mixed> $cart_item Switch cart item.
+	 * @param array<string,mixed> $cart_item Cart item.
 	 * @return int
 	 */
-	private function get_switch_cart_item_product_id( array $cart_item ): int {
+	private function get_cart_item_product_id( array $cart_item ): int {
 		$variation_id = absint( $cart_item['variation_id'] ?? 0 );
 
 		return 0 < $variation_id ? $variation_id : absint( $cart_item['product_id'] ?? 0 );

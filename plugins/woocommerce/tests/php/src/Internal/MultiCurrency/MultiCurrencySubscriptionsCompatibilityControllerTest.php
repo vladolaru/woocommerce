@@ -360,9 +360,9 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 */
 	public function test_keeps_resubscribe_cart_prices_while_the_cart_is_set_up(): void {
 		$resubscribe = $this->create_controller();
-		$resubscribe->set_subscription_cart_item( 'resubscribe', $this->create_subscription( 'GBP' ) );
+		$resubscribe->set_subscription_cart_item( 'resubscribe', $this->create_subscription( 'GBP' ), 1 );
 
-		$this->assertFalse( CallStack::run( array( 'WCS_Cart_Renewal->setup_cart', 'WC_Cart_Totals->calculate_item_totals' ), fn() => $resubscribe->should_convert_product_price( true, (object) array( 'id' => 1 ) ) ) );
+		$this->assertFalse( CallStack::run( array( 'WCS_Cart_Renewal->setup_cart', 'WC_Cart_Totals->calculate_item_totals' ), fn() => $resubscribe->should_convert_product_price( true, $this->create_product( 1 ) ) ) );
 	}
 
 	/**
@@ -388,9 +388,85 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		$this->assertTrue( CallStack::run( array( 'WCS_Cart_Renewal->setup_cart', 'WC_Cart_Totals->calculate_item_totals' ), fn() => $renewal_setup->should_convert_product_price( true, $product ) ) );
 
 		$resubscribe = $this->create_controller();
-		$resubscribe->set_subscription_cart_item( 'resubscribe', $this->create_subscription( 'GBP' ) );
+		$resubscribe->set_subscription_cart_item( 'resubscribe', $this->create_subscription( 'GBP' ), 1 );
 
-		$this->assertFalse( CallStack::run( array( 'WC_Cart->get_product_subtotal' ), fn() => $resubscribe->should_convert_product_price( true, $product ) ) );
+		$this->assertFalse( CallStack::run( array( 'WC_Cart->get_product_subtotal' ), fn() => $resubscribe->should_convert_product_price( true, $this->create_product( 1 ) ) ) );
+	}
+
+	/**
+	 * @testdox Should convert the other products of a resubscribe cart while totals calculate.
+	 *
+	 * With mixed checkout on, WooCommerce Subscriptions 9.3.0 keeps other products in a resubscribe cart (only renewal carts are
+	 * isolated, `includes/core/class-wc-subscriptions-cart-validator.php:57,82,207-211`). Only the resubscribed item holds the
+	 * subscription's stored price; a simple product and a new subscription bought beside it are priced in the store currency
+	 * and convert. A recorded store run at GBP 0.73 charged them 10.00 and 20.00 a month where 7.45 and 14.95 were due. The
+	 * fixture converts by doubling.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_converts_the_other_products_of_a_resubscribe_cart_while_totals_calculate(): void {
+		$sut = $this->create_controller();
+		$sut->set_subscription_cart_item( 'resubscribe', $this->create_subscription( 'GBP' ), 21 );
+		$sut->register();
+		$this->register_frontend_prices();
+		$resubscribed     = $this->create_priced_product( 21, '10' );
+		$simple           = $this->create_priced_product( 22, '10' );
+		$new_subscription = $this->create_priced_product( 23, '20' );
+
+		$prices = CallStack::run(
+			array( 'WC_Cart_Totals->calculate_item_totals' ),
+			// Subscriptions reads a subscription product's recurring price through its own filter (`includes/core/class-wc-subscriptions-product.php:570`).
+			static fn() => array( $resubscribed->get_price(), $simple->get_price(), apply_filters( 'woocommerce_subscriptions_product_price', '20', $new_subscription ) )
+		);
+
+		$this->assertSame( '10', $prices[0], 'The resubscribed item keeps its stored price.' );
+		$this->assertSame( '20', $prices[1], 'A simple product beside it converts.' );
+		$this->assertSame( 40.0, $prices[2], 'A new subscription beside it converts its recurring price.' );
+	}
+
+	/**
+	 * @testdox Should find every resubscribed item in the cart, or in the session cart before the cart loads.
+	 *
+	 * A resubscribe cart holds one item per line of the old subscription, each keyed `subscription_resubscribe` (Subscriptions
+	 * 9.3.0 `includes/core/class-wcs-cart-renewal.php:298-370`, `class-wcs-cart-resubscribe.php:19`).
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_finds_every_resubscribed_item_in_the_cart_or_the_session_cart(): void {
+		$resubscribe = array( 'subscription_resubscribe' => array( 'subscription_id' => 31 ) );
+		$cart_items  = array(
+			'a' => array(
+				'product_id'   => 21,
+				'variation_id' => 0,
+			) + $resubscribe,
+			'b' => array(
+				'product_id'   => 24,
+				'variation_id' => 25,
+			) + $resubscribe,
+			'c' => array(
+				'product_id'   => 22,
+				'variation_id' => 0,
+			),
+		);
+		$products    = array( $this->create_priced_product( 21, '10' ), $this->create_priced_product( 25, '10' ), $this->create_priced_product( 22, '10' ) );
+		$decisions   = function () use ( $products ): array {
+			$sut = new MultiCurrencySubscriptionsCompatibilityController();
+			$sut->init(
+				$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
+				new LegacyProxy(),
+				wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ),
+				wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class )
+			);
+
+			return CallStack::run( array( 'WC_Cart_Totals->calculate_item_totals' ), static fn() => array_map( static fn( $product ) => $sut->should_convert_product_price( true, $product ), $products ) );
+		};
+
+		WC()->cart->set_cart_contents( $cart_items );
+		$this->assertSame( array( false, false, true ), $decisions(), 'Cart' );
+
+		WC()->cart->set_cart_contents( array() );
+		WC()->session->set( 'cart', $cart_items );
+		$this->assertSame( array( false, false, true ), $decisions(), 'Session cart' );
 	}
 
 	/**
@@ -990,10 +1066,13 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 			 *
 			 * @param string $type         Subscription cart type.
 			 * @param object $subscription Subscription object.
+			 * @param int    $product_id   ID of the cart item's product.
 			 */
-			public function set_subscription_cart_item( string $type, object $subscription ): void {
+			public function set_subscription_cart_item( string $type, object $subscription, int $product_id = 0 ): void {
 				$this->cart_items[ $type ] = array(
 					'subscription_' . $type => array( 'subscription_id' => $type . '-subscription' ),
+					'product_id'            => $product_id,
+					'variation_id'          => 0,
 					'subscription_object'   => $subscription,
 				);
 			}
@@ -1041,6 +1120,16 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 			 */
 			protected function get_subscription_type_from_cart( string $type ): ?array {
 				return $this->cart_items[ $type ] ?? null;
+			}
+
+			/**
+			 * Get the deterministic cart items of a subscription cart type.
+			 *
+			 * @param string $type Subscription cart type.
+			 * @return array<int,array<string,mixed>>
+			 */
+			protected function get_subscription_cart_items( string $type ): array {
+				return isset( $this->cart_items[ $type ] ) ? array( $this->cart_items[ $type ] ) : array();
 			}
 
 			/**
@@ -1357,6 +1446,22 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 			$product->add_meta_data( '_subscription_sign_up_fee_prorated', '10.00', true );
 		}
 		// Set after the meta, so the product reads no meta from the database.
+		$product->set_id( $product_id );
+
+		return $product;
+	}
+
+	/**
+	 * Create an unsaved simple product with a price.
+	 *
+	 * @param int    $product_id Product ID.
+	 * @param string $price      Regular and active price.
+	 * @return \WC_Product
+	 */
+	private function create_priced_product( int $product_id, string $price ): \WC_Product {
+		$product = new \WC_Product_Simple();
+		$product->set_regular_price( $price );
+		$product->set_price( $price );
 		$product->set_id( $product_id );
 
 		return $product;
