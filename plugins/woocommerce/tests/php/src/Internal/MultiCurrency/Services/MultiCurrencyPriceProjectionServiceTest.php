@@ -79,6 +79,31 @@ class MultiCurrencyPriceProjectionServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should convert from a selected currency that is not enabled, keeping the enabled list as it is.
+	 *
+	 * A subscription cart keeps its subscription's currency after the merchant disabled it, so the selected currency can be
+	 * one the enabled list no longer holds.
+	 */
+	public function test_converts_from_a_selected_currency_that_is_not_enabled(): void {
+		$usd   = $this->create_currency( 'USD', 1.0, true );
+		$gbp   = $this->create_currency( 'GBP', 0.82, false );
+		$state = new MultiCurrencyState(
+			array(
+				'USD' => $usd,
+				'GBP' => $gbp,
+			),
+			array( 'USD' => $usd ),
+			$usd,
+			$gbp
+		);
+		$sut   = $this->create_service( $state );
+
+		$this->assertSame( 8.2 * ( 1.0 / 0.82 ), $sut->get_raw_conversion( 8.2, 'USD', 'GBP' ) );
+		$this->assertSame( '10', $sut->get_price_filter_query_value( 8.2, '>=' ) );
+		$this->assertSame( array( 'USD' ), array_keys( $state->get_enabled_currencies() ) );
+	}
+
+	/**
 	 * @testdox Should report whether selected and default currencies differ.
 	 */
 	public function test_reports_whether_selected_currency_differs_from_default(): void {

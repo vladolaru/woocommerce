@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use WC_Unit_Test_Case;
 
 require_once __DIR__ . '/Fixtures/legacy-multi-currency-consumers.inc';
@@ -101,6 +102,45 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 20.0, $facade_projected_amount, 'The Deposits facade call should apply the selected-currency rate.' );
 		$this->assertSame( 20.0, $cart_contents['deposit']['deposit_amount'], 'Native Deposits compatibility must preserve the facade-projected amount instead of applying the rate twice.' );
+	}
+
+	/**
+	 * @testdox The facade converts a subscription cart's disabled currency back to the store currency for shipping price bands.
+	 *
+	 * A renewal or resubscribe cart keeps its subscription's currency after the merchant disabled it. Table Rate Shipping
+	 * compares the cart subtotal, converted back to the store currency, with its price bands; when that conversion throws, it
+	 * compares the unconverted subtotal. GBP's manual rate 0.73 is kept, so a £73 subtotal is $100.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_converts_a_disabled_subscription_currency_for_shipping_price_bands(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'JPY' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_jpy', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_jpy', '150' );
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.73' );
+		// What the Subscriptions compatibility returns for a GBP subscription's cart.
+		add_filter(
+			'wcpay_multi_currency_override_selected_currency',
+			static function () {
+				MultiCurrencyStateBuilder::set_order_currency_override( 'GBP' );
+
+				return 'GBP';
+			}
+		);
+		$state_builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create();
+		$loader        = $this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class )->create_price_projection_service( null, $state_builder ) );
+		$loader->set_state_builder( $state_builder );
+		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::instance' );
+		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_selected_currency' );
+		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_default_currency' );
+		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_raw_conversion' );
+
+		$subtotal = ( new LegacyMultiCurrencyConsumerFixture() )->get_table_rate_base_currency_price( 73.0 );
+
+		$this->assertEqualsWithDelta( 100.0, $subtotal, 0.000001 );
+		$this->assertSame( 'from $90', $subtotal >= 90.0 ? 'from $90' : 'below $90', 'The subtotal falls in the store-currency price band it is worth.' );
 	}
 
 	/**

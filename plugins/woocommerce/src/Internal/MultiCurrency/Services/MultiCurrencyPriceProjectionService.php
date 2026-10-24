@@ -7,6 +7,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
+
 /**
  * Projects multi-currency prices for native shadow comparisons.
  *
@@ -81,7 +84,7 @@ class MultiCurrencyPriceProjectionService {
 	}
 
 	/**
-	 * Project a raw conversion between enabled currencies.
+	 * Project a raw conversion between enabled currencies or from or to the selected one.
 	 *
 	 * @param float  $amount        Amount.
 	 * @param string $to_currency   Target currency code.
@@ -89,13 +92,11 @@ class MultiCurrencyPriceProjectionService {
 	 * @return float
 	 */
 	public function get_raw_conversion( float $amount, string $to_currency, string $from_currency ): float {
-		$state = $this->state_builder->build();
-
 		return $this->price_calculator->get_raw_conversion(
 			$amount,
 			$to_currency,
 			$from_currency,
-			$state->get_enabled_currencies()
+			$this->get_conversion_currencies( $this->state_builder->build() )
 		);
 	}
 
@@ -123,7 +124,7 @@ class MultiCurrencyPriceProjectionService {
 			(float) $amount,
 			$state->get_default_currency()->get_code(),
 			$state->get_selected_currency()->get_code(),
-			$state->get_enabled_currencies()
+			$this->get_conversion_currencies( $state )
 		);
 
 		$precision_epsilon = 0.000000001;
@@ -131,6 +132,21 @@ class MultiCurrencyPriceProjectionService {
 		return '<=' === $compare
 			? (string) ceil( $converted_amount - $precision_epsilon )
 			: (string) floor( $converted_amount + $precision_epsilon );
+	}
+
+	/**
+	 * Get the currencies a raw conversion may use: the enabled ones and the selected one.
+	 *
+	 * A subscription cart keeps its subscription's currency after the merchant disabled it, so the selected currency can be
+	 * missing from the enabled list.
+	 *
+	 * @param MultiCurrencyState $state Multi-currency state.
+	 * @return array<string,MultiCurrencyCurrency>
+	 */
+	private function get_conversion_currencies( MultiCurrencyState $state ): array {
+		$selected = $state->get_selected_currency();
+
+		return $state->get_enabled_currencies() + array( $selected->get_code() => $selected );
 	}
 
 	/**

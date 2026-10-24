@@ -29,6 +29,9 @@ class LegacyMultiCurrencyConsumerFixture {
 	/**
 	 * Convert a selected-currency price back to the store currency for rate rules.
 	 *
+	 * As WooCommerce Table Rate Shipping 3.7.4 does (`includes/class-wc-shipping-table-rate.php:1293-1315`): a conversion
+	 * that throws leaves the amount unconverted.
+	 *
 	 * @param float $amount Selected-currency amount.
 	 * @return float
 	 */
@@ -45,6 +48,11 @@ class LegacyMultiCurrencyConsumerFixture {
 			return $amount;
 		}
 
-		return $multi_currency->get_raw_conversion( $amount, $base_currency->get_code(), $selected_currency->get_code() );
+		try {
+			return $multi_currency->get_raw_conversion( $amount, $base_currency->get_code(), $selected_currency->get_code() );
+		} catch ( \Exception $e ) {
+			unset( $e );
+			return $amount;
+		}
 	}
 }
