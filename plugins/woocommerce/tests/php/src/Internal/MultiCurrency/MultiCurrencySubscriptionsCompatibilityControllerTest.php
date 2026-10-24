@@ -7,11 +7,14 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySubscriptionsCompatibilityController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
@@ -44,6 +47,8 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		'woocommerce_cart_item_removed',
 		'woocommerce_cart_item_restored',
 		'wcpay_multi_currency_should_output_explicit_price',
+		'woocommerce_coupon_get_minimum_amount',
+		'woocommerce_coupon_get_maximum_amount',
 	);
 
 	/**
@@ -95,6 +100,8 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		$this->assertSame( 50, has_filter( 'wcpay_multi_currency_should_disable_currency_switching', array( $sut, 'should_disable_currency_switching' ) ) );
 		$this->assertSame( 50, has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'should_convert_product_price' ) ) );
 		$this->assertSame( 50, has_filter( 'wcpay_multi_currency_should_convert_coupon_amount', array( $sut, 'should_convert_coupon_amount' ) ) );
+		$this->assertSame( 100, has_filter( 'woocommerce_coupon_get_minimum_amount', array( $sut, 'get_subscription_session_coupon_spend_limit' ) ) );
+		$this->assertSame( 100, has_filter( 'woocommerce_coupon_get_maximum_amount', array( $sut, 'get_subscription_session_coupon_spend_limit' ) ) );
 		$this->assertSame( 50, has_filter( 'woocommerce_subscriptions_product_price', array( $sut, 'get_subscription_product_price' ) ) );
 		$this->assertSame( 50, has_filter( 'woocommerce_product_get__subscription_sign_up_fee', array( $sut, 'get_subscription_product_signup_fee' ) ) );
 		$this->assertSame( 50, has_filter( 'woocommerce_product_variation_get__subscription_sign_up_fee', array( $sut, 'get_subscription_product_signup_fee' ) ) );
@@ -121,6 +128,8 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 				'woocommerce_cart_item_restored'          => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
 				'woocommerce_cart_loaded_from_session'    => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
 				'woocommerce_cart_updated'                => array( 'clear_subscription_type_cache' => array( 10, 1 ) ),
+				'woocommerce_coupon_get_maximum_amount'   => array( 'get_subscription_session_coupon_spend_limit' => array( 100, 2 ) ),
+				'woocommerce_coupon_get_minimum_amount'   => array( 'get_subscription_session_coupon_spend_limit' => array( 100, 2 ) ),
 				'woocommerce_get_formatted_subscription_total' => array( 'maybe_clear_current_my_account_subscription' => array( 50, 2 ) ),
 				'woocommerce_product_get__subscription_sign_up_fee' => array( 'get_subscription_product_signup_fee' => array( 50, 2 ) ),
 				'woocommerce_product_variation_get__subscription_sign_up_fee' => array( 'get_subscription_product_signup_fee' => array( 50, 2 ) ),
@@ -622,6 +631,87 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
+	 * @testdox Should apply a subscription cart's coupon at the amount, minimum and maximum it holds.
+	 *
+	 * WooCommerce Subscriptions 9.3.0 sets up renewal and initial payment carts by storing each coupon's view-context amount,
+	 * minimum and maximum in the session (`includes/core/class-wcs-cart-renewal.php:1108-1166`) and rebuilding the coupon from
+	 * there on every later read, as a virtual coupon (`:1041-1077`); a manual or deleted discount becomes a `renewal_cart` or
+	 * `initial_cart` coupon holding the order's discount (`:1708-1852`). The session amounts were converted when they were stored,
+	 * and an order discount is already in the order's currency, so neither converts again. Amounts are from a recorded store run
+	 * at GBP 0.73: a 10.00 coupon stored as 7.30 with a 50.00 minimum stored as 36.45 (a 100.00 maximum would store 73.00), and a
+	 * 5.00 manual discount. The fixture converts by doubling.
+	 *
+	 * @dataProvider subscription_cart_coupons
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param string|null          $cart_type Subscription cart type, or null for an initial payment cart.
+	 * @param string[]             $calls     Calls on the stack while the coupon is read.
+	 * @param string               $origin    `session` (rebuilt from the session), `virtual`, `virtual beside stored`, `order` or `database`.
+	 * @param array<string,string> $props     Coupon properties.
+	 * @param string               $amount    Expected amount.
+	 * @param string[]             $limits    Expected minimum and maximum spend.
+	 */
+	public function test_applies_a_subscription_cart_coupon_at_the_amount_it_holds( ?string $cart_type, array $calls, string $origin, array $props, string $amount, array $limits ): void {
+		$sut = $this->create_controller();
+		if ( null !== $cart_type ) {
+			$sut->set_subscription_cart_item( $cart_type, $this->create_subscription( 'GBP' ) );
+		}
+		$sut->register();
+		$this->register_frontend_prices();
+		$coupon = $this->create_subscription_cart_coupon( $origin, $props );
+
+		$read = CallStack::run( $calls, static fn() => array( $coupon->get_amount(), $coupon->get_minimum_amount(), $coupon->get_maximum_amount() ) );
+
+		$this->assertSame( $amount, $read[0], 'Amount' );
+		$this->assertSame( $limits, array( $read[1], $read[2] ), 'Minimum and maximum spend' );
+	}
+
+	/**
+	 * Coupons a renewal or initial payment cart reads while it is set up, applied, and turned into the order's coupon line.
+	 *
+	 * @return array<string,array<mixed>>
+	 */
+	public function subscription_cart_coupons(): array {
+		$setup        = array( 'WCS_Cart_Renewal->setup_cart' );
+		$apply        = array( 'WC_Discounts->apply_coupon' );
+		$stored       = array(
+			'code'           => 'ten',
+			'discount_type'  => 'fixed_cart',
+			'amount'         => '7.30',
+			'minimum_amount' => '36.45',
+			'maximum_amount' => '73.00',
+		);
+		$order_amount = array(
+			'code'   => 'discount_renewal',
+			'amount' => '5.00',
+		);
+		$database     = array(
+			'code'           => 'other',
+			'discount_type'  => 'fixed_cart',
+			'amount'         => '10.00',
+			'minimum_amount' => '50.00',
+			'maximum_amount' => '60.00',
+		);
+
+		return array(
+			'renewal, manual discount, stored'           => array( 'renewal', $setup, 'order', $order_amount + array( 'discount_type' => 'renewal_cart' ), '5.00', array( '0', '0' ) ),
+			'renewal, manual discount, applied'          => array( 'renewal', $apply, 'session', $order_amount + array( 'discount_type' => 'renewal_cart' ), '5.00', array( '0', '0' ) ),
+			'initial payment, manual discount, stored'   => array( null, $setup, 'order', array( 'code' => 'discount_initial' ) + $order_amount + array( 'discount_type' => 'initial_cart' ), '5.00', array( '0', '0' ) ),
+			'initial payment, manual discount, applied'  => array( null, $apply, 'session', array( 'code' => 'discount_initial' ) + $order_amount + array( 'discount_type' => 'initial_cart' ), '5.00', array( '0', '0' ) ),
+			'initial payment, stored coupon, applied'    => array( null, $apply, 'session', $stored, '7.30', array( '36.45', '73.00' ) ),
+			'renewal, stored non-recurring coupon, applied' => array( 'renewal', $apply, 'session', $stored, '7.30', array( '36.45', '73.00' ) ),
+			'renewal, stored renewal coupon, applied'    => array( 'renewal', $apply, 'session', array( 'discount_type' => 'renewal_fee' ) + $stored, '7.30', array( '36.45', '73.00' ) ),
+			'renewal, stored coupon, order coupon line'  => array( 'renewal', array(), 'session', $stored, '7.30', array( '36.45', '73.00' ) ),
+			'renewal, database coupon, stored'           => array( 'renewal', $setup, 'database', $database, '20', array( '100', '120' ) ),
+			'initial payment, database coupon, stored'   => array( null, $setup, 'database', $database, '20', array( '100', '120' ) ),
+			'initial payment, coupon typed in, applied'  => array( null, $apply, 'database', $database, '20', array( '100', '120' ) ),
+			'renewal, another plugin\'s virtual coupon'  => array( 'renewal', $apply, 'virtual', $database, '20', array( '100', '120' ) ),
+			'renewal, virtual coupon beside stored ones' => array( 'renewal', $apply, 'virtual beside stored', $database, '20', array( '100', '120' ) ),
+		);
+	}
+
+	/**
 	 * @testdox Should cache the cart subscription-type lookup per request until the cart changes.
 	 */
 	public function test_caches_cart_subscription_type_until_invalidated(): void {
@@ -713,6 +803,8 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		$this->assertFalse( has_filter( 'wcpay_multi_currency_should_disable_currency_switching', array( $sut, 'should_disable_currency_switching' ) ) );
 		$this->assertFalse( has_filter( 'wcpay_multi_currency_should_convert_product_price', array( $sut, 'should_convert_product_price' ) ) );
 		$this->assertFalse( has_filter( 'wcpay_multi_currency_should_convert_coupon_amount', array( $sut, 'should_convert_coupon_amount' ) ) );
+		$this->assertFalse( has_filter( 'woocommerce_coupon_get_minimum_amount', array( $sut, 'get_subscription_session_coupon_spend_limit' ) ) );
+		$this->assertFalse( has_filter( 'woocommerce_coupon_get_maximum_amount', array( $sut, 'get_subscription_session_coupon_spend_limit' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_subscriptions_product_price', array( $sut, 'get_subscription_product_price' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_product_get__subscription_sign_up_fee', array( $sut, 'get_subscription_product_signup_fee' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_product_variation_get__subscription_sign_up_fee', array( $sut, 'get_subscription_product_signup_fee' ) ) );
@@ -724,6 +816,82 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		foreach ( $this->cache_invalidation_hooks as $hook ) {
 			$this->assertFalse( has_action( $hook, array( $sut, 'clear_subscription_type_cache' ) ), $hook );
 		}
+	}
+
+	/**
+	 * Register the frontend price conversions, which convert at the rate the fixture's projection service doubles by.
+	 */
+	private function register_frontend_prices(): void {
+		$frontend_prices = new MultiCurrencyFrontendPricesController();
+		$frontend_prices->init(
+			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
+			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ),
+			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
+		);
+		$frontend_prices->set_price_projection_service( $this->create_price_projection_service() );
+		$frontend_prices->set_request_context(
+			new class() extends MultiCurrencyRequestContext {
+				/**
+				 * Register the storefront hooks.
+				 *
+				 * @return bool
+				 */
+				public function should_register_frontend_hooks(): bool {
+					return true;
+				}
+			}
+		);
+		$frontend_prices->register();
+	}
+
+	/**
+	 * Create a coupon the way a subscription cart reads it.
+	 *
+	 * `session`: Subscriptions rebuilt it from the coupon properties it stored in the session, through its shop coupon data
+	 * filter (Subscriptions 9.3.0 `includes/core/class-wcs-cart-renewal.php:1041-1077,1108-1166`). `virtual`: a coupon another
+	 * plugin builds through the same filter (`virtual beside stored`: while the session holds another code). `order`: the pseudo coupon Subscriptions makes for an order discount (`:1813-1828`).
+	 * `database`: a coupon read from the database.
+	 *
+	 * @param string               $origin Where the coupon comes from.
+	 * @param array<string,string> $props  Coupon properties, the code included.
+	 * @return \WC_Coupon
+	 */
+	private function create_subscription_cart_coupon( string $origin, array $props ): \WC_Coupon {
+		$code = $props['code'];
+		unset( $props['code'] );
+		// The renewal and order discount types Subscriptions registers (`includes/core/class-wc-subscriptions-coupon.php:1179-1189`).
+		add_filter(
+			'woocommerce_coupon_discount_types',
+			static fn( array $types ): array => $types + array_fill_keys( array( 'renewal_fee', 'renewal_cart', 'initial_cart' ), 'Subscriptions' )
+		);
+
+		if ( 'order' !== $origin && 'database' !== $origin ) {
+			if ( 'virtual' !== $origin ) {
+				$stored_code = 'session' === $origin ? $code : 'ten';
+				WC()->session->set( 'wcs_renewal_coupons', array( 41 => array( $stored_code => $props ) ) );
+			}
+			add_filter(
+				'woocommerce_get_shop_coupon_data',
+				static function ( $data, $coupon_code ) use ( $code, $props ) {
+					return $code === $coupon_code ? $props + array(
+						'id'           => true,
+						'usage_limit'  => '',
+						'usage_count'  => '',
+						'date_expires' => '',
+					) : $data;
+				},
+				10,
+				2
+			);
+
+			return new \WC_Coupon( $code );
+		}
+
+		$coupon = 'order' === $origin ? new \WC_Coupon( $code ) : new \WC_Coupon();
+		$coupon->set_props( $props );
+		$coupon->set_code( $code );
+
+		return $coupon;
 	}
 
 	/**

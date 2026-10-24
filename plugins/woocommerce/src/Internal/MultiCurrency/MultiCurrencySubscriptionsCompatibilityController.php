@@ -55,6 +55,14 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 		'renewal_cart',
 	);
 
+	/**
+	 * Coupon types Subscriptions gives the discount of the order a renewal or initial payment cart pays, in that order's currency.
+	 */
+	private const ORDER_DISCOUNT_COUPON_TYPES = array(
+		'renewal_cart',
+		'initial_cart',
+	);
+
 	private const PRODUCT_PRICE_CALCULATION_CALLS = array(
 		'WC_Cart_Totals->calculate_item_totals',
 		'WC_Cart->get_product_subtotal',
@@ -254,6 +262,8 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_disable_currency_switching', array( $this, 'should_disable_currency_switching' ), 50 );
 		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_convert_product_price', array( $this, 'should_convert_product_price' ), 50, 2 );
 		add_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_convert_coupon_amount', array( $this, 'should_convert_coupon_amount' ), 50, 2 );
+		add_filter( 'woocommerce_coupon_get_minimum_amount', array( $this, 'get_subscription_session_coupon_spend_limit' ), 100, 2 );
+		add_filter( 'woocommerce_coupon_get_maximum_amount', array( $this, 'get_subscription_session_coupon_spend_limit' ), 100, 2 );
 		add_filter( 'woocommerce_subscriptions_product_price', array( $this, 'get_subscription_product_price' ), 50, 2 );
 		add_filter( 'woocommerce_product_get__subscription_sign_up_fee', array( $this, 'get_subscription_product_signup_fee' ), 50, 2 );
 		add_filter( 'woocommerce_product_variation_get__subscription_sign_up_fee', array( $this, 'get_subscription_product_signup_fee' ), 50, 2 );
@@ -355,7 +365,12 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	public function should_convert_coupon_amount( bool $should_convert, $coupon ): bool {
 		$discount_type = strtolower( trim( $this->get_coupon_discount_type( $coupon ) ) );
 
-		if ( ! $should_convert || in_array( $discount_type, self::SUBSCRIPTION_PERCENT_COUPON_TYPES, true ) ) {
+		if (
+			! $should_convert
+			|| in_array( $discount_type, self::SUBSCRIPTION_PERCENT_COUPON_TYPES, true )
+			|| in_array( $discount_type, self::ORDER_DISCOUNT_COUPON_TYPES, true )
+			|| $this->is_subscription_session_coupon( $coupon )
+		) {
 			return false;
 		}
 
@@ -366,6 +381,24 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 			&& MultiCurrencyRequestContext::is_call_in_backtrace( self::APPLY_COUPON_CALLS )
 			&& in_array( $discount_type, self::SUBSCRIPTION_RECURRING_COUPON_TYPES, true )
 		);
+	}
+
+	/**
+	 * Keep the minimum or maximum spend Subscriptions stored for a coupon it rebuilds from the session.
+	 *
+	 * Subscriptions stored the converted spend limit while it set the cart up, so the stored value is returned in place of the
+	 * frontend price conversion's second pass.
+	 *
+	 * @param mixed $amount Coupon minimum or maximum spend.
+	 * @param mixed $coupon Coupon object.
+	 * @return mixed
+	 */
+	public function get_subscription_session_coupon_spend_limit( $amount, $coupon ) {
+		if ( ! $this->is_subscription_session_coupon( $coupon ) ) {
+			return $amount;
+		}
+
+		return 'woocommerce_coupon_get_minimum_amount' === current_filter() ? $coupon->get_minimum_amount( 'edit' ) : $coupon->get_maximum_amount( 'edit' );
 	}
 
 	/**
@@ -738,6 +771,36 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 		$discount_type = $coupon->get_discount_type();
 
 		return is_scalar( $discount_type ) ? (string) $discount_type : '';
+	}
+
+	/**
+	 * Tell whether Subscriptions rebuilt the coupon from the properties it stored in the session while it set up the cart.
+	 *
+	 * Subscriptions stores each coupon's amount and spend limits as read while the cart is set up, already converted, and
+	 * serves them back for that code as a virtual coupon (Subscriptions 9.3.0 `includes/core/class-wcs-cart-renewal.php:1041-1077,1108-1166`).
+	 *
+	 * @param mixed $coupon Coupon object.
+	 * @return bool
+	 */
+	private function is_subscription_session_coupon( $coupon ): bool {
+		if ( ! $coupon instanceof \WC_Coupon || ! $coupon->get_virtual( 'edit' ) || 0 !== $coupon->get_id() ) {
+			return false;
+		}
+
+		$session         = WC()->session;
+		$renewal_coupons = $session instanceof \WC_Session ? $session->get( 'wcs_renewal_coupons' ) : null;
+		if ( ! is_array( $renewal_coupons ) ) {
+			return false;
+		}
+
+		$code = $coupon->get_code( 'edit' );
+		foreach ( $renewal_coupons as $order_coupons ) {
+			if ( is_array( $order_coupons ) && isset( $order_coupons[ $code ] ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
