@@ -36,6 +36,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		'woocommerce_subscriptions_product_price',
 		'woocommerce_subscriptions_product_sale_price',
 		'woocommerce_subscriptions_product_regular_price',
+		'woocommerce_product_get_sale_price',
 		'woocommerce_product_get__subscription_sign_up_fee',
 		'woocommerce_product_variation_get__subscription_sign_up_fee',
 		'woocommerce_subscription_price_string_details',
@@ -715,7 +716,8 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * (`:598-606`), with the stored subscription price, and passes the price it picks through
 	 * `woocommerce_subscriptions_product_price`, which converts. A switch prorates from that price
 	 * (`includes/switching/class-wcs-switch-cart-item.php:220`). Product: subscription price 10, regular price 10, sale price 8.
-	 * A recorded store run at GBP 0.73 charged an upgrade to such a product 0.50 where about 3.50 was due.
+	 * A recorded store run at GBP 0.73 charged an upgrade to such a product 0.50 where about 3.50 was due. In the store currency
+	 * nothing converts, so a pricing plugin's sale price is used as it is.
 	 * @dataProvider on_sale_subscription_prices
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
@@ -724,8 +726,9 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * @param string $subscription_price Stored subscription price.
 	 * @param string $sale               Sale price.
 	 * @param float  $expected           Active price.
+	 * @param string $plugin_sale        Sale price a pricing plugin supplies through the product getter, if any.
 	 */
-	public function test_converts_an_on_sale_subscription_price_once( float $rate, string $subscription_price, string $sale, float $expected ): void {
+	public function test_converts_an_on_sale_subscription_price_once( float $rate, string $subscription_price, string $sale, float $expected, string $plugin_sale = '' ): void {
 		$sut = $this->create_controller();
 		$sut->set_price_projection_service( $this->create_price_projection_service( $rate ) );
 		$sut->register();
@@ -737,6 +740,9 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		$product->set_price( '' === $sale ? '10' : $sale );
 		// Set after the meta, so the product reads no meta from the database.
 		$product->set_id( 10 );
+		if ( '' !== $plugin_sale ) {
+			add_filter( 'woocommerce_product_get_sale_price', static fn() => $plugin_sale );
+		}
 
 		$active_price = CallStack::run(
 			array( 'WC_Subscriptions_Product::get_price' ),
@@ -757,17 +763,18 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
-	 * Rates on both sides of 1, which convert a sale price below and above the stored subscription price, and the regular price
-	 * the lookup falls back to without a stored subscription price.
+	 * Rates on both sides of 1, which convert a sale price below and above the stored subscription price, the regular price
+	 * the lookup falls back to without a stored subscription price, and the store currency.
 	 *
-	 * @return array<string,array{0:float,1:string,2:string,3:float}>
+	 * @return array<string,array<int,float|string>>
 	 */
 	public function on_sale_subscription_prices(): array {
 		return array(
-			'rate above 1, sale kept'      => array( 2.0, '10', '8', 16.0 ),
-			'rate below 1, sale kept'      => array( 0.5, '10', '8', 4.0 ),
-			'not on sale'                  => array( 2.0, '10', '', 20.0 ),
-			'no stored subscription price' => array( 2.0, '', '', 20.0 ),
+			'rate above 1, sale kept'                    => array( 2.0, '10', '8', 16.0 ),
+			'rate below 1, sale kept'                    => array( 0.5, '10', '8', 4.0 ),
+			'not on sale'                                => array( 2.0, '10', '', 20.0 ),
+			'no stored subscription price'               => array( 2.0, '', '', 20.0 ),
+			'store currency, sale from a pricing plugin' => array( 1.0, '10', '', 8.0, '8' ),
 		);
 	}
 
@@ -1367,6 +1374,15 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 				unset( $type );
 
 				return (float) $price * $this->rate;
+			}
+
+			/**
+			 * Tell whether the selected currency differs from the store currency.
+			 *
+			 * @return bool
+			 */
+			public function should_project_between_selected_and_default_currency(): bool {
+				return 1.0 !== $this->rate;
 			}
 		};
 	}

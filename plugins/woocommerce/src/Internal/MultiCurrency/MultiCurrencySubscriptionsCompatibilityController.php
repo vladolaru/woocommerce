@@ -438,14 +438,19 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	 *
 	 * The lookup compares the sale price with the stored subscription price and passes the price it picks through
 	 * `woocommerce_subscriptions_product_price`, which converts it (Subscriptions 9.3.0
-	 * `includes/core/class-wc-subscriptions-product.php:553-606`), so it must compare and pick stored prices.
+	 * `includes/core/class-wc-subscriptions-product.php:553-606`), so it must compare and pick stored prices. In the store
+	 * currency nothing converts, and the prices pass through as other filters made them.
 	 *
 	 * @param mixed $price   Sale or regular price.
 	 * @param mixed $product Product object.
 	 * @return mixed
 	 */
 	public function get_stored_price_for_active_price( $price, $product ) {
-		if ( ! $product instanceof \WC_Product || ! MultiCurrencyRequestContext::is_call_in_backtrace( self::SUBSCRIPTION_PRODUCT_ACTIVE_PRICE_CALLS ) ) {
+		if (
+			! $product instanceof \WC_Product
+			|| ! $this->get_price_projection_service()->should_project_between_selected_and_default_currency()
+			|| ! MultiCurrencyRequestContext::is_call_in_backtrace( self::SUBSCRIPTION_PRODUCT_ACTIVE_PRICE_CALLS )
+		) {
 			return $price;
 		}
 
