@@ -1,0 +1,644 @@
+{
+  "_meta": {
+    "recording": "REC-T60-2",
+    "source": "Local WPCOM (wpcom-local v0.36.0) WCPay server, blog 100000002, account acct_1UL3bQJQsm0lol5W, a test-drive (Custom) account created 2026-09-29 16:10:12Z through core's NOX \"Test payments\" onboarding, Stripe test mode",
+    "store": "fresh native WooCommerce native8096.localhost:8096 (woocommerce-develop-2, branch exp/core-native-payments at 3694bea8e60, WooPayments plugin not installed)",
+    "captured_via": "WooPaymentsApiClient::get_account() (GET wcpay/accounts), parsed body, one request; the store account cache was unchanged by the read",
+    "sanitized": "string values holding an email address or a URL replaced with REDACTED at: email, communications_email, business_profile.url, business_profile.support_email, account_details.payout_status.popover.cta_link; everything else verbatim",
+    "notes": "Task 6.0 F-T60-2: the full account record the client refetches after clearing its cache post test-drive init (class-wc-payments-onboarding-service.php:796). Session folder data/admin-ux-parity.md."
+  },
+  "account": {
+    "account_id": "acct_1UL3bQJQsm0lol5W",
+    "email": "REDACTED",
+    "communications_email": "REDACTED",
+    "live_publishable_key": "pk_live_XXXXXXX",
+    "test_publishable_key": "pk_test_51HHncdJ5cIRIG92xWV6ZRUF50GHxLiDwJqeVgnzvT3iH75NQv0OJbaVa3781JgjwCoD4okbd5OGfoPDQ6edrpHA400vMtnxe2D",
+    "is_live": false,
+    "is_test_drive": true,
+    "created": "2026-09-29 16:10:12",
+    "has_pending_requirements": false,
+    "has_future_requirements": false,
+    "has_overdue_requirements": false,
+    "details_submitted": true,
+    "current_deadline": null,
+    "status": "complete",
+    "capabilities": {
+      "affirm_payments": "active",
+      "afterpay_clearpay_payments": "active",
+      "alipay_payments": "active",
+      "amazon_pay_payments": "active",
+      "bancontact_payments": "active",
+      "card_payments": "active",
+      "eps_payments": "active",
+      "ideal_payments": "active",
+      "klarna_payments": "active",
+      "multibanco_payments": "active",
+      "tax_reporting_us_1099_k": "active",
+      "transfers": "active",
+      "wechat_pay_payments": "active",
+      "acss_debit_payments": "unrequested",
+      "app_distribution": "unrequested",
+      "bacs_debit_payments": "unrequested",
+      "bank_transfer_payments": "unrequested",
+      "bizum_payments": "unrequested",
+      "blik_payments": "unrequested",
+      "cartes_bancaires_payments": "unrequested",
+      "cashapp_payments": "unrequested",
+      "crypto_payments": "unrequested",
+      "gb_bank_transfer_payments": "unrequested",
+      "kakao_pay_payments": "unrequested",
+      "klarna": "unrequested",
+      "kr_card_payments": "unrequested",
+      "link_payments": "unrequested",
+      "mb_way_payments": "unrequested",
+      "naver_pay_payments": "unrequested",
+      "oxxo_payments": "unrequested",
+      "p24_payments": "unrequested",
+      "pay_by_bank_payments": "unrequested",
+      "payco_payments": "unrequested",
+      "pix_payments": "unrequested",
+      "samsung_pay_payments": "unrequested",
+      "satispay_payments": "unrequested",
+      "scalapay_payments": "unrequested",
+      "sepa_bank_transfer_payments": "unrequested",
+      "sepa_debit_payments": "unrequested",
+      "sunbit_payments": "unrequested",
+      "tax_reporting_us_1099_misc": "unrequested",
+      "upi_payments": "unrequested",
+      "us_bank_account_ach_payments": "unrequested",
+      "us_bank_transfer_payments": "unrequested",
+      "zip_payments": "unrequested"
+    },
+    "capability_requirements": {
+      "acss_debit_payments": [],
+      "affirm_payments": [],
+      "afterpay_clearpay_payments": [],
+      "alipay_payments": [],
+      "amazon_pay_payments": [],
+      "app_distribution": [],
+      "bacs_debit_payments": [],
+      "bancontact_payments": [],
+      "bank_transfer_payments": [],
+      "bizum_payments": [],
+      "blik_payments": [],
+      "card_payments": [],
+      "cartes_bancaires_payments": [],
+      "cashapp_payments": [],
+      "crypto_payments": [],
+      "eps_payments": [],
+      "gb_bank_transfer_payments": [],
+      "ideal_payments": [],
+      "kakao_pay_payments": [],
+      "klarna": [],
+      "klarna_payments": [],
+      "kr_card_payments": [],
+      "link_payments": [],
+      "mb_way_payments": [],
+      "multibanco_payments": [],
+      "naver_pay_payments": [],
+      "oxxo_payments": [],
+      "p24_payments": [],
+      "pay_by_bank_payments": [],
+      "payco_payments": [],
+      "pix_payments": [],
+      "samsung_pay_payments": [],
+      "satispay_payments": [],
+      "scalapay_payments": [],
+      "sepa_bank_transfer_payments": [],
+      "sepa_debit_payments": [],
+      "sunbit_payments": [],
+      "tax_reporting_us_1099_k": [],
+      "tax_reporting_us_1099_misc": [],
+      "transfers": [],
+      "upi_payments": [],
+      "us_bank_account_ach_payments": [],
+      "us_bank_transfer_payments": [],
+      "wechat_pay_payments": [],
+      "zip_payments": []
+    },
+    "payments_enabled": true,
+    "deposits": {
+      "status": "enabled",
+      "restrictions": "deposits_unrestricted",
+      "interval": "daily",
+      "weekly_anchor": "",
+      "monthly_anchor": null,
+      "delay_days": 2,
+      "completed_waiting_period": true,
+      "minimum_manual_deposit_amounts": {
+        "aud": 500,
+        "bgn": 100,
+        "cad": 500,
+        "chf": 500,
+        "czk": 3000,
+        "dkk": 5000,
+        "eur": 500,
+        "gbp": 500,
+        "hkd": 5000,
+        "huf": 36000,
+        "nok": 5000,
+        "nzd": 500,
+        "jpy": 50,
+        "sek": 5000,
+        "sgd": 500,
+        "usd": 500,
+        "ron": 500,
+        "pln": 500,
+        "aed": 200
+      },
+      "minimum_scheduled_deposit_amounts": {
+        "aed": 200,
+        "aud": 0,
+        "bgn": 100,
+        "cad": 0,
+        "chf": 500,
+        "czk": 3000,
+        "dkk": 2000,
+        "eur": 100,
+        "gbp": 100,
+        "hkd": 0,
+        "huf": 36000,
+        "jpy": 1,
+        "nok": 2000,
+        "nzd": 0,
+        "pln": 500,
+        "ron": 500,
+        "sek": 2000,
+        "sgd": 100,
+        "usd": 0
+      },
+      "default_external_accounts": [
+        {
+          "object": "bank_account",
+          "bank_name": "STRIPE TEST BANK",
+          "brand": null,
+          "last4": "6789",
+          "routing_number": "110000000",
+          "account_holder_type": null,
+          "currency": "usd",
+          "country": "US",
+          "status": "new"
+        }
+      ]
+    },
+    "lifetime_total_payment_volume": 100,
+    "requirements": {
+      "errors": []
+    },
+    "statement_descriptor": "WOOCOMMERCE",
+    "statement_descriptor_kanji": "",
+    "statement_descriptor_kana": "",
+    "latest_tos_agreement": {
+      "date": "2026-09-29 16:10:12",
+      "source": "signup",
+      "is_current_version": true
+    },
+    "fees": {
+      "base": {
+        "percentage_rate": 0.029,
+        "fixed_rate": 30,
+        "currency": "usd"
+      },
+      "discount": [],
+      "card": {
+        "base": {
+          "percentage_rate": 0.029,
+          "fixed_rate": 30,
+          "currency": "usd"
+        },
+        "additional": {
+          "percentage_rate": 0.015,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "fx": {
+          "percentage_rate": 0.01,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "discount": []
+      },
+      "card_present": {
+        "base": {
+          "percentage_rate": 0.027,
+          "fixed_rate": 10,
+          "currency": "usd"
+        },
+        "additional": {
+          "percentage_rate": 0.01,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "fx": {
+          "percentage_rate": 0.01,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "discount": []
+      },
+      "link": {
+        "base": {
+          "percentage_rate": 0.029,
+          "fixed_rate": 30,
+          "currency": "usd"
+        },
+        "additional": {
+          "percentage_rate": 0,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "fx": {
+          "percentage_rate": 0.01,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "discount": []
+      },
+      "bancontact": {
+        "base": {
+          "percentage_rate": 0.014,
+          "fixed_rate": 30,
+          "currency": "usd"
+        },
+        "additional": {
+          "percentage_rate": 0.015,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "fx": {
+          "percentage_rate": 0.01,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "discount": []
+      },
+      "eps": {
+        "base": {
+          "percentage_rate": 0.018,
+          "fixed_rate": 30,
+          "currency": "usd"
+        },
+        "additional": {
+          "percentage_rate": 0.015,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "fx": {
+          "percentage_rate": 0.01,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "discount": []
+      },
+      "ideal": {
+        "base": {
+          "percentage_rate": 0,
+          "fixed_rate": 80,
+          "currency": "usd"
+        },
+        "additional": {
+          "percentage_rate": 0.015,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "fx": {
+          "percentage_rate": 0.01,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "discount": []
+      },
+      "klarna": {
+        "base": {
+          "percentage_rate": 0.0599,
+          "fixed_rate": 30,
+          "currency": "usd"
+        },
+        "additional": {
+          "percentage_rate": 0,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "fx": {
+          "percentage_rate": 0,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "discount": []
+      },
+      "affirm": {
+        "base": {
+          "percentage_rate": 0.06,
+          "fixed_rate": 30,
+          "currency": "usd"
+        },
+        "additional": {
+          "percentage_rate": 0,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "fx": {
+          "percentage_rate": 0,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "discount": []
+      },
+      "afterpay_clearpay": {
+        "base": {
+          "percentage_rate": 0.06,
+          "fixed_rate": 30,
+          "currency": "usd"
+        },
+        "additional": {
+          "percentage_rate": 0,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "fx": {
+          "percentage_rate": 0,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "discount": []
+      },
+      "multibanco": {
+        "base": {
+          "percentage_rate": 0.0295,
+          "fixed_rate": 30,
+          "currency": "usd"
+        },
+        "additional": {
+          "percentage_rate": 0.015,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "fx": {
+          "percentage_rate": 0.01,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "discount": []
+      },
+      "alipay": {
+        "base": {
+          "percentage_rate": 0.029,
+          "fixed_rate": 30,
+          "currency": "usd"
+        },
+        "additional": {
+          "percentage_rate": 0,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "fx": {
+          "percentage_rate": 0.01,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "discount": []
+      },
+      "wechat_pay": {
+        "base": {
+          "percentage_rate": 0.029,
+          "fixed_rate": 30,
+          "currency": "usd"
+        },
+        "additional": {
+          "percentage_rate": 0,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "fx": {
+          "percentage_rate": 0.01,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "discount": []
+      },
+      "amazon_pay": {
+        "base": {
+          "percentage_rate": 0.029,
+          "fixed_rate": 30,
+          "currency": "usd"
+        },
+        "additional": {
+          "percentage_rate": 0.015,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "fx": {
+          "percentage_rate": 0.01,
+          "fixed_rate": 0,
+          "currency": "usd"
+        },
+        "discount": []
+      }
+    },
+    "capital": {
+      "has_active_loan": false,
+      "has_previous_loans": false,
+      "loans": []
+    },
+    "fraud_services": {
+      "stripe": []
+    },
+    "store_currencies": {
+      "default": "usd",
+      "supported": [
+        "usd"
+      ]
+    },
+    "customer_currencies": {
+      "supported": [
+        "usd",
+        "aed",
+        "afn",
+        "all",
+        "amd",
+        "ang",
+        "aoa",
+        "ars",
+        "aud",
+        "awg",
+        "azn",
+        "bam",
+        "bbd",
+        "bdt",
+        "bif",
+        "bmd",
+        "bnd",
+        "bob",
+        "brl",
+        "bsd",
+        "bwp",
+        "byn",
+        "bzd",
+        "cad",
+        "cdf",
+        "chf",
+        "clp",
+        "cny",
+        "cop",
+        "crc",
+        "cve",
+        "czk",
+        "djf",
+        "dkk",
+        "dop",
+        "dzd",
+        "egp",
+        "etb",
+        "eur",
+        "fjd",
+        "fkp",
+        "gbp",
+        "gel",
+        "gip",
+        "gmd",
+        "gnf",
+        "gtq",
+        "gyd",
+        "hkd",
+        "hnl",
+        "htg",
+        "huf",
+        "idr",
+        "ils",
+        "inr",
+        "isk",
+        "jmd",
+        "jpy",
+        "kes",
+        "kgs",
+        "khr",
+        "kmf",
+        "krw",
+        "kyd",
+        "kzt",
+        "lak",
+        "lbp",
+        "lkr",
+        "lrd",
+        "lsl",
+        "mad",
+        "mdl",
+        "mga",
+        "mkd",
+        "mmk",
+        "mnt",
+        "mop",
+        "mur",
+        "mvr",
+        "mwk",
+        "mxn",
+        "myr",
+        "mzn",
+        "nad",
+        "ngn",
+        "nio",
+        "nok",
+        "npr",
+        "nzd",
+        "pab",
+        "pen",
+        "pgk",
+        "php",
+        "pkr",
+        "pln",
+        "pyg",
+        "qar",
+        "ron",
+        "rsd",
+        "rub",
+        "rwf",
+        "sar",
+        "sbd",
+        "scr",
+        "sek",
+        "sgd",
+        "shp",
+        "sle",
+        "sos",
+        "srd",
+        "std",
+        "szl",
+        "thb",
+        "tjs",
+        "top",
+        "try",
+        "ttd",
+        "twd",
+        "tzs",
+        "uah",
+        "ugx",
+        "uyu",
+        "uzs",
+        "vnd",
+        "vuv",
+        "wst",
+        "xaf",
+        "xcd",
+        "xcg",
+        "xof",
+        "xpf",
+        "yer",
+        "zar",
+        "zmw"
+      ]
+    },
+    "country": "US",
+    "instant_deposits_eligible": false,
+    "card_present_eligible": true,
+    "has_card_readers_available": false,
+    "platform_checkout_eligible": true,
+    "platform_direct_checkout_eligible": true,
+    "platform_global_theme_support_enabled": false,
+    "business_profile": {
+      "name": "woocommerce",
+      "url": "REDACTED",
+      "support_address": [],
+      "support_email": "REDACTED",
+      "support_phone": "+10000000000"
+    },
+    "branding": {
+      "icon": "file_1UL3bRJ5cIRIG92x9fTnaql1",
+      "logo": "file_1UL3bRJ5cIRIG92xUuhi3ubw",
+      "primary_color": "#873eff",
+      "secondary_color": "#2c045d"
+    },
+    "locale": "en_US",
+    "has_more_failed_events": false,
+    "has_submitted_vat_data": false,
+    "is_documents_enabled": false,
+    "card_testing_protection_eligible": false,
+    "fraud_mitigation_settings": {
+      "avs_check_enabled": false,
+      "cvc_check_enabled": true
+    },
+    "is_deferred_intent_creation_upe_enabled": true,
+    "pre_check_save_my_info": false,
+    "is_tokenized_ece_disabled": false,
+    "ece_confirmation_tokens_disabled": false,
+    "reports_area_enabled": null,
+    "eligibility_wporg_review_campaign_2025": false,
+    "eligibility_review_prompt": false,
+    "eligibility_review_prompt_phase_0": false,
+    "account_details": {
+      "account_status": {
+        "text": "Connected",
+        "background_color": "green"
+      },
+      "payout_status": {
+        "text": "Active",
+        "background_color": "green",
+        "popover": {
+          "text": "Your next payout will be sent in 2 days based on your daily schedule. Arrival time depends on your bank's processing speed.",
+          "cta_text": "Learn more about payouts",
+          "cta_link": "REDACTED"
+        }
+      },
+      "banner": null
+    }
+  }
+}

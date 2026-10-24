@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The transaction type in the WooPayments transactions list still opens the details but now reads as plain text, as in the WooPayments plugin.

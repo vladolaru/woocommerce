@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Admin\Suggestions;
 use Automattic\WooCommerce\Internal\Admin\Onboarding\OnboardingProfile;
 use Automattic\WooCommerce\Internal\Admin\Settings\PaymentsProviders;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\PaymentsExtensionSuggestionIncentives;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Admin\Suggestions\PaymentsExtensionSuggestions;
 use WC_Unit_Test_Case;
 
@@ -477,6 +478,30 @@ class PaymentsExtensionSuggestionsTest extends WC_Unit_Test_Case {
 		$this->assertIsArray( $extension );
 		$this->assertArrayHasKey( 'id', $extension );
 		$this->assertSame( 'woopayments', $extension['id'] );
+	}
+
+	/**
+	 * @testdox The WooPayments suggestion should install the extension while the WooPayments feature is off.
+	 */
+	public function test_woopayments_extension_includes_plugin_install_metadata_while_the_feature_is_off(): void {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'no' );
+
+		$extension = $this->sut->get_by_id( PaymentsExtensionSuggestions::WOOPAYMENTS );
+
+		$this->assertNotNull( $extension );
+		$this->assertSame( 'woocommerce-payments', $extension['plugin']['slug'] );
+	}
+
+	/**
+	 * @testdox The WooPayments suggestion should not provide WordPress.org install metadata while the WooPayments feature is on.
+	 */
+	public function test_woopayments_extension_does_not_include_plugin_install_metadata_while_the_feature_is_on(): void {
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+
+		$extension = $this->sut->get_by_id( PaymentsExtensionSuggestions::WOOPAYMENTS );
+
+		$this->assertNotNull( $extension );
+		$this->assertArrayNotHasKey( 'plugin', $extension );
 	}
 
 	/**

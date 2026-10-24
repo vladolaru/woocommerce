@@ -1,0 +1,333 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\WooPay;
+
+use ActionScheduler_Store;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayExtensionSync;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
+use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
+use WC_Unit_Test_Case;
+
+/**
+ * Tests for the WooPaymentsWooPayExtensionSync class.
+ */
+class WooPaymentsWooPayExtensionSyncTest extends WC_Unit_Test_Case {
+
+	use ProviderTextLogAssertions;
+
+	/**
+	 * Created sync instances whose hooks must be removed after each test.
+	 *
+	 * @var WooPaymentsWooPayExtensionSync[]
+	 */
+	private array $syncs = array();
+
+	/**
+	 * Previous active plugins option value.
+	 *
+	 * @var mixed
+	 */
+	private $previous_active_plugins;
+
+	/**
+	 * Set up test fixtures.
+	 */
+	public function setUp(): void {
+		parent::setUp();
+
+		$this->previous_active_plugins = get_option( 'active_plugins', array() );
+		$this->clear_scheduled_actions();
+		$this->delete_sync_options();
+	}
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		foreach ( $this->syncs as $sync ) {
+			$this->remove_sync_hooks( $sync );
+		}
+
+		update_option( 'active_plugins', $this->previous_active_plugins );
+		$this->clear_scheduled_actions();
+		$this->delete_sync_options();
+
+		parent::tearDown();
+	}
+
+	/**
+	 * @testdox WooPay extension sync hooks are registered.
+	 */
+	public function test_registers_hooks(): void {
+		$sync = $this->create_sync();
+
+		$sync->register();
+
+		$this->assertSame( 10, has_action( 'action_scheduler_ensure_recurring_actions', array( $sync, 'schedule' ) ) );
+		$this->assertSame( 10, has_action( 'validate_woopay_compatibility', array( $sync, 'update_compatibility_and_maybe_show_incompatibility_warning' ) ) );
+		$this->assertSame( 10, has_action( 'activated_plugin', array( $sync, 'show_warning_when_incompatible_extension_is_enabled' ) ) );
+		$this->assertSame( 10, has_action( 'deactivated_plugin', array( $sync, 'hide_warning_when_incompatible_extension_is_disabled' ) ) );
+	}
+
+	/**
+	 * @testdox WooPay compatibility validation is asked for as one unique daily action of the WooPayments group, with no args.
+	 *
+	 * Unique keeps two requests that ensure recurring actions at the same time from both scheduling it; the existence check
+	 * alone cannot. The request is read where Action Scheduler receives it and nothing is stored.
+	 */
+	public function test_schedule_asks_for_a_unique_daily_compatibility_action(): void {
+		$sync     = $this->create_sync();
+		$requests = array();
+		$capture  = static function ( $pre, $timestamp, $interval, $hook, $args, $group, $priority, $unique ) use ( &$requests ) {
+			unset( $pre, $timestamp, $priority );
+			$requests[] = array(
+				'interval' => $interval,
+				'hook'     => $hook,
+				'args'     => $args,
+				'group'    => $group,
+				'unique'   => $unique,
+			);
+			return 1;
+		};
+		add_filter( 'pre_as_schedule_recurring_action', $capture, 10, 8 );
+
+		try {
+			$sync->schedule();
+		} finally {
+			remove_filter( 'pre_as_schedule_recurring_action', $capture, 10 );
+		}
+
+		$this->assertSame(
+			array(
+				array(
+					'interval' => DAY_IN_SECONDS,
+					'hook'     => 'validate_woopay_compatibility',
+					'args'     => array(),
+					'group'    => 'woocommerce_payments',
+					'unique'   => true,
+				),
+			),
+			$requests
+		);
+	}
+
+	/**
+	 * @testdox WooPay compatibility validation is scheduled once through the recurring-actions hook.
+	 */
+	public function test_recurring_action_ensure_hook_schedules_one_compatibility_action(): void {
+		$sync = $this->create_sync();
+
+		$sync->register();
+		/**
+		 * Runs the recurring action registration callback.
+		 *
+		 * @since 11.0.0
+		 */
+		do_action( 'action_scheduler_ensure_recurring_actions' );
+		/**
+		 * Runs the recurring action registration callback a second time.
+		 *
+		 * @since 11.0.0
+		 */
+		do_action( 'action_scheduler_ensure_recurring_actions' );
+
+		$this->assertSame( 1, $this->count_pending_actions( 'validate_woopay_compatibility' ) );
+	}
+
+	/**
+	 * @testdox The retired incompatible-extension cron hook is cleared on WooPayments updates.
+	 */
+	public function test_remove_retired_validation_schedule_clears_wp_cron_hook(): void {
+		$sync = $this->create_sync();
+
+		wp_schedule_event( time(), 'daily', 'validate_incompatible_extensions' );
+		$this->assertNotFalse( wp_next_scheduled( 'validate_incompatible_extensions' ) );
+
+		$sync->remove_retired_validation_schedule();
+
+		$this->assertFalse( wp_next_scheduled( 'validate_incompatible_extensions' ) );
+	}
+
+	/**
+	 * @testdox Compatibility sync preserves WooPay option names and recomputes active incompatible/adapted extensions.
+	 */
+	public function test_update_compatibility_and_maybe_show_incompatibility_warning_updates_options(): void {
+		update_option(
+			'active_plugins',
+			array(
+				'bad-extension/bad-extension.php',
+				'woocommerce-points-and-rewards/woocommerce-points-and-rewards.php',
+			)
+		);
+		update_option( 'woopay_invalid_extension_found', false );
+		update_option( 'woopay_enabled_adapted_extensions', array( 'stale-extension' ) );
+
+		$sync = $this->create_sync(
+			array(
+				'incompatible_extensions' => array( 'bad-extension' ),
+				'adapted_extensions'      => array( 'woocommerce-points-and-rewards', 'woocommerce-gift-cards' ),
+				'available_countries'     => array( 'US', 'BR' ),
+			)
+		);
+
+		$sync->update_compatibility_and_maybe_show_incompatibility_warning();
+
+		$this->assertSame( array( 'bad-extension' ), get_option( 'woopay_incompatible_extensions' ) );
+		$this->assertTrue( get_option( 'woopay_invalid_extension_found' ) );
+		$this->assertSame( array( 'woocommerce-points-and-rewards', 'woocommerce-gift-cards' ), get_option( 'woopay_adapted_extensions' ) );
+		$this->assertSame( array( 'woocommerce-points-and-rewards' ), get_option( 'woopay_enabled_adapted_extensions' ) );
+		$this->assertSame( '["US","BR"]', get_option( 'woocommerce_woocommerce_payments_woopay_available_countries' ) );
+	}
+
+	/**
+	 * @testdox A platform error fetching WooPay compatibility data is logged with its status and code, never its message.
+	 */
+	public function test_compatibility_fetch_failure_log_leaves_out_platform_text(): void {
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_woopay_compatibility' ) )
+			->getMock();
+		$api_client->method( 'get_woopay_compatibility' )->willThrowException( self::make_provider_error() );
+		$sync = new WooPaymentsWooPayExtensionSync();
+		$sync->init( $api_client, wc_get_container()->get( WooPaymentsActionSchedulerService::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
+		$logger = RecordingWcLogger::install();
+
+		$sync->update_compatibility_and_maybe_show_incompatibility_warning();
+
+		$context = $this->get_logged_context_at_level( $logger, 'error', 'woopayments' );
+		$this->assertSame( array( 404, 'resource_missing' ), array( $context['http_status'], $context['error_code'] ) );
+		$this->assert_log_holds_no_provider_text( $logger );
+	}
+
+	/**
+	 * @testdox Compatibility sync clears the warning option when no active incompatible extension remains.
+	 */
+	public function test_update_compatibility_clears_warning_when_no_incompatible_extension_is_active(): void {
+		update_option( 'active_plugins', array( 'safe-extension/safe-extension.php' ) );
+		update_option( 'woopay_invalid_extension_found', true );
+
+		$sync = $this->create_sync(
+			array(
+				'incompatible_extensions' => array( 'bad-extension' ),
+				'adapted_extensions'      => array(),
+				'available_countries'     => array(),
+			)
+		);
+
+		$sync->update_compatibility_and_maybe_show_incompatibility_warning();
+
+		$this->assertNull( get_option( 'woopay_invalid_extension_found', null ) );
+	}
+
+	/**
+	 * @testdox Plugin activation and deactivation update WooPay incompatibility warning state.
+	 */
+	public function test_activation_and_deactivation_update_incompatibility_warning_state(): void {
+		update_option( 'woopay_incompatible_extensions', array( 'bad-extension' ) );
+		update_option( 'woopay_adapted_extensions', array( 'good-extension' ) );
+		update_option(
+			'active_plugins',
+			array(
+				'bad-extension/bad-extension.php',
+				'good-extension/good-extension.php',
+			)
+		);
+
+		$sync = $this->create_sync();
+
+		$sync->show_warning_when_incompatible_extension_is_enabled( 'bad-extension/bad-extension.php' );
+
+		$this->assertTrue( get_option( 'woopay_invalid_extension_found' ) );
+		$this->assertSame( array( 'good-extension' ), get_option( 'woopay_enabled_adapted_extensions' ) );
+
+		$sync->hide_warning_when_incompatible_extension_is_disabled( 'bad-extension/bad-extension.php' );
+
+		$this->assertNull( get_option( 'woopay_invalid_extension_found', null ) );
+		$this->assertSame( array( 'good-extension' ), get_option( 'woopay_enabled_adapted_extensions' ) );
+	}
+
+	/**
+	 * Create a sync instance.
+	 *
+	 * @param array<string,mixed> $compatibility Compatibility response, with the keys client 11.1.0 reads (includes/woopay/class-woopay-scheduler.php:82-87).
+	 * @return WooPaymentsWooPayExtensionSync
+	 */
+	private function create_sync( array $compatibility = array() ): WooPaymentsWooPayExtensionSync {
+		$api_client = $this->getMockBuilder( WooPaymentsApiClient::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_woopay_compatibility' ) )
+			->getMock();
+		$api_client->method( 'get_woopay_compatibility' )
+			->willReturn( $compatibility );
+
+		$sync = new WooPaymentsWooPayExtensionSync();
+		$sync->init( $api_client, wc_get_container()->get( WooPaymentsActionSchedulerService::class ), wc_get_container()->get( WooPaymentsLogger::class ) );
+
+		$this->syncs[] = $sync;
+
+		return $sync;
+	}
+
+	/**
+	 * Remove hooks registered by a sync instance.
+	 *
+	 * @param WooPaymentsWooPayExtensionSync $sync Sync instance.
+	 */
+	private function remove_sync_hooks( WooPaymentsWooPayExtensionSync $sync ): void {
+		remove_action( 'init', array( $sync, 'schedule' ) );
+		remove_action( 'action_scheduler_ensure_recurring_actions', array( $sync, 'schedule' ) );
+		remove_action( 'validate_woopay_compatibility', array( $sync, 'update_compatibility_and_maybe_show_incompatibility_warning' ) );
+		remove_action( 'activated_plugin', array( $sync, 'show_warning_when_incompatible_extension_is_enabled' ) );
+		remove_action( 'deactivated_plugin', array( $sync, 'hide_warning_when_incompatible_extension_is_disabled' ) );
+	}
+
+	/**
+	 * Count pending Action Scheduler actions.
+	 *
+	 * @param string $hook Hook name.
+	 * @return int
+	 */
+	private function count_pending_actions( string $hook ): int {
+		if ( ! function_exists( 'as_get_scheduled_actions' ) ) {
+			return 0;
+		}
+
+		$actions = as_get_scheduled_actions(
+			array(
+				'hook'   => $hook,
+				'group'  => 'woocommerce_payments',
+				'status' => ActionScheduler_Store::STATUS_PENDING,
+			)
+		);
+
+		return count( $actions );
+	}
+
+	/**
+	 * Clear scheduled compatibility actions.
+	 */
+	private function clear_scheduled_actions(): void {
+		wp_clear_scheduled_hook( 'validate_woopay_compatibility' );
+		wp_clear_scheduled_hook( 'validate_incompatible_extensions' );
+
+		if ( function_exists( 'as_unschedule_all_actions' ) ) {
+			as_unschedule_all_actions( 'validate_woopay_compatibility', array(), 'woocommerce_payments' );
+			as_unschedule_all_actions( 'validate_incompatible_extensions', array(), 'woocommerce_payments' );
+		}
+	}
+
+	/**
+	 * Delete WooPay extension sync options.
+	 */
+	private function delete_sync_options(): void {
+		delete_option( 'woopay_invalid_extension_found' );
+		delete_option( 'woopay_incompatible_extensions' );
+		delete_option( 'woopay_enabled_adapted_extensions' );
+		delete_option( 'woopay_adapted_extensions' );
+		delete_option( 'woocommerce_woocommerce_payments_woopay_available_countries' );
+	}
+}

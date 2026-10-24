@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Keep every value readable in the enabled currencies table on narrow screens: Manage no longer covers the exchange rate and headers no longer break mid-word.

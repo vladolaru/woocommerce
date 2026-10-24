@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments list summaries now sit in the card footer with each figure separated, and use the client wording and thousand separators.

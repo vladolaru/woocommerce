@@ -8,6 +8,8 @@ namespace Automattic\WooCommerce\Admin\Features\PaymentGatewaySuggestions;
 defined( 'ABSPATH' ) || exit;
 
 use Automattic\WooCommerce\Admin\RemoteSpecs\RemoteSpecsEngine;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 
 /**
  * Remote Payment Methods engine.
@@ -25,6 +27,10 @@ class Init extends RemoteSpecsEngine {
 	public function __construct() {
 		PaymentGatewaysController::init();
 		add_action( 'update_option_woocommerce_default_country', array( $this, 'delete_specs_transient' ) );
+		// The fallback defaults cached with these specs depend on the WooPayments feature, so a feature change drops them.
+		foreach ( array( 'add_option_', 'update_option_', 'delete_option_' ) as $hook ) {
+			add_action( $hook . WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, array( __CLASS__, 'delete_specs_transient' ), 10, 0 );
+		}
 	}
 
 	/**
@@ -58,7 +64,7 @@ class Init extends RemoteSpecsEngine {
 			PaymentGatewaySuggestionsDataSourcePoller::get_instance()->set_specs_transient( array( $locale => $specs_to_save ), 3 * HOUR_IN_SECONDS );
 		}
 
-		return $specs_to_return;
+		return self::remove_woopayments_from_suggestions( $specs_to_return );
 	}
 
 	/**
@@ -83,7 +89,48 @@ class Init extends RemoteSpecsEngine {
 		 */
 		$specs   = apply_filters( 'woocommerce_admin_payment_gateway_suggestion_specs', $specs );
 		$results = EvaluateSuggestion::evaluate_specs( $specs );
-		return $results['suggestions'];
+		return self::remove_woopayments_from_suggestions( $results['suggestions'] );
+	}
+
+	/**
+	 * Remove the woocommerce-payments plugin from the plugins a WooPayments suggestion installs.
+	 *
+	 * While the WooPayments feature is on, the built-in WooPayments is offered, so its suggestion installs nothing. Remote
+	 * suggestions still name the plugin; while the feature is off they are left as they are.
+	 *
+	 * @param array $suggestions Payment gateway suggestions.
+	 * @return array Normalized suggestions.
+	 */
+	private static function remove_woopayments_from_suggestions( array $suggestions ): array {
+		if ( ! wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->is_builtin_enabled() ) {
+			return $suggestions;
+		}
+
+		foreach ( $suggestions as $suggestion ) {
+			if ( ! is_object( $suggestion ) || empty( $suggestion->id ) ) {
+				continue;
+			}
+
+			$id = explode( ':', (string) $suggestion->id )[0];
+			if ( ! in_array( $id, array( 'woocommerce_payments', 'woocommerce-payments' ), true ) || empty( $suggestion->plugins ) || ! is_array( $suggestion->plugins ) ) {
+				continue;
+			}
+
+			$suggestion->plugins = array_values(
+				array_filter(
+					$suggestion->plugins,
+					static function ( $plugin ) {
+						return 'woocommerce-payments' !== $plugin;
+					}
+				)
+			);
+
+			if ( empty( $suggestion->plugins ) ) {
+				unset( $suggestion->plugins );
+			}
+		}
+
+		return $suggestions;
 	}
 
 	/**

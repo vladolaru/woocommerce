@@ -1,0 +1,43 @@
+{
+	"schema_version": 2,
+	"slice_id": "bnpl-checkout-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "3b0b98095838ffefa44d18732514a174228e020d",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:98::BNPL checkout › Carding protection false › Checkout with Affirm",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:98::BNPL checkout › Carding protection false › Checkout with Cash App Afterpay",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:98::BNPL checkout › Carding protection true › Checkout with Affirm",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-bnpls-checkout.spec.ts:98::BNPL checkout › Carding protection true › Checkout with Cash App Afterpay"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/checkout.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review checkout evidence SHA dff6620b6888dc1c2b88474012b175d4e93e14eba5b28fee15fe0f0879d88512 against mutated ledger SHA 8925659b401959bed432b35f84c5098b2e55adca0710647499d4315c3c72e9b3 and committed baseline bc4cc924de492205b51380a85ca9eaca3fd42393a56ee9f72b56c0bfb4047c15 at 3b0b98095838ffefa44d18732514a174228e020d, with no findings. Exactly the four checkout IDs point to this evidence and only fields 37-40 change. The schema-v2 readiness deferral preserves one serialized, one-writer, exclusive-listener, zero-retry and no-replay campaign with exactly four independent USD 55.00 captures across Affirm and Afterpay with exact protection false and true. It requires cached-state proof, absent token when false, equal redacted submitted-token digests and length when true, one authorization and return, exact local/provider/method/type/amount/currency/status/charge/capture cardinality, restoration, retention, quarantine, accessibility and drift controls, and makes no implementation, defect, known-gap, verification or closure claim."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native readiness fails before the serialized BNPL campaign may allocate its exact native US account/store, provider writer, exclusive listener, carding-protection controller, shoppers, products, orders, or financial graphs. The shared checkout target contract and owner remain pending, and no approved deterministic Affirm/Afterpay authorization adapter or exact protection-state restoration exists. Core's registry, gateway, fraud-token, redirect, and lower-layer coverage align with the frozen contracts, so no current native defect, known gap, authority conflict, or source drift is established.",
+		"affected_scope": "Four row-independent USD 55.00 captured checkouts in one serialized campaign: Affirm and Cash App Afterpay with exact carding-protection false, then Affirm and Afterpay with exact carding-protection true. Each owns a unique product, fresh complete US shopper, context, cart, session, order, intent, charge, payment method, external authorization, return, locks, provider journal, accessible confirmation, and verdict. False rows prove cached eligibility false, controller off, and no submitted token; true rows prove eligibility true and equality of one submitted 16-character token by redacted digest. Every row joins exact gateway/type, order key, amount, currency, status, one charge and one capture. Refund and settlement remain separate.",
+		"no_allowlisted_action_reason": "The campaign cannot establish native readiness, approve the target/owner and external authorization adapters, or allocate the protected account/store and sole listener. A visible BNPL label, fraud-token global, source authorization page, Order received text, local order, provider object, inherited false state, lower-layer test, or sibling row cannot substitute for exact capability and method eligibility, row-specific protection state and submitted-token proof, one external authorization and native return, and complete local/provider identity, amount, USD, type, status, capture and occurrence joins. Use one worker, zero retries, one writer and no replay; any uncertain checkout or authorization halts all later dispatches.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy exact native readiness for one native-owned US test account/store with active Affirm and Afterpay capabilities and reachable callback; approve the checkout target, owner, USD 55.00 fixture, deterministic authorization adapters, and exact false/true protection controller; allocate one protected provider window and exactly one exclusively owned listener. Run Affirm false, Afterpay false, switch and prove true, Affirm true, then Afterpay true with four pre-dispatch journals, exact external-return and provider joins, redacted token evidence, byte-exact gateway/method/dev-tools/account-cache restoration, retained financial records, quarantine, and fresh code, E2E-test, reliability, accessibility, security and provider-evidence reviews.",
+		"quarantine_status": "No browser context, account, store, allocation, gateway, method, protection option/cache, shopper, product, cart, session, order, intent, charge, payment method, authorization, callback, event, lock, journal, listener, retention record, or quarantine was created or changed; the separately owned listener remains untouched. A future readiness, identity, capability, protection-state, token, bundle, lock, listener, authorization, return, order/provider association, method, amount, currency, status, occurrence, capture, restoration, cleanup, or callback mismatch must preserve all journals and financial records and quarantine the exact account/store/settings/session/product/order/provider/event graph without replay, provider deletion, account repair, or later-row continuation."
+	}
+}

@@ -8,6 +8,125 @@ declare( strict_types = 1 );
  */
 class WC_Template_Functions_Tests extends \WC_Unit_Test_Case {
 	/**
+	 * @testdox Currency switcher markup template tag has the client-compatible public contract.
+	 */
+	public function test_currency_switcher_markup_template_tag_has_client_compatible_public_contract(): void {
+		$this->assertTrue( function_exists( 'wc_get_currency_switcher_markup' ), 'The public currency switcher template tag must be defined.' );
+
+		$reflection = new \ReflectionFunction( 'wc_get_currency_switcher_markup' );
+		$parameters = $reflection->getParameters();
+
+		$this->assertSame( 'string', (string) $reflection->getReturnType() );
+		$this->assertCount( 2, $parameters );
+		$this->assertSame( 'instance', $parameters[0]->getName() );
+		$this->assertSame( 'array', (string) $parameters[0]->getType() );
+		$this->assertSame( array(), $parameters[0]->getDefaultValue() );
+		$this->assertSame( 'args', $parameters[1]->getName() );
+		$this->assertSame( 'array', (string) $parameters[1]->getType() );
+		$this->assertSame( array(), $parameters[1]->getDefaultValue() );
+	}
+
+	/**
+	 * @testdox Currency switcher markup template tag delegates and returns rather than echoes markup.
+	 */
+	public function test_currency_switcher_markup_template_tag_delegates_and_returns_rather_than_echoes_markup(): void {
+		$instance                = array(
+			'title'  => 'Facade title',
+			'symbol' => false,
+		);
+		$args                    = array(
+			'before_widget' => '<aside>',
+			'after_widget'  => '</aside>',
+		);
+		$expected_markup         = '<form>Facade switcher</form>';
+		$controller              = new class() {
+			/**
+			 * Received widget instance settings.
+			 *
+			 * @var array
+			 */
+			public array $received_instance = array();
+
+			/**
+			 * Received widget arguments.
+			 *
+			 * @var array
+			 */
+			public array $received_args = array();
+
+			/**
+			 * Get deterministic switcher markup.
+			 *
+			 * @param array $instance Widget instance settings.
+			 * @param array $args     Widget arguments.
+			 * @return string
+			 */
+			public function get_switcher_widget_markup( array $instance = array(), array $args = array() ): string {
+				$this->received_instance = $instance;
+				$this->received_args     = $args;
+
+				return '<form>Facade switcher</form>';
+			}
+		};
+		$container               = new class( $controller ) {
+			/**
+			 * Resolved class name.
+			 *
+			 * @var string|null
+			 */
+			public ?string $resolved_class = null;
+
+			/**
+			 * Switcher controller test double.
+			 *
+			 * @var object
+			 */
+			private object $controller;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param object $controller Switcher controller test double.
+			 */
+			public function __construct( object $controller ) {
+				$this->controller = $controller;
+			}
+
+			/**
+			 * Resolve the requested service.
+			 *
+			 * @param string $class_name Class name.
+			 * @return object
+			 */
+			public function get( string $class_name ): object {
+				$this->resolved_class = $class_name;
+
+				return $this->controller;
+			}
+		};
+		$previous_container      = $GLOBALS['wc_container'];
+		$buffer_level            = ob_get_level();
+		$GLOBALS['wc_container'] = $container;
+
+		ob_start();
+		try {
+			$markup = wc_get_currency_switcher_markup( $instance, $args );
+			$output = (string) ob_get_clean();
+
+			$this->assertSame( \Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherWidgetController::class, $container->resolved_class );
+			$this->assertSame( $instance, $controller->received_instance );
+			$this->assertSame( $args, $controller->received_args );
+			$this->assertSame( $expected_markup, $markup );
+			$this->assertSame( '', $output );
+		} finally {
+			while ( ob_get_level() > $buffer_level ) {
+				ob_end_clean();
+			}
+			$GLOBALS['wc_container'] = $previous_container;
+		}
+	}
+
+	/**
 	 * Render the loop add-to-cart template for a product.
 	 *
 	 * @param WC_Product $test_product Product to render.

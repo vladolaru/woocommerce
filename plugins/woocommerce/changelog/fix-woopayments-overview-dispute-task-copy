@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments Overview dispute task now counts every dispute awaiting a response, marks disputes due within a day as their last day, and shows the due time or the time left as WooPayments does.

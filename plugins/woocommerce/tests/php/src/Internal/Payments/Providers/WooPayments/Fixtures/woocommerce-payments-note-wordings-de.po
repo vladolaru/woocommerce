@@ -1,0 +1,16 @@
+# Three WooPayments extension order-note wordings, for the note wording snapshot tests. The msgids are the extension's
+# 11.1.0 source strings (includes/class-wc-payments-order-service.php:2054, :2321 and :2296). The German msgstrs are
+# synthetic, written for these tests, not taken from the extension's language pack.
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: de_DE\n"
+
+msgid "A payment of %1$s was <strong>successfully charged</strong> using %2$s (<a>%3$s</a>)."
+msgstr "Eine Zahlung von %1$s wurde mit %2$s <strong>erfolgreich belastet</strong> (<a>%3$s</a>)."
+
+msgid "Payment authorization was successfully <strong>cancelled</strong> (<a>%1$s</a>)."
+msgstr "Die Zahlungsautorisierung wurde erfolgreich <strong>storniert</strong> (<a>%1$s</a>)."
+
+msgid "Payment authorization has <strong>expired</strong> (<a>%1$s</a>)."
+msgstr "Die Zahlungsautorisierung ist <strong>abgelaufen</strong> (<a>%1$s</a>)."

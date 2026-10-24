@@ -1,0 +1,4 @@
+Significance: patch
+Type: performance
+
+Load the WooPayments Documents page and the tax details link without an extra account request.

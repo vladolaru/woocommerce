@@ -1,7 +1,37 @@
 /**
+ * External dependencies
+ */
+import type { PaymentsProvider } from '@woocommerce/data';
+
+/**
  * Internal dependencies
  */
-import { getPluginActionErrorMessage, getFailedPluginAction } from '../utils';
+import {
+	getPluginActionErrorMessage,
+	getFailedPluginAction,
+	providersContainWooPaymentsNeedsSetup,
+} from '../utils';
+
+describe( 'providersContainWooPaymentsNeedsSetup', () => {
+	it( 'recognizes a plugin-free native WooPayments suggestion as needing setup', () => {
+		const providers = [
+			{
+				id: '_wc_pes_woopayments',
+				plugin: {
+					file: '',
+					status: 'not_installed',
+				},
+				onboarding: {
+					type: 'native_in_context',
+				},
+			},
+		] as PaymentsProvider[];
+
+		expect( providersContainWooPaymentsNeedsSetup( providers ) ).toBe(
+			true
+		);
+	} );
+} );
 
 describe( 'getPluginActionErrorMessage', () => {
 	const reason =

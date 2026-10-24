@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments Overview payout schedule now names the weekly payout day in the site language.

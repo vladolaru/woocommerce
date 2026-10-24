@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "checkout-free-coupon-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "458b93bf839cc2d3f112887442aceaa55f67188e",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-cart-coupon.spec.ts:53::Checkout with free coupon & after modifying cart on Checkout page › Checkout with a free coupon"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/checkout.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review evidence SHA ee6bc16bddcba31ff08a0712237ab8bb8bd7bdb04e353f7cb4c58daff14e2b81 against mutated ledger SHA 72b896a3887c171d6e961dfbfa91aa4844ffb065b0c80d3f8a9ead5e6ddb4d39 and committed baseline 8925659b401959bed432b35f84c5098b2e55adca0710647499d4315c3c72e9b3 at 458b93bf839cc2d3f112887442aceaa55f67188e, with no findings. Only the line-53 row changes fields 37-40. The deferral requires an independent USD 10.99 product and unique 100 percent coupon, exact USD 0.00 cart/order and one-order cardinality, inaccessible and unfocusable payment controls, authoritative zero payment transport, provider writers, journals, objects and listeners, single activation, zero retries/replay, exact local journaling/restoration, ambiguity quarantine, retention, accessible coupon/total/confirmation semantics, and prevents the paid sibling from starting after ambiguous state."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native readiness fails before this zero-total checkout may allocate its exact store, shopper, product, coupon, session or order. The shared checkout target is absent and its contract and owner remain pending. Core's non-payable checkout branch and lower-layer zero-provider-call coverage align with the frozen contract, so no current native defect, known gap, authority conflict or source drift is established.",
+		"affected_scope": "One provider-free zero-total checkout. A fresh exact shopper owns one unique virtual non-taxable USD 10.99 product, one unique run-owned 100 percent coupon, one cart, one session and one order. The row proves one coupon application, one exact product and coupon line after reload, USD 10.99 discount and USD 0.00 total, no accessible or focusable payment controls, one semantic Place order activation, exactly one matching order, matching customer/product/coupon/order-key identity, zero total, empty gateway and transaction/provider identifiers, zero native/provider payment-initiation transports, and an exact accessible confirmation. The paid coupon-removal row shares no state or success.",
+		"no_allowlisted_action_reason": "The run cannot establish native readiness, approve the target/owner or allocate the deterministic row-owned fixture and exact local order/transport oracle. Generic coupon success text, a shared global coupon or shopper, source helper retries, Order received heading, zero browser total, local order alone or lower-layer tests cannot substitute for the exact cart/coupon/discount/total/order identity and cardinality join plus authoritative zero payment-transport proof. Run once with one worker, zero retries and one checkout activation; no provider writer, provider journal, provider object or listener is allowed.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy exact native readiness and approve the shared target contract and owner. Supply a deterministic fresh shopper, unique USD 10.99 virtual product, unique run-owned 100 percent coupon, row correlation marker, exact cart/order reader, zero-payment-transport audit and ownership-checked local restoration. Run once with one worker and zero retries, assert semantic coupon controls, announced application, structured zero total, absent payment controls and exact accessible order confirmation, then obtain fresh code, E2E-test, reliability and accessibility reviews. No provider allocation or listener is needed.",
+		"quarantine_status": "No browser context, store, allocation, shopper, product, coupon, cart, session, order, setting, provider object, listener, lock, journal, retention record or quarantine was created or changed; the separately owned listener remains untouched. A future readiness, identity, coupon, total, order-cardinality, duplicate-submission, unexpected payment transport, lock, restoration or cleanup mismatch must preserve diagnostics and quarantine only the exact local store/session/shopper/product/coupon/order graph without provider replay, broad deletion, guessed restoration or starting the paid sibling from ambiguous state."
+	}
+}

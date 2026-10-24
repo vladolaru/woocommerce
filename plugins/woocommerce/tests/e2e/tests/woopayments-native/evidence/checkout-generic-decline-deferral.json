@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "checkout-generic-decline-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "5ee93fd094e4fc4fac212dba56668dd4ebba7ffe",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-failures.spec.ts:47::Shopper › Checkout › Failures with various cards › should throw an error that the card was simply declined"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/decline.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review evidence SHA ab3e0b9401949ad9794ccd3f5b4bd4cac9f8e1ed38e5b94da4d9c41099df551b against mutated ledger SHA 07f414b64fc8d0a7e88a567d6266ad1cb360e35fcb9c90d1df5b6469834cd708 and committed baseline 72b896a3887c171d6e961dfbfa91aa4844ffb065b0c80d3f8a9ead5e6ddb4d39 at 5ee93fd094e4fc4fac212dba56668dd4ebba7ffe, with no findings. Exactly the intended decline-family rows change fields 37-40 while fields 1-36 and target tuples remain exact. The artifact binds one generic decline to one exact failed order, method, intent, failed event and exact-order merchant note, with zero successful financial effects. Readiness remains first; one writer and exclusive listener apply only where provider-backed, with zero retries/replay, complete journals, restoration, retention, halt, quarantine, accessibility and drift controls, and no unsupported product-defect, known-gap, implementation, verification or closure claim."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native account, store, gateway, and callback readiness fails before this row may allocate a protected test-mode provider lane, its sole writer, or one exclusively owned listener. The shared decline target contract and implementation owner remain pending, and no approved fresh shopper/product/order fixture, identity-safe one-dispatch adapter, durable journals, exact local/provider/event readers, retention policy, restoration protocol, or quarantine owner exists. Existing deterministic native error-message and failed-rate-limiter coverage establishes no native product defect; none may be claimed before prerequisites and an exact-target RED.",
+		"affected_scope": "Only source line 47. One fresh shopper context, Woo session, unique run-owned product/cart marker, and exactly one provider-writing submission with test card 4000000000000002 create exactly one correlated failed Woo order, one PaymentMethod, one PaymentIntent in requires_payment_method with error.code=card_declined and decline_code=generic_decline, and one relevant payment_intent.payment_failed event captured and ingested once. Order lines, amount, currency, metadata, and identities match exactly; there is no second order, successful intent, charge, capture, balance transaction, saved token, success event, or receipt. The checkout stays available for correction and its announced alert equals Error: Your card was declined. with no raw request ID or unsafe diagnostic. Exactly one correlated failure effect produces exactly one note on that exact order, not a newest-order or newest-global-note surrogate; the note identifies the failed payment/intent and decline category. It claims no frozen iframe, admin route, selector, helper-retry, or note-prose contract beyond those semantics.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, approve the pending shared target and owner, allocate the provider account/store window, or take exclusive ownership of a listener. A synchronous banner, lower-layer mapper test, failed order, provider record, or uncorrelated newest note cannot substitute for the exact order/intent/method/event graph and its one-note effect. The future provider mutation requires one writer, one worker, zero Playwright retries, exactly one explicit shopper dispatch, and no harness or manual replay after known or ambiguous dispatch; the frozen helper's additional clicks are forbidden.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy exact native account/store/gateway/callback readiness; approve the shared target contract and implementation owner; allocate one protected test-mode provider writer and one exclusively owned listener from before dispatch through event/order/note convergence; and supply fresh row-owned shopper, session, product, cart, and order identities. Before the sole dispatch, acquire ordered writer/account/store/listener/record locks and durably journal the run, identities, listener ownership, card alias, expected amount/currency, idempotency key when knowable, and before-state. Run once with one worker, zero retries, and no replay; prove the exact failed graph, accessible announced alert, zero-success cardinalities, and exactly one exact-order note. Restore only run-owned reversible local state and verify byte-exact gateway, account, mode, currency, limiter, session/cart, and listener configuration snapshots without broad reset or limiter changes; retain immutable redacted financial/event/note evidence; quarantine any ambiguity; obtain fresh code, E2E-test, reliability, accessibility, and provider-evidence reviews. If the shared target or source/calibration bundle drifts, recompute provenance and explicitly reopen/review rather than extending this artifact silently.",
+		"quarantine_status": "This readiness deferral implemented and verified nothing, opened no browser, allocated no account/store/writer/listener capacity, acquired no lock, opened no journal, changed no environment or limiter, created no local or provider object, retained no run graph, and created no quarantine; the separately owned listener remains untouched. Any future uncertain dispatch, identity mismatch, missing or duplicate order/intent/method/event/note, unexpected success/charge/capture/balance/receipt/token, listener or lock loss, convergence timeout, publication failure, drift, or byte-restoration mismatch must preserve the pre-dispatch and restoration journals plus immutable redacted financial history and quarantine the exact account/store/session/product/order/provider/event/note graph without replay, provider deletion, broad cleanup, or listener takeover."
+	}
+}

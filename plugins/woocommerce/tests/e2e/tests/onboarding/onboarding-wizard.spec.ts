@@ -120,12 +120,15 @@ test.describe(
 						name: 'Get a boost with our free features',
 					} )
 				).toBeVisible();
-				// check that WooPayments is displayed because Australia is a supported country
+				// check that WooPayments is displayed because Australia is a supported country; the
+				// WooPayments feature-on CI leg offers the built-in WooPayments instead of the extension
 				await expect(
 					page.getByRole( 'heading', {
 						name: 'Get paid with WooPayments',
 					} )
-				).toBeVisible();
+				).toBeVisible( {
+					visible: process.env.WOOPAYMENTS_FEATURE !== 'yes',
+				} );
 				// skip this step so that no extensions are installed
 				await page
 					.getByRole( 'button', { name: 'Skip this step' } )

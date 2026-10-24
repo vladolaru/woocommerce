@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The page number in the WooPayments list pager lines up with the "Page" and "of" labels.

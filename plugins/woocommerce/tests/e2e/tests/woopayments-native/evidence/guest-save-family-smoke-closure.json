@@ -1,0 +1,104 @@
+{
+	"schema_version": 2,
+	"slice_id": "guest-save-family-smoke-closure",
+	"wc_base_commit": "143b1c5ea5d1c2ff63a90e943783ffe815f8a04d",
+	"verified_at_commit": "d26ee0d83fff5f121b71d5f1a0a7547f3988e82b",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/saved-methods.spec.ts",
+		"plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsTokenServiceTest.php"
+	],
+	"source_test_sha256": "105d9a4e05111b9c666098ccadc95e5ee9f74e677b5691ae84a0c0861f6493e3",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:117::Saved cards › When using a basic card added on checkout › should not allow guest user to save the card"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsTokenServiceTest.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/saved-methods.spec.ts",
+			"contract": "guest checkout offers no credential persistence while card payment stays operable"
+		}
+	],
+	"implementation_commits": [ "d26ee0d83fff5f121b71d5f1a0a7547f3988e82b" ],
+	"verification": [
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/saved-methods.spec.ts",
+			"exit_code": 0,
+			"summary": "The provider-free smoke ran twice consecutively with one worker and zero retries against the closed bytes and passed 1/1 in 7.7 and 6.6 seconds, after env-setup proved provider-free readiness for the native store. The single test establishes a run-stable virtual product and customer idempotently over REST, asserts the preconditions the absence claim depends on (gateway enabled, saved cards enabled, WooPay off, guest checkout permitted), proves a logged-in customer sees and can operate the semantic save control (unchecked, check, uncheck), then proves a fresh anonymous guest - identified by the guest-only checkout notice - gets a visible, accessibly-named card payment frame with zero accessible save controls, zero switch-role controls, zero save-wrapper nodes, zero visible persistence-implying copy, zero Store API checkout dispatches, and unchanged product-scoped order and customer-scoped token cardinalities. The oracle was mutation-checked in both directions on the closed bytes: forcing the blocks save-eligibility open for guests fails exactly at the save-control zero-count with a received count of one, and disabling saved cards fails exactly at the REST precondition."
+		},
+		{
+			"command": "pnpm --dir plugins/woocommerce test:e2e:woopayments:controller",
+			"exit_code": 0,
+			"summary": "The full controller passed on the closed proposal before commit: the contract-map validator unit tests, the ledger validation across all 181 contracts including the reopened row, the project-routing validator unit tests including the new annotation binding, the environment-setup contract tests, and the provider-free harness unit tests."
+		}
+	],
+	"reviews": [
+		{
+			"role": "code",
+			"verdict": "APPROVE",
+			"source_test_sha256": "105d9a4e05111b9c666098ccadc95e5ee9f74e677b5691ae84a0c0861f6493e3",
+			"summary": "Two-round review; the single blocking finding was applied and re-verified on the closed bytes. The anonymity guard originally leaned on the unconditionally rendered email field; it now asserts the guest-only checkout notice, which core blocks emits only for an anonymous session on a guest-permitting store, so it genuinely discriminates a guest from a logged-in shopper. The precondition guard is honest: the saved-cards flag on the payments settings route reads the same gateway setting the checkout bridge uses to compute the save option, so the guard gates exactly what the UI renders. The scoped order counter was verified against both order-storage backends via the registered product collection parameter. Remaining hardening was confirmed present: the WooPay-off precondition with rationale, a product lookup that throws on a slug squatter, a password reset that refuses a foreign-email account, the alternate REST route form in the dispatch counter, a throwing runtime derivation, and an honestly scoped token-cardinality comment. Both oracle directions are demonstrably live under mutation."
+		},
+		{
+			"role": "e2e-tests",
+			"verdict": "APPROVE",
+			"source_test_sha256": "105d9a4e05111b9c666098ccadc95e5ee9f74e677b5691ae84a0c0861f6493e3",
+			"summary": "Two-round review; both findings resolved on the closed bytes. The spec uses role-based locators with exact accessible names and auto-retrying assertions throughout, with a positive-control-first design that proves the same locator detects the save control for an account holder before the guest-side absence is trusted. The customer browsing context now opens and closes under try/finally. The guest absence assertion is gated on causally-tied signals - the guest-only notice, the card frame, and the submit control that closes the checkout block tree - and the zero-count is backstopped by switch-role and wrapper-class checks that close the accessibility-hidden-ghost escape, so the ordering guarantee is enforced rather than inferred. Behavior is verified through request interception and product-scoped order plus customer-scoped token cardinality deltas rather than internal state."
+		},
+		{
+			"role": "reliability",
+			"verdict": "APPROVE",
+			"source_test_sha256": "105d9a4e05111b9c666098ccadc95e5ee9f74e677b5691ae84a0c0861f6493e3",
+			"summary": "Two-round review; the one flagged gap is fixed on the closed bytes with the positive-control context now torn down under try/finally. Every REST-backed setup and precondition helper fails loudly with HTTP status and response body, so a broken store precondition cannot masquerade as a passing absence claim - empirically confirmed by mutation. The password-reset path is not a silent no-op risk because the immediately following login fails loudly and proximately if the credential did not take, and the reset refuses accounts that are not the smoke fixture. The order counter scopes to orders containing the run-owned product through the genuine orders collection parameter, immune to unrelated concurrent activity, and the product lookup fails loudly on slug drift instead of silently suffixing. No production or runtime code is touched; the change is scoped entirely to test infrastructure."
+		},
+		{
+			"role": "accessibility",
+			"verdict": "APPROVE",
+			"source_test_sha256": "105d9a4e05111b9c666098ccadc95e5ee9f74e677b5691ae84a0c0861f6493e3",
+			"summary": "Two-round review; all three findings closed on the closed bytes. Locating the save control by role plus exact accessible name is the semantically correct adapter: the core control renders a genuine checkbox inside a label whose only content is the label text, so any accessible-name regression fails the positive control immediately. The positive control is now a genuine name-role-value proof - the actionability-gated check and uncheck sequence fails on a disabled or covered control and restores the safe opt-out default. The guest absence claim is four independent layers: the role-based zero-count, a page-wide switch-role zero-count verified free of collisions on the shopper surface, a wrapper-class backstop that closes the aria-hidden-yet-focusable ghost escape, and the visible-copy check. The card frame gate asserts an accessible frame name and non-hidden state, backing the operability wording with an accessibility-facing check; the residual nuance that hidden state can be inherited from an ancestor is recorded as non-blocking."
+		},
+		{
+			"role": "security",
+			"verdict": "APPROVE",
+			"source_test_sha256": "105d9a4e05111b9c666098ccadc95e5ee9f74e677b5691ae84a0c0861f6493e3",
+			"summary": "Two-round review; the single non-blocking finding is resolved on the closed bytes. The smoke customer's password reset now verifies the existing account's email matches the fixture's reserved-documentation-domain address before touching it and fails loudly on mismatch, so a username collision on a misrouted store cannot silently reassign a real account's credentials, with the dedicated-store assumption documented inline. The hardcoded throwaway fixture credentials are appropriate for a dedicated local test store and follow the suite's existing fixture pattern. The spec handles no sensitive value - all REST calls route through the harness admin fixture with only compile-time literals in query strings, the capability-gated diagnostic route is consumed for a token count only and never surfaces token identifiers, and no capability check, nonce, sanitisation or escaping is bypassed to make an assertion pass."
+		}
+	],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:117::Saved cards › When using a basic card added on checkout › should not allow guest user to save the card",
+			"target": {
+				"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsTokenServiceTest.php;plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/saved-methods.spec.ts",
+				"contract": "guest checkout offers no credential persistence while card payment stays operable"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-readonly --workers=1 --retries=0 tests/e2e/tests/woopayments-native/shopper/saved-methods.spec.ts",
+					"exit_code": 0,
+					"summary": "The contract is proven in the test body per direction: the logged-in positive control sees and operates exactly one semantic save control behind preconditions asserting the store genuinely offers persistence to account holders, and the anonymous guest - proven anonymous by the guest-only notice - gets an operable, accessibly named card frame with zero accessible save controls across four independent absence layers, zero checkout dispatches, and unchanged order and token cardinalities. Vacuity was mutation-checked in both directions on the closed bytes."
+				}
+			],
+			"reviews": [
+				{
+					"role": "code",
+					"verdict": "APPROVE",
+					"source_test_sha256": "105d9a4e05111b9c666098ccadc95e5ee9f74e677b5691ae84a0c0861f6493e3",
+					"summary": "The precondition guard gates exactly what the UI renders, the anonymity guard genuinely discriminates a guest session, and both oracle directions are live under mutation."
+				},
+				{
+					"role": "e2e-tests",
+					"verdict": "APPROVE",
+					"source_test_sha256": "105d9a4e05111b9c666098ccadc95e5ee9f74e677b5691ae84a0c0861f6493e3",
+					"summary": "Role-based locators with a positive-control-first design and an enforced full-render gate ahead of every absence read; the zero-count was mutation-verified against a forced-open save control."
+				},
+				{
+					"role": "reliability",
+					"verdict": "APPROVE",
+					"source_test_sha256": "105d9a4e05111b9c666098ccadc95e5ee9f74e677b5691ae84a0c0861f6493e3",
+					"summary": "Setup and precondition failures are loud and cause-proximate, teardown is guaranteed under try/finally, and the counters are scoped to run-owned resources so concurrent activity cannot flip them."
+				}
+			]
+		}
+	],
+	"known_gaps": [],
+	"deferral": null
+}

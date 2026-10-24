@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "klarna-product-messaging-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "c810a086d33ad477e21c15734f9141347f724bea",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/klarna-checkout-purchase.spec.ts:42::Klarna Checkout › shows the message in the product page"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/shopper/alternative-methods.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved pre-review evidence SHA 29ebbbbd04b8ee9d462a9463f84aa598cce21836b9ae609b5a9a1dc405c81b8a against ledger SHA fd8453b9a1ae89fbfc275aef2132a4084844ff60455be2e9564d030969351c9e with no findings. Exactly fields 37-40 change on Klarna line 42; fields 1-36, all siblings, and checkout line 57 remain unchanged. The evidence requires exact native, canonical/split Klarna, active capability, US/USD, supported amount, and unique-product eligibility; a parsed allowlisted HTTPS Stripe origin; and accessible hosted content joining Klarna identity, financing semantics, and a product-related value without freezing provider prose. Immutable fixture state, safe redaction, external-network attribution, restoration, quarantine, and source/target/runtime drift controls are complete. The row remains read-only and allocates no order, intent, charge, financial-provider writer, callback, or listener."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before the live hosted Klarna-message observation can bind exact native ownership, account, capability, split-gateway, country, currency, amount, product, and external-origin identities; the target contract and owner remain pending; and no approved Klarna-only immutable fixture or live Stripe-host allowlist exists. Core already owns product payment-method messaging, exact BNPL eligibility, amount/currency configuration, and mount/update behavior, so no current native defect, known gap, authority conflict, or frozen-to-rolling source staleness is established.",
+		"affected_scope": "Only one read-only live external product-message observation. In a fresh public session, join exact native-owned process-capable test account, canonical and split Klarna enablement, active klarna_payments capability, US/USD eligibility, Klarna as the sole active BNPL message method, and a unique product within the supported minor-unit range. Prove the exact product and price, visible non-hidden message region, loaded HTTPS frame on an approved exact Stripe-owned origin, accessible hosted content that identifies Klarna and financing semantics plus a value related to the product price, and no loading or error document. Checkout, redirects, authorization, orders, intents, charges, callbacks, refunds, and financial provider records remain separate.",
+		"no_allowlisted_action_reason": "The run cannot establish native readiness, approve the target/owner, activate provider capability, invent a live-host origin policy, or normalize shared Klarna and multi-currency settings without exact journals. A nonempty iframe body, placeholder, mocked frame, lower-layer mount/config test, full-sentence snapshot, hard-coded selector, provider writer, or listener cannot substitute for live provenance, exact eligibility and product/amount joins, readable Klarna financing semantics, accessibility-tree evidence, approved-origin parsing, and immutable fixture state. If cross-origin content cannot be safely inspected, the row remains deferred.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy exact native readiness and extend it to canonical Klarna enablement, projected split gateway, klarna_payments active, US/USD eligibility, and supported amount; approve the target contract and owner; provide a preprovisioned immutable Klarna-only BNPL fixture, unique exact product, parsed live Stripe-origin allowlist, safe redacted hosted-content evidence, and source/target/runtime drift fingerprint. Run the read-only semantic/accessibility observation once with a fresh session, one worker, zero retries, no provider mutation, exact ephemeral cleanup if a product is provisioned, and fresh code, E2E-test, reliability, accessibility, and external-evidence reviews.",
+		"quarantine_status": "No browser context, account, store, product, setting, capability, external frame, lock, journal, provider object, listener, retention record, or quarantine was created or changed for this row. A future wrong owner/account/capability/gateway/product/amount identity, unapproved frame origin, inaccessible or ambiguous hosted content, settings drift, unsafe redaction, target/runtime drift, owned-product cleanup failure, or incomplete restoration must preserve diagnostics and quarantine the exact store/settings/product/browser evidence graph without replay. This read-only row allocates no order, intent, charge, provider writer, callback listener, or financial record."
+	}
+}

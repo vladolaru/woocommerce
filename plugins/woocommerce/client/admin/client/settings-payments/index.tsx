@@ -3,11 +3,13 @@
  */
 import { Gridicon } from '@automattic/components';
 import { Button, Placeholder, SelectControl } from '@wordpress/components';
-import React, { lazy, Suspense, useEffect } from '@wordpress/element';
+import React, { lazy, Suspense, useEffect, useState } from '@wordpress/element';
+import type { ReactNode } from 'react';
 import {
 	unstable_HistoryRouter as HistoryRouter,
 	Route,
 	Routes,
+	useInRouterContext,
 	useLocation,
 } from 'react-router-dom';
 import { getHistory, getNewPath } from '@woocommerce/navigation';
@@ -19,6 +21,8 @@ import { __, sprintf } from '@wordpress/i18n';
 import { Header } from './components/header/header';
 import { BackButton } from './components/buttons/back-button';
 import { ListPlaceholder } from '~/settings-payments/components/list-placeholder';
+import { ProviderRouteLoading } from '~/settings-payments/components/provider-route-loading';
+import { WOOPAYMENTS_SETTINGS_HEADING_ID } from '~/settings-payments/constants';
 import './settings-payments-main.scss';
 
 /**
@@ -47,7 +51,7 @@ const SettingsPaymentsOfflineChunk = lazy(
 const SettingsPaymentsWooPaymentsChunk = lazy(
 	() =>
 		import(
-			/* webpackChunkName: "settings-payments-woocommerce-payments" */ './settings-payments-woopayments'
+			/* webpackChunkName: "settings-payments-woopayments" */ './settings-payments-woopayments'
 		)
 );
 
@@ -245,26 +249,76 @@ export const SettingsPaymentsOfflineWrapper = () => {
 	);
 };
 
+interface SettingsPaymentsWooPaymentsWrapperProps {
+	/**
+	 * The page body. Defaults to the lazy-loaded WooPayments settings chunk.
+	 */
+	children?: ReactNode;
+}
+
 /**
- * Wraps the WooPayments settings page.
+ * Wraps the WooPayments settings page under the same header as the offline payments page.
  */
-export const SettingsPaymentsWooPaymentsWrapper = () => {
+export const SettingsPaymentsWooPaymentsWrapper = ( {
+	children,
+}: SettingsPaymentsWooPaymentsWrapperProps ) => {
+	// The `section` URL renders this outside the Payments router, where a pushed route would not render.
+	const isInRouter = useInRouterContext();
+
+	useEffect( () => {
+		// A section link (`anchor` or hash) is scrolled to by the page itself once settings load.
+		if (
+			! window.location.hash &&
+			! new URLSearchParams( window.location.search ).has( 'anchor' )
+		) {
+			window.scrollTo( 0, 0 );
+		}
+	}, [] );
+
 	return (
 		<>
 			<Header title={ __( 'Settings', 'woocommerce' ) } />
-			<Suspense
-				fallback={
-					<div>
-						{ sprintf(
-							/* translators: %s: WooPayments */
-							__( 'Loading %s settings…', 'woocommerce' ),
-							'WooPayments'
-						) }
-					</div>
-				}
-			>
-				<SettingsPaymentsWooPaymentsChunk />
-			</Suspense>
+			<div className="settings-payments-offline__container">
+				<div className="settings-payments-offline__header">
+					<h1
+						id={ WOOPAYMENTS_SETTINGS_HEADING_ID }
+						className="components-truncate components-text woocommerce-layout__header-heading woocommerce-layout__header-left-align"
+					>
+						<BackButton
+							href={ getNewPath(
+								{ page: 'wc-settings', tab: 'checkout' },
+								'/',
+								{}
+							) }
+							tooltipText={ __(
+								'Return to payments settings',
+								'woocommerce'
+							) }
+							isRoute={ isInRouter }
+							from={ 'woopayments_settings' }
+						>
+							<span className="woocommerce-settings-payments-header__title">
+								WooPayments
+							</span>
+						</BackButton>
+					</h1>
+				</div>
+				{ children ?? (
+					<Suspense
+						fallback={
+							<div>
+								{ sprintf(
+									/* translators: %s: WooPayments */
+									__( 'Loading %s settings…', 'woocommerce' ),
+									'WooPayments'
+								) }
+							</div>
+						}
+					>
+						<SettingsPaymentsWooPaymentsChunk />
+					</Suspense>
+				) }
+			</div>
 		</>
 	);
 };
@@ -287,34 +341,120 @@ export const SettingsPaymentsChequeWrapper = () =>
 		chunkComponent: SettingsPaymentsChequeChunk,
 	} );
 
+type NativeProviderRoute = { path: string; element: ReactNode };
+
+let nativeProviderRoutes: NativeProviderRoute[] | undefined;
+let nativeProviderRoutesRequest: Promise< NativeProviderRoute[] > | undefined;
+
+/**
+ * Loads the Core-owned WooPayments routes once, only when a Payments path needs them.
+ */
+const loadNativeProviderRoutes = () => {
+	if ( ! nativeProviderRoutesRequest ) {
+		nativeProviderRoutesRequest = import(
+			/* webpackChunkName: "settings-payments-woopayments-routes" */ '~/woopayments/admin/routes'
+		)
+			.then( ( { woopaymentsProviderRoutes } ) => {
+				nativeProviderRoutes = woopaymentsProviderRoutes;
+
+				return woopaymentsProviderRoutes;
+			} )
+			.catch( ( error ) => {
+				// Let the next mount try again.
+				nativeProviderRoutesRequest = undefined;
+				throw error;
+			} );
+	}
+
+	return nativeProviderRoutesRequest;
+};
+
+// The WooPayments onboarding modal opens over the main page, which owns `/woopayments/onboarding`.
+const needsNativeProviderRoutes = ( pathname: string ) =>
+	( pathname === '/woopayments' || pathname.startsWith( '/woopayments/' ) ) &&
+	! pathname.startsWith( '/woopayments/onboarding' );
+
+/**
+ * Renders the Payments routes, loading the WooPayments routes first when the current path needs them.
+ */
+const SettingsPaymentsRoutes = () => {
+	// The router's location also updates on in-app navigation, so this covers direct loads and pushes alike.
+	const { pathname } = useLocation();
+	const [ providerRoutes, setProviderRoutes ] =
+		useState( nativeProviderRoutes );
+	// A failed load (offline, broken build) falls back to the other routes instead of loading forever.
+	const [ hasLoadFailed, setHasLoadFailed ] = useState( false );
+	const isLoadingNativeProviderRoutes =
+		! providerRoutes &&
+		! hasLoadFailed &&
+		needsNativeProviderRoutes( pathname );
+
+	useEffect( () => {
+		if ( ! isLoadingNativeProviderRoutes ) {
+			return;
+		}
+
+		let isMounted = true;
+		loadNativeProviderRoutes().then(
+			( routes ) => {
+				if ( isMounted ) {
+					setProviderRoutes( routes );
+				}
+			},
+			() => {
+				if ( isMounted ) {
+					setHasLoadFailed( true );
+				}
+			}
+		);
+
+		return () => {
+			isMounted = false;
+		};
+	}, [ isLoadingNativeProviderRoutes ] );
+
+	if ( isLoadingNativeProviderRoutes ) {
+		return <ProviderRouteLoading providerName="WooPayments" />;
+	}
+
+	return (
+		<Routes>
+			<Route
+				path="/offline"
+				element={ <SettingsPaymentsOfflineWrapper /> }
+			/>
+			<Route
+				path="/offline/bacs"
+				element={ <SettingsPaymentsBacsWrapper /> }
+			/>
+			<Route
+				path="/offline/cod"
+				element={ <SettingsPaymentsCodWrapper /> }
+			/>
+			<Route
+				path="/offline/cheque"
+				element={ <SettingsPaymentsChequeWrapper /> }
+			/>
+			{ providerRoutes?.map( ( route ) => (
+				<Route
+					key={ route.path }
+					path={ route.path }
+					element={ route.element }
+				/>
+			) ) }
+			<Route path="/*" element={ <SettingsPaymentsMain /> } />
+		</Routes>
+	);
+};
+
 /**
  * Wraps the main payment settings and payment methods settings pages.
  */
-export const SettingsPaymentsMainWrapper = () => {
-	return (
-		<>
-			<Header title={ __( 'Settings', 'woocommerce' ) } />
-			<HistoryRouter history={ getHistory() }>
-				<Routes>
-					<Route
-						path="/offline"
-						element={ <SettingsPaymentsOfflineWrapper /> }
-					/>
-					<Route
-						path="/offline/bacs"
-						element={ <SettingsPaymentsBacsWrapper /> }
-					/>
-					<Route
-						path="/offline/cod"
-						element={ <SettingsPaymentsCodWrapper /> }
-					/>
-					<Route
-						path="/offline/cheque"
-						element={ <SettingsPaymentsChequeWrapper /> }
-					/>
-					<Route path="/*" element={ <SettingsPaymentsMain /> } />
-				</Routes>
-			</HistoryRouter>
-		</>
-	);
-};
+export const SettingsPaymentsMainWrapper = () => (
+	<>
+		<Header title={ __( 'Settings', 'woocommerce' ) } />
+		<HistoryRouter history={ getHistory() }>
+			<SettingsPaymentsRoutes />
+		</HistoryRouter>
+	</>
+);

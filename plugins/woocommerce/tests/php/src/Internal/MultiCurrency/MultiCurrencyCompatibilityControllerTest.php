@@ -1,0 +1,417 @@
+<?php
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
+
+use Automattic\WooCommerce\Caches\OrderCache;
+use Automattic\WooCommerce\Internal\Admin\Notes\NewSalesRecord;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
+use WC_Unit_Test_Case;
+
+/**
+ * Tests for the MultiCurrencyCompatibilityController class.
+ */
+class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
+
+	/** The WooCommerce Admin new sales record call the conversion runs inside. */
+	private const SALES_RECORD_CALL = NewSalesRecord::class . '::sum_sales_for_date';
+
+	/**
+	 * Hooks touched by the compatibility controller.
+	 *
+	 * @var string[]
+	 */
+	private array $hooks = array(
+		'init',
+		'woocommerce_admin_sales_record_milestone_enabled',
+		'woocommerce_order_query',
+		'wcpay_multi_currency_override_selected_currency',
+		'wcpay_multi_currency_should_hide_widgets',
+		'wcpay_multi_currency_should_disable_currency_switching',
+		'wcpay_multi_currency_should_convert_coupon_amount',
+		'wcpay_multi_currency_should_convert_product_price',
+		'wcpay_multi_currency_should_return_store_currency',
+	);
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tear_down(): void {
+		foreach ( $this->hooks as $hook ) {
+			remove_all_filters( $hook );
+		}
+
+		unset( $_GET['pay_for_order'] );
+
+		parent::tear_down();
+	}
+
+	/**
+	 * @testdox Should not register hooks when plugin owns runtime.
+	 */
+	public function test_does_not_register_hooks_when_plugin_owns_runtime(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true );
+
+		$sut->register();
+
+		$this->assertFalse( has_filter( 'woocommerce_admin_sales_record_milestone_enabled', array( $sut, 'attach_order_modifier' ) ) );
+	}
+
+	/**
+	 * @testdox Should register sales record filter only for cron requests.
+	 */
+	public function test_registers_sales_record_filter_only_for_cron_requests(): void {
+		$non_cron = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
+		$cron     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
+
+		$non_cron->register();
+		$cron->register();
+
+		$this->assertFalse( has_filter( 'woocommerce_admin_sales_record_milestone_enabled', array( $non_cron, 'attach_order_modifier' ) ) );
+		$this->assertSame( 10, has_filter( 'woocommerce_admin_sales_record_milestone_enabled', array( $cron, 'attach_order_modifier' ) ) );
+	}
+
+	/**
+	 * @testdox Should apply public compatibility decision filters.
+	 */
+	public function test_applies_public_compatibility_decision_filters(): void {
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+		$product = (object) array( 'id' => 1 );
+		$coupon  = (object) array( 'id' => 2 );
+
+		add_filter(
+			'wcpay_multi_currency_override_selected_currency',
+			static function () {
+				return 'EUR';
+			}
+		);
+		add_filter( 'wcpay_multi_currency_should_convert_product_price', '__return_false' );
+		add_filter( 'wcpay_multi_currency_should_convert_coupon_amount', '__return_false' );
+		add_filter( 'wcpay_multi_currency_should_return_store_currency', '__return_true' );
+
+		$this->assertSame( 'EUR', $sut->override_selected_currency() );
+		$this->assertTrue( $sut->should_convert_product_price(), 'Empty product arguments should preserve the WooPayments true default.' );
+		$this->assertTrue( $sut->should_convert_coupon_amount(), 'Empty coupon arguments should preserve the WooPayments true default.' );
+		$this->assertFalse( $sut->should_convert_product_price( $product ) );
+		$this->assertFalse( $sut->should_convert_coupon_amount( $coupon ) );
+		$this->assertTrue( $sut->should_return_store_currency() );
+	}
+
+	/**
+	 * @testdox Should disable currency switching for pay-for-order and external filters.
+	 */
+	public function test_disables_currency_switching_for_pay_for_order_and_external_filters(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+
+		$this->assertFalse( $sut->should_disable_currency_switching() );
+
+		$_GET['pay_for_order'] = '1';
+
+		$this->assertTrue( $sut->should_disable_currency_switching() );
+
+		unset( $_GET['pay_for_order'] );
+		add_filter( 'wcpay_multi_currency_should_disable_currency_switching', '__return_true' );
+
+		$this->assertTrue( $sut->should_disable_currency_switching() );
+
+		$this->setExpectedDeprecated( 'should_hide_widgets' );
+
+		$this->assertTrue( $sut->should_hide_widgets() );
+	}
+
+	/**
+	 * @testdox Should attach order modifier and return original value.
+	 */
+	public function test_attach_order_modifier_adds_order_query_filter_and_returns_original_value(): void {
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+
+		$this->assertSame( 'enabled', $sut->attach_order_modifier( 'enabled' ) );
+
+		$this->assertSame( 10, has_filter( 'woocommerce_order_query', array( $sut, 'convert_order_prices' ) ) );
+	}
+
+	/**
+	 * @testdox Should convert sales record order totals to default currency.
+	 */
+	public function test_converts_sales_record_order_totals_to_default_currency(): void {
+		$sut   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+		$order = wc_create_order();
+		$order->set_currency( 'GBP' );
+		$order->set_total( 1000 );
+		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE, 0.5 );
+		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$order->save();
+
+		add_filter( 'woocommerce_order_query', array( $sut, 'convert_order_prices' ) );
+
+		$result = CallStack::run( array( self::SALES_RECORD_CALL ), fn() => $sut->convert_order_prices( array( $order ) ) );
+
+		wc_get_container()->get( OrderCache::class )->remove( $order->get_id() );
+		$stored_order = wc_get_order( $order->get_id() );
+
+		$this->assertSame( 2000.0, (float) $result[0]->get_total() );
+		$this->assertInstanceOf( \WC_Order::class, $stored_order );
+		$this->assertSame( 1000.0, (float) $stored_order->get_total(), 'The compatibility conversion should not persist the adjusted total.' );
+		$this->assertFalse( has_filter( 'woocommerce_order_query', array( $sut, 'convert_order_prices' ) ) );
+	}
+
+	/**
+	 * @testdox Should skip sales record conversion when context or meta do not match.
+	 */
+	public function test_skips_sales_record_conversion_when_context_or_meta_do_not_match(): void {
+		$wrong_context = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+		$missing_meta  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+		$order         = wc_create_order();
+		$order->set_currency( 'GBP' );
+		$order->set_total( 1000 );
+		$order->save();
+		$object_results = (object) array( $order );
+
+		$this->assertSame( array( $order ), $wrong_context->convert_order_prices( array( $order ) ) );
+		$this->assertSame( array( $order ), CallStack::run( array( self::SALES_RECORD_CALL ), fn() => $missing_meta->convert_order_prices( array( $order ) ) ) );
+		$this->assertSame( $object_results, CallStack::run( array( self::SALES_RECORD_CALL ), fn() => $missing_meta->convert_order_prices( $object_results ) ) );
+		$this->assertSame( 1000.0, (float) $order->get_total() );
+	}
+
+	/**
+	 * @testdox Should name only methods that exist on WooCommerce's new sales record note in the sales-record backtrace check.
+	 */
+	public function test_sales_record_backtrace_calls_name_existing_methods(): void {
+		$calls = ( new \ReflectionClass( MultiCurrencyCompatibilityController::class ) )->getConstant( 'NEW_SALES_RECORD_BACKTRACE_CALLS' );
+
+		$this->assertNotEmpty( $calls );
+		foreach ( $calls as $call ) {
+			list( $class_name, $method ) = explode( '::', $call, 2 );
+			$this->assertTrue( method_exists( $class_name, $method ), "{$call} does not exist." );
+		}
+	}
+
+	/**
+	 * @testdox Should sum yesterday's orders in two currencies in the store currency for the best sales day note.
+	 *
+	 * Client 11.1.0 contains the intended conversion of the order totals the note sums back to the store currency
+	 * (`includes/multi-currency/Compatibility.php:245-292`). The refund makes the order query's refund-cache priming return
+	 * a refund (`includes/data-stores/abstract-wc-order-data-store-cpt.php:745`), which the conversion must leave alone.
+	 */
+	public function test_sales_record_sums_orders_in_two_currencies_in_the_store_currency(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		delete_option( NewSalesRecord::RECORD_DATE_OPTION_KEY );
+		delete_option( NewSalesRecord::RECORD_AMOUNT_OPTION_KEY );
+		$sut       = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
+		$yesterday = strtotime( gmdate( 'Y-m-d', current_time( 'timestamp', 0 ) - DAY_IN_SECONDS ) . ' 12:00:00' ); // phpcs:ignore WordPress.DateTime.CurrentTimeTimestamp.Requested -- The note reads the same clock.
+
+		$store_currency_order = wc_create_order();
+		$store_currency_order->set_currency( 'USD' );
+		$store_currency_order->set_total( 10 );
+		$store_currency_order->set_date_created( $yesterday );
+		$store_currency_order->save();
+
+		$pound_order = wc_create_order();
+		$pound_order->set_currency( 'GBP' );
+		$pound_order->set_total( 20 );
+		$pound_order->set_date_created( $yesterday );
+		$pound_order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE, 0.5 );
+		$pound_order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$pound_order->save();
+		wc_create_refund(
+			array(
+				'order_id' => $pound_order->get_id(),
+				'amount'   => 5,
+			)
+		);
+
+		$sut->register();
+		NewSalesRecord::possibly_add_note();
+
+		$this->assertSame( 50.0, (float) get_option( NewSalesRecord::RECORD_AMOUNT_OPTION_KEY ) );
+	}
+
+	/**
+	 * Create a compatibility controller with deterministic runtime context.
+	 *
+	 * @param string $owner                 Runtime owner.
+	 * @param bool   $is_cron               Whether the request is cron.
+	 * @param int    $enabled_count         Enabled currency count.
+	 * @return MultiCurrencyCompatibilityController
+	 */
+	private function create_controller(
+		string $owner,
+		bool $is_cron = false,
+		int $enabled_count = 2
+	): MultiCurrencyCompatibilityController {
+		$controller = new class( $is_cron ) extends MultiCurrencyCompatibilityController {
+			/**
+			 * Whether the request is cron.
+			 *
+			 * @var bool
+			 */
+			private bool $is_cron;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param bool $is_cron Whether the request is cron.
+			 */
+			public function __construct( bool $is_cron ) {
+				$this->is_cron = $is_cron;
+			}
+
+			/**
+			 * The request signals this double's case sets.
+			 *
+			 * @return array<string,bool>
+			 */
+			private function request_signals(): array {
+				return array( 'cron' => $this->is_cron );
+			}
+
+			/** Register with this case's request signals set. */
+			public function register() {
+				RequestSignals::run( $this->request_signals(), fn() => parent::register() );
+			}
+		};
+		$controller->init(
+			$this->create_arbiter( $owner ),
+			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )
+		);
+		$controller->set_state_builder( $this->create_state_builder( $enabled_count ) );
+
+		return $controller;
+	}
+
+	/**
+	 * Create a static multi-currency runtime arbiter.
+	 *
+	 * @param string $owner Runtime owner.
+	 * @return MultiCurrencyRuntimeArbiter
+	 */
+	private function create_arbiter( string $owner ): MultiCurrencyRuntimeArbiter {
+		return new class( $owner ) extends MultiCurrencyRuntimeArbiter {
+			/**
+			 * Runtime owner.
+			 *
+			 * @var string
+			 */
+			private string $owner;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param string $owner Runtime owner.
+			 */
+			public function __construct( string $owner ) {
+				$this->owner = $owner;
+			}
+
+			/**
+			 * Get the multi-currency runtime owner for the current site.
+			 *
+			 * @return string
+			 */
+			public function get_runtime_owner(): string {
+				return $this->owner;
+			}
+
+			/**
+			 * Tell whether core multi-currency may register hooks.
+			 *
+			 * @return bool
+			 */
+			public function should_core_register(): bool {
+				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
+			}
+		};
+	}
+
+	/**
+	 * Create a deterministic state builder.
+	 *
+	 * @param int $enabled_count Enabled currency count.
+	 * @return MultiCurrencyStateBuilder
+	 */
+	private function create_state_builder( int $enabled_count ): MultiCurrencyStateBuilder {
+		return new class( $enabled_count, $this->create_localization() ) extends MultiCurrencyStateBuilder {
+			/**
+			 * Enabled currency count.
+			 *
+			 * @var int
+			 */
+			private int $enabled_count;
+
+			/**
+			 * Localization service.
+			 *
+			 * @var MultiCurrencyLocalizationInterface
+			 */
+			private MultiCurrencyLocalizationInterface $localization_service;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param int                                $enabled_count         Enabled currency count.
+			 * @param MultiCurrencyLocalizationInterface $localization_service Localization service.
+			 */
+			public function __construct( int $enabled_count, MultiCurrencyLocalizationInterface $localization_service ) {
+				$this->enabled_count        = $enabled_count;
+				$this->localization_service = $localization_service;
+			}
+
+			/**
+			 * Build a deterministic multi-currency state snapshot.
+			 *
+			 * @return MultiCurrencyState
+			 */
+			public function build(): MultiCurrencyState {
+				$usd       = new MultiCurrencyCurrency( $this->localization_service, 'USD', 1.0, true );
+				$gbp       = new MultiCurrencyCurrency( $this->localization_service, 'GBP', 0.5, false );
+				$available = array(
+					'USD' => $usd,
+					'GBP' => $gbp,
+				);
+				$enabled   = 1 === $this->enabled_count ? array( 'USD' => $usd ) : $available;
+
+				return new MultiCurrencyState( $available, $enabled, $usd, 1 === $this->enabled_count ? $usd : $gbp );
+			}
+		};
+	}
+
+	/**
+	 * Create a localization service test double.
+	 *
+	 * @return MultiCurrencyLocalizationInterface
+	 */
+	private function create_localization(): MultiCurrencyLocalizationInterface {
+		return new class() implements MultiCurrencyLocalizationInterface {
+			/**
+			 * Get a currency format.
+			 *
+			 * @param string $currency_code Currency code.
+			 * @return array<string,mixed>
+			 */
+			public function get_currency_format( $currency_code ): array {
+				unset( $currency_code );
+
+				return array( 'num_decimals' => 2 );
+			}
+
+			/**
+			 * Get locale data for a country.
+			 *
+			 * @param string $country Country code.
+			 * @return array<string,mixed>
+			 */
+			public function get_country_locale_data( $country ): array {
+				unset( $country );
+
+				return array();
+			}
+		};
+	}
+}

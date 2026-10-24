@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-onboarding-multiple-selection-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "ee948e817b2a797aa31c3cd7037d454f48bb47cf",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:86::Multi-currency on-boarding › Currency selection and management › should allow multiple currencies to be selected"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/onboarding.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved evidence SHA 4b94c29353bd561c4fcbe4369d824f329bbc49ad75ea0b3b7ce1f421940792c8 against ledger SHA a35a243af3475c4c4db1fc66192064d19464e203d93efa5bc45d405af8b9c061: exactly one ledger row changes fields 37-40 while preserving the pending disposition, target, contract, and unresolved owner. The evidence cleanly bounds line 86 to transient simultaneous selection of two deterministic eligible currencies with no persistence or provider effects, and records readiness, adapter, restoration, quarantine, accessibility, and drift safeguards without absorbing line 59, 110, 125, checkout, rates, or persistence contracts."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before the authenticated native multi-currency selection surface can run; the provisional target is absent; and the exact target contract, settings owner, deterministic two-currency fixture, and row-safe topology remain pending. Core's existing named management modal supports transient multi-selection and is a plausible honest adapter for this narrower invariant, so no production defect or product-authority conflict is established.",
+		"affected_scope": "Only the exact transient multi-selection contract: expose at least two distinct deterministic, initially unselected, otherwise-actionable non-default currencies; select both through semantic controls; and require both to remain checked simultaneously. Do not submit or save. Require zero currency-settings request, enabled-currency option mutation, cache/rate side effect, or provider effect and byte-identical authoritative raw currency settings. Persisted enablement, shopper availability, checkout currency, rates, recommendation categories, ordering, and provider behavior remain outside this row.",
+		"no_allowlisted_action_reason": "The run cannot enable native ownership, establish account/callback readiness, repair shared Core E2E sites, invent the pending target/owner/topology, or guarantee two deterministic available currencies. Component tests prove the selection model but cannot substitute for the authenticated route, real currency catalog, simultaneous accessibility state, zero request interval, and full raw-option identity proof. No provider writer or listener can unlock this transient settings row.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy native readiness; approve the exact native target, settings owner, management-modal adapter, and row-safe topology; provide at least two deterministic eligible currencies under ordered account, store, and currency-settings ownership with complete raw snapshots and a pre-write restoration journal if setup writes are required; implement the semantic two-selection and zero-update/full-byte-identity oracle; then run once with one worker and zero retries and obtain fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, account, store, currency setting, catalog fixture, lock, journal, provider object, listener, environment, retention record, or quarantine was created or changed for this row. A future ambiguous settings request, raw-byte divergence, currency-catalog drift, lost ownership, or uncertain restoration must preserve evidence and quarantine the exact store, currency-settings resources, and catalog fixture; no financial or provider resource belongs to this contract."
+	}
+}

@@ -1,0 +1,156 @@
+{
+	"schema_version": 2,
+	"slice_id": "duplicate-contract-retirement-2026-08-06",
+	"wc_base_commit": "33df21de52357d7d68ed0debd865f2d1048a16db",
+	"verified_at_commit": "33df21de52357d7d68ed0debd865f2d1048a16db",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [],
+	"source_test_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+	"contract_ids": [
+		"default::setup::tests/e2e/specs/auth.setup.ts:112::authenticate as editor",
+		"default::chromium::tests/e2e/specs/basic.spec.ts:8::A basic set of tests to ensure WP, wp-admin and my-account load › Load the home page",
+		"default::chromium::tests/e2e/specs/basic.spec.ts:16::A basic set of tests to ensure WP, wp-admin and my-account load › Sign in as admin › Load Payments Overview",
+		"default::chromium::tests/e2e/specs/basic.spec.ts:29::A basic set of tests to ensure WP, wp-admin and my-account load › Sign in as customer › Load customer my account page",
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency.spec.ts:55::Multi-currency › add the currency switcher to the sidebar",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:109::Saved cards › When using a 3ds card added on checkout › should delete the card",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:117::Saved cards › When using a 3ds card added on checkout › should not allow guest user to save the card",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:214::Shopper can save and delete cards › Testing card: 3ds › should be able to set the 3ds card as default payment method",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:214::Shopper can save and delete cards › Testing card: 3ds2 › should be able to set the 3ds2 card as default payment method",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:249::Shopper can save and delete cards › Testing card: 3ds › should be able to delete 3ds card",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:249::Shopper can save and delete cards › Testing card: 3ds2 › should be able to delete 3ds2 card",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-saved-card-checkout-and-usage.spec.ts:82::WooCommerce Blocks › Saved cards › should delete the card"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/fixtures/auth.setup.ts",
+			"contract": "Retired as a duplicate of: default::chromium::tests/e2e/specs/wcpay/merchant/non-admin-wp-admin-access.spec.ts:43::Non-admin WP-Admin access › should be able to access wp-admin of fully onboarded WooPayments site"
+		},
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsRestControllerIntegrationTest.php",
+			"contract": "Retired as a duplicate of: default::basic::tests/e2e/specs/basic.spec.ts:8::A basic set of tests to ensure WP, wp-admin and my-account load › Load the home page"
+		},
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Admin/Settings/PaymentsProviders/WooPayments/WooPaymentsRestControllerIntegrationTest.php",
+			"contract": "Retired as a duplicate of: default::basic::tests/e2e/specs/basic.spec.ts:16::A basic set of tests to ensure WP, wp-admin and my-account load › Sign in as admin › Load Payments Overview"
+		},
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsTokenServiceTest.php",
+			"contract": "Retired as a duplicate of: default::basic::tests/e2e/specs/basic.spec.ts:29::A basic set of tests to ensure WP, wp-admin and my-account load › Sign in as customer › Load customer my account page"
+		},
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/MultiCurrency/MultiCurrencySettingsControllerTest.php",
+			"contract": "Retired as a duplicate of: default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:40::Shopper Multi-Currency widget › should display currency switcher widget if multi-currency is enabled"
+		},
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsTokenServiceTest.php",
+			"contract": "Retired as a duplicate of: default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:109::Saved cards › When using a basic card added on checkout › should delete the card"
+		},
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsTokenServiceTest.php",
+			"contract": "Retired as a duplicate of: default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:117::Saved cards › When using a basic card added on checkout › should not allow guest user to save the card"
+		},
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsTokenServiceTest.php",
+			"contract": "Retired as a duplicate of: default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:214::Shopper can save and delete cards › Testing card: basic › should be able to set the basic card as default payment method"
+		},
+		{
+			"path": "plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsTokenServiceTest.php",
+			"contract": "Retired as a duplicate of: default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:249::Shopper can save and delete cards › Testing card: basic › should be able to delete basic card"
+		}
+	],
+	"implementation_commits": [
+		"33df21de52357d7d68ed0debd865f2d1048a16db"
+	],
+	"verification": [
+		{
+			"command": "node plugins/woocommerce/tests/e2e/bin/validate-woopayments-client-contract-map.mjs --require-saturated",
+			"exit_code": 0,
+			"summary": "Ledger validation passed with the twelve duplicate contracts retired."
+		}
+	],
+	"reviews": [
+		{
+			"role": "disposition-authority",
+			"verdict": "APPROVE",
+			"source_test_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+			"summary": "Ledger owner granted retirement authority for these twelve duplicate and structural contracts, resolving PILOT-RETIREMENT-AUTHORITY. No source was migrated or reviewed."
+		}
+	],
+	"closures": [],
+	"retirements": [
+		{
+			"contract_id": "default::setup::tests/e2e/specs/auth.setup.ts:112::authenticate as editor",
+			"retained_contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/non-admin-wp-admin-access.spec.ts:43::Non-admin WP-Admin access › should be able to access wp-admin of fully onboarded WooPayments site",
+			"approver": "human-approved:duplicate-contract-retirement-2026-08-06",
+			"rationale": "Editor authentication is a harness fixture with no independent WooPayments outcome; the retained role-access contract owns any editor session it needs."
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/basic.spec.ts:8::A basic set of tests to ensure WP, wp-admin and my-account load › Load the home page",
+			"retained_contract_id": "default::basic::tests/e2e/specs/basic.spec.ts:8::A basic set of tests to ensure WP, wp-admin and my-account load › Load the home page",
+			"approver": "human-approved:duplicate-contract-retirement-2026-08-06",
+			"rationale": "Exact duplicate project instance of the retained basic-project storefront smoke."
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/basic.spec.ts:16::A basic set of tests to ensure WP, wp-admin and my-account load › Sign in as admin › Load Payments Overview",
+			"retained_contract_id": "default::basic::tests/e2e/specs/basic.spec.ts:16::A basic set of tests to ensure WP, wp-admin and my-account load › Sign in as admin › Load Payments Overview",
+			"approver": "human-approved:duplicate-contract-retirement-2026-08-06",
+			"rationale": "Exact duplicate project instance of the retained basic-project payments-admin smoke."
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/basic.spec.ts:29::A basic set of tests to ensure WP, wp-admin and my-account load › Sign in as customer › Load customer my account page",
+			"retained_contract_id": "default::basic::tests/e2e/specs/basic.spec.ts:29::A basic set of tests to ensure WP, wp-admin and my-account load › Sign in as customer › Load customer my account page",
+			"approver": "human-approved:duplicate-contract-retirement-2026-08-06",
+			"rationale": "Exact duplicate project instance of the retained basic-project My Account smoke."
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency.spec.ts:55::Multi-currency › add the currency switcher to the sidebar",
+			"retained_contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:40::Shopper Multi-Currency widget › should display currency switcher widget if multi-currency is enabled",
+			"approver": "human-approved:duplicate-contract-retirement-2026-08-06",
+			"rationale": "Setup-helper invocation only; the retained shopper switcher contract proves the shopper-visible behaviour and native need not replicate the legacy widget placement."
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:109::Saved cards › When using a 3ds card added on checkout › should delete the card",
+			"retained_contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:109::Saved cards › When using a basic card added on checkout › should delete the card",
+			"approver": "human-approved:duplicate-contract-retirement-2026-08-06",
+			"rationale": "3DS origin does not change token deletion; duplicates the retained basic deletion contract."
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:117::Saved cards › When using a 3ds card added on checkout › should not allow guest user to save the card",
+			"retained_contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-checkout-save-card-and-purchase.spec.ts:117::Saved cards › When using a basic card added on checkout › should not allow guest user to save the card",
+			"approver": "human-approved:duplicate-contract-retirement-2026-08-06",
+			"rationale": "The parameterized 3DS variant never enters card details and proves the same guest UI as the retained basic contract."
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:214::Shopper can save and delete cards › Testing card: 3ds › should be able to set the 3ds card as default payment method",
+			"retained_contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:214::Shopper can save and delete cards › Testing card: basic › should be able to set the basic card as default payment method",
+			"approver": "human-approved:duplicate-contract-retirement-2026-08-06",
+			"rationale": "Does not set the titled 3DS card and adds nothing beyond the retained default-method contract."
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:214::Shopper can save and delete cards › Testing card: 3ds2 › should be able to set the 3ds2 card as default payment method",
+			"retained_contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:214::Shopper can save and delete cards › Testing card: basic › should be able to set the basic card as default payment method",
+			"approver": "human-approved:duplicate-contract-retirement-2026-08-06",
+			"rationale": "Never defaults the 3DS2 card and is subsumed by the retained default-token contract."
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:249::Shopper can save and delete cards › Testing card: 3ds › should be able to delete 3ds card",
+			"retained_contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:249::Shopper can save and delete cards › Testing card: basic › should be able to delete basic card",
+			"approver": "human-approved:duplicate-contract-retirement-2026-08-06",
+			"rationale": "Deletion is authentication-agnostic; the retained basic deletion contract covers the user contract."
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:249::Shopper can save and delete cards › Testing card: 3ds2 › should be able to delete 3ds2 card",
+			"retained_contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:249::Shopper can save and delete cards › Testing card: basic › should be able to delete basic card",
+			"approver": "human-approved:duplicate-contract-retirement-2026-08-06",
+			"rationale": "3DS2 origin does not alter delete behaviour; one retained deletion contract suffices."
+		},
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-wc-blocks-saved-card-checkout-and-usage.spec.ts:82::WooCommerce Blocks › Saved cards › should delete the card",
+			"retained_contract_id": "default::chromium::tests/e2e/specs/wcpay/shopper/shopper-myaccount-saved-cards.spec.ts:249::Shopper can save and delete cards › Testing card: basic › should be able to delete basic card",
+			"approver": "human-approved:duplicate-contract-retirement-2026-08-06",
+			"rationale": "Token deletion has no Blocks-specific behaviour and is covered by the retained My Account deletion contract."
+		}
+	],
+	"known_gaps": [],
+	"deferral": null
+}

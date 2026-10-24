@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the "Sell worldwide in multiple currencies" inbox note on stores that turned on multi-currency but have not added a currency yet.

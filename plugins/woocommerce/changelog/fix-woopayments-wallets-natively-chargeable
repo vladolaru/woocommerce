@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Keep Apple Pay, Google Pay and Amazon Pay available in the built-in WooPayments, and keep every enabled payment method enabled when a store switches from the WooPayments extension.

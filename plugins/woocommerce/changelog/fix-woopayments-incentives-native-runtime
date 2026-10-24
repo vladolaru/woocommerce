@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Stores that run the built-in WooPayments with a live account no longer see WooPayments incentives, as when the WooPayments plugin is active.

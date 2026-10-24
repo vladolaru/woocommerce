@@ -1,0 +1,41 @@
+{
+	"schema_version": 2,
+	"slice_id": "alipay-checkout-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "9abc62cbb4ac9d2b025a6889e287cd52d8f3ae77",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/shopper/alipay-checkout-purchase.spec.ts:60::Alipay Checkout › checkout on shortcode checkout page",
+		"default::chromium::tests/e2e/specs/wcpay/shopper/alipay-checkout-purchase.spec.ts:84::Alipay Checkout › checkout on block-based checkout page › completes payment successfully"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/checkout.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved pre-review evidence SHA e2fa7cf3222fbf746a3eb06e913e0d0242f299e41f387a84a7f70cc40cc9bbe4 against ledger SHA b8832d86d7109116c13084e6c35fc8712e358e7eddd61fa40e4df9ae15c07e66 with no findings. Exactly fields 37-40 change on only the line-60 Classic and line-84 Blocks checkout rows; refund line 74 remains planned. The shared deferral preserves independent shopper, product, cart, order, intent, charge, payment-method, and journal graphs; exactly one transport dispatch and one external authorization per leg; zero replay; exact identity, amount, USD, captured status, occurrence, and accessible Alipay confirmation joins. Complete readiness, protected allocation, exclusive listener, lock, retention, settings restoration, quarantine, accessibility, and source/target/runtime drift controls are bound. Frozen and rolling source bytes match, and current Core supports Alipay without an established defect or known gap."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing-native readiness fails before either Alipay checkout leg may allocate a provider writer, listener, browser, product, or financial graph; the target contract and owner remain pending; and no approved Alipay-active protected test allocation or exact settings/restoration topology exists. Core already supplies a first-class split Alipay gateway, Classic and Blocks integration, idempotent intent construction, validated redirect return, and order-success projection, so no current native defect, known gap, authority conflict, or frozen-to-rolling source staleness is established.",
+		"affected_scope": "Two independently attributable checkout subcontracts in one serialized family packet. Each leg uses its own fresh shopper, product, cart, order, intent, charge, payment method, journal, and outcome: line 60 owns exactly one Classic checkout request; line 84 owns exactly one Store API checkout request. For each, choose semantic Alipay once, dispatch and authorize once with no replay, join exact order/key/method/amount/USD/status to one succeeded captured Alipay intent and charge with one occurrence, then prove the exact order and Alipay payment method in the accessible confirmation summary. Refunds, cross-leg state reuse, capability requests, other methods, and cleanup of financial history remain separate.",
+		"no_allowlisted_action_reason": "The run cannot establish native owner/account/callback readiness, approve the target/owner, allocate the required unique Alipay-active US/USD test tuple, seize the separately owned listener, or create financial records without an exclusive provider-write lease and durable journals. A global logo, order-received heading, URL, lower-layer gateway tests, three-click Classic retry, repeated external authorization, or sibling success cannot substitute for exact transport attribution, no-replay phases, authoritative order-provider identity and amount joins, exact occurrence counts, retained evidence, settings restoration, and listener-correlated terminal proof.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally satisfy exact native readiness; approve the protected target contract and owner; provide a unique non-CI test-mode US/USD account/store alias with alipay_payments already active, split gateway enabled, canonical settings snapshots, and one exclusively owned listener. Acquire account, store, feature-setting, and record-event locks; serialize the Classic and Blocks legs with separate pre-dispatch lifecycle journals, one worker, zero retries, no replay, unique resource graphs, exact provider readers, retention, restoration, and quarantine; then obtain fresh code, E2E-test, reliability, accessibility, and provider-evidence reviews.",
+		"quarantine_status": "No browser context, account, store, allocation, product, cart, order, intent, charge, payment method, setting, lock, journal, listener, provider object, retention record, or quarantine was created or changed for either row; the separately owned listener remains untouched. A future uncertain checkout or authorization dispatch, duplicate occurrence, cross-record identity, amount/currency mismatch, listener attribution gap, runtime or bundle drift after dispatch, lock loss, incomplete settings restoration, or unsafe cleanup must preserve diagnostics and financial history and quarantine the exact account/store/settings/resource graph and journal without replay."
+	}
+}

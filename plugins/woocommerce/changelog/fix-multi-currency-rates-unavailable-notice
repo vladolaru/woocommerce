@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Keep the Multi-currency notice about unavailable automatic exchange rates on screen until those currencies have a rate source, and name the two ways out.

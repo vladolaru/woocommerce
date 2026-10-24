@@ -1,0 +1,3 @@
+Significance: patch
+Type: fix
+Comment: WooPayments merchant help links now open the intended documentation sections and payout-schedule links use accurate wording.

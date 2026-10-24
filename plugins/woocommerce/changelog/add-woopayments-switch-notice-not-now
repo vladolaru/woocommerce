@@ -1,0 +1,4 @@
+Significance: patch
+Type: add
+
+Add "Not now" to the WooPayments switch notice, hiding it for 30 days on admin pages other than Payments settings.

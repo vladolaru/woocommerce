@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Native WooPayments onboarding now sends the accepted WooPayments promotion notes to the platform, so an incentive accepted on the Payments page applies to the new account.

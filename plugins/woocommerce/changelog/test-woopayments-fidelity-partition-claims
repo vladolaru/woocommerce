@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Partition the readiness-gated WooPayments contracts into provider-fidelity families and name each family's falsifiable claim.

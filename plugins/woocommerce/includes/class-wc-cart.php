@@ -1175,11 +1175,11 @@ class WC_Cart extends WC_Legacy_Cart {
 	 * Add a product to the cart.
 	 *
 	 * @throws Exception Plugins can throw an exception to prevent adding to cart.
-	 * @param int   $product_id contains the id of the product to add to the cart.
-	 * @param int   $quantity contains the quantity of the item to add.
-	 * @param int   $variation_id ID of the variation being added to the cart.
-	 * @param array $variation attribute values.
-	 * @param array $cart_item_data extra cart item data we want to pass into the item.
+	 * @param int       $product_id contains the id of the product to add to the cart.
+	 * @param int|float $quantity contains the quantity of the item to add.
+	 * @param int       $variation_id ID of the variation being added to the cart.
+	 * @param array     $variation attribute values.
+	 * @param array     $cart_item_data extra cart item data we want to pass into the item.
 	 * @return string|bool $cart_item_key
 	 */
 	public function add_to_cart( $product_id = 0, $quantity = 1, $variation_id = 0, $variation = array(), $cart_item_data = array() ) {

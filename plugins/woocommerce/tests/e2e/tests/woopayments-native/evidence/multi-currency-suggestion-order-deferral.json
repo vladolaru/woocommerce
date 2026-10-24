@@ -1,0 +1,48 @@
+{
+	"schema_version": 2,
+	"slice_id": "multi-currency-suggestion-order-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "15bd89c533af71f484b95df1b1ec5eb0df16c236",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:125::Multi-currency on-boarding › Currency selection and management › should display suggested currencies at the beginning of the list"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/onboarding.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved evidence SHA 50bcec2e49219a81008b001d0936326cda51f477796bf3e5b72a4e0f0acda1d0 against ledger SHA d38ad7aa7594af55a34be12a73a27113c512a9e92c114479d0283f6d0abb358e with no findings. Exactly one row changes only fields 37-40 to deferred/ambiguous-decision/ambiguous-decision:PILOT-MULTI-CURRENCY-RECOMMENDATION-AUTHORITY/evidence; the pending target, contract, owner, and adjacent rows remain unchanged. The source proves only a visible nonempty tagged set while the ledger retains conditional suggested-before-general ordering. Core has one alphabetical list without recommendation policy, metadata, or semantic grouping, so Product/UX/native authority is primary, readiness secondary, and no defect is claimed. The future oracle correctly binds deterministic suggested/general identities to unique controls and complete DOM, accessibility-reading, and keyboard prefix order with no duplicates/interleaving or selection/save/settings/provider effect, while preserving schema/API authority, raw snapshot/pre-write journal, quarantine, accessibility/drift, and adjacent-contract boundaries."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Product/UX and native ownership have not decided whether Core intentionally exposes suggested currencies, what policy and source define them, or whether this client-only safeguard is paired or retired. The frozen E2E proves only a nonempty recommended-tagged set, while the reviewed ledger retains actual conditional prefix priority. Core has one alphabetically sorted checkbox sequence with no recommendation metadata, semantic group, or policy, so no honest adapter or bounded defect exists before authority. Native readiness is secondary.",
+		"affected_scope": "Only the conditional suggestion-priority contract: if an approved native recommendation policy exists, join at least one deterministic suggested currency and at least one deterministic general currency from authoritative policy/catalog evidence to unique semantic controls; require every suggested choice to precede every general choice in DOM/accessibility reading and keyboard order with no duplicates or interleaving; and perform zero selection, save, settings write, or provider effect. Exact client policy codes, internal suggested order, preselection, copy, search, and already-enabled exclusion remain separate unless explicitly approved.",
+		"no_allowlisted_action_reason": "The run cannot invent a recommendation strategy, derive suggestion semantics from alphabetical position, add unapproved REST/schema metadata, create a new product grouping, or silently retire the retained ledger contract. It also cannot resolve the pending target/owner or bypass native readiness. Client snapshots and Core alphabetical/component tests cannot choose product policy or substitute for authoritative suggestion identity joined to browser semantic order. No provider writer or listener can resolve this decision.",
+		"reference": "ambiguous-decision:PILOT-MULTI-CURRENCY-RECOMMENDATION-AUTHORITY",
+		"unlock_decision": "Product/UX and native ownership must decide whether Core retains suggested currencies and, if so, approve the exact recommendation policy/source, eligibility, target surface, accessibility semantics, preselection boundary, and implementation shape without an unapproved exposed schema change; otherwise approve a paired safeguard or legal disposition/retirement. Then satisfy native readiness, provide a deterministic policy/catalog fixture containing at least one suggested and one general currency under ordered ownership with complete raw snapshots and a pre-write restoration journal for any setup/cache normalization, implement the semantic prefix-order and zero-write oracle, and run once with one worker, zero retries, and fresh code, E2E-test, reliability, and accessibility reviews.",
+		"quarantine_status": "No browser context, account, store, setting, recommendation policy, catalog fixture, lock, journal, provider object, listener, environment, retention record, or quarantine was created or changed for this row. A future identity failure, policy/catalog drift, unexpected settings traffic, lost ownership, or incomplete restoration must preserve evidence and quarantine the exact store, settings, catalog/cache, recommendation fixture, and restoration journal; no financial or provider resource belongs to this contract.",
+		"unlock_satisfactions": [
+			{
+				"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/multi-currency-on-boarding.spec.ts:125::Multi-currency on-boarding › Currency selection and management › should display suggested currencies at the beginning of the list",
+				"unlock_decision": "Product/UX and native ownership must decide whether Core retains suggested currencies and, if so, approve the exact recommendation policy/source, eligibility, target surface, accessibility semantics, preselection boundary, and implementation shape without an unapproved exposed schema change; otherwise approve a paired safeguard or legal disposition/retirement. Then satisfy native readiness, provide a deterministic policy/catalog fixture containing at least one suggested and one general currency under ordered ownership with complete raw snapshots and a pre-write restoration journal for any setup/cache normalization, implement the semantic prefix-order and zero-write oracle, and run once with one worker, zero retries, and fresh code, E2E-test, reliability, and accessibility reviews.",
+				"satisfied_on": "2026-08-08",
+				"reference": "calibration-notes:2026-08-08:multi-currency-wizard-affordance-retirement"
+			}
+		]
+	}
+}

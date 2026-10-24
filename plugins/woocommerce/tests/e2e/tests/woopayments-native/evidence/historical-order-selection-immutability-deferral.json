@@ -1,0 +1,29 @@
+{
+	"schema_version": 2,
+	"slice_id": "historical-order-selection-immutability-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "1fba85b2fbf1aa18f94af2031721f84c4be869da",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": ["plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": ["default::chromium::tests/e2e/specs/wcpay/shopper/shopper-multi-currency-widget.spec.ts:96::Shopper Multi-Currency widget › Should not affect prices › at My account › Orders"],
+	"targets": [{"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/transitions/historical-money-records.spec.ts", "contract": "pending"}],
+	"implementation_commits": [], "verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh independent review approved pre-review switcher SHA 32aa3b839f53b1d46a1cf8aab1b4170b9d6b3230c1f588d0c1c5f86498b21d23, context-switching SHA adad6de54f961c90c2eee8554288cc9d9d8f0d5721abcb392ec5a3c2559d70a9, order-received SHA 08f4cf266ce95e9f35e4567578cb11855337cdcd1f042c558eb9048c0d16fee5, historical-order SHA e7710661c3d71114ce472975a4e63e7bfbb51485e372be94cfcaea9350cc1734 and pay-for-order SHA d5c63e6eae3c0af549c4151ffb36b3a1b353b60c08bee8fae2a3696843de27fb against mutated ledger SHA ff9521f565ec2195ba46b710706eeebf88d7c67bb21f79e14527092754d7a4a4 and baseline 2fb5e5b50cd574c256e537f8c5d447c805216faf4b1a72e485f2c91c3ffc82a6 at 1fba85b2fbf1aa18f94af2031721f84c4be869da, with no findings. Exactly eight rows change only fields 37-40 across honest 2/3/1/1/1 groups. Enabled/disabled owner semantics, exact USD 10.00 to EUR 8.00 continuity, the sole 1000 usd provider/listener graph, provider-free historical/pay-for-order boundaries, zero replay, exact restoration, retention, quarantine, accessibility and drift are preserved; disabled behavior remains only a future RED and no unsupported claim is made."
+		}
+	],
+	"closures": [], "known_gaps": [],
+	"deferral": {
+		"blocker": "The historical target is absent with pending contract/owner and lacks an approved runner capability; standing readiness cannot allocate the version-pinned disposable plugin-to-Core transition or deterministic local customer/order fixture. Existing order-context projections establish no transition closure, and prior historical evidence names another contract; no defect is claimed.",
+		"affected_scope": "One provider-free disposable allocation starts with the plugin as sole owner and one exact run-owned completed USD 10.00 customer order created through local CRUD/REST with recorded ID, customer, currency, total, status, marker, storage backend and metadata. Exactly one documented cutover proves Core becomes sole owner. A fresh authenticated context selects EUR once, then the exact accessible My Account order relationship and row still expose the full USD 10.00 total once, while the stored tuple remains byte-for-field unchanged. No provider identity, writer or listener exists.",
+		"no_allowlisted_action_reason": "No local action can assign target/owner, add the historical runner allowlist or provision the version-pinned allocation. A steady-state order, anonymous unpaid REST fixture or evidence from another row cannot substitute for exact pre/post owner and record continuity. Use one cutover and one selection, zero retries/replay and no reverse transition.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Approve target/owner and runner capability, satisfy transition readiness, pin the source plugin/Core artifacts and provision a disposable customer/order allocation. Journal owner, storage and exact order state, cut over once, select EUR once, prove accessible My Account USD immutability and cold-read tuple equality, then destroy only the successful allocation. Quarantine transition uncertainty and obtain fresh code/E2E/reliability/accessibility/security/drift reviews; no listener is required.",
+		"quarantine_status": "No allocation, runtime owner, browser, customer, order, cutover, writer, listener, journal or quarantine was created; the separately owned listener remains untouched. Future artifact, owner, order, selection, display, storage, cleanup, publication or drift mismatch must preserve the allocation and journals and quarantine that exact disposable transition graph without reverse cutover, provider claims, replay or broad repair."
+	}
+}

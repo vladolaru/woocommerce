@@ -1,0 +1,525 @@
+<?php
+/**
+ * WooPaymentsAuthorizationsRestController class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
+use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
+use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsAuthorizationsListRequest;
+use Automattic\WooCommerce\Internal\RestApiControllerBase;
+use Throwable;
+use WC_Order;
+use WP_Error;
+use WP_REST_Request;
+use WP_REST_Response;
+use WP_REST_Server;
+
+/**
+ * Serves the uncaptured authorizations list, its summary and one authorization, and captures or cancels an order's
+ * authorization.
+ *
+ * A capture or cancel is refused for a refunded order, for an intent that is not the order's and for a payment no longer
+ * awaiting capture.
+ *
+ * @since 11.0.0
+ * @internal
+ */
+class WooPaymentsAuthorizationsRestController extends RestApiControllerBase {
+
+	/**
+	 * WooPayments API client.
+	 *
+	 * @var WooPaymentsApiClient
+	 */
+	private WooPaymentsApiClient $api_client;
+
+	/**
+	 * Payment processing service.
+	 *
+	 * @var PaymentProcessingService
+	 */
+	private PaymentProcessingService $processing_service;
+
+	/**
+	 * WooPayments provider.
+	 *
+	 * @var WooPaymentsProvider
+	 */
+	private WooPaymentsProvider $provider;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param WooPaymentsApiClient     $api_client         WooPayments API client.
+	 * @param PaymentProcessingService $processing_service Payment processing service.
+	 * @param WooPaymentsProvider      $provider           WooPayments provider.
+	 */
+	final public function init( WooPaymentsApiClient $api_client, PaymentProcessingService $processing_service, WooPaymentsProvider $provider ): void {
+		$this->api_client         = $api_client;
+		$this->processing_service = $processing_service;
+		$this->provider           = $provider;
+	}
+
+	/**
+	 * Get this controller's key in WooCommerce's list of REST controllers.
+	 *
+	 * @return string
+	 */
+	protected function get_rest_api_namespace(): string {
+		return 'woopayments-authorizations';
+	}
+
+	/**
+	 * Register the authorization routes.
+	 */
+	public function register_routes(): void {
+		register_rest_route( $this->route_namespace, '/payments/authorizations', $this->get_readable_route( 'get_authorizations' ) );
+		register_rest_route( $this->route_namespace, '/payments/authorizations/summary', $this->get_readable_route( 'get_authorizations_summary' ) );
+		register_rest_route( $this->route_namespace, '/payments/authorizations/(?P<payment_intent_id>\w+)', $this->get_readable_route( 'get_authorization' ) );
+		register_rest_route( $this->route_namespace, '/payments/orders/(?P<order_id>\w+)/capture_authorization', $this->get_capture_route() );
+		register_rest_route( $this->route_namespace, '/payments/orders/(?P<order_id>\w+)/cancel_authorization', $this->get_cancel_route() );
+	}
+
+	/**
+	 * Check route permissions.
+	 *
+	 * @return bool
+	 */
+	public function has_permission(): bool {
+		return current_user_can( 'manage_woocommerce' );
+	}
+
+	/**
+	 * Get authorizations.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_authorizations( WP_REST_Request $request ) {
+		try {
+			return new WP_REST_Response( $this->api_client->get_authorizations( $this->get_filtered_list_params( $request ), false ) );
+		} catch ( WooPaymentsApiException $exception ) {
+			return $exception->to_wp_error();
+		}
+	}
+
+	/**
+	 * Get authorizations summary.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_authorizations_summary( WP_REST_Request $request ) {
+		unset( $request );
+
+		try {
+			// The client asks for the store-wide totals: no query and no list filter (class-wc-rest-payments-authorizations-controller.php:88-92).
+			return new WP_REST_Response( $this->api_client->get_authorizations_summary() );
+		} catch ( WooPaymentsApiException $exception ) {
+			return $exception->to_wp_error();
+		}
+	}
+
+	/**
+	 * Get authorization detail.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_authorization( WP_REST_Request $request ) {
+		try {
+			return new WP_REST_Response( $this->api_client->get_authorization( (string) $request->get_param( 'payment_intent_id' ) ) );
+		} catch ( WooPaymentsApiException $exception ) {
+			return $exception->to_wp_error();
+		}
+	}
+
+	/**
+	 * Capture an authorization.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function capture_authorization( WP_REST_Request $request ) {
+		return $this->run_authorization_action( $request, 'capture' );
+	}
+
+	/**
+	 * Cancel an authorization.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function cancel_authorization( WP_REST_Request $request ) {
+		return $this->run_authorization_action( $request, 'cancel' );
+	}
+
+	/**
+	 * Run a capture or cancel request; an unexpected error is logged and answered as a 500 `wcpay_server_error`.
+	 *
+	 * Client 11.1.0 wraps both routes the same way (class-wc-rest-payments-orders-controller.php:434-436, :667-669).
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @param string          $action  Action name, capture or cancel.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	private function run_authorization_action( WP_REST_Request $request, string $action ) {
+		try {
+			return $this->handle_authorization_action( $request, $action );
+		} catch ( Throwable $exception ) {
+			wc_get_container()->get( WooPaymentsLogger::class )->log_throwable(
+				'capture' === $action ? 'Failed to capture an authorization via the REST API.' : 'Failed to cancel an authorization via the REST API.',
+				$exception,
+				array( 'order_id' => absint( $request->get_param( 'order_id' ) ) )
+			);
+
+			return new WP_Error( 'wcpay_server_error', __( 'Unexpected server error', 'woocommerce' ), array( 'status' => 500 ) );
+		}
+	}
+
+	/**
+	 * Handle capture/cancel authorization requests.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @param string          $action  Action name.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response|WP_Error
+	 */
+	private function handle_authorization_action( WP_REST_Request $request, string $action ) {
+		$order_id          = absint( $request->get_param( 'order_id' ) );
+		$payment_intent_id = (string) $request->get_param( 'payment_intent_id' );
+		$order             = wc_get_order( $order_id );
+
+		if ( ! $order instanceof WC_Order ) {
+			return new WP_Error( 'wcpay_missing_order', __( 'Order not found', 'woocommerce' ), array( 'status' => 404 ) );
+		}
+
+		if ( 0 < (float) $order->get_total_refunded() ) {
+			return new WP_Error(
+				'wcpay_refunded_order_uncapturable',
+				'capture' === $action
+					? __( 'Payment cannot be captured for partially or fully refunded orders.', 'woocommerce' )
+					: __( 'Payment cannot be canceled for partially or fully refunded orders.', 'woocommerce' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		if ( '' === $payment_intent_id || $payment_intent_id !== $this->get_order_intent_id( $order ) ) {
+			return new WP_Error(
+				'wcpay_intent_order_mismatch',
+				'capture' === $action ? __( 'The payment cannot be captured', 'woocommerce' ) : __( 'The payment cannot be canceled', 'woocommerce' ),
+				array( 'status' => 409 )
+			);
+		}
+
+		$live_intent = $this->validate_live_authorization_intent( $order, $payment_intent_id, $action );
+		if ( is_wp_error( $live_intent ) ) {
+			return $live_intent;
+		}
+
+		$this->add_fraud_outcome_manual_entry( $order, 'capture' === $action ? 'approve' : 'block' );
+
+		$outcome = 'capture' === $action
+			? $this->processing_service->capture( PaymentOperationContext::for_capture( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $this->provider )
+			: $this->processing_service->cancel( PaymentOperationContext::for_cancel( $order, WooPaymentsPersistenceVocabulary::GATEWAY_ID ), $this->provider );
+
+		// The merchant's audit entry is saved whatever the platform answered; client 11.1.0's capture and cancel also save the
+		// order on failure (`includes/class-wc-payment-gateway-wcpay.php:4043-4051,4129-4130`,
+		// `includes/class-wc-payments-order-service.php:2894`).
+		$order->save_meta_data();
+
+		if ( ! $this->is_expected_action_outcome( $outcome, $action ) ) {
+			return $this->authorization_action_error( $outcome, $action );
+		}
+
+		return new WP_REST_Response(
+			array(
+				'status' => 'capture' === $action ? 'succeeded' : 'canceled',
+				'id'     => '' !== $outcome->get_provider_payment_id() ? $outcome->get_provider_payment_id() : $payment_intent_id,
+			)
+		);
+	}
+
+	/**
+	 * Build a readable REST route definition.
+	 *
+	 * @param string $callback Callback method.
+	 * @return array<string,mixed>
+	 */
+	private function get_readable_route( string $callback ): array {
+		return array(
+			'methods'             => WP_REST_Server::READABLE,
+			'callback'            => array( $this, $callback ),
+			'permission_callback' => array( $this, 'has_permission' ),
+		);
+	}
+
+	/**
+	 * Build a creatable REST route definition.
+	 *
+	 * @param string $callback Callback method.
+	 * @return array<string,mixed>
+	 */
+	private function get_creatable_route( string $callback ): array {
+		return array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( $this, $callback ),
+			'permission_callback' => array( $this, 'has_permission' ),
+		);
+	}
+
+	/**
+	 * Build the capture route definition with its required intent ID. It takes no amount: the order total is captured, as on
+	 * the client (class-wc-rest-payments-orders-controller.php:106-119).
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_capture_route(): array {
+		$route         = $this->get_creatable_route( 'capture_authorization' );
+		$route['args'] = array(
+			'payment_intent_id' => array(
+				'required' => true,
+			),
+		);
+
+		return $route;
+	}
+
+	/**
+	 * Build the cancel route definition with its required intent ID.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_cancel_route(): array {
+		$route         = $this->get_creatable_route( 'cancel_authorization' );
+		$route['args'] = array(
+			'payment_intent_id' => array(
+				'required' => true,
+			),
+		);
+
+		return $route;
+	}
+
+	/**
+	 * Get the authorizations list params, with their alias params mapped, after the `wcpay_list_authorizations_request` filter
+	 * ran.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return array<string,mixed>
+	 */
+	private function get_filtered_list_params( WP_REST_Request $request ): array {
+		$params = array(
+			'page'                => max( 1, (int) ( $request->get_param( 'page' ) ?? 1 ) ),
+			'pagesize'            => max( 1, (int) ( $request->get_param( 'pagesize' ) ?? $request->get_param( 'per_page' ) ?? 25 ) ),
+			'sort'                => $this->normalize_sort( (string) ( $request->get_param( 'sort' ) ?? $request->get_param( 'orderby' ) ?? 'created' ) ),
+			'direction'           => $this->normalize_direction( (string) ( $request->get_param( 'direction' ) ?? $request->get_param( 'order' ) ?? 'desc' ) ),
+			'limit'               => 100,
+			'match'               => $request->get_param( 'match' ),
+			'order_id_is'         => $request->get_param( 'order_id_is' ) ?? $request->get_param( 'order_id' ),
+			'customer_email_is'   => $request->get_param( 'customer_email_is' ) ?? $request->get_param( 'customer_email' ),
+			'customer_country_is' => $request->get_param( 'customer_country_is' ),
+			'risk_level_is'       => $request->get_param( 'risk_level_is' ),
+			'source_is'           => $request->get_param( 'source_is' ) ?? $request->get_param( 'payment_method_type' ),
+			'date_before'         => $request->get_param( 'date_before' ),
+			'date_after'          => $request->get_param( 'date_after' ),
+			'date_between'        => $request->get_param( 'date_between' ),
+			'search'              => $request->get_param( 'search' ),
+		);
+
+		$params = array_filter(
+			$params,
+			static function ( $value ): bool {
+				return null !== $value && '' !== $value;
+			}
+		);
+
+		return $this->apply_authorizations_request_filter( $params );
+	}
+
+	/**
+	 * Apply the `wcpay_list_authorizations_request` filter to the list params.
+	 *
+	 * The filter runs here once, on the params this route built; the API client call passes `false` so it does not run
+	 * again.
+	 *
+	 * @param array<string,mixed> $params Request params.
+	 * @return array<string,mixed>
+	 * @throws WooPaymentsApiException When a filter callback returns no request.
+	 */
+	private function apply_authorizations_request_filter( array $params ): array {
+		$request = WooPaymentsAuthorizationsListRequest::from_params( $params );
+
+		return $request->get_filtered_request()->get_params();
+	}
+
+	/**
+	 * Normalize sort field.
+	 *
+	 * @param string $sort Sort field.
+	 * @return string
+	 */
+	private function normalize_sort( string $sort ): string {
+		return 'capture_by' === $sort ? 'created' : $sort;
+	}
+
+	/**
+	 * Validate the live PaymentIntent still belongs to this order and remains capturable.
+	 *
+	 * @param WC_Order $order             Order.
+	 * @param string   $payment_intent_id PaymentIntent ID.
+	 * @param string   $action            Action name.
+	 * @return array<string,mixed>|WP_Error
+	 * @throws WooPaymentsApiException When the intent read fails; the route's generic catch answers it, as the client's does (class-wc-rest-payments-orders-controller.php:389-391, :434-437).
+	 */
+	private function validate_live_authorization_intent( WC_Order $order, string $payment_intent_id, string $action ) {
+		$intent = $this->api_client->get_payment_intention( $payment_intent_id );
+
+		$metadata                 = isset( $intent['metadata'] ) && is_array( $intent['metadata'] ) ? $intent['metadata'] : array();
+		$intent_meta_order_id_raw = $metadata['order_id'] ?? '';
+		$intent_meta_order_id     = is_numeric( $intent_meta_order_id_raw ) ? absint( $intent_meta_order_id_raw ) : 0;
+
+		if ( $intent_meta_order_id !== $order->get_id() ) {
+			return new WP_Error(
+				'wcpay_intent_order_mismatch',
+				'capture' === $action ? __( 'The payment cannot be captured', 'woocommerce' ) : __( 'The payment cannot be canceled', 'woocommerce' ),
+				array( 'status' => 409 )
+			);
+		}
+
+		$status = isset( $intent['status'] ) && is_scalar( $intent['status'] ) ? (string) $intent['status'] : '';
+		if ( 'requires_capture' !== $status ) {
+			return new WP_Error(
+				'wcpay_payment_uncapturable',
+				'capture' === $action ? __( 'The payment cannot be captured', 'woocommerce' ) : __( 'The payment cannot be canceled', 'woocommerce' ),
+				array( 'status' => 409 )
+			);
+		}
+
+		return $intent;
+	}
+
+	/**
+	 * Normalize sort direction.
+	 *
+	 * @param string $direction Sort direction.
+	 * @return string
+	 */
+	private function normalize_direction( string $direction ): string {
+		return 'asc' === strtolower( $direction ) ? 'asc' : 'desc';
+	}
+
+	/**
+	 * Get the PaymentIntent id stored on an order.
+	 *
+	 * @param WC_Order $order Order.
+	 * @return string
+	 */
+	private function get_order_intent_id( WC_Order $order ): string {
+		$intent_id = (string) $order->get_transaction_id();
+		if ( '' === $intent_id ) {
+			$intent_id = (string) $order->get_meta( '_intent_id', true );
+		}
+
+		return $intent_id;
+	}
+
+	/**
+	 * Add a fraud outcome manual action entry to the order.
+	 *
+	 * @param WC_Order $order  Order.
+	 * @param string   $action Action name.
+	 */
+	private function add_fraud_outcome_manual_entry( WC_Order $order, string $action ): void {
+		$current_user = wp_get_current_user();
+		$order->add_meta_data(
+			'_wcpay_fraud_outcome_manual_entry',
+			array(
+				'type'     => 'fraud_outcome_manual_' . $action,
+				'user'     => array(
+					'id'       => $current_user->ID,
+					'username' => $current_user->user_login,
+				),
+				'action'   => 'block' === $action ? 'blocked' : 'approved',
+				'datetime' => time(),
+			)
+		);
+	}
+
+	/**
+	 * Tell whether an outcome matches the requested action success state.
+	 *
+	 * @param PaymentOutcome $outcome Outcome.
+	 * @param string         $action  Action name.
+	 * @return bool
+	 */
+	private function is_expected_action_outcome( PaymentOutcome $outcome, string $action ): bool {
+		return 'capture' === $action
+			? PaymentOutcome::STATUS_COMPLETED === $outcome->get_status()
+			: PaymentOutcome::STATUS_CANCELED === $outcome->get_status();
+	}
+
+	/**
+	 * Convert a failed capture or cancel to its REST error.
+	 *
+	 * Client 11.1.0 answers a failed capture with wcpay_capture_error, the escaped platform message, the minimum amount for
+	 * amount_too_small, the platform's status and the error type (class-wc-rest-payments-orders-controller.php:410-425,
+	 * class-wc-payment-gateway-wcpay.php:3991-4061), and a failed cancel with wcpay_cancel_error at 502 (:648-658).
+	 *
+	 * @param PaymentOutcome $outcome Outcome.
+	 * @param string         $action  Action name.
+	 * @return WP_Error
+	 */
+	private function authorization_action_error( PaymentOutcome $outcome, string $action ): WP_Error {
+		$data    = $outcome->get_data();
+		$message = isset( $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] ) ? (string) $data[ PaymentOutcome::DATA_ERROR_MESSAGE ] : '';
+
+		if ( 'cancel' === $action ) {
+			return new WP_Error(
+				'wcpay_cancel_error',
+				sprintf(
+					/* translators: %s: the error message. */
+					__( 'Payment cancel failed to complete with the following message: %s', 'woocommerce' ),
+					'' !== $message ? $message : __( 'Unknown error', 'woocommerce' )
+				),
+				array( 'status' => 502 )
+			);
+		}
+
+		$error_type    = isset( $data[ PaymentOutcome::DATA_ERROR_CODE ] ) && '' !== (string) $data[ PaymentOutcome::DATA_ERROR_CODE ] ? (string) $data[ PaymentOutcome::DATA_ERROR_CODE ] : null;
+		$http_code     = isset( $data['http_code'] ) ? (int) $data['http_code'] : 502;
+		$extra_details = isset( $data['extra_details'] ) && is_array( $data['extra_details'] ) ? $data['extra_details'] : array();
+		$message       = WooPaymentsIntentCodec::with_minimum_capture_amount( $message, $extra_details );
+
+		return new WP_Error(
+			'wcpay_capture_error',
+			sprintf(
+				/* translators: %s: the error message. */
+				__( 'Payment capture failed to complete with the following message: %s', 'woocommerce' ),
+				'' !== $message ? esc_html( $message ) : __( 'Unknown error', 'woocommerce' )
+			),
+			array(
+				// The client's $result['http_code'] ?? 502, which keeps a platform status of 0 (class-wc-rest-payments-orders-controller.php:419).
+				'status'        => '' !== $message ? $http_code : 502,
+				'extra_details' => $extra_details,
+				'error_type'    => $error_type,
+			)
+		);
+	}
+}

@@ -1,0 +1,4 @@
+Significance: patch
+Type: dev
+
+Centralize WooPayments admin runtime access behind injected collaborators.

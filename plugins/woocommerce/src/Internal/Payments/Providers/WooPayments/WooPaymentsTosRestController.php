@@ -1,0 +1,217 @@
+<?php
+/**
+ * WooPaymentsTosRestController class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
+use Automattic\WooCommerce\Internal\RestApiControllerBase;
+use Throwable;
+use WP_REST_Request;
+use WP_REST_Response;
+use WP_REST_Server;
+
+/**
+ * Records the merchant's answer to the WooPayments Terms of Service: accepting turns the gateway on and sends the
+ * agreement to the platform, declining turns it off, and the reactivate route turns it back on.
+ *
+ * A request without an answer gets a 400 and a failure a 500, with `result` set to `bad_request` or `error`.
+ *
+ * @since 11.0.0
+ * @internal
+ */
+class WooPaymentsTosRestController extends RestApiControllerBase {
+
+	private const ONBOARDING_STRIPE_CONNECTED_OPTION = '_wcpay_onboarding_stripe_connected';
+
+	private const RESULT_SUCCESS = 'success';
+
+	private const RESULT_BAD_REQUEST = 'bad_request';
+
+	private const RESULT_ERROR = 'error';
+
+	/**
+	 * WooPayments API client.
+	 *
+	 * @var WooPaymentsApiClient
+	 */
+	private WooPaymentsApiClient $api_client;
+
+	/**
+	 * WooPayments account service.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param WooPaymentsApiClient      $api_client      WooPayments API client.
+	 * @param WooPaymentsAccountService $account_service WooPayments account service.
+	 */
+	final public function init( WooPaymentsApiClient $api_client, WooPaymentsAccountService $account_service ): void {
+		$this->api_client      = $api_client;
+		$this->account_service = $account_service;
+	}
+
+	/**
+	 * Get this controller's key in WooCommerce's list of REST controllers.
+	 *
+	 * @return string
+	 */
+	protected function get_rest_api_namespace(): string {
+		return 'woopayments-tos';
+	}
+
+	/**
+	 * Register the Terms of Service routes.
+	 */
+	public function register_routes(): void {
+		register_rest_route( $this->route_namespace, '/payments/tos', $this->get_creatable_route( 'handle_tos' ) );
+		register_rest_route( $this->route_namespace, '/payments/tos/reactivate', $this->get_creatable_route( 'reactivate' ) );
+		register_rest_route( $this->route_namespace, '/payments/tos/stripe_track_connected', $this->get_creatable_route( 'remove_stripe_connect_track' ) );
+	}
+
+	/**
+	 * Check route permissions.
+	 *
+	 * @return bool
+	 */
+	public function has_permission(): bool {
+		return current_user_can( 'manage_woocommerce' );
+	}
+
+	/**
+	 * Record ToS acceptance or decline.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response
+	 */
+	public function handle_tos( WP_REST_Request $request ): WP_REST_Response {
+		$body = $request->get_json_params();
+		$body = is_array( $body ) ? $body : array();
+
+		try {
+			// A null accept counts as missing, as in client 11.1.0 (includes/admin/class-wc-rest-payments-tos-controller.php:108).
+			if ( ! isset( $body['accept'] ) ) {
+				return $this->result_response( self::RESULT_BAD_REQUEST, 400 );
+			}
+
+			if ( (bool) $body['accept'] ) {
+				$this->handle_tos_accepted();
+			} else {
+				$this->set_gateway_enabled( false );
+			}
+		} catch ( Throwable $exception ) {
+			$this->log_exception( 'Failed to handle WooPayments Terms of Service request.', $exception );
+
+			return $this->result_response( self::RESULT_ERROR, 500 );
+		}
+
+		return $this->result_response( self::RESULT_SUCCESS );
+	}
+
+	/**
+	 * Re-enable the gateway after a ToS decline.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response
+	 */
+	public function reactivate( WP_REST_Request $request ): WP_REST_Response {
+		unset( $request );
+
+		try {
+			$this->set_gateway_enabled( true );
+		} catch ( Throwable $exception ) {
+			$this->log_exception( 'Failed to reactivate WooPayments after Terms of Service decline.', $exception );
+
+			return $this->result_response( self::RESULT_ERROR, 500 );
+		}
+
+		return $this->result_response( self::RESULT_SUCCESS );
+	}
+
+	/**
+	 * Clear Stripe connection tracking after it has been recorded.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @phpstan-param WP_REST_Request<array<string,mixed>> $request
+	 * @return WP_REST_Response
+	 */
+	public function remove_stripe_connect_track( WP_REST_Request $request ): WP_REST_Response {
+		unset( $request );
+
+		delete_option( self::ONBOARDING_STRIPE_CONNECTED_OPTION );
+
+		return $this->result_response( self::RESULT_SUCCESS );
+	}
+
+	/**
+	 * Process ToS acceptance.
+	 */
+	private function handle_tos_accepted(): void {
+		$this->set_gateway_enabled( true );
+
+		$current_user = wp_get_current_user();
+		$this->api_client->add_account_tos_agreement( 'settings-popup', $current_user->user_login );
+		$this->account_service->refresh_account_data();
+	}
+
+	/**
+	 * Turn the WooPayments gateway on or off in its stored settings.
+	 *
+	 * @param bool $enabled Whether the gateway should be enabled.
+	 */
+	private function set_gateway_enabled( bool $enabled ): void {
+		$settings = get_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array() );
+		$settings = is_array( $settings ) ? $settings : array();
+
+		$settings['enabled'] = $enabled ? 'yes' : 'no';
+
+		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, $settings );
+	}
+
+	/**
+	 * Get a creatable route definition.
+	 *
+	 * @param string $callback Callback method.
+	 * @return array<string,mixed>
+	 */
+	private function get_creatable_route( string $callback ): array {
+		return array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( $this, $callback ),
+			'permission_callback' => array( $this, 'has_permission' ),
+		);
+	}
+
+	/**
+	 * Build a result response.
+	 *
+	 * @param string $result Result code.
+	 * @param int    $status HTTP status.
+	 * @return WP_REST_Response
+	 */
+	private function result_response( string $result, int $status = 200 ): WP_REST_Response {
+		return new WP_REST_Response( array( 'result' => $result ), $status );
+	}
+
+	/**
+	 * Log a ToS route exception with its class, code, trace and, for a platform error, its status and code; never its
+	 * message, which the platform writes when the agreement call fails.
+	 *
+	 * @param string    $message   Log message.
+	 * @param Throwable $exception Exception.
+	 */
+	private function log_exception( string $message, Throwable $exception ): void {
+		wc_get_container()->get( WooPaymentsLogger::class )->log_throwable( $message, $exception );
+	}
+}

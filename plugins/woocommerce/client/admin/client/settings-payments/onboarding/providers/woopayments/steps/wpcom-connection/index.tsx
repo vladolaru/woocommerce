@@ -20,6 +20,12 @@ export const JetpackStep: React.FC = () => {
 		useOnboardingContext();
 	const [ isConnectButtonLoading, setIsConnectButtonLoading ] =
 		useState( false );
+	// Sent with this step by WooPaymentsService::get_wpcom_connection_state().
+	const connectionState = currentStep?.context?.connection_state;
+	// A store still connected to WordPress.com whose authorizing account is no longer linked only needs that account linked again.
+	const isOwnerless =
+		!! connectionState?.is_store_connected &&
+		! connectionState?.has_connected_owner;
 
 	return (
 		<>
@@ -46,13 +52,20 @@ export const JetpackStep: React.FC = () => {
 			<div className="settings-payments-onboarding-modal__step--content">
 				<div className="settings-payments-onboarding-modal__step--content-jetpack">
 					<h1 className="settings-payments-onboarding-modal__step--content-jetpack-title">
-						{ __( 'Connect to WordPress.com', 'woocommerce' ) }
+						{ isOwnerless
+							? __( 'Reconnect to WordPress.com', 'woocommerce' )
+							: __( 'Connect to WordPress.com', 'woocommerce' ) }
 					</h1>
 					<p className="settings-payments-onboarding-modal__step--content-jetpack-description">
-						{ __(
-							'You’ll be briefly redirected to connect your store to your WordPress.com account and unlock the full features and functionality of WooPayments',
-							'woocommerce'
-						) }
+						{ isOwnerless
+							? __(
+									'Your store is connected to WordPress.com, but the account that authorized it is no longer linked. Reconnect to restore WooPayments.',
+									'woocommerce'
+							  )
+							: __(
+									'You’ll be briefly redirected to connect your store to your WordPress.com account and unlock the full features and functionality of WooPayments',
+									'woocommerce'
+							  ) }
 					</p>
 					<Button
 						variant="primary"
@@ -90,7 +103,9 @@ export const JetpackStep: React.FC = () => {
 								currentStep?.actions?.auth?.href ?? '';
 						} }
 					>
-						{ __( 'Connect', 'woocommerce' ) }
+						{ isOwnerless
+							? __( 'Reconnect', 'woocommerce' )
+							: __( 'Connect', 'woocommerce' ) }
 					</Button>
 				</div>
 			</div>

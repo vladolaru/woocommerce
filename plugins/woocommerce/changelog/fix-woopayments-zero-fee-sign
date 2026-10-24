@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show a zero WooPayments fee as $0.00 instead of -$0.00 on the transactions and payout details lists.

@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the fetched exchange rate and when it was last updated in the multi-currency currency settings.

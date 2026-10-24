@@ -34,6 +34,7 @@ use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\EmailEditor\WCTransactionalEmails\WCEmailPostsCleanup;
 use Automattic\WooCommerce\Internal\EmailEditor\WCTransactionalEmails\WCEmailTemplateSyncBackfill;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\ProductAttributesLookup\DataRegenerator;
 use Automattic\WooCommerce\Internal\ProductAttributesLookup\LookupDataStore;
 use Automattic\WooCommerce\Internal\ProductDownloads\ApprovedDirectories\Register as Download_Directories;
@@ -3799,4 +3800,15 @@ function wc_update_11202_reset_refund_returning_customer_markers() {
 	wc_update_11201_invalidate_analytics_reports_cache();
 
 	return false;
+}
+
+/**
+ * Seed the independent core multi-currency feature from prior WooPayments use.
+ *
+ * @since 11.2.0
+ *
+ * @return void
+ */
+function wc_update_11204_seed_multi_currency_feature(): void {
+	MultiCurrencyFeatureController::seed_from_prior_use();
 }

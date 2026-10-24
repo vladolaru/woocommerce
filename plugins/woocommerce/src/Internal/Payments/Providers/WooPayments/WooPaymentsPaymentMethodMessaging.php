@@ -1,0 +1,615 @@
+<?php
+/**
+ * WooPaymentsPaymentMethodMessaging class file.
+ */
+
+declare( strict_types = 1 );
+
+namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
+
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
+use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\Jetpack\Constants;
+use WC_AJAX;
+use WC_Product;
+
+/**
+ * Shows the buy now, pay later message (Stripe's payment method messaging element) on product and cart pages, and
+ * answers its cart total and availability AJAX calls.
+ *
+ * No message shows for a subscription product or a cart with a subscription.
+ *
+ * @since 11.0.0
+ * @internal
+ */
+class WooPaymentsPaymentMethodMessaging implements RegisterHooksInterface {
+
+	private const SCRIPT_HANDLE = 'wc-woopayments-payment-method-messaging';
+
+	private const CART_BLOCK_SCRIPT_HANDLE = 'wc-woopayments-cart-block-payment-method-messaging';
+
+	private const STYLE_HANDLE = 'wc-woopayments-payment-method-messaging';
+
+	private const CART_BLOCK_STYLE_HANDLE = 'wc-woopayments-cart-block-payment-method-messaging';
+
+	private const BNPL_CAPABILITY = 'buy_now_pay_later';
+
+	/**
+	 * WooPayments account service.
+	 *
+	 * @var WooPaymentsAccountService
+	 */
+	private WooPaymentsAccountService $account_service;
+
+	/**
+	 * WooPayments payment method definition registry.
+	 *
+	 * @var WooPaymentsPaymentMethodRegistry
+	 */
+	private WooPaymentsPaymentMethodRegistry $payment_method_registry;
+
+	/**
+	 * Shared frontend styles service.
+	 *
+	 * @var WooPaymentsFrontendStylesService|null
+	 */
+	private ?WooPaymentsFrontendStylesService $frontend_styles_service = null;
+
+	/**
+	 * Cached messaging eligibility for the current request.
+	 *
+	 * @var bool|null
+	 */
+	private ?bool $messaging_eligible = null;
+
+	/**
+	 * Cached active BNPL payment method IDs for the current request.
+	 *
+	 * @var string[]|null
+	 */
+	private ?array $active_bnpl_payment_method_ids = null;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param WooPaymentsAccountService             $account_service         WooPayments account service.
+	 * @param WooPaymentsPaymentMethodRegistry      $payment_method_registry WooPayments payment method registry.
+	 * @param WooPaymentsFrontendStylesService|null $frontend_styles_service Optional shared frontend styles service.
+	 */
+	final public function init(
+		WooPaymentsAccountService $account_service,
+		WooPaymentsPaymentMethodRegistry $payment_method_registry,
+		?WooPaymentsFrontendStylesService $frontend_styles_service = null
+	): void {
+		$this->account_service         = $account_service;
+		$this->payment_method_registry = $payment_method_registry;
+		$this->frontend_styles_service = $frontend_styles_service;
+	}
+
+	/**
+	 * Register BNPL payment method messaging hooks.
+	 */
+	public function register() {
+		add_action( 'woocommerce_single_product_summary', array( $this, 'render_site_messaging' ) );
+
+		add_action( 'woocommerce_proceed_to_checkout', array( $this, 'render_site_messaging' ), 5 );
+
+		add_action( 'woocommerce_blocks_enqueue_cart_block_scripts_after', array( $this, 'render_site_messaging' ) );
+
+		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_site_messaging_style' ) );
+
+		add_action( 'wc_ajax_wcpay_get_cart_total', array( $this, 'handle_get_cart_total' ) );
+
+		add_action( 'wc_ajax_wcpay_check_bnpl_availability', array( $this, 'handle_check_bnpl_availability' ) );
+	}
+
+	/**
+	 * Render the BNPL messaging placeholder and enqueue its config.
+	 *
+	 * @internal
+	 */
+	public function render_site_messaging(): void {
+		if ( ! $this->is_supported_surface() || ! $this->is_messaging_eligible() ) {
+			return;
+		}
+
+		$is_cart_block = $this->is_cart_block_surface();
+		$this->enqueue_site_messaging_config( $is_cart_block );
+
+		if ( ! $is_cart_block ) {
+			echo '<div id="payment-method-message"></div>';
+		}
+	}
+
+	/**
+	 * Enqueue the BNPL messaging stylesheet early, so it prints in the head and sizes the placeholder from first paint.
+	 *
+	 * Classic themes only: block themes render the template before `wp_head`, so the render-time enqueue already prints in the head.
+	 * Client 11.1.0 enqueues it at render time on every theme (includes/class-wc-payments-payment-method-messaging-element.php:137-142).
+	 *
+	 * @internal
+	 */
+	public function enqueue_site_messaging_style(): void {
+		if ( wp_is_block_theme() || ! $this->is_supported_surface() || ! $this->is_messaging_eligible() ) {
+			return;
+		}
+
+		$is_cart_block = is_cart() && has_block( 'woocommerce/cart' );
+		$this->register_site_messaging_assets( $is_cart_block );
+		wp_enqueue_style( $is_cart_block ? self::CART_BLOCK_STYLE_HANDLE : self::STYLE_HANDLE );
+	}
+
+	/**
+	 * Answer the messaging element's cart total AJAX call.
+	 *
+	 * @internal
+	 */
+	public function handle_get_cart_total(): void {
+		if ( ! $this->is_messaging_eligible() ) {
+			return;
+		}
+
+		check_ajax_referer( 'wcpay-get-cart-total', 'security' );
+
+		// Recalculate before answering so the widget never receives a stale session figure.
+		wc_maybe_define_constant( 'WOOCOMMERCE_CART', true );
+		wc_maybe_define_constant( 'WOOCOMMERCE_CHECKOUT', true );
+		WC()->cart->calculate_totals();
+
+		wp_send_json( $this->get_cart_total_response() );
+	}
+
+	/**
+	 * Answer the messaging element's availability AJAX call.
+	 *
+	 * @internal
+	 */
+	public function handle_check_bnpl_availability(): void {
+		if ( ! $this->is_messaging_eligible() ) {
+			return;
+		}
+
+		check_ajax_referer( 'wcpay-is-bnpl-available', 'security' );
+
+		$response = $this->get_bnpl_availability_response( wp_unslash( $_POST ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+
+		wp_send_json_success( $response['data'] );
+	}
+
+	/**
+	 * Get the availability answer: whether an enabled buy now, pay later method's amount limits for the currency and
+	 * country include the price.
+	 *
+	 * @param array<string,mixed> $request Request data.
+	 * @return array{success:bool,data:array{is_available:bool}}
+	 */
+	public function get_bnpl_availability_response( array $request ): array {
+		$price    = isset( $request['price'] ) && is_scalar( $request['price'] ) ? (float) $request['price'] : 0.0;
+		$currency = isset( $request['currency'] ) && is_scalar( $request['currency'] ) ? strtoupper( sanitize_text_field( (string) $request['currency'] ) ) : '';
+		$country  = isset( $request['country'] ) && is_scalar( $request['country'] ) ? strtoupper( sanitize_text_field( (string) $request['country'] ) ) : '';
+
+		return array(
+			'success' => true,
+			'data'    => array(
+				'is_available' => $this->is_any_bnpl_method_available( $this->get_active_bnpl_payment_method_ids(), $country, $currency, $price ),
+			),
+		);
+	}
+
+	/**
+	 * Get the cart total AJAX response.
+	 *
+	 * @return array{total:int}
+	 */
+	public function get_cart_total_response(): array {
+		return array(
+			'total' => $this->get_cart_total(),
+		);
+	}
+
+	/**
+	 * Enqueue the BNPL messaging config.
+	 *
+	 * @param bool $is_cart_block Whether the current surface is the cart block.
+	 */
+	private function enqueue_site_messaging_config( bool $is_cart_block ): void {
+		$this->register_site_messaging_assets( $is_cart_block );
+
+		$script_handle = $is_cart_block ? self::CART_BLOCK_SCRIPT_HANDLE : self::SCRIPT_HANDLE;
+		$style_handle  = $is_cart_block ? self::CART_BLOCK_STYLE_HANDLE : self::STYLE_HANDLE;
+
+		wp_localize_script(
+			$script_handle,
+			'wcpayStripeSiteMessaging',
+			$this->get_site_messaging_config( $is_cart_block )
+		);
+
+		wp_enqueue_script( $script_handle );
+		wp_enqueue_style( $style_handle );
+	}
+
+	/**
+	 * Get BNPL messaging frontend config.
+	 *
+	 * @param bool $is_cart_block Whether the current surface is the cart block.
+	 * @return array<string,mixed>
+	 */
+	private function get_site_messaging_config( bool $is_cart_block ): array {
+		$product            = $this->get_current_product();
+		$currency_code      = get_woocommerce_currency();
+		$country            = $this->get_customer_or_store_country();
+		$product_variations = array();
+		$product_price      = 0;
+		$is_product_surface = $product instanceof WC_Product || is_product();
+
+		if ( $product instanceof WC_Product ) {
+			$product_variations = $this->get_product_variations( $product, $currency_code );
+			$product_price      = $product_variations['base_product']['amount'];
+		}
+
+		$payment_methods = $this->get_active_bnpl_payment_method_ids();
+
+		$config = array(
+			'productId'            => 'base_product',
+			'productVariations'    => $product_variations,
+			'country'              => $country,
+			'locale'               => WooPaymentsLocaleUtils::get_stripe_locale(),
+			'accountId'            => $this->account_service->get_account_id(),
+			'publishableKey'       => $this->account_service->get_publishable_key(),
+			'paymentMethods'       => array_values( $payment_methods ),
+			'currencyCode'         => $currency_code,
+			'isCart'               => ! $is_product_surface && is_cart(),
+			'isCartBlock'          => $is_cart_block,
+			'cartTotal'            => $this->get_cart_total(),
+			'nonce'                => array(
+				'get_cart_total'    => wp_create_nonce( 'wcpay-get-cart-total' ),
+				'is_bnpl_available' => wp_create_nonce( 'wcpay-is-bnpl-available' ),
+			),
+			'wcAjaxUrl'            => WC_AJAX::get_endpoint( '%%endpoint%%' ),
+			'shouldInitializePMME' => $this->is_any_bnpl_supporting_country( $payment_methods, $country, $currency_code ),
+			'stylesCacheVersion'   => $this->get_frontend_styles_service()->get_or_create_styles_cache_version(),
+		);
+
+		if ( $product instanceof WC_Product ) {
+			$config['shouldShowPMME'] = $this->is_any_bnpl_method_available( $payment_methods, $country, $currency_code, $product_price );
+		}
+
+		return $config;
+	}
+
+	/**
+	 * Register the script handles required for BNPL messaging config.
+	 *
+	 * @param bool $is_cart_block Whether the current surface is the cart block.
+	 */
+	private function register_site_messaging_assets( bool $is_cart_block ): void {
+		WooPaymentsFrontendAssets::register_stripe_script();
+
+		if ( $is_cart_block ) {
+			$this->register_cart_block_assets();
+			return;
+		}
+
+		$suffix = Constants::is_true( 'SCRIPT_DEBUG' ) ? '' : '.min';
+
+		WooPaymentsFrontendAssets::register_appearance_script();
+
+		if ( ! wp_script_is( self::SCRIPT_HANDLE, 'registered' ) ) {
+			wp_register_script(
+				self::SCRIPT_HANDLE,
+				WC()->plugin_url() . '/assets/js/frontend/woopayments-payment-method-messaging' . $suffix . '.js',
+				array( 'jquery', WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE, WooPaymentsFrontendAssets::APPEARANCE_SCRIPT_HANDLE ),
+				WC_VERSION,
+				true
+			);
+		}
+
+		if ( ! wp_style_is( self::STYLE_HANDLE, 'registered' ) ) {
+			wp_register_style(
+				self::STYLE_HANDLE,
+				WC()->plugin_url() . '/assets/css/woopayments-payment-method-messaging.css',
+				array(),
+				WC_VERSION
+			);
+			wp_style_add_data( self::STYLE_HANDLE, 'rtl', 'replace' );
+		}
+	}
+
+	/**
+	 * Register the Blocks cart BNPL messaging slotfill assets.
+	 */
+	private function register_cart_block_assets(): void {
+		if ( ! wp_script_is( self::CART_BLOCK_SCRIPT_HANDLE, 'registered' ) ) {
+			wp_register_script(
+				self::CART_BLOCK_SCRIPT_HANDLE,
+				WC()->plugin_url() . '/assets/client/blocks/wc-woopayments-cart-block-payment-method-messaging.js',
+				array(
+					WooPaymentsFrontendAssets::STRIPE_SCRIPT_HANDLE,
+					'react-jsx-runtime',
+					'wc-blocks-checkout',
+					'wp-data',
+					'wp-element',
+					'wp-plugins',
+					'wp-polyfill',
+				),
+				WC_VERSION,
+				true
+			);
+		}
+
+		if ( ! wp_style_is( self::CART_BLOCK_STYLE_HANDLE, 'registered' ) ) {
+			wp_register_style(
+				self::CART_BLOCK_STYLE_HANDLE,
+				WC()->plugin_url() . '/assets/client/blocks/wc-woopayments-cart-block-payment-method-messaging.css',
+				array(),
+				WC_VERSION
+			);
+			wp_style_add_data( self::CART_BLOCK_STYLE_HANDLE, 'rtl', 'replace' );
+		}
+	}
+
+	/**
+	 * Get the shared frontend styles service.
+	 *
+	 * @return WooPaymentsFrontendStylesService
+	 */
+	private function get_frontend_styles_service(): WooPaymentsFrontendStylesService {
+		if ( null === $this->frontend_styles_service ) {
+			$this->frontend_styles_service = wc_get_container()->get( WooPaymentsFrontendStylesService::class );
+		}
+
+		return $this->frontend_styles_service;
+	}
+
+	/**
+	 * Tell whether the current request can show BNPL messaging.
+	 *
+	 * @return bool
+	 */
+	private function is_supported_surface(): bool {
+		$is_surface = is_product() || is_cart() || $this->is_cart_block_surface();
+
+		return $is_surface && ! $this->is_subscription_surface();
+	}
+
+	/**
+	 * Tell whether the request shows a subscription product or a cart with a subscription.
+	 *
+	 * Client 11.1.0 shows no BNPL messaging there (includes/class-wc-payments.php:2061-2073).
+	 *
+	 * @return bool
+	 */
+	private function is_subscription_surface(): bool {
+		$product = $this->get_current_product();
+		if ( null === $product && is_product() ) {
+			// The global product is set only inside the loop; callers that run earlier read the queried product.
+			$product = wc_get_product( get_queried_object_id() );
+		}
+		if ( $product instanceof WC_Product && class_exists( 'WC_Subscriptions_Product' ) && \WC_Subscriptions_Product::is_subscription( $product ) ) {
+			return true;
+		}
+
+		return is_cart()
+			&& class_exists( 'WC_Subscriptions_Cart' ) && \WC_Subscriptions_Cart::cart_contains_subscription();
+	}
+
+	/**
+	 * Tell whether the current hook is the cart-block messaging surface.
+	 *
+	 * @return bool
+	 */
+	private function is_cart_block_surface(): bool {
+		return 'woocommerce_blocks_enqueue_cart_block_scripts_after' === current_filter();
+	}
+
+	/**
+	 * Get the current product.
+	 *
+	 * @return WC_Product|null
+	 */
+	private function get_current_product(): ?WC_Product {
+		$product = $GLOBALS['product'] ?? null;
+
+		return $product instanceof WC_Product ? $product : null;
+	}
+
+	/**
+	 * Get product and variation amounts in provider minor units.
+	 *
+	 * @param WC_Product $product  Product object.
+	 * @param string     $currency Currency code.
+	 * @return array<array-key,array{amount:int,currency:string}>
+	 */
+	private function get_product_variations( WC_Product $product, string $currency ): array {
+		$product_variations = array(
+			'base_product' => array(
+				'amount'   => WooPaymentsCurrencyUtils::amount_to_minor_units( $this->get_product_price( $product ), $currency ),
+				'currency' => $currency,
+			),
+		);
+
+		$variation_ids = $product->get_children();
+		if ( ! empty( $variation_ids ) ) {
+			// Load the variations' posts and meta in one go instead of once per variation below.
+			_prime_post_caches( $variation_ids );
+		}
+
+		foreach ( $variation_ids as $variation_id ) {
+			$variation = wc_get_product( $variation_id );
+			if ( $variation instanceof WC_Product ) {
+				$product_variations[ (string) $variation_id ] = array(
+					'amount'   => WooPaymentsCurrencyUtils::amount_to_minor_units( $this->get_product_price( $variation ), $currency ),
+					'currency' => $currency,
+				);
+			}
+		}
+
+		return $product_variations;
+	}
+
+	/**
+	 * Get a product price matching the shop tax display context.
+	 *
+	 * @param WC_Product $product Product object.
+	 * @return float
+	 */
+	private function get_product_price( WC_Product $product ): float {
+		if ( wc_tax_enabled() && $product->is_taxable() ) {
+			if (
+				wc_prices_include_tax()
+				&& ( 'incl' !== get_option( 'woocommerce_tax_display_shop' ) || ( WC()->customer && WC()->customer->get_is_vat_exempt() ) )
+			) {
+				return (float) wc_get_price_excluding_tax( $product );
+			}
+
+			if ( 'incl' === get_option( 'woocommerce_tax_display_shop' ) && ! ( WC()->customer && WC()->customer->get_is_vat_exempt() ) ) {
+				return (float) wc_get_price_including_tax( $product );
+			}
+		}
+
+		return (float) $product->get_price();
+	}
+
+	/**
+	 * Tell whether messaging can be shown for this request.
+	 *
+	 * @return bool
+	 */
+	private function is_messaging_eligible(): bool {
+		if ( null !== $this->messaging_eligible ) {
+			return $this->messaging_eligible;
+		}
+
+		$this->messaging_eligible = $this->account_service->is_gateway_enabled()
+			&& $this->account_service->can_process_payments()
+			&& ! empty( $this->get_active_bnpl_payment_method_ids() );
+
+		return $this->messaging_eligible;
+	}
+
+	/**
+	 * Get active enabled BNPL payment method IDs.
+	 *
+	 * @return string[]
+	 */
+	private function get_active_bnpl_payment_method_ids(): array {
+		if ( null !== $this->active_bnpl_payment_method_ids ) {
+			return $this->active_bnpl_payment_method_ids;
+		}
+
+		$enabled_payment_methods = $this->account_service->get_gateway_setting( 'upe_enabled_payment_method_ids', array( 'card' ) );
+		if ( ! is_array( $enabled_payment_methods ) ) {
+			$this->active_bnpl_payment_method_ids = array();
+
+			return $this->active_bnpl_payment_method_ids;
+		}
+
+		$enabled_payment_methods = array_map( 'strval', $enabled_payment_methods );
+		$active_bnpl_methods     = array();
+
+		foreach ( $enabled_payment_methods as $payment_method_id ) {
+			$definition = $this->payment_method_registry->get( $payment_method_id );
+			if ( ! $definition instanceof WooPaymentsPaymentMethodDefinition ) {
+				continue;
+			}
+
+			if ( ! in_array( self::BNPL_CAPABILITY, $definition->get_capabilities(), true ) ) {
+				continue;
+			}
+
+			if ( ! $this->account_service->is_capability_active( $definition->get_account_capability_key() ) ) {
+				continue;
+			}
+
+			$active_bnpl_methods[] = $definition->get_id();
+		}
+
+		$this->active_bnpl_payment_method_ids = array_values( array_unique( $active_bnpl_methods ) );
+
+		return $this->active_bnpl_payment_method_ids;
+	}
+
+	/**
+	 * Tell whether any enabled BNPL method supports the country/currency pair.
+	 *
+	 * @param string[] $enabled_methods Enabled BNPL method IDs.
+	 * @param string   $country         Country code.
+	 * @param string   $currency        Currency code.
+	 * @return bool
+	 */
+	private function is_any_bnpl_supporting_country( array $enabled_methods, string $country, string $currency ): bool {
+		foreach ( $enabled_methods as $method ) {
+			$definition = $this->payment_method_registry->get( $method );
+			if ( ! $definition instanceof WooPaymentsPaymentMethodDefinition ) {
+				continue;
+			}
+
+			$limits = $definition->get_limits_per_currency();
+			if ( isset( $limits[ strtoupper( $currency ) ][ strtoupper( $country ) ] ) ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Tell whether any enabled BNPL method supports the requested amount.
+	 *
+	 * @param string[] $enabled_methods Enabled BNPL method IDs.
+	 * @param string   $country         Country code.
+	 * @param string   $currency        Currency code.
+	 * @param float    $price           Price in provider minor units.
+	 * @return bool
+	 */
+	private function is_any_bnpl_method_available( array $enabled_methods, string $country, string $currency, float $price ): bool {
+		foreach ( $enabled_methods as $method ) {
+			$definition = $this->payment_method_registry->get( $method );
+			if ( ! $definition instanceof WooPaymentsPaymentMethodDefinition ) {
+				continue;
+			}
+
+			$minimum_amount = $definition->get_minimum_amount( $currency, $country );
+			$maximum_amount = $definition->get_maximum_amount( $currency, $country );
+			if ( null !== $minimum_amount && null !== $maximum_amount && $price >= $minimum_amount && $price <= $maximum_amount ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Get the customer billing country or store base country.
+	 *
+	 * @return string
+	 */
+	private function get_customer_or_store_country(): string {
+		$billing_country = WC()->customer ? WC()->customer->get_billing_country() : '';
+
+		if ( '' !== $billing_country ) {
+			return strtoupper( $billing_country );
+		}
+
+		// The getter ends in the woocommerce_countries_base_country filter, which can return a non-string.
+		$base_country = WC()->countries->get_base_country();
+
+		return is_string( $base_country ) ? strtoupper( $base_country ) : '';
+	}
+
+	/**
+	 * Get the current cart total in provider minor units.
+	 *
+	 * @return int
+	 */
+	private function get_cart_total(): int {
+		if ( ! WC()->cart ) {
+			return 0;
+		}
+
+		return WooPaymentsCurrencyUtils::amount_to_minor_units( (float) WC()->cart->get_total( 'edit' ), get_woocommerce_currency() );
+	}
+}

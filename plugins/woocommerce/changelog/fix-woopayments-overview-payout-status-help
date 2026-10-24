@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+The WooPayments payout status help icon on the Overview sits right after the status, at the client's larger size.

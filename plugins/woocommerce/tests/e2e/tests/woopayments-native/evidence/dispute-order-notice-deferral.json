@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "dispute-order-notice-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "e1a78e2788ad32bb7adccbe87ed3b9d6e8f71057",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-disputes-view-details-via-order-notice.spec.ts:40::Disputes › View dispute details via disputed order notice › should navigate to dispute details when disputed order notice button clicked"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/scenarios/transaction-navigation.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved the exact line-40 blocked-environment deferral and four-field-only transition, strict order-discovery boundary, full run-owned payment and dispute identities, exact amount, currency, reason, and event, durable order-to-dispute correlation, semantic affected-order notice and response action, exact correlated dispute detail with unauthorized explanation, explicit supported-version execution or reported unsupported skip replacing silent success, narrow non-claims, pending target and owner, readiness plus later fixture, oracle, listener, lock, journal, retry, retention, cleanup, and quarantine gates, lower-layer non-substitution, shared transaction-navigation target drift, predecessor and calibration binding, and zero current quarantine."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing exact-store, account, callback, and native-ownership readiness fails first. The run also lacks an approved supported-version matrix; a resolved exact target contract, owner, and row-safe closure-bundle topology; deterministic checkout/dispute provisioning and an exact order-dispute-provider correlation oracle; one exclusively owned listener; account, store, provider-write, and record-event ownership; separate durable checkout and dispute-event/discovery journals; bounded reads; and approved retained-record cleanup.",
+		"affected_scope": "Only line 40 order-to-dispute discovery: one fresh run-owned product, shopper, order, credential, provider customer, payment intent, charge, payment method, dispute, and native transaction chain proves exactly one captured payment and one fraudulent unauthorized dispute with exact amount, currency, reason, identities, and one correlated dispute-created event; on the exact affected historical order an authorized merchant sees a semantic actionable dispute notice, activates its response action, and reaches the exact correlated dispute detail where the unauthorized claim and enough detail to respond are discoverable. It claims no UI amount, status, deadline, provider ID, response decision, evidence submission, acceptance, list behavior, or terminal outcome and no plugin route, placement, copy, CSS, or layout.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair native readiness, approve the version matrix or deterministic fixture/oracle, resolve row-safe target ownership, obtain exclusive listener attribution, or establish locks, journals, bounded reads, retention, and cleanup. Lower event-handler, response-enrichment, and mocked UI tests do not assemble checkout, provider event, exact order association, notice, and detail navigation. The frozen missing-container early return is a false pass: supported versions must execute the oracle and unsupported historical versions must report an explicit skip. Any apparent native discovery gap is not known until prerequisites pass and an exact target yields an anchored RED.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide successful exact-store/account/callback native readiness; approve the supported-version matrix; resolve a row-safe target and owner; approve deterministic checkout/dispute provisioning and an exact order-dispute-provider oracle plus retained-record policy; obtain one exclusively owned listener; then run once with one worker and zero retries under account, store, provider-write, and record-event locks, separate checkout and dispute-event/discovery journals, exact identities, amount, currency, reason, event, order notice, response navigation, and correlated detail evidence, bounded reads, cleanup, and fail-closed quarantine. Prefer a row-specific target or plan explicit reopen/re-closure for later shared transaction-navigation edits.",
+		"quarantine_status": "This deferral allocated and mutated nothing, acquired no lock, opened no provider-write or restoration journal, performed no browser or provider run, consumed no provider capacity, and created no quarantine. The separately owned listener remains untouched and cannot provide exclusive attribution. Any uncertain eventual checkout, event, correlation, discovery, navigation, cleanup, listener, lock, or journal state must quarantine affected resources and must not be replayed."
+	}
+}

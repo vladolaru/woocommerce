@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Re-evaluate WooPayments incentive eligibility after a WooPayments account reset.

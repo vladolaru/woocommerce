@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+Show the Test mode heading above the Enable test mode checkbox in WooPayments settings, as the WooPayments plugin does.

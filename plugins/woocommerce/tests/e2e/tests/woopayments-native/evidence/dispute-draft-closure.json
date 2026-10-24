@@ -1,0 +1,74 @@
+{
+	"schema_version": 2,
+	"slice_id": "dispute-draft-closure",
+	"wc_base_commit": "1a4c8f6fb9e984f412144f29c080ef22fa68da23",
+	"verified_at_commit": "1a4c8f6fb9e984f412144f29c080ef22fa68da23",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/dispute-draft.spec.ts"
+	],
+	"source_test_sha256": "c6a076dd9f1d0fa00d8e123837508f3a86b87886df888c1e7d988cd700bbca59",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/wcpay/merchant/merchant-disputes-respond.spec.ts:497::Disputes › Respond to a dispute › Save a dispute challenge without submitting evidence"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/dispute-draft.spec.ts",
+			"contract": "one acknowledged dispute draft write survives navigation and read-only re-entry without submission or replay"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [
+		{
+			"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep='one acknowledged dispute draft write survives navigation and read-only re-entry without submission or replay' tests/e2e/tests/woopayments-native/merchant/dispute-draft.spec.ts",
+			"exit_code": 0,
+			"summary": "The exact provider-backed contract passed 1/1 in 51.7 seconds with a 50.6-second test body. The run's reporter emitted ctrf-report-1786643545056.json, and the observed result was transcribed into this durable packet before later Playwright runs replaced the ephemeral report file. The exclusively owned listener remained PID 51722 and ended with q=0 and a=0."
+		}
+	],
+	"reviews": [
+		{
+			"role": "semantic",
+			"verdict": "APPROVE",
+			"source_test_sha256": "c6a076dd9f1d0fa00d8e123837508f3a86b87886df888c1e7d988cd700bbca59",
+			"summary": "The native test preserves the current-client merchant contract and migration continuity: one acknowledged submit=false draft remains durable in provider state and is restored in the UI after leaving and re-entering the exact dispute. Exact order, PaymentIntent, charge, and dispute identities remain joined while the dispute stays needs_response with zero submissions and no submitted timestamp."
+		},
+		{
+			"role": "simplification",
+			"verdict": "APPROVE",
+			"source_test_sha256": "c6a076dd9f1d0fa00d8e123837508f3a86b87886df888c1e7d988cd700bbca59",
+			"summary": "The single native journey replaces the client's retrying draft workaround with one acknowledged write and read-only durability checks. It does not replay the save, reconstruct legacy endpoint structure, or broaden into dispute submission and final-decision behavior."
+		}
+	],
+	"closures": [
+		{
+			"contract_id": "default::chromium::tests/e2e/specs/wcpay/merchant/merchant-disputes-respond.spec.ts:497::Disputes › Respond to a dispute › Save a dispute challenge without submitting evidence",
+			"target": {
+				"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/merchant/dispute-draft.spec.ts",
+				"contract": "one acknowledged dispute draft write survives navigation and read-only re-entry without submission or replay"
+			},
+			"verification": [
+				{
+					"command": "WCPAY_RUNTIME=native pnpm --dir plugins/woocommerce test:e2e:with-env woopayments-native --project=woopayments-native-provider --workers=1 --retries=0 --grep='one acknowledged dispute draft write survives navigation and read-only re-entry without submission or replay' tests/e2e/tests/woopayments-native/merchant/dispute-draft.spec.ts",
+					"exit_code": 0,
+					"summary": "Passed 1/1 in 51.7 seconds, body 50.6 seconds, with one worker and zero retries. One acknowledged submit=false request persisted the unique draft; provider and UI readback restored it after navigation against the exact order, PaymentIntent, charge, and dispute graph. The dispute remained needs_response with submission count zero and no submitted timestamp, only one draft request was observed, no save was replayed, and the listener ended q=0 and a=0."
+				}
+			],
+			"reviews": [
+				{
+					"role": "semantic",
+					"verdict": "APPROVE",
+					"source_test_sha256": "c6a076dd9f1d0fa00d8e123837508f3a86b87886df888c1e7d988cd700bbca59",
+					"summary": "The closure carries the current WooPayments client product promise through the native WooCommerce surface while strengthening the weak retry behavior into one acknowledged, durable, non-submitting draft write with exact record correlation."
+				},
+				{
+					"role": "simplification",
+					"verdict": "APPROVE",
+					"source_test_sha256": "c6a076dd9f1d0fa00d8e123837508f3a86b87886df888c1e7d988cd700bbca59",
+					"summary": "The proof stays at the product boundary: save once, read provider state, leave, re-enter read-only, and verify the same draft without submission or replay."
+				}
+			]
+		}
+	],
+	"known_gaps": [],
+	"deferral": null
+}

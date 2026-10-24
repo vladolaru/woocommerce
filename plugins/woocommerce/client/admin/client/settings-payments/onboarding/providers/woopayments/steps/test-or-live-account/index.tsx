@@ -171,7 +171,7 @@ const TestOrLiveAccountStep = () => {
 							</Button>
 							<Link
 								className="woocommerce-payments-test-or-live-account-step__learn-more"
-								href="https://woocommerce.com/document/woopayments/startup-guide/#sign-up-process"
+								href="https://woocommerce.com/document/woopayments/startup-guide/#signup-process"
 								target="_blank"
 								rel="noreferrer"
 								type="external"

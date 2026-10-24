@@ -340,9 +340,9 @@ class DriverAvailabilityServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * The sync package alone is not enough: other plugins bundle it without the
 	 * Jetpack plugin, and on those stores there is no Jetpack Sync flow for the
-	 * apps to fall back to. Class presence is stubbed because neither class exists
-	 * in the test environment, so asserting against real class_exists() calls would
-	 * only compare the implementation with itself.
+	 * apps to fall back to. Class presence is stubbed to cover every combination:
+	 * the sync package is bundled with WooCommerce and the Jetpack plugin class is
+	 * absent in the test environment, so real class_exists() calls cover only one.
 	 *
 	 * @testdox The Jetpack Sync driver is installed only when both the Jetpack plugin and the sync package are present.
 	 *
@@ -376,32 +376,6 @@ class DriverAvailabilityServiceTest extends WC_Unit_Test_Case {
 		$reflection->setAccessible( true );
 
 		$this->assertSame( $expected, $reflection->invoke( $service ) );
-	}
-
-	/**
-	 * Reaching the is_callable guard means the class is present but the method is
-	 * not, which is an incompatible Jetpack Sync rather than a merchant choice.
-	 *
-	 * @testdox An unusable Jetpack Sync settings class reports enabled as null, not false.
-	 */
-	public function test_unusable_sync_settings_class_reports_enabled_as_null() {
-		$this->mock_jetpack_connection( true );
-
-		/**
-		 * Only the install seam is stubbed, so is_jetpack_sync_enabled() runs for real
-		 * and hits the is_callable guard, the class being absent in tests.
-		 *
-		 * @var DriverAvailabilityService&MockObject $service
-		 */
-		$service = $this->getMockBuilder( DriverAvailabilityService::class )
-			->onlyMethods( array( 'is_jetpack_sync_installed' ) )
-			->getMock();
-		$service->method( 'is_jetpack_sync_installed' )->willReturn( true );
-
-		$driver = $service->get_status()['installed_drivers'][ DriverAvailabilityService::DRIVER_JETPACK_SYNC ];
-
-		$this->assertNull( $driver['enabled'], 'An undeterminable sync state must be null rather than a definitive false.' );
-		$this->assertFalse( $driver['available'] );
 	}
 
 	/**

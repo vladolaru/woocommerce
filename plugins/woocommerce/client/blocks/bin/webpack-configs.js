@@ -254,8 +254,9 @@ const getMainConfig = ( options = {} ) => {
 							if (
 								metadata.parent &&
 								! genericBlocks[ blockName ]
-							)
+							) {
 								return `./inner-blocks/${ blockName }/block.json`;
+							}
 							return `./${ blockName }/block.json`;
 						},
 					},
@@ -372,6 +373,13 @@ const getFrontConfig = ( options = {} ) => {
 	};
 };
 
+// The WooPayments Blocks entries whose shared code is split into chunks (see getPaymentsConfig()).
+const WOOPAYMENTS_SHARED_CHUNK_ENTRIES = [
+	'wc-payment-method-woopayments',
+	'wc-payment-method-woopayments-woopay',
+	'wc-payment-method-woopayments-express-checkout',
+];
+
 /**
  * Build config for built-in payment gateway integrations.
  *
@@ -379,7 +387,18 @@ const getFrontConfig = ( options = {} ) => {
  */
 const getPaymentsConfig = ( options = {} ) => {
 	const { alias, resolvePlugins = [] } = options;
-	const resolve = getResolve( { alias, resolvePlugins } );
+	const resolve = getResolve( {
+		alias: {
+			...alias,
+			// Core's mobile phone validation, bundled into the WooPay save-user phone validation script only. Not an
+			// `@woocommerce/` request, so it is never externalized to the wc-components admin script.
+			'woocommerce-phone-number-validation': path.resolve(
+				__dirname,
+				'../../../../../packages/js/components/src/phone-number-input/validation.ts'
+			),
+		},
+		resolvePlugins,
+	} );
 	return {
 		entry: getEntryConfig( 'payments', options.exclude || [] ),
 		output: {
@@ -435,12 +454,46 @@ const getPaymentsConfig = ( options = {} ) => {
 				automaticNameDelimiter: '--',
 				cacheGroups: {
 					...getCacheGroups(),
+					// The WooPayments card, WooPay and express scripts load together on the checkout block. Code they share
+					// ships once, in chunks src/Blocks/Payments/Integrations/WooPayments.php registers as their
+					// dependencies: the common helpers for all three, and the WooPay email check for card and WooPay only,
+					// so the cart page (express alone) does not load it.
+					woopaymentsCommon: {
+						test: /woopayments[\\/](upe-styles|tracks|wait-for-stripe)\.js$|woopayments-appearance\.js$/,
+						chunks: ( chunk ) =>
+							WOOPAYMENTS_SHARED_CHUNK_ENTRIES.includes(
+								chunk.name
+							),
+						name: 'wc-payment-method-woopayments-common',
+						enforce: true,
+					},
+					woopaymentsWooPayCommon: {
+						test: /woopayments[\\/]woopay[\\/]email-input-iframe\.js$/,
+						chunks: ( chunk ) =>
+							WOOPAYMENTS_SHARED_CHUNK_ENTRIES.includes(
+								chunk.name
+							),
+						name: 'wc-payment-method-woopayments-woopay-common',
+						enforce: true,
+					},
 				},
 			},
 		},
 		plugins: [
 			...getSharedPlugins( {
 				bundleAnalyzerReportTitle: 'Payment Method Extensions',
+				// FingerprintJS already ships as the vendored UMD build behind
+				// the `wc-woopayments-fingerprintjs` handle, which sets
+				// `window.FingerprintJS`. Load it from there instead of
+				// bundling a second copy into the WooPayments card script.
+				dependencyRequestToExternal: ( request ) =>
+					request === '@fingerprintjs/fingerprintjs'
+						? 'FingerprintJS'
+						: requestToExternal( request ),
+				dependencyRequestToHandle: ( request ) =>
+					request === '@fingerprintjs/fingerprintjs'
+						? 'wc-woopayments-fingerprintjs'
+						: requestToHandle( request ),
 			} ),
 			new ProgressBarPlugin(
 				getProgressBarPluginConfig( 'Payment Method Extensions' )

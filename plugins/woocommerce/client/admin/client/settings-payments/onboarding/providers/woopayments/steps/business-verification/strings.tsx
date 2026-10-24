@@ -9,7 +9,7 @@ import React from 'react';
 const documentationUrls = {
 	tos: 'https://wordpress.com/tos/',
 	signUpLink:
-		'https://woocommerce.com/document/woopayments/startup-guide/#sign-up-process',
+		'https://woocommerce.com/document/woopayments/startup-guide/#signup-process',
 	merchantTerms: 'https://wordpress.com/tos/#more-woopay-specifically',
 	privacyPolicy: 'https://automattic.com/privacy/',
 };

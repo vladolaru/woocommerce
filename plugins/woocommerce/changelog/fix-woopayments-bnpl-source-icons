@@ -1,0 +1,4 @@
+Significance: patch
+Type: fix
+
+WooPayments payment details and transaction lists show the framed Affirm and Afterpay icons instead of shrunken wordmarks.

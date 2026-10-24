@@ -1,0 +1,40 @@
+{
+	"schema_version": 2,
+	"slice_id": "subscriptions-no-fee-shopper-deferral",
+	"wc_base_commit": "92b2fc3376f6a5ce47d283656cb0c06dc569fb9f",
+	"verified_at_commit": "9c89efbc81157848cd1f752244aa1306e48abf43",
+	"reference_contract_commit": "6dda1d4eb101f05c22f60882d67a22f75281ae45",
+	"source_test_paths": [
+		"plugins/woocommerce/tests/e2e/tests/woopayments-native/evidence/calibration-notes.md"
+	],
+	"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+	"contract_ids": [
+		"default::chromium::tests/e2e/specs/subscriptions/shopper/shopper-subscriptions-purchase-no-signup-fee.spec.ts:37::Shopper Subscriptions Purchase No Signup Fee › It should be able to purchase a subscription without a signup fee"
+	],
+	"targets": [
+		{
+			"path": "plugins/woocommerce/tests/e2e/tests/woopayments-native/subscriptions/purchase.spec.ts",
+			"contract": "pending"
+		}
+	],
+	"implementation_commits": [],
+	"verification": [],
+	"reviews": [
+		{
+			"role": "deferral",
+			"verdict": "APPROVE",
+			"source_test_sha256": "ab2b1f40a319fe03533e3128ee3ba6581e1f5959bbe1b4d057a1e0ee79d7d1ec",
+			"summary": "Fresh broad review approved this exact line-37 blocked-environment deferral, its strict separation from line 71, complete $9.99 no-signup-fee shopper, awaited-receipt, active-subscription, reusable-credential, and exactly-once provider contract, missing-await strengthening, earliest native-readiness blocker, later prerequisites, calibration bundle, and zero quarantine."
+		}
+	],
+	"closures": [],
+	"known_gaps": [],
+	"deferral": {
+		"blocker": "Standing native ownership, account, and callback readiness fails first. The run also lacks an approved deterministic version-pinned active WooCommerce Subscriptions provisioner, a resolved concrete native owner and exact target contract, run-owned shopper, product, cart, order, active-subscription, saved-token, and provider fixtures with stable identifiers, an awaited receipt and exact local and provider correlations, an exclusive listener interval, exact locks and journals, and bounded cleanup.",
+		"affected_scope": "Only the exact line-37 shopper creation contract: purchase the exact $9.99/month product with no signup fee, submit once, reach an awaited completed order receipt, create the exact active subscription and reusable payment credential, and correlate those local identities to exactly one successful and captured provider payment for the first recurring amount with no additional signup-fee component.",
+		"no_allowlisted_action_reason": "No allowlisted action can repair standing native readiness, approve or supply the pinned active Subscriptions fixture, assign the unresolved native target owner or exact target contract, provide run-owned non-destructive lifecycle fixtures and stable local and provider correlations, or establish the required provider lane and exclusive listener interval. The source test's missing await is a false-positive weakness rather than behavior to preserve, and capability flags, mocked PaymentIntent routing and persistence, token synchronization, generic checkout smoke, or the separate line-71 merchant observation cannot substitute for the exact completed shopper lifecycle, active subscription, reusable credential, exactly-once payment, and no-extra-fee proof.",
+		"reference": "blocked-environment:PILOT-NATIVE-READINESS",
+		"unlock_decision": "Externally provide a standing store that passes the existing native ownership, account, and callback readiness gate, an approved pinned active WooCommerce Subscriptions provisioner, and one exclusively owned listener for the full callback and evidence interval. Resolve the exact native owner and target contract; create one self-contained run-owned line-37 shopper lifecycle with the exact $9.99/month no-signup-fee product, shopper, clean cart, awaited receipt, active subscription, reusable credential, and exact local and provider correlations; then execute it once with one worker and zero retries under exact account, store, provider-write, and feature-setting locks, provider-write journaling, bounded cleanup, and fail-closed quarantine controls. Only after this contract closes, or an approved independent shared provisioner creates the same exact lifecycle, should separate line 71 become implementation-eligible.",
+		"quarantine_status": "This deferral allocated and mutated nothing, acquired no lease or lock, opened no provider-write or restoration journal, and created no quarantine. The existing separately owned listener is a later independent blocker and remains untouched."
+	}
+}

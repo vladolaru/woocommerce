@@ -1,0 +1,26 @@
+@import "../../_tokens.scss";
+
+.woocommerce-woopayments-documents-vat-modal {
+	&__content {
+		display: grid;
+		gap: $gap;
+		// stylelint-disable-next-line declaration-property-value-disallowed-list -- the modal's minimum width; no upstream token.
+		min-width: min(420px, 80vw);
+	}
+
+	&__step-title {
+		margin: 0;
+		font-size: $woopayments-font-size-subheading;
+		font-weight: 600;
+	}
+
+	p {
+		margin: 0;
+	}
+
+	&__actions {
+		display: flex;
+		gap: $gap-smaller;
+		justify-content: flex-end;
+	}
+}
