@@ -199,13 +199,9 @@ class MultiCurrencyStateBuilder {
 			}
 
 			$currency = $this->create_enabled_currency( $default_code, $available_currency );
-			if ( null === $currency ) {
-				continue;
+			if ( null !== $currency ) {
+				$enabled[ $currency_code ] = $currency;
 			}
-
-			$this->apply_currency_settings( $currency );
-
-			$enabled[ $currency_code ] = $currency;
 		}
 
 		$stored_code = $this->get_stored_currency_code();
@@ -252,7 +248,7 @@ class MultiCurrencyStateBuilder {
 	}
 
 	/**
-	 * Create an enabled currency clone with preserved rate behavior.
+	 * Create an enabled currency clone with preserved rate behavior and its rounding and charm settings.
 	 *
 	 * @param string                $default_code       Default currency code.
 	 * @param MultiCurrencyCurrency $available_currency Available currency.
@@ -270,13 +266,16 @@ class MultiCurrencyStateBuilder {
 			return null;
 		}
 
-		return new MultiCurrencyCurrency(
+		$currency = new MultiCurrencyCurrency(
 			$this->localization_service,
 			$currency_code,
 			$rate,
 			false,
 			$available_currency->get_last_updated()
 		);
+		$this->apply_currency_settings( $currency );
+
+		return $currency;
 	}
 
 	/**
@@ -299,12 +298,7 @@ class MultiCurrencyStateBuilder {
 			$available_currency = null === $rate ? null : new MultiCurrencyCurrency( $this->localization_service, $currency_code, $rate );
 		}
 
-		$currency = null === $available_currency ? null : $this->create_enabled_currency( $default_code, $available_currency );
-		if ( null !== $currency ) {
-			$this->apply_currency_settings( $currency );
-		}
-
-		return $currency;
+		return null === $available_currency ? null : $this->create_enabled_currency( $default_code, $available_currency );
 	}
 
 	/**
