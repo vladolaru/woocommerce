@@ -34438,12 +34438,6 @@ parameters:
 			path: includes/wc-order-functions.php
 
 		-
-			message: '#^Parameter \#1 \$value of method WC_Abstract_Order\:\:set_total\(\) expects string, \(float\|int\) given\.$#'
-			identifier: argument.type
-			count: 1
-			path: includes/wc-order-functions.php
-
-		-
 			message: '#^Parameter \#1 \$value of method WC_Customer_Download\:\:set_user_email\(\) expects int, string given\.$#'
 			identifier: argument.type
 			count: 1

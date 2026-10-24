@@ -153,15 +153,17 @@ class WC_Order_Refund extends WC_Abstract_Order {
 	/**
 	 * Set the refund total, rounded to the decimals of the refund's currency.
 	 *
-	 * @param string $value      Value to set.
-	 * @param string $deprecated Function used to set different totals based on this.
+	 * @since 11.2.0
+	 *
+	 * @param string|float|int $value      Value to set.
+	 * @param string           $deprecated Function used to set different totals based on this.
 	 *
 	 * @return bool|void
 	 * @throws WC_Data_Exception Exception may be thrown if value is invalid.
 	 */
 	public function set_total( $value, $deprecated = '' ) {
 		if ( $deprecated ) {
-			return parent::set_total( $value, $deprecated );
+			return parent::set_total( (string) $value, $deprecated );
 		}
 
 		if ( ! is_string( $value ) || 0 === strlen( $value ) ) {
