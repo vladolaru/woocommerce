@@ -107,6 +107,38 @@ final class MultiCurrencyBootstrap {
 		MultiCurrencyTrackingController::class,
 	);
 
+	/**
+	 * Classes a cart holding a subscription in another currency needs on a store without additional currencies: the currency the
+	 * cart runs in, the prices it converts (shipping, coupons typed in, a switch's new plan, other products beside a resubscribe)
+	 * and the Subscriptions rules that select the subscription's currency and keep its stored amounts.
+	 *
+	 * @var array<int,class-string>
+	 */
+	private const SUBSCRIPTION_CURRENCY = array(
+		MultiCurrencyFrontendCurrenciesController::class,
+		MultiCurrencyFrontendPricesController::class,
+		MultiCurrencySubscriptionsCompatibilityController::class,
+	);
+
+	/**
+	 * Hooks after which the cart, or a switch request, is known: Subscriptions sets a renewal, resubscribe or switch cart up
+	 * through add_to_cart(), WooCommerce loads the cart from the session, and the switch page arrives as a request.
+	 *
+	 * @var array<int,string>
+	 */
+	private const SUBSCRIPTION_CURRENCY_HOOKS = array(
+		'woocommerce_cart_loaded_from_session',
+		'woocommerce_add_to_cart',
+		'wp_loaded',
+	);
+
+	/**
+	 * Container the subscription-currency classes register from, while a store without additional currencies watches for them.
+	 *
+	 * @var Container|RuntimeContainer|null
+	 */
+	private $subscription_currency_container = null;
+
 	/** Admin-only classes. @var array<int,class-string> */
 	private const ADMIN = array(
 		MultiCurrencyAdminNoticesController::class,
@@ -193,6 +225,67 @@ final class MultiCurrencyBootstrap {
 		}
 
 		$this->register_cron_classes_on_demand( $container, $request_type, $classes );
+
+		if ( 'configured' !== $this->usage && in_array( $request_type, array( RequestTypeUtil::FRONT, RequestTypeUtil::AJAX, RequestTypeUtil::REST ), true ) ) {
+			$this->subscription_currency_container = $container;
+			if ( did_action( 'plugins_loaded' ) ) {
+				$this->listen_for_subscription_currency();
+			} else {
+				add_action( 'plugins_loaded', array( $this, 'listen_for_subscription_currency' ), 20 );
+			}
+		}
+	}
+
+	/**
+	 * On a store without additional currencies, watch for a cart that holds a subscription in another currency.
+	 *
+	 * Renewal, resubscribe and switch carts run in the subscription's currency, which may since have been disabled. Only
+	 * WooCommerce Subscriptions makes such carts, so nothing is watched without it.
+	 *
+	 * @internal
+	 */
+	public function listen_for_subscription_currency(): void {
+		if ( ! class_exists( 'WC_Subscriptions' ) ) {
+			return;
+		}
+
+		foreach ( self::SUBSCRIPTION_CURRENCY_HOOKS as $hook ) {
+			add_action( $hook, array( $this, 'handle_subscription_currency_context' ) );
+		}
+	}
+
+	/**
+	 * Register the currency, price and Subscriptions classes once the cart, or a switch request, holds a subscription in a
+	 * currency other than the store currency.
+	 *
+	 * @internal
+	 */
+	public function handle_subscription_currency_context(): void {
+		$container = $this->subscription_currency_container;
+		if ( null === $container ) {
+			return;
+		}
+
+		/**
+		 * Native Multi-Currency Subscriptions compatibility controller.
+		 *
+		 * @var MultiCurrencySubscriptionsCompatibilityController $controller
+		 */
+		$controller = $container->get( MultiCurrencySubscriptionsCompatibilityController::class );
+		// The cart changed: Subscriptions added an item, or WooCommerce loaded the cart from the session.
+		if ( 'wp_loaded' !== current_action() ) {
+			$controller->clear_subscription_type_cache();
+		}
+		if ( ! $controller->has_subscription_in_another_currency() ) {
+			return;
+		}
+
+		$this->subscription_currency_container = null;
+		foreach ( self::SUBSCRIPTION_CURRENCY_HOOKS as $hook ) {
+			remove_action( $hook, array( $this, 'handle_subscription_currency_context' ) );
+		}
+
+		$this->register_classes( $container, array_merge( $this->get_provider_classes(), self::SUBSCRIPTION_CURRENCY ) );
 	}
 
 	/**

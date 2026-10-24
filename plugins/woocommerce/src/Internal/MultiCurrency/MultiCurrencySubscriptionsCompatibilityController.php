@@ -336,6 +336,30 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	}
 
 	/**
+	 * Tell whether the cart, or a verified switch request, holds a subscription in a currency other than the store currency.
+	 *
+	 * Reads the cached cart items, loads a subscription only for a subscription cart item, and starts no session.
+	 *
+	 * @return bool
+	 */
+	public function has_subscription_in_another_currency(): bool {
+		if ( ! $this->is_subscriptions_runtime_available() ) {
+			return false;
+		}
+
+		$currency_codes = array( $this->get_subscription_currency( $this->get_subscription_from_switch_request() ) );
+		foreach ( self::SUBSCRIPTION_TYPES as $type ) {
+			foreach ( $this->get_subscription_cart_items( $type ) as $cart_item ) {
+				$currency_codes[] = $this->get_subscription_currency( $this->get_subscription_from_cart_item( $cart_item, $type ) );
+			}
+		}
+
+		$currency_codes = array_filter( $currency_codes );
+
+		return array() !== $currency_codes && array() !== array_diff( $currency_codes, array( $this->get_state_builder()->build()->get_default_currency()->get_code() ) );
+	}
+
+	/**
 	 * Tell whether currency switching should be disabled for subscription contexts.
 	 *
 	 * @param bool $should_disable Existing switching-disable decision.
