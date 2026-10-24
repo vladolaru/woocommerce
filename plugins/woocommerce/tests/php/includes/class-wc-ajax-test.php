@@ -2970,8 +2970,8 @@ class WC_AJAX_Test extends \WP_Ajax_UnitTestCase {
 	/**
 	 * @testdox An amount-only refund allocated to two of three order items by item ID leaves the order processing with the exact remaining refundable amount.
 	 *
-	 * R2 (`data/t1-provider-family-audit.md` §2.7, §4 Batch 5; no recording
-	 * used, the fixture prices are hand-built to match the audited case): a
+	 * R2 (no recording used, the fixture prices are hand-built to match the
+	 * audited case): a
 	 * three-line USD 10.99 order whose first two lines (USD 1.11, 2.22) are
 	 * refunded by their exact order-item ID
 	 * while the third (USD 7.66) stays untouched, mirroring
@@ -3251,8 +3251,7 @@ class WC_AJAX_Test extends \WP_Ajax_UnitTestCase {
 	}
 
 	/**
-	 * Create a three-line refundable order priced USD 1.11 / 2.22 / 7.66, matching R2's fixture
-	 * (`data/t1-provider-family-audit.md` §2.7).
+	 * Create a three-line refundable order priced USD 1.11 / 2.22 / 7.66, matching R2's fixture.
 	 *
 	 * @param WC_Payment_Gateway $gateway Payment gateway assigned to the order.
 	 * @return array{order:WC_Order,products:array{WC_Product,WC_Product,WC_Product},item_ids:array{first:int,second:int,third:int}}
