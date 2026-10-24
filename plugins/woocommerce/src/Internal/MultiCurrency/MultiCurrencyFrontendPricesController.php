@@ -62,6 +62,15 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	private ?MultiCurrencyRequestContext $request_context = null;
 
 	/**
+	 * The flat-rate method whose cost arguments were last converted to the store currency.
+	 *
+	 * Static because the currency controller's decimals filter reads it.
+	 *
+	 * @var object|null
+	 */
+	private static ?object $store_currency_cost_method = null;
+
+	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -224,9 +233,30 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 			return $args;
 		}
 
-		$args['cost'] = $this->get_price_projection_service()->get_default_currency_amount( (float) $args['cost'] );
+		$args['cost']                     = $this->get_price_projection_service()->get_default_currency_amount( (float) $args['cost'] );
+		self::$store_currency_cost_method = is_object( $shipping_method ) ? $shipping_method : null;
 
 		return $args;
+	}
+
+	/**
+	 * Tell whether core is computing a percent fee in store units, so the fee rounds to the store's decimals.
+	 *
+	 * Core's flat rate registers the `[fee]` shortcode for the method only while it evaluates that method's cost, and its
+	 * `fee()` is the only decimals reader in that window. The memory clears on the first read after the window closes.
+	 *
+	 * @return bool
+	 */
+	public static function is_computing_store_currency_fee(): bool {
+		global $shortcode_tags;
+
+		if ( null !== self::$store_currency_cost_method && shortcode_exists( 'fee' ) && array( self::$store_currency_cost_method, 'fee' ) === $shortcode_tags['fee'] ) {
+			return true;
+		}
+
+		self::$store_currency_cost_method = null;
+
+		return false;
 	}
 
 	/**

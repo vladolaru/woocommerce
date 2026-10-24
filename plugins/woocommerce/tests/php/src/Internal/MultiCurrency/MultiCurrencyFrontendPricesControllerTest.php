@@ -449,6 +449,96 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should round a store-currency percent fee to the store's decimals: $store_currency store, $selected_currency selected, $cost.
+	 *
+	 * Core's `fee()` rounds the percent fee with `wc_get_price_decimals()`, which is the selected currency's on the storefront.
+	 * Once the formula works in store units, the fee needs the store's decimals: 10% of a ¥1,556 cart on a USD store at 150
+	 * is $1.04, so ¥156, not $1 and ¥150. A fee the method keeps in the selected currency keeps the selected decimals.
+	 *
+	 * @testWith ["USD", "2", "JPY", "150", "[fee percent=\"10\"]", 1556.0, true, "156"]
+	 *           ["JPY", "0", "USD", "0.0067", "[fee percent=\"10\"]", 13.47, true, "1.35"]
+	 *           ["USD", "2", "JPY", "150", "[fee percent=\"10\"] * 10", 1553.0, false, "1550"]
+	 *
+	 * @param string $store_currency    Store currency.
+	 * @param string $store_decimals    Store price decimals.
+	 * @param string $selected_currency Currency the shopper selected.
+	 * @param string $rate              Manual rate of the selected currency, with no rounding.
+	 * @param string $cost              Flat-rate cost as the merchant types it.
+	 * @param float  $contents_cost     Cart contents cost, in the selected currency.
+	 * @param bool   $convert           Whether the shipping method lets Multi-Currency convert its cost.
+	 * @param string $expected_cost     Rate cost the shopper pays.
+	 */
+	public function test_rounds_a_store_currency_percent_fee_to_the_store_decimals( string $store_currency, string $store_decimals, string $selected_currency, string $rate, string $cost, float $contents_cost, bool $convert, string $expected_cost ): void {
+		$code = strtolower( $selected_currency );
+		update_option( 'woocommerce_currency', $store_currency );
+		update_option( 'woocommerce_price_num_decimals', $store_decimals );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( $store_currency, $selected_currency ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_' . $code, 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_' . $code, $rate );
+		update_option( 'wcpay_multi_currency_price_rounding_' . $code, '0.00' );
+		update_option(
+			'woocommerce_flat_rate_7_settings',
+			array(
+				'title'      => 'Flat rate',
+				'tax_status' => 'none',
+				'cost'       => $cost,
+				'type'       => 'class',
+			)
+		);
+		add_filter( 'wcpay_multi_currency_override_selected_currency', fn() => $selected_currency );
+		if ( ! $convert ) {
+			add_filter( 'wcpay_multi_currency_should_convert_shipping_amount', '__return_false' );
+		}
+		$this->register_storefront_controllers();
+
+		$shipping_method = new \WC_Shipping_Flat_Rate( 7 );
+		$shipping_method->calculate_shipping(
+			array(
+				'contents'      => array(),
+				'contents_cost' => $contents_cost,
+			)
+		);
+
+		$this->assertSame( $expected_cost, $shipping_method->rates['flat_rate:7']->get_cost() );
+		$this->assertSame( 'JPY' === $selected_currency ? 0 : 2, wc_get_price_decimals(), 'Outside the fee the selected decimals apply.' );
+	}
+
+	/**
+	 * @testdox Should round a later fee the same method keeps in the selected currency to the selected decimals.
+	 */
+	public function test_rounds_a_later_selected_currency_fee_of_the_same_method_to_the_selected_decimals(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'JPY' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_jpy', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_jpy', '150' );
+		update_option( 'wcpay_multi_currency_price_rounding_jpy', '0.00' );
+		update_option(
+			'woocommerce_flat_rate_7_settings',
+			array(
+				'title'      => 'Flat rate',
+				'tax_status' => 'none',
+				'cost'       => '[fee percent="10"] * 10',
+				'type'       => 'class',
+			)
+		);
+		add_filter( 'wcpay_multi_currency_override_selected_currency', fn() => 'JPY' );
+		$this->register_storefront_controllers();
+		$shipping_method = new \WC_Shipping_Flat_Rate( 7 );
+		$package         = array(
+			'contents'      => array(),
+			'contents_cost' => 1553.0,
+		);
+
+		$shipping_method->calculate_shipping( $package );
+		$this->assertSame( '1560', $shipping_method->rates['flat_rate:7']->get_cost(), '10% of $10.3533 is $1.04, times 10 is $10.40, ¥1,560.' );
+
+		add_filter( 'wcpay_multi_currency_should_convert_shipping_amount', '__return_false' );
+		$shipping_method->rates = array();
+		$shipping_method->calculate_shipping( $package );
+		$this->assertSame( '1550', $shipping_method->rates['flat_rate:7']->get_cost(), '10% of ¥1,553 is ¥155, times 10 is ¥1,550.' );
+	}
+
+	/**
 	 * @testdox Should respect conversion guards for product and coupon prices.
 	 */
 	public function test_respects_conversion_guards_for_product_and_coupon_prices(): void {
