@@ -126,4 +126,44 @@ class WC_Admin_Assets_Test extends WC_Unit_Test_Case {
 
 		$this->assertStringContainsString( 'id="wc-lost-connection-notice"', $output );
 	}
+
+	/**
+	 * @testdox The order screen's script rounds refund amounts to the decimals of the order's currency.
+	 * @testWith ["JPY", 0, "USD", "2"]
+	 *           ["USD", 2, "KWD", "3"]
+	 *           ["USD", 0, "USD", "0"]
+	 *
+	 * @param string $store_currency Store currency.
+	 * @param int    $store_decimals Store price decimals.
+	 * @param string $order_currency Currency of the order being edited.
+	 * @param string $expected       Expected currency_format_num_decimals value.
+	 */
+	public function test_order_screen_num_decimals_follow_order_currency( string $store_currency, int $store_decimals, string $order_currency, string $expected ): void {
+		global $theorder;
+
+		update_option( 'woocommerce_currency', $store_currency );
+		update_option( 'woocommerce_price_num_decimals', $store_decimals );
+		$order = wc_create_order();
+		$order->set_currency( $order_currency );
+		$order->save();
+
+		set_current_screen();
+		$screen            = get_current_screen();
+		$screen->id        = wc_get_page_screen_id( 'shop-order' );
+		$screen->base      = $screen->id;
+		$screen->post_type = 'shop_order';
+		$theorder          = $order;
+		wp_scripts()->add_data( 'wc-admin-meta-boxes', 'data', '' );
+
+		try {
+			$this->sut->admin_scripts();
+		} finally {
+			$theorder = null;
+		}
+
+		$localized = (string) wp_scripts()->get_data( 'wc-admin-meta-boxes', 'data' );
+		$this->assertSame( 1, preg_match_all( '/var woocommerce_admin_meta_boxes = (\{.*\});/s', $localized, $matches ), 'The order screen should localize woocommerce_admin_meta_boxes once.' );
+		$params = json_decode( $matches[1][0], true );
+		$this->assertSame( $expected, $params['currency_format_num_decimals'], "A {$order_currency} order on a {$store_currency} store with {$store_decimals} decimals." );
+	}
 }

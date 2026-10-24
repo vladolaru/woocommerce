@@ -1,4 +1,4 @@
 Significance: patch
 Type: fix
 
-Round refund totals and the remaining refundable amount of an order placed in another currency to that currency's decimals, so a 5.25 refund of a USD order on a store priced in yen is no longer recorded as 5.
+Round refund totals, the remaining refundable amount and the order screen's refund amount of an order placed in another currency to that currency's decimals, so a 5.25 refund of a USD order on a store priced in yen is no longer recorded as 5.
