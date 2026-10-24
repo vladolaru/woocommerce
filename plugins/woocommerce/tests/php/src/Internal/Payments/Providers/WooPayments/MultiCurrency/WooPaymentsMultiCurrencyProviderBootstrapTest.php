@@ -3,12 +3,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\MultiCurrencyProviderAccountResolver;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProviderRegistrar;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsLegacyApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsLegacyAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyProviderBootstrap;
@@ -45,11 +42,12 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 
 		$context['bootstrap']->register();
 
-		$this->assertTrue( $context['account_resolver']->is_provider_connected(), 'Resolver should delegate plugin-owned connection checks to the legacy adapter.' );
+		$this->assertTrue( $context['rate_service']->is_provider_connected(), 'The rate service should delegate plugin-owned connection checks to the legacy adapter.' );
+		$this->assertSame( WooPaymentsCurrencyRateProvider::PROVIDER_ID, $context['rate_service']->get_automatic_rate_source_id() );
 		$this->assertSame(
-			array( 'eur' => 0.82 ),
-			$context['provider_registry_factory']->create()->get_provider( WooPaymentsCurrencyRateProvider::PROVIDER_ID )->get_currency_rates( 'usd', array( 'eur' ) ),
-			'Provider registry should use the legacy API adapter while the plugin owns runtime.'
+			array( 'EUR' => 0.82 ),
+			$context['rate_service']->get_rates( 'usd', array( 'eur' ) ),
+			'The rate provider should use the legacy API adapter while the plugin owns runtime.'
 		);
 	}
 
@@ -61,11 +59,12 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 
 		$context['bootstrap']->register();
 
-		$this->assertTrue( $context['account_resolver']->is_provider_connected(), 'Resolver should delegate native-owned connection checks to the native adapter.' );
+		$this->assertTrue( $context['rate_service']->is_provider_connected(), 'The rate service should delegate native-owned connection checks to the native adapter.' );
+		$this->assertSame( WooPaymentsCurrencyRateProvider::PROVIDER_ID, $context['rate_service']->get_automatic_rate_source_id() );
 		$this->assertSame(
-			array( 'eur' => 0.91 ),
-			$context['provider_registry_factory']->create()->get_provider( WooPaymentsCurrencyRateProvider::PROVIDER_ID )->get_currency_rates( 'usd', array( 'eur' ) ),
-			'Provider registry should use the native API adapter while native owns runtime.'
+			array( 'EUR' => 0.91 ),
+			$context['rate_service']->get_rates( 'usd', array( 'eur' ) ),
+			'The rate provider should use the native API adapter while native owns runtime.'
 		);
 	}
 
@@ -77,8 +76,8 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 
 		$context['bootstrap']->register();
 
-		$this->assertFalse( $context['account_resolver']->is_provider_connected(), 'Resolver should stay disconnected without a runtime owner.' );
-		$this->assertSame( array(), $context['provider_registry_factory']->create()->get_providers(), 'Provider registry should stay empty without a runtime owner.' );
+		$this->assertFalse( $context['rate_service']->is_provider_connected(), 'The rate service should stay disconnected without a runtime owner.' );
+		$this->assertFalse( $context['rate_service']->has_provider(), 'No rate provider should be set without a runtime owner.' );
 	}
 
 	/**
@@ -156,7 +155,6 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 	 * @return array<string,mixed>
 	 */
 	private function create_bootstrap_context( bool $native_owner, bool $plugin_owner ): array {
-		$account_resolver  = new MultiCurrencyProviderAccountResolver();
 		$arbiter           = $this->create_arbiter( $native_owner, $plugin_owner );
 		$extension_runtime = new WooPaymentsExtensionRuntime();
 		$legacy_account    = $this->create_legacy_account();
@@ -190,26 +188,19 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 		$native_api_client_adapter->init( $this->create_native_api_client() );
 		wc_get_container()->replace( WooPaymentsNativeApiClientAdapter::class, $native_api_client_adapter );
 
-		$provider_registry_factory = new CurrencyRateProviderRegistryFactory();
-		$provider_registrar        = new WooPaymentsCurrencyRateProviderRegistrar();
-		$rate_service              = RateServices::with();
+		$rate_service = RateServices::with();
 
 		$bootstrap = new WooPaymentsMultiCurrencyProviderBootstrap();
 		$bootstrap->init(
-			$account_resolver,
 			$arbiter,
 			$legacy_account_adapter,
 			$legacy_api_client_adapter,
-			$provider_registry_factory,
-			$provider_registrar,
 			$rate_service
 		);
 
 		return array(
-			'account_resolver'          => $account_resolver,
-			'bootstrap'                 => $bootstrap,
-			'provider_registry_factory' => $provider_registry_factory,
-			'rate_service'              => $rate_service,
+			'bootstrap'    => $bootstrap,
+			'rate_service' => $rate_service,
 		);
 	}
 

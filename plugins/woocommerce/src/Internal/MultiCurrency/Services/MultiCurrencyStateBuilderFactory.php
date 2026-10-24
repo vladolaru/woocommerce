@@ -8,22 +8,14 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 
 /**
- * Creates native multi-currency state builders with the live rate-provider registry.
+ * Creates the Multi-Currency state builders, over the rate service that holds the automatic-rate provider.
  *
  * @since 11.0.0
  * @internal Transitional internal component for the native multi-currency runtime.
  */
 class MultiCurrencyStateBuilderFactory {
-
-	/**
-	 * Rate provider registry factory.
-	 *
-	 * @var CurrencyRateProviderRegistryFactory
-	 */
-	private CurrencyRateProviderRegistryFactory $provider_registry_factory;
 
 	/**
 	 * Rate service holding the automatic-rate provider.
@@ -47,25 +39,16 @@ class MultiCurrencyStateBuilderFactory {
 	private ?MultiCurrencyStateBuilder $shared_builder = null;
 
 	/**
-	 * Provider registrars the shared builder's rate registry was built from.
-	 *
-	 * @var array<int,mixed>
-	 */
-	private array $shared_builder_registrars = array();
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param CurrencyRateProviderRegistryFactory $provider_registry_factory Rate provider registry factory.
-	 * @param MultiCurrencyRateService            $rate_service              Rate service holding the automatic-rate provider.
-	 * @param MultiCurrencyStateInvalidator       $state_invalidator         Request-local state invalidation coordinator.
+	 * @param MultiCurrencyRateService      $rate_service      Rate service holding the automatic-rate provider.
+	 * @param MultiCurrencyStateInvalidator $state_invalidator Request-local state invalidation coordinator.
 	 */
-	final public function init( CurrencyRateProviderRegistryFactory $provider_registry_factory, MultiCurrencyRateService $rate_service, MultiCurrencyStateInvalidator $state_invalidator ): void {
-		$this->provider_registry_factory = $provider_registry_factory;
-		$this->rate_service              = $rate_service;
-		$this->state_invalidator         = $state_invalidator;
+	final public function init( MultiCurrencyRateService $rate_service, MultiCurrencyStateInvalidator $state_invalidator ): void {
+		$this->rate_service      = $rate_service;
+		$this->state_invalidator = $state_invalidator;
 	}
 
 	/**
@@ -73,16 +56,13 @@ class MultiCurrencyStateBuilderFactory {
 	 *
 	 * Every consumer shares one builder, so the state is built once per request, with one Multi-Currency instance per
 	 * request in client 11.1.0 `includes/compat/multi-currency/wc-payments-multi-currency.php:35-50`. It rebuilds after
-	 * reset() and when its stored inputs change: a Multi-Currency option, the store currency or the user.
+	 * reset() and when its stored inputs change: a Multi-Currency option, the store currency, the user or the rate provider.
 	 *
 	 * @return MultiCurrencyStateBuilder
 	 */
 	public function create(): MultiCurrencyStateBuilder {
-		// The rate registry is taken from the registrars once, so a builder made before a provider registered is replaced.
-		$registrars = $this->provider_registry_factory->get_provider_registrars();
-		if ( null === $this->shared_builder || $registrars !== $this->shared_builder_registrars ) {
-			$this->shared_builder            = $this->build_state_builder( new MultiCurrencyLocalizationService() );
-			$this->shared_builder_registrars = $registrars;
+		if ( null === $this->shared_builder ) {
+			$this->shared_builder = $this->build_state_builder( new MultiCurrencyLocalizationService() );
 		}
 
 		// A listener that is missing (first call, or removed by a hook reset) may have missed a change, so rebuild too.

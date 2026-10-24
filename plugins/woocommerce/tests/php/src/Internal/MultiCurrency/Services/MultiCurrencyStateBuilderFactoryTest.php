@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAsyncPriceRendererController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
@@ -11,8 +12,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrencie
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySelectedCurrencyController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistrarInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelectedCurrencyPersistenceService;
@@ -109,7 +109,7 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 		$this->original_user_id  = get_current_user_id();
 		update_option( 'woocommerce_currency', 'USD' );
 		$this->delete_options();
-		$this->reset_rate_provider_registry_factory();
+		$this->reset_rate_provider();
 	}
 
 	/**
@@ -117,7 +117,7 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 	 */
 	public function tearDown(): void {
 		$this->delete_options();
-		$this->reset_rate_provider_registry_factory();
+		$this->reset_rate_provider();
 		$this->reset_legacy_proxy_mocks();
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		update_option( 'woocommerce_currency', $this->original_currency );
@@ -212,15 +212,11 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 		$shared = $factory->create();
 		$this->assertSame( $shared, $factory->create() );
 
-		// A provider registered after the first build gets a builder that knows it.
-		$registry_factory = wc_get_container()->get( CurrencyRateProviderRegistryFactory::class );
-		$registrars       = $registry_factory->get_provider_registrars();
-		$registry_factory->set_provider_registrars( array_merge( $registrars, array( $this->createMock( CurrencyRateProviderRegistrarInterface::class ) ) ) );
-		try {
-			$this->assertNotSame( $shared, $factory->create() );
-		} finally {
-			$registry_factory->set_provider_registrars( $registrars );
-		}
+		// A provider set after the first build reaches the same builder, whose next build knows it.
+		$state = $shared->build();
+		wc_get_container()->get( MultiCurrencyRateService::class )->set_provider( $this->createMock( CurrencyRateProvider::class ) );
+		$this->assertSame( $shared, $factory->create() );
+		$this->assertNotSame( $state, $shared->build() );
 	}
 
 	/**
@@ -566,10 +562,10 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Reset the shared rate-provider registry factory.
+	 * Drop the rate provider a test set, with the services resolved around it.
 	 */
-	private function reset_rate_provider_registry_factory(): void {
-		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
+	private function reset_rate_provider(): void {
+		wc_get_container()->reset_all_resolved();
 	}
 
 	/**

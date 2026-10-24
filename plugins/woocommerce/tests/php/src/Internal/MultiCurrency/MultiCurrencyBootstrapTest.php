@@ -20,7 +20,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySubscriptionsCompatibilityController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -146,7 +145,6 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		} finally {
 			unset( $_GET['switch-subscription'], $_GET['_wcsnonce'] );
 			WC()->cart->set_cart_contents( array() );
-			wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
 			wc_get_container()->reset_all_replacements();
 		}
 	}
@@ -269,7 +267,6 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		} finally {
 			WC()->session = $session;
 			WC()->cart->set_cart_contents( array() );
-			wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
 			wc_get_container()->reset_all_replacements();
 		}
 	}
