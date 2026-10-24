@@ -230,6 +230,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	 */
 	public function convert_shipping_cost_args_to_store_currency( $args, $sum = null, $shipping_method = null ) {
 		unset( $sum );
+		self::$store_currency_cost_method = null;
 
 		if ( ! is_array( $args ) || ! isset( $args['cost'] ) || ! is_numeric( $args['cost'] ) || ! $this->should_convert_shipping_amount( $shipping_method ) ) {
 			return $args;
@@ -242,10 +243,11 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether core is computing a percent fee in store units, so the fee rounds to the store's decimals.
+	 * Tell whether core is computing a percent fee in store units, so the fee keeps at least the store's decimals.
 	 *
 	 * Core's flat rate registers the `[fee]` shortcode for the method only while it evaluates that method's cost, and its
-	 * `fee()` is the only decimals reader in that window. The memory clears on the first read after the window closes.
+	 * `fee()` is the only decimals reader in that window. The memory clears at the next cost evaluation or on the first
+	 * read after the window closes.
 	 *
 	 * @return bool
 	 */

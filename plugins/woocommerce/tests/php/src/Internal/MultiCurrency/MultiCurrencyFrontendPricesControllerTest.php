@@ -489,14 +489,17 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should round a store-currency percent fee to the store's decimals: $store_currency store, $selected_currency selected, $cost.
+	 * @testdox Should round a store-currency percent fee to at least the store's decimals: $store_currency store, $selected_currency selected, $cost.
 	 *
 	 * Core's `fee()` rounds the percent fee with `wc_get_price_decimals()`, which is the selected currency's on the storefront.
 	 * Once the formula works in store units, the fee needs the store's decimals: 10% of a ¥1,556 cart on a USD store at 150
-	 * is $1.04, so ¥156, not $1 and ¥150. A fee the method keeps in the selected currency keeps the selected decimals.
+	 * is $1.04, so ¥156, not $1 and ¥150. A selected currency with more decimals than the store keeps them: 10% of a $13.44
+	 * cart on a JPY store at 0.0067 is ¥200.60, so $1.34, not ¥201 and $1.35. A fee the method keeps in the selected
+	 * currency keeps the selected decimals.
 	 *
 	 * @testWith ["USD", "2", "JPY", "150", "[fee percent=\"10\"]", 1556.0, true, "156"]
 	 *           ["JPY", "0", "USD", "0.0067", "[fee percent=\"10\"]", 13.47, true, "1.35"]
+	 *           ["JPY", "0", "USD", "0.0067", "[fee percent=\"10\"]", 13.44, true, "1.34"]
 	 *           ["USD", "2", "JPY", "150", "[fee percent=\"10\"] * 10", 1553.0, false, "1550"]
 	 *
 	 * @param string $store_currency    Store currency.

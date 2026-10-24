@@ -206,11 +206,14 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * @return int
 	 */
 	public function get_price_decimals( $decimals ): int {
+		$projected = $this->get_frontend_projection_service()->get_price_decimals( absint( $decimals ), $this->order_currency );
+
+		// A flat-rate percent fee in store units keeps the store's decimals, or the shopper's currency's when it has more.
 		if ( MultiCurrencyFrontendPricesController::is_computing_store_currency_fee() ) {
-			return absint( $decimals );
+			return max( absint( $decimals ), $projected );
 		}
 
-		return $this->get_frontend_projection_service()->get_price_decimals( absint( $decimals ), $this->order_currency );
+		return $projected;
 	}
 
 	/**
