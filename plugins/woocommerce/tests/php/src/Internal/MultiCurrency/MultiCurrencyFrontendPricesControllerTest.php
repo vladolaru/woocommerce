@@ -315,18 +315,24 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not show a variable range cached for another currency or an older rate.
+	 * @testdox Should not show a variable range cached for another currency or older conversion settings.
 	 *
-	 * Core caches the range's prices across requests under the variation price hash. EUR at 0.22 or 0.30 and GBP at 0.19,
-	 * all with the default 1.00 step, convert 1 PLN to the same 1.00, so the hash must name the currency and its rate.
+	 * Core caches the range's prices across requests under the variation price hash, and each step below reloads the product
+	 * and reads that cache. EUR at 0.22 or 0.30 and GBP at 0.19, all with the default 1.00 step, convert 1 PLN to the same
+	 * 1.00; then only the rounding step changes, then only the charm; then JPY takes EUR's rate, step and charm and differs
+	 * only in its decimals. So the hash must name the currency, its rate, its rounding step and its charm.
 	 */
 	public function test_does_not_show_a_variable_range_cached_for_another_currency_or_rate(): void {
 		update_option( 'woocommerce_currency', 'PLN' );
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'PLN', 'EUR', 'GBP' ) );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'PLN', 'EUR', 'GBP', 'JPY' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
 		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.22' );
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
 		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.19' );
+		update_option( 'wcpay_multi_currency_exchange_rate_jpy', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_jpy', '0.30' );
+		update_option( 'wcpay_multi_currency_price_rounding_jpy', '0.50' );
+		update_option( 'wcpay_multi_currency_price_charm_jpy', '-0.01' );
 		$selected = 'EUR';
 		add_filter(
 			'wcpay_multi_currency_override_selected_currency',
@@ -345,6 +351,15 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$selected = 'EUR';
 		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.30' );
 		$this->assertSame( array_combine( $variation_ids, array( '4.00', '7.00' ) ), wc_get_product( $product->get_id() )->get_variation_prices( true )['price'], 'EUR at 0.30: 3.11 and 6.11, up to 4 and 7.' );
+
+		update_option( 'wcpay_multi_currency_price_rounding_eur', '0.50' );
+		$this->assertSame( array_combine( $variation_ids, array( '3.50', '6.50' ) ), wc_get_product( $product->get_id() )->get_variation_prices( true )['price'], 'Only the step changes to 0.50: up to 3.50 and 6.50.' );
+
+		update_option( 'wcpay_multi_currency_price_charm_eur', '-0.01' );
+		$this->assertSame( array_combine( $variation_ids, array( '3.49', '6.49' ) ), wc_get_product( $product->get_id() )->get_variation_prices( true )['price'], 'Only the charm changes to -0.01: 3.49 and 6.49.' );
+
+		$selected = 'JPY';
+		$this->assertSame( array_combine( $variation_ids, array( '3', '6' ) ), wc_get_product( $product->get_id() )->get_variation_prices( true )['price'], 'JPY with EUR\'s rate, step and charm: 3.49 and 6.49 shown with no decimals.' );
 	}
 
 	/**
