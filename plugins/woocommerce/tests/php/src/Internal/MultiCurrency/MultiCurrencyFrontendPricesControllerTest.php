@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
@@ -30,7 +31,9 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		'woocommerce_product_variation_get_price',
 		'woocommerce_product_variation_get_regular_price',
 		'woocommerce_product_variation_get_sale_price',
-		'woocommerce_variation_prices',
+		'woocommerce_variation_prices_price',
+		'woocommerce_variation_prices_regular_price',
+		'woocommerce_variation_prices_sale_price',
 		'woocommerce_get_variation_prices_hash',
 		'woocommerce_shipping_zone_shipping_methods',
 		'woocommerce_shipping_method_add_rate_args',
@@ -100,7 +103,9 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 99, has_filter( 'woocommerce_product_variation_get_price', array( $sut, 'get_product_price_string' ) ) );
 		$this->assertSame( 99, has_filter( 'woocommerce_product_variation_get_regular_price', array( $sut, 'get_product_price_string' ) ) );
 		$this->assertSame( 99, has_filter( 'woocommerce_product_variation_get_sale_price', array( $sut, 'get_product_price_string' ) ) );
-		$this->assertSame( 99, has_filter( 'woocommerce_variation_prices', array( $sut, 'get_variation_price_range' ) ) );
+		$this->assertSame( 99, has_filter( 'woocommerce_variation_prices_price', array( $sut, 'get_product_price_string' ) ) );
+		$this->assertSame( 99, has_filter( 'woocommerce_variation_prices_regular_price', array( $sut, 'get_product_price_string' ) ) );
+		$this->assertSame( 99, has_filter( 'woocommerce_variation_prices_sale_price', array( $sut, 'get_product_price_string' ) ) );
 		$this->assertSame( 99, has_filter( 'woocommerce_get_variation_prices_hash', array( $sut, 'add_exchange_rate_to_variation_prices_hash' ) ) );
 		$this->assertSame( 99, has_filter( 'woocommerce_shipping_zone_shipping_methods', array( $sut, 'convert_free_shipping_method_min_amount' ) ) );
 		$this->assertSame( 99, has_filter( 'woocommerce_shipping_method_add_rate_args', array( $sut, 'convert_shipping_method_rate_cost' ) ) );
@@ -138,19 +143,6 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assertSame( '20', $sut->get_product_price_string( '10.00', (object) array() ) );
-		$this->assertSame(
-			array(
-				'price'         => array( 11 => '20' ),
-				'regular_price' => array( 11 => '24' ),
-			),
-			$sut->get_variation_price_range(
-				array(
-					'price'         => array( 11 => '10.00' ),
-					'regular_price' => array( 11 => '12.00' ),
-				)
-			)
-		);
-		$this->assertSame( array( 'base', 2.0 ), $sut->add_exchange_rate_to_variation_prices_hash( array( 'base' ) ) );
 		$this->assertSame( array( 'cost' => 6.0 ), $sut->convert_shipping_method_rate_cost( array( 'cost' => '2.00' ) ) );
 		$this->assertSame(
 			array(
@@ -221,6 +213,138 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$this->assertEquals( 2.74, $fixed_coupon->get_amount(), '3.01 x 0.91 = 2.7391, rounded to two decimals.' );
 		$this->assertEquals( 18.49, $fixed_coupon->get_minimum_amount(), 'A coupon minimum is treated as a product price (client FrontendPrices.php:329-337).' );
 		$this->assertEquals( 10, $percent_coupon->get_amount(), 'A percent coupon keeps its percentage.' );
+	}
+
+	/**
+	 * @testdox Should convert a variable product's range before rounding it to the selected currency's decimals: JPY rounding $rounding.
+	 *
+	 * The prices are a recorded store run's: a PLN store, JPY at a manual 35, variations at 10.37 and 20.37 PLN. Core rounds
+	 * the range's prices with `wc_get_price_decimals()`, which is the selected currency's 0 on the storefront. The run showed
+	 * ¥350 - ¥700 (no rounding) and ¥400 - ¥700 (the default step of 100) while the variations and the cart charged
+	 * ¥363 and ¥713, and ¥400 and ¥800.
+	 *
+	 * @testWith ["0.00", "363", "713"]
+	 *           [null, "400", "800"]
+	 *
+	 * @param string|null $rounding JPY rounding step, null for the default.
+	 * @param string      $small    Range price of the 10.37 PLN variation.
+	 * @param string      $large    Range price of the 20.37 PLN variation.
+	 */
+	public function test_converts_a_variable_range_before_rounding_it_to_the_selected_currency_decimals( ?string $rounding, string $small, string $large ): void {
+		update_option( 'woocommerce_currency', 'PLN' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'PLN', 'JPY' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_jpy', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_jpy', '35' );
+		if ( null !== $rounding ) {
+			update_option( 'wcpay_multi_currency_price_rounding_jpy', $rounding );
+		}
+		add_filter( 'wcpay_multi_currency_override_selected_currency', fn() => 'JPY' );
+		$this->register_storefront_controllers();
+
+		list( $product, $variation_ids ) = $this->create_variable_product( array( '10.37', '20.37' ) );
+		$prices                          = $product->get_variation_prices( true );
+
+		$this->assertSame( array_combine( $variation_ids, array( $small, $large ) ), $prices['price'] );
+		$this->assertSame( array_combine( $variation_ids, array( $small, $large ) ), $prices['regular_price'] );
+		$this->assertSame( $small, wc_get_product( $variation_ids[0] )->get_price(), 'The variation charges the range price.' );
+		$this->assertSame( $large, wc_get_product( $variation_ids[1] )->get_price(), 'The variation charges the range price.' );
+	}
+
+	/**
+	 * @testdox Should keep a variation's sale in the range in the selected currency.
+	 *
+	 * Core treats a variation as on sale only while its sale price equals its active price, so all three convert alike.
+	 */
+	public function test_keeps_a_variation_sale_in_the_range_in_the_selected_currency(): void {
+		update_option( 'woocommerce_currency', 'PLN' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'PLN', 'JPY' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_jpy', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_jpy', '35' );
+		update_option( 'wcpay_multi_currency_price_rounding_jpy', '0.00' );
+		add_filter( 'wcpay_multi_currency_override_selected_currency', fn() => 'JPY' );
+		$this->register_storefront_controllers();
+
+		list( $product, $variation_ids ) = $this->create_variable_product( array( '20.37' ) );
+		$variation                       = wc_get_product( $variation_ids[0] );
+		$variation->set_sale_price( '10.37' );
+		$variation->save();
+		\WC_Product_Variable::sync( $product->get_id() );
+		$prices = wc_get_product( $product->get_id() )->get_variation_prices( true );
+
+		$this->assertSame( array( $variation_ids[0] => '363' ), $prices['price'] );
+		$this->assertSame( array( $variation_ids[0] => '713' ), $prices['regular_price'] );
+		$this->assertSame( array( $variation_ids[0] => '363' ), $prices['sale_price'] );
+	}
+
+	/**
+	 * @testdox Should round a variable product's range to the rounding step before adding tax, as the simple product and the cart do.
+	 *
+	 * The prices are a recorded store run's: a PLN store, EUR at a manual 0.9 with the default 1.00 step, 20% tax shown
+	 * including tax, a 12 PLN variation and a 12 PLN simple product. The run showed the range at 13,00 EUR (tax added first:
+	 * 14.40 x 0.9 = 12.96, up to 13.00) and the simple product at 13,20 EUR (12 x 0.9 = 10.80, up to 11.00, plus 2.20 tax),
+	 * which the cart charged for either.
+	 */
+	public function test_rounds_a_variable_range_before_adding_tax(): void {
+		update_option( 'woocommerce_currency', 'PLN' );
+		update_option( 'woocommerce_calc_taxes', 'yes' );
+		update_option( 'woocommerce_prices_include_tax', 'no' );
+		update_option( 'woocommerce_tax_display_shop', 'incl' );
+		\WC_Tax::_insert_tax_rate(
+			array(
+				'tax_rate_country'  => '',
+				'tax_rate'          => '20.0000',
+				'tax_rate_name'     => 'VAT',
+				'tax_rate_priority' => '1',
+				'tax_rate_compound' => '0',
+				'tax_rate_shipping' => '1',
+				'tax_rate_order'    => '1',
+				'tax_rate_class'    => '',
+			)
+		);
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'PLN', 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		add_filter( 'wcpay_multi_currency_override_selected_currency', fn() => 'EUR' );
+		$this->register_storefront_controllers();
+
+		list( $product, $variation_ids ) = $this->create_variable_product( array( '12', '12' ) );
+		$simple                          = \WC_Helper_Product::create_simple_product( true, array( 'regular_price' => '12' ) );
+
+		$this->assertSame( array_combine( $variation_ids, array( '13.20', '13.20' ) ), $product->get_variation_prices( true )['price'] );
+		$this->assertSame( 13.2, wc_get_price_to_display( $simple ), 'The simple product shows the same price.' );
+	}
+
+	/**
+	 * @testdox Should not show a variable range cached for another currency or an older rate.
+	 *
+	 * Core caches the range's prices across requests under the variation price hash. EUR at 0.22 or 0.30 and GBP at 0.19,
+	 * all with the default 1.00 step, convert 1 PLN to the same 1.00, so the hash must name the currency and its rate.
+	 */
+	public function test_does_not_show_a_variable_range_cached_for_another_currency_or_rate(): void {
+		update_option( 'woocommerce_currency', 'PLN' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'PLN', 'EUR', 'GBP' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.22' );
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.19' );
+		$selected = 'EUR';
+		add_filter(
+			'wcpay_multi_currency_override_selected_currency',
+			function () use ( &$selected ) {
+				return $selected;
+			}
+		);
+		$this->register_storefront_controllers();
+		list( $product, $variation_ids ) = $this->create_variable_product( array( '10.37', '20.37' ) );
+
+		$this->assertSame( array_combine( $variation_ids, array( '3.00', '5.00' ) ), $product->get_variation_prices( true )['price'], 'EUR at 0.22: 2.28 and 4.48, up to 3 and 5.' );
+
+		$selected = 'GBP';
+		$this->assertSame( array_combine( $variation_ids, array( '2.00', '4.00' ) ), wc_get_product( $product->get_id() )->get_variation_prices( true )['price'], 'GBP at 0.19: 1.97 and 3.87, up to 2 and 4.' );
+
+		$selected = 'EUR';
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.30' );
+		$this->assertSame( array_combine( $variation_ids, array( '4.00', '7.00' ) ), wc_get_product( $product->get_id() )->get_variation_prices( true )['price'], 'EUR at 0.30: 3.11 and 6.11, up to 4 and 7.' );
 	}
 
 	/**
@@ -752,6 +876,43 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 				return $this->should_register_frontend_hooks;
 			}
 		};
+	}
+
+	/**
+	 * Register the price and currency controllers on the real services, as a storefront request does.
+	 */
+	private function register_storefront_controllers(): void {
+		$arbiter = $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+		foreach ( array( new MultiCurrencyFrontendPricesController(), new MultiCurrencyFrontendCurrenciesController() ) as $controller ) {
+			$controller->init( $arbiter, wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ), wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class ) );
+			$controller->register();
+		}
+	}
+
+	/**
+	 * Create a variable product with one variation per price.
+	 *
+	 * @param string[] $prices Variation regular prices.
+	 * @return array{0:\WC_Product_Variable,1:int[]} The product and its variation IDs, in price order.
+	 */
+	private function create_variable_product( array $prices ): array {
+		$attribute = new \WC_Product_Attribute();
+		$attribute->set_name( 'size' );
+		$attribute->set_options( array( 'S', 'L' ) );
+		$attribute->set_visible( true );
+		$attribute->set_variation( true );
+		$product = new \WC_Product_Variable();
+		$product->set_name( 'Probe variable widget' );
+		$product->set_attributes( array( $attribute ) );
+		$product->save();
+
+		$variation_ids = array();
+		foreach ( array_values( $prices ) as $index => $price ) {
+			$variation_ids[] = \WC_Helper_Product::create_product_variation_object( $product->get_id(), '', $price, array( 'size' => 0 === $index ? 'S' : 'L' ) )->get_id();
+		}
+		\WC_Product_Variable::sync( $product->get_id() );
+
+		return array( wc_get_product( $product->get_id() ), $variation_ids );
 	}
 
 	/**

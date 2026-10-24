@@ -116,7 +116,10 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 		add_filter( 'woocommerce_product_variation_get_price', array( $this, 'get_product_price_string' ), 99, 2 );
 		add_filter( 'woocommerce_product_variation_get_regular_price', array( $this, 'get_product_price_string' ), 99, 2 );
 		add_filter( 'woocommerce_product_variation_get_sale_price', array( $this, 'get_product_price_string' ), 99, 2 );
-		add_filter( 'woocommerce_variation_prices', array( $this, 'get_variation_price_range' ), 99 );
+		// Each range price converts before core adds tax and rounds it, as a variation's own price does.
+		add_filter( 'woocommerce_variation_prices_price', array( $this, 'get_product_price_string' ), 99 );
+		add_filter( 'woocommerce_variation_prices_regular_price', array( $this, 'get_product_price_string' ), 99 );
+		add_filter( 'woocommerce_variation_prices_sale_price', array( $this, 'get_product_price_string' ), 99 );
 		add_filter( 'woocommerce_get_variation_prices_hash', array( $this, 'add_exchange_rate_to_variation_prices_hash' ), 99 );
 		add_filter( 'woocommerce_shipping_zone_shipping_methods', array( $this, 'convert_free_shipping_method_min_amount' ), 99 );
 		add_filter( 'woocommerce_shipping_method_add_rate_args', array( $this, 'convert_shipping_method_rate_cost' ), 99, 2 );
@@ -156,31 +159,9 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Project variation price ranges.
+	 * Add the selected currency's conversion settings to the variation price hash.
 	 *
-	 * @param mixed $variation_prices Variation price range arrays.
-	 * @return mixed
-	 */
-	public function get_variation_price_range( $variation_prices ) {
-		if ( ! is_array( $variation_prices ) ) {
-			return $variation_prices;
-		}
-
-		foreach ( $variation_prices as $price_type => $prices ) {
-			if ( ! is_array( $prices ) ) {
-				continue;
-			}
-
-			foreach ( $prices as $variation_id => $price ) {
-				$variation_prices[ $price_type ][ $variation_id ] = $this->get_product_price_string( $price );
-			}
-		}
-
-		return $variation_prices;
-	}
-
-	/**
-	 * Add the selected-currency exchange rate to the variation price hash.
+	 * Core caches the range's converted prices under this hash, so it varies with everything the conversion depends on.
 	 *
 	 * @param mixed $prices_hash Variation prices hash.
 	 * @return mixed
@@ -190,7 +171,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 			return $prices_hash;
 		}
 
-		$prices_hash[] = $this->get_product_price( 1 );
+		$prices_hash[] = $this->get_price_projection_service()->get_selected_currency_conversion_key();
 
 		return $prices_hash;
 	}

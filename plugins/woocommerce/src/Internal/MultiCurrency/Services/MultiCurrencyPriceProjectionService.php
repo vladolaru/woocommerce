@@ -101,6 +101,17 @@ class MultiCurrencyPriceProjectionService {
 	}
 
 	/**
+	 * Get what converting a product price to the selected currency depends on: its code, rate, rounding step and charm.
+	 *
+	 * @return array{0:string,1:string,2:string,3:float}
+	 */
+	public function get_selected_currency_conversion_key(): array {
+		$currency = $this->state_builder->build()->get_selected_currency();
+
+		return array( $currency->get_code(), $currency->get_rate_decimal(), $currency->get_rounding_decimal(), $currency->get_charm() );
+	}
+
+	/**
 	 * Convert a selected-currency amount back to the store currency at the raw rate, with no rounding.
 	 *
 	 * @param float $amount Amount in the selected currency.
