@@ -170,6 +170,7 @@ class WC_REST_Order_Refunds_Controller_Test extends WC_REST_Unit_Test_Case {
 	 *
 	 * @testWith ["JPY", 0, "USD", "5.25", "-5.25", "12.75", "0.25", "-0.25", "12.50"]
 	 *           ["JPY", 0, "USD", "5.75", "-5.75", "12.25", "12.25", "-12.25", "0.00"]
+	 *           ["USD", 2, "KWD", "5.125", "-5.125", "12.875", "0.125", "-0.125", "12.750"]
 	 *           ["USD", 0, "USD", "5.25", "-5", "13", "2", "-2", "11"]
 	 *
 	 * @param string $store_currency   Store currency.
