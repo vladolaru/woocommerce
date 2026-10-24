@@ -7,9 +7,9 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrencie
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyOrderContextService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use WC_Unit_Test_Case;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -181,8 +181,8 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$sut = new MultiCurrencyFrontendPricesController();
 		$sut->init(
 			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
-			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ),
-			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
+			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
+			wc_get_container()->get( MultiCurrencyRequestContext::class )
 		);
 		$sut->register();
 
@@ -470,8 +470,8 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$sut = new MultiCurrencyFrontendPricesController();
 		$sut->init(
 			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
-			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ),
-			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
+			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
+			wc_get_container()->get( MultiCurrencyRequestContext::class )
 		);
 		$sut->register();
 
@@ -663,8 +663,8 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$sut = new MultiCurrencyFrontendPricesController();
 		$sut->init(
 			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
-			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ),
-			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
+			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
+			wc_get_container()->get( MultiCurrencyRequestContext::class )
 		);
 		$order = wc_create_order();
 		$order->set_currency( $order_currency );
@@ -676,7 +676,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $rate, $order->get_meta( '_wcpay_multi_currency_order_exchange_rate', true ) );
 		$this->assertSame( $store_currency, $order->get_meta( '_wcpay_multi_currency_order_default_currency', true ) );
 
-		$stats = wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )->create_analytics_projection_service()->update_order_stats_data(
+		$stats = wc_get_container()->get( MultiCurrencyServiceFactory::class )->create_analytics_projection_service()->update_order_stats_data(
 			array(
 				'net_total'      => $net_total,
 				'shipping_total' => $shipping_total,
@@ -837,8 +837,8 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$controller = new MultiCurrencyFrontendPricesController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ),
-			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
+			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
+			wc_get_container()->get( MultiCurrencyRequestContext::class )
 		);
 		$controller->set_price_projection_service( $this->create_projection_service( $should_project_queries ) );
 		if ( null !== $request_context && method_exists( $controller, 'set_request_context' ) ) {
@@ -1035,7 +1035,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$arbiter    = $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$currencies = new MultiCurrencyFrontendCurrenciesController();
 		foreach ( array( new MultiCurrencyFrontendPricesController(), $currencies ) as $controller ) {
-			$controller->init( $arbiter, wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ), wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class ) );
+			$controller->init( $arbiter, wc_get_container()->get( MultiCurrencyServiceFactory::class ), wc_get_container()->get( MultiCurrencyRequestContext::class ), wc_get_container()->get( MultiCurrencyOrderContextService::class ) );
 			$controller->register();
 		}
 

@@ -8,7 +8,6 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 
@@ -32,28 +31,21 @@ class MultiCurrencyRestRequestOverrideController implements RegisterHooksInterfa
 	/**
 	 * Request context.
 	 *
-	 * @var MultiCurrencyRequestContext|null
+	 * @var MultiCurrencyRequestContext
 	 */
-	private ?MultiCurrencyRequestContext $request_context = null;
-
-	/**
-	 * Runtime service factory.
-	 *
-	 * @var MultiCurrencyRuntimeServiceFactory
-	 */
-	private MultiCurrencyRuntimeServiceFactory $runtime_service_factory;
+	private MultiCurrencyRequestContext $request_context;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter        $arbiter                 Runtime owner arbiter.
-	 * @param MultiCurrencyRuntimeServiceFactory $runtime_service_factory Runtime service factory.
+	 * @param MultiCurrencyRuntimeArbiter $arbiter         Runtime owner arbiter.
+	 * @param MultiCurrencyRequestContext $request_context Request context.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyRuntimeServiceFactory $runtime_service_factory ): void {
-		$this->arbiter                 = $arbiter;
-		$this->runtime_service_factory = $runtime_service_factory;
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyRequestContext $request_context ): void {
+		$this->arbiter         = $arbiter;
+		$this->request_context = $request_context;
 	}
 
 	/**
@@ -71,7 +63,7 @@ class MultiCurrencyRestRequestOverrideController implements RegisterHooksInterfa
 	 * Register non-Store REST request-local override filters.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() || ! $this->get_request_context()->should_register_rest_request_overrides() ) {
+		if ( ! $this->arbiter->should_core_register() || ! $this->request_context->should_register_rest_request_overrides() ) {
 			return;
 		}
 
@@ -117,18 +109,5 @@ class MultiCurrencyRestRequestOverrideController implements RegisterHooksInterfa
 		unset( $currency_code );
 
 		return strtoupper( get_woocommerce_currency() );
-	}
-
-	/**
-	 * Get the request context.
-	 *
-	 * @return MultiCurrencyRequestContext
-	 */
-	private function get_request_context(): MultiCurrencyRequestContext {
-		if ( null === $this->request_context ) {
-			$this->request_context = $this->runtime_service_factory->create_request_context();
-		}
-
-		return $this->request_context;
 	}
 }

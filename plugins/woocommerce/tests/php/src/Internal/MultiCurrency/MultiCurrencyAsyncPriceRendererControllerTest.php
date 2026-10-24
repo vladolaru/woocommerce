@@ -6,9 +6,8 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAsyncPriceRendererController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use WC_Unit_Test_Case;
 
 /**
@@ -451,8 +450,8 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 		$controller = new MultiCurrencyAsyncPriceRendererController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ),
-			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
+			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
+			wc_get_container()->get( MultiCurrencyRequestContext::class )
 		);
 		$controller->set_frontend_projection_service( $this->create_frontend_projection_service( $cache_optimized_mode ) );
 		$controller->set_request_context( $this->create_request_context( $frontend_request, $store_api_request, $admin_api_request ) );

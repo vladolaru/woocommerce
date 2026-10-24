@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherProjectionService;
@@ -56,11 +56,11 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	private MultiCurrencyStateBuilderFactory $state_builder_factory;
 
 	/**
-	 * Runtime service factory.
+	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyRuntimeServiceFactory
+	 * @var MultiCurrencyServiceFactory
 	 */
-	private MultiCurrencyRuntimeServiceFactory $runtime_service_factory;
+	private MultiCurrencyServiceFactory $service_factory;
 
 	/**
 	 * Compatibility controller.
@@ -90,18 +90,18 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	 *
 	 * @param MultiCurrencyRuntimeArbiter          $arbiter                  Runtime owner arbiter.
 	 * @param MultiCurrencyStateBuilderFactory     $state_builder_factory    State builder factory.
-	 * @param MultiCurrencyRuntimeServiceFactory   $runtime_service_factory  Runtime service factory.
+	 * @param MultiCurrencyServiceFactory          $service_factory          Multi-Currency service factory.
 	 * @param MultiCurrencyCompatibilityController $compatibility_controller Compatibility controller.
 	 */
 	final public function init(
 		MultiCurrencyRuntimeArbiter $arbiter,
 		MultiCurrencyStateBuilderFactory $state_builder_factory,
-		MultiCurrencyRuntimeServiceFactory $runtime_service_factory,
+		MultiCurrencyServiceFactory $service_factory,
 		MultiCurrencyCompatibilityController $compatibility_controller
 	): void {
 		$this->arbiter                  = $arbiter;
 		$this->state_builder_factory    = $state_builder_factory;
-		$this->runtime_service_factory  = $runtime_service_factory;
+		$this->service_factory          = $service_factory;
 		$this->compatibility_controller = $compatibility_controller;
 	}
 
@@ -267,7 +267,7 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	 */
 	private function get_switcher_projection_service(): MultiCurrencySwitcherProjectionService {
 		if ( null === $this->switcher_projection_service ) {
-			$this->switcher_projection_service = $this->runtime_service_factory->create_switcher_projection_service( $this->get_state_builder() );
+			$this->switcher_projection_service = $this->service_factory->create_switcher_projection_service();
 		}
 
 		return $this->switcher_projection_service;

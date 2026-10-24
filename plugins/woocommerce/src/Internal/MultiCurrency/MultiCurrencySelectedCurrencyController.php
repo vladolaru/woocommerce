@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelectedCurrencyPersistenceService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
@@ -47,9 +47,9 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	/**
 	 * Request context.
 	 *
-	 * @var MultiCurrencyRequestContext|null
+	 * @var MultiCurrencyRequestContext
 	 */
-	private ?MultiCurrencyRequestContext $request_context = null;
+	private MultiCurrencyRequestContext $request_context;
 
 	/**
 	 * Geolocation service.
@@ -73,11 +73,11 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	private array $simulation_params = array();
 
 	/**
-	 * Runtime service factory.
+	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyRuntimeServiceFactory
+	 * @var MultiCurrencyServiceFactory
 	 */
-	private MultiCurrencyRuntimeServiceFactory $runtime_service_factory;
+	private MultiCurrencyServiceFactory $service_factory;
 
 	/**
 	 * Compatibility controller.
@@ -92,13 +92,15 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	 * @internal
 	 *
 	 * @param MultiCurrencyRuntimeArbiter          $arbiter                  Runtime owner arbiter.
-	 * @param MultiCurrencyRuntimeServiceFactory   $runtime_service_factory  Runtime service factory.
+	 * @param MultiCurrencyServiceFactory          $service_factory          Multi-Currency service factory.
 	 * @param MultiCurrencyCompatibilityController $compatibility_controller Compatibility controller.
+	 * @param MultiCurrencyRequestContext          $request_context          Request context.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyRuntimeServiceFactory $runtime_service_factory, MultiCurrencyCompatibilityController $compatibility_controller ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyServiceFactory $service_factory, MultiCurrencyCompatibilityController $compatibility_controller, MultiCurrencyRequestContext $request_context ): void {
 		$this->arbiter                  = $arbiter;
-		$this->runtime_service_factory  = $runtime_service_factory;
+		$this->service_factory          = $service_factory;
 		$this->compatibility_controller = $compatibility_controller;
+		$this->request_context          = $request_context;
 	}
 
 	/**
@@ -144,8 +146,8 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 
 		add_filter( 'woocommerce_rest_prepare_customer', array( $this, 'handle_woocommerce_rest_prepare_customer' ), 10, 3 );
 
-		if ( $this->get_request_context()->should_register_selected_currency_entry_hooks() ) {
-			if ( $this->get_request_context()->is_store_api_request() ) {
+		if ( $this->request_context->should_register_selected_currency_entry_hooks() ) {
+			if ( $this->request_context->is_store_api_request() ) {
 				add_filter( 'rest_pre_dispatch', array( $this, 'handle_store_api_rest_pre_dispatch' ), 10, 3 );
 			} else {
 				add_action( 'woocommerce_load_cart_from_session', array( $this, 'handle_woocommerce_load_cart_from_session' ), 10, 0 );
@@ -507,7 +509,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	 */
 	private function get_persistence_service(): MultiCurrencySelectedCurrencyPersistenceService {
 		if ( null === $this->persistence_service ) {
-			$this->persistence_service = $this->runtime_service_factory->create_selected_currency_persistence_service();
+			$this->persistence_service = $this->service_factory->create_selected_currency_persistence_service();
 		}
 
 		return $this->persistence_service;
@@ -520,23 +522,10 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	 */
 	private function get_geolocation_service(): MultiCurrencyGeolocationService {
 		if ( null === $this->geolocation_service ) {
-			$this->geolocation_service = $this->runtime_service_factory->create_geolocation_service();
+			$this->geolocation_service = $this->service_factory->create_geolocation_service();
 		}
 
 		return $this->geolocation_service;
-	}
-
-	/**
-	 * Get the request context.
-	 *
-	 * @return MultiCurrencyRequestContext
-	 */
-	private function get_request_context(): MultiCurrencyRequestContext {
-		if ( null === $this->request_context ) {
-			$this->request_context = $this->runtime_service_factory->create_request_context();
-		}
-
-		return $this->request_context;
 	}
 
 	/**
@@ -586,7 +575,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	private function should_use_async_rendering(): bool {
 		return $this->is_cache_optimized_mode()
 			&& ! $this->has_active_session()
-			&& ! $this->get_request_context()->is_store_api_request();
+			&& ! $this->request_context->is_store_api_request();
 	}
 
 	/**

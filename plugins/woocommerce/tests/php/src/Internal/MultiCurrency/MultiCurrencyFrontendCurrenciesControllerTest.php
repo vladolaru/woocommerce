@@ -9,9 +9,8 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesCon
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyOrderContextService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use WC_Unit_Test_Case;
 
 /**
@@ -469,10 +468,10 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 
 		$arbiter = $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$prices  = new MultiCurrencyFrontendPricesController();
-		$prices->init( $arbiter, wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ), wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class ) );
+		$prices->init( $arbiter, wc_get_container()->get( MultiCurrencyServiceFactory::class ), wc_get_container()->get( MultiCurrencyRequestContext::class ) );
 		$prices->register();
 		$sut = new MultiCurrencyFrontendCurrenciesController();
-		$sut->init( $arbiter, wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ), wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class ) );
+		$sut->init( $arbiter, wc_get_container()->get( MultiCurrencyServiceFactory::class ), wc_get_container()->get( MultiCurrencyRequestContext::class ), wc_get_container()->get( MultiCurrencyOrderContextService::class ) );
 		$sut->register();
 
 		$shipping_method = new \WC_Shipping_Flat_Rate( 0 );
@@ -503,8 +502,9 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		$controller = new MultiCurrencyFrontendCurrenciesController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ),
-			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
+			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
+			wc_get_container()->get( MultiCurrencyRequestContext::class ),
+			wc_get_container()->get( MultiCurrencyOrderContextService::class )
 		);
 		$controller->set_frontend_projection_service( $this->create_projection_service() );
 		if ( null !== $request_context && method_exists( $controller, 'set_request_context' ) ) {

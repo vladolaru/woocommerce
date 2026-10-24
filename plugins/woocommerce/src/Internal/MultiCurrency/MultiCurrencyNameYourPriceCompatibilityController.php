@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyRateException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -54,25 +54,25 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	private MultiCurrencyStateBuilderFactory $state_builder_factory;
 
 	/**
-	 * Projection service factory.
+	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyProjectionServiceFactory
+	 * @var MultiCurrencyServiceFactory
 	 */
-	private MultiCurrencyProjectionServiceFactory $projection_service_factory;
+	private MultiCurrencyServiceFactory $service_factory;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter           $arbiter                    Runtime owner arbiter.
-	 * @param MultiCurrencyStateBuilderFactory      $state_builder_factory      State builder factory.
-	 * @param MultiCurrencyProjectionServiceFactory $projection_service_factory Projection service factory.
+	 * @param MultiCurrencyRuntimeArbiter      $arbiter               Runtime owner arbiter.
+	 * @param MultiCurrencyStateBuilderFactory $state_builder_factory State builder factory.
+	 * @param MultiCurrencyServiceFactory      $service_factory       Multi-Currency service factory.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyStateBuilderFactory $state_builder_factory, MultiCurrencyProjectionServiceFactory $projection_service_factory ): void {
-		$this->arbiter                    = $arbiter;
-		$this->state_builder_factory      = $state_builder_factory;
-		$this->projection_service_factory = $projection_service_factory;
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyStateBuilderFactory $state_builder_factory, MultiCurrencyServiceFactory $service_factory ): void {
+		$this->arbiter               = $arbiter;
+		$this->state_builder_factory = $state_builder_factory;
+		$this->service_factory       = $service_factory;
 	}
 
 	/**
@@ -417,7 +417,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	 */
 	private function get_price_projection_service(): MultiCurrencyPriceProjectionService {
 		if ( null === $this->price_projection_service ) {
-			$this->price_projection_service = $this->projection_service_factory->create_price_projection_service( null, $this->get_state_builder() );
+			$this->price_projection_service = $this->service_factory->create_price_projection_service();
 		}
 
 		return $this->price_projection_service;

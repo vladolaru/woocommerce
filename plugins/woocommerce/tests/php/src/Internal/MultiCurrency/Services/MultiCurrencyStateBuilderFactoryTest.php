@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySelectedCurrencyC
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistrarInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelectedCurrencyPersistenceService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
@@ -456,8 +456,9 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 		$controller = new MultiCurrencySelectedCurrencyController();
 		$controller->init(
 			$this->create_core_owning_arbiter(),
-			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class ),
-			wc_get_container()->get( MultiCurrencyCompatibilityController::class )
+			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
+			wc_get_container()->get( MultiCurrencyCompatibilityController::class ),
+			wc_get_container()->get( MultiCurrencyRequestContext::class )
 		);
 		$controller->set_persistence_service( $persistence );
 		$controller->set_request_context( $this->create_store_api_request_context() );

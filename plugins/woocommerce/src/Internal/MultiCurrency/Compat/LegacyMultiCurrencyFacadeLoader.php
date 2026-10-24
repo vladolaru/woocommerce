@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Compat;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -177,7 +177,7 @@ class LegacyMultiCurrencyFacadeLoader implements RegisterHooksInterface {
 	 */
 	private function get_price_projection_service(): MultiCurrencyPriceProjectionService {
 		if ( null === $this->price_projection_service ) {
-			$this->price_projection_service = wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class )->create_price_projection_service( null, $this->get_state_builder() );
+			$this->price_projection_service = wc_get_container()->get( MultiCurrencyServiceFactory::class )->create_price_projection_service();
 		}
 
 		return $this->price_projection_service;

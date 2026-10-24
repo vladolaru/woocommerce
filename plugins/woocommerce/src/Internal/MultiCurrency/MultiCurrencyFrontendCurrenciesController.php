@@ -10,9 +10,8 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyOrderContextService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -31,18 +30,11 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	private MultiCurrencyRuntimeArbiter $arbiter;
 
 	/**
-	 * Projection service factory.
+	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyProjectionServiceFactory
+	 * @var MultiCurrencyServiceFactory
 	 */
-	private MultiCurrencyProjectionServiceFactory $projection_service_factory;
-
-	/**
-	 * Runtime service factory.
-	 *
-	 * @var MultiCurrencyRuntimeServiceFactory
-	 */
-	private MultiCurrencyRuntimeServiceFactory $runtime_service_factory;
+	private MultiCurrencyServiceFactory $service_factory;
 
 	/**
 	 * Frontend projection service.
@@ -54,16 +46,16 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	/**
 	 * Request context.
 	 *
-	 * @var MultiCurrencyRequestContext|null
+	 * @var MultiCurrencyRequestContext
 	 */
-	private ?MultiCurrencyRequestContext $request_context = null;
+	private MultiCurrencyRequestContext $request_context;
 
 	/**
 	 * Order context service.
 	 *
-	 * @var MultiCurrencyOrderContextService|null
+	 * @var MultiCurrencyOrderContextService
 	 */
-	private ?MultiCurrencyOrderContextService $order_context_service = null;
+	private MultiCurrencyOrderContextService $order_context_service;
 
 	/**
 	 * Order currency override for order-context formatting.
@@ -84,18 +76,21 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter           $arbiter                    Runtime owner arbiter.
-	 * @param MultiCurrencyProjectionServiceFactory $projection_service_factory Projection service factory.
-	 * @param MultiCurrencyRuntimeServiceFactory    $runtime_service_factory    Runtime service factory.
+	 * @param MultiCurrencyRuntimeArbiter      $arbiter               Runtime owner arbiter.
+	 * @param MultiCurrencyServiceFactory      $service_factory       Multi-Currency service factory.
+	 * @param MultiCurrencyRequestContext      $request_context       Request context.
+	 * @param MultiCurrencyOrderContextService $order_context_service Order context service.
 	 */
 	final public function init(
 		MultiCurrencyRuntimeArbiter $arbiter,
-		MultiCurrencyProjectionServiceFactory $projection_service_factory,
-		MultiCurrencyRuntimeServiceFactory $runtime_service_factory
+		MultiCurrencyServiceFactory $service_factory,
+		MultiCurrencyRequestContext $request_context,
+		MultiCurrencyOrderContextService $order_context_service
 	): void {
-		$this->arbiter                    = $arbiter;
-		$this->projection_service_factory = $projection_service_factory;
-		$this->runtime_service_factory    = $runtime_service_factory;
+		$this->arbiter               = $arbiter;
+		$this->service_factory       = $service_factory;
+		$this->request_context       = $request_context;
+		$this->order_context_service = $order_context_service;
 	}
 
 	/**
@@ -139,7 +134,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 			return;
 		}
 
-		if ( $this->get_request_context()->should_register_frontend_hooks() ) {
+		if ( $this->request_context->should_register_frontend_hooks() ) {
 			add_filter( 'woocommerce_currency', array( $this, 'get_woocommerce_currency' ), 900 );
 			add_filter( 'wc_get_price_decimals', array( $this, 'get_price_decimals' ), 900 );
 			add_filter( 'wc_get_price_decimal_separator', array( $this, 'get_price_decimal_separator' ), 900 );
@@ -292,7 +287,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * @return mixed
 	 */
 	public function maybe_init_order_currency_from_order_total_prop( $total, $order ) {
-		if ( $this->get_order_context_service()->should_use_order_currency() ) {
+		if ( $this->order_context_service->should_use_order_currency() ) {
 			$this->init_order_currency( $order );
 		}
 
@@ -311,7 +306,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	public function maybe_clear_order_currency_after_formatted_order_total( $formatted_total, $order, $tax_display, $display_refunded ) {
 		unset( $order, $tax_display, $display_refunded );
 
-		if ( null !== $this->order_currency && $this->get_order_context_service()->should_use_order_currency() ) {
+		if ( null !== $this->order_currency && $this->order_context_service->should_use_order_currency() ) {
 			$this->order_currency = null;
 		}
 
@@ -398,7 +393,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 */
 	private function get_frontend_projection_service(): MultiCurrencyFrontendProjectionService {
 		if ( null === $this->frontend_projection_service ) {
-			$this->frontend_projection_service = $this->projection_service_factory->create_frontend_projection_service();
+			$this->frontend_projection_service = $this->service_factory->create_frontend_projection_service();
 		}
 
 		return $this->frontend_projection_service;
@@ -451,31 +446,5 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 			'wc_get_price_decimal_separator'  => array( $this, 'get_price_decimal_separator' ),
 			'wc_get_price_decimals'           => array( $this, 'get_price_decimals' ),
 		);
-	}
-
-	/**
-	 * Get the request context.
-	 *
-	 * @return MultiCurrencyRequestContext
-	 */
-	private function get_request_context(): MultiCurrencyRequestContext {
-		if ( null === $this->request_context ) {
-			$this->request_context = $this->runtime_service_factory->create_request_context();
-		}
-
-		return $this->request_context;
-	}
-
-	/**
-	 * Get the order context service.
-	 *
-	 * @return MultiCurrencyOrderContextService
-	 */
-	private function get_order_context_service(): MultiCurrencyOrderContextService {
-		if ( null === $this->order_context_service ) {
-			$this->order_context_service = $this->runtime_service_factory->create_order_context_service();
-		}
-
-		return $this->order_context_service;
 	}
 }

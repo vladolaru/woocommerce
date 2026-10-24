@@ -12,9 +12,8 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySubscriptionsComp
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
@@ -499,7 +498,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 				$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
 				new LegacyProxy(),
 				wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ),
-				wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class )
+				wc_get_container()->get( MultiCurrencyServiceFactory::class )
 			);
 
 			return CallStack::run( array( 'WC_Cart_Totals->calculate_item_totals' ), static fn() => array_map( static fn( $product ) => $sut->should_convert_product_price( true, $product ), $products ) );
@@ -1020,8 +1019,8 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		$frontend_prices = new MultiCurrencyFrontendPricesController();
 		$frontend_prices->init(
 			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
-			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ),
-			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
+			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
+			wc_get_container()->get( MultiCurrencyRequestContext::class )
 		);
 		$frontend_prices->set_price_projection_service( $this->create_price_projection_service( $rate ) );
 		$frontend_prices->set_request_context(
@@ -1288,7 +1287,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 			$this->create_arbiter( $owner ),
 			new LegacyProxy(),
 			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ),
-			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class )
+			wc_get_container()->get( MultiCurrencyServiceFactory::class )
 		);
 		$controller->set_price_projection_service( $this->create_price_projection_service() );
 		$controller->set_state_builder( $this->create_state_builder( $has_additional_currencies_enabled ) );

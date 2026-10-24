@@ -13,7 +13,9 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalytic
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDatabaseCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsSqlProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use WC_Unit_Test_Case;
@@ -229,8 +231,10 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$sut = new MultiCurrencyAnalyticsController();
 		$sut->init(
 			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
-			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class ),
-			$detector
+			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
+			$detector,
+			wc_get_container()->get( MultiCurrencyRequestContext::class ),
+			wc_get_container()->get( MultiCurrencyAnalyticsSqlProjectionService::class )
 		);
 		$sut->set_rest_request_resolver( static fn(): bool => true );
 		$sut->set_hpos_resolver( static fn(): bool => false );
@@ -650,8 +654,10 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$controller = new MultiCurrencyAnalyticsController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class ),
-			new MultiCurrencyUsageDetector()
+			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
+			new MultiCurrencyUsageDetector(),
+			wc_get_container()->get( MultiCurrencyRequestContext::class ),
+			wc_get_container()->get( MultiCurrencyAnalyticsSqlProjectionService::class )
 		);
 		if ( $set_rest_request_resolver ) {
 			$controller->set_rest_request_resolver( static fn(): bool => false );
@@ -676,8 +682,10 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$controller = new MultiCurrencyAnalyticsController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class ),
-			new MultiCurrencyUsageDetector()
+			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
+			new MultiCurrencyUsageDetector(),
+			wc_get_container()->get( MultiCurrencyRequestContext::class ),
+			wc_get_container()->get( MultiCurrencyAnalyticsSqlProjectionService::class )
 		);
 		$controller->set_rest_request_resolver( static fn(): bool => true );
 		$controller->set_hpos_resolver( static fn(): bool => false );

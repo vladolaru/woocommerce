@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyRate
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySettingsCurrencyCatalog;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
@@ -80,29 +80,29 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	private ?MultiCurrencySettingsCurrencyCatalog $settings_currency_catalog = null;
 
 	/**
-	 * Projection service factory.
+	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyProjectionServiceFactory
+	 * @var MultiCurrencyServiceFactory
 	 */
-	private MultiCurrencyProjectionServiceFactory $projection_service_factory;
+	private MultiCurrencyServiceFactory $service_factory;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter             $arbiter                    Runtime owner arbiter.
-	 * @param MultiCurrencyStateBuilderFactory        $state_builder_factory      State builder factory.
-	 * @param MultiCurrencyProjectionServiceFactory   $projection_service_factory Projection service factory.
+	 * @param MultiCurrencyRuntimeArbiter             $arbiter                 Runtime owner arbiter.
+	 * @param MultiCurrencyStateBuilderFactory        $state_builder_factory   State builder factory.
+	 * @param MultiCurrencyServiceFactory             $service_factory         Multi-Currency service factory.
 	 * @param MultiCurrencyCacheRenderingService|null $cache_rendering_service Cache rendering service.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyStateBuilderFactory $state_builder_factory, MultiCurrencyProjectionServiceFactory $projection_service_factory, ?MultiCurrencyCacheRenderingService $cache_rendering_service = null ): void {
-		$this->arbiter                    = $arbiter;
-		$this->state_builder_factory      = $state_builder_factory;
-		$this->projection_service_factory = $projection_service_factory;
-		$this->cache_rendering_service    = $cache_rendering_service ?? wc_get_container()->get( MultiCurrencyCacheRenderingService::class );
-		$this->namespace                  = self::REST_NAMESPACE;
-		$this->rest_base                  = self::REST_BASE;
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyStateBuilderFactory $state_builder_factory, MultiCurrencyServiceFactory $service_factory, ?MultiCurrencyCacheRenderingService $cache_rendering_service = null ): void {
+		$this->arbiter                 = $arbiter;
+		$this->state_builder_factory   = $state_builder_factory;
+		$this->service_factory         = $service_factory;
+		$this->cache_rendering_service = $cache_rendering_service ?? wc_get_container()->get( MultiCurrencyCacheRenderingService::class );
+		$this->namespace               = self::REST_NAMESPACE;
+		$this->rest_base               = self::REST_BASE;
 	}
 
 	/**
@@ -604,7 +604,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	 */
 	private function get_frontend_projection_service(): MultiCurrencyFrontendProjectionService {
 		if ( null === $this->frontend_projection_service ) {
-			$this->frontend_projection_service = $this->projection_service_factory->create_frontend_projection_service( null, $this->get_state_builder() );
+			$this->frontend_projection_service = $this->service_factory->create_frontend_projection_service();
 		}
 
 		return $this->frontend_projection_service;

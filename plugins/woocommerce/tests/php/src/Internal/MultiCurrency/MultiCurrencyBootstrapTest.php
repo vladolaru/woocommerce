@@ -23,7 +23,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvide
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistrarInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
@@ -1239,7 +1239,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( MultiCurrencyRuntimeArbiter::class ),
 			new LegacyProxy(),
 			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ),
-			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class )
+			wc_get_container()->get( MultiCurrencyServiceFactory::class )
 		);
 		wc_get_container()->replace( MultiCurrencySubscriptionsCompatibilityController::class, $controller );
 

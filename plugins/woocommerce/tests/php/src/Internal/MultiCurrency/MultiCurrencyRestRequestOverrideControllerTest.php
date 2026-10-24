@@ -6,7 +6,6 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestRequestOverrideController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use WC_Unit_Test_Case;
 
 /**
@@ -166,7 +165,7 @@ class MultiCurrencyRestRequestOverrideControllerTest extends WC_Unit_Test_Case {
 		$controller = new MultiCurrencyRestRequestOverrideController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
+			wc_get_container()->get( MultiCurrencyRequestContext::class )
 		);
 		$controller->set_request_context( $this->create_request_context( $should_register_request_overrides ) );
 

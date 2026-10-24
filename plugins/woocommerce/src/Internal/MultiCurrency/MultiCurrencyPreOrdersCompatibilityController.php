@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -27,11 +27,11 @@ class MultiCurrencyPreOrdersCompatibilityController implements RegisterHooksInte
 	private MultiCurrencyRuntimeArbiter $arbiter;
 
 	/**
-	 * Projection service factory.
+	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyProjectionServiceFactory
+	 * @var MultiCurrencyServiceFactory
 	 */
-	private MultiCurrencyProjectionServiceFactory $projection_service_factory;
+	private MultiCurrencyServiceFactory $service_factory;
 
 	/**
 	 * Price projection service.
@@ -45,12 +45,12 @@ class MultiCurrencyPreOrdersCompatibilityController implements RegisterHooksInte
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter           $arbiter                    Runtime owner arbiter.
-	 * @param MultiCurrencyProjectionServiceFactory $projection_service_factory Projection service factory.
+	 * @param MultiCurrencyRuntimeArbiter $arbiter         Runtime owner arbiter.
+	 * @param MultiCurrencyServiceFactory $service_factory Multi-Currency service factory.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyProjectionServiceFactory $projection_service_factory ): void {
-		$this->arbiter                    = $arbiter;
-		$this->projection_service_factory = $projection_service_factory;
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyServiceFactory $service_factory ): void {
+		$this->arbiter         = $arbiter;
+		$this->service_factory = $service_factory;
 	}
 
 	/**
@@ -125,7 +125,7 @@ class MultiCurrencyPreOrdersCompatibilityController implements RegisterHooksInte
 	 */
 	private function get_price_projection_service(): MultiCurrencyPriceProjectionService {
 		if ( null === $this->price_projection_service ) {
-			$this->price_projection_service = $this->projection_service_factory->create_price_projection_service();
+			$this->price_projection_service = $this->service_factory->create_price_projection_service();
 		}
 
 		return $this->price_projection_service;

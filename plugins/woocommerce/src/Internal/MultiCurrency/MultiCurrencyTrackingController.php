@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyTrackingProjectionService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Utilities\OrderUtil;
@@ -44,23 +44,23 @@ class MultiCurrencyTrackingController implements RegisterHooksInterface {
 	private $hpos_enabled_resolver = null;
 
 	/**
-	 * Runtime service factory.
+	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyRuntimeServiceFactory
+	 * @var MultiCurrencyServiceFactory
 	 */
-	private MultiCurrencyRuntimeServiceFactory $runtime_service_factory;
+	private MultiCurrencyServiceFactory $service_factory;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter        $arbiter                 Runtime owner arbiter.
-	 * @param MultiCurrencyRuntimeServiceFactory $runtime_service_factory Runtime service factory.
+	 * @param MultiCurrencyRuntimeArbiter $arbiter         Runtime owner arbiter.
+	 * @param MultiCurrencyServiceFactory $service_factory Multi-Currency service factory.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyRuntimeServiceFactory $runtime_service_factory ): void {
-		$this->arbiter                 = $arbiter;
-		$this->runtime_service_factory = $runtime_service_factory;
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyServiceFactory $service_factory ): void {
+		$this->arbiter         = $arbiter;
+		$this->service_factory = $service_factory;
 	}
 
 	/**
@@ -115,7 +115,7 @@ class MultiCurrencyTrackingController implements RegisterHooksInterface {
 	 */
 	private function get_tracking_projection_service(): MultiCurrencyTrackingProjectionService {
 		if ( null === $this->tracking_projection_service ) {
-			$this->tracking_projection_service = $this->runtime_service_factory->create_tracking_projection_service();
+			$this->tracking_projection_service = $this->service_factory->create_tracking_projection_service();
 		}
 
 		return $this->tracking_projection_service;

@@ -9,9 +9,8 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 
@@ -38,18 +37,11 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	private MultiCurrencyRuntimeArbiter $arbiter;
 
 	/**
-	 * Projection service factory.
+	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyProjectionServiceFactory
+	 * @var MultiCurrencyServiceFactory
 	 */
-	private MultiCurrencyProjectionServiceFactory $projection_service_factory;
-
-	/**
-	 * Runtime service factory.
-	 *
-	 * @var MultiCurrencyRuntimeServiceFactory
-	 */
-	private MultiCurrencyRuntimeServiceFactory $runtime_service_factory;
+	private MultiCurrencyServiceFactory $service_factory;
 
 	/**
 	 * Frontend projection service.
@@ -61,9 +53,9 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	/**
 	 * Request context.
 	 *
-	 * @var MultiCurrencyRequestContext|null
+	 * @var MultiCurrencyRequestContext
 	 */
-	private ?MultiCurrencyRequestContext $request_context = null;
+	private MultiCurrencyRequestContext $request_context;
 
 	/**
 	 * Active session resolver.
@@ -91,18 +83,18 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter           $arbiter                    Runtime owner arbiter.
-	 * @param MultiCurrencyProjectionServiceFactory $projection_service_factory Projection service factory.
-	 * @param MultiCurrencyRuntimeServiceFactory    $runtime_service_factory    Runtime service factory.
+	 * @param MultiCurrencyRuntimeArbiter $arbiter         Runtime owner arbiter.
+	 * @param MultiCurrencyServiceFactory $service_factory Multi-Currency service factory.
+	 * @param MultiCurrencyRequestContext $request_context Request context.
 	 */
 	final public function init(
 		MultiCurrencyRuntimeArbiter $arbiter,
-		MultiCurrencyProjectionServiceFactory $projection_service_factory,
-		MultiCurrencyRuntimeServiceFactory $runtime_service_factory
+		MultiCurrencyServiceFactory $service_factory,
+		MultiCurrencyRequestContext $request_context
 	): void {
-		$this->arbiter                    = $arbiter;
-		$this->projection_service_factory = $projection_service_factory;
-		$this->runtime_service_factory    = $runtime_service_factory;
+		$this->arbiter         = $arbiter;
+		$this->service_factory = $service_factory;
+		$this->request_context = $request_context;
 	}
 
 	/**
@@ -186,7 +178,7 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	 * @internal
 	 */
 	public function maybe_register_async_hooks(): void {
-		$request_context = $this->get_request_context();
+		$request_context = $this->request_context;
 		if (
 			! $this->arbiter->should_core_register()
 			|| ! $request_context->should_register_frontend_hooks()
@@ -380,23 +372,10 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	 */
 	private function get_frontend_projection_service(): MultiCurrencyFrontendProjectionService {
 		if ( null === $this->frontend_projection_service ) {
-			$this->frontend_projection_service = $this->projection_service_factory->create_frontend_projection_service();
+			$this->frontend_projection_service = $this->service_factory->create_frontend_projection_service();
 		}
 
 		return $this->frontend_projection_service;
-	}
-
-	/**
-	 * Get the request context.
-	 *
-	 * @return MultiCurrencyRequestContext
-	 */
-	private function get_request_context(): MultiCurrencyRequestContext {
-		if ( null === $this->request_context ) {
-			$this->request_context = $this->runtime_service_factory->create_request_context();
-		}
-
-		return $this->request_context;
 	}
 
 	/**

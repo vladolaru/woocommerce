@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRuntimeServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherProjectionService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
@@ -50,11 +50,11 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 	private MultiCurrencyCompatibilityController $compatibility_controller;
 
 	/**
-	 * Runtime service factory.
+	 * Multi-Currency service factory.
 	 *
-	 * @var MultiCurrencyRuntimeServiceFactory
+	 * @var MultiCurrencyServiceFactory
 	 */
-	private MultiCurrencyRuntimeServiceFactory $runtime_service_factory;
+	private MultiCurrencyServiceFactory $service_factory;
 
 	/**
 	 * Switcher projection service.
@@ -70,16 +70,16 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 	 *
 	 * @param MultiCurrencyRuntimeArbiter          $arbiter                  Runtime owner arbiter.
 	 * @param MultiCurrencyCompatibilityController $compatibility_controller Compatibility controller.
-	 * @param MultiCurrencyRuntimeServiceFactory   $runtime_service_factory  Runtime service factory.
+	 * @param MultiCurrencyServiceFactory          $service_factory          Multi-Currency service factory.
 	 */
 	final public function init(
 		MultiCurrencyRuntimeArbiter $arbiter,
 		MultiCurrencyCompatibilityController $compatibility_controller,
-		MultiCurrencyRuntimeServiceFactory $runtime_service_factory
+		MultiCurrencyServiceFactory $service_factory
 	): void {
 		$this->arbiter                  = $arbiter;
 		$this->compatibility_controller = $compatibility_controller;
-		$this->runtime_service_factory  = $runtime_service_factory;
+		$this->service_factory          = $service_factory;
 	}
 
 	/**
@@ -253,7 +253,7 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 	 */
 	private function get_switcher_projection_service(): MultiCurrencySwitcherProjectionService {
 		if ( null === $this->switcher_projection_service ) {
-			$this->switcher_projection_service = $this->runtime_service_factory->create_switcher_projection_service();
+			$this->switcher_projection_service = $this->service_factory->create_switcher_projection_service();
 		}
 
 		return $this->switcher_projection_service;

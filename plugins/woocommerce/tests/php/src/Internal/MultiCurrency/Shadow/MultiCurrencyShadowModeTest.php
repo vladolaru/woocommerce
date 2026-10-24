@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencyShadowComparison;
 use Automattic\WooCommerce\Internal\MultiCurrency\Shadow\MultiCurrencyShadowMode;
@@ -97,7 +97,7 @@ class MultiCurrencyShadowModeTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( MultiCurrencyRuntimeArbiter::class ),
 			new MultiCurrencySurfaceDiffer(),
 			wc_get_container()->get( LegacyProxy::class ),
-			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class )
+			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )
 		);
 		$this->sut->set_projection_service( $this->projection_service );
 

@@ -9,8 +9,8 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Shadow;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceCalculator;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -71,11 +71,11 @@ class MultiCurrencyShadowMode implements RegisterHooksInterface {
 	private MultiCurrencyRuntimeArbiter $arbiter;
 
 	/**
-	 * Projection service factory.
+	 * State builder factory.
 	 *
-	 * @var MultiCurrencyProjectionServiceFactory
+	 * @var MultiCurrencyStateBuilderFactory
 	 */
-	private MultiCurrencyProjectionServiceFactory $projection_service_factory;
+	private MultiCurrencyStateBuilderFactory $state_builder_factory;
 
 	/**
 	 * Native price/meta projection service.
@@ -103,16 +103,16 @@ class MultiCurrencyShadowMode implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter           $arbiter                    Runtime owner arbiter.
-	 * @param MultiCurrencySurfaceDiffer            $differ                     Multi-currency surface differ.
-	 * @param LegacyProxy                           $legacy_proxy               Legacy proxy.
-	 * @param MultiCurrencyProjectionServiceFactory $projection_service_factory Projection service factory.
+	 * @param MultiCurrencyRuntimeArbiter      $arbiter               Runtime owner arbiter.
+	 * @param MultiCurrencySurfaceDiffer       $differ                Multi-currency surface differ.
+	 * @param LegacyProxy                      $legacy_proxy          Legacy proxy.
+	 * @param MultiCurrencyStateBuilderFactory $state_builder_factory State builder factory.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencySurfaceDiffer $differ, LegacyProxy $legacy_proxy, MultiCurrencyProjectionServiceFactory $projection_service_factory ): void {
-		$this->arbiter                    = $arbiter;
-		$this->differ                     = $differ;
-		$this->legacy_proxy               = $legacy_proxy;
-		$this->projection_service_factory = $projection_service_factory;
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencySurfaceDiffer $differ, LegacyProxy $legacy_proxy, MultiCurrencyStateBuilderFactory $state_builder_factory ): void {
+		$this->arbiter               = $arbiter;
+		$this->differ                = $differ;
+		$this->legacy_proxy          = $legacy_proxy;
+		$this->state_builder_factory = $state_builder_factory;
 	}
 
 	/**
@@ -304,9 +304,9 @@ class MultiCurrencyShadowMode implements RegisterHooksInterface {
 	private function get_projection_service(): MultiCurrencyPriceProjectionService {
 		if ( null === $this->projection_service ) {
 			$localization_service     = $this->create_read_only_localization_service();
-			$this->projection_service = $this->projection_service_factory->create_price_projection_service(
-				$localization_service,
-				wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create_separate( $localization_service )
+			$this->projection_service = new MultiCurrencyPriceProjectionService(
+				$this->state_builder_factory->create_separate( $localization_service ),
+				new MultiCurrencyPriceCalculator( $localization_service )
 			);
 		}
 

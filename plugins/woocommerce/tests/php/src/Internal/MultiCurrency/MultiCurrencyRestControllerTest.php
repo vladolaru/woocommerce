@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDatabase
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCachingEnvironment;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySettingsCurrencyCatalog;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
@@ -667,7 +667,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 		$controller->init(
 			$this->create_arbiter( $owner ),
 			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ),
-			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ),
+			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
 			$cache_rendering_service
 		);
 		$state_builder = $state_builder ?? $this->create_state_builder();

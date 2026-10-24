@@ -10,7 +10,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyDepositsCompatibi
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyProjectionServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use WC_Unit_Test_Case;
@@ -89,7 +89,7 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 		$facade_projected_amount = $consumer->get_woopayments_multicurrency_price( 10.0 );
 
 		$controller = new MultiCurrencyDepositsCompatibilityController();
-		$controller->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), $this->createMock( MultiCurrencyProjectionServiceFactory::class ) );
+		$controller->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), $this->createMock( MultiCurrencyServiceFactory::class ) );
 		$controller->set_price_projection_service( $projection_service );
 		$cart_contents = $controller->modify_cart_item_deposit_amounts(
 			array(
@@ -130,7 +130,7 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 			}
 		);
 		$state_builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create();
-		$loader        = $this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class )->create_price_projection_service( null, $state_builder ) );
+		$loader        = $this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, wc_get_container()->get( MultiCurrencyServiceFactory::class )->create_price_projection_service() );
 		$loader->set_state_builder( $state_builder );
 		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::instance' );
 		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_selected_currency' );
