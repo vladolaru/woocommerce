@@ -90,6 +90,10 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 		'WC_Subscriptions_Product::get_sign_up_fee',
 	);
 
+	private const SUBSCRIPTION_PRODUCT_ACTIVE_PRICE_CALLS = array(
+		'WC_Subscriptions_Product::get_price',
+	);
+
 	private const CART_CALCULATE_TOTALS_CALLS = array(
 		'WC_Cart->calculate_totals',
 	);
@@ -265,6 +269,8 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 		add_filter( 'woocommerce_coupon_get_minimum_amount', array( $this, 'get_subscription_session_coupon_spend_limit' ), 100, 2 );
 		add_filter( 'woocommerce_coupon_get_maximum_amount', array( $this, 'get_subscription_session_coupon_spend_limit' ), 100, 2 );
 		add_filter( 'woocommerce_subscriptions_product_price', array( $this, 'get_subscription_product_price' ), 50, 2 );
+		add_filter( 'woocommerce_subscriptions_product_sale_price', array( $this, 'get_stored_price_for_active_price' ), 50, 2 );
+		add_filter( 'woocommerce_subscriptions_product_regular_price', array( $this, 'get_stored_price_for_active_price' ), 50, 2 );
 		add_filter( 'woocommerce_product_get__subscription_sign_up_fee', array( $this, 'get_subscription_product_signup_fee' ), 50, 2 );
 		add_filter( 'woocommerce_product_variation_get__subscription_sign_up_fee', array( $this, 'get_subscription_product_signup_fee' ), 50, 2 );
 		add_filter( 'woocommerce_subscription_price_string_details', array( $this, 'maybe_set_current_my_account_subscription' ), 50, 2 );
@@ -413,6 +419,25 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 		}
 
 		return $this->get_price_projection_service()->get_price( $price, 'product' );
+	}
+
+	/**
+	 * Give Subscriptions' active price lookup the stored sale or regular price.
+	 *
+	 * The lookup compares the sale price with the stored subscription price and passes the price it picks through
+	 * `woocommerce_subscriptions_product_price`, which converts it (Subscriptions 9.3.0
+	 * `includes/core/class-wc-subscriptions-product.php:553-606`), so it must compare and pick stored prices.
+	 *
+	 * @param mixed $price   Sale or regular price.
+	 * @param mixed $product Product object.
+	 * @return mixed
+	 */
+	public function get_stored_price_for_active_price( $price, $product ) {
+		if ( ! $product instanceof \WC_Product || ! MultiCurrencyRequestContext::is_call_in_backtrace( self::SUBSCRIPTION_PRODUCT_ACTIVE_PRICE_CALLS ) ) {
+			return $price;
+		}
+
+		return 'woocommerce_subscriptions_product_sale_price' === current_filter() ? $product->get_sale_price( 'edit' ) : $product->get_regular_price( 'edit' );
 	}
 
 	/**

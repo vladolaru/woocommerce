@@ -32,7 +32,7 @@ final class CallStack {
 		'WCS_Cart_Renewal'             => array( 'setup_cart' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:230.
 		'WCS_Cart_Early_Renewal'       => array( 'setup_cart' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:284.
 		'WC_Subscriptions_Cart'        => array( '::set_subscription_prices_for_calculation' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:122.
-		'WC_Subscriptions_Product'     => array( '::get_sign_up_fee' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:127.
+		'WC_Subscriptions_Product'     => array( '::get_sign_up_fee', '::get_price' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:127; Subscriptions 9.3.0 includes/core/class-wc-subscriptions-product.php:553.
 		'WCS_Switch_Totals_Calculator' => array( 'apportion_sign_up_fees' ), // Client 11.1.0 Compatibility/WooCommerceSubscriptions.php:130.
 	);
 

@@ -34,6 +34,8 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		'wcpay_multi_currency_should_convert_product_price',
 		'wcpay_multi_currency_should_convert_coupon_amount',
 		'woocommerce_subscriptions_product_price',
+		'woocommerce_subscriptions_product_sale_price',
+		'woocommerce_subscriptions_product_regular_price',
 		'woocommerce_product_get__subscription_sign_up_fee',
 		'woocommerce_product_variation_get__subscription_sign_up_fee',
 		'woocommerce_subscription_price_string_details',
@@ -103,6 +105,8 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		$this->assertSame( 100, has_filter( 'woocommerce_coupon_get_minimum_amount', array( $sut, 'get_subscription_session_coupon_spend_limit' ) ) );
 		$this->assertSame( 100, has_filter( 'woocommerce_coupon_get_maximum_amount', array( $sut, 'get_subscription_session_coupon_spend_limit' ) ) );
 		$this->assertSame( 50, has_filter( 'woocommerce_subscriptions_product_price', array( $sut, 'get_subscription_product_price' ) ) );
+		$this->assertSame( 50, has_filter( 'woocommerce_subscriptions_product_sale_price', array( $sut, 'get_stored_price_for_active_price' ) ) );
+		$this->assertSame( 50, has_filter( 'woocommerce_subscriptions_product_regular_price', array( $sut, 'get_stored_price_for_active_price' ) ) );
 		$this->assertSame( 50, has_filter( 'woocommerce_product_get__subscription_sign_up_fee', array( $sut, 'get_subscription_product_signup_fee' ) ) );
 		$this->assertSame( 50, has_filter( 'woocommerce_product_variation_get__subscription_sign_up_fee', array( $sut, 'get_subscription_product_signup_fee' ) ) );
 		$this->assertSame( 50, has_filter( 'woocommerce_subscription_price_string_details', array( $sut, 'maybe_set_current_my_account_subscription' ) ) );
@@ -135,6 +139,8 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 				'woocommerce_product_variation_get__subscription_sign_up_fee' => array( 'get_subscription_product_signup_fee' => array( 50, 2 ) ),
 				'woocommerce_subscription_price_string_details' => array( 'maybe_set_current_my_account_subscription' => array( 50, 2 ) ),
 				'woocommerce_subscriptions_product_price' => array( 'get_subscription_product_price' => array( 50, 2 ) ),
+				'woocommerce_subscriptions_product_regular_price' => array( 'get_stored_price_for_active_price' => array( 50, 2 ) ),
+				'woocommerce_subscriptions_product_sale_price' => array( 'get_stored_price_for_active_price' => array( 50, 2 ) ),
 			),
 			RegisteredHooks::of( $sut )
 		);
@@ -680,6 +686,70 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
+	 * @testdox Should convert an on-sale subscription product's active price once.
+	 *
+	 * Replays `WC_Subscriptions_Product::get_price()` (WooCommerce Subscriptions 9.3.0
+	 * `includes/core/class-wc-subscriptions-product.php:553-571`): it compares the sale price, read through its own filter
+	 * (`:598-606`), with the stored subscription price, and passes the price it picks through
+	 * `woocommerce_subscriptions_product_price`, which converts. A switch prorates from that price
+	 * (`includes/switching/class-wcs-switch-cart-item.php:220`). Product: subscription price 10, regular price 10, sale price 8.
+	 * A recorded store run at GBP 0.73 charged an upgrade to such a product 0.50 where about 3.50 was due.
+	 * @dataProvider on_sale_subscription_prices
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param float  $rate               Rate the fixture converts by.
+	 * @param string $subscription_price Stored subscription price.
+	 * @param string $sale               Sale price.
+	 * @param float  $expected           Active price.
+	 */
+	public function test_converts_an_on_sale_subscription_price_once( float $rate, string $subscription_price, string $sale, float $expected ): void {
+		$sut = $this->create_controller();
+		$sut->set_price_projection_service( $this->create_price_projection_service( $rate ) );
+		$sut->register();
+		$this->register_frontend_prices( $rate );
+		$product = new \WC_Product_Simple();
+		$product->add_meta_data( '_subscription_price', $subscription_price, true );
+		$product->set_regular_price( '10' );
+		$product->set_sale_price( $sale );
+		$product->set_price( '' === $sale ? '10' : $sale );
+		// Set after the meta, so the product reads no meta from the database.
+		$product->set_id( 10 );
+
+		$active_price = CallStack::run(
+			array( 'WC_Subscriptions_Product::get_price' ),
+			static function () use ( $product ) {
+				$subscription_price = $product->get_meta( '_subscription_price' );
+				$sale_price         = apply_filters( 'woocommerce_subscriptions_product_sale_price', $product->get_sale_price(), $product );
+				$active_price       = $subscription_price ? $subscription_price : apply_filters( 'woocommerce_subscriptions_product_regular_price', $product->get_regular_price(), $product );
+				if ( $product->is_on_sale() && '' !== $sale_price && $subscription_price > $sale_price ) {
+					$active_price = $sale_price;
+				}
+
+				return apply_filters( 'woocommerce_subscriptions_product_price', $active_price, $product );
+			}
+		);
+
+		$this->assertSame( $expected, $active_price );
+		$this->assertSame( '16', apply_filters( 'woocommerce_subscriptions_product_sale_price', '16', $product ), 'Outside the active price lookup the sale price is left as it is.' );
+	}
+
+	/**
+	 * Rates on both sides of 1, which convert a sale price below and above the stored subscription price, and the regular price
+	 * the lookup falls back to without a stored subscription price.
+	 *
+	 * @return array<string,array{0:float,1:string,2:string,3:float}>
+	 */
+	public function on_sale_subscription_prices(): array {
+		return array(
+			'rate above 1, sale kept'      => array( 2.0, '10', '8', 16.0 ),
+			'rate below 1, sale kept'      => array( 0.5, '10', '8', 4.0 ),
+			'not on sale'                  => array( 2.0, '10', '', 20.0 ),
+			'no stored subscription price' => array( 2.0, '', '', 20.0 ),
+		);
+	}
+
+	/**
 	 * @testdox Should apply subscription coupon conversion decisions.
 	 * @runInSeparateProcess
 	 * @preserveGlobalState disabled
@@ -882,6 +952,8 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		$this->assertFalse( has_filter( 'woocommerce_coupon_get_minimum_amount', array( $sut, 'get_subscription_session_coupon_spend_limit' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_coupon_get_maximum_amount', array( $sut, 'get_subscription_session_coupon_spend_limit' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_subscriptions_product_price', array( $sut, 'get_subscription_product_price' ) ) );
+		$this->assertFalse( has_filter( 'woocommerce_subscriptions_product_sale_price', array( $sut, 'get_stored_price_for_active_price' ) ) );
+		$this->assertFalse( has_filter( 'woocommerce_subscriptions_product_regular_price', array( $sut, 'get_stored_price_for_active_price' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_product_get__subscription_sign_up_fee', array( $sut, 'get_subscription_product_signup_fee' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_product_variation_get__subscription_sign_up_fee', array( $sut, 'get_subscription_product_signup_fee' ) ) );
 		$this->assertFalse( has_filter( 'woocommerce_subscription_price_string_details', array( $sut, 'maybe_set_current_my_account_subscription' ) ) );
@@ -895,16 +967,18 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
-	 * Register the frontend price conversions, which convert at the rate the fixture's projection service doubles by.
+	 * Register the frontend price conversions.
+	 *
+	 * @param float $rate Rate the fixture's projection service converts by.
 	 */
-	private function register_frontend_prices(): void {
+	private function register_frontend_prices( float $rate = 2.0 ): void {
 		$frontend_prices = new MultiCurrencyFrontendPricesController();
 		$frontend_prices->init(
 			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
 			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ),
 			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
 		);
-		$frontend_prices->set_price_projection_service( $this->create_price_projection_service() );
+		$frontend_prices->set_price_projection_service( $this->create_price_projection_service( $rate ) );
 		$frontend_prices->set_request_context(
 			new class() extends MultiCurrencyRequestContext {
 				/**
@@ -1239,14 +1313,26 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	/**
 	 * Create a deterministic price projection service.
 	 *
+	 * @param float $rate Rate it converts by.
 	 * @return MultiCurrencyPriceProjectionService
 	 */
-	private function create_price_projection_service(): MultiCurrencyPriceProjectionService {
-		return new class() extends MultiCurrencyPriceProjectionService {
+	private function create_price_projection_service( float $rate = 2.0 ): MultiCurrencyPriceProjectionService {
+		return new class( $rate ) extends MultiCurrencyPriceProjectionService {
+			/**
+			 * Rate it converts by.
+			 *
+			 * @var float
+			 */
+			private float $rate;
+
 			/**
 			 * Constructor.
+			 *
+			 * @param float $rate Rate it converts by.
 			 */
-			public function __construct() {}
+			public function __construct( float $rate ) {
+				$this->rate = $rate;
+			}
 
 			/**
 			 * Project a converted price for the selected currency.
@@ -1258,7 +1344,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 			public function get_price( $price, string $type ): float {
 				unset( $type );
 
-				return (float) $price * 2;
+				return (float) $price * $this->rate;
 			}
 		};
 	}
