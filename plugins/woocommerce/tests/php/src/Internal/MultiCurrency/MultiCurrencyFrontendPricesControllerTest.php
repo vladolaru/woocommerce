@@ -34,6 +34,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		'woocommerce_get_variation_prices_hash',
 		'woocommerce_shipping_zone_shipping_methods',
 		'woocommerce_shipping_method_add_rate_args',
+		'woocommerce_evaluate_shipping_cost_args',
 		'woocommerce_coupon_get_amount',
 		'woocommerce_coupon_get_minimum_amount',
 		'woocommerce_coupon_get_maximum_amount',
@@ -251,6 +252,75 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame(
 			array( 'cost' => '2.00' ),
 			apply_filters( 'woocommerce_shipping_method_add_rate_args', array( 'cost' => '2.00' ), $shipping_method )
+		);
+	}
+
+	/**
+	 * @testdox Should evaluate a flat-rate cost formula on the store-currency package cost and convert the rate once: $cost.
+	 *
+	 * The amounts are a recorded store run's: PLN store, EUR at a manual 0.22 with no rounding, a 2000 PLN product shown as
+	 * a 440.00 EUR cart line. Core substitutes the package's converted contents cost into `[cost]` and `[fee]` and compares
+	 * `min_fee`/`max_fee`, typed in store units, with it; the evaluated rate is then converted on `woocommerce_shipping_method_add_rate_args`.
+	 *
+	 * @dataProvider provider_flat_rate_cost_formulas
+	 *
+	 * @param string $cost           Flat-rate cost as the merchant types it, in store units.
+	 * @param bool   $convert        Whether the shipping method lets Multi-Currency convert its cost.
+	 * @param float  $expected_rate  Rate the shopper pays, in EUR.
+	 */
+	public function test_evaluates_flat_rate_cost_formulas_in_the_store_currency( string $cost, bool $convert, float $expected_rate ): void {
+		update_option( 'woocommerce_currency', 'PLN' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'PLN', 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.22' );
+		update_option( 'wcpay_multi_currency_price_rounding_eur', '0.00' );
+		update_option(
+			'woocommerce_flat_rate_7_settings',
+			array(
+				'title'      => 'Flat rate',
+				'tax_status' => 'none',
+				'cost'       => $cost,
+				'type'       => 'class',
+			)
+		);
+		add_filter( 'wcpay_multi_currency_override_selected_currency', fn() => 'EUR' );
+		if ( ! $convert ) {
+			add_filter( 'wcpay_multi_currency_should_convert_shipping_amount', '__return_false' );
+		}
+
+		$sut = new MultiCurrencyFrontendPricesController();
+		$sut->init(
+			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
+			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ),
+			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
+		);
+		$sut->register();
+
+		$shipping_method = new \WC_Shipping_Flat_Rate( 7 );
+		$shipping_method->calculate_shipping(
+			array(
+				'contents'      => array(),
+				'contents_cost' => 440.0,
+			)
+		);
+
+		$this->assertArrayHasKey( 'flat_rate:7', $shipping_method->rates );
+		$this->assertSame( $expected_rate, (float) $shipping_method->rates['flat_rate:7']->get_cost() );
+	}
+
+	/**
+	 * Flat-rate cost formulas with the rate a recorded store run expects.
+	 *
+	 * @return array<string,array{0:string,1:bool,2:float}>
+	 */
+	public function provider_flat_rate_cost_formulas(): array {
+		return array(
+			'percent fee: (10 + 10% of 2000) x 0.22'       => array( '10 + [fee percent="10"]', true, 46.2 ),
+			'cost formula: 10% of 2000 x 0.22'             => array( '[cost] * 0.1', true, 44.0 ),
+			'minimum fee below the fee: (10 + 200) x 0.22' => array( '10 + [fee percent="10" min_fee="100"]', true, 46.2 ),
+			'maximum fee caps the fee: (10 + 100) x 0.22'  => array( '10 + [fee percent="10" max_fee="100"]', true, 24.2 ),
+			'plain rate: 10 x 0.22'                        => array( '10', true, 2.2 ),
+			'method keeps its cost: 10% of 440.00 EUR'     => array( '[cost] * 0.1', false, 44.0 ),
 		);
 	}
 

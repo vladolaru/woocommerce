@@ -101,6 +101,27 @@ class MultiCurrencyPriceProjectionService {
 	}
 
 	/**
+	 * Convert a selected-currency amount back to the store currency at the raw rate, with no rounding.
+	 *
+	 * @param float $amount Amount in the selected currency.
+	 * @return float
+	 */
+	public function get_default_currency_amount( float $amount ): float {
+		$state = $this->state_builder->build();
+
+		if ( $state->get_selected_currency()->get_is_default() ) {
+			return $amount;
+		}
+
+		return $this->price_calculator->get_raw_conversion(
+			$amount,
+			$state->get_default_currency()->get_code(),
+			$state->get_selected_currency()->get_code(),
+			$this->get_conversion_currencies( $state )
+		);
+	}
+
+	/**
 	 * Tell whether selected and default currencies differ.
 	 *
 	 * @return bool

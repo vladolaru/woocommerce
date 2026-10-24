@@ -120,6 +120,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 		add_filter( 'woocommerce_get_variation_prices_hash', array( $this, 'add_exchange_rate_to_variation_prices_hash' ), 99 );
 		add_filter( 'woocommerce_shipping_zone_shipping_methods', array( $this, 'convert_free_shipping_method_min_amount' ), 99 );
 		add_filter( 'woocommerce_shipping_method_add_rate_args', array( $this, 'convert_shipping_method_rate_cost' ), 99, 2 );
+		add_filter( 'woocommerce_evaluate_shipping_cost_args', array( $this, 'convert_shipping_cost_args_to_store_currency' ), 99, 3 );
 		add_filter( 'woocommerce_coupon_get_amount', array( $this, 'get_coupon_amount' ), 99, 2 );
 		add_filter( 'woocommerce_coupon_get_minimum_amount', array( $this, 'get_coupon_min_max_amount' ), 99 );
 		add_filter( 'woocommerce_coupon_get_maximum_amount', array( $this, 'get_coupon_min_max_amount' ), 99 );
@@ -220,6 +221,29 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 		} else {
 			$args['cost'] = $this->get_price_projection_service()->get_price( $args['cost'], 'shipping' );
 		}
+
+		return $args;
+	}
+
+	/**
+	 * Give flat-rate cost formulas the package cost in the store currency.
+	 *
+	 * Merchants type formulas in store units and the evaluated rate is converted once when it is added, so `[cost]`, `[fee]`
+	 * and its `min_fee`/`max_fee` must work on the store-currency cost, not on the cart's converted contents cost.
+	 *
+	 * @param mixed $args            Cost arguments, with the package cost under `cost`.
+	 * @param mixed $sum             Cost formula.
+	 * @param mixed $shipping_method Shipping method object.
+	 * @return mixed
+	 */
+	public function convert_shipping_cost_args_to_store_currency( $args, $sum = null, $shipping_method = null ) {
+		unset( $sum );
+
+		if ( ! is_array( $args ) || ! isset( $args['cost'] ) || ! is_numeric( $args['cost'] ) || ! $this->should_convert_shipping_amount( $shipping_method ) ) {
+			return $args;
+		}
+
+		$args['cost'] = $this->get_price_projection_service()->get_default_currency_amount( (float) $args['cost'] );
 
 		return $args;
 	}
