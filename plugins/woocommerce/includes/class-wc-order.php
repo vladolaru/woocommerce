@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Utilities\FeaturesUtil;
 use Automattic\WooCommerce\StoreApi\Utilities\LocalPickupUtils;
 use Automattic\WooCommerce\Utilities\NumberUtil;
 use Automattic\WooCommerce\Internal\Orders\OrderNoteGroup;
+use Automattic\WooCommerce\Internal\Utilities\CurrencyUtil;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -2486,12 +2487,12 @@ class WC_Order extends WC_Abstract_Order {
 	}
 
 	/**
-	 * How much money is left to refund?
+	 * How much money is left to refund? Rounded to the decimals of the order's currency.
 	 *
 	 * @return string
 	 */
 	public function get_remaining_refund_amount() {
-		return wc_format_decimal( (float) $this->get_total() - (float) $this->get_total_refunded(), wc_get_price_decimals() );
+		return wc_format_decimal( (float) $this->get_total() - (float) $this->get_total_refunded(), CurrencyUtil::get_price_decimals( $this->get_currency() ) );
 	}
 
 	/**

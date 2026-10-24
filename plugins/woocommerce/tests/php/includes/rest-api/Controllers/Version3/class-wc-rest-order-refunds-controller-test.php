@@ -4,6 +4,7 @@
  * Class WC_REST_Order_Refunds_Controller_Test.
  */
 
+use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Tests\Helpers\MetaDataAssertionTrait;
 
 /**
@@ -162,5 +163,53 @@ class WC_REST_Order_Refunds_Controller_Test extends WC_REST_Unit_Test_Case {
 		$this->assertEquals( 201, $response->get_status() );
 
 		$this->assert_incomplete_meta_data_handled_correctly( wc_get_order( $response->get_data()['id'] ) );
+	}
+
+	/**
+	 * @testdox An amount-only V3 refund stores its total and the order's remaining amount in the order currency's decimals.
+	 *
+	 * @testWith ["JPY", 0, "USD", "5.25", "-5.25", "12.75", "0.25", "-0.25", "12.50"]
+	 *           ["JPY", 0, "USD", "5.75", "-5.75", "12.25", "12.25", "-12.25", "0.00"]
+	 *           ["USD", 0, "USD", "5.25", "-5", "13", "2", "-2", "11"]
+	 *
+	 * @param string $store_currency   Store currency.
+	 * @param int    $store_decimals   Store price decimals.
+	 * @param string $order_currency   Order currency.
+	 * @param string $first_amount     First requested refund amount.
+	 * @param string $first_total      Expected total of the first refund.
+	 * @param string $first_remaining  Expected remaining amount after the first refund.
+	 * @param string $second_amount    Second requested refund amount.
+	 * @param string $second_total     Expected total of the second refund.
+	 * @param string $second_remaining Expected remaining amount after the second refund.
+	 */
+	public function test_create_refund_uses_order_currency_decimals( string $store_currency, int $store_decimals, string $order_currency, string $first_amount, string $first_total, string $first_remaining, string $second_amount, string $second_total, string $second_remaining ): void {
+		update_option( 'woocommerce_currency', $store_currency );
+		update_option( 'woocommerce_price_num_decimals', $store_decimals );
+		wp_set_current_user( 1 );
+
+		$order = wc_create_order();
+		$order->set_currency( $order_currency );
+		$order->set_total( '18' );
+		$order->set_status( OrderStatus::PROCESSING );
+		$order->save();
+
+		foreach ( array( array( $first_amount, $first_total, $first_remaining ), array( $second_amount, $second_total, $second_remaining ) ) as $step ) {
+			list( $amount, $expected_total, $expected_remaining ) = $step;
+
+			$request = new WP_REST_Request( 'POST', '/wc/v3/orders/' . $order->get_id() . '/refunds' );
+			$request->set_body_params(
+				array(
+					'amount'     => $amount,
+					'api_refund' => false,
+				)
+			);
+			$response = $this->server->dispatch( $request );
+
+			$this->assertSame( 201, $response->get_status(), "The {$amount} refund should be created." );
+			$refund = wc_get_order( $response->get_data()['id'] );
+			$this->assertSame( $amount, $refund->get_amount(), "The {$amount} refund should keep its amount." );
+			$this->assertSame( $expected_total, $refund->get_total(), "The {$amount} refund should store its total in the order currency's decimals." );
+			$this->assertSame( $expected_remaining, wc_get_order( $order->get_id() )->get_remaining_refund_amount(), "The remaining amount after the {$amount} refund should use the order currency's decimals." );
+		}
 	}
 }

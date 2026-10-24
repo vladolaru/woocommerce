@@ -8,6 +8,7 @@
  */
 
 use Automattic\WooCommerce\Enums\OrderStatus;
+use Automattic\WooCommerce\Internal\Utilities\CurrencyUtil;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -147,6 +148,27 @@ class WC_Order_Refund extends WC_Abstract_Order {
 	 */
 	public function set_amount( $value ) {
 		$this->set_prop( 'amount', wc_format_decimal( $value ) );
+	}
+
+	/**
+	 * Set the refund total, rounded to the decimals of the refund's currency.
+	 *
+	 * @param string $value      Value to set.
+	 * @param string $deprecated Function used to set different totals based on this.
+	 *
+	 * @return bool|void
+	 * @throws WC_Data_Exception Exception may be thrown if value is invalid.
+	 */
+	public function set_total( $value, $deprecated = '' ) {
+		if ( $deprecated ) {
+			return parent::set_total( $value, $deprecated );
+		}
+
+		if ( ! is_string( $value ) || 0 === strlen( $value ) ) {
+			$value = (float) $value;
+		}
+
+		$this->set_prop( 'total', wc_format_decimal( $value, CurrencyUtil::get_price_decimals( $this->get_currency( 'edit' ) ) ) );
 	}
 
 	/**
