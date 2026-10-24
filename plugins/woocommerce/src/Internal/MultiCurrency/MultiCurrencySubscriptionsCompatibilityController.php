@@ -296,7 +296,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 
 		$currency_code = $this->get_subscription_currency( $this->current_my_account_subscription );
 		if ( null !== $currency_code ) {
-			return $currency_code;
+			return $this->mark_order_currency( $currency_code );
 		}
 
 		foreach ( self::SUBSCRIPTION_TYPES as $type ) {
@@ -316,12 +316,24 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 
 			$currency_code = $this->get_subscription_currency( $subscription );
 
-			return null === $currency_code ? $selected_currency : $currency_code;
+			return null === $currency_code ? $selected_currency : $this->mark_order_currency( $currency_code );
 		}
 
 		$currency_code = $this->get_subscription_currency( $this->get_subscription_from_switch_request() );
 
-		return null === $currency_code ? $selected_currency : $currency_code;
+		return null === $currency_code ? $selected_currency : $this->mark_order_currency( $currency_code );
+	}
+
+	/**
+	 * Mark a subscription's currency as an existing order's currency, which holds even after the merchant disabled it.
+	 *
+	 * @param string $currency_code Subscription currency code.
+	 * @return string
+	 */
+	private function mark_order_currency( string $currency_code ): string {
+		MultiCurrencyStateBuilder::set_order_currency_override( $currency_code );
+
+		return $currency_code;
 	}
 
 	/**

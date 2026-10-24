@@ -496,72 +496,84 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should select an overriding currency the merchant disabled, at the rate it is known by.
+	 * @testdox Should select a subscription's currency the merchant disabled, at the rate it is known by, and no other disabled currency.
 	 *
 	 * A renewal, resubscribe or switch cart overrides the selection with its subscription's currency, which holds the
-	 * subscription's stored amounts. A recorded store run with GBP disabled charged a 7.45 GBP renewal as 7.45 USD.
-	 * Disabling a currency in the settings deletes its rate settings, which leaves the provider's cached rate; a merchant who
-	 * only edited the enabled list keeps them.
+	 * subscription's stored amounts, and marks it as that order's currency. A recorded store run with GBP disabled charged a
+	 * 7.45 GBP renewal as 7.45 USD. Disabling a currency in the settings deletes its rate settings, which leaves the provider's
+	 * cached rate; a merchant who only edited the enabled list keeps them. Any other override that names a disabled currency
+	 * gets the store currency, as client 11.1.0 resolves it (`includes/multi-currency/MultiCurrency.php:802-811`).
 	 *
 	 * @dataProvider disabled_override_currencies
 	 *
-	 * @param array<string,mixed> $options  Options the store holds.
-	 * @param float               $rate     Expected rate.
-	 * @param float               $charm    Expected charm.
-	 * @param string              $rounding Expected rounding.
+	 * @param array<string,mixed> $options    Options the store holds.
+	 * @param bool                $marked     Whether the override is marked as an order's currency.
+	 * @param string|null         $later_code Code a later callback returns instead, if any.
+	 * @param array<int,mixed>    $expected   Expected code, rate, charm and rounding.
 	 */
-	public function test_selects_an_overriding_currency_the_merchant_disabled( array $options, float $rate, float $charm, string $rounding ): void {
+	public function test_selects_a_disabled_currency_only_for_an_order( array $options, bool $marked, ?string $later_code, array $expected ): void {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'JPY' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_jpy', 'manual' );
 		update_option( 'wcpay_multi_currency_manual_rate_jpy', '150' );
 		foreach ( $options as $name => $value ) {
 			update_option( $name, $value );
 		}
-		add_filter( 'wcpay_multi_currency_override_selected_currency', static fn() => 'GBP' );
+		add_filter(
+			'wcpay_multi_currency_override_selected_currency',
+			static function () use ( $marked ) {
+				if ( $marked ) {
+					MultiCurrencyStateBuilder::set_order_currency_override( 'GBP' );
+				}
+
+				return 'GBP';
+			}
+		);
+		if ( null !== $later_code ) {
+			add_filter( 'wcpay_multi_currency_override_selected_currency', static fn() => $later_code, 60 );
+		}
 		// A registered provider that cannot be reached keeps serving its cached rates.
 		$registry = new CurrencyRateProviderRegistry();
 		$registry->register( $this->create_unavailable_rate_provider() );
 
 		$selected = $this->create_builder( $registry )->build()->get_selected_currency();
 
-		$this->assertSame( 'GBP', $selected->get_code() );
-		$this->assertSame( array( $rate, $charm, $rounding ), array( $selected->get_rate(), $selected->get_charm(), $selected->get_rounding() ) );
+		$this->assertSame( $expected, array( $selected->get_code(), $selected->get_rate(), $selected->get_charm(), $selected->get_rounding() ) );
 	}
 
 	/**
-	 * Rate sources left for GBP after it was disabled.
+	 * Rate sources left for GBP after it was disabled, and overrides that are not an order's currency.
 	 *
-	 * @return array<string,array{0:array<string,mixed>,1:float,2:float,3:string}>
+	 * @return array<string,array{0:array<string,mixed>,1:bool,2:string|null,3:array<int,mixed>}>
 	 */
 	public function disabled_override_currencies(): array {
-		return array(
-			'cached provider rate' => array(
-				array(
-					MultiCurrencyCacheInterface::CURRENCIES_KEY => array(
-						'data'               => array(
-							'currencies' => array( 'gbp' => 0.79 ),
-							'updated'    => 123456,
-						),
-						'fetched'            => time(),
-						'errored'            => false,
-						'consecutive_errors' => 0,
+		$cached_rates = array(
+			MultiCurrencyCacheInterface::CURRENCIES_KEY => array(
+				'data'               => array(
+					'currencies' => array(
+						'gbp' => 0.79,
+						'eur' => 0.91,
 					),
+					'updated'    => 123456,
 				),
-				0.79,
-				0.0,
-				'1.00',
+				'fetched'            => time(),
+				'errored'            => false,
+				'consecutive_errors' => 0,
 			),
-			'manual rate kept'     => array(
-				array(
-					'wcpay_multi_currency_exchange_rate_gbp' => 'manual',
-					'wcpay_multi_currency_manual_rate_gbp' => '0.73',
-					'wcpay_multi_currency_price_rounding_gbp' => '0.50',
-					'wcpay_multi_currency_price_charm_gbp' => '-0.05',
-				),
-				0.73,
-				-0.05,
-				'0.50',
-			),
+		);
+		$manual_rate  = array(
+			'wcpay_multi_currency_exchange_rate_gbp'  => 'manual',
+			'wcpay_multi_currency_manual_rate_gbp'    => '0.73',
+			'wcpay_multi_currency_price_rounding_gbp' => '0.50',
+			'wcpay_multi_currency_price_charm_gbp'    => '-0.05',
+		);
+		$store        = array( 'USD', 1.0, 0.0, '0' );
+
+		return array(
+			'order currency, cached provider rate'      => array( $cached_rates, true, null, array( 'GBP', 0.79, 0.0, '1.00' ) ),
+			'order currency, manual rate kept'          => array( $manual_rate, true, null, array( 'GBP', 0.73, -0.05, '0.50' ) ),
+			'order currency, manual rate before cached' => array( $manual_rate + $cached_rates, true, null, array( 'GBP', 0.73, -0.05, '0.50' ) ),
+			'another plugin\'s override'                => array( $cached_rates, false, null, $store ),
+			'order currency replaced by a later one'    => array( $cached_rates, true, 'EUR', $store ),
 		);
 	}
 

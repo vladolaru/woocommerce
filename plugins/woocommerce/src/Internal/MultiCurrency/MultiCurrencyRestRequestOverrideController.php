@@ -88,8 +88,6 @@ class MultiCurrencyRestRequestOverrideController implements RegisterHooksInterfa
 	/**
 	 * Get a request-local selected currency from the REST query parameter.
 	 *
-	 * A currency that is not enabled gives the store currency, as client 11.1.0 resolves it (`MultiCurrency.php:802-811`).
-	 *
 	 * @internal
 	 *
 	 * @param mixed $currency_code Existing override value.
@@ -102,11 +100,9 @@ class MultiCurrencyRestRequestOverrideController implements RegisterHooksInterfa
 			return false;
 		}
 
-		$currency_code = strtoupper( trim( sanitize_text_field( (string) wp_unslash( $_GET['currency'] ) ) ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$enabled_codes = get_option( MultiCurrencyStateBuilder::ENABLED_CURRENCIES_OPTION, array() );
-		$enabled_codes = is_array( $enabled_codes ) ? array_map( static fn( $code ) => strtoupper( (string) $code ), $enabled_codes ) : array();
+		$currency_code = sanitize_text_field( (string) wp_unslash( $_GET['currency'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 
-		return in_array( $currency_code, $enabled_codes, true ) ? $currency_code : strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
+		return strtoupper( trim( $currency_code ) );
 	}
 
 	/**

@@ -225,6 +225,28 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	}
 
 	/**
+	 * @testdox Should keep a renewal cart in its subscription's currency after the merchant disabled it.
+	 *
+	 * The cart holds the subscription's stored amounts in that currency; a recorded store run with GBP disabled charged a
+	 * 7.45 GBP renewal as 7.45 USD. The merchant only edited the enabled list here, so GBP's manual rate is kept.
+	 */
+	public function test_keeps_a_renewal_cart_in_a_disabled_subscription_currency(): void {
+		update_option( 'woocommerce_currency', 'USD' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'JPY' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_jpy', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_jpy', '150' );
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.73' );
+		$sut = $this->create_controller();
+		$sut->set_subscription_cart_item( 'renewal', $this->create_subscription( 'GBP' ) );
+		$sut->register();
+
+		$selected = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create()->build()->get_selected_currency();
+
+		$this->assertSame( array( 'GBP', 0.73 ), array( $selected->get_code(), $selected->get_rate() ) );
+	}
+
+	/**
 	 * @testdox Should preserve an existing selected currency override.
 	 */
 	public function test_preserves_existing_selected_currency_override(): void {

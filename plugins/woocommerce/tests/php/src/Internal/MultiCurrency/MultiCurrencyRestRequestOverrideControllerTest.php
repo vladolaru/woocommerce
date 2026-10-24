@@ -79,7 +79,6 @@ class MultiCurrencyRestRequestOverrideControllerTest extends WC_Unit_Test_Case {
 	public function test_registers_query_currency_override_for_non_store_rest_request(): void {
 		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 		$_GET['currency'] = ' gbp ';
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'gbp' ) );
 
 		$sut->register();
 		$sut->register();
@@ -93,26 +92,6 @@ class MultiCurrencyRestRequestOverrideControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'GBP', apply_filters( self::FILTER_OVERRIDE_SELECTED_CURRENCY, false ) );
 		$this->assertFalse( has_filter( self::FILTER_SHOULD_RETURN_STORE_CURRENCY, '__return_true' ) );
 		$this->assertFalse( has_filter( self::FILTER_SHOULD_CONVERT_PRODUCT_PRICE, '__return_false' ) );
-	}
-
-	/**
-	 * @testdox Should ask for the store currency when the query names a currency that is not enabled.
-	 *
-	 * Client 11.1.0 resolves a selected currency that is not enabled to the store currency (`includes/multi-currency/MultiCurrency.php:802-811`).
-	 */
-	public function test_asks_for_the_store_currency_when_the_query_currency_is_not_enabled(): void {
-		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
-		$_GET['currency'] = 'EUR';
-		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
-
-		$sut->register();
-
-		/**
-		 * Apply the request-local selected currency override filter registered by the controller.
-		 *
-		 * @since 11.0.0
-		 */
-		$this->assertSame( 'USD', apply_filters( self::FILTER_OVERRIDE_SELECTED_CURRENCY, false ) );
 	}
 
 	/**

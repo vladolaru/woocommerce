@@ -128,6 +128,13 @@ class MultiCurrencyStateBuilder {
 	private static bool $unknown_store_currency_logged = false;
 
 	/**
+	 * Order currency a compatibility callback marked during the selected-currency override read in progress.
+	 *
+	 * @var string|null
+	 */
+	private static ?string $order_currency_override = null;
+
+	/**
 	 * Build a multi-currency state snapshot.
 	 *
 	 * The result is memoized for the lifetime of this builder instance because the
@@ -204,16 +211,17 @@ class MultiCurrencyStateBuilder {
 		$stored_code = $this->get_stored_currency_code();
 		$stored      = $stored_code && isset( $enabled[ $stored_code ] ) ? $enabled[ $stored_code ] : $default;
 		// The override filter is asked on every read, as compatibility code changes it mid-request (client 11.1.0 `MultiCurrency.php:802-810`).
-		// An override names the currency of an existing order, such as a subscription's, so it holds even after the merchant
-		// disabled that currency, as long as its rate is known; otherwise the store currency is used.
+		// An override marked as an existing order's currency, such as a subscription's, holds even after the merchant disabled
+		// that currency, as long as its rate is known; any other override that is not enabled gives the store currency.
 		$selected = function () use ( $default_code, $available, $enabled, $default, $stored ): MultiCurrencyCurrency {
-			$override_code = self::get_override_currency_code();
+			$is_order_currency = false;
+			$override_code     = self::get_override_currency_code( $is_order_currency );
 			if ( null === $override_code ) {
 				return $stored;
 			}
 
-			if ( isset( $enabled[ $override_code ] ) ) {
-				return $enabled[ $override_code ];
+			if ( isset( $enabled[ $override_code ] ) || ! $is_order_currency ) {
+				return $enabled[ $override_code ] ?? $default;
 			}
 
 			if ( ! array_key_exists( $override_code, $this->disabled_override_currencies ) ) {
@@ -497,21 +505,43 @@ class MultiCurrencyStateBuilder {
 	}
 
 	/**
+	 * Mark the code a compatibility callback returns from the selected-currency override as an existing order's currency.
+	 *
+	 * Holds only for the override read in progress: the read clears it once the filter has run.
+	 *
+	 * @internal
+	 *
+	 * @param string $currency_code Currency code of the order.
+	 */
+	public static function set_order_currency_override( string $currency_code ): void {
+		self::$order_currency_override = strtoupper( trim( $currency_code ) );
+	}
+
+	/**
 	 * Get the selected-currency override from compatibility filters.
 	 *
+	 * @param bool $is_order_currency Set to whether the code was marked as an existing order's currency during this read.
 	 * @return string|null Currency code, or null when nothing overrides the shopper's selection.
 	 */
-	private static function get_override_currency_code(): ?string {
-		/**
-		 * Filters the selected native multi-currency code.
-		 *
-		 * @param string|false $currency_code Override currency code, or false to use stored state.
-		 *
-		 * @since 11.0.0
-		 */
-		$override_currency_code = apply_filters( self::FILTER_OVERRIDE_SELECTED_CURRENCY, false );
+	private static function get_override_currency_code( bool &$is_order_currency = false ): ?string {
+		try {
+			/**
+			 * Filters the selected native multi-currency code.
+			 *
+			 * @param string|false $currency_code Override currency code, or false to use stored state.
+			 *
+			 * @since 11.0.0
+			 */
+			$override_currency_code = apply_filters( self::FILTER_OVERRIDE_SELECTED_CURRENCY, false );
+			$order_currency_code    = self::$order_currency_override;
+		} finally {
+			self::$order_currency_override = null;
+		}
 
-		return is_scalar( $override_currency_code ) && '' !== trim( (string) $override_currency_code ) ? strtoupper( trim( (string) $override_currency_code ) ) : null;
+		$override_currency_code = is_scalar( $override_currency_code ) && '' !== trim( (string) $override_currency_code ) ? strtoupper( trim( (string) $override_currency_code ) ) : null;
+		$is_order_currency      = null !== $override_currency_code && $override_currency_code === $order_currency_code;
+
+		return $override_currency_code;
 	}
 
 	/**
