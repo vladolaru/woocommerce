@@ -94,7 +94,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 * rate 0.75 left). A recorded store run charged its renewal and resubscribe as USD 7.45. The renewal and resubscribe lines
 	 * hold the subscription's stored amounts; the cart's currency, and what the cart converts (an ordinary product beside a
 	 * resubscribe, a switch's new plan), follow the subscription's currency. Carts without such a subscription stay as they
-	 * were: nothing more registers.
+	 * were: nothing more registers and no currency state is built.
 	 *
 	 * @dataProvider subscription_currency_carts
 	 * @runInSeparateProcess
@@ -102,175 +102,52 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string              $label     Case label.
 	 * @param array<string,mixed> $options   Options the store holds besides an enabled list without additional currencies.
-	 * @param string              $cart_type Subscription cart type of the cart item, or `switch request` for the switch page.
+	 * @param string              $cart_type Subscription cart type of the cart item, `switch request` for the switch page, or
+	 *                                       `ordinary` for a cart without a subscription.
 	 * @param string              $currency  The subscription's currency.
-	 * @param array<int,mixed>    $expected  Cart currency, a new order's currency, a 20.00 product's price, and whether the
-	 *                                       subscription's currency hooks registered.
+	 * @param string              $request   Request type.
+	 * @param array<int,mixed>    $expected  Cart currency, a new order's currency, a 20.00 product's price, whether WooCommerce's
+	 *                                       currency is filtered, whether the currency state was built, and the cart total.
 	 */
-	public function test_runs_a_subscription_cart_in_its_currency_on_a_single_currency_store( string $label, array $options, string $cart_type, string $currency, array $expected ): void {
+	public function test_runs_a_subscription_cart_in_its_currency_on_a_single_currency_store( string $label, array $options, string $cart_type, string $currency, string $request, array $expected ): void {
 		unset( $label );
-		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'Outbound HTTP is blocked in this test.' ) );
-		update_option( 'woocommerce_currency', 'USD' );
-		$this->enable_core_multi_currency( false );
-		foreach ( $options as $name => $value ) {
-			update_option( $name, $value );
-		}
-		// A registered provider that cannot be reached keeps serving its cached rates, as the store's provider does.
-		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array( $this->create_cached_rate_registrar() ) );
-		// The Subscriptions runtime the compatibility controller checks for.
-		if ( ! class_exists( 'WC_Subscriptions', false ) ) {
-			eval( 'class WC_Subscriptions {}' ); // phpcs:ignore Squiz.PHP.Eval.Discouraged -- Stub of the extension's class, declared in this process only.
-		}
-		$subscription = new class( $currency ) extends \WC_Order {
-			/** @var string */
-			private string $code;
-
-			/**
-			 * Constructor.
-			 *
-			 * @param string $code Currency code.
-			 */
-			public function __construct( string $code ) {
-				parent::__construct();
-				$this->code = $code;
-			}
-
-			/**
-			 * Get the subscription's currency.
-			 *
-			 * @param string $context View or edit context.
-			 * @return string
-			 */
-			public function get_currency( $context = 'view' ) {
-				unset( $context );
-				return $this->code;
-			}
-		};
-		wc_get_container()->replace( MultiCurrencySubscriptionsCompatibilityController::class, $this->create_subscriptions_controller( $subscription, 'switch request' === $cart_type ) );
-		if ( 'switch request' !== $cart_type && '' !== $cart_type ) {
-			WC()->cart->set_cart_contents(
-				array(
-					'item' => array(
-						'subscription_' . $cart_type => array( 'subscription_id' => 7 ),
-						'product_id'                 => 0,
-						'variation_id'               => 0,
-						'quantity'                   => 1,
-					),
-				)
-			);
+		$this->arrange_single_currency_subscriptions_store( $options, $currency );
+		if ( 'switch request' === $cart_type ) {
+			// The switch link Subscriptions builds for the subscription's customer (`includes/switching/class-wc-subscriptions-switcher.php`).
+			$_GET['switch-subscription'] = '7';
+			$_GET['_wcsnonce']           = wp_create_nonce( 'wcs_switch_request' );
+		} else {
+			WC()->cart->set_cart_contents( array( 'item' => $this->create_cart_item( $cart_type, 'ordinary' === $cart_type ? '20' : '7.45' ) ) );
 		}
 
 		try {
-			$this->register_as( new MultiCurrencyBootstrap( static fn(): array => array() ), wc_get_container(), 'front' );
+			$this->register_as( new MultiCurrencyBootstrap( static fn(): array => array( 'CachedRateProviderRoot' ) ), wc_get_container(), $request );
 			// Subscriptions sets the cart up or WooCommerce loads it from the session; the switch page arrives as a request.
 			do_action( 'switch request' === $cart_type ? 'wp_loaded' : 'woocommerce_cart_loaded_from_session', WC()->cart );
 			$product = new \WC_Product_Simple();
 			$product->set_regular_price( '20' );
 			$product->set_price( '20' );
+			$total = null;
+			if ( ! WC()->cart->is_empty() ) {
+				WC()->cart->calculate_totals();
+				$total = (float) WC()->cart->get_total( 'edit' );
+			}
 
-			$this->assertSame( $expected, array( get_woocommerce_currency(), wc_create_order()->get_currency(), $product->get_price(), false !== has_filter( 'woocommerce_currency' ) ) );
-		} finally {
-			WC()->cart->set_cart_contents( array() );
-			wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
-			wc_get_container()->reset_all_replacements();
-		}
-	}
-
-	/**
-	 * @testdox Should watch carts on a single-currency store with WooCommerce Subscriptions only: subscriptions $subscriptions, additional currencies $configured.
-	 * @testWith [false, false, false]
-	 *           [true, true, false]
-	 *           [true, false, true]
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 *
-	 * @param bool $subscriptions Whether WooCommerce Subscriptions is active.
-	 * @param bool $configured    Whether an additional currency is enabled.
-	 * @param bool $watched       Whether carts are watched.
-	 */
-	public function test_watches_carts_only_on_a_single_currency_store_with_subscriptions( bool $subscriptions, bool $configured, bool $watched ): void {
-		if ( $subscriptions && ! class_exists( 'WC_Subscriptions', false ) ) {
-			eval( 'class WC_Subscriptions {}' ); // phpcs:ignore Squiz.PHP.Eval.Discouraged -- Stub of the extension's class, declared in this process only.
-		}
-		$this->enable_core_multi_currency( $configured );
-		$sut = new MultiCurrencyBootstrap( static fn(): array => array() );
-		$this->register_as( $sut, wc_get_container(), 'front' );
-
-		foreach ( array( 'woocommerce_cart_loaded_from_session', 'woocommerce_add_to_cart', 'wp_loaded' ) as $hook ) {
-			$this->assertSame( $watched, (bool) has_action( $hook, array( $sut, 'handle_subscription_currency_context' ) ), $hook );
-		}
-	}
-
-	/**
-	 * @testdox Should check an ordinary cart without a query, a subscription load or a session, and wake for a renewal set up later.
-	 *
-	 * The single-currency watch runs on every request that loads a cart, up to three times; on a cart without a subscription
-	 * item it must cost nothing, and on a request without a loaded session it must not start one.
-	 * @runInSeparateProcess
-	 * @preserveGlobalState disabled
-	 */
-	public function test_checks_an_ordinary_cart_for_free_and_wakes_for_a_renewal_set_up_later(): void {
-		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'Outbound HTTP is blocked in this test.' ) );
-		update_option( 'woocommerce_currency', 'USD' );
-		$this->enable_core_multi_currency( false );
-		foreach ( self::subscription_currency_carts()['renewal, enabled list edited'][1] as $name => $value ) {
-			update_option( $name, $value );
-		}
-		if ( ! class_exists( 'WC_Subscriptions', false ) ) {
-			eval( 'class WC_Subscriptions {}' ); // phpcs:ignore Squiz.PHP.Eval.Discouraged -- Stub of the extension's class, declared in this process only.
-		}
-		$subscription = new \WC_Order();
-		$subscription->set_currency( 'GBP' );
-		$product = new \WC_Product_Simple();
-		$product->set_regular_price( '7.45' );
-		$product->set_price( '7.45' );
-		$controller = $this->create_subscriptions_controller( $subscription, false );
-		wc_get_container()->replace( MultiCurrencySubscriptionsCompatibilityController::class, $controller );
-		WC()->cart->set_cart_contents(
-			array(
-				'item' => array(
-					'product_id'   => 5,
-					'variation_id' => 0,
-					'quantity'     => 1,
-					'data'         => $product,
-				),
-			)
-		);
-		$session = WC()->session;
-		global $wpdb;
-
-		try {
-			$sut = new MultiCurrencyBootstrap( static fn(): array => array() );
-			$this->register_as( $sut, wc_get_container(), 'front' );
-			WC()->session = null;
-			$queries      = $wpdb->num_queries;
-			$sut->handle_subscription_currency_context();
-			$sut->handle_subscription_currency_context();
-
-			$this->assertSame( array( 0, 0, null, false ), array( $wpdb->num_queries - $queries, $controller->subscription_loads, WC()->session, false !== has_filter( 'woocommerce_currency' ) ) );
-			$walks = $controller->cart_walks;
-			$controller->has_subscription_in_another_currency();
-			$this->assertSame( $walks, $controller->cart_walks, 'A repeated check on an unchanged cart reads the cached cart items.' );
-
-			WC()->session = $session;
-			WC()->cart->set_cart_contents(
+			$this->assertSame(
+				$expected,
 				array(
-					'item' => array(
-						'subscription_renewal' => array( 'subscription_id' => 7 ),
-						'product_id'           => 5,
-						'variation_id'         => 0,
-						'quantity'             => 1,
-						'data'                 => $product,
-					),
+					get_woocommerce_currency(),
+					wc_create_order()->get_currency(),
+					$product->get_price(),
+					false !== has_filter( 'woocommerce_currency' ),
+					false !== has_action( 'updated_option', array( wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ), 'handle_option_change' ) ),
+					$total,
 				)
 			);
-			// Subscriptions sets the renewal cart up through add_to_cart().
-			do_action( 'woocommerce_add_to_cart', 'item', 5, 1, 0, array(), array() );
-
-			$this->assertSame( 'GBP', get_woocommerce_currency() );
 		} finally {
-			WC()->session = $session;
+			unset( $_GET['switch-subscription'], $_GET['_wcsnonce'] );
 			WC()->cart->set_cart_contents( array() );
+			wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
 			wc_get_container()->reset_all_replacements();
 		}
 	}
@@ -281,12 +158,14 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	 * @return array<string,array<int,mixed>>
 	 */
 	public static function subscription_currency_carts(): array {
-		$kept_rate    = array(
+		$kept_rate = array(
 			'wcpay_multi_currency_exchange_rate_gbp'  => 'manual',
 			'wcpay_multi_currency_manual_rate_gbp'    => '0.73',
 			'wcpay_multi_currency_price_rounding_gbp' => '0',
 		);
-		$cached_rate  = array(
+		// The rate cache's envelope as the provider stores it (client 11.1.0 `includes/class-database-cache.php:377-382`,
+		// data from `includes/multi-currency/MultiCurrency.php:492-508`).
+		$cached_rate = array(
 			'wcpay_multi_currency_cached_currencies' => array(
 				'data'               => array(
 					'currencies' => array( 'gbp' => 0.75 ),
@@ -297,19 +176,105 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 				'consecutive_errors' => 0,
 			),
 		);
-		$store        = array( 'USD', 'USD', '20', false );
-		$subscription = array( 'GBP', 'GBP', '14.6', true );
+		$gbp         = array( 'GBP', 'GBP', '14.6', true, true );
+		$usd         = array( 'USD', 'USD', '20', false, false );
 
 		return array(
-			'renewal, enabled list edited'             => array( 'renewal, enabled list edited', $kept_rate, 'renewal', 'GBP', $subscription ),
-			'renewal, settings screen'                 => array( 'renewal, settings screen', $cached_rate, 'renewal', 'GBP', array( 'GBP', 'GBP', '15', true ) ),
-			'resubscribe, enabled list edited'         => array( 'resubscribe, enabled list edited', $kept_rate, 'resubscribe', 'GBP', $subscription ),
-			'switch cart, enabled list edited'         => array( 'switch cart, enabled list edited', $kept_rate, 'switch', 'GBP', $subscription ),
-			'switch page, enabled list edited'         => array( 'switch page, enabled list edited', $kept_rate, 'switch request', 'GBP', $subscription ),
-			'renewal of a store-currency subscription' => array( 'renewal of a store-currency subscription', $kept_rate, 'renewal', 'USD', $store ),
-			'cart without a subscription'              => array( 'cart without a subscription', $kept_rate, '', 'GBP', $store ),
+			'renewal, enabled list edited'             => array( 'renewal, enabled list edited', $kept_rate, 'renewal', 'GBP', 'front', array_merge( $gbp, array( 7.45 ) ) ),
+			'renewal, settings screen'                 => array( 'renewal, settings screen', $cached_rate, 'renewal', 'GBP', 'front', array( 'GBP', 'GBP', '15', true, true, 7.45 ) ),
+			'renewal through the Store API'            => array( 'renewal through the Store API', $kept_rate, 'renewal', 'GBP', 'rest', array_merge( $gbp, array( 7.45 ) ) ),
+			'resubscribe, enabled list edited'         => array( 'resubscribe, enabled list edited', $kept_rate, 'resubscribe', 'GBP', 'front', array_merge( $gbp, array( 7.45 ) ) ),
+			'switch cart, enabled list edited'         => array( 'switch cart, enabled list edited', $kept_rate, 'switch', 'GBP', 'front', array_merge( $gbp, array( 5.44 ) ) ),
+			'switch page, enabled list edited'         => array( 'switch page, enabled list edited', $kept_rate, 'switch request', 'GBP', 'front', array_merge( $gbp, array( null ) ) ),
+			'renewal of a store-currency subscription' => array( 'renewal of a store-currency subscription', $kept_rate, 'renewal', 'USD', 'front', array_merge( $usd, array( 7.45 ) ) ),
+			'cart without a subscription'              => array( 'cart without a subscription', $kept_rate, 'ordinary', 'GBP', 'front', array_merge( $usd, array( 20.0 ) ) ),
 		);
 	}
+
+	/**
+	 * @testdox Should watch carts only on a single-currency store with WooCommerce Subscriptions, on storefront, AJAX and REST requests: subscriptions $subscriptions, additional currencies $configured, $request request.
+	 * @testWith [false, false, "front", false]
+	 *           [true, true, "front", false]
+	 *           [true, false, "front", true]
+	 *           [true, false, "ajax", true]
+	 *           [true, false, "rest", true]
+	 *           [true, false, "admin", false]
+	 *           [true, false, "cron", false]
+	 *           [true, false, "cli", false]
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param bool   $subscriptions Whether WooCommerce Subscriptions is active.
+	 * @param bool   $configured    Whether an additional currency is enabled.
+	 * @param string $request       Request type.
+	 * @param bool   $watched       Whether carts are watched.
+	 */
+	public function test_watches_carts_only_on_a_single_currency_store_with_subscriptions( bool $subscriptions, bool $configured, string $request, bool $watched ): void {
+		if ( $subscriptions && ! class_exists( 'WC_Subscriptions', false ) ) {
+			eval( 'class WC_Subscriptions {}' ); // phpcs:ignore Squiz.PHP.Eval.Discouraged -- Stub of the extension's class, declared in this process only.
+		}
+		$this->enable_core_multi_currency( $configured );
+		$sut = new MultiCurrencyBootstrap( static fn(): array => array() );
+		$this->register_as( $sut, wc_get_container(), $request );
+
+		foreach ( array( 'woocommerce_cart_loaded_from_session', 'woocommerce_add_to_cart', 'woocommerce_cart_item_restored', 'wp_loaded' ) as $hook ) {
+			$this->assertSame( $watched, (bool) has_action( $hook, array( $sut, 'handle_subscription_currency_context' ) ), $hook );
+		}
+	}
+
+	/**
+	 * @testdox Should check an ordinary cart without a query, a subscription load or a session, and wake once $hook brings a renewal in.
+	 *
+	 * The single-currency watch runs on every request that loads a cart, up to four times; on a cart without a subscription
+	 * item it must cost nothing, a repeated check on an unchanged cart reads the cached cart items, and on a request without
+	 * a loaded session it must not start one. A renewal item then enters through add_to_cart() (Subscriptions' setup,
+	 * `includes/core/class-wcs-cart-renewal.php:370`) or an Undo restore.
+	 * @testWith ["woocommerce_add_to_cart"]
+	 *           ["woocommerce_cart_item_restored"]
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 *
+	 * @param string $hook Hook the renewal item arrives with.
+	 */
+	public function test_checks_an_ordinary_cart_for_free_and_wakes_for_a_renewal_set_up_later( string $hook ): void {
+		$controller = $this->arrange_single_currency_subscriptions_store( self::subscription_currency_carts()['renewal, enabled list edited'][1], 'GBP' );
+		WC()->cart->set_cart_contents( array( 'item' => $this->create_cart_item( 'ordinary', '20' ) ) );
+		$session = WC()->session;
+		global $wpdb;
+
+		try {
+			$sut = new MultiCurrencyBootstrap( static fn(): array => array( 'CachedRateProviderRoot' ) );
+			$this->register_as( $sut, wc_get_container(), 'front' );
+			WC()->session = null;
+			$queries      = $wpdb->num_queries;
+			$sut->handle_subscription_currency_context();
+			$sut->handle_subscription_currency_context();
+
+			$this->assertSame( array( 0, 0, null, false ), array( $wpdb->num_queries - $queries, $GLOBALS['wcs_subscription_loads'], WC()->session, false !== has_filter( 'woocommerce_currency' ) ) );
+
+			// Through the listeners as they fire: the cart loads, then wp_loaded reads the same cart from the cache.
+			WC()->session = $session;
+			do_action( 'woocommerce_cart_loaded_from_session', WC()->cart );
+			$walks     = $controller->cart_walks;
+			$wp_loaded = $GLOBALS['wp_filter']['wp_loaded'] ?? null;
+			remove_all_actions( 'wp_loaded' );
+			add_action( 'wp_loaded', array( $sut, 'handle_subscription_currency_context' ) );
+			do_action( 'wp_loaded' );
+			$GLOBALS['wp_filter']['wp_loaded'] = $wp_loaded; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restores the hook this case emptied.
+			$this->assertSame( $walks, $controller->cart_walks, 'wp_loaded reads the cart items the cart load cached.' );
+
+			WC()->cart->set_cart_contents( array( 'item' => $this->create_cart_item( 'renewal', '7.45' ) ) );
+			do_action( $hook, 'item', 31, 1, 0, array(), array() );
+
+			$this->assertSame( 'GBP', get_woocommerce_currency() );
+		} finally {
+			WC()->session = $session;
+			WC()->cart->set_cart_contents( array() );
+			wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
+			wc_get_container()->reset_all_replacements();
+		}
+	}
+
 
 	/** @testdox Should arm the Multi-Currency handover on a request the WooPayments plugin owns. */
 	public function test_plugin_owned_request_arms_the_handover(): void {
@@ -1204,6 +1169,110 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Arrange a store whose only additional currency is disabled, with WooCommerce Subscriptions loaded and a subscription.
+	 *
+	 * Declares the Subscriptions class and `wcs_get_subscription()` in this process (the test must run in its own), stores the
+	 * subscription it returns in `$GLOBALS['wcs_subscription']` and counts its calls in `$GLOBALS['wcs_subscription_loads']`,
+	 * logs its customer in, serves the provider root `CachedRateProviderRoot` that installs a provider whose cached rates serve,
+	 * and puts a Subscriptions compatibility controller that counts its cart walks in the container.
+	 *
+	 * @param array<string,mixed> $options  Options the store holds besides an enabled list without additional currencies.
+	 * @param string              $currency The subscription's currency.
+	 * @return MultiCurrencySubscriptionsCompatibilityController&object{cart_walks:int}
+	 */
+	private function arrange_single_currency_subscriptions_store( array $options, string $currency ): MultiCurrencySubscriptionsCompatibilityController {
+		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'Outbound HTTP is blocked in this test.' ) );
+		update_option( 'woocommerce_currency', 'USD' );
+		$this->enable_core_multi_currency( false );
+		foreach ( $options as $name => $value ) {
+			update_option( $name, $value );
+		}
+		if ( ! class_exists( 'WC_Subscriptions', false ) ) {
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged -- Stubs of the extension's class and lookup, declared in this process only.
+			eval( 'class WC_Subscriptions {} function wcs_get_subscription( $id ) { ++$GLOBALS["wcs_subscription_loads"]; return $GLOBALS["wcs_subscription"]; }' );
+		}
+		$customer_id = self::factory()->user->create();
+		wp_set_current_user( $customer_id );
+		// Subscriptions 9.3.0's `WC_Subscription` extends `WC_Order` (`includes/core/class-wc-subscription.php:15`).
+		$subscription = new \WC_Order();
+		$subscription->set_currency( $currency );
+		$subscription->set_customer_id( $customer_id );
+		$GLOBALS['wcs_subscription']       = $subscription;
+		$GLOBALS['wcs_subscription_loads'] = 0;
+		wc_get_container()->replace(
+			'CachedRateProviderRoot',
+			new class( $this->create_cached_rate_registrar() ) {
+				/** @var CurrencyRateProviderRegistrarInterface */
+				private CurrencyRateProviderRegistrarInterface $registrar;
+
+				/**
+				 * Constructor.
+				 *
+				 * @param CurrencyRateProviderRegistrarInterface $registrar Registrar of a provider whose cached rates serve.
+				 */
+				public function __construct( CurrencyRateProviderRegistrarInterface $registrar ) {
+					$this->registrar = $registrar;
+				}
+
+				/** Register the provider, as a payments provider's Multi-Currency classes do. */
+				public function register(): void {
+					wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array( $this->registrar ) );
+				}
+			}
+		);
+		$controller = new class() extends MultiCurrencySubscriptionsCompatibilityController {
+			/** @var int Walks of the cart and session for one cart type. */
+			public int $cart_walks = 0;
+
+			/**
+			 * Walk the cart and session for one cart type, counting the walks.
+			 *
+			 * @param string $type Subscription cart type.
+			 * @return array<int,array<string,mixed>>
+			 */
+			protected function resolve_subscription_cart_items( string $type ): array {
+				++$this->cart_walks;
+				return parent::resolve_subscription_cart_items( $type );
+			}
+		};
+		$controller->init(
+			wc_get_container()->get( MultiCurrencyRuntimeArbiter::class ),
+			new LegacyProxy(),
+			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ),
+			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class )
+		);
+		wc_get_container()->replace( MultiCurrencySubscriptionsCompatibilityController::class, $controller );
+
+		return $controller;
+	}
+
+	/**
+	 * Create a cart item, keyed for a subscription cart type as Subscriptions 9.3.0 keys them: renewal
+	 * (`includes/core/class-wcs-cart-renewal.php:228-233`), resubscribe (`includes/core/class-wcs-cart-resubscribe.php:110-112`)
+	 * and switch (`includes/switching/class-wc-subscriptions-switcher.php:2431-2436`); `ordinary` carries no key.
+	 *
+	 * @param string $cart_type Subscription cart type or `ordinary`.
+	 * @param string $price     The line's price, a renewal's or resubscribe's stored amount.
+	 * @return array<string,mixed>
+	 */
+	private function create_cart_item( string $cart_type, string $price ): array {
+		$product = new \WC_Product_Simple();
+		$product->set_regular_price( $price );
+		$product->set_price( $price );
+		$product->set_virtual( true );
+		$product->set_id( 31 );
+		$item = array(
+			'key'          => 'item',
+			'product_id'   => 31,
+			'variation_id' => 0,
+			'quantity'     => 1,
+			'data'         => $product,
+		);
+
+		return 'ordinary' === $cart_type ? $item : $item + array( 'subscription_' . $cart_type => array( 'subscription_id' => 7 ) );
+	}
+
+	/**
 	 * Create a rate provider registrar whose provider cannot be reached, so the cached rates serve.
 	 *
 	 * @return CurrencyRateProviderRegistrarInterface
@@ -1250,80 +1319,6 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		};
 	}
 
-	/**
-	 * Create the Subscriptions compatibility controller with the subscription its cart item or switch request names.
-	 *
-	 * @param \WC_Order $subscription   Subscription (Subscriptions 9.3.0's `WC_Subscription` extends `WC_Order`).
-	 * @param bool      $switch_request Whether the subscription comes from a switch request rather than a cart item.
-	 * @return MultiCurrencySubscriptionsCompatibilityController
-	 */
-	private function create_subscriptions_controller( \WC_Order $subscription, bool $switch_request ): MultiCurrencySubscriptionsCompatibilityController {
-		$controller = new class( $subscription, $switch_request ) extends MultiCurrencySubscriptionsCompatibilityController {
-			/** @var \WC_Order */
-			private \WC_Order $subscription;
-
-			/** @var bool */
-			private bool $switch_request;
-
-			/** @var int Subscriptions loaded for cart items. */
-			public int $subscription_loads = 0;
-
-			/** @var int Walks of the cart and session for one cart type. */
-			public int $cart_walks = 0;
-
-			/**
-			 * Constructor.
-			 *
-			 * @param \WC_Order $subscription   Subscription.
-			 * @param bool      $switch_request Whether it comes from a switch request.
-			 */
-			public function __construct( \WC_Order $subscription, bool $switch_request ) {
-				$this->subscription   = $subscription;
-				$this->switch_request = $switch_request;
-			}
-
-			/**
-			 * Get the subscription a cart item names.
-			 *
-			 * @param array<string,mixed> $cart_item Cart item.
-			 * @param string              $type      Subscription cart type.
-			 * @return object|null
-			 */
-			protected function get_subscription_from_cart_item( array $cart_item, string $type ): ?object {
-				unset( $cart_item, $type );
-				++$this->subscription_loads;
-				return $this->subscription;
-			}
-
-			/**
-			 * Walk the cart and session for one cart type, counting the walks.
-			 *
-			 * @param string $type Subscription cart type.
-			 * @return array<int,array<string,mixed>>
-			 */
-			protected function resolve_subscription_cart_items( string $type ): array {
-				++$this->cart_walks;
-				return parent::resolve_subscription_cart_items( $type );
-			}
-
-			/**
-			 * Get the subscription a verified switch request names.
-			 *
-			 * @return object|null
-			 */
-			protected function get_subscription_from_switch_request(): ?object {
-				return $this->switch_request ? $this->subscription : null;
-			}
-		};
-		$controller->init(
-			wc_get_container()->get( MultiCurrencyRuntimeArbiter::class ),
-			new LegacyProxy(),
-			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ),
-			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class )
-		);
-
-		return $controller;
-	}
 
 	/**
 	 * Hand Multi-Currency to core with the real container, as an upgraded store with native payments has it.

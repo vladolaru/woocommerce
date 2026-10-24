@@ -122,13 +122,15 @@ final class MultiCurrencyBootstrap {
 
 	/**
 	 * Hooks after which the cart, or a switch request, is known: Subscriptions sets a renewal, resubscribe or switch cart up
-	 * through add_to_cart(), WooCommerce loads the cart from the session, and the switch page arrives as a request.
+	 * through add_to_cart(), WooCommerce loads the cart from the session or restores a removed item, and the switch page
+	 * arrives as a request.
 	 *
 	 * @var array<int,string>
 	 */
 	private const SUBSCRIPTION_CURRENCY_HOOKS = array(
 		'woocommerce_cart_loaded_from_session',
 		'woocommerce_add_to_cart',
+		'woocommerce_cart_item_restored',
 		'wp_loaded',
 	);
 
@@ -272,7 +274,7 @@ final class MultiCurrencyBootstrap {
 		 * @var MultiCurrencySubscriptionsCompatibilityController $controller
 		 */
 		$controller = $container->get( MultiCurrencySubscriptionsCompatibilityController::class );
-		// The cart changed: Subscriptions added an item, or WooCommerce loaded the cart from the session.
+		// The cart changed: Subscriptions added an item, or WooCommerce loaded the cart from the session or restored an item.
 		if ( 'wp_loaded' !== current_action() ) {
 			$controller->clear_subscription_type_cache();
 		}

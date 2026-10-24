@@ -338,7 +338,8 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	/**
 	 * Tell whether the cart, or a verified switch request, holds a subscription in a currency other than the store currency.
 	 *
-	 * Reads the cached cart items, loads a subscription only for a subscription cart item, and starts no session.
+	 * Reads the cached cart items, loads a subscription only for a subscription cart item (its currency is on the subscription),
+	 * compares with the stored store currency without building the currency state, and starts no session.
 	 *
 	 * @return bool
 	 */
@@ -356,7 +357,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 
 		$currency_codes = array_filter( $currency_codes );
 
-		return array() !== $currency_codes && array() !== array_diff( $currency_codes, array( $this->get_state_builder()->build()->get_default_currency()->get_code() ) );
+		return array() !== $currency_codes && array() !== array_diff( $currency_codes, array( strtoupper( trim( (string) get_option( 'woocommerce_currency' ) ) ) ) );
 	}
 
 	/**
