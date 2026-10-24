@@ -320,7 +320,9 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	 * Core caches the range's prices across requests under the variation price hash, and each step below reloads the product
 	 * and reads that cache. EUR at 0.22 or 0.30 and GBP at 0.19, all with the default 1.00 step, convert 1 PLN to the same
 	 * 1.00; then only the rounding step changes, then only the charm; then JPY takes EUR's rate, step and charm and differs
-	 * only in its decimals. So the hash must name the currency, its rate, its rounding step and its charm.
+	 * only in its decimals. Last, with no rounding, JPY rounds the conversion to its own 0 decimals while an EUR order page
+	 * formats it with EUR's 2, the same decimals an EUR shopper's range uses. So the hash must name the currency, its rate,
+	 * its rounding step and its charm.
 	 */
 	public function test_does_not_show_a_variable_range_cached_for_another_currency_or_rate(): void {
 		update_option( 'woocommerce_currency', 'PLN' );
@@ -340,7 +342,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 				return $selected;
 			}
 		);
-		$this->register_storefront_controllers();
+		$currencies                      = $this->register_storefront_controllers();
 		list( $product, $variation_ids ) = $this->create_variable_product( array( '10.37', '20.37' ) );
 
 		$this->assertSame( array_combine( $variation_ids, array( '3.00', '5.00' ) ), $product->get_variation_prices( true )['price'], 'EUR at 0.22: 2.28 and 4.48, up to 3 and 5.' );
@@ -360,6 +362,19 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 
 		$selected = 'JPY';
 		$this->assertSame( array_combine( $variation_ids, array( '3', '6' ) ), wc_get_product( $product->get_id() )->get_variation_prices( true )['price'], 'JPY with EUR\'s rate, step and charm: 3.49 and 6.49 shown with no decimals.' );
+
+		foreach ( array( 'eur', 'jpy' ) as $code ) {
+			update_option( 'wcpay_multi_currency_price_rounding_' . $code, '0.00' );
+			update_option( 'wcpay_multi_currency_price_charm_' . $code, '0' );
+		}
+		$on_eur_order_page = $currencies->format_in_order_currency(
+			'EUR',
+			fn() => implode( '|', wc_get_product( $product->get_id() )->get_variation_prices( true )['price'] )
+		);
+		$this->assertSame( '3.00|6.00', $on_eur_order_page, 'JPY with no rounding converts to 3 and 6, shown with the EUR order\'s decimals.' );
+
+		$selected = 'EUR';
+		$this->assertSame( array_combine( $variation_ids, array( '3.11', '6.11' ) ), wc_get_product( $product->get_id() )->get_variation_prices( true )['price'], 'EUR at the same rate with no rounding: 3.11 and 6.11, with the same two decimals.' );
 	}
 
 	/**
