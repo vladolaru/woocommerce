@@ -170,7 +170,8 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	/**
 	 * Add the selected currency's conversion settings to the variation price hash.
 	 *
-	 * Core caches the range's converted prices under this hash, so it varies with everything the conversion depends on.
+	 * Core caches the range's converted prices under this hash, so it varies with everything the conversion depends on, and
+	 * with the decimals core rounds them to, which follow an order's currency on that order's pages.
 	 *
 	 * @param mixed $prices_hash Variation prices hash.
 	 * @return mixed
@@ -181,6 +182,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 		}
 
 		$prices_hash[] = $this->get_price_projection_service()->get_selected_currency_conversion_key();
+		$prices_hash[] = wc_get_price_decimals();
 
 		return $prices_hash;
 	}

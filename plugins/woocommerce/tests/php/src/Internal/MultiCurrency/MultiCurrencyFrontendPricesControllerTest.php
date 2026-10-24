@@ -363,6 +363,31 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not show a variable range cached while an order page formatted prices in the order's currency.
+	 *
+	 * The thank-you and view-order pages format prices in the order's currency for the rest of the request, so a range built
+	 * there, by a cross-sell for example, rounds to a JPY order's decimals while it converts to the shopper's EUR.
+	 */
+	public function test_does_not_show_a_variable_range_cached_with_an_order_currency_decimals(): void {
+		update_option( 'woocommerce_currency', 'PLN' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'PLN', 'EUR', 'JPY' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		update_option( 'wcpay_multi_currency_price_rounding_eur', '0.00' );
+		add_filter( 'wcpay_multi_currency_override_selected_currency', fn() => 'EUR' );
+		$currencies                      = $this->register_storefront_controllers();
+		list( $product, $variation_ids ) = $this->create_variable_product( array( '10.37', '20.37' ) );
+
+		$on_order_page = $currencies->format_in_order_currency(
+			'JPY',
+			fn() => implode( '|', $product->get_variation_prices( true )['price'] )
+		);
+		$this->assertSame( '9|18', $on_order_page, 'On the JPY order page 9.33 and 18.33 EUR round to no decimals.' );
+
+		$this->assertSame( array_combine( $variation_ids, array( '9.33', '18.33' ) ), wc_get_product( $product->get_id() )->get_variation_prices( true )['price'] );
+	}
+
+	/**
 	 * @testdox Should skip shipping cost conversion when the shipping method filter returns false.
 	 */
 	public function test_skips_shipping_cost_conversion_when_shipping_method_filter_returns_false(): void {
@@ -985,13 +1010,18 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Register the price and currency controllers on the real services, as a storefront request does.
+	 *
+	 * @return MultiCurrencyFrontendCurrenciesController The registered currency controller.
 	 */
-	private function register_storefront_controllers(): void {
-		$arbiter = $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		foreach ( array( new MultiCurrencyFrontendPricesController(), new MultiCurrencyFrontendCurrenciesController() ) as $controller ) {
+	private function register_storefront_controllers(): MultiCurrencyFrontendCurrenciesController {
+		$arbiter    = $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+		$currencies = new MultiCurrencyFrontendCurrenciesController();
+		foreach ( array( new MultiCurrencyFrontendPricesController(), $currencies ) as $controller ) {
 			$controller->init( $arbiter, wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ), wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class ) );
 			$controller->register();
 		}
+
+		return $currencies;
 	}
 
 	/**
