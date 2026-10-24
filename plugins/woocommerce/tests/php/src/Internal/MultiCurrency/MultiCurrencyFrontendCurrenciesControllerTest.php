@@ -5,6 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Caches\OrderCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyOrderContextService;
@@ -444,19 +445,46 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should set store currency decimals for shipping rate args.
+	 * @testdox Should round a converted shipping rate to the selected currency's decimals: $selected_currency, rounding $rounding.
+	 *
+	 * The amounts are a recorded store run's: a JPY store with no decimals, USD at a manual 0.0067, a 500 JPY flat rate
+	 * (500 x 0.0067 = 3.35). Core rounds the rate cost with the rate's `price_decimals` after it is converted.
+	 *
+	 * @testWith ["USD", "0.00", "3.35"]
+	 *           ["USD", "0.50", "3.50"]
+	 *           ["JPY", "0.00", "500"]
+	 *
+	 * @param string $selected_currency Currency the shopper selected.
+	 * @param string $rounding          USD rounding step, 0.00 for none.
+	 * @param string $expected_cost     Rate cost the shopper pays.
 	 */
-	public function test_sets_store_currency_decimals_for_shipping_rate_args(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+	public function test_rounds_a_converted_shipping_rate_to_the_selected_currency_decimals( string $selected_currency, string $rounding, string $expected_cost ): void {
+		update_option( 'woocommerce_currency', 'JPY' );
+		update_option( 'woocommerce_price_num_decimals', '0' );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'JPY', 'USD' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_usd', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_usd', '0.0067' );
+		update_option( 'wcpay_multi_currency_price_rounding_usd', $rounding );
+		add_filter( 'wcpay_multi_currency_override_selected_currency', fn() => $selected_currency );
+
+		$arbiter = $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+		$prices  = new MultiCurrencyFrontendPricesController();
+		$prices->init( $arbiter, wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ), wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class ) );
+		$prices->register();
+		$sut = new MultiCurrencyFrontendCurrenciesController();
+		$sut->init( $arbiter, wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ), wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class ) );
 		$sut->register();
 
-		$this->assertSame(
+		$shipping_method = new \WC_Shipping_Flat_Rate( 0 );
+		$shipping_method->add_rate(
 			array(
-				'cost'           => '10.00',
-				'price_decimals' => 2,
-			),
-			$sut->fix_price_decimals_for_shipping_rates( array( 'cost' => '10.00' ), null )
+				'id'    => 'flat_rate',
+				'label' => 'Flat rate',
+				'cost'  => '500',
+			)
 		);
+
+		$this->assertSame( $expected_cost, $shipping_method->rates['flat_rate']->get_cost() );
 	}
 
 	/**
@@ -664,15 +692,6 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 			 */
 			public function get_woocommerce_currency_pos( string $position, ?string $order_currency = null ): string {
 				return 'right_space';
-			}
-
-			/**
-			 * Project the store/default currency decimal count.
-			 *
-			 * @return int
-			 */
-			public function get_store_currency_decimals(): int {
-				return 2;
 			}
 
 			/**

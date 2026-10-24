@@ -363,7 +363,10 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Preserve shipping rate args until native shipping decimal handling is added.
+	 * Round shipping rates to the decimals of the currency their cost is in.
+	 *
+	 * Core rounds the rate cost with `price_decimals` after computing its taxes. On storefront requests the cost is in the
+	 * selected currency, whose decimals `wc_get_price_decimals()` returns there; elsewhere it returns the store's.
 	 *
 	 * @param mixed $args   Shipping rate args.
 	 * @param mixed $method Shipping method.
@@ -376,7 +379,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 			return $args;
 		}
 
-		$args['price_decimals'] = $this->get_frontend_projection_service()->get_store_currency_decimals();
+		$args['price_decimals'] = wc_get_price_decimals();
 
 		return $args;
 	}
