@@ -120,7 +120,7 @@ class MultiCurrencyPriceProjectionServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertSame(
 			array(
-				'_wcpay_multi_currency_order_exchange_rate'    => 0.82,
+				'_wcpay_multi_currency_order_exchange_rate'    => '0.82',
 				'_wcpay_multi_currency_order_default_currency' => 'USD',
 			),
 			$sut->get_order_meta_candidates( 'GBP' )

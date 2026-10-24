@@ -362,6 +362,63 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should store the order's exchange rate at full precision, so Analytics counts the order at that rate: $store_currency store, $order_currency at $rate.
+	 *
+	 * The rates and amounts are a recorded store run's orders. Analytics divides the order's net, shipping and tax by the
+	 * stored rate when no Stripe rate exists; the run stored 0.01 and 0.92 and counted net 1400 and 2007.61.
+	 *
+	 * @testWith ["JPY", "0", "USD", "0.0066667", 14.0, 4.0, 2100.0, 600.0]
+	 *           ["PLN", "2", "EUR", "0.9234", 1847.0, 462.0, 2000.22, 500.32]
+	 *
+	 * @param string $store_currency    Store currency.
+	 * @param string $store_decimals    Store price decimals.
+	 * @param string $order_currency    Currency the shopper selected and the order is in.
+	 * @param string $rate              Manual rate of the order currency.
+	 * @param float  $net_total         Order net total, in the order currency.
+	 * @param float  $shipping_total    Order shipping total, in the order currency.
+	 * @param float  $expected_net      Net total Analytics counts, in the store currency.
+	 * @param float  $expected_shipping Shipping total Analytics counts, in the store currency.
+	 */
+	public function test_stores_the_order_exchange_rate_at_full_precision( string $store_currency, string $store_decimals, string $order_currency, string $rate, float $net_total, float $shipping_total, float $expected_net, float $expected_shipping ): void {
+		$code = strtolower( $order_currency );
+		update_option( 'woocommerce_currency', $store_currency );
+		update_option( 'woocommerce_price_num_decimals', $store_decimals );
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( $store_currency, $order_currency ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_' . $code, 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_' . $code, $rate );
+		add_filter( 'wcpay_multi_currency_override_selected_currency', fn() => $order_currency );
+
+		$sut = new MultiCurrencyFrontendPricesController();
+		$sut->init(
+			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
+			wc_get_container()->get( MultiCurrencyProjectionServiceFactory::class ),
+			wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )
+		);
+		$order = wc_create_order();
+		$order->set_currency( $order_currency );
+		$order->save();
+
+		$sut->add_order_meta( $order->get_id(), $order );
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertSame( $rate, $order->get_meta( '_wcpay_multi_currency_order_exchange_rate', true ) );
+		$this->assertSame( $store_currency, $order->get_meta( '_wcpay_multi_currency_order_default_currency', true ) );
+
+		$stats = wc_get_container()->get( MultiCurrencyRuntimeServiceFactory::class )->create_analytics_projection_service()->update_order_stats_data(
+			array(
+				'net_total'      => $net_total,
+				'shipping_total' => $shipping_total,
+				'tax_total'      => 0.0,
+				'total_sales'    => $net_total + $shipping_total,
+			),
+			$order
+		);
+
+		$this->assertSame( $expected_net, $stats['net_total'] );
+		$this->assertSame( $expected_shipping, $stats['shipping_total'] );
+	}
+
+	/**
 	 * @testdox Should convert free shipping minimums and persist projected order meta.
 	 */
 	public function test_converts_free_shipping_minimums_and_persists_order_meta(): void {

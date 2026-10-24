@@ -173,8 +173,10 @@ class MultiCurrencyPriceProjectionService {
 	/**
 	 * Project order meta candidates for a selected-currency order.
 	 *
+	 * The selected currency's rate is stored as it is, unrounded: Analytics divides the order's amounts by it.
+	 *
 	 * @param string $order_currency Order currency code.
-	 * @return array<string,float|string>
+	 * @return array<string,string>
 	 */
 	public function get_order_meta_candidates( string $order_currency ): array {
 		$state            = $this->state_builder->build();
@@ -185,7 +187,7 @@ class MultiCurrencyPriceProjectionService {
 		}
 
 		return array(
-			self::META_KEY_ORDER_EXCHANGE_RATE    => $this->price_calculator->get_price( 1, 'exchange_rate', $state->get_selected_currency() ),
+			self::META_KEY_ORDER_EXCHANGE_RATE    => $state->get_selected_currency()->get_rate_decimal(),
 			self::META_KEY_ORDER_DEFAULT_CURRENCY => $default_currency->get_code(),
 		);
 	}
