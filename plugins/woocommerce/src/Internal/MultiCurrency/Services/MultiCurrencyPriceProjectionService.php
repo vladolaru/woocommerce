@@ -151,14 +151,7 @@ class MultiCurrencyPriceProjectionService {
 	 * @return string
 	 */
 	public function get_price_filter_query_value( $amount, string $compare ): string {
-		$state            = $this->state_builder->build();
-		$converted_amount = $this->price_calculator->get_raw_conversion(
-			(float) $amount,
-			$state->get_default_currency()->get_code(),
-			$state->get_selected_currency()->get_code(),
-			$this->get_conversion_currencies( $state )
-		);
-
+		$converted_amount  = $this->get_default_currency_amount( (float) $amount );
 		$precision_epsilon = 0.000000001;
 
 		return '<=' === $compare
