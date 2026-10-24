@@ -519,6 +519,7 @@ class MultiCurrencyStateBuilder {
 	 */
 	private static function get_override_currency_code( bool &$is_order_currency = false ): ?string {
 		try {
+			self::$order_currency_override = null;
 			/**
 			 * Filters the selected native multi-currency code.
 			 *
@@ -533,7 +534,8 @@ class MultiCurrencyStateBuilder {
 		}
 
 		$override_currency_code = is_scalar( $override_currency_code ) && '' !== trim( (string) $override_currency_code ) ? strtoupper( trim( (string) $override_currency_code ) ) : null;
-		$is_order_currency      = null !== $override_currency_code && $override_currency_code === $order_currency_code;
+		// @phpstan-ignore booleanAnd.alwaysFalse, identical.alwaysFalse (a callback the filter runs may mark the code after the clear above)
+		$is_order_currency = null !== $override_currency_code && $override_currency_code === $order_currency_code;
 
 		return $override_currency_code;
 	}

@@ -541,6 +541,38 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should not honour an order currency mark left by a filter run the builder did not start.
+	 *
+	 * Code outside the builder can apply the override filter, and the Subscriptions compatibility marks its code whenever the
+	 * filter runs; it returns an earlier callback's code unmarked.
+	 */
+	public function test_ignores_an_order_currency_mark_left_by_another_filter_run(): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'JPY' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_jpy', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_jpy', '150' );
+		update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, $this->disabled_override_currencies()['order currency, cached provider rate'][0][ MultiCurrencyCacheInterface::CURRENCIES_KEY ] );
+		add_filter(
+			'wcpay_multi_currency_override_selected_currency',
+			static function ( $selected_currency ) {
+				if ( $selected_currency ) {
+					return $selected_currency;
+				}
+				MultiCurrencyStateBuilder::set_order_currency_override( 'GBP' );
+
+				return 'GBP';
+			},
+			50
+		);
+		/** This filter is documented in src/Internal/MultiCurrency/Services/MultiCurrencyStateBuilder.php */
+		apply_filters( 'wcpay_multi_currency_override_selected_currency', false );
+		add_filter( 'wcpay_multi_currency_override_selected_currency', static fn() => 'GBP', 10 );
+		$registry = new CurrencyRateProviderRegistry();
+		$registry->register( $this->create_unavailable_rate_provider() );
+
+		$this->assertSame( 'USD', $this->create_builder( $registry )->build()->get_selected_currency()->get_code() );
+	}
+
+	/**
 	 * Rate sources left for GBP after it was disabled, and overrides that are not an order's currency.
 	 *
 	 * @return array<string,array{0:array<string,mixed>,1:bool,2:string|null,3:array<int,mixed>}>

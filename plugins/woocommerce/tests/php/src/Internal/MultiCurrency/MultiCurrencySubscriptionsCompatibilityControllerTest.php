@@ -487,7 +487,10 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 			'a' => array( 'data' => $resubscribed ) + $session_items['a'],
 			'b' => array( 'data' => $variation ) + $session_items['b'],
 			'c' => array( 'data' => $other ) + $session_items['c'],
-			'd' => array( 'data' => $plain_line ) + $session_items['c'],
+			'd' => array(
+				'data'       => $plain_line,
+				'product_id' => 21,
+			) + $session_items['c'],
 		);
 		$products      = array( $resubscribed, $variation, $other, $plain_line );
 		$decisions     = function () use ( $products ): array {

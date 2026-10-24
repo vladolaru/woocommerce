@@ -99,6 +99,7 @@ class MultiCurrencyPriceProjectionServiceTest extends WC_Unit_Test_Case {
 		$sut   = $this->create_service( $state );
 
 		$this->assertSame( 8.2 * ( 1.0 / 0.82 ), $sut->get_raw_conversion( 8.2, 'USD', 'GBP' ) );
+		$this->assertSame( 10.0 * ( 0.82 / 1.0 ), $sut->get_raw_conversion( 10.0, 'GBP', 'USD' ), 'Into the selected currency too, as a Name Your Price amount entered in USD is.' );
 		$this->assertSame( '10', $sut->get_price_filter_query_value( 8.2, '>=' ) );
 		$this->assertSame( array( 'USD' ), array_keys( $state->get_enabled_currencies() ) );
 	}
