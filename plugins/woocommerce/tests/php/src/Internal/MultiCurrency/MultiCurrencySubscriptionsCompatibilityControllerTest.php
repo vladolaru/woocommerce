@@ -825,7 +825,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * there on every later read, as a virtual coupon (`:1041-1077`); a manual or deleted discount becomes a `renewal_cart` or
 	 * `initial_cart` coupon holding the order's discount (`:1708-1852`). The session amounts were converted when they were stored,
 	 * and an order discount is already in the order's currency, so neither converts again. Amounts are from a recorded store run
-	 * at GBP 0.73: a 10.00 coupon stored as 7.30 with a 50.00 minimum stored as 36.45 (a 100.00 maximum would store 73.00), and a
+	 * at GBP 0.73: a 10.00 coupon stored as 7.30 with a 50.00 minimum stored as 36.45 (the 73.00 maximum is a synthetic value), and a
 	 * 5.00 manual discount. The fixture converts by doubling.
 	 *
 	 * @dataProvider subscription_cart_coupons
@@ -893,6 +893,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 			'renewal, database coupon, stored'           => array( 'renewal', $setup, 'database', $database, '20', array( '100', '120' ) ),
 			'initial payment, database coupon, stored'   => array( null, $setup, 'database', $database, '20', array( '100', '120' ) ),
 			'initial payment, coupon typed in, applied'  => array( null, $apply, 'database', $database, '20', array( '100', '120' ) ),
+			'recurring percent coupon, limits convert'   => array( null, $apply, 'database', array( 'discount_type' => 'recurring_percent' ) + $database, '10.00', array( '100', '120' ) ),
 			'renewal, another plugin\'s virtual coupon'  => array( 'renewal', $apply, 'virtual', $database, '20', array( '100', '120' ) ),
 			'renewal, virtual coupon beside stored ones' => array( 'renewal', $apply, 'virtual beside stored', $database, '20', array( '100', '120' ) ),
 		);
@@ -1050,10 +1051,10 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	private function create_subscription_cart_coupon( string $origin, array $props ): \WC_Coupon {
 		$code = $props['code'];
 		unset( $props['code'] );
-		// The renewal and order discount types Subscriptions registers (`includes/core/class-wc-subscriptions-coupon.php:1179-1189`).
+		// Discount types Subscriptions registers (`includes/core/class-wc-subscriptions-coupon.php:136-147,1179-1189`).
 		add_filter(
 			'woocommerce_coupon_discount_types',
-			static fn( array $types ): array => $types + array_fill_keys( array( 'renewal_fee', 'renewal_cart', 'initial_cart' ), 'Subscriptions' )
+			static fn( array $types ): array => $types + array_fill_keys( array( 'recurring_percent', 'renewal_fee', 'renewal_cart', 'initial_cart' ), 'Subscriptions' )
 		);
 
 		if ( 'order' !== $origin && 'database' !== $origin ) {
