@@ -89,7 +89,7 @@ class MultiCurrencySelectedCurrencyPersistenceService {
 		}
 
 		$currency_code = $this->normalize_currency_code( $currency_code );
-		if ( '' === $currency_code || ! $this->is_enabled_currency( $currency_code ) ) {
+		if ( '' === $currency_code ) {
 			return false;
 		}
 

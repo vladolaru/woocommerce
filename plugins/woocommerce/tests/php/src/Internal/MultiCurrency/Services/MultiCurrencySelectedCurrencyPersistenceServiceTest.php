@@ -141,10 +141,18 @@ class MultiCurrencySelectedCurrencyPersistenceServiceTest extends WC_Unit_Test_C
 	}
 
 	/**
-	 * @testdox Should copy guest session currency to new customer meta.
+	 * @testdox Should copy guest session currency to new customer meta, whether or not the currency is still enabled.
+	 *
+	 * Client 11.1.0 copies the session currency as it is (`includes/multi-currency/MultiCurrency.php:1123-1128`); a stored
+	 * currency that is not enabled resolves to the store currency when it is read.
+	 *
+	 * @testWith ["GBP"]
+	 *           ["EUR"]
+	 *
+	 * @param string $currency_code Session currency; the store enables USD and GBP.
 	 */
-	public function test_copies_guest_session_currency_to_new_customer_meta(): void {
-		$session      = $this->create_session( 'GBP' );
+	public function test_copies_guest_session_currency_to_new_customer_meta( string $currency_code ): void {
+		$session      = $this->create_session( $currency_code );
 		WC()->session = $session;
 		$user_id      = self::factory()->user->create();
 		$sut          = $this->create_service( 'USD' );
@@ -152,7 +160,7 @@ class MultiCurrencySelectedCurrencyPersistenceServiceTest extends WC_Unit_Test_C
 		$updated = $sut->set_new_customer_currency_meta( $user_id );
 
 		$this->assertTrue( $updated, 'Session currency should be copied to new customer meta.' );
-		$this->assertSame( 'GBP', get_user_meta( $user_id, 'wcpay_currency', true ) );
+		$this->assertSame( $currency_code, get_user_meta( $user_id, 'wcpay_currency', true ) );
 	}
 
 	/**
