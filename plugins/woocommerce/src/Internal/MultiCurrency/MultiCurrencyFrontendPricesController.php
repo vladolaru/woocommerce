@@ -289,7 +289,9 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 			$order = wc_get_order( absint( $order_id ) );
 		}
 
-		if ( ! $order instanceof \WC_Order ) {
+		// WooCommerce Subscriptions creates its renewal orders in the browsing currency and then copies the subscription's
+		// currency and Multi-Currency meta onto them, so the browsing currency's rate does not belong on them.
+		if ( ! $order instanceof \WC_Order || 'subscription' === $order->get_created_via() ) {
 			return;
 		}
 

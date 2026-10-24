@@ -271,6 +271,27 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should leave the Multi-Currency meta of an order Subscriptions creates to the subscription's copy.
+	 *
+	 * WooCommerce Subscriptions 9.3.0 creates renewal orders, the early renewal modal's included, with `created_via`
+	 * `subscription` in the browsing currency, then copies the subscription's currency and meta onto them
+	 * (`includes/core/wcs-order-functions.php:236-242`). A recorded store run stamped a store-currency renewal with the
+	 * browsing currency's rate.
+	 */
+	public function test_leaves_the_meta_of_an_order_subscriptions_creates_to_the_subscription(): void {
+		$sut   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+		$order = wc_create_order( array( 'created_via' => 'subscription' ) );
+		$order->set_currency( 'GBP' );
+		$order->save();
+
+		$sut->add_order_meta( $order->get_id(), $order );
+		$order = wc_get_order( $order->get_id() );
+
+		$this->assertSame( '', $order->get_meta( '_wcpay_multi_currency_order_exchange_rate', true ) );
+		$this->assertSame( '', $order->get_meta( '_wcpay_multi_currency_order_default_currency', true ) );
+	}
+
+	/**
 	 * @testdox Should convert free shipping minimums and persist projected order meta.
 	 */
 	public function test_converts_free_shipping_minimums_and_persists_order_meta(): void {
