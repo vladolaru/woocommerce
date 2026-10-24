@@ -52,7 +52,6 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 		'recurring_percent',
 		'renewal_fee',
 		'renewal_percent',
-		'renewal_cart',
 	);
 
 	/**
@@ -167,7 +166,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	 * cart mutates. Invalidated by the cart-lifecycle hooks registered in
 	 * register_subscription_filters().
 	 *
-	 * @var array<string,array<string,mixed>|null>
+	 * @var array<string,array<int,array<string,mixed>>>
 	 */
 	private array $subscription_type_cache = array();
 
@@ -569,7 +568,17 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	}
 
 	/**
-	 * Get a subscription cart item for a specific Subscriptions cart type.
+	 * Get the first cart item of a specific Subscriptions cart type.
+	 *
+	 * @param string $type Subscription cart type.
+	 * @return array<string,mixed>|null
+	 */
+	protected function get_subscription_type_from_cart( string $type ): ?array {
+		return $this->get_subscription_cart_items( $type )[0] ?? null;
+	}
+
+	/**
+	 * Get the cart items of a specific Subscriptions cart type.
 	 *
 	 * Cached per request: the lookup only reads cart/session state, which is stable until the
 	 * cart mutates, and the invalidation hooks registered in register_subscription_filters()
@@ -577,14 +586,12 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	 * the whole cart and session on every filter invocation.
 	 *
 	 * @param string $type Subscription cart type.
-	 * @return array<string,mixed>|null
+	 * @return array<int,array<string,mixed>>
 	 */
-	protected function get_subscription_type_from_cart( string $type ): ?array {
-		if ( array_key_exists( $type, $this->subscription_type_cache ) ) {
-			return $this->subscription_type_cache[ $type ];
+	private function get_subscription_cart_items( string $type ): array {
+		if ( ! array_key_exists( $type, $this->subscription_type_cache ) ) {
+			$this->subscription_type_cache[ $type ] = $this->resolve_subscription_cart_items( $type );
 		}
-
-		$this->subscription_type_cache[ $type ] = $this->resolve_subscription_type_from_cart( $type );
 
 		return $this->subscription_type_cache[ $type ];
 	}
@@ -602,22 +609,12 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	}
 
 	/**
-	 * Resolve a subscription cart item for a specific Subscriptions cart type from cart/session.
-	 *
-	 * @param string $type Subscription cart type.
-	 * @return array<string,mixed>|null
-	 */
-	protected function resolve_subscription_type_from_cart( string $type ): ?array {
-		return $this->get_subscription_cart_items( $type )[0] ?? null;
-	}
-
-	/**
-	 * Get the cart items of a Subscriptions cart type from the cart, or from the session cart while the cart is not loaded.
+	 * Resolve the cart items of a Subscriptions cart type from the cart, or from the session cart while the cart is not loaded.
 	 *
 	 * @param string $type Subscription cart type.
 	 * @return array<int,array<string,mixed>>
 	 */
-	protected function get_subscription_cart_items( string $type ): array {
+	protected function resolve_subscription_cart_items( string $type ): array {
 		if ( ! in_array( $type, self::SUBSCRIPTION_TYPES, true ) ) {
 			return array();
 		}
@@ -651,7 +648,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	 * @return bool
 	 */
 	private function is_resubscribed_product( $product ): bool {
-		if ( ! $product instanceof \WC_Product || null === $this->get_subscription_type_from_cart( 'resubscribe' ) ) {
+		if ( ! $product instanceof \WC_Product ) {
 			return false;
 		}
 

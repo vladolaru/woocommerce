@@ -931,13 +931,13 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 			 * Spy resolver standing in for the real cart/session traversal.
 			 *
 			 * @param string $type Subscription cart type.
-			 * @return array<string,mixed>|null
+			 * @return array<int,array<string,mixed>>
 			 */
-			protected function resolve_subscription_type_from_cart( string $type ): ?array {
+			protected function resolve_subscription_cart_items( string $type ): array {
 				unset( $type );
 				++$this->resolve_calls;
 
-				return $this->next_value;
+				return null === $this->next_value ? array() : array( $this->next_value );
 			}
 		};
 
@@ -1190,6 +1190,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 					'variation_id'          => 0,
 					'subscription_object'   => $subscription,
 				);
+				$this->clear_subscription_type_cache();
 			}
 
 			/**
@@ -1207,6 +1208,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 					'key'                 => $key,
 					'subscription_object' => (object) array(),
 				);
+				$this->clear_subscription_type_cache();
 			}
 
 			/**
@@ -1228,22 +1230,12 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 			}
 
 			/**
-			 * Get a deterministic subscription cart item.
-			 *
-			 * @param string $type Subscription cart type.
-			 * @return array<string,mixed>|null
-			 */
-			protected function get_subscription_type_from_cart( string $type ): ?array {
-				return $this->cart_items[ $type ] ?? null;
-			}
-
-			/**
 			 * Get the deterministic cart items of a subscription cart type.
 			 *
 			 * @param string $type Subscription cart type.
 			 * @return array<int,array<string,mixed>>
 			 */
-			protected function get_subscription_cart_items( string $type ): array {
+			protected function resolve_subscription_cart_items( string $type ): array {
 				return isset( $this->cart_items[ $type ] ) ? array( $this->cart_items[ $type ] ) : array();
 			}
 
