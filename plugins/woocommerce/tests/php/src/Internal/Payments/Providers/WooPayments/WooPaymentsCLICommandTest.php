@@ -5,7 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -113,7 +112,7 @@ class WooPaymentsCLICommandTest extends WC_Unit_Test_Case {
 		$this->seed_connected_store();
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, $core_option );
 		update_option( '_wcpay_feature_customer_multi_currency', $flag );
-		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
+		wc_get_container()->reset_all_resolved();
 
 		$lines = wc_get_container()->get( WooPaymentsCLICommand::class )->get_status_lines();
 

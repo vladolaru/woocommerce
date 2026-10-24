@@ -3,8 +3,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
@@ -449,13 +450,49 @@ class WooPaymentsStatusReportTest extends WC_Unit_Test_Case {
 		$connected_api_client->method( 'is_available' )->willReturn( true );
 		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
 		$this->seed_connected_store();
-		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
+		wc_get_container()->reset_all_resolved();
 
 		$data = $this->get_sut()->get_status_data();
 
 		$this->assertTrue( $data['multi_currency']['enabled'] );
 		$this->assertTrue( $data['account_connected'] );
 		$this->assertFalse( $data['multi_currency']['rate_provider_available'], 'Connected account state alone must not make the rate provider look available.' );
+	}
+
+	/**
+	 * @testdox Status data reports the WooPayments rate provider available only while Multi-Currency holds it and it is available: $label.
+	 * @testWith ["WooPayments provider available", "woopayments", true, true]
+	 *           ["WooPayments provider unavailable", "woopayments", false, false]
+	 *           ["another provider available", "other-rates", true, false]
+	 *
+	 * @param string $label       Readable case name.
+	 * @param string $provider_id ID of the provider Multi-Currency holds.
+	 * @param bool   $available   Whether that provider is available.
+	 * @param bool   $expected    Expected rate_provider_available.
+	 */
+	public function test_status_data_reports_rate_provider_availability_from_the_rate_service( string $label, string $provider_id, bool $available, bool $expected ): void {
+		unset( $label );
+		$this->fake_plugin( false );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$connected_api_client = $this->createMock( WooPaymentsApiClient::class );
+		$connected_api_client->method( 'is_available' )->willReturn( true );
+		wc_get_container()->replace( WooPaymentsApiClient::class, $connected_api_client );
+		$this->seed_connected_store();
+		wc_get_container()->reset_all_resolved();
+		$provider = $this->createMock( CurrencyRateProvider::class );
+		$provider->method( 'get_id' )->willReturn( $provider_id );
+		$provider->method( 'is_available' )->willReturn( $available );
+		wc_get_container()->get( MultiCurrencyRateService::class )->set_provider( $provider );
+
+		try {
+			$data = $this->get_sut()->get_status_data();
+		} finally {
+			// A fresh rate service holds no provider.
+			wc_get_container()->reset_all_resolved();
+		}
+
+		$this->assertTrue( $data['multi_currency']['enabled'] );
+		$this->assertSame( $expected, $data['multi_currency']['rate_provider_available'] );
 	}
 
 	/**

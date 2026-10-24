@@ -6,10 +6,10 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDatabaseCache;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateInvalidator;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RateServices;
 use WC_Unit_Test_Case;
 
 /**
@@ -196,12 +196,11 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	 * upper-case code, so a miss prices the currency at 1.0 (client 11.1.0 includes/multi-currency/MultiCurrency.php:1719).
 	 */
 	public function test_refreshes_automatic_currencies_from_available_provider(): void {
-		$registry = new CurrencyRateProviderRegistry();
-		$registry->register( $this->create_available_rate_provider( array( 'GBP' => 0.82 ) ) );
+		$provider = $this->create_available_rate_provider( array( 'GBP' => 0.82 ) );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
 
-		$state  = $this->create_builder( $registry )->build();
+		$state  = $this->create_builder( $provider )->build();
 		$cached = get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY );
 
 		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $state->get_enabled_currencies() ) );
@@ -213,24 +212,39 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should rebuild a state built without a rate provider once the provider is set.
+	 */
+	public function test_rebuilds_the_state_once_a_rate_provider_is_set(): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
+		$invalidator  = new MultiCurrencyStateInvalidator();
+		$rate_service = RateServices::with( null, $invalidator );
+		$builder      = new MultiCurrencyStateBuilder( $this->create_localization(), $rate_service, new MultiCurrencyDatabaseCache(), $invalidator );
+
+		$this->assertSame( array( 'USD' ), array_keys( $builder->build()->get_enabled_currencies() ), 'Without a provider an automatic currency has no rate.' );
+
+		$rate_service->set_provider( $this->create_available_rate_provider( array( 'GBP' => 0.82 ) ) );
+
+		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $builder->build()->get_enabled_currencies() ) );
+		$this->assertSame( 0.82, $builder->build()->get_enabled_currencies()['GBP']->get_rate() );
+	}
+
+	/**
 	 * @testdox Should filter automatic currencies by provider-supported currencies.
 	 */
 	public function test_filters_automatic_currencies_by_provider_supported_currencies(): void {
-		$registry = new CurrencyRateProviderRegistry();
-		$registry->register(
-			$this->create_available_rate_provider(
-				array(
-					'gbp' => 0.82,
-					'eur' => 0.91,
-				),
-				array( 'GBP' )
-			)
+		$provider = $this->create_available_rate_provider(
+			array(
+				'gbp' => 0.82,
+				'eur' => 0.91,
+			),
+			array( 'GBP' )
 		);
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP', 'EUR' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
 		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'automatic' );
 
-		$state = $this->create_builder( $registry )->build();
+		$state = $this->create_builder( $provider )->build();
 
 		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $state->get_enabled_currencies() ) );
 		$this->assertSame( 0.82, $state->get_enabled_currencies()['GBP']->get_rate() );
@@ -281,8 +295,7 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	 * @testdox Should retain preserved automatic currencies when a registered provider is unavailable.
 	 */
 	public function test_retains_preserved_automatic_currencies_when_a_registered_provider_is_unavailable(): void {
-		$registry = new CurrencyRateProviderRegistry();
-		$registry->register( $this->create_unavailable_rate_provider() );
+		$provider = $this->create_unavailable_rate_provider();
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
 		update_option(
@@ -299,7 +312,7 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 			false
 		);
 
-		$state = $this->create_builder( $registry )->build();
+		$state = $this->create_builder( $provider )->build();
 
 		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $state->get_enabled_currencies() ) );
 		$this->assertSame( 0.82, $state->get_enabled_currencies()['GBP']->get_rate() );
@@ -383,8 +396,7 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	 */
 	public function test_uses_the_configured_store_currency_for_automatic_provider_rates_when_the_display_currency_is_filtered(): void {
 		$currency_from = array();
-		$registry      = new CurrencyRateProviderRegistry();
-		$registry->register( $this->create_recording_available_rate_provider( $currency_from ) );
+		$provider      = $this->create_recording_available_rate_provider( $currency_from );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
 		$currency_filter = static function ( string $currency ): string {
@@ -395,7 +407,7 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_currency', $currency_filter, 1 );
 
 		try {
-			$state = $this->create_builder( $registry )->build();
+			$state = $this->create_builder( $provider )->build();
 		} finally {
 			remove_filter( 'woocommerce_currency', $currency_filter, 1 );
 		}
@@ -532,10 +544,9 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 			add_filter( 'wcpay_multi_currency_override_selected_currency', static fn() => $later_code, 60 );
 		}
 		// A registered provider that cannot be reached keeps serving its cached rates.
-		$registry = new CurrencyRateProviderRegistry();
-		$registry->register( $this->create_unavailable_rate_provider() );
+		$provider = $this->create_unavailable_rate_provider();
 
-		$selected = $this->create_builder( $registry )->build()->get_selected_currency();
+		$selected = $this->create_builder( $provider )->build()->get_selected_currency();
 
 		$this->assertSame( $expected, array( $selected->get_code(), $selected->get_rate(), $selected->get_charm(), $selected->get_rounding() ) );
 	}
@@ -566,10 +577,9 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 		/** This filter is documented in src/Internal/MultiCurrency/Services/MultiCurrencyStateBuilder.php */
 		apply_filters( 'wcpay_multi_currency_override_selected_currency', false );
 		add_filter( 'wcpay_multi_currency_override_selected_currency', static fn() => 'GBP', 10 );
-		$registry = new CurrencyRateProviderRegistry();
-		$registry->register( $this->create_unavailable_rate_provider() );
+		$provider = $this->create_unavailable_rate_provider();
 
-		$this->assertSame( 'USD', $this->create_builder( $registry )->build()->get_selected_currency()->get_code() );
+		$this->assertSame( 'USD', $this->create_builder( $provider )->build()->get_selected_currency()->get_code() );
 	}
 
 	/**
@@ -690,9 +700,8 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	 */
 	public function test_memoizes_state_across_repeated_calls(): void {
 		$cache    = $this->create_counting_cache();
-		$registry = new CurrencyRateProviderRegistry();
-		$registry->register( $this->create_unavailable_rate_provider() );
-		$builder = $this->create_builder( $registry, $cache );
+		$provider = $this->create_unavailable_rate_provider();
+		$builder  = $this->create_builder( $provider, $cache );
 
 		$first  = $builder->build();
 		$second = $builder->build();
@@ -706,9 +715,8 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	 */
 	public function test_reset_rebuilds_state(): void {
 		$cache    = $this->create_counting_cache();
-		$registry = new CurrencyRateProviderRegistry();
-		$registry->register( $this->create_unavailable_rate_provider() );
-		$builder = $this->create_builder( $registry, $cache );
+		$provider = $this->create_unavailable_rate_provider();
+		$builder  = $this->create_builder( $provider, $cache );
 
 		$first = $builder->build();
 		$builder->reset();
@@ -750,14 +758,14 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the state builder.
 	 *
-	 * @param CurrencyRateProviderRegistry|null $registry Rate provider registry.
-	 * @param MultiCurrencyCacheInterface|null  $cache    Multi-currency cache.
+	 * @param CurrencyRateProvider|null        $provider Automatic-rate provider, or null for none.
+	 * @param MultiCurrencyCacheInterface|null $cache    Multi-currency cache.
 	 * @return MultiCurrencyStateBuilder
 	 */
-	private function create_builder( ?CurrencyRateProviderRegistry $registry = null, ?MultiCurrencyCacheInterface $cache = null ): MultiCurrencyStateBuilder {
+	private function create_builder( ?CurrencyRateProvider $provider = null, ?MultiCurrencyCacheInterface $cache = null ): MultiCurrencyStateBuilder {
 		return new MultiCurrencyStateBuilder(
 			$this->create_localization(),
-			new MultiCurrencyRateService( $registry ?? new CurrencyRateProviderRegistry() ),
+			RateServices::with( $provider ),
 			$cache ?? new MultiCurrencyDatabaseCache()
 		);
 	}
@@ -870,6 +878,15 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 			}
 
 			/**
+			 * Tell whether the provider's account is connected.
+			 *
+			 * @return bool
+			 */
+			public function is_connected(): bool {
+				return true;
+			}
+
+			/**
 			 * Get supported currencies.
 			 *
 			 * @return string[]
@@ -932,6 +949,15 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 			}
 
 			/**
+			 * Tell whether the provider's account is connected.
+			 *
+			 * @return bool
+			 */
+			public function is_connected(): bool {
+				return true;
+			}
+
+			/**
 			 * Get supported currencies.
 			 *
 			 * @return string[]
@@ -979,6 +1005,15 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 			 */
 			public function is_available(): bool {
 				return false;
+			}
+
+			/**
+			 * Tell whether the provider's account is connected.
+			 *
+			 * @return bool
+			 */
+			public function is_connected(): bool {
+				return true;
 			}
 
 			/**

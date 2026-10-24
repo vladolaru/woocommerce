@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\MultiCurrencyProviderAccountResolver;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -32,11 +32,11 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 	private MultiCurrencyRuntimeArbiter $arbiter;
 
 	/**
-	 * Provider account resolver.
+	 * Rate service holding the automatic-rate provider.
 	 *
-	 * @var MultiCurrencyProviderAccountResolver
+	 * @var MultiCurrencyRateService
 	 */
-	private MultiCurrencyProviderAccountResolver $account_resolver;
+	private MultiCurrencyRateService $rate_service;
 
 	/**
 	 * Admin request resolver.
@@ -78,12 +78,12 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter          $arbiter          Runtime owner arbiter.
-	 * @param MultiCurrencyProviderAccountResolver $account_resolver Provider account resolver.
+	 * @param MultiCurrencyRuntimeArbiter $arbiter      Runtime owner arbiter.
+	 * @param MultiCurrencyRateService    $rate_service Rate service holding the automatic-rate provider.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyProviderAccountResolver $account_resolver ): void {
-		$this->arbiter          = $arbiter;
-		$this->account_resolver = $account_resolver;
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyRateService $rate_service ): void {
+		$this->arbiter      = $arbiter;
+		$this->rate_service = $rate_service;
 	}
 
 	/**
@@ -216,7 +216,7 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 			return (bool) call_user_func( $this->provider_connected_resolver );
 		}
 
-		return $this->account_resolver->is_provider_connected();
+		return $this->rate_service->is_provider_connected();
 	}
 
 	/**

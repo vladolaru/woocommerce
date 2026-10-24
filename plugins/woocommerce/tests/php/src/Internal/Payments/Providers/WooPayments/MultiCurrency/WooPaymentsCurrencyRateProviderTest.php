@@ -59,6 +59,40 @@ class WooPaymentsCurrencyRateProviderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Should report the account connected from the account alone: $label.
+	 *
+	 * @dataProvider connection_provider
+	 *
+	 * @param string $label             Case label.
+	 * @param bool   $server_connected  Whether the API client is connected.
+	 * @param bool   $account_connected Whether the account is connected.
+	 * @param bool   $account_rejected  Whether the account is rejected.
+	 */
+	public function test_is_connected_follows_the_account( string $label, bool $server_connected, bool $account_connected, bool $account_rejected ): void {
+		unset( $label );
+		$provider = new WooPaymentsCurrencyRateProvider(
+			$this->create_account( $account_connected, $account_rejected ),
+			$this->create_api_client( $server_connected )
+		);
+
+		$this->assertSame( $account_connected, $provider->is_connected() );
+	}
+
+	/**
+	 * Get connection cases.
+	 *
+	 * @return array<string,array{string,bool,bool,bool}>
+	 */
+	public function connection_provider(): array {
+		return array(
+			'connected'                      => array( 'connected', true, true, false ),
+			'connected, server disconnected' => array( 'connected, server disconnected', false, true, false ),
+			'connected, account rejected'    => array( 'connected, account rejected', true, true, true ),
+			'account disconnected'           => array( 'account disconnected', true, false, false ),
+		);
+	}
+
+	/**
 	 * @testdox Should delegate currency rate requests to the API client.
 	 */
 	public function test_delegates_currency_rate_requests_to_api_client(): void {

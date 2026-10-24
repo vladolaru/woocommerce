@@ -20,9 +20,8 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySubscriptionsCompatibilityController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistrarInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
@@ -1201,22 +1200,22 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$GLOBALS['wcs_subscription_loads'] = 0;
 		wc_get_container()->replace(
 			'CachedRateProviderRoot',
-			new class( $this->create_cached_rate_registrar() ) {
-				/** @var CurrencyRateProviderRegistrarInterface */
-				private CurrencyRateProviderRegistrarInterface $registrar;
+			new class( $this->create_cached_rate_provider() ) {
+				/** @var CurrencyRateProvider */
+				private CurrencyRateProvider $provider;
 
 				/**
 				 * Constructor.
 				 *
-				 * @param CurrencyRateProviderRegistrarInterface $registrar Registrar of a provider whose cached rates serve.
+				 * @param CurrencyRateProvider $provider A provider whose cached rates serve.
 				 */
-				public function __construct( CurrencyRateProviderRegistrarInterface $registrar ) {
-					$this->registrar = $registrar;
+				public function __construct( CurrencyRateProvider $provider ) {
+					$this->provider = $provider;
 				}
 
-				/** Register the provider, as a payments provider's Multi-Currency classes do. */
+				/** Set the provider, as a payments provider's Multi-Currency classes do. */
 				public function register(): void {
-					wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array( $this->registrar ) );
+					wc_get_container()->get( MultiCurrencyRateService::class )->set_provider( $this->provider );
 				}
 			}
 		);
@@ -1273,48 +1272,42 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a rate provider registrar whose provider cannot be reached, so the cached rates serve.
+	 * Create a rate provider that cannot be reached, so the cached rates serve.
 	 *
-	 * @return CurrencyRateProviderRegistrarInterface
+	 * @return CurrencyRateProvider
 	 */
-	private function create_cached_rate_registrar(): CurrencyRateProviderRegistrarInterface {
-		return new class() implements CurrencyRateProviderRegistrarInterface {
+	private function create_cached_rate_provider(): CurrencyRateProvider {
+		return new class() implements CurrencyRateProvider {
+			/** @return string */
+			public function get_id(): string {
+				return 'unreachable-provider';
+			}
+
+			/** @return bool */
+			public function is_available(): bool {
+				return false;
+			}
+
+			/** @return bool */
+			public function is_connected(): bool {
+				return true;
+			}
+
+			/** @return string[] */
+			public function get_supported_currencies(): array {
+				return array();
+			}
+
 			/**
-			 * Register the unreachable provider.
+			 * Get currency rates.
 			 *
-			 * @param CurrencyRateProviderRegistry $registry Registry.
+			 * @param string        $currency_from Currency to convert from.
+			 * @param string[]|null $currencies_to Currencies to convert into.
+			 * @return array<string,mixed>
 			 */
-			public function register( CurrencyRateProviderRegistry $registry ): void {
-				$registry->register(
-					new class() implements CurrencyRateProvider {
-						/** @return string */
-						public function get_id(): string {
-							return 'unreachable-provider';
-						}
-
-						/** @return bool */
-						public function is_available(): bool {
-							return false;
-						}
-
-						/** @return string[] */
-						public function get_supported_currencies(): array {
-							return array();
-						}
-
-						/**
-						 * Get currency rates.
-						 *
-						 * @param string        $currency_from Currency to convert from.
-						 * @param string[]|null $currencies_to Currencies to convert into.
-						 * @return array<string,mixed>
-						 */
-						public function get_currency_rates( string $currency_from, ?array $currencies_to = null ): array {
-							unset( $currency_from, $currencies_to );
-							return array();
-						}
-					}
-				);
+			public function get_currency_rates( string $currency_from, ?array $currencies_to = null ): array {
+				unset( $currency_from, $currencies_to );
+				return array();
 			}
 		};
 	}

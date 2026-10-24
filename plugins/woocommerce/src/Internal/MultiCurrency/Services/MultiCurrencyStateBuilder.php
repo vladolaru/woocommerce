@@ -360,7 +360,7 @@ class MultiCurrencyStateBuilder {
 	 * @return array<string,mixed>|null
 	 */
 	private function get_cached_currency_data( string $default_code ): ?array {
-		if ( ! $this->rate_service->has_registered_provider() ) {
+		if ( ! $this->rate_service->has_provider() ) {
 			return null;
 		}
 

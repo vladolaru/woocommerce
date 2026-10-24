@@ -248,7 +248,8 @@ class CurrencyRateProviderRegistryFactoryTest extends WC_Unit_Test_Case {
 			$account_adapter,
 			$api_client_adapter,
 			$sut,
-			$registrar
+			$registrar,
+			\Automattic\WooCommerce\Tests\Internal\MultiCurrency\RateServices::with()
 		);
 		$bootstrap->register();
 
@@ -285,6 +286,15 @@ class CurrencyRateProviderRegistryFactoryTest extends WC_Unit_Test_Case {
 						 * @return bool
 						 */
 						public function is_available(): bool {
+							return true;
+						}
+
+						/**
+						 * Tell whether the provider's account is connected.
+						 *
+						 * @return bool
+						 */
+						public function is_connected(): bool {
 							return true;
 						}
 

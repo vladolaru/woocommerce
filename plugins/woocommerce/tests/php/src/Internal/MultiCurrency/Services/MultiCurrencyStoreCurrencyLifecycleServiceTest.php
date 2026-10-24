@@ -4,13 +4,12 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDatabaseCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStoreCurrencyLifecycleService;
 use WC_Unit_Test_Case;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RateServices;
 
 /**
  * Tests for the MultiCurrencyStoreCurrencyLifecycleService class.
@@ -321,7 +320,7 @@ class MultiCurrencyStoreCurrencyLifecycleServiceTest extends WC_Unit_Test_Case {
 			$cache,
 			new MultiCurrencyStateBuilder(
 				new MultiCurrencyLocalizationService(),
-				new MultiCurrencyRateService( new CurrencyRateProviderRegistry() ),
+				RateServices::with(),
 				$cache
 			)
 		);

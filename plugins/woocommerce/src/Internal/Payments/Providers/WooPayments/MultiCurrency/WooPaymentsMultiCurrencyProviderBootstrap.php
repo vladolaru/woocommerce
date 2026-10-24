@@ -11,6 +11,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyAccoun
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyApiClientInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Providers\MultiCurrencyProviderAccountResolver;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -66,6 +67,13 @@ class WooPaymentsMultiCurrencyProviderBootstrap implements RegisterHooksInterfac
 	private WooPaymentsCurrencyRateProviderRegistrar $provider_registrar;
 
 	/**
+	 * Multi-Currency rate service.
+	 *
+	 * @var MultiCurrencyRateService
+	 */
+	private MultiCurrencyRateService $rate_service;
+
+	/**
 	 * Initialize the bootstrap.
 	 *
 	 * @internal
@@ -76,6 +84,7 @@ class WooPaymentsMultiCurrencyProviderBootstrap implements RegisterHooksInterfac
 	 * @param WooPaymentsLegacyApiClientAdapter        $legacy_api_client_adapter Legacy WooPayments API client adapter.
 	 * @param CurrencyRateProviderRegistryFactory      $provider_registry_factory Rate provider registry factory.
 	 * @param WooPaymentsCurrencyRateProviderRegistrar $provider_registrar        WooPayments rate provider registrar.
+	 * @param MultiCurrencyRateService                 $rate_service              Multi-Currency rate service.
 	 */
 	final public function init(
 		MultiCurrencyProviderAccountResolver $account_resolver,
@@ -83,7 +92,8 @@ class WooPaymentsMultiCurrencyProviderBootstrap implements RegisterHooksInterfac
 		WooPaymentsLegacyAccountAdapter $legacy_account_adapter,
 		WooPaymentsLegacyApiClientAdapter $legacy_api_client_adapter,
 		CurrencyRateProviderRegistryFactory $provider_registry_factory,
-		WooPaymentsCurrencyRateProviderRegistrar $provider_registrar
+		WooPaymentsCurrencyRateProviderRegistrar $provider_registrar,
+		MultiCurrencyRateService $rate_service
 	): void {
 		$this->account_resolver          = $account_resolver;
 		$this->arbiter                   = $arbiter;
@@ -91,6 +101,7 @@ class WooPaymentsMultiCurrencyProviderBootstrap implements RegisterHooksInterfac
 		$this->legacy_api_client_adapter = $legacy_api_client_adapter;
 		$this->provider_registry_factory = $provider_registry_factory;
 		$this->provider_registrar        = $provider_registrar;
+		$this->rate_service              = $rate_service;
 	}
 
 	/**
@@ -159,5 +170,6 @@ class WooPaymentsMultiCurrencyProviderBootstrap implements RegisterHooksInterfac
 		$this->account_resolver->set_account( $account_adapter );
 		$this->provider_registrar->set_adapters( $account_adapter, $api_client_adapter );
 		$this->provider_registry_factory->set_provider_registrars( array( $this->provider_registrar ) );
+		$this->rate_service->set_provider( new WooPaymentsCurrencyRateProvider( $account_adapter, $api_client_adapter ) );
 	}
 }

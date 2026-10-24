@@ -7,11 +7,10 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvide
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySettingsCurrencyCatalog;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use WC_Unit_Test_Case;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RateServices;
 
 /**
  * Tests for the MultiCurrencySettingsCurrencyCatalog class.
@@ -182,15 +181,10 @@ class MultiCurrencySettingsCurrencyCatalogTest extends WC_Unit_Test_Case {
 	 * @return MultiCurrencySettingsCurrencyCatalog
 	 */
 	private function create_catalog( array $available_codes = array( 'USD' ), array $enabled_codes = array( 'USD' ), ?bool $provider_state = null, array $supported = array() ): MultiCurrencySettingsCurrencyCatalog {
-		$registry = new CurrencyRateProviderRegistry();
-		if ( null !== $provider_state ) {
-			$registry->register( $this->create_provider( $provider_state, $supported ) );
-		}
-
 		return new MultiCurrencySettingsCurrencyCatalog(
 			$this->create_localization(),
 			$this->create_state_builder( $available_codes, $enabled_codes ),
-			new MultiCurrencyRateService( $registry )
+			RateServices::with( null === $provider_state ? null : $this->create_provider( $provider_state, $supported ) )
 		);
 	}
 
@@ -270,6 +264,11 @@ class MultiCurrencySettingsCurrencyCatalogTest extends WC_Unit_Test_Case {
 			/** @return bool */
 			public function is_available(): bool {
 				return $this->available;
+			}
+
+			/** @return bool */
+			public function is_connected(): bool {
+				return true;
 			}
 
 			/** @return string[] */

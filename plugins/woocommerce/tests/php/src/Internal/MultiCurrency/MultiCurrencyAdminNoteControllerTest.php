@@ -4,10 +4,9 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Admin\Notes\Note;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyAccountInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoteController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\MultiCurrencyProviderAccountResolver;
 use WC_Unit_Test_Case;
 
 /**
@@ -209,82 +208,14 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 	 * @return MultiCurrencyAdminNoteController
 	 */
 	private function create_controller( string $owner, bool $is_admin, bool $provider_connected = true ): MultiCurrencyAdminNoteController {
-		$account_resolver = new MultiCurrencyProviderAccountResolver();
-		$account_resolver->set_account( $this->create_account_boundary( $provider_connected ) );
+		$provider = $this->createMock( CurrencyRateProvider::class );
+		$provider->method( 'is_connected' )->willReturn( $provider_connected );
 
 		$controller = new MultiCurrencyAdminNoteController();
-		$controller->init( $this->create_arbiter( $owner ), $account_resolver );
+		$controller->init( $this->create_arbiter( $owner ), RateServices::with( $provider ) );
 		$controller->set_admin_request_resolver( static fn(): bool => $is_admin );
 
 		return $controller;
-	}
-
-	/**
-	 * Create a provider account boundary test double.
-	 *
-	 * @param bool $provider_connected Whether the provider account is connected.
-	 * @return MultiCurrencyAccountInterface
-	 */
-	private function create_account_boundary( bool $provider_connected ): MultiCurrencyAccountInterface {
-		return new class( $provider_connected ) implements MultiCurrencyAccountInterface {
-			/**
-			 * Whether the provider account is connected.
-			 *
-			 * @var bool
-			 */
-			private bool $provider_connected;
-
-			/**
-			 * Constructor.
-			 *
-			 * @param bool $provider_connected Whether the provider account is connected.
-			 */
-			public function __construct( bool $provider_connected ) {
-				$this->provider_connected = $provider_connected;
-			}
-
-			/**
-			 * Tell whether the rate provider account is connected.
-			 *
-			 * @param bool $on_error Value to return on provider errors.
-			 * @return bool
-			 */
-			public function is_provider_connected( bool $on_error = false ): bool {
-				unset( $on_error );
-
-				return $this->provider_connected;
-			}
-
-			/**
-			 * Tell whether the connected account is rejected.
-			 *
-			 * @return bool
-			 */
-			public function is_account_rejected(): bool {
-				return false;
-			}
-
-			/**
-			 * Get cached provider account data.
-			 *
-			 * @param bool $force_refresh Whether to force-refresh provider data.
-			 * @return array<string,mixed>
-			 */
-			public function get_cached_account_data( bool $force_refresh = false ) {
-				unset( $force_refresh );
-
-				return array();
-			}
-
-			/**
-			 * Get account-supported customer currencies.
-			 *
-			 * @return string[]
-			 */
-			public function get_account_customer_supported_currencies(): array {
-				return array();
-			}
-		};
 	}
 
 	/**

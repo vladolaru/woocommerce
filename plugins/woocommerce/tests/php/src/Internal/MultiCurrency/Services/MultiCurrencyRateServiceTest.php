@@ -4,8 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RateServices;
 use WC_Unit_Test_Case;
 
 /**
@@ -48,7 +47,7 @@ class MultiCurrencyRateServiceTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
 		update_option( 'wcpay_multi_currency_manual_rate_eur', '1.25' );
 
-		$service = new MultiCurrencyRateService( new CurrencyRateProviderRegistry() );
+		$service = RateServices::with();
 
 		$this->assertSame( 1.25, $service->get_rate( 'USD', 'EUR' ) );
 	}
@@ -64,7 +63,7 @@ class MultiCurrencyRateServiceTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
 		update_option( 'wcpay_multi_currency_manual_rate_eur', $manual_rate );
 
-		$service = new MultiCurrencyRateService( new CurrencyRateProviderRegistry() );
+		$service = RateServices::with();
 
 		$this->assertNull( $service->get_rate( 'USD', 'EUR' ) );
 	}
@@ -89,9 +88,8 @@ class MultiCurrencyRateServiceTest extends WC_Unit_Test_Case {
 	public function test_resolves_automatic_rate_from_available_provider(): void {
 		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'automatic' );
 
-		$registry = new CurrencyRateProviderRegistry();
-		$registry->register( $this->create_provider( true, array( 'eur' => 1.2 ) ) );
-		$service = new MultiCurrencyRateService( $registry );
+		$provider = $this->create_provider( true, array( 'eur' => 1.2 ) );
+		$service  = RateServices::with( $provider );
 
 		$this->assertSame( 1.2, $service->get_rate( 'USD', 'EUR' ) );
 	}
@@ -102,9 +100,8 @@ class MultiCurrencyRateServiceTest extends WC_Unit_Test_Case {
 	public function test_accepts_uppercase_provider_rate_keys(): void {
 		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'automatic' );
 
-		$registry = new CurrencyRateProviderRegistry();
-		$registry->register( $this->create_provider( true, array( 'EUR' => 1.3 ) ) );
-		$service = new MultiCurrencyRateService( $registry );
+		$provider = $this->create_provider( true, array( 'EUR' => 1.3 ) );
+		$service  = RateServices::with( $provider );
 
 		$this->assertSame( 1.3, $service->get_rate( 'USD', 'EUR' ) );
 	}
@@ -113,21 +110,18 @@ class MultiCurrencyRateServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should resolve bulk automatic rates from the available provider.
 	 */
 	public function test_resolves_bulk_automatic_rates_from_available_provider(): void {
-		$registry = new CurrencyRateProviderRegistry();
-		$registry->register(
-			$this->create_provider(
-				true,
-				array(
-					'currencies' => array(
-						'eur' => '1.2',
-						'GBP' => 0.82,
-						'bad' => 'not-a-rate',
-						'jpy' => 0,
-					),
-				)
+		$provider = $this->create_provider(
+			true,
+			array(
+				'currencies' => array(
+					'eur' => '1.2',
+					'GBP' => 0.82,
+					'bad' => 'not-a-rate',
+					'jpy' => 0,
+				),
 			)
 		);
-		$service = new MultiCurrencyRateService( $registry );
+		$service  = RateServices::with( $provider );
 
 		$this->assertTrue( $service->has_available_provider() );
 		$this->assertSame(
@@ -143,60 +137,102 @@ class MultiCurrencyRateServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should return null for bulk rates without an available provider.
 	 */
 	public function test_returns_null_for_bulk_rates_without_available_provider(): void {
-		$registry = new CurrencyRateProviderRegistry();
-		$registry->register( $this->create_provider( false, array( 'eur' => 1.2 ) ) );
-		$service = new MultiCurrencyRateService( $registry );
+		$provider = $this->create_provider( false, array( 'eur' => 1.2 ) );
+		$service  = RateServices::with( $provider );
 
 		$this->assertFalse( $service->has_available_provider() );
 		$this->assertNull( $service->get_rates( 'USD' ) );
 	}
 
 	/**
-	 * @testdox Should distinguish registered providers from available providers and prefer the available source.
+	 * @testdox Should tell whether a provider is set and available, and keep its source while it is unavailable: $label.
+	 *
+	 * @dataProvider provider_states
+	 *
+	 * @param string    $label     Case label.
+	 * @param bool|null $available Whether the set provider is available, or null for no provider.
+	 * @param bool      $has       Expected has_provider().
+	 * @param bool      $is_up     Expected has_available_provider().
+	 * @param ?string   $source    Expected automatic rate source.
 	 */
-	public function test_distinguishes_registered_and_available_providers_when_resolving_the_automatic_rate_source(): void {
-		$registry = new CurrencyRateProviderRegistry();
-		$registry->register( $this->create_provider( false, array(), array(), 'outage' ) );
-		$registry->register( $this->create_provider( true, array(), array(), 'available' ) );
-		$service = new MultiCurrencyRateService( $registry );
+	public function test_reports_the_provider_and_the_automatic_rate_source( string $label, ?bool $available, bool $has, bool $is_up, ?string $source ): void {
+		unset( $label );
+		$service = RateServices::with( null === $available ? null : $this->create_provider( $available, array(), array(), $available ? 'available' : 'outage' ) );
 
-		$this->assertTrue( $service->has_registered_provider() );
+		$this->assertSame( $has, $service->has_provider() );
+		$this->assertSame( $is_up, $service->has_available_provider() );
+		$this->assertSame( $source, $service->get_automatic_rate_source_id() );
+	}
+
+	/**
+	 * Provider states.
+	 *
+	 * @return array<string,array{string,bool|null,bool,bool,string|null}>
+	 */
+	public function provider_states(): array {
+		return array(
+			'available provider'   => array( 'available provider', true, true, true, 'available' ),
+			'unavailable provider' => array( 'unavailable provider', false, true, false, 'outage' ),
+			'no provider'          => array( 'no provider', null, false, false, null ),
+		);
+	}
+
+	/**
+	 * @testdox Should answer from the provider set last.
+	 */
+	public function test_answers_from_the_provider_set_last(): void {
+		$service = RateServices::with( $this->create_provider( false, array(), array(), 'first' ) );
+
+		$service->set_provider( $this->create_provider( true, array(), array(), 'second' ) );
+
 		$this->assertTrue( $service->has_available_provider() );
-		$this->assertSame( 'available', $service->get_automatic_rate_source_id() );
+		$this->assertSame( 'second', $service->get_automatic_rate_source_id() );
 	}
 
 	/**
-	 * @testdox Should retain a registered provider source while it is unavailable.
+	 * @testdox Should tell whether the provider's account is connected, false without a provider or when it fails: $label.
+	 *
+	 * @dataProvider connection_states
+	 *
+	 * @param string      $label     Case label.
+	 * @param string|null $connected 'yes', 'no', 'throws', or null for no provider.
+	 * @param bool        $expected  Expected is_provider_connected().
 	 */
-	public function test_returns_the_first_registered_provider_as_the_automatic_rate_source_during_an_outage(): void {
-		$registry = new CurrencyRateProviderRegistry();
-		$registry->register( $this->create_provider( false, array(), array(), 'first-outage' ) );
-		$registry->register( $this->create_provider( false, array(), array(), 'second-outage' ) );
-		$service = new MultiCurrencyRateService( $registry );
+	public function test_tells_whether_the_provider_account_is_connected( string $label, ?string $connected, bool $expected ): void {
+		unset( $label );
+		$provider = null;
+		if ( null !== $connected ) {
+			$provider = $this->createMock( CurrencyRateProvider::class );
+			if ( 'throws' === $connected ) {
+				$provider->method( 'is_connected' )->willThrowException( new \RuntimeException( 'Account error' ) );
+			} else {
+				$provider->method( 'is_connected' )->willReturn( 'yes' === $connected );
+			}
+		}
 
-		$this->assertTrue( $service->has_registered_provider() );
-		$this->assertFalse( $service->has_available_provider() );
-		$this->assertSame( 'first-outage', $service->get_automatic_rate_source_id() );
+		$this->assertSame( $expected, RateServices::with( $provider )->is_provider_connected() );
 	}
 
 	/**
-	 * @testdox Should report no automatic rate source when no providers are registered.
+	 * Provider account connection states.
+	 *
+	 * @return array<string,array{string,string|null,bool}>
 	 */
-	public function test_reports_no_automatic_rate_source_without_registered_providers(): void {
-		$service = new MultiCurrencyRateService( new CurrencyRateProviderRegistry() );
-
-		$this->assertFalse( $service->has_registered_provider() );
-		$this->assertFalse( $service->has_available_provider() );
-		$this->assertNull( $service->get_automatic_rate_source_id() );
+	public function connection_states(): array {
+		return array(
+			'connected'     => array( 'connected', 'yes', true ),
+			'not connected' => array( 'not connected', 'no', false ),
+			'fails'         => array( 'fails', 'throws', false ),
+			'no provider'   => array( 'no provider', null, false ),
+		);
 	}
 
 	/**
 	 * @testdox Should return normalized supported currency codes from provider.
 	 */
 	public function test_returns_normalized_supported_currency_codes_from_provider(): void {
-		$registry = new CurrencyRateProviderRegistry();
-		$registry->register( $this->create_provider( true, array(), array( 'gbp', 'EUR', 'bad-code' ) ) );
-		$service = new MultiCurrencyRateService( $registry );
+		$provider = $this->create_provider( true, array(), array( 'gbp', 'EUR', 'bad-code' ) );
+		$service  = RateServices::with( $provider );
 
 		$this->assertSame( array( 'GBP', 'EUR' ), $service->get_supported_currency_codes() );
 	}
@@ -205,9 +241,8 @@ class MultiCurrencyRateServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should return all WooCommerce currency codes when provider support is empty.
 	 */
 	public function test_returns_all_woocommerce_currency_codes_when_provider_support_is_empty(): void {
-		$registry = new CurrencyRateProviderRegistry();
-		$registry->register( $this->create_provider( true, array(), array() ) );
-		$service = new MultiCurrencyRateService( $registry );
+		$provider = $this->create_provider( true, array(), array() );
+		$service  = RateServices::with( $provider );
 
 		$this->assertContains( 'USD', $service->get_supported_currency_codes() );
 		$this->assertContains( 'GBP', $service->get_supported_currency_codes() );
@@ -219,9 +254,8 @@ class MultiCurrencyRateServiceTest extends WC_Unit_Test_Case {
 	public function test_returns_null_for_automatic_rate_without_provider(): void {
 		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'automatic' );
 
-		$registry = new CurrencyRateProviderRegistry();
-		$registry->register( $this->create_provider( false, array( 'eur' => 1.2 ) ) );
-		$service = new MultiCurrencyRateService( $registry );
+		$provider = $this->create_provider( false, array( 'eur' => 1.2 ) );
+		$service  = RateServices::with( $provider );
 
 		$this->assertNull( $service->get_rate( 'USD', 'EUR' ) );
 	}
@@ -234,9 +268,7 @@ class MultiCurrencyRateServiceTest extends WC_Unit_Test_Case {
 		$provider = $this->createMock( CurrencyRateProvider::class );
 		$provider->method( 'is_available' )->willReturn( true );
 		$provider->method( 'get_currency_rates' )->willThrowException( new \RuntimeException( 'Server error' ) );
-		$registry = new CurrencyRateProviderRegistry();
-		$registry->register( $provider );
-		$service = new MultiCurrencyRateService( $registry );
+		$service = RateServices::with( $provider );
 
 		$this->assertNull( $service->get_rate( 'USD', 'EUR' ) );
 		$this->assertNull( $service->get_rates( 'USD' ) );
@@ -320,6 +352,15 @@ class MultiCurrencyRateServiceTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function is_available(): bool {
+				return $this->available;
+			}
+
+			/**
+			 * Tell whether the provider's account is connected.
+			 *
+			 * @return bool
+			 */
+			public function is_connected(): bool {
 				return $this->available;
 			}
 

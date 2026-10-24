@@ -31,9 +31,7 @@ use Automattic\WooCommerce\Internal\Features\FeaturesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistrarInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 use WP_Error;
@@ -2748,10 +2746,8 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 			);
 			update_option( MultiCurrencyCacheInterface::CURRENCIES_KEY, $rates_cache, false );
 		}
-		$registry_factory = wc_get_container()->get( CurrencyRateProviderRegistryFactory::class );
-		$registrars       = $registry_factory->get_provider_registrars();
 		if ( 'provider' === $rate_source ) {
-			$registry_factory->set_provider_registrars( array( $this->create_usd_rate_provider_registrar( (float) $rate ) ) );
+			wc_get_container()->get( MultiCurrencyRateService::class )->set_provider( $this->create_usd_rate_provider( (float) $rate ) );
 		}
 		$expected_standard                      = $this->get_standard_fraud_ruleset_fixture();
 		$expected_standard[2]['check']['value'] = $expected;
@@ -2775,7 +2771,7 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 				$this->assertSame( $rate, (string) get_option( 'wcpay_multi_currency_manual_rate_usd' ), 'The manual rate is never changed.' );
 			}
 		} finally {
-			$registry_factory->set_provider_registrars( $registrars );
+			wc_get_container()->reset_all_resolved();
 			// Through delete_option(), so the shared Multi-Currency state sees the change.
 			delete_option( 'wcpay_multi_currency_enabled_currencies' );
 			delete_option( 'wcpay_multi_currency_exchange_rate_usd' );
@@ -2813,25 +2809,19 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * A rate provider registrar whose provider is available and answers one USD rate, as a running Multi-Currency has.
+	 * A rate provider that is available and answers one USD rate, as a running Multi-Currency has.
 	 *
 	 * @param float $rate USD rate against the store currency.
-	 * @return CurrencyRateProviderRegistrarInterface
+	 * @return CurrencyRateProvider
 	 */
-	private function create_usd_rate_provider_registrar( float $rate ): CurrencyRateProviderRegistrarInterface {
+	private function create_usd_rate_provider( float $rate ): CurrencyRateProvider {
 		$provider = $this->createMock( CurrencyRateProvider::class );
 		$provider->method( 'get_id' )->willReturn( 'test-rates' );
 		$provider->method( 'is_available' )->willReturn( true );
 		$provider->method( 'get_supported_currencies' )->willReturn( array( 'USD' ) );
 		$provider->method( 'get_currency_rates' )->willReturn( array( 'USD' => $rate ) );
-		$registrar = $this->createMock( CurrencyRateProviderRegistrarInterface::class );
-		$registrar->method( 'register' )->willReturnCallback(
-			static function ( CurrencyRateProviderRegistry $registry ) use ( $provider ): void {
-				$registry->register( $provider );
-			}
-		);
 
-		return $registrar;
+		return $provider;
 	}
 
 	/**

@@ -5,15 +5,14 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\M
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyAccountInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDatabaseCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use WC_Unit_Test_Case;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RateServices;
 
 /**
  * Tests for the WooPaymentsNativeApiClientAdapter class.
@@ -70,9 +69,8 @@ class WooPaymentsNativeApiClientAdapterTest extends WC_Unit_Test_Case {
 		);
 		$adapter = new WooPaymentsNativeApiClientAdapter();
 		$adapter->init( new FailingRatesNativeApiClient() );
-		$registry = new CurrencyRateProviderRegistry();
-		$registry->register( new WooPaymentsCurrencyRateProvider( new ConnectedMultiCurrencyAccount(), $adapter ) );
-		$builder = new MultiCurrencyStateBuilder( new MultiCurrencyLocalizationService(), new MultiCurrencyRateService( $registry ), new MultiCurrencyDatabaseCache() );
+		$provider = new WooPaymentsCurrencyRateProvider( new ConnectedMultiCurrencyAccount(), $adapter );
+		$builder  = new MultiCurrencyStateBuilder( new MultiCurrencyLocalizationService(), RateServices::with( $provider ), new MultiCurrencyDatabaseCache() );
 
 		$enabled = $builder->build()->get_enabled_currencies();
 		$stored  = get_option( MultiCurrencyCacheInterface::CURRENCIES_KEY );

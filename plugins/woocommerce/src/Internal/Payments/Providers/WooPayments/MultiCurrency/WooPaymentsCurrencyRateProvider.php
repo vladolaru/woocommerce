@@ -67,6 +67,15 @@ class WooPaymentsCurrencyRateProvider implements CurrencyRateProvider {
 	}
 
 	/**
+	 * Tell whether the WooPayments account is connected.
+	 *
+	 * @return bool
+	 */
+	public function is_connected(): bool {
+		return $this->account->is_provider_connected();
+	}
+
+	/**
 	 * Get supported customer currencies.
 	 *
 	 * @return string[]

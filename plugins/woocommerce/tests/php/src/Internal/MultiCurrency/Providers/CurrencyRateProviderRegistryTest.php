@@ -118,6 +118,15 @@ class CurrencyRateProviderRegistryTest extends WC_Unit_Test_Case {
 			}
 
 			/**
+			 * Tell whether the provider's account is connected.
+			 *
+			 * @return bool
+			 */
+			public function is_connected(): bool {
+				return true;
+			}
+
+			/**
 			 * Get supported currencies.
 			 *
 			 * @return string[]

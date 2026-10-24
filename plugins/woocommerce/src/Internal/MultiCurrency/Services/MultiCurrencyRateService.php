@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
 
 /**
  * Resolves multi-currency exchange rates for the native runtime.
@@ -18,19 +18,44 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProvider
 class MultiCurrencyRateService {
 
 	/**
-	 * Rate provider registry.
+	 * Request-local state invalidation coordinator.
 	 *
-	 * @var CurrencyRateProviderRegistry
+	 * @var MultiCurrencyStateInvalidator
 	 */
-	private CurrencyRateProviderRegistry $provider_registry;
+	private MultiCurrencyStateInvalidator $state_invalidator;
 
 	/**
-	 * Constructor.
+	 * The automatic-rate provider, or null until one is set.
 	 *
-	 * @param CurrencyRateProviderRegistry $provider_registry Rate provider registry.
+	 * @var CurrencyRateProvider|null
 	 */
-	public function __construct( CurrencyRateProviderRegistry $provider_registry ) {
-		$this->provider_registry = $provider_registry;
+	private ?CurrencyRateProvider $provider = null;
+
+	/**
+	 * Initialize the class instance.
+	 *
+	 * @internal
+	 *
+	 * @param MultiCurrencyStateInvalidator $state_invalidator Request-local state invalidation coordinator.
+	 */
+	final public function init( MultiCurrencyStateInvalidator $state_invalidator ): void {
+		$this->state_invalidator = $state_invalidator;
+	}
+
+	/**
+	 * Set the automatic-rate provider, and invalidate the currency state built without it.
+	 *
+	 * The WooPayments provider calls this when its Multi-Currency classes register. It is reachable through the container
+	 * but is not a supported extension point: the last caller wins, and a supported way to add a rate source would be a
+	 * filter where this service takes its provider.
+	 *
+	 * @internal
+	 *
+	 * @param CurrencyRateProvider $provider Automatic-rate provider.
+	 */
+	public function set_provider( CurrencyRateProvider $provider ): void {
+		$this->provider = $provider;
+		$this->state_invalidator->invalidate();
 	}
 
 	/**
@@ -41,41 +66,47 @@ class MultiCurrencyRateService {
 	 * @since 11.0.0
 	 */
 	public function has_available_provider(): bool {
-		return null !== $this->provider_registry->get_available_provider();
+		return null !== $this->get_available_provider();
 	}
 
 	/**
-	 * Tell whether an automatic-rate provider is registered.
+	 * Tell whether an automatic-rate provider is set.
 	 *
 	 * @return bool
 	 *
 	 * @since 11.2.0
 	 */
-	public function has_registered_provider(): bool {
-		return ! empty( $this->provider_registry->get_providers() );
+	public function has_provider(): bool {
+		return null !== $this->provider;
 	}
 
 	/**
-	 * Get the configured source for automatic rates.
-	 *
-	 * Prefer a currently available provider. When all registered providers are
-	 * unavailable, retain the first registered source so settings can describe
-	 * the outage without treating it as an unconfigured automatic rate source.
+	 * Get the source of automatic rates: the provider's ID, also while it is unavailable, so settings can describe the
+	 * outage without treating automatic rates as having no source.
 	 *
 	 * @return string|null
 	 *
 	 * @since 11.2.0
 	 */
 	public function get_automatic_rate_source_id(): ?string {
-		$provider = $this->provider_registry->get_available_provider();
-		if ( null !== $provider ) {
-			return $provider->get_id();
+		return null === $this->provider ? null : $this->provider->get_id();
+	}
+
+	/**
+	 * Tell whether the provider's account is connected; false without a provider or when the provider fails.
+	 *
+	 * @return bool
+	 */
+	public function is_provider_connected(): bool {
+		if ( null === $this->provider ) {
+			return false;
 		}
 
-		$providers = $this->provider_registry->get_providers();
-		$provider  = reset( $providers );
-
-		return false === $provider ? null : $provider->get_id();
+		try {
+			return $this->provider->is_connected();
+		} catch ( \Throwable $e ) {
+			return false;
+		}
 	}
 
 	/**
@@ -94,7 +125,7 @@ class MultiCurrencyRateService {
 			return $this->get_manual_rate( $to_currency );
 		}
 
-		$provider = $this->provider_registry->get_available_provider();
+		$provider = $this->get_available_provider();
 		if ( ! $provider ) {
 			return null;
 		}
@@ -122,7 +153,7 @@ class MultiCurrencyRateService {
 	 * @since 11.0.0
 	 */
 	public function get_rates( string $from_currency, ?array $currencies_to = null ): ?array {
-		$provider = $this->provider_registry->get_available_provider();
+		$provider = $this->get_available_provider();
 		if ( ! $provider ) {
 			return null;
 		}
@@ -151,7 +182,7 @@ class MultiCurrencyRateService {
 	 * @since 11.0.0
 	 */
 	public function get_supported_currency_codes(): array {
-		$provider = $this->provider_registry->get_available_provider();
+		$provider = $this->get_available_provider();
 		if ( ! $provider ) {
 			return array();
 		}
@@ -168,6 +199,15 @@ class MultiCurrencyRateService {
 				$wc_currencies
 			)
 		);
+	}
+
+	/**
+	 * Get the provider when automatic rates are available from it.
+	 *
+	 * @return CurrencyRateProvider|null
+	 */
+	private function get_available_provider(): ?CurrencyRateProvider {
+		return null !== $this->provider && $this->provider->is_available() ? $this->provider : null;
 	}
 
 	/**

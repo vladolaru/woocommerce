@@ -17,6 +17,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExtensionRuntime;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RateServices;
 use WC_Unit_Test_Case;
 
 /**
@@ -191,6 +192,7 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 
 		$provider_registry_factory = new CurrencyRateProviderRegistryFactory();
 		$provider_registrar        = new WooPaymentsCurrencyRateProviderRegistrar();
+		$rate_service              = RateServices::with();
 
 		$bootstrap = new WooPaymentsMultiCurrencyProviderBootstrap();
 		$bootstrap->init(
@@ -199,13 +201,15 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 			$legacy_account_adapter,
 			$legacy_api_client_adapter,
 			$provider_registry_factory,
-			$provider_registrar
+			$provider_registrar,
+			$rate_service
 		);
 
 		return array(
 			'account_resolver'          => $account_resolver,
 			'bootstrap'                 => $bootstrap,
 			'provider_registry_factory' => $provider_registry_factory,
+			'rate_service'              => $rate_service,
 		);
 	}
 

@@ -8,13 +8,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDatabaseCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCachingEnvironment;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySettingsCurrencyCatalog;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
@@ -23,6 +21,7 @@ use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
 use WP_REST_Server;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RateServices;
 
 /**
  * Tests for the MultiCurrencyRestController class.
@@ -708,15 +707,10 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	 * @return MultiCurrencySettingsCurrencyCatalog
 	 */
 	private function create_settings_currency_catalog( MultiCurrencyStateBuilder $state_builder, ?bool $provider_available, array $supported_currencies = array() ): MultiCurrencySettingsCurrencyCatalog {
-		$registry = new CurrencyRateProviderRegistry();
-		if ( null !== $provider_available ) {
-			$registry->register( $this->create_rate_provider( $provider_available, $supported_currencies ) );
-		}
-
 		return new MultiCurrencySettingsCurrencyCatalog(
 			$this->create_localization_service(),
 			$state_builder,
-			new MultiCurrencyRateService( $registry )
+			RateServices::with( null === $provider_available ? null : $this->create_rate_provider( $provider_available, $supported_currencies ) )
 		);
 	}
 
@@ -752,6 +746,11 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 			/** @return bool */
 			public function is_available(): bool {
 				return $this->available;
+			}
+
+			/** @return bool */
+			public function is_connected(): bool {
+				return true;
 			}
 
 			/** @return string[] */
@@ -894,7 +893,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	private function create_real_state_builder(): MultiCurrencyStateBuilder {
 		return new MultiCurrencyStateBuilder(
 			$this->create_localization_service(),
-			new MultiCurrencyRateService( new CurrencyRateProviderRegistry() ),
+			RateServices::with(),
 			new MultiCurrencyDatabaseCache()
 		);
 	}

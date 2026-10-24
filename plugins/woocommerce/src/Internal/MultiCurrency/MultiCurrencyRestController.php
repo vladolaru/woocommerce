@@ -17,7 +17,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateServ
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySettingsCurrencyCatalog;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WP_Error;
 use WP_REST_Controller;
@@ -617,13 +616,10 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	 */
 	private function get_settings_currency_catalog(): MultiCurrencySettingsCurrencyCatalog {
 		if ( null === $this->settings_currency_catalog ) {
-			$localization_service = new MultiCurrencyLocalizationService();
-			$registry_factory     = wc_get_container()->get( CurrencyRateProviderRegistryFactory::class );
-
 			$this->settings_currency_catalog = new MultiCurrencySettingsCurrencyCatalog(
-				$localization_service,
+				new MultiCurrencyLocalizationService(),
 				$this->get_state_builder(),
-				new MultiCurrencyRateService( $registry_factory->create() )
+				wc_get_container()->get( MultiCurrencyRateService::class )
 			);
 		}
 

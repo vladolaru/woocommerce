@@ -26,6 +26,13 @@ class MultiCurrencyStateBuilderFactory {
 	private CurrencyRateProviderRegistryFactory $provider_registry_factory;
 
 	/**
+	 * Rate service holding the automatic-rate provider.
+	 *
+	 * @var MultiCurrencyRateService
+	 */
+	private MultiCurrencyRateService $rate_service;
+
+	/**
 	 * Request-local state invalidation coordinator.
 	 *
 	 * @var MultiCurrencyStateInvalidator
@@ -52,10 +59,12 @@ class MultiCurrencyStateBuilderFactory {
 	 * @internal
 	 *
 	 * @param CurrencyRateProviderRegistryFactory $provider_registry_factory Rate provider registry factory.
+	 * @param MultiCurrencyRateService            $rate_service              Rate service holding the automatic-rate provider.
 	 * @param MultiCurrencyStateInvalidator       $state_invalidator         Request-local state invalidation coordinator.
 	 */
-	final public function init( CurrencyRateProviderRegistryFactory $provider_registry_factory, MultiCurrencyStateInvalidator $state_invalidator ): void {
+	final public function init( CurrencyRateProviderRegistryFactory $provider_registry_factory, MultiCurrencyRateService $rate_service, MultiCurrencyStateInvalidator $state_invalidator ): void {
 		$this->provider_registry_factory = $provider_registry_factory;
+		$this->rate_service              = $rate_service;
 		$this->state_invalidator         = $state_invalidator;
 	}
 
@@ -135,7 +144,7 @@ class MultiCurrencyStateBuilderFactory {
 	private function build_state_builder( MultiCurrencyLocalizationInterface $localization_service ): MultiCurrencyStateBuilder {
 		return new MultiCurrencyStateBuilder(
 			$localization_service,
-			new MultiCurrencyRateService( $this->provider_registry_factory->create() ),
+			$this->rate_service,
 			new MultiCurrencyDatabaseCache(),
 			$this->state_invalidator
 		);

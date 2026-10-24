@@ -7,9 +7,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvide
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoticesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistrarInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use WC_Unit_Test_Case;
 
 /**
@@ -213,11 +211,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		unset( $label );
 		$this->set_current_user_can_manage_woocommerce();
 		$this->enable_multi_currency_with_rate_type( $rate_type );
-		$provider_registry_factory = new CurrencyRateProviderRegistryFactory();
-		if ( $provider ) {
-			$this->register_available_rate_provider( $provider_registry_factory );
-		}
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $provider_registry_factory );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, RateServices::with( $provider ? $this->create_available_rate_provider() : null ) );
 
 		ob_start();
 		$sut->handle_admin_notices();
@@ -379,13 +373,13 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an admin notices controller.
 	 *
-	 * @param string                                   $owner                     Runtime owner.
-	 * @param CurrencyRateProviderRegistryFactory|null $provider_registry_factory Rate provider registry factory.
+	 * @param string                        $owner        Runtime owner.
+	 * @param MultiCurrencyRateService|null $rate_service Rate service, or null for one without a provider.
 	 * @return MultiCurrencyAdminNoticesController
 	 */
-	private function create_controller( string $owner, ?CurrencyRateProviderRegistryFactory $provider_registry_factory = null ): MultiCurrencyAdminNoticesController {
+	private function create_controller( string $owner, ?MultiCurrencyRateService $rate_service = null ): MultiCurrencyAdminNoticesController {
 		$controller = new MultiCurrencyAdminNoticesController();
-		$controller->init( $this->create_arbiter( $owner ), $provider_registry_factory ?? new CurrencyRateProviderRegistryFactory() );
+		$controller->init( $this->create_arbiter( $owner ), $rate_service ?? RateServices::with() );
 
 		return $controller;
 	}
@@ -417,67 +411,61 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Register an available automatic-rate provider.
+	 * Create an available automatic-rate provider.
 	 *
-	 * @param CurrencyRateProviderRegistryFactory $provider_registry_factory Rate provider registry factory.
+	 * @return CurrencyRateProvider
 	 */
-	private function register_available_rate_provider( CurrencyRateProviderRegistryFactory $provider_registry_factory ): void {
-		$provider_registry_factory->set_provider_registrars(
-			array(
-				new class() implements CurrencyRateProviderRegistrarInterface {
-					/**
-					 * Register an available rate provider.
-					 *
-					 * @param CurrencyRateProviderRegistry $registry Rate provider registry.
-					 */
-					public function register( CurrencyRateProviderRegistry $registry ): void {
-						$registry->register(
-							new class() implements CurrencyRateProvider {
-								/**
-								 * Get the provider identifier.
-								 *
-								 * @return string
-								 */
-								public function get_id(): string {
-									return 'test';
-								}
+	private function create_available_rate_provider(): CurrencyRateProvider {
+		return new class() implements CurrencyRateProvider {
+			/**
+			 * Get the provider identifier.
+			 *
+			 * @return string
+			 */
+			public function get_id(): string {
+				return 'test';
+			}
 
-								/**
-								 * Tell whether automatic rates are currently available.
-								 *
-								 * @return bool
-								 */
-								public function is_available(): bool {
-									return true;
-								}
+			/**
+			 * Tell whether automatic rates are currently available.
+			 *
+			 * @return bool
+			 */
+			public function is_available(): bool {
+				return true;
+			}
 
-								/**
-								 * Get supported currencies.
-								 *
-								 * @return string[]
-								 */
-								public function get_supported_currencies(): array {
-									return array( 'GBP' );
-								}
+			/**
+			 * Tell whether the provider's account is connected.
+			 *
+			 * @return bool
+			 */
+			public function is_connected(): bool {
+				return true;
+			}
 
-								/**
-								 * Get currency rates.
-								 *
-								 * @param string        $currency_from Currency to convert from.
-								 * @param string[]|null $currencies_to Currencies to convert into, or null for all supported.
-								 * @return array<string,mixed>
-								 */
-								public function get_currency_rates( string $currency_from, ?array $currencies_to = null ): array {
-									unset( $currency_from, $currencies_to );
+			/**
+			 * Get supported currencies.
+			 *
+			 * @return string[]
+			 */
+			public function get_supported_currencies(): array {
+				return array( 'GBP' );
+			}
 
-									return array( 'gbp' => 0.82 );
-								}
-							}
-						);
-					}
-				},
-			)
-		);
+			/**
+			 * Get currency rates.
+			 *
+			 * @param string        $currency_from Currency to convert from.
+			 * @param string[]|null $currencies_to Currencies to convert into, or null for all supported.
+			 * @return array<string,mixed>
+			 */
+			public function get_currency_rates( string $currency_from, ?array $currencies_to = null ): array {
+				unset( $currency_from, $currencies_to );
+
+				return array( 'gbp' => 0.82 );
+			}
+		};
 	}
 
 	/**

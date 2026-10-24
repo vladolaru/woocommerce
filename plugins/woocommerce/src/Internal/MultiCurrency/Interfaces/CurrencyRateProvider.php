@@ -34,6 +34,13 @@ interface CurrencyRateProvider {
 	public function is_available(): bool;
 
 	/**
+	 * Tell whether the provider's account is connected, whether or not rates are available now.
+	 *
+	 * @return bool
+	 */
+	public function is_connected(): bool;
+
+	/**
 	 * Get supported customer currencies.
 	 *
 	 * An empty array means all WooCommerce currencies are supported.

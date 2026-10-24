@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStoreCurrencyLifecycleService;
@@ -38,11 +38,11 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	private MultiCurrencyRuntimeArbiter $arbiter;
 
 	/**
-	 * Rate provider registry factory.
+	 * Rate service holding the automatic-rate provider.
 	 *
-	 * @var CurrencyRateProviderRegistryFactory
+	 * @var MultiCurrencyRateService
 	 */
-	private CurrencyRateProviderRegistryFactory $provider_registry_factory;
+	private MultiCurrencyRateService $rate_service;
 
 	/**
 	 * Optional die handler used by tests.
@@ -56,12 +56,12 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter              $arbiter                   Runtime owner arbiter.
-	 * @param CurrencyRateProviderRegistryFactory|null $provider_registry_factory Rate provider registry factory.
+	 * @param MultiCurrencyRuntimeArbiter $arbiter      Runtime owner arbiter.
+	 * @param MultiCurrencyRateService    $rate_service Rate service holding the automatic-rate provider.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, ?CurrencyRateProviderRegistryFactory $provider_registry_factory = null ): void {
-		$this->arbiter                   = $arbiter;
-		$this->provider_registry_factory = $provider_registry_factory ?? wc_get_container()->get( CurrencyRateProviderRegistryFactory::class );
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyRateService $rate_service ): void {
+		$this->arbiter      = $arbiter;
+		$this->rate_service = $rate_service;
 	}
 
 	/**
@@ -272,7 +272,7 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	 */
 	private function has_available_rate_provider(): bool {
 		try {
-			return null !== $this->provider_registry_factory->create()->get_available_provider();
+			return $this->rate_service->has_available_provider();
 		} catch ( \Throwable $e ) {
 			return false;
 		}

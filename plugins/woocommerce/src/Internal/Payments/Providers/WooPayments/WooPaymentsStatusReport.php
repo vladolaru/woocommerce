@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsDebugTools;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsHttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPreflightService;
@@ -69,12 +69,6 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 */
 	private ?WooPaymentsCutoverPreflightService $cutover_preflight_service = null;
 
-	/**
-	 * Rate provider registry factory.
-	 *
-	 * @var CurrencyRateProviderRegistryFactory|null
-	 */
-	private ?CurrencyRateProviderRegistryFactory $provider_registry_factory = null;
 
 	/**
 	 * Setup tier.
@@ -684,16 +678,16 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the named rate provider is available in the active registry.
+	 * Tell whether the named rate provider is the one Multi-Currency holds, and is available.
 	 *
 	 * @param string $provider_id Rate provider ID.
 	 * @return bool
 	 */
 	private function is_rate_provider_available( string $provider_id ): bool {
 		try {
-			$provider = $this->get_provider_registry_factory()->create()->get_provider( $provider_id );
+			$rate_service = wc_get_container()->get( MultiCurrencyRateService::class );
 
-			return null !== $provider && $provider->is_available();
+			return $provider_id === $rate_service->get_automatic_rate_source_id() && $rate_service->has_available_provider();
 		} catch ( Throwable $exception ) {
 			return false;
 		}
@@ -881,19 +875,6 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		}
 
 		return $this->cutover_preflight_service;
-	}
-
-	/**
-	 * Get the provider registry factory, resolving it on first use.
-	 *
-	 * @return CurrencyRateProviderRegistryFactory
-	 */
-	private function get_provider_registry_factory(): CurrencyRateProviderRegistryFactory {
-		if ( null === $this->provider_registry_factory ) {
-			$this->provider_registry_factory = wc_get_container()->get( CurrencyRateProviderRegistryFactory::class );
-		}
-
-		return $this->provider_registry_factory;
 	}
 
 	/**

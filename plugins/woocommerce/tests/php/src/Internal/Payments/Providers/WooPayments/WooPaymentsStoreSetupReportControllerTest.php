@@ -7,9 +7,7 @@ use ActionScheduler_Store;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistrarInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistry;
-use Automattic\WooCommerce\Internal\MultiCurrency\Providers\CurrencyRateProviderRegistryFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
@@ -53,7 +51,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_option( MultiCurrencyCacheInterface::CURRENCIES_KEY );
-		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars( array() );
+		wc_get_container()->reset_all_resolved();
 		if ( function_exists( 'as_unschedule_all_actions' ) ) {
 			as_unschedule_all_actions( WooPaymentsStoreSetupReportController::STORE_SETUP_SYNC_ACTION, null, WooPaymentsActionSchedulerService::GROUP_ID );
 		}
@@ -718,16 +716,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 		$provider->method( 'get_id' )->willReturn( 'test-outage' );
 		$provider->method( 'is_available' )->willReturn( false );
 
-		$registrar = $this->createMock( CurrencyRateProviderRegistrarInterface::class );
-		$registrar->method( 'register' )->willReturnCallback(
-			static function ( CurrencyRateProviderRegistry $registry ) use ( $provider ): void {
-				$registry->register( $provider );
-			}
-		);
-
-		wc_get_container()->get( CurrencyRateProviderRegistryFactory::class )->set_provider_registrars(
-			array( $registrar )
-		);
+		wc_get_container()->get( MultiCurrencyRateService::class )->set_provider( $provider );
 	}
 
 	/**
