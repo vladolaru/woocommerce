@@ -1085,6 +1085,100 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * Client 11.1.0 asks for manual capture only on its card gateway, for card and Link (`includes/admin/class-wc-rest-payments-settings-controller.php:704-720`
+	 * keeps a method under manual capture only when it allows manual capture or is Link); any other method charges through its own
+	 * gateway, whose `manual_capture` no writer stores, so it captures automatically (`includes/class-wc-payment-gateway-wcpay.php:3122-3124`, `:3229-3231`).
+	 * Its definitions give the capture-later capability to card, Apple Pay, Google Pay and Amazon Pay only
+	 * (`includes/payment-methods/Configs/Definitions/`). The recorded refusal of manual capture for iDEAL and the other single-use
+	 * redirect methods is Stripe's "capture_method=manual is not supported by payment method type" error.
+	 *
+	 * @testdox The charge asks for $expected_capture capture for $_dataName.
+	 * @dataProvider capture_method_data
+	 *
+	 * @param string              $gateway_id       Checkout gateway ID.
+	 * @param array<string,mixed> $provider_data    Checkout provider data.
+	 * @param array<int,string>   $enabled_methods  Enabled payment method IDs.
+	 * @param string              $manual_capture   The manual capture setting.
+	 * @param array<int,string>   $expected_types   Expected payment_method_types.
+	 * @param string              $expected_capture Expected capture_method.
+	 */
+	public function test_charge_asks_for_manual_capture_only_when_every_declared_method_can_capture_later( string $gateway_id, array $provider_data, array $enabled_methods, string $manual_capture, array $expected_types, string $expected_capture ): void {
+		$order = wc_create_order();
+		$order->set_currency( 'USD' );
+		$order->set_total( '30.00' );
+		$order->save();
+		$settings        = array(
+			'manual_capture'                    => $manual_capture,
+			'upe_enabled_payment_method_ids'    => $enabled_methods,
+			'express_checkout_checkout_methods' => array( 'payment_request', 'amazon_pay' ),
+		);
+		$account_service = $this->getMockBuilder( WooPaymentsAccountService::class )
+			->disableOriginalConstructor()
+			->onlyMethods( array( 'get_gateway_setting', 'get_cached_account_data', 'get_account_country', 'is_gateway_enabled', 'is_test_mode_enabled', 'get_customer_supported_currencies' ) )
+			->getMock();
+		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
+			static fn( string $key, $fallback = null ) => $settings[ $key ] ?? $fallback
+		);
+		$account_service->method( 'get_cached_account_data' )->willReturn(
+			array(
+				'status'           => 'complete',
+				'payments_enabled' => true,
+				'country'          => 'US',
+				'capabilities'     => array(
+					'card_payments'       => 'active',
+					'link_payments'       => 'active',
+					'amazon_pay_payments' => 'active',
+				),
+				'fees'             => array( 'link' => array() ),
+			)
+		);
+		$account_service->method( 'get_account_country' )->willReturn( 'US' );
+		$account_service->method( 'is_gateway_enabled' )->willReturn( true );
+		$account_service->method( 'is_test_mode_enabled' )->willReturn( true );
+		$account_service->method( 'get_customer_supported_currencies' )->willReturn( array() );
+		$request_builder = new WooPaymentsIntentRequestBuilder();
+		$request_builder->init(
+			$account_service,
+			new WooPaymentsOrderDataService(),
+			$this->createStub( WooPaymentsTokenService::class ),
+			new WooPaymentsPaymentMethodRegistry()
+		);
+
+		$request = $request_builder->charge_request_data(
+			PaymentOperationContext::for_checkout( $order, $gateway_id, 'pm_capture', array(), $provider_data ),
+			'pm_capture',
+			'cus_native',
+			false
+		);
+
+		$this->assertSame( $expected_types, $request['payment_method_types'] );
+		$this->assertSame( $expected_capture, $request['capture_method'] );
+	}
+
+	/**
+	 * Checkout charges by declared payment method types and the manual capture setting.
+	 *
+	 * @return array<string,array{string,array<string,mixed>,array<int,string>,string,array<int,string>,string}>
+	 */
+	public function capture_method_data(): array {
+		$card    = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
+		$prefix  = WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX;
+		$express = array(
+			'express_payment_method_types' => array( 'card', 'amazon_pay' ),
+			'express_checkout_context'     => 'checkout',
+		);
+
+		return array(
+			'iDEAL under manual capture'               => array( $prefix . 'ideal', array(), array( 'card', 'ideal' ), 'yes', array( 'ideal' ), 'automatic' ),
+			'Klarna under manual capture'              => array( $prefix . 'klarna', array(), array( 'card', 'klarna' ), 'yes', array( 'klarna' ), 'automatic' ),
+			'card under manual capture'                => array( $card, array(), array( 'card' ), 'yes', array( 'card' ), 'manual' ),
+			'card with Link under manual capture'      => array( $card, array(), array( 'card', 'link' ), 'yes', array( 'card', 'link' ), 'manual' ),
+			'the express methods under manual capture' => array( $card, $express, array( 'card', 'amazon_pay' ), 'yes', array( 'card', 'amazon_pay' ), 'manual' ),
+			'card with manual capture off'             => array( $card, array(), array( 'card' ), 'no', array( 'card' ), 'automatic' ),
+		);
+	}
+
+	/**
 	 * Build a charge request with a payment-method save requested.
 	 *
 	 * @param string $gateway_id Gateway ID.

@@ -23,7 +23,12 @@ class WooPaymentsPaymentMethodRegistry {
 
 	private const TOKENIZATION = 'tokenization';
 
-	private const CAPTURE_LATER = 'capture_later';
+	/**
+	 * Capability marking a method whose payment can be authorized now and captured later.
+	 *
+	 * Public so the intent request asks for manual capture only for methods that have it.
+	 */
+	public const CAPTURE_LATER = 'capture_later';
 
 	private const BUY_NOW_PAY_LATER = 'buy_now_pay_later';
 
