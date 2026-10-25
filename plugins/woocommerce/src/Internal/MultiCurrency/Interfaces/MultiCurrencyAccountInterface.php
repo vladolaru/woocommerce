@@ -8,10 +8,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Interfaces;
 
 /**
- * Account boundary used by provider-backed multi-currency rate sources.
+ * The payments account the WooPayments rate provider reads: its connection, rejection, cached data and supported
+ * customer currencies.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 interface MultiCurrencyAccountInterface {
 

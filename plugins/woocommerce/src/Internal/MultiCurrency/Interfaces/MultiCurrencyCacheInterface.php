@@ -8,10 +8,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Interfaces;
 
 /**
- * Cache boundary for the native multi-currency runtime.
+ * A Multi-Currency cache: entries read with or without their expiry, regenerated when missing or stale, and deleted;
+ * CURRENCIES_KEY holds the cached rates.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 interface MultiCurrencyCacheInterface {
 

@@ -8,14 +8,13 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Interfaces;
 
 /**
- * Provider-neutral seam for automatic multi-currency FX rates.
+ * The automatic-rate source the rate service holds: its ID, availability, account connection, supported currencies
+ * and rates.
  *
- * Manual rates do not require a provider. Automatic rates are supplied through
- * implementations of this seam, including the WooPayments provider in native
- * payments mode.
+ * Manual rates need no provider. The WooPayments provider implements it.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 interface CurrencyRateProviderInterface {
 

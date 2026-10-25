@@ -8,10 +8,10 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Interfaces;
 
 /**
- * Localization boundary for the native multi-currency runtime.
+ * Gives Multi-Currency each currency's format for the user's locale and each country's locale data.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 interface MultiCurrencyLocalizationInterface {
 

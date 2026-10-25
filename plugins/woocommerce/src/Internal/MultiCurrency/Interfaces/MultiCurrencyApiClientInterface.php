@@ -8,10 +8,10 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Interfaces;
 
 /**
- * API-client boundary used by provider-backed multi-currency rate sources.
+ * The API client the WooPayments rate provider fetches currency rates through, and whether it reaches its server.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 interface MultiCurrencyApiClientInterface {
 
