@@ -22,7 +22,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\WooPaymentsAdminLinkController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyPaymentMethodsMap;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyProviderBootstrap;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
@@ -388,7 +388,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * @return array<int,class-string> Class names in registration order.
 	 */
 	public static function get_multi_currency_classes(): array {
-		return array( WooPaymentsMultiCurrencyProviderBootstrap::class, WooPaymentsMultiCurrencyPaymentMethodsMap::class );
+		return array( WooPaymentsMultiCurrencyController::class, WooPaymentsMultiCurrencyPaymentMethodsMap::class );
 	}
 
 	/**

@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsMultiCurrencyProviderBootstrap class file.
+ * WooPaymentsMultiCurrencyController class file.
  */
 
 declare( strict_types = 1 );
@@ -20,7 +20,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  * @since 11.0.0
  * @internal Transitional bootstrap while WooPayments multi-currency runtime is absorbed into core.
  */
-class WooPaymentsMultiCurrencyProviderBootstrap implements RegisterHooksInterface {
+class WooPaymentsMultiCurrencyController implements RegisterHooksInterface {
 
 	/**
 	 * Runtime ownership arbiter.

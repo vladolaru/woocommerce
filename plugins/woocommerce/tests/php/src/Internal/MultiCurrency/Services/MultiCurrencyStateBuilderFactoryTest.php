@@ -18,7 +18,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelected
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyProviderBootstrap;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyController;
 use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 use WC_Session;
 use WC_Unit_Test_Case;
@@ -556,7 +556,7 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 	 * Register WooPayments provider boundaries for tests that exercise provider-backed rates.
 	 */
 	private function register_woopayments_provider_boundaries(): void {
-		wc_get_container()->get( WooPaymentsMultiCurrencyProviderBootstrap::class )->register();
+		wc_get_container()->get( WooPaymentsMultiCurrencyController::class )->register();
 	}
 
 	/**
