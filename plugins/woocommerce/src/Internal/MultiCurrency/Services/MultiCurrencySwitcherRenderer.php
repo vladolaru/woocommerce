@@ -1,6 +1,6 @@
 <?php
 /**
- * MultiCurrencySwitcherProjectionService class file.
+ * MultiCurrencySwitcherRenderer class file.
  */
 
 declare( strict_types = 1 );
@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
  * @since 11.0.0
  * @internal Transitional internal component for the native multi-currency runtime.
  */
-class MultiCurrencySwitcherProjectionService {
+class MultiCurrencySwitcherRenderer {
 
 	private const SWITCHER_CLASS = 'js-woopayments-currency-switcher';
 	private const WIDGET_ID_BASE = 'currency_switcher_widget';

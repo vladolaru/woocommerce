@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityCont
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherWidget;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherWidgetController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherRenderer;
 use WC_Unit_Test_Case;
 
 /**
@@ -255,7 +255,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should clean the output buffer when widget rendering throws.
 	 */
 	public function test_cleans_output_buffer_when_widget_rendering_throws(): void {
-		$projection = new class() extends MultiCurrencySwitcherProjectionService {
+		$projection = new class() extends MultiCurrencySwitcherRenderer {
 			/**
 			 * Constructor.
 			 */
@@ -388,19 +388,19 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a switcher widget controller.
 	 *
-	 * @param string                                 $owner      Runtime owner.
-	 * @param MultiCurrencySwitcherProjectionService $projection Projection service.
+	 * @param string                        $owner      Runtime owner.
+	 * @param MultiCurrencySwitcherRenderer $projection Projection service.
 	 * @return MultiCurrencySwitcherWidgetController
 	 */
 	private function create_controller(
 		string $owner,
-		?MultiCurrencySwitcherProjectionService $projection = null
+		?MultiCurrencySwitcherRenderer $projection = null
 	): MultiCurrencySwitcherWidgetController {
 		$controller = new MultiCurrencySwitcherWidgetController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
 			$this->create_compatibility_controller(),
-			ServiceFactories::with( $this, array( 'create_switcher_projection_service' => $projection ?? $this->create_projection_service() ) )
+			ServiceFactories::with( $this, array( 'create_switcher_renderer' => $projection ?? $this->create_projection_service() ) )
 		);
 
 		return $controller;
@@ -409,12 +409,12 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a switcher widget.
 	 *
-	 * @param MultiCurrencySwitcherProjectionService|null $projection          Projection service.
-	 * @param bool                                        $switching_disabled Whether switching is disabled.
+	 * @param MultiCurrencySwitcherRenderer|null $projection          Projection service.
+	 * @param bool                               $switching_disabled Whether switching is disabled.
 	 * @return MultiCurrencySwitcherWidget
 	 */
 	private function create_widget(
-		?MultiCurrencySwitcherProjectionService $projection = null,
+		?MultiCurrencySwitcherRenderer $projection = null,
 		bool $switching_disabled = false
 	): MultiCurrencySwitcherWidget {
 		return new MultiCurrencySwitcherWidget(
@@ -505,10 +505,10 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a switcher projection service test double.
 	 *
-	 * @return MultiCurrencySwitcherProjectionService
+	 * @return MultiCurrencySwitcherRenderer
 	 */
-	private function create_projection_service(): MultiCurrencySwitcherProjectionService {
-		return new class() extends MultiCurrencySwitcherProjectionService {
+	private function create_projection_service(): MultiCurrencySwitcherRenderer {
+		return new class() extends MultiCurrencySwitcherRenderer {
 			/**
 			 * Last widget instance settings.
 			 *

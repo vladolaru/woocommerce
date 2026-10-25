@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherRenderer;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 
@@ -72,9 +72,9 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	/**
 	 * Switcher projection service.
 	 *
-	 * @var MultiCurrencySwitcherProjectionService|null
+	 * @var MultiCurrencySwitcherRenderer|null
 	 */
-	private ?MultiCurrencySwitcherProjectionService $switcher_projection_service = null;
+	private ?MultiCurrencySwitcherRenderer $switcher_renderer = null;
 
 	/**
 	 * Initialize the class instance.
@@ -170,7 +170,7 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 		$args = apply_filters( MultiCurrencyStateBuilder::FILTER_PREFIX . 'storefront_widget_args', $default_args );
 		$args = is_array( $args ) ? $args : $default_args;
 
-		$widget_markup = $this->get_switcher_projection_service()->get_widget_markup(
+		$widget_markup = $this->get_switcher_renderer()->get_widget_markup(
 			$instance,
 			$args,
 			MultiCurrencyRequestContext::get_current_query_args(),
@@ -223,14 +223,14 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	/**
 	 * Get the switcher projection service.
 	 *
-	 * @return MultiCurrencySwitcherProjectionService
+	 * @return MultiCurrencySwitcherRenderer
 	 */
-	private function get_switcher_projection_service(): MultiCurrencySwitcherProjectionService {
-		if ( null === $this->switcher_projection_service ) {
-			$this->switcher_projection_service = $this->service_factory->create_switcher_projection_service();
+	private function get_switcher_renderer(): MultiCurrencySwitcherRenderer {
+		if ( null === $this->switcher_renderer ) {
+			$this->switcher_renderer = $this->service_factory->create_switcher_renderer();
 		}
 
-		return $this->switcher_projection_service;
+		return $this->switcher_renderer;
 	}
 
 	/**

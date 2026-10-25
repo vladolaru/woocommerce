@@ -7,13 +7,13 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocali
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherRenderer;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the MultiCurrencySwitcherProjectionService class.
+ * Tests for the MultiCurrencySwitcherRenderer class.
  */
-class MultiCurrencySwitcherProjectionServiceTest extends WC_Unit_Test_Case {
+class MultiCurrencySwitcherRendererTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should project widget markup with preserved query parameters and currency labels.
@@ -222,10 +222,10 @@ class MultiCurrencySwitcherProjectionServiceTest extends WC_Unit_Test_Case {
 	 * Create the projection service.
 	 *
 	 * @param MultiCurrencyState $state Multi-currency state.
-	 * @return MultiCurrencySwitcherProjectionService
+	 * @return MultiCurrencySwitcherRenderer
 	 */
-	private function create_service( MultiCurrencyState $state ): MultiCurrencySwitcherProjectionService {
-		return new MultiCurrencySwitcherProjectionService( $this->create_state_builder( $state ) );
+	private function create_service( MultiCurrencyState $state ): MultiCurrencySwitcherRenderer {
+		return new MultiCurrencySwitcherRenderer( $this->create_state_builder( $state ) );
 	}
 
 	/**

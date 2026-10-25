@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelected
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySettingsCurrencyCatalog;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStoreCurrencyLifecycleService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherRenderer;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyTrackingProjectionService;
 use WC_Unit_Test_Case;
 
@@ -31,7 +31,7 @@ class MultiCurrencyServiceFactoryTest extends WC_Unit_Test_Case {
 			'frontend projection'           => array( 'create_display_service', MultiCurrencyDisplayService::class ),
 			'geolocation'                   => array( 'create_geolocation_service', MultiCurrencyGeolocationService::class ),
 			'selected-currency persistence' => array( 'create_selected_currency_persistence_service', MultiCurrencySelectedCurrencyPersistenceService::class ),
-			'switcher projection'           => array( 'create_switcher_projection_service', MultiCurrencySwitcherProjectionService::class ),
+			'switcher projection'           => array( 'create_switcher_renderer', MultiCurrencySwitcherRenderer::class ),
 			'analytics projection'          => array( 'create_analytics_projection_service', MultiCurrencyAnalyticsProjectionService::class ),
 			'tracking projection'           => array( 'create_tracking_projection_service', MultiCurrencyTrackingProjectionService::class ),
 			'store-currency lifecycle'      => array( 'create_store_currency_lifecycle_service', MultiCurrencyStoreCurrencyLifecycleService::class ),

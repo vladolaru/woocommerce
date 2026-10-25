@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityCont
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherBlockController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherRenderer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use WC_Unit_Test_Case;
@@ -258,14 +258,14 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a switcher block controller.
 	 *
-	 * @param string                                      $owner               Runtime owner.
-	 * @param MultiCurrencySwitcherProjectionService|null $projection          Projection service.
-	 * @param bool                                        $switching_disabled Whether switching is disabled.
+	 * @param string                             $owner               Runtime owner.
+	 * @param MultiCurrencySwitcherRenderer|null $projection          Projection service.
+	 * @param bool                               $switching_disabled Whether switching is disabled.
 	 * @return MultiCurrencySwitcherBlockController
 	 */
 	private function create_controller(
 		string $owner,
-		?MultiCurrencySwitcherProjectionService $projection = null,
+		?MultiCurrencySwitcherRenderer $projection = null,
 		bool $switching_disabled = false
 	): MultiCurrencySwitcherBlockController {
 		return $this->create_controller_with_arbiter( $this->create_arbiter( $owner ), $projection, $switching_disabled );
@@ -274,21 +274,21 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a switcher block controller with an explicit runtime arbiter.
 	 *
-	 * @param MultiCurrencyRuntimeArbiter                 $arbiter            Runtime owner arbiter.
-	 * @param MultiCurrencySwitcherProjectionService|null $projection         Projection service.
-	 * @param bool                                        $switching_disabled Whether switching is disabled.
+	 * @param MultiCurrencyRuntimeArbiter        $arbiter            Runtime owner arbiter.
+	 * @param MultiCurrencySwitcherRenderer|null $projection         Projection service.
+	 * @param bool                               $switching_disabled Whether switching is disabled.
 	 * @return MultiCurrencySwitcherBlockController
 	 */
 	private function create_controller_with_arbiter(
 		MultiCurrencyRuntimeArbiter $arbiter,
-		?MultiCurrencySwitcherProjectionService $projection = null,
+		?MultiCurrencySwitcherRenderer $projection = null,
 		bool $switching_disabled = false
 	): MultiCurrencySwitcherBlockController {
 		$controller = new MultiCurrencySwitcherBlockController();
 		$controller->init(
 			$arbiter,
 			$this->create_compatibility_controller( $switching_disabled ),
-			ServiceFactories::with( $this, array( 'create_switcher_projection_service' => $projection ?? $this->create_projection_service() ) )
+			ServiceFactories::with( $this, array( 'create_switcher_renderer' => $projection ?? $this->create_projection_service() ) )
 		);
 
 		return $controller;
@@ -376,10 +376,10 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a switcher projection service test double.
 	 *
-	 * @return MultiCurrencySwitcherProjectionService
+	 * @return MultiCurrencySwitcherRenderer
 	 */
-	private function create_projection_service(): MultiCurrencySwitcherProjectionService {
-		return new class() extends MultiCurrencySwitcherProjectionService {
+	private function create_projection_service(): MultiCurrencySwitcherRenderer {
+		return new class() extends MultiCurrencySwitcherRenderer {
 			/**
 			 * Last block attributes.
 			 *

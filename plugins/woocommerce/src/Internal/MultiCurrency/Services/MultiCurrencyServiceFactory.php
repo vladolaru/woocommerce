@@ -84,10 +84,10 @@ class MultiCurrencyServiceFactory {
 	/**
 	 * Create a switcher projection service.
 	 *
-	 * @return MultiCurrencySwitcherProjectionService
+	 * @return MultiCurrencySwitcherRenderer
 	 */
-	public function create_switcher_projection_service(): MultiCurrencySwitcherProjectionService {
-		return new MultiCurrencySwitcherProjectionService( $this->state_builder_factory->create() );
+	public function create_switcher_renderer(): MultiCurrencySwitcherRenderer {
+		return new MultiCurrencySwitcherRenderer( $this->state_builder_factory->create() );
 	}
 
 	/**

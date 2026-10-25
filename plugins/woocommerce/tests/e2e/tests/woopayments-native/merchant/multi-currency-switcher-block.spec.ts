@@ -13,7 +13,7 @@ test.use( { storageState: ADMIN_STATE_PATH } );
  * Three provider-free contracts against the Core-owned currency switcher block
  * (`woocommerce-payments/multi-currency-switcher`), registered server-side by
  * MultiCurrencySwitcherBlockController and rendered by
- * MultiCurrencySwitcherProjectionService:
+ * MultiCurrencySwitcherRenderer:
  *
  * - the merchant can configure the block's presentation choices and they
  *   persist;
@@ -94,7 +94,7 @@ const CONFIGURED_PRESENTATION = {
 	fontLineHeight: 2,
 } as const;
 
-// The US regional-indicator pair MultiCurrencySwitcherProjectionService
+// The US regional-indicator pair MultiCurrencySwitcherRenderer
 // derives for the USD store default.
 const USD_FLAG = '\u{1F1FA}\u{1F1F8}';
 
@@ -212,7 +212,7 @@ async function getStoreCurrencies(
  *
  * The switcher projection returns empty markup unless the store has an
  * additional enabled currency
- * (`MultiCurrencySwitcherProjectionService::get_block_markup` →
+ * (`MultiCurrencySwitcherRenderer::get_block_markup` →
  * `MultiCurrencyState::has_additional_currencies_enabled`), so on a
  * single-currency store every assertion below would be about an absent
  * control. That must fail loudly here, before any post is created, rather
