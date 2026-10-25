@@ -249,7 +249,7 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	 * @return array{key:string,class:string,message:string,dismissible:bool}|null
 	 */
 	private function get_rate_provider_unavailable_notice(): ?array {
-		if ( ! $this->has_automatic_multi_currency_rate_currencies() || $this->has_available_rate_provider() ) {
+		if ( ! $this->has_automatic_multi_currency_rate_currencies() || $this->rate_service->has_available_provider() ) {
 			return null;
 		}
 
@@ -263,19 +263,6 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 			),
 			'dismissible' => false,
 		);
-	}
-
-	/**
-	 * Tell whether an automatic-rate provider is currently available.
-	 *
-	 * @return bool
-	 */
-	private function has_available_rate_provider(): bool {
-		try {
-			return $this->rate_service->has_available_provider();
-		} catch ( \Throwable $e ) {
-			return false;
-		}
 	}
 
 	/**

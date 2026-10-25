@@ -12,6 +12,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDatabase
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCachingEnvironment;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySettingsCurrencyCatalog;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
@@ -77,6 +78,78 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 		$wp_rest_server = null;
 
 		parent::tearDown();
+	}
+
+	/**
+	 * @testdox Should describe automatic rates and the enable-able currencies from the provider Multi-Currency holds: $label.
+	 *
+	 * @dataProvider held_rate_providers
+	 *
+	 * @param string              $label     Case label.
+	 * @param bool|null           $available Whether the held provider is available, or null for no provider.
+	 * @param array<string,mixed> $automatic Expected automatic_rates descriptor.
+	 * @param string[]|null       $codes     Expected available codes after the store currency, or null for every WooCommerce currency.
+	 */
+	public function test_get_store_currencies_reads_the_provider_multi_currency_holds( string $label, ?bool $available, array $automatic, ?array $codes ): void {
+		unset( $label );
+		$controller = new MultiCurrencyRestController();
+		$controller->init(
+			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
+			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ),
+			wc_get_container()->get( MultiCurrencyServiceFactory::class )
+		);
+		if ( null !== $available ) {
+			wc_get_container()->get( MultiCurrencyRateService::class )->set_provider( $this->create_rate_provider( $available, array( 'GBP', 'EUR' ) ) );
+		}
+
+		try {
+			$data = $controller->get_store_currencies()->get_data();
+		} finally {
+			// A fresh rate service holds no provider.
+			wc_get_container()->reset_all_resolved();
+		}
+
+		$store    = strtoupper( (string) get_option( 'woocommerce_currency', 'USD' ) );
+		$expected = array_merge( array( $store ), array_values( array_diff( $codes ?? array_map( 'strtoupper', array_keys( get_woocommerce_currencies() ) ), array( $store ) ) ) );
+		$this->assertSame( $automatic, $data['automatic_rates'] );
+		$this->assertSame( $expected, array_keys( $data['available'] ) );
+	}
+
+	/**
+	 * Providers Multi-Currency may hold: available, unavailable, none.
+	 *
+	 * @return array<string,array{string,bool|null,array<string,mixed>,string[]|null}>
+	 */
+	public function held_rate_providers(): array {
+		return array(
+			'available provider'   => array(
+				'available provider',
+				true,
+				array(
+					'available' => true,
+					'source'    => 'available',
+				),
+				array( 'EUR', 'GBP' ),
+			),
+			'unavailable provider' => array(
+				'unavailable provider',
+				false,
+				array(
+					'available' => false,
+					'source'    => 'outage',
+				),
+				null,
+			),
+			'no provider'          => array(
+				'no provider',
+				null,
+				array(
+					'available' => false,
+					'source'    => null,
+				),
+				null,
+			),
+		);
 	}
 
 	/**

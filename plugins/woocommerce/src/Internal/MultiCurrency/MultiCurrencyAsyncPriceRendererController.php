@@ -178,11 +178,10 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	 * @internal
 	 */
 	public function maybe_register_async_hooks(): void {
-		$request_context = $this->request_context;
 		if (
 			! $this->arbiter->should_core_register()
-			|| ! $request_context->should_register_frontend_hooks()
-			|| $request_context->is_store_api_request()
+			|| ! $this->request_context->should_register_frontend_hooks()
+			|| $this->request_context->is_store_api_request()
 			|| ! $this->is_using_auto_currency_switching()
 			|| $this->has_pending_currency_switch()
 		) {
@@ -193,7 +192,7 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 			! $this->get_frontend_projection_service()->is_cache_optimized_mode()
 			|| is_admin()
 			|| wp_doing_cron()
-			|| $request_context->is_admin_api_request()
+			|| $this->request_context->is_admin_api_request()
 			|| $this->has_active_session()
 		) {
 			return;

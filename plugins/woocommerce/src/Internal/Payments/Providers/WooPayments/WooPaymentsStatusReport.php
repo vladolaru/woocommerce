@@ -69,7 +69,6 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 */
 	private ?WooPaymentsCutoverPreflightService $cutover_preflight_service = null;
 
-
 	/**
 	 * Setup tier.
 	 *
@@ -253,7 +252,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			'multi_currency'          => array(
 				'enabled'                 => $multi_currency_enabled,
 				'rate_provider'           => WooPaymentsCurrencyRateProvider::PROVIDER_ID,
-				'rate_provider_available' => $multi_currency_enabled && $this->is_rate_provider_available( WooPaymentsCurrencyRateProvider::PROVIDER_ID ),
+				'rate_provider_available' => $multi_currency_enabled && $this->is_rate_provider_available(),
 			),
 			'last_webhook_fetch'      => (int) get_option( WooPaymentsWebhookReliabilityService::LAST_FETCH_OPTION_KEY, 0 ),
 		);
@@ -678,16 +677,15 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the named rate provider is the one Multi-Currency holds, and is available.
+	 * Tell whether the WooPayments rate provider is the one Multi-Currency holds, and is available.
 	 *
-	 * @param string $provider_id Rate provider ID.
 	 * @return bool
 	 */
-	private function is_rate_provider_available( string $provider_id ): bool {
+	private function is_rate_provider_available(): bool {
 		try {
 			$rate_service = wc_get_container()->get( MultiCurrencyRateService::class );
 
-			return $provider_id === $rate_service->get_automatic_rate_source_id() && $rate_service->has_available_provider();
+			return WooPaymentsCurrencyRateProvider::PROVIDER_ID === $rate_service->get_automatic_rate_source_id() && $rate_service->has_available_provider();
 		} catch ( Throwable $exception ) {
 			return false;
 		}

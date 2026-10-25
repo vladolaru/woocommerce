@@ -261,6 +261,9 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a recording legacy account test double.
 	 *
+	 * Its two methods have the signatures of client 11.1.0 `WC_Payments_Account::is_provider_connected()` and
+	 * `is_account_rejected()` (`includes/class-wc-payments-account.php:203`, `:306`); the answers are the case's premise.
+	 *
 	 * @return object
 	 */
 	private function create_legacy_account(): object {
@@ -290,6 +293,10 @@ class WooPaymentsMultiCurrencyProviderBootstrapTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Create a recording legacy API-client test double.
+	 *
+	 * Its methods have the signatures of client 11.1.0 `WC_Payments_API_Client::is_server_connected()` and
+	 * `get_currency_rates()` (`includes/wc-payment-api/class-wc-payments-api-client.php:204`, `:1051`). The lower-case
+	 * rate map is a synthetic input for the rate service's normalization, not a recorded platform response.
 	 *
 	 * @return object
 	 */

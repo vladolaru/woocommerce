@@ -52,6 +52,8 @@ class MultiCurrencyRateService {
 	 * @internal
 	 *
 	 * @param CurrencyRateProvider $provider Automatic-rate provider.
+	 *
+	 * @since 11.2.0
 	 */
 	public function set_provider( CurrencyRateProvider $provider ): void {
 		$this->provider = $provider;
@@ -96,6 +98,8 @@ class MultiCurrencyRateService {
 	 * Tell whether the provider's account is connected; false without a provider or when the provider fails.
 	 *
 	 * @return bool
+	 *
+	 * @since 11.2.0
 	 */
 	public function is_provider_connected(): bool {
 		if ( null === $this->provider ) {
