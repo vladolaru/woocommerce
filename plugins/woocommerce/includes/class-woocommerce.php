@@ -426,6 +426,8 @@ final class WooCommerce {
 		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusReport::class )->register();
 		// Declares the WooPayments extension's classes for Woo extensions that probe them; removed in WooCommerce 12.0.0 (Compat/README.md lists what goes with it).
 		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\WooPaymentsExtensionFacadeLoader::class )->register();
+		// Registered on every request, since the extension's Multi-Currency class must answer on every request type while WooCommerce
+		// runs Multi-Currency and the loader decides at plugins_loaded; removed in WooCommerce 12.0.0 (MultiCurrency/Compat/README.md).
 		$container->get( Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionMultiCurrencyFacadeLoader::class )->register();
 		$container->get( Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayVerifiedEmailRestoreService::class )->register();
 		// The conversion of a network-wide activation of the WooPayments extension into per-site activations, offered on network
