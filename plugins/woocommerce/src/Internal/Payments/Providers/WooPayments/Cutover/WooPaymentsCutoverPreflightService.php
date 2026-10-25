@@ -40,9 +40,12 @@ class WooPaymentsCutoverPreflightService {
 	 * Oldest WooPayments extension version the cutover switches from.
 	 *
 	 * The data migration removes only the retired settings, options and transients this version no longer reads, so
-	 * re-activating the extension at this version still finds what it reads; the appearance caches it clears are rebuilt.
+	 * re-activating the extension at this version still finds what it reads; it no longer reads the appearance caches the
+	 * migration clears. It is also the first version that reads every order, token and setting the built-in WooPayments
+	 * writes for payments, cards and renewals: 10.6.0 loads Amazon Pay tokens and registers the Amazon Pay gateway by
+	 * default (class-wc-payments.php:516, class-wc-payments-features.php:381-382).
 	 */
-	public const MINIMUM_CUTOVER_PLUGIN_VERSION = '10.5.0';
+	public const MINIMUM_CUTOVER_PLUGIN_VERSION = '10.6.0';
 
 	/** The WooPayments feature is off on this site, so no other check runs. */
 	public const FAILURE_BUILTIN_RUNTIME_DISABLED = 'builtin_runtime_disabled';

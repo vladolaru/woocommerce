@@ -173,7 +173,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 		parent::setUp();
 		// The owner is resolved once per request; a test that fakes the extension must not see one cached before it.
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
-		update_option( 'woocommerce_woocommerce_payments_version', '10.5.0' );
+		update_option( 'woocommerce_woocommerce_payments_version', '10.6.0' );
 
 		$this->provider = $this->getMockBuilder( WooPaymentsProvider::class )
 			->disableOriginalConstructor()
@@ -710,7 +710,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_deferred_extension_update_explains_the_waiting_switch( bool $file_mods_blocked, bool $installed_current, ?string $warning ): void {
 		// The active extension last recorded a version below the floor; an update by hand records the new one only once it runs.
-		update_option( WooPaymentsRuntimeArbiter::EXTENSION_VERSION_OPTION, '10.4.9' );
+		update_option( WooPaymentsRuntimeArbiter::EXTENSION_VERSION_OPTION, '10.5.2' );
 		$this->fake_plugin_active();
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
@@ -947,7 +947,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * @testdox A store waiting for its switch that last ran an extension below the switch's minimum is told to activate and update it, and is offered no click.
 	 */
 	public function test_store_waiting_with_an_old_extension_is_told_to_update_it_first(): void {
-		update_option( 'woocommerce_woocommerce_payments_version', '10.4.9' );
+		update_option( 'woocommerce_woocommerce_payments_version', '10.5.2' );
 		$this->fake_plugin_active( false );
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
@@ -984,9 +984,9 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function provide_update_rights_around_the_minimum_version(): array {
 		return array(
-			'below the minimum, without update_plugins' => array( '10.4.9', array( 'manage_woocommerce', 'activate_plugins' ), false ),
-			'below the minimum, with update_plugins'    => array( '10.4.9', array( 'manage_woocommerce', 'activate_plugins', 'update_plugins' ), true ),
-			'at the minimum, without update_plugins'    => array( '10.5.0', array( 'manage_woocommerce', 'activate_plugins' ), true ),
+			'below the minimum, without update_plugins' => array( '10.5.2', array( 'manage_woocommerce', 'activate_plugins' ), false ),
+			'below the minimum, with update_plugins'    => array( '10.5.2', array( 'manage_woocommerce', 'activate_plugins', 'update_plugins' ), true ),
+			'at the minimum, without update_plugins'    => array( '10.6.0', array( 'manage_woocommerce', 'activate_plugins' ), true ),
 			'above the minimum, without update_plugins' => array( '11.1.0', array( 'manage_woocommerce', 'activate_plugins' ), true ),
 		);
 	}
@@ -1013,7 +1013,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 			grant_super_admin( $user_id );
 		}
 		wp_set_current_user( $user_id );
-		update_option( 'woocommerce_woocommerce_payments_version', '10.4.9' );
+		update_option( 'woocommerce_woocommerce_payments_version', '10.5.2' );
 		$capabilities = array_values( array_filter( array( 'manage_woocommerce', 'activate_plugins', 'update_plugins' ), 'current_user_can' ) );
 		$this->assertContains( 'activate_plugins', $capabilities, 'The Plugins menu lets the user activate plugins.' );
 		$this->fake_current_user_capabilities( $capabilities );
@@ -1033,7 +1033,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	 * @testdox A store waiting for its switch with an old extension that is excluded for bundled Stripe Billing subscriptions is still told why, with no start button.
 	 */
 	public function test_old_extension_store_excluded_for_bundled_subscriptions_is_told_why(): void {
-		update_option( 'woocommerce_woocommerce_payments_version', '10.4.9' );
+		update_option( 'woocommerce_woocommerce_payments_version', '10.5.2' );
 		$this->fake_plugin_active( false );
 		$this->fake_current_user_caps( true );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
@@ -1103,7 +1103,7 @@ class WooPaymentsCutoverControllerTest extends WC_Unit_Test_Case {
 	public function test_activation_guard_allows_the_activation( string $store ): void {
 		$controller = $this->sut;
 		if ( 'recorded version' === $store ) {
-			// setUp() records extension version 10.5.0.
+			// setUp() records extension version 10.6.0.
 			$this->enable_builtin_runtime_owner();
 		} elseif ( 'not the owner' === $store ) {
 			delete_option( 'woocommerce_woocommerce_payments_version' );

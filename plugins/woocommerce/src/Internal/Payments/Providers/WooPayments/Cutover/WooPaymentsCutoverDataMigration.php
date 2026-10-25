@@ -24,8 +24,7 @@ defined( 'ABSPATH' ) || exit;
  *
  * Each retired option and transient it removes carries the extension version that stopped reading it, so re-activating the
  * extension at the floor version still finds what it reads. It also clears the UPE appearance caches in APPEARANCE_TRANSIENTS,
- * which the floor version rebuilds itself (10.5.x reads them as day-long caches; the extension deletes them in its 10.6.0
- * migration).
+ * which the floor version no longer reads (the extension deletes them in its 10.6.0 migration).
  *
  * In the shared gateway settings option it removes no key and changes no value's type. It adds missing form defaults, and
  * drops from the enabled payment method list the methods that cannot be captured manually while manual capture is on, which
@@ -109,8 +108,8 @@ class WooPaymentsCutoverDataMigration implements RegisterHooksInterface {
 	/**
 	 * UPE appearance caches the migration deletes.
 	 *
-	 * Extension 10.5.x still reads them, but only as day-long caches it rebuilds and clears itself (10.5.0
-	 * class-wc-payment-gateway-wcpay.php:4281-4282, :4303-4312), so deleting them loses no merchant setting.
+	 * Extension 10.6.0 no longer reads them and deletes them in its own migration (10.6.0
+	 * includes/migrations/class-delete-appearance-transients.php), so deleting them loses no merchant setting.
 	 *
 	 * @var string[]
 	 */

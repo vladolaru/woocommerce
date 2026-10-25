@@ -3687,8 +3687,8 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 	 */
 	public function installed_plugin_version_provider(): array {
 		return array(
-			'the minimum supported version' => array( '10.5.0', '10.5.0', 0 ),
-			'one patch below the minimum'   => array( '10.4.9', '10.4.9', 1 ),
+			'the minimum supported version' => array( '10.6.0', '10.6.0', 0 ),
+			'the last release below it'     => array( '10.5.2', '10.5.2', 1 ),
 			'a missing plugin file'         => array( null, '', 1 ),
 		);
 	}
@@ -3881,7 +3881,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 		$upgrade_working_dir = trailingslashit( WP_CONTENT_DIR ) . 'upgrade/' . basename( basename( $package, '.tmp' ), '.zip' );
 		$zip                 = new \ZipArchive();
 		$zip->open( $package, \ZipArchive::OVERWRITE );
-		$zip->addFromString( $plugin_file, "<?php\n/**\n * Plugin Name: WooPayments Fixture\n * Version: 10.5.0\n */\n" );
+		$zip->addFromString( $plugin_file, "<?php\n/**\n * Plugin Name: WooPayments Fixture\n * Version: 10.6.0\n */\n" );
 		$zip->close();
 
 		set_site_transient(
@@ -3890,7 +3890,7 @@ class WooPaymentsCutoverReconciliationJobTest extends WC_Unit_Test_Case {
 				'response' => array(
 					$plugin_file => (object) array(
 						'package'     => $package,
-						'new_version' => '10.5.0',
+						'new_version' => '10.6.0',
 						'slug'        => 'woocommerce-payments',
 					),
 				),

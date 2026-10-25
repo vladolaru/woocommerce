@@ -94,7 +94,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function setUp(): void {
 		parent::setUp();
-		update_option( 'woocommerce_woocommerce_payments_version', '10.5.0' );
+		update_option( 'woocommerce_woocommerce_payments_version', '10.6.0' );
 		update_option( WooPaymentsPersistenceVocabulary::GATEWAY_SETTINGS_OPTION, array( 'upe_enabled_payment_method_ids' => array( 'card' ) ) );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 	}
@@ -130,6 +130,25 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * WooPayments 10.6.0 is the first release that loads Amazon Pay tokens and registers the Amazon Pay gateway by default
+	 * (client 10.6.0 includes/class-wc-payments.php:516, includes/class-wc-payments-features.php:381-382; 10.5.x keeps the
+	 * gateway off, includes/class-wc-payments-features.php:361-362), so a store rolled back to 10.5.x could not refund or
+	 * renew the Amazon Pay payments the built-in WooPayments took.
+	 *
+	 * @testdox The switch supports a store that last ran WooPayments $version: $supported.
+	 * @testWith ["10.5.2", false]
+	 *           ["10.6.0", true]
+	 *
+	 * @param string $version   Recorded WooPayments extension version.
+	 * @param bool   $supported Whether the switch supports it.
+	 */
+	public function test_the_switch_supports_woopayments_from_10_6_0( string $version, bool $supported ): void {
+		update_option( 'woocommerce_woocommerce_payments_version', $version );
+
+		$this->assertSame( $supported, $this->create_sut()->is_woopayments_plugin_version_supported() );
+	}
+
+	/**
 	 * @testdox The induced reconciliation vocabulary is exactly the 10 conditions a store can reach.
 	 */
 	public function test_induced_reconciliation_vocabulary_is_exactly_the_ten_reachable_conditions(): void {
@@ -141,7 +160,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 		$this->platform_failures         = array( 'wpcom_connection_unavailable', 'wpcom_blog_id_unavailable', 'wpcom_connection_owner_unavailable' );
 		$this->fee_remediation_ready     = false;
 		$this->rate_api_client_connected = false;
-		update_option( 'woocommerce_woocommerce_payments_version', '10.4.9' );
+		update_option( 'woocommerce_woocommerce_payments_version', '10.5.2' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		$this->create_bundled_stripe_billing_subscription( 'active' );
 		as_schedule_single_action( time() + HOUR_IN_SECONDS, 'wcpay_preflight_service_test', array(), 'test', true );
@@ -401,7 +420,7 @@ class WooPaymentsCutoverPreflightServiceTest extends WC_Unit_Test_Case {
 			),
 			'the recorded WooPayments version is missing'  => array( 'woopayments_plugin_version_unsupported', $unsupported_version( '' ) ),
 			'the recorded WooPayments version is malformed' => array( 'woopayments_plugin_version_unsupported', $unsupported_version( 'not-a-version' ) ),
-			'the recorded WooPayments version is older than the floor' => array( 'woopayments_plugin_version_unsupported', $unsupported_version( '10.4.9' ) ),
+			'the recorded WooPayments version is older than the floor' => array( 'woopayments_plugin_version_unsupported', $unsupported_version( '10.5.2' ) ),
 			'an unknown WooPayments action is pending'     => array(
 				'operational_queue_hooks_unhandled',
 				static function ( self $test ): void {
