@@ -17,10 +17,12 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 
 /**
- * Registers native multi-currency Subscriptions compatibility hooks when core owns multi-currency.
+ * Keeps WooCommerce Subscriptions carts in the subscription's currency: renewal, resubscribe and switch carts select it
+ * and disable currency switching, and prices, sign-up fees and coupons convert only where Subscriptions has not already
+ * stored converted amounts. My Account subscription totals get the explicit currency code.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooksInterface {
 
@@ -118,14 +120,14 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	private MultiCurrencyRuntimeArbiter $arbiter;
 
 	/**
-	 * Legacy proxy for mockable global calls.
+	 * Proxy for global function calls that tests can replace.
 	 *
 	 * @var LegacyProxy
 	 */
 	private LegacyProxy $legacy_proxy;
 
 	/**
-	 * Price projection service.
+	 * Price converter, built on first use.
 	 *
 	 * @var MultiCurrencyPriceConverter|null
 	 */
@@ -190,7 +192,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	 * @internal
 	 *
 	 * @param MultiCurrencyRuntimeArbiter      $arbiter               Runtime owner arbiter.
-	 * @param LegacyProxy                      $legacy_proxy          Legacy proxy.
+	 * @param LegacyProxy                      $legacy_proxy          Proxy for global function calls.
 	 * @param MultiCurrencyStateBuilderFactory $state_builder_factory State builder factory.
 	 * @param MultiCurrencyServiceFactory      $service_factory       Multi-Currency service factory.
 	 */
@@ -902,7 +904,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	}
 
 	/**
-	 * Get the price projection service.
+	 * Get the price converter, building it on first use.
 	 *
 	 * @return MultiCurrencyPriceConverter
 	 */

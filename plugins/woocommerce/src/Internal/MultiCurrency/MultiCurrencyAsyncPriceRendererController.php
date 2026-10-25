@@ -15,10 +15,11 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 
 /**
- * Registers native async price renderer hooks when core owns multi-currency.
+ * Renders prices in the shopper's currency in the browser: in cache-optimized mode with automatic currency switching, a
+ * storefront request without a session gets placeholder price markup and the script that fills it in.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterface {
 
@@ -44,7 +45,7 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	private MultiCurrencyServiceFactory $service_factory;
 
 	/**
-	 * Frontend projection service.
+	 * Display service, built on first use.
 	 *
 	 * @var MultiCurrencyDisplayService|null
 	 */
@@ -144,7 +145,7 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 		unset( $original_price );
 
 		/**
-		 * Filters the native async multi-currency price type.
+		 * Filters the price type written on an async price placeholder.
 		 *
 		 * @param string           $price_type Price type.
 		 * @param int|float|string $price      Raw price.
@@ -288,7 +289,7 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Get the frontend projection service.
+	 * Get the display service, building it on first use.
 	 *
 	 * @return MultiCurrencyDisplayService
 	 */

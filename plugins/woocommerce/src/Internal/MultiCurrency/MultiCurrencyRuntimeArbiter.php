@@ -11,34 +11,33 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
- * Decides which multi-currency runtime owns the price/currency pipeline.
+ * Tells who runs Multi-Currency on this site, the Multi-Currency owner: WooCommerce, the WooPayments extension, or neither.
  *
- * The WooPayments extension carries its own Multi-Currency module, whose classes share names with the facades core
- * declares, so the two never run together: while the extension is active its own flag decides, and core
- * Multi-Currency runs on its feature only while the extension is not active. Core Multi-Currency does not need a
- * payments provider; without one it runs on manual rates.
+ * The extension carries its own Multi-Currency module, whose classes share names with the facades WooCommerce declares,
+ * so the two never run together: while the extension is active its own flag decides, and otherwise the Multi-currency
+ * feature does. WooCommerce's Multi-Currency needs no payments provider; without one it runs on manual rates.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyRuntimeArbiter {
 
 	/**
-	 * Owner value: the standalone WooPayments plugin owns multi-currency.
+	 * Owner value: the WooPayments extension runs Multi-Currency.
 	 *
 	 * @var string
 	 */
 	const OWNER_EXTENSION = 'extension';
 
 	/**
-	 * Owner value: WooCommerce core owns multi-currency.
+	 * Owner value: WooCommerce runs Multi-Currency.
 	 *
 	 * @var string
 	 */
 	const OWNER_BUILTIN = 'builtin';
 
 	/**
-	 * Owner value: no multi-currency runtime is active for this site.
+	 * Owner value: nothing runs Multi-Currency on this site.
 	 *
 	 * @var string
 	 */
@@ -52,7 +51,7 @@ class MultiCurrencyRuntimeArbiter {
 	private WooPaymentsRuntimeArbiter $payments_arbiter;
 
 	/**
-	 * Legacy proxy for mockable global calls.
+	 * Proxy for global function calls that tests can replace.
 	 *
 	 * @var LegacyProxy
 	 */
@@ -64,7 +63,7 @@ class MultiCurrencyRuntimeArbiter {
 	 * @internal
 	 *
 	 * @param WooPaymentsRuntimeArbiter $payments_arbiter Payments runtime owner arbiter.
-	 * @param LegacyProxy               $legacy_proxy Legacy proxy.
+	 * @param LegacyProxy               $legacy_proxy Proxy for global function calls.
 	 */
 	final public function init( WooPaymentsRuntimeArbiter $payments_arbiter, LegacyProxy $legacy_proxy ): void {
 		$this->payments_arbiter = $payments_arbiter;
@@ -72,9 +71,9 @@ class MultiCurrencyRuntimeArbiter {
 	}
 
 	/**
-	 * Tell whether the independent core multi-currency feature is enabled.
+	 * Tell whether the Multi-currency feature is enabled.
 	 *
-	 * @return bool True when the core feature is enabled.
+	 * @return bool True when the feature is enabled.
 	 */
 	public function feature_is_enabled(): bool {
 		// Ownership is decided before `init`; asking FeaturesController would build every feature definition and load translations too early.
@@ -82,7 +81,7 @@ class MultiCurrencyRuntimeArbiter {
 	}
 
 	/**
-	 * Tell whether the WooPayments extension owns payments, so its own Multi-Currency module may run.
+	 * Tell whether the WooPayments extension is the payments owner; its Multi-Currency flag then decides who runs Multi-Currency.
 	 *
 	 * @since 11.2.0
 	 *
@@ -93,7 +92,9 @@ class MultiCurrencyRuntimeArbiter {
 	}
 
 	/**
-	 * Tell whether the built-in WooPayments owns payments, so WooCommerce's Multi-Currency may run.
+	 * Tell whether the built-in WooPayments is the payments owner.
+	 *
+	 * Multi-Currency does not depend on it; the payments-owner sync reads it before it seeds the feature option.
 	 *
 	 * @since 11.2.0
 	 *
@@ -104,7 +105,7 @@ class MultiCurrencyRuntimeArbiter {
 	}
 
 	/**
-	 * Get the multi-currency runtime owner for the current site.
+	 * Get the Multi-Currency owner for the current site.
 	 *
 	 * @return string One of self::OWNER_EXTENSION, self::OWNER_BUILTIN, self::OWNER_NONE.
 	 */
@@ -117,31 +118,30 @@ class MultiCurrencyRuntimeArbiter {
 	}
 
 	/**
-	 * Tell whether core multi-currency may register price/currency hooks.
+	 * Tell whether WooCommerce is the Multi-Currency owner, so the module registers its hooks.
 	 *
-	 * @return bool True when core owns multi-currency.
+	 * @return bool True when WooCommerce runs Multi-Currency.
 	 */
 	public function is_builtin_owner(): bool {
 		return self::OWNER_BUILTIN === $this->get_runtime_owner();
 	}
 
 	/**
-	 * Tell whether the standalone plugin owns multi-currency.
+	 * Tell whether the WooPayments extension is the Multi-Currency owner.
 	 *
-	 * @return bool True when plugin multi-currency owns the price/currency pipeline.
+	 * @return bool True when the extension's Multi-Currency module runs.
 	 */
 	public function is_extension_owner(): bool {
 		return self::OWNER_EXTENSION === $this->get_runtime_owner();
 	}
 
 	/**
-	 * Tell whether the plugin has customer multi-currency switched on.
+	 * Tell whether the WooPayments extension has its Multi-Currency flag on.
 	 *
-	 * WooPayments defaults `_wcpay_feature_customer_multi_currency` to enabled and
-	 * returns before loading its multi-currency module when the option is `0`.
-	 * The core-owned runtime uses its independent WooCommerce feature setting.
+	 * The extension defaults `_wcpay_feature_customer_multi_currency` to on and does not load its Multi-Currency module
+	 * when the option is `0`. WooCommerce's own Multi-Currency reads the Multi-currency feature instead.
 	 *
-	 * @return bool True when the multi-currency runtime may take ownership.
+	 * @return bool True when the flag is on.
 	 */
 	private function is_extension_multi_currency_enabled(): bool {
 		return '1' === (string) $this->legacy_proxy->call_function( 'get_option', MultiCurrencyFeatureController::WOOPAYMENTS_MULTI_CURRENCY_FLAG_OPTION, '1' );

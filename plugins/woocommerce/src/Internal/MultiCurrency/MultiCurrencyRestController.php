@@ -22,10 +22,12 @@ use WP_REST_Request;
 use WP_REST_Response;
 
 /**
- * Registers native multi-currency REST routes when core owns multi-currency.
+ * Serves the Multi-Currency REST routes under `wc/v3/payments/multi-currency`: the store currencies, the enabled
+ * currencies, and the per-currency and store settings for store managers, plus the public config the async renderer
+ * reads in cache-optimized mode.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyRestController extends WP_REST_Controller implements RegisterHooksInterface {
 
@@ -63,7 +65,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	private MultiCurrencyStateBuilderFactory $state_builder_factory;
 
 	/**
-	 * Frontend projection service.
+	 * Display service, built on first use.
 	 *
 	 * @var MultiCurrencyDisplayService|null
 	 */
@@ -114,7 +116,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	}
 
 	/**
-	 * Register native multi-currency REST routes.
+	 * Register the Multi-Currency REST routes.
 	 *
 	 * @internal
 	 */
@@ -392,7 +394,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	}
 
 	/**
-	 * Update preserved single-currency option keys.
+	 * Save one currency's rate type, manual rate, rounding and charm options.
 	 *
 	 * @param string     $currency_code      Currency code.
 	 * @param string     $exchange_rate_type Exchange rate type.
@@ -562,7 +564,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	}
 
 	/**
-	 * Get the frontend projection service.
+	 * Get the display service, building it on first use.
 	 *
 	 * @return MultiCurrencyDisplayService
 	 */

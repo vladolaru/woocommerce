@@ -12,10 +12,11 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 
 /**
- * Registers native non-Store REST request-local currency override filters.
+ * Sets the currency of a REST request outside the Store API: the `currency` query argument when one is given, otherwise
+ * the store currency with product prices left unconverted.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyRestRequestOverrideController implements RegisterHooksInterface {
 

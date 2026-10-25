@@ -13,7 +13,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBui
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 
 /**
- * Defines the native Multi-Currency feature and its safe disable presentation.
+ * Declares the Multi-currency feature and asks for confirmation before it is turned off while currencies or
+ * foreign-currency orders exist.
+ *
+ * It keeps the feature in step with the WooPayments extension: it seeds the option from stored Multi-Currency setup, hands
+ * the extension's state over when the extension stops owning payments, and writes the extension's flag when the feature changes.
  *
  * @since 11.2.0
  * @internal
@@ -81,10 +85,10 @@ class MultiCurrencyFeatureController {
 	}
 
 	/**
-	 * Turn the feature on for a store that used the WooPayments plugin's Multi-Currency, unless a choice is already stored.
+	 * Turn the feature on for a store with stored Multi-Currency setup, unless a choice is already stored.
 	 *
-	 * Runs at upgrade. Without prior use the option stays unset, so the feature stays off; the WooPayments cutover later
-	 * hands the plugin's state over with hand_over_extension_state().
+	 * Runs at upgrade, and from sync_payments_owner() on the first request the built-in WooPayments owns payments with no
+	 * owner recorded. Without stored setup the option stays unset, so the feature stays off.
 	 *
 	 * @since 11.2.0
 	 */
@@ -121,13 +125,13 @@ class MultiCurrencyFeatureController {
 	}
 
 	/**
-	 * Record whether the WooPayments extension owns payments, and hand its Multi-Currency state over on the first request after it stops owning
-	 * them, whether the built-in WooPayments or nothing owns them next.
+	 * Write the payments-owner marker, and on the first request after the WooPayments extension stops owning payments, whether the
+	 * built-in WooPayments or nothing owns them next, claim the marker and hand the extension's Multi-Currency state over.
 	 *
 	 * The marker is a per-blog option read with get_option(), not a network-wide site option, so each site of a network hands over on its own first
-	 * request without the extension. An extension-owned request re-arms it, so a reactivation hands over again at the next switch. A native-owned
-	 * request with no marker gets the upgrade seed and the 'builtin' marker; a request with no owner and no marker writes nothing. Runs before the
-	 * Multi-Currency arbiter reads the feature option.
+	 * request without the extension. An extension-owned request re-arms it, so a reactivation hands over again at the next switch. A request the
+	 * built-in WooPayments owns with no marker gets the upgrade seed and the 'builtin' marker; a request with no owner and no marker writes nothing.
+	 * Runs before the Multi-Currency arbiter reads the feature option.
 	 *
 	 * @since 11.2.0
 	 *
@@ -148,7 +152,7 @@ class MultiCurrencyFeatureController {
 				return;
 			}
 
-			// No plugin-owned request was recorded (a network site may get none before a network deactivation). Apply the upgrade seed,
+			// No extension-owned request was recorded (a network site may get none before a network deactivation). Apply the upgrade seed,
 			// which never overwrites a stored choice, and mark the site so later requests read the autoloaded marker instead of a missing option.
 			self::seed_from_prior_use();
 			update_option( self::LAST_PAYMENTS_OWNER_OPTION, self::LAST_PAYMENTS_OWNER_BUILTIN, true );
@@ -186,10 +190,11 @@ class MultiCurrencyFeatureController {
 	}
 
 	/**
-	 * Hand the plugin's Multi-Currency state over to the feature option.
+	 * Hand the WooPayments extension's Multi-Currency state over to the feature option.
 	 *
-	 * While the plugin owns payments the option does not control prices, so a stored value (a Features page save stores "no") is replaced.
-	 * Without plugin use only an existing "yes" is turned off; an unset option stays unset.
+	 * With stored Multi-Currency setup the option becomes "yes", replacing a stored value: while the extension owns payments the option
+	 * does not control prices (a Features page save stores "no"). Without stored setup only an existing "yes" is turned off; an unset
+	 * option stays unset.
 	 *
 	 * @since 11.2.0
 	 */
@@ -202,7 +207,8 @@ class MultiCurrencyFeatureController {
 	}
 
 	/**
-	 * Tell whether the plugin runs Multi-Currency: it was set up and the plugin's own feature flag is on.
+	 * Tell whether Multi-Currency setup is stored: enabled currencies or the setup-completed option, with the WooPayments
+	 * Multi-Currency flag on.
 	 *
 	 * @return bool
 	 */
@@ -211,7 +217,7 @@ class MultiCurrencyFeatureController {
 		$has_prior_use      = ( is_array( $enabled_currencies ) && ! empty( $enabled_currencies ) )
 			|| filter_var( get_option( self::SETUP_COMPLETED_OPTION, false ), FILTER_VALIDATE_BOOLEAN );
 
-		// The plugin's own feature flag, on unless the merchant turned it off (client 11.1.0 `includes/class-wc-payments-features.php:67-69`).
+		// The WooPayments Multi-Currency flag, on unless the merchant turned it off (client 11.1.0 `includes/class-wc-payments-features.php:67-69`).
 		return $has_prior_use && '1' === (string) get_option( self::WOOPAYMENTS_MULTI_CURRENCY_FLAG_OPTION, '1' );
 	}
 

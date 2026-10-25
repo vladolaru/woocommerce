@@ -13,10 +13,11 @@ if ( ! class_exists( '\WC_Settings_Page', false ) ) {
 }
 
 /**
- * WooCommerce settings page adapter for native multi-currency settings rows.
+ * The Multi-currency tab of the WooCommerce settings: a settings page holding the rows it is given, without the standard
+ * save button when asked.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencySettingsPage extends \WC_Settings_Page {
 

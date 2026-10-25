@@ -13,10 +13,11 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 
 /**
- * Registers native multi-currency switcher block rendering when core owns multi-currency.
+ * Registers the currency switcher block under the WooPayments extension's block name, with its editor script and the
+ * server-side render of the switcher.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 
@@ -57,7 +58,7 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 	private MultiCurrencyServiceFactory $service_factory;
 
 	/**
-	 * Switcher projection service.
+	 * Switcher renderer, built on first use.
 	 *
 	 * @var MultiCurrencySwitcherRenderer|null
 	 */
@@ -94,7 +95,7 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register the native switcher block type.
+	 * Register the currency switcher block type, unless a block of that name is registered already.
 	 *
 	 * @internal
 	 */
@@ -176,7 +177,7 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Render the native switcher block.
+	 * Render the currency switcher block.
 	 *
 	 * @param mixed $block_attributes Block attributes.
 	 * @return string
@@ -190,7 +191,7 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get preserved WooPayments switcher block attributes.
+	 * Get the switcher block attributes, with the defaults that blocks saved under the WooPayments extension rely on.
 	 *
 	 * @return array<string,array<string,mixed>>
 	 */
@@ -236,7 +237,7 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the switcher projection service.
+	 * Get the switcher renderer, building it on first use.
 	 *
 	 * @return MultiCurrencySwitcherRenderer
 	 */

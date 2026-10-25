@@ -15,10 +15,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestC
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 
 /**
- * Registers native multi-currency Bookings compatibility hooks when core owns multi-currency.
+ * Converts WooCommerce Bookings costs to the selected currency on the storefront and in Ajax requests: block, base,
+ * person-type and resource costs, cost rules, calculated booking costs and the prices its cost Ajax formats.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInterface {
 
@@ -49,14 +50,14 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	private MultiCurrencyServiceFactory $service_factory;
 
 	/**
-	 * Price projection service.
+	 * Price converter, built on first use.
 	 *
 	 * @var MultiCurrencyPriceConverter|null
 	 */
 	private ?MultiCurrencyPriceConverter $price_converter = null;
 
 	/**
-	 * Frontend projection service.
+	 * Display service, built on first use.
 	 *
 	 * @var MultiCurrencyDisplayService|null
 	 */
@@ -200,7 +201,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	}
 
 	/**
-	 * Project selected-currency wc_price args for Bookings Ajax.
+	 * Set the selected currency and its format on the wc_price args of the Bookings cost Ajax.
 	 *
 	 * @param array<mixed> $args Existing wc_price args.
 	 * @return array<mixed>
@@ -230,7 +231,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	}
 
 	/**
-	 * Get the price projection service.
+	 * Get the price converter, building it on first use.
 	 *
 	 * @return MultiCurrencyPriceConverter
 	 */
@@ -243,7 +244,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	}
 
 	/**
-	 * Get the frontend projection service.
+	 * Get the display service, building it on first use.
 	 *
 	 * @return MultiCurrencyDisplayService
 	 */

@@ -12,10 +12,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestC
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 
 /**
- * Registers native multi-currency FedEx compatibility hooks when core owns multi-currency.
+ * Keeps WooCommerce FedEx Shipping's rate calculations in the store currency: product prices are not converted and the
+ * store currency is returned while FedEx builds and processes its requests.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyFedExCompatibilityController implements RegisterHooksInterface {
 
@@ -87,7 +88,7 @@ class MultiCurrencyFedExCompatibilityController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Tell whether native multi-currency should force store currency for FedEx.
+	 * Tell whether Multi-Currency answers with the store currency, as it does inside FedEx calculations.
 	 *
 	 * @param bool $should_return Existing store-currency decision.
 	 * @return bool

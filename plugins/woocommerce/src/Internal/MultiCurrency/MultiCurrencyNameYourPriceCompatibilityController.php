@@ -16,10 +16,13 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBui
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Registers native multi-currency Name Your Price compatibility hooks when core owns multi-currency.
+ * Converts Name Your Price amounts between currencies: the minimum, maximum and suggested prices, and a cart item's entered
+ * price, kept with the currency it was entered in and converted when the shopper switches currency.
+ *
+ * A cart item whose entered currency can no longer be converted is removed with an error notice.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooksInterface {
 
@@ -33,7 +36,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	private MultiCurrencyRuntimeArbiter $arbiter;
 
 	/**
-	 * Price projection service.
+	 * Price converter, built on first use.
 	 *
 	 * @var MultiCurrencyPriceConverter|null
 	 */
@@ -184,9 +187,9 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	/**
 	 * Remove a NYP cart item whose price was entered in a currency that can no longer be converted, before the cart loads it.
 	 *
-	 * The client lets the conversion exception escape while the cart loads; removing the item with an error notice, as core
-	 * does for an item that can no longer be purchased, keeps the cart usable, reaches Store API carts as a cart error, and
-	 * never charges the entered amount in another currency.
+	 * Removing the item with an error notice, as core does for an item that can no longer be purchased, keeps the cart
+	 * usable when the conversion fails, reaches Store API carts as a cart error, and never charges the entered amount in
+	 * another currency.
 	 *
 	 * @internal
 	 *
@@ -230,7 +233,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	}
 
 	/**
-	 * Tell whether native product-price conversion should run for NYP products.
+	 * Tell whether product-price conversion runs: not for NYP products, nor for cart items still in their entered currency.
 	 *
 	 * @param bool  $should_convert Existing product conversion decision.
 	 * @param mixed $product        Product.
@@ -389,7 +392,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	}
 
 	/**
-	 * Get the price projection service.
+	 * Get the price converter, building it on first use.
 	 *
 	 * @return MultiCurrencyPriceConverter
 	 */

@@ -12,10 +12,10 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceF
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Registers native multi-currency Pre-Orders compatibility hooks when core owns multi-currency.
+ * Converts the WooCommerce Pre-Orders fee to the selected currency.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyPreOrdersCompatibilityController implements RegisterHooksInterface {
 
@@ -34,7 +34,7 @@ class MultiCurrencyPreOrdersCompatibilityController implements RegisterHooksInte
 	private MultiCurrencyServiceFactory $service_factory;
 
 	/**
-	 * Price projection service.
+	 * Price converter, built on first use.
 	 *
 	 * @var MultiCurrencyPriceConverter|null
 	 */
@@ -108,7 +108,7 @@ class MultiCurrencyPreOrdersCompatibilityController implements RegisterHooksInte
 	}
 
 	/**
-	 * Get the price projection service.
+	 * Get the price converter, building it on first use.
 	 *
 	 * @return MultiCurrencyPriceConverter
 	 */

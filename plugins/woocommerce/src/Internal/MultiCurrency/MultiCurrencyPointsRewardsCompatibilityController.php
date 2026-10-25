@@ -13,10 +13,11 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 
 /**
- * Registers native multi-currency Points and Rewards compatibility hooks when core owns multi-currency.
+ * Converts the money side of WooCommerce Points and Rewards' earn and redeem ratios to the selected currency outside
+ * wp-admin, except while Points and Rewards computes a discount.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyPointsRewardsCompatibilityController implements RegisterHooksInterface {
 

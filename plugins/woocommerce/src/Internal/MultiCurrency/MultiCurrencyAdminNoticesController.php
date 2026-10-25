@@ -14,10 +14,11 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStoreCurrencyLifecycleService;
 
 /**
- * Registers native multi-currency admin notices when core owns multi-currency.
+ * Shows store managers the Multi-Currency admin notices and handles their dismiss link: the currencies left on manual
+ * rates after a store currency change (dismissible), and automatic rates being unavailable (not dismissible).
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 

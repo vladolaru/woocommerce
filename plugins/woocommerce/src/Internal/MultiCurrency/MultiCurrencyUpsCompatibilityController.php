@@ -12,10 +12,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestC
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 
 /**
- * Registers native multi-currency UPS compatibility hooks when core owns multi-currency.
+ * Keeps WooCommerce UPS Shipping's rate calculations in the store currency: the store currency is returned while UPS
+ * calculates shipping.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyUpsCompatibilityController implements RegisterHooksInterface {
 
@@ -73,7 +74,7 @@ class MultiCurrencyUpsCompatibilityController implements RegisterHooksInterface 
 	}
 
 	/**
-	 * Tell whether native multi-currency should force store currency for UPS.
+	 * Tell whether Multi-Currency answers with the store currency, as it does inside UPS calculations.
 	 *
 	 * @param bool $should_return Existing store-currency decision.
 	 * @return bool

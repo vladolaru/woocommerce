@@ -20,10 +20,13 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 
 /**
- * Registers native multi-currency analytics hooks when core owns multi-currency.
+ * Adds Multi-Currency to WooCommerce Analytics: the customer-currency filter on wc-admin pages, its query args, and, on
+ * REST requests of a store with foreign-currency orders, the SQL clauses that filter and convert reports by currency.
+ *
+ * The bootstrap's order listeners also call it to record the currencies customers used and to convert order stats.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 
@@ -65,14 +68,14 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	private MultiCurrencyUsageDetector $usage_detector;
 
 	/**
-	 * Analytics projection service.
+	 * Analytics service, built on first use.
 	 *
 	 * @var MultiCurrencyAnalyticsService|null
 	 */
 	private ?MultiCurrencyAnalyticsService $analytics_service = null;
 
 	/**
-	 * Analytics SQL projection service.
+	 * Analytics SQL filters.
 	 *
 	 * @var MultiCurrencyAnalyticsSqlFilters
 	 */
@@ -87,7 +90,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	 * @param MultiCurrencyServiceFactory      $service_factory        Multi-Currency service factory.
 	 * @param MultiCurrencyUsageDetector       $usage_detector         Persisted usage detector.
 	 * @param MultiCurrencyRequestContext      $request_context        Request context.
-	 * @param MultiCurrencyAnalyticsSqlFilters $analytics_sql_filters Analytics SQL projection service.
+	 * @param MultiCurrencyAnalyticsSqlFilters $analytics_sql_filters Analytics SQL filters.
 	 */
 	final public function init(
 		MultiCurrencyRuntimeArbiter $arbiter,
@@ -154,12 +157,12 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			return;
 		}
 
-		// Concrete values, as the client registers them, so a key another plugin already registered, even lazily, is kept.
+		// Concrete values, added only when the key is absent, so a key another plugin already registered, even lazily, is kept.
 		$registry = Package::container()->get( AssetDataRegistry::class );
 		if ( ! $registry->exists( 'customerCurrencies' ) ) {
 			$registry->add( 'customerCurrencies', $this->get_analytics_service()->get_customer_currency_options() );
 		}
-		// Symbols too when another plugin supplied the list, as the client's come from a separate source.
+		// Symbols are checked on their own: another plugin may supply the currency list without them.
 		if ( ! $registry->exists( 'customerCurrencySymbols' ) ) {
 			$registry->add( 'customerCurrencySymbols', $this->get_analytics_service()->get_currency_symbols() );
 		}
@@ -172,7 +175,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			return;
 		}
 
-		// The plugin's handle, kept as an alias for scripts that list it as a dependency (client 11.1.0 `Analytics.php:27`).
+		// The WooPayments extension's handle, kept as an alias for scripts that list it as a dependency (client 11.1.0 `Analytics.php:27`).
 		wp_register_script( 'WCPAY_MULTI_CURRENCY_ANALYTICS', false, array( 'wc-admin-multi-currency-analytics' ), WC_VERSION, true );
 	}
 
@@ -222,7 +225,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Project multi-currency analytics SELECT clauses.
+	 * Extend the Analytics SELECT clauses with the order currency columns and the store-currency conversion.
 	 *
 	 * @internal
 	 *
@@ -231,7 +234,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	 * @return string[]
 	 */
 	public function handle_woocommerce_analytics_clauses_select( array $clauses, $context = null ): array {
-		// The client leaves the clauses alone without a context, before its disable filter, and in a context that is neither
+		// The clauses stay as they are without a context, before the disable filter, and in a context that is neither
 		// stats nor a subquery, after it (client 11.1.0 `includes/multi-currency/Analytics.php:233-260`).
 		if ( ! is_string( $context ) || $this->is_clause_filter_disabled( self::DISABLE_SELECT_FILTER ) ) {
 			return $clauses;
@@ -248,7 +251,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Project multi-currency analytics JOIN clauses.
+	 * Extend the Analytics JOIN clauses with the order currency and exchange-rate meta.
 	 *
 	 * @internal
 	 *
@@ -267,7 +270,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Project multi-currency analytics WHERE clauses.
+	 * Extend the Analytics WHERE clauses with the customer-currency filter of the request.
 	 *
 	 * @internal
 	 *
@@ -285,7 +288,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Project selected-currency order SELECT clauses.
+	 * Extend the order SELECT clauses so net totals show in each order's currency when the request selects a currency.
 	 *
 	 * @internal
 	 *
@@ -304,7 +307,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the analytics projection service.
+	 * Get the Analytics service, building it on first use.
 	 *
 	 * @return MultiCurrencyAnalyticsService
 	 */
@@ -326,7 +329,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether analytics should project selected-currency order totals.
+	 * Tell whether the Analytics request selects a currency other than the store currency.
 	 *
 	 * @return bool
 	 */
@@ -349,7 +352,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	 */
 	private function is_clause_filter_disabled( string $hook ): bool {
 		/**
-		 * Filters whether a native multi-currency analytics SQL clause filter should be disabled.
+		 * Filters whether Multi-Currency leaves this kind of Analytics SQL clause unchanged.
 		 *
 		 * @param bool $disabled Whether the SQL clause filter should be disabled.
 		 *
@@ -367,7 +370,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	 */
 	private function apply_clause_filter( string $hook, array $clauses ): array {
 		/**
-		 * Filters native multi-currency analytics SQL clauses.
+		 * Filters the Analytics SQL clauses after Multi-Currency extended them.
 		 *
 		 * @param string[] $clauses SQL clauses.
 		 *

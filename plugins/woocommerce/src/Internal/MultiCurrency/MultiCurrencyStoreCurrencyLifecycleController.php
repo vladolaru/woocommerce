@@ -12,10 +12,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStoreCur
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Registers native multi-currency store-currency lifecycle hooks.
+ * Notices a store currency change on `init`: the rates cache is cleared and the manual-rate currencies are listed for
+ * the admin notice.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyStoreCurrencyLifecycleController implements RegisterHooksInterface {
 

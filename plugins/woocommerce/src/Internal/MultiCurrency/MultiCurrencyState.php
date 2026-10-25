@@ -8,7 +8,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 /**
- * Multi-currency state snapshot for native shadow calculations.
+ * The request's Multi-Currency state: the available, enabled, default and selected currencies, and the currencies
+ * customers have used, a list it can rebuild from orders and store on first read.
  *
  * Read-only by contract: MultiCurrencyStateBuilder::build() memoizes a single
  * instance per request and hands it to every caller. Callers MUST NOT mutate this
@@ -17,7 +18,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
  * the shared snapshot for every other consumer in the request.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyState {
 
@@ -123,7 +124,7 @@ class MultiCurrencyState {
 	}
 
 	/**
-	 * Get customer-used currency codes.
+	 * Get the currencies customers have used; on first call it can rebuild the stored list from orders and store it.
 	 *
 	 * @return string[]
 	 */

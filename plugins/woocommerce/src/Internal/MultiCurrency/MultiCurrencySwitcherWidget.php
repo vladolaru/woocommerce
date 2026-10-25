@@ -11,15 +11,15 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcher
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 
 /**
- * Native multi-currency switcher widget.
+ * The currency switcher widget: a select of the enabled currencies, with optional symbols and flags.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencySwitcherWidget extends \WC_Widget {
 
 	/**
-	 * Switcher projection service.
+	 * Switcher renderer.
 	 *
 	 * @var MultiCurrencySwitcherRenderer
 	 */
@@ -35,7 +35,7 @@ class MultiCurrencySwitcherWidget extends \WC_Widget {
 	/**
 	 * Constructor.
 	 *
-	 * @param MultiCurrencySwitcherRenderer        $switcher_renderer Switcher projection service.
+	 * @param MultiCurrencySwitcherRenderer        $switcher_renderer Switcher renderer.
 	 * @param MultiCurrencyCompatibilityController $compatibility_controller    Compatibility controller.
 	 */
 	public function __construct(
@@ -86,6 +86,6 @@ class MultiCurrencySwitcherWidget extends \WC_Widget {
 			$this->compatibility_controller->should_disable_currency_switching()
 		);
 
-		echo $markup; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Switcher projection service escapes the generated markup.
+		echo $markup; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- The switcher renderer escapes the generated markup.
 	}
 }

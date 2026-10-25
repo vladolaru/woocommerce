@@ -16,7 +16,11 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 
 /**
- * Selects the independent Multi-Currency registrations for the current request.
+ * Starts Multi-Currency for the request: syncs the payments owner, and while WooCommerce runs Multi-Currency registers the
+ * refund, customer-currency and Analytics order listeners and the module's classes for the request type and usage.
+ *
+ * A class the request lacks registers when it is needed: the cron classes when Action Scheduler runs an action, and the
+ * Subscriptions currency classes once a cart holds a subscription in another currency.
  *
  * @since 11.2.0
  * @internal
@@ -190,7 +194,7 @@ final class MultiCurrencyBootstrap {
 
 		if ( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION === $owner ) {
 			/**
-			 * Filters whether read-only native Multi-Currency shadow mode is enabled.
+			 * Filters whether the read-only Multi-Currency shadow mode runs on stores the WooPayments extension owns.
 			 *
 			 * @since 11.0.0
 			 *
@@ -205,7 +209,7 @@ final class MultiCurrencyBootstrap {
 		}
 
 		$this->order_container = $container;
-		// The client copies the order's exchange rates to refunds, records the customer currency and converts Analytics order stats
+		// Refunds get the order's exchange rates, the customer currency is recorded and Analytics order stats are converted
 		// on every request (client 11.1.0 `includes/multi-currency/MultiCurrency.php:371`, `:384`, `Analytics.php:79-80`), so an
 		// order created or imported on any request is handled, including a synchronous Analytics import on ?wc-ajax=checkout.
 		add_action( 'woocommerce_order_refunded', array( $this, 'handle_woocommerce_order_refunded' ), 50, 2 );
@@ -269,7 +273,7 @@ final class MultiCurrencyBootstrap {
 		}
 
 		/**
-		 * Native Multi-Currency Subscriptions compatibility controller.
+		 * Multi-Currency Subscriptions compatibility controller.
 		 *
 		 * @var MultiCurrencySubscriptionsCompatibilityController $controller
 		 */
@@ -353,7 +357,7 @@ final class MultiCurrencyBootstrap {
 		}
 
 		/**
-		 * Native Multi-Currency price controller.
+		 * Multi-Currency price controller.
 		 *
 		 * @var MultiCurrencyFrontendPricesController $controller
 		 */
@@ -374,7 +378,7 @@ final class MultiCurrencyBootstrap {
 		}
 
 		/**
-		 * Native Multi-Currency Analytics controller.
+		 * Multi-Currency Analytics controller.
 		 *
 		 * @var MultiCurrencyAnalyticsController $controller
 		 */
@@ -397,7 +401,7 @@ final class MultiCurrencyBootstrap {
 		}
 
 		/**
-		 * Native Multi-Currency Analytics controller.
+		 * Multi-Currency Analytics controller.
 		 *
 		 * @var MultiCurrencyAnalyticsController $controller
 		 */
@@ -420,7 +424,7 @@ final class MultiCurrencyBootstrap {
 	}
 
 	/**
-	 * Register the native Multi-Currency REST controller during an internal dispatch from an admin page.
+	 * Register the Multi-Currency REST controller during an internal dispatch from an admin page.
 	 *
 	 * @since 11.2.0
 	 */
@@ -430,7 +434,7 @@ final class MultiCurrencyBootstrap {
 		}
 
 		/**
-		 * Native Multi-Currency REST controller.
+		 * Multi-Currency REST controller.
 		 *
 		 * @var MultiCurrencyRestController $controller
 		 */

@@ -14,10 +14,11 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
- * Registers native multi-currency settings hooks when core owns multi-currency.
+ * Adds the Multi-currency settings tab and loads its React app on it; on admin requests by store managers, it lets the
+ * cache rendering service turn cache-optimized rendering on once a page cache is detected.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencySettingsController implements RegisterHooksInterface {
 
@@ -127,7 +128,7 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Add the native multi-currency settings page, except on WP-CLI, WordPress.com jobs and upgrader requests.
+	 * Add the Multi-currency settings page, except on WP-CLI, WordPress.com jobs and upgrader requests.
 	 *
 	 * @param array<int,mixed> $settings_pages Existing settings pages.
 	 * @return array<int,mixed>
@@ -152,7 +153,7 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Render the React mount point for connected multi-currency settings.
+	 * Render the mount point of the Multi-currency settings React app.
 	 *
 	 * @internal
 	 */
@@ -182,7 +183,7 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Enqueue multi-currency settings assets when the migrated bundle is available.
+	 * Enqueue the Multi-currency settings assets when their bundle is built.
 	 *
 	 * @internal
 	 */
@@ -221,7 +222,7 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the migrated settings asset bundle exists.
+	 * Tell whether the settings script and stylesheet bundles are built.
 	 *
 	 * @return bool
 	 */

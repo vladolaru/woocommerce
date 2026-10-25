@@ -13,10 +13,10 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 
 /**
- * Registers native multi-currency tracker data when core owns multi-currency.
+ * Adds the Multi-Currency part, order counts included, to the WooCommerce tracker payload.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyTrackerController implements RegisterHooksInterface {
 
@@ -30,7 +30,7 @@ class MultiCurrencyTrackerController implements RegisterHooksInterface {
 	private MultiCurrencyRuntimeArbiter $arbiter;
 
 	/**
-	 * Tracking projection service.
+	 * Tracker data builder, built on first use.
 	 *
 	 * @var MultiCurrencyTrackerDataBuilder|null
 	 */
@@ -68,7 +68,7 @@ class MultiCurrencyTrackerController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Add native multi-currency data to the WooCommerce tracker payload.
+	 * Add the Multi-Currency data to the WooCommerce tracker payload.
 	 *
 	 * @internal
 	 *
@@ -80,7 +80,7 @@ class MultiCurrencyTrackerController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the tracking projection service.
+	 * Get the tracker data builder, building it on first use.
 	 *
 	 * @return MultiCurrencyTrackerDataBuilder
 	 */

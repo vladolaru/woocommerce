@@ -12,10 +12,10 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcher
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Registers native multi-currency switcher widget hooks when core owns multi-currency.
+ * Registers the currency switcher widget, and renders it for the wc_get_currency_switcher_markup() template tag.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 
@@ -34,7 +34,7 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 	private MultiCurrencyCompatibilityController $compatibility_controller;
 
 	/**
-	 * Switcher projection service.
+	 * Switcher renderer, built on first use.
 	 *
 	 * @var MultiCurrencySwitcherRenderer|null
 	 */
@@ -85,7 +85,7 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register the native switcher widget.
+	 * Register the currency switcher widget once.
 	 *
 	 * @internal
 	 */
@@ -166,7 +166,7 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the switcher projection service.
+	 * Get the switcher renderer, building it on first use.
 	 *
 	 * @return MultiCurrencySwitcherRenderer
 	 */

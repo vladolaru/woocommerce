@@ -11,10 +11,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocali
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherRenderer;
 
 /**
- * Currency value object for the native multi-currency runtime.
+ * A Multi-Currency currency: its code, conversion rate, rounding, charm and last rate update, and its JSON form with
+ * name, symbol and flag.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyCurrency implements \JsonSerializable {
 

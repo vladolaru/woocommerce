@@ -13,10 +13,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateServ
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Registers native multi-currency WC Admin notes when core owns multi-currency.
+ * Adds the "Sell worldwide in multiple currencies" admin note when it is not stored yet, while WooCommerce runs
+ * Multi-Currency and an automatic-rate provider is connected.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 

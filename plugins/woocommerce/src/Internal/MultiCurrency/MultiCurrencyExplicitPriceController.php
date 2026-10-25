@@ -13,10 +13,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDet
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Registers native multi-currency explicit price formatting hooks.
+ * Appends the currency code to the cart total, formatted order totals and the admin order totals when more than one
+ * currency is in use, or when the explicit-price filter asks for it.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyExplicitPriceController implements RegisterHooksInterface {
 

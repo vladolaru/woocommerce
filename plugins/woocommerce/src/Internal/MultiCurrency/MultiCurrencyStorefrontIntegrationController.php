@@ -15,10 +15,11 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 
 /**
- * Registers native Storefront multi-currency switcher hooks when core owns multi-currency.
+ * Shows the currency switcher in the Storefront theme's breadcrumb, with its inline CSS, when Storefront is active,
+ * more than one currency is enabled and the Storefront switcher setting (or the settings preview) asks for it.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInterface {
 
@@ -70,7 +71,7 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	private MultiCurrencyCompatibilityController $compatibility_controller;
 
 	/**
-	 * Switcher projection service.
+	 * Switcher renderer, built on first use.
 	 *
 	 * @var MultiCurrencySwitcherRenderer|null
 	 */
@@ -137,7 +138,7 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	}
 
 	/**
-	 * Inject the native switcher into Storefront breadcrumb defaults.
+	 * Put the currency switcher markup before the Storefront breadcrumb.
 	 *
 	 * @internal
 	 *
@@ -147,7 +148,7 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	public function handle_woocommerce_breadcrumb_defaults( array $defaults ): array {
 		$instance = array();
 		/**
-		 * Filters the native multi-currency Storefront widget instance.
+		 * Filters the widget instance of the Storefront currency switcher.
 		 *
 		 * @param array<string,mixed> $instance Widget instance.
 		 *
@@ -161,7 +162,7 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 			'after_widget'  => '</div>',
 		);
 		/**
-		 * Filters the native multi-currency Storefront widget args.
+		 * Filters the widget args of the Storefront currency switcher.
 		 *
 		 * @param array<string,string> $args Widget args.
 		 *
@@ -187,13 +188,13 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	}
 
 	/**
-	 * Add Storefront inline CSS for the native switcher.
+	 * Add the inline CSS of the Storefront currency switcher.
 	 *
 	 * @internal
 	 */
 	public function handle_wp_enqueue_scripts(): void {
 		/**
-		 * Filters the native multi-currency Storefront widget CSS.
+		 * Filters the inline CSS of the Storefront currency switcher.
 		 *
 		 * @param string $css Inline CSS.
 		 *
@@ -221,7 +222,7 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	}
 
 	/**
-	 * Get the switcher projection service.
+	 * Get the switcher renderer, building it on first use.
 	 *
 	 * @return MultiCurrencySwitcherRenderer
 	 */

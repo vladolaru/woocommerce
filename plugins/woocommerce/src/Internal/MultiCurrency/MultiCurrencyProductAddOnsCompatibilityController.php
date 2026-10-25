@@ -13,10 +13,13 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBui
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Registers native multi-currency Product Add-ons compatibility hooks when core owns multi-currency.
+ * Converts WooCommerce Product Add-Ons prices to the selected currency on the storefront: add-on prices, the script's
+ * price format, the cart's add-on labels and product prices, order line item meta, and the product page's Ajax calculation.
+ *
+ * A product whose add-ons already converted its price is marked so its price is not converted twice.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooksInterface {
 
@@ -37,7 +40,7 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 	private MultiCurrencyServiceFactory $service_factory;
 
 	/**
-	 * Price projection service.
+	 * Price converter, built on first use.
 	 *
 	 * @var MultiCurrencyPriceConverter|null
 	 */
@@ -101,7 +104,7 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 	}
 
 	/**
-	 * Tell whether native product-price conversion should run for Product Add-ons products.
+	 * Tell whether product-price conversion runs: not for a product whose add-ons already converted its price.
 	 *
 	 * @param bool  $should_convert Existing product conversion decision.
 	 * @param mixed $product        Product.
@@ -508,7 +511,7 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 	}
 
 	/**
-	 * Get the price projection service.
+	 * Get the price converter, building it on first use.
 	 *
 	 * @return MultiCurrencyPriceConverter
 	 */

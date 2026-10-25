@@ -16,10 +16,13 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 
 /**
- * Registers native multi-currency compatibility hooks when core owns multi-currency.
+ * Answers the compatibility questions other Multi-Currency classes ask through the `wcpay_multi_currency_*` filters:
+ * the selected-currency override, disabled switching, coupon and product conversion, and the store currency.
+ *
+ * On cron it also converts the best sales day note's order totals back to the store currency.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 
@@ -87,7 +90,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 	 */
 	public function override_selected_currency() {
 		/**
-		 * Filters the native multi-currency selected currency override.
+		 * Filters a currency code that overrides the shopper's selected currency, or false for none.
 		 *
 		 * @param mixed $currency Currency code or false.
 		 *
@@ -118,7 +121,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 		if ( has_filter( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_hide_widgets' ) ) {
 			wc_deprecated_hook( MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_hide_widgets', '6.5.0', MultiCurrencyStateBuilder::FILTER_PREFIX . 'should_disable_currency_switching' );
 			/**
-			 * Filters whether native multi-currency widgets should be hidden.
+			 * Filters whether currency switching is disabled, under the deprecated name of the filter below.
 			 *
 			 * @param bool $should_disable Whether currency switching should be disabled.
 			 *
@@ -128,7 +131,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 		}
 
 		/**
-		 * Filters whether native multi-currency switching should be disabled.
+		 * Filters whether currency switching is disabled on this request.
 		 *
 		 * @param bool $should_disable Whether currency switching should be disabled.
 		 *
@@ -188,7 +191,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 	 */
 	public function should_return_store_currency(): bool {
 		/**
-		 * Filters whether native multi-currency should return the store currency.
+		 * Filters whether Multi-Currency answers with the store currency instead of the selected one.
 		 *
 		 * @param bool $should_return Whether to return the store currency.
 		 *

@@ -16,10 +16,13 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 
 /**
- * Registers native selected-currency entry points when core owns multi-currency.
+ * Sets the shopper's selected currency: from the `currency` URL argument, by geolocation under automatic switching (with
+ * its store notice), from the My Account currency field, and on a customer created at checkout.
+ *
+ * It also runs the settings Preview simulation and leaves the customer's stored currency out of customer REST responses.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface {
 
@@ -239,7 +242,7 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 		$store_currency_name   = $currencies[ $store_currency_code ] ?? $store_currency_code;
 
 		/**
-		 * Filters the country name displayed in the native multi-currency geolocation notice.
+		 * Filters the country name shown in the geolocation currency notice.
 		 *
 		 * @param string $country_name Country name.
 		 *
@@ -248,7 +251,7 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 		$country_name = apply_filters( self::FILTER_OVERRIDE_NOTICE_COUNTRY, $country_name );
 
 		/**
-		 * Filters the currency name displayed in the native multi-currency geolocation notice.
+		 * Filters the currency name shown in the geolocation currency notice.
 		 *
 		 * @param string $current_currency_name Current currency name.
 		 *
@@ -361,7 +364,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	}
 
 	/**
-	 * Remove native provider bookkeeping from customer REST representations.
+	 * Remove the customer's stored selected-currency meta from customer REST responses.
 	 *
 	 * @internal
 	 *
@@ -370,7 +373,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	 * @param \WP_REST_Request $request REST request.
 	 *
 	 * @phpstan-param \WP_REST_Request<array<string, mixed>> $request
-	 * @return mixed Customer response without provider bookkeeping metadata.
+	 * @return mixed Customer response without the stored selected-currency meta.
 	 */
 	public function handle_woocommerce_rest_prepare_customer( $response, \WP_User $user_data, \WP_REST_Request $request ) {
 		unset( $user_data, $request );

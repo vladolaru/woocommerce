@@ -15,10 +15,14 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestC
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Registers native frontend currency hooks when core owns multi-currency.
+ * Answers the currency and its format (code, decimals, separators, price format, symbol position) on storefront requests:
+ * the selected currency, or an order's currency on the order-pay, order-received and view-order pages.
+ *
+ * It also varies the cart hash by currency and rate, rounds shipping rates to their currency's decimals and loads the
+ * script that shows the currency code after the Cart and Checkout block totals.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterface {
 
@@ -37,7 +41,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	private MultiCurrencyServiceFactory $service_factory;
 
 	/**
-	 * Frontend projection service.
+	 * Display service, built on first use.
 	 *
 	 * @var MultiCurrencyDisplayService|null
 	 */
@@ -65,7 +69,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	private ?string $order_currency = null;
 
 	/**
-	 * Whether the WooCommerce currency filter is currently being projected.
+	 * Whether the WooCommerce currency filter is running, so a nested read gets the stored currency.
 	 *
 	 * @var bool
 	 */
@@ -142,7 +146,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Project the WooCommerce currency code.
+	 * Get the currency code for this request: the order's or the selected currency.
 	 *
 	 * @param mixed $currency Existing currency.
 	 * @return string
@@ -162,7 +166,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Project the price decimal count.
+	 * Get the price decimal count of this request's currency.
 	 *
 	 * @param mixed $decimals Existing decimal count.
 	 * @return int
@@ -179,7 +183,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Project the price decimal separator.
+	 * Get the price decimal separator of this request's currency.
 	 *
 	 * @param mixed $separator Existing decimal separator.
 	 * @return string
@@ -189,7 +193,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Project the price thousand separator.
+	 * Get the price thousand separator of this request's currency.
 	 *
 	 * @param mixed $separator Existing thousand separator.
 	 * @return string
@@ -199,7 +203,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Project the WooCommerce price format.
+	 * Get the price format of this request's currency.
 	 *
 	 * @param mixed $format Existing price format.
 	 * @return string
@@ -209,7 +213,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Project the WooCommerce currency position option.
+	 * Get the currency symbol position of this request's currency.
 	 *
 	 * @param mixed $position Existing currency position.
 	 * @return string
@@ -219,7 +223,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Project a cart hash varied by selected currency and rate.
+	 * Vary the cart hash by the selected currency and its rate.
 	 *
 	 * @param mixed $hash Existing cart hash.
 	 * @return string
@@ -247,7 +251,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Preserve order total until native order-context currency handling is added.
+	 * Switch formatting to the order's currency when the order context asks for it; the total is returned unchanged.
 	 *
 	 * @param mixed $total Order total.
 	 * @param mixed $order Order object.
@@ -354,7 +358,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Get the frontend projection service.
+	 * Get the display service, building it on first use.
 	 *
 	 * @return MultiCurrencyDisplayService
 	 */

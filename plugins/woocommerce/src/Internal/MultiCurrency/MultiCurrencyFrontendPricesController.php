@@ -13,10 +13,13 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestC
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Registers native frontend price hooks when core owns multi-currency.
+ * Converts storefront prices to the selected currency: product and variation prices, shipping rates and free-shipping
+ * minimums, fixed coupon amounts and limits, the Store API price range and the query-loop price filter.
+ *
+ * It records the exchange-rate meta on new orders, and on refunds through the bootstrap's refund listener.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 
@@ -40,7 +43,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	private MultiCurrencyServiceFactory $service_factory;
 
 	/**
-	 * Price projection service.
+	 * Price converter, built on first use.
 	 *
 	 * @var MultiCurrencyPriceConverter|null
 	 */
@@ -112,7 +115,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Project the product price when conversion is allowed.
+	 * Convert the product price to the selected currency when conversion is allowed.
 	 *
 	 * @param mixed $price   Product price.
 	 * @param mixed $product Product object.
@@ -127,7 +130,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Project the product price as a string.
+	 * Convert the product price to the selected currency, as a string.
 	 *
 	 * @param mixed $price   Product price.
 	 * @param mixed $product Product object.
@@ -158,7 +161,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Project shipping add-rate cost args.
+	 * Convert a shipping rate's cost to the selected currency when it is added.
 	 *
 	 * @param mixed $args            Shipping rate args.
 	 * @param mixed $shipping_method Shipping method object.
@@ -234,7 +237,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Project fixed coupon amounts when conversion is allowed.
+	 * Convert a fixed coupon amount to the selected currency when conversion is allowed.
 	 *
 	 * @param mixed $amount Coupon amount.
 	 * @param mixed $coupon Coupon object.
@@ -249,7 +252,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Project coupon minimum and maximum amounts.
+	 * Convert a coupon's minimum or maximum spend to the selected currency.
 	 *
 	 * @param mixed $amount Coupon minimum or maximum amount.
 	 * @return mixed
@@ -263,7 +266,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Project free shipping minimum amounts.
+	 * Convert free shipping minimum amounts to the selected currency.
 	 *
 	 * @param mixed $methods Shipping methods.
 	 * @return mixed
@@ -288,7 +291,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Persist projected multi-currency order meta.
+	 * Save the exchange-rate meta of the order's currency on a new order.
 	 *
 	 * @param mixed $order_id Order ID.
 	 * @param mixed $order    Order object.
@@ -317,7 +320,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Persist projected multi-currency refund meta.
+	 * Copy the order's exchange-rate meta to a new refund.
 	 *
 	 * @param mixed $order_id  Order ID.
 	 * @param mixed $refund_id Refund ID.
@@ -343,7 +346,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Project Store API collection-data price ranges.
+	 * Convert the price range of the Store API collection-data response to the selected currency.
 	 *
 	 * @param mixed $response REST response.
 	 * @param mixed $server   REST server.
@@ -378,7 +381,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Project query-loop price-range query vars.
+	 * Convert the query loop's price filter to the store currency the stored prices are in.
 	 *
 	 * @param mixed $query Query vars.
 	 * @param mixed $block Block instance.
@@ -405,7 +408,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the price projection service.
+	 * Get the price converter, building it on first use.
 	 *
 	 * @return MultiCurrencyPriceConverter
 	 */
@@ -418,7 +421,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Recursively project price meta-query filters.
+	 * Convert the `_price` bounds of a meta query, recursing into nested queries.
 	 *
 	 * @param array<mixed> $meta_query Meta query.
 	 * @param int          $depth      Current recursion depth.

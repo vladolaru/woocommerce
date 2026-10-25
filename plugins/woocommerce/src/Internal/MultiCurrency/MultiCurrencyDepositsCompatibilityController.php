@@ -15,10 +15,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestC
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 
 /**
- * Registers native multi-currency Deposits compatibility hooks when core owns multi-currency.
+ * Converts WooCommerce Deposits amounts to the selected currency for Deposits versions before 2.0.1, which do not convert
+ * their own: cart deposit amounts and percent deposits on the form, and gives a remaining-payment order its deposit's currency.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInterface {
 
@@ -45,7 +46,7 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 	private MultiCurrencyServiceFactory $service_factory;
 
 	/**
-	 * Price projection service.
+	 * Price converter, built on first use.
 	 *
 	 * @var MultiCurrencyPriceConverter|null
 	 */
@@ -146,7 +147,7 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 	}
 
 	/**
-	 * Tell whether native product-price conversion should run during Deposits calculations.
+	 * Tell whether product-price conversion runs during Deposits calculations: not for a payment plan while the cart totals.
 	 *
 	 * @param bool  $result  Existing product conversion decision.
 	 * @param mixed $product Product.
@@ -245,7 +246,7 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 	}
 
 	/**
-	 * Get the price projection service.
+	 * Get the price converter, building it on first use.
 	 *
 	 * @return MultiCurrencyPriceConverter
 	 */
