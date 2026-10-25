@@ -7,18 +7,15 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Compat;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
  * While WooCommerce runs Multi-Currency, declares the WooPayments extension's `WCPay\MultiCurrency\MultiCurrency` class
- * at `plugins_loaded` and answers its members; it records whether the facade converted a product price this request,
- * which the Deposits compatibility controller reads.
+ * at `plugins_loaded`, and converts the facade's prices; it records whether the facade converted a product price this
+ * request, which the Deposits compatibility controller reads.
  *
  * Removed in WooCommerce 12.0.0.
  *
@@ -40,13 +37,6 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoader implements RegisterHooksInte
 	 * @var MultiCurrencyPriceConverter|null
 	 */
 	private ?MultiCurrencyPriceConverter $price_converter = null;
-
-	/**
-	 * The request's state builder, shared by the facade's conversions and state reads.
-	 *
-	 * @var MultiCurrencyStateBuilder|null
-	 */
-	private ?MultiCurrencyStateBuilder $state_builder = null;
 
 	/**
 	 * Whether a facade call converted a product price during this request.
@@ -110,40 +100,6 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoader implements RegisterHooksInte
 	}
 
 	/**
-	 * Convert an amount between two currencies; an empty source currency is the store currency.
-	 *
-	 * @param float  $amount        Amount.
-	 * @param string $to_currency   Target currency code.
-	 * @param string $from_currency Source currency code.
-	 * @return float
-	 */
-	public function get_raw_conversion( float $amount, string $to_currency, string $from_currency ): float {
-		if ( '' === $from_currency ) {
-			$from_currency = $this->get_default_currency()->get_code();
-		}
-
-		return $this->get_price_converter()->get_raw_conversion( $amount, $to_currency, $from_currency );
-	}
-
-	/**
-	 * Get the selected currency from the request's Multi-Currency state.
-	 *
-	 * @return MultiCurrencyCurrency
-	 */
-	public function get_selected_currency(): MultiCurrencyCurrency {
-		return $this->get_state_builder()->build()->get_selected_currency();
-	}
-
-	/**
-	 * Get the store's default currency from the request's Multi-Currency state.
-	 *
-	 * @return MultiCurrencyCurrency
-	 */
-	public function get_default_currency(): MultiCurrencyCurrency {
-		return $this->get_state_builder()->build()->get_default_currency();
-	}
-
-	/**
 	 * Tell whether the facade already converted a product price in this request.
 	 *
 	 * @return bool
@@ -163,18 +119,5 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoader implements RegisterHooksInte
 		}
 
 		return $this->price_converter;
-	}
-
-	/**
-	 * Get the request's state builder.
-	 *
-	 * @return MultiCurrencyStateBuilder
-	 */
-	private function get_state_builder(): MultiCurrencyStateBuilder {
-		if ( null === $this->state_builder ) {
-			$this->state_builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->get_state_builder();
-		}
-
-		return $this->state_builder;
 	}
 }

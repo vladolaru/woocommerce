@@ -75,13 +75,15 @@ class MultiCurrencyPriceConverter {
 	}
 
 	/**
-	 * Round an amount already in the selected currency and add its charm (client 11.1.0 `MultiCurrency::adjust_amount_for_selected_currency()`).
+	 * Round an amount already in the selected currency and add its charm unless asked not to (client 11.1.0
+	 * `MultiCurrency::adjust_amount_for_selected_currency()`).
 	 *
-	 * @param mixed $amount Amount in the selected currency.
+	 * @param mixed $amount              Amount in the selected currency.
+	 * @param bool  $apply_charm_pricing Whether the selected currency's charm is added.
 	 * @return float
 	 */
-	public function adjust_amount_for_selected_currency( $amount ): float {
-		return $this->price_calculator->get_adjusted_amount( $amount, $this->state_builder->build()->get_selected_currency() );
+	public function adjust_amount_for_selected_currency( $amount, bool $apply_charm_pricing = true ): float {
+		return $this->price_calculator->get_adjusted_amount( $amount, $this->state_builder->build()->get_selected_currency(), $apply_charm_pricing );
 	}
 
 	/**

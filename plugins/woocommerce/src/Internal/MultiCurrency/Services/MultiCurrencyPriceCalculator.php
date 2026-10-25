@@ -66,14 +66,15 @@ class MultiCurrencyPriceCalculator {
 	}
 
 	/**
-	 * Round an amount already in the given currency and add its charm.
+	 * Round an amount already in the given currency and add its charm unless asked not to.
 	 *
-	 * @param mixed                 $amount   Amount in the currency.
-	 * @param MultiCurrencyCurrency $currency Currency whose rounding and charm apply.
+	 * @param mixed                 $amount              Amount in the currency.
+	 * @param MultiCurrencyCurrency $currency            Currency whose rounding and charm apply.
+	 * @param bool                  $apply_charm_pricing Whether the currency's charm is added.
 	 * @return float
 	 */
-	public function get_adjusted_amount( $amount, MultiCurrencyCurrency $currency ): float {
-		return $this->get_adjusted_price( (float) $amount, true, $currency, $amount, '1' );
+	public function get_adjusted_amount( $amount, MultiCurrencyCurrency $currency, bool $apply_charm_pricing = true ): float {
+		return $this->get_adjusted_price( (float) $amount, $apply_charm_pricing, $currency, $amount, '1' );
 	}
 
 	/**

@@ -37,6 +37,24 @@ class MultiCurrencyFacadePluginCallersFixture {
 	}
 
 	/**
+	 * Name the WooPayments Multi-Currency as incompatible unless it enables only FOX's default currency, as FOX Currency
+	 * Switcher 1.5.4 does after its guard (`classes/woocs.php`, `notice_incompatibility_plugin()`).
+	 *
+	 * @param string $default_currency FOX's default currency.
+	 * @return string The incompatible option named in FOX's notice, or an empty string.
+	 */
+	public function fox_incompatible_plugin_notice( string $default_currency ): string {
+		$multi_currency      = \WCPay\MultiCurrency\MultiCurrency::instance();
+		$woocurrencies       = $multi_currency->get_enabled_currencies();
+		$incompatible_plugin = 'Option: Multi-currency of WooPayments plugin by Woo.';
+		if ( count( $woocurrencies ) === 1 && $multi_currency->get_default_currency()->get_code() === $default_currency ) {
+			$incompatible_plugin = '';
+		}
+
+		return $incompatible_plugin;
+	}
+
+	/**
 	 * Stop the Multi-Currency product price conversion of a product already converted elsewhere, as Advanced Dynamic
 	 * Pricing 4.14.0 does (`BaseVersion/Includes/Compatibility/WooCommerceMultiCurrencyCmp.php:74`).
 	 *
