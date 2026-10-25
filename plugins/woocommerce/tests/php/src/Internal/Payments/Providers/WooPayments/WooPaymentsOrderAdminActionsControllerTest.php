@@ -895,17 +895,18 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox A retry that falls due once $_dataName completes with client 11.1.0's failure note and changes nothing else.
 	 *
-	 * The built-in WooPayments queued the retry while it owned payments; the retry then runs where it no longer does. Client
-	 * 11.1.0 writes this note when a status-change capture or cancel fails (class-wc-payments-order-service.php:1827-1831,
-	 * :1880-1884) and captures only on the change to Completed, hiding Capture on paid orders.
+	 * The built-in WooPayments queued the retry on an active store; the retry then runs where the order actions controller
+	 * is not loaded. Client 11.1.0 writes this note when a status-change capture or cancel fails
+	 * (class-wc-payments-order-service.php:1827-1831, :1880-1884) and captures only on the change to Completed, hiding
+	 * Capture on paid orders.
 	 *
 	 * @dataProvider retry_after_ownership_loss_data
 	 *
-	 * @param string $ownership    How the built-in WooPayments stopped owning payments.
+	 * @param string $ownership    What changed since the retry was queued.
 	 * @param string $operation    Capture or cancel.
 	 * @param string $order_status Status the order changed to.
 	 */
-	public function test_retry_after_the_built_in_stops_owning_completes_with_the_failure_note( string $ownership, string $operation, string $order_status ): void {
+	public function test_retry_the_built_in_cannot_run_completes_with_the_failure_note( string $ownership, string $operation, string $order_status ): void {
 		$this->set_ownership( $ownership );
 		$order = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'requires_capture', $order_status );
 		$order->add_order_note( $this->pending_note( $operation ) );
@@ -935,7 +936,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Ways the built-in WooPayments stops owning payments, with each status-change operation.
+	 * Ways the order actions controller stops loading, with each status-change operation.
 	 *
 	 * @return array<string,array{string,string,string}>
 	 */
@@ -945,6 +946,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 			'the extension is active, cancel'  => array( 'extension', PaymentProcessingService::OPERATION_CANCEL, OrderStatus::CANCELLED ),
 			'the feature is off, capture'      => array( 'feature_off', PaymentProcessingService::OPERATION_CAPTURE, OrderStatus::COMPLETED ),
 			'the feature is off, cancel'       => array( 'feature_off', PaymentProcessingService::OPERATION_CANCEL, OrderStatus::CANCELLED ),
+			'the built-in lost its account record, capture' => array( 'account_lost', PaymentProcessingService::OPERATION_CAPTURE, OrderStatus::COMPLETED ),
 		);
 	}
 
@@ -1012,10 +1014,12 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Put the store in an ownership state after the built-in WooPayments was connected and active.
 	 *
-	 * @param string $ownership builtin (it still owns payments), extension (the extension is active) or feature_off.
+	 * @param string $ownership builtin (it still owns payments), account_lost (it still owns payments, and an account read that
+	 *                          found no account wrote the available tier, WooPaymentsAccountService::sync_setup_tier()),
+	 *                          extension (the extension is active) or feature_off.
 	 */
 	private function set_ownership( string $ownership ): void {
-		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
+		update_option( WooPaymentsSetupTier::OPTION_NAME, 'account_lost' === $ownership ? WooPaymentsSetupTier::AVAILABLE : WooPaymentsSetupTier::ACTIVE );
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'feature_off' === $ownership ? 'no' : 'yes' );
 		if ( 'extension' === $ownership ) {
 			update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
@@ -1023,7 +1027,7 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
 		$arbiter->invalidate();
 		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
-		$this->assertSame( 'builtin' === $ownership, $arbiter->is_builtin_owner() );
+		$this->assertSame( in_array( $ownership, array( 'builtin', 'account_lost' ), true ), $arbiter->is_builtin_owner() );
 	}
 
 	/**

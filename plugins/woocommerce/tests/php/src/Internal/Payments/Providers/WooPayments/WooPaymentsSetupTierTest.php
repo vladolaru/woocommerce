@@ -188,6 +188,34 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * A store whose stored tier is still disabled never ran the built-in WooPayments with an account, so it cannot hold a
+	 * status-change retry; one whose account synced while the feature was on can.
+	 *
+	 * @testdox With the WooPayments feature on and the extension active, cron and WP-CLI list the status-change retry listener only when the stored tier is not disabled ($stored_state), beside the cutover classes.
+	 * @testWith ["disabled", false]
+	 *           ["available", true]
+	 *           ["active", true]
+	 *
+	 * @param string $stored_state Stored tier.
+	 * @param bool   $lists        Whether the retry listener is listed.
+	 */
+	public function test_extension_store_lists_the_retry_listener_only_after_an_account_sync( string $stored_state, bool $lists ): void {
+		update_option( WooPaymentsSetupTier::OPTION_NAME, $stored_state );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
+		$this->make_extension_own_the_runtime();
+		$this->state->invalidate();
+
+		foreach ( array( 'cron', 'cli' ) as $request_type ) {
+			$classes = $this->state->get_classes_for_request( $request_type );
+			$this->assertSame( $lists, in_array( WooPaymentsStatusChangeRetryListener::class, $classes, true ), $request_type );
+			$this->assertContains( WooPaymentsCutoverReconciliationJob::class, $classes, "$request_type keeps the cutover job." );
+		}
+		foreach ( array( 'front', 'admin', 'ajax', 'rest' ) as $request_type ) {
+			$this->assertNotContains( WooPaymentsStatusChangeRetryListener::class, $this->state->get_classes_for_request( $request_type ), $request_type );
+		}
+	}
+
+	/**
 	 * @testdox State memoization remains isolated by blog.
 	 * @group multisite
 	 */

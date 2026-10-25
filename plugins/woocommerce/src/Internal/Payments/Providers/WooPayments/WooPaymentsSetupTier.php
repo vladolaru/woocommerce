@@ -102,9 +102,12 @@ final class WooPaymentsSetupTier {
 	/**
 	 * Get the classes a request type registers for WooPayments, in registration order.
 	 *
-	 * A `disabled` tier reads no provider class list. It lists nothing, except on a store whose stored tier shows the built-in
-	 * WooPayments was set up: there cron and WP-CLI requests list the listener that notes a status-change capture or cancel
-	 * retry queued before the WooPayments feature was turned off.
+	 * A `disabled` tier reads no provider class list.
+	 *
+	 * On a `disabled` or `available` tier, cron and WP-CLI requests also list the listener that notes a status-change
+	 * capture or cancel retry queued while the built-in WooPayments took payments, when the stored tier is not `disabled`:
+	 * it leaves `disabled` only through an account sync while the WooPayments feature was on, which every store that could
+	 * queue such a retry went through.
 	 *
 	 * @since 11.2.0
 	 *
@@ -112,21 +115,26 @@ final class WooPaymentsSetupTier {
 	 * @return array<int,class-string>
 	 */
 	public function get_classes_for_request( string $request_type ): array {
-		$tier = $this->get_effective_tier();
-		if ( self::DISABLED === $tier ) {
-			return in_array( $request_type, array( RequestTypeUtil::CRON, RequestTypeUtil::CLI ), true ) && self::DISABLED !== $this->get_stored_tier()
-				? array( WooPaymentsStatusChangeRetryListener::class )
-				: array();
+		$tier    = $this->get_effective_tier();
+		$classes = array();
+		if ( self::DISABLED !== $tier ) {
+			if ( null === $this->classes_by_setup_tier ) {
+				$this->classes_by_setup_tier = WooPaymentsProvider::get_classes_by_setup_tier();
+			}
+
+			$classes = $this->classes_by_setup_tier[ $tier ][ $request_type ] ?? array();
+			// A store waiting for its switch keeps the switch notice on the WooPayments pages, which strip other notices.
+			if ( RequestTypeUtil::ADMIN === $request_type && self::AVAILABLE === $tier && $this->runtime_arbiter->is_awaiting_switch() ) {
+				$classes[] = WooPaymentsAdminNoticesPassthrough::class;
+			}
 		}
 
-		if ( null === $this->classes_by_setup_tier ) {
-			$this->classes_by_setup_tier = WooPaymentsProvider::get_classes_by_setup_tier();
-		}
-
-		$classes = $this->classes_by_setup_tier[ $tier ][ $request_type ] ?? array();
-		// A store waiting for its switch keeps the switch notice on the WooPayments pages, which strip other notices.
-		if ( RequestTypeUtil::ADMIN === $request_type && self::AVAILABLE === $tier && $this->runtime_arbiter->is_awaiting_switch() ) {
-			$classes[] = WooPaymentsAdminNoticesPassthrough::class;
+		if (
+			in_array( $tier, array( self::DISABLED, self::AVAILABLE ), true )
+			&& in_array( $request_type, array( RequestTypeUtil::CRON, RequestTypeUtil::CLI ), true )
+			&& self::DISABLED !== $this->get_stored_tier()
+		) {
+			$classes[] = WooPaymentsStatusChangeRetryListener::class;
 		}
 
 		return $classes;

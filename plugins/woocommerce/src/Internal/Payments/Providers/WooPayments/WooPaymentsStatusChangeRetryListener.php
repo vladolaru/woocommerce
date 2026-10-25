@@ -13,11 +13,11 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Order;
 
 /**
- * Answers a queued status-change capture or cancel retry that falls due after the built-in WooPayments stopped owning
- * payments, because the WooPayments extension was activated or the WooPayments feature was turned off.
+ * Answers a queued status-change capture or cancel retry that falls due where the built-in WooPayments cannot run it:
+ * the WooPayments extension was activated, the WooPayments feature was turned off, or the account is no longer connected.
  *
- * WooPaymentsOrderAdminActionsController queues the retry and runs it while the built-in WooPayments owns payments; this
- * listener then does nothing. Otherwise, while the order is still completed (capture) or cancelled (cancel), paid with
+ * WooPaymentsOrderAdminActionsController queues the retry and runs it on a connected or active setup tier; there this
+ * listener does nothing. Otherwise, while the order is still completed (capture) or cancelled (cancel), paid with
  * WooPayments and authorized, it writes the failure note client 11.1.0 writes when such a capture or cancel fails
  * (class-wc-payments-order-service.php:1827-1831, :1880-1884), so the merchant knows the authorization is still open.
  * It changes no status and calls no platform.
@@ -28,21 +28,21 @@ use WC_Order;
 class WooPaymentsStatusChangeRetryListener implements RegisterHooksInterface {
 
 	/**
-	 * Runtime ownership arbiter.
+	 * Setup tier, which decides whether the order actions controller runs the retry.
 	 *
-	 * @var WooPaymentsRuntimeArbiter
+	 * @var WooPaymentsSetupTier
 	 */
-	private WooPaymentsRuntimeArbiter $runtime_arbiter;
+	private WooPaymentsSetupTier $setup_tier;
 
 	/**
 	 * Initialize the listener.
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter $runtime_arbiter Runtime ownership arbiter.
+	 * @param WooPaymentsSetupTier $setup_tier Setup tier.
 	 */
-	final public function init( WooPaymentsRuntimeArbiter $runtime_arbiter ): void {
-		$this->runtime_arbiter = $runtime_arbiter;
+	final public function init( WooPaymentsSetupTier $setup_tier ): void {
+		$this->setup_tier = $setup_tier;
 	}
 
 	/**
@@ -53,7 +53,7 @@ class WooPaymentsStatusChangeRetryListener implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Note that a retried status-change capture or cancel did not run, when the built-in WooPayments does not own payments.
+	 * Note that a retried status-change capture or cancel did not run, unless the order actions controller runs it.
 	 *
 	 * @internal
 	 *
@@ -63,7 +63,7 @@ class WooPaymentsStatusChangeRetryListener implements RegisterHooksInterface {
 	 */
 	public function handle_retry_status_change_operation( $order_id, $operation = '', $retry = 0 ): void {
 		unset( $retry );
-		if ( $this->runtime_arbiter->is_builtin_owner() ) {
+		if ( in_array( $this->setup_tier->get_effective_tier(), array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ), true ) ) {
 			return;
 		}
 
