@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Blocks\Assets\AssetDataRegistry;
 use Automattic\WooCommerce\Blocks\Package;
 use Automattic\WooCommerce\Internal\Admin\WCAdminAssets;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsClauses;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsSqlFilters;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
@@ -74,33 +74,33 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	/**
 	 * Analytics SQL projection service.
 	 *
-	 * @var MultiCurrencyAnalyticsClauses
+	 * @var MultiCurrencyAnalyticsSqlFilters
 	 */
-	private MultiCurrencyAnalyticsClauses $analytics_clauses;
+	private MultiCurrencyAnalyticsSqlFilters $analytics_sql_filters;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter   $arbiter                Runtime owner arbiter.
-	 * @param MultiCurrencyServiceFactory   $service_factory        Multi-Currency service factory.
-	 * @param MultiCurrencyUsageDetector    $usage_detector         Persisted usage detector.
-	 * @param MultiCurrencyRequestContext   $request_context        Request context.
-	 * @param MultiCurrencyAnalyticsClauses $analytics_clauses Analytics SQL projection service.
+	 * @param MultiCurrencyRuntimeArbiter      $arbiter                Runtime owner arbiter.
+	 * @param MultiCurrencyServiceFactory      $service_factory        Multi-Currency service factory.
+	 * @param MultiCurrencyUsageDetector       $usage_detector         Persisted usage detector.
+	 * @param MultiCurrencyRequestContext      $request_context        Request context.
+	 * @param MultiCurrencyAnalyticsSqlFilters $analytics_sql_filters Analytics SQL projection service.
 	 */
 	final public function init(
 		MultiCurrencyRuntimeArbiter $arbiter,
 		MultiCurrencyServiceFactory $service_factory,
 		MultiCurrencyUsageDetector $usage_detector,
 		MultiCurrencyRequestContext $request_context,
-		MultiCurrencyAnalyticsClauses $analytics_clauses
+		MultiCurrencyAnalyticsSqlFilters $analytics_sql_filters
 	): void {
-		$this->arbiter           = $arbiter;
-		$this->service_factory   = $service_factory;
-		$this->usage_detector    = $usage_detector;
-		$this->request_context   = $request_context;
-		$this->analytics_clauses = $analytics_clauses;
+		$this->arbiter               = $arbiter;
+		$this->service_factory       = $service_factory;
+		$this->usage_detector        = $usage_detector;
+		$this->request_context       = $request_context;
+		$this->analytics_sql_filters = $analytics_sql_filters;
 	}
 
 	/**
@@ -242,7 +242,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			return $clauses;
 		}
 
-		$clauses = $this->analytics_clauses->extend_select_clauses( $clauses, $context, OrderUtil::custom_orders_table_usage_is_enabled() );
+		$clauses = $this->analytics_sql_filters->extend_select_clauses( $clauses, $context, OrderUtil::custom_orders_table_usage_is_enabled() );
 
 		return $this->apply_clause_filter( self::EXTEND_SELECT_FILTER, $clauses );
 	}
@@ -261,7 +261,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			return $clauses;
 		}
 
-		$clauses = $this->analytics_clauses->extend_join_clauses( $clauses, $context, OrderUtil::custom_orders_table_usage_is_enabled() );
+		$clauses = $this->analytics_sql_filters->extend_join_clauses( $clauses, $context, OrderUtil::custom_orders_table_usage_is_enabled() );
 
 		return $this->apply_clause_filter( self::EXTEND_JOIN_FILTER, $clauses );
 	}
@@ -279,7 +279,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			return $clauses;
 		}
 
-		$clauses = $this->analytics_clauses->extend_where_clauses( $clauses, $this->get_request_args(), OrderUtil::custom_orders_table_usage_is_enabled() );
+		$clauses = $this->analytics_sql_filters->extend_where_clauses( $clauses, $this->get_request_args(), OrderUtil::custom_orders_table_usage_is_enabled() );
 
 		return $this->apply_clause_filter( self::EXTEND_WHERE_FILTER, $clauses );
 	}
@@ -298,7 +298,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			return $clauses;
 		}
 
-		$clauses = $this->analytics_clauses->extend_order_select_clauses( $clauses );
+		$clauses = $this->analytics_sql_filters->extend_order_select_clauses( $clauses );
 
 		return $this->apply_clause_filter( self::EXTEND_ORDER_SELECT_FILTER, $clauses );
 	}

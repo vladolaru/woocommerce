@@ -1,6 +1,6 @@
 <?php
 /**
- * MultiCurrencyAnalyticsClauses class file.
+ * MultiCurrencyAnalyticsSqlFilters class file.
  */
 
 declare( strict_types = 1 );
@@ -13,7 +13,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  * @since 11.0.0
  * @internal Transitional internal component for the native multi-currency runtime.
  */
-class MultiCurrencyAnalyticsClauses {
+class MultiCurrencyAnalyticsSqlFilters {
 
 	private const SUPPORTED_CONTEXTS = array( 'orders', 'products', 'variations', 'categories', 'coupons', 'taxes' );
 

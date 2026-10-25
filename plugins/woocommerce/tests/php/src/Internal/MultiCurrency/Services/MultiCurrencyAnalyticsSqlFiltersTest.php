@@ -3,19 +3,19 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsClauses;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsSqlFilters;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the MultiCurrencyAnalyticsClauses class.
+ * Tests for the MultiCurrencyAnalyticsSqlFilters class.
  */
-class MultiCurrencyAnalyticsClausesTest extends WC_Unit_Test_Case {
+class MultiCurrencyAnalyticsSqlFiltersTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should project select clauses for legacy order storage.
 	 */
 	public function test_projects_select_clauses_for_legacy_order_storage(): void {
-		$sut = new MultiCurrencyAnalyticsClauses();
+		$sut = new MultiCurrencyAnalyticsSqlFilters();
 
 		$result = $sut->extend_select_clauses(
 			array(
@@ -56,7 +56,7 @@ class MultiCurrencyAnalyticsClausesTest extends WC_Unit_Test_Case {
 	 * @testdox Should project select clauses for HPOS order storage.
 	 */
 	public function test_projects_select_clauses_for_hpos_order_storage(): void {
-		$sut = new MultiCurrencyAnalyticsClauses();
+		$sut = new MultiCurrencyAnalyticsSqlFilters();
 
 		$result = $sut->extend_select_clauses(
 			array( ', SUM(discount_amount) AS discount_amount' ),
@@ -80,7 +80,7 @@ class MultiCurrencyAnalyticsClausesTest extends WC_Unit_Test_Case {
 	public function test_projects_join_clauses_for_legacy_order_storage(): void {
 		global $wpdb;
 
-		$sut = new MultiCurrencyAnalyticsClauses();
+		$sut = new MultiCurrencyAnalyticsSqlFilters();
 
 		$result = $sut->extend_join_clauses(
 			array( "INNER JOIN {$wpdb->prefix}wc_order_stats ON 1 = 1" ),
@@ -104,7 +104,7 @@ class MultiCurrencyAnalyticsClausesTest extends WC_Unit_Test_Case {
 	public function test_projects_join_clauses_for_hpos_order_storage(): void {
 		global $wpdb;
 
-		$sut = new MultiCurrencyAnalyticsClauses();
+		$sut = new MultiCurrencyAnalyticsSqlFilters();
 
 		$result = $sut->extend_join_clauses(
 			array( "INNER JOIN {$wpdb->prefix}wc_order_stats ON 1 = 1" ),
@@ -126,7 +126,7 @@ class MultiCurrencyAnalyticsClausesTest extends WC_Unit_Test_Case {
 	 * @testdox Should project currency where clauses for legacy order storage.
 	 */
 	public function test_projects_currency_where_clauses_for_legacy_order_storage(): void {
-		$sut = new MultiCurrencyAnalyticsClauses();
+		$sut = new MultiCurrencyAnalyticsSqlFilters();
 
 		$result = $sut->extend_where_clauses(
 			array( 'AND status != "trash"' ),
@@ -156,7 +156,7 @@ class MultiCurrencyAnalyticsClausesTest extends WC_Unit_Test_Case {
 	 * @testdox Should escape currency values in prepared where clauses.
 	 */
 	public function test_escapes_currency_values_in_where_clauses(): void {
-		$sut = new MultiCurrencyAnalyticsClauses();
+		$sut = new MultiCurrencyAnalyticsSqlFilters();
 
 		$result = $sut->extend_where_clauses(
 			array(),
@@ -181,7 +181,7 @@ class MultiCurrencyAnalyticsClausesTest extends WC_Unit_Test_Case {
 	public function test_projects_selected_currency_order_select_clauses(): void {
 		global $wpdb;
 
-		$sut       = new MultiCurrencyAnalyticsClauses();
+		$sut       = new MultiCurrencyAnalyticsSqlFilters();
 		$net_total = "{$wpdb->prefix}wc_order_stats.net_total";
 		$decimals  = wc_get_price_decimals();
 

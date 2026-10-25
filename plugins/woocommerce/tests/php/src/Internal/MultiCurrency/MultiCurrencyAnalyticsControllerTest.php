@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDatabase
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsClauses;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsSqlFilters;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use WC_Unit_Test_Case;
@@ -232,7 +232,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
 			$detector,
 			$this->create_request_context( true ),
-			wc_get_container()->get( MultiCurrencyAnalyticsClauses::class )
+			wc_get_container()->get( MultiCurrencyAnalyticsSqlFilters::class )
 		);
 		$original_postmeta = $wpdb->postmeta;
 		$suppress_errors   = $wpdb->suppress_errors( true );
@@ -635,7 +635,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 			ServiceFactories::with( $this, array( 'create_analytics_service' => $analytics_service ) ),
 			new MultiCurrencyUsageDetector(),
 			null === $rest_request ? wc_get_container()->get( MultiCurrencyRequestContext::class ) : $this->create_request_context( $rest_request ),
-			wc_get_container()->get( MultiCurrencyAnalyticsClauses::class )
+			wc_get_container()->get( MultiCurrencyAnalyticsSqlFilters::class )
 		);
 
 		return $controller;
@@ -692,7 +692,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
 			new MultiCurrencyUsageDetector(),
 			$this->create_request_context( true ),
-			wc_get_container()->get( MultiCurrencyAnalyticsClauses::class )
+			wc_get_container()->get( MultiCurrencyAnalyticsSqlFilters::class )
 		);
 
 		return $controller;
