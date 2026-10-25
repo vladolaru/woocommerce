@@ -9,6 +9,9 @@ namespace WCPay\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionMultiCurrencyFacadeLoader;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 
 // phpcs:disable SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName -- The WooPayments extension's file and class casing are the compatibility contract.
 /**
@@ -22,6 +25,69 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
  */
 class MultiCurrency {
 	// phpcs:enable SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName
+
+	/**
+	 * Session key holding the shopper's selected currency. Removed in WooCommerce 12.0.0.
+	 *
+	 * @deprecated 11.0.0 No public replacement.
+	 */
+	const CURRENCY_SESSION_KEY = MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY;
+
+	/**
+	 * User meta key holding the customer's selected currency. Removed in WooCommerce 12.0.0.
+	 *
+	 * @deprecated 11.0.0 No public replacement.
+	 */
+	const CURRENCY_META_KEY = MultiCurrencyStateBuilder::CURRENCY_STORAGE_KEY;
+
+	/**
+	 * Prefix of the Multi-Currency hook names. Removed in WooCommerce 12.0.0.
+	 *
+	 * @deprecated 11.0.0 No public replacement.
+	 */
+	const FILTER_PREFIX = MultiCurrencyStateBuilder::FILTER_PREFIX;
+
+	/**
+	 * Option holding the currencies customers have ordered in. Removed in WooCommerce 12.0.0.
+	 *
+	 * @deprecated 11.0.0 No public replacement.
+	 */
+	const CUSTOMER_CURRENCIES_KEY = MultiCurrencyStateBuilder::CUSTOMER_CURRENCIES_KEY;
+
+	/**
+	 * Rendering mode that converts prices on the server. Removed in WooCommerce 12.0.0.
+	 *
+	 * @deprecated 11.0.0 No public replacement.
+	 */
+	const RENDERING_MODE_SPEED = MultiCurrencyDisplayService::RENDERING_MODE_SPEED;
+
+	/**
+	 * Rendering mode that converts prices in the browser, for cached pages. Removed in WooCommerce 12.0.0.
+	 *
+	 * @deprecated 11.0.0 No public replacement.
+	 */
+	const RENDERING_MODE_CACHE = MultiCurrencyDisplayService::RENDERING_MODE_CACHE;
+
+	/**
+	 * Option holding the rendering mode. Removed in WooCommerce 12.0.0.
+	 *
+	 * @deprecated 11.0.0 No public replacement.
+	 */
+	const RENDERING_MODE_OPTION = MultiCurrencyDisplayService::RENDERING_MODE_OPTION;
+
+	/**
+	 * Option set once the page-cache detection has run. Removed in WooCommerce 12.0.0.
+	 *
+	 * @deprecated 11.0.0 No public replacement.
+	 */
+	const CACHE_AUTODETECT_DONE_OPTION = MultiCurrencyCacheRenderingService::AUTODETECT_DONE_OPTION;
+
+	/**
+	 * Option set when the merchant dismissed the cache-mode recommendation. Removed in WooCommerce 12.0.0.
+	 *
+	 * @deprecated 11.0.0 No public replacement.
+	 */
+	const CACHE_RECOMMENDATION_DISMISSED_OPTION = MultiCurrencyCacheRenderingService::DISMISSED_OPTION;
 
 	/**
 	 * Request-local facade instance.
