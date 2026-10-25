@@ -65,11 +65,11 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	private ?string $order_currency = null;
 
 	/**
-	 * Whether the WooCommerce currency filter is currently being projected.
+	 * Whether the WooCommerce currency filter is currently being currency_decimals.
 	 *
 	 * @var bool
 	 */
-	private bool $is_projecting_woocommerce_currency = false;
+	private bool $is_converting_woocommerce_currency = false;
 
 	/**
 	 * Initialize the class instance.
@@ -148,16 +148,16 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * @return string
 	 */
 	public function get_woocommerce_currency( $currency = null ): string {
-		if ( $this->is_projecting_woocommerce_currency ) {
+		if ( $this->is_converting_woocommerce_currency ) {
 			return is_scalar( $currency ) && '' !== (string) $currency ? (string) $currency : (string) get_option( 'woocommerce_currency' );
 		}
 
-		$this->is_projecting_woocommerce_currency = true;
+		$this->is_converting_woocommerce_currency = true;
 
 		try {
 			return $this->get_display_service()->get_woocommerce_currency( $this->order_currency );
 		} finally {
-			$this->is_projecting_woocommerce_currency = false;
+			$this->is_converting_woocommerce_currency = false;
 		}
 	}
 
@@ -168,14 +168,14 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * @return int
 	 */
 	public function get_price_decimals( $decimals ): int {
-		$projected = $this->get_display_service()->get_price_decimals( absint( $decimals ), $this->order_currency );
+		$currency_decimals = $this->get_display_service()->get_price_decimals( absint( $decimals ), $this->order_currency );
 
 		// A flat-rate percent fee in store units keeps the store's decimals, or the shopper's currency's when it has more.
 		if ( MultiCurrencyFrontendPricesController::is_computing_store_currency_fee() ) {
-			return max( absint( $decimals ), $projected );
+			return max( absint( $decimals ), $currency_decimals );
 		}
 
-		return $projected;
+		return $currency_decimals;
 	}
 
 	/**
