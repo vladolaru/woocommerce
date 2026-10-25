@@ -39,10 +39,10 @@ class MultiCurrencyServiceFactory {
 	/**
 	 * Create a price projection service.
 	 *
-	 * @return MultiCurrencyPriceProjectionService
+	 * @return MultiCurrencyPriceConverter
 	 */
-	public function create_price_projection_service(): MultiCurrencyPriceProjectionService {
-		return new MultiCurrencyPriceProjectionService(
+	public function create_price_converter(): MultiCurrencyPriceConverter {
+		return new MultiCurrencyPriceConverter(
 			$this->state_builder_factory->create(),
 			new MultiCurrencyPriceCalculator( new MultiCurrencyLocalizationService() )
 		);

@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesCon
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySubscriptionsCompatibilityController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -1018,7 +1018,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		$frontend_prices = new MultiCurrencyFrontendPricesController();
 		$frontend_prices->init(
 			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
-			ServiceFactories::with( $this, array( 'create_price_projection_service' => $this->create_price_projection_service( $rate ) ) ),
+			ServiceFactories::with( $this, array( 'create_price_converter' => $this->create_price_converter( $rate ) ) ),
 			new class() extends MultiCurrencyRequestContext {
 				/**
 				 * Register the storefront hooks.
@@ -1284,7 +1284,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 			$this->create_arbiter( $owner ),
 			new LegacyProxy(),
 			ServiceFactories::state_builder( $this, $this->create_state_builder( $has_additional_currencies_enabled ) ),
-			ServiceFactories::with( $this, array( 'create_price_projection_service' => $this->create_price_projection_service( $rate ) ) )
+			ServiceFactories::with( $this, array( 'create_price_converter' => $this->create_price_converter( $rate ) ) )
 		);
 
 		return $controller;
@@ -1345,10 +1345,10 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * Create a deterministic price projection service.
 	 *
 	 * @param float $rate Rate it converts by.
-	 * @return MultiCurrencyPriceProjectionService
+	 * @return MultiCurrencyPriceConverter
 	 */
-	private function create_price_projection_service( float $rate = 2.0 ): MultiCurrencyPriceProjectionService {
-		return new class( $rate ) extends MultiCurrencyPriceProjectionService {
+	private function create_price_converter( float $rate = 2.0 ): MultiCurrencyPriceConverter {
+		return new class( $rate ) extends MultiCurrencyPriceConverter {
 			/**
 			 * Rate it converts by.
 			 *
@@ -1383,7 +1383,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 			 *
 			 * @return bool
 			 */
-			public function should_project_between_selected_and_default_currency(): bool {
+			public function should_convert_between_selected_and_default_currency(): bool {
 				return 1.0 !== $this->rate;
 			}
 		};

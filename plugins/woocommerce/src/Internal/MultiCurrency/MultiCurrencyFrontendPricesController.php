@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -42,9 +42,9 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	/**
 	 * Price projection service.
 	 *
-	 * @var MultiCurrencyPriceProjectionService|null
+	 * @var MultiCurrencyPriceConverter|null
 	 */
-	private ?MultiCurrencyPriceProjectionService $price_projection_service = null;
+	private ?MultiCurrencyPriceConverter $price_converter = null;
 
 	/**
 	 * Request context.
@@ -123,7 +123,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 			return $price;
 		}
 
-		return $this->get_price_projection_service()->get_price( $price, 'product' );
+		return $this->get_price_converter()->get_price( $price, 'product' );
 	}
 
 	/**
@@ -151,7 +151,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 			return $prices_hash;
 		}
 
-		$prices_hash[] = $this->get_price_projection_service()->get_selected_currency_conversion_key();
+		$prices_hash[] = $this->get_price_converter()->get_selected_currency_conversion_key();
 		$prices_hash[] = wc_get_price_decimals();
 
 		return $prices_hash;
@@ -176,12 +176,12 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 		if ( is_array( $args['cost'] ) ) {
 			$args['cost'] = array_map(
 				function ( $cost ) {
-					return $this->get_price_projection_service()->get_price( $cost, 'shipping' );
+					return $this->get_price_converter()->get_price( $cost, 'shipping' );
 				},
 				$args['cost']
 			);
 		} else {
-			$args['cost'] = $this->get_price_projection_service()->get_price( $args['cost'], 'shipping' );
+			$args['cost'] = $this->get_price_converter()->get_price( $args['cost'], 'shipping' );
 		}
 
 		return $args;
@@ -206,7 +206,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 			return $args;
 		}
 
-		$args['cost']                     = $this->get_price_projection_service()->get_default_currency_amount( (float) $args['cost'] );
+		$args['cost']                     = $this->get_price_converter()->get_default_currency_amount( (float) $args['cost'] );
 		self::$store_currency_cost_method = is_object( $shipping_method ) ? $shipping_method : null;
 
 		return $args;
@@ -245,7 +245,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 			return $amount;
 		}
 
-		return $this->get_price_projection_service()->get_price( $amount, 'coupon' );
+		return $this->get_price_converter()->get_price( $amount, 'coupon' );
 	}
 
 	/**
@@ -259,7 +259,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 			return $amount;
 		}
 
-		return $this->get_price_projection_service()->get_price( $amount, 'product' );
+		return $this->get_price_converter()->get_price( $amount, 'product' );
 	}
 
 	/**
@@ -280,7 +280,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 				'free_shipping' === $method->id &&
 				! empty( $method->min_amount )
 			) {
-				$method->min_amount = $this->get_price_projection_service()->get_price( $method->min_amount, 'product' );
+				$method->min_amount = $this->get_price_converter()->get_price( $method->min_amount, 'product' );
 			}
 		}
 
@@ -304,7 +304,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 			return;
 		}
 
-		$meta_candidates = $this->get_price_projection_service()->get_order_meta_candidates( $order->get_currency() );
+		$meta_candidates = $this->get_price_converter()->get_order_meta_candidates( $order->get_currency() );
 		if ( empty( $meta_candidates ) ) {
 			return;
 		}
@@ -330,7 +330,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 			return;
 		}
 
-		$meta_candidates = $this->get_price_projection_service()->get_refund_meta_candidates( $order );
+		$meta_candidates = $this->get_price_converter()->get_refund_meta_candidates( $order );
 		if ( empty( $meta_candidates ) ) {
 			return;
 		}
@@ -368,7 +368,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 
 		foreach ( array( 'min_price', 'max_price' ) as $field ) {
 			if ( property_exists( $data['price_range'], $field ) && is_numeric( $data['price_range']->$field ) ) {
-				$data['price_range']->$field = (string) $this->get_price_projection_service()->get_price( $data['price_range']->$field, 'product' );
+				$data['price_range']->$field = (string) $this->get_price_converter()->get_price( $data['price_range']->$field, 'product' );
 			}
 		}
 
@@ -393,7 +393,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 			'product' !== ( $query['post_type'] ?? null ) ||
 			empty( $query['meta_query'] ) ||
 			! is_array( $query['meta_query'] ) ||
-			! $this->get_price_projection_service()->should_project_between_selected_and_default_currency()
+			! $this->get_price_converter()->should_convert_between_selected_and_default_currency()
 		) {
 			return $query;
 		}
@@ -407,14 +407,14 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	/**
 	 * Get the price projection service.
 	 *
-	 * @return MultiCurrencyPriceProjectionService
+	 * @return MultiCurrencyPriceConverter
 	 */
-	private function get_price_projection_service(): MultiCurrencyPriceProjectionService {
-		if ( null === $this->price_projection_service ) {
-			$this->price_projection_service = $this->service_factory->create_price_projection_service();
+	private function get_price_converter(): MultiCurrencyPriceConverter {
+		if ( null === $this->price_converter ) {
+			$this->price_converter = $this->service_factory->create_price_converter();
 		}
 
-		return $this->price_projection_service;
+		return $this->price_converter;
 	}
 
 	/**
@@ -440,7 +440,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 				is_numeric( $query['value'] ) &&
 				in_array( $query['compare'], array( '<=', '>=' ), true )
 			) {
-				$meta_query[ $key ]['value'] = $this->get_price_projection_service()->get_price_filter_query_value(
+				$meta_query[ $key ]['value'] = $this->get_price_converter()->get_price_filter_query_value(
 					$query['value'],
 					$query['compare']
 				);

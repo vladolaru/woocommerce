@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyOrderContextService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
@@ -837,7 +837,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$controller = new MultiCurrencyFrontendPricesController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			ServiceFactories::with( $this, array( 'create_price_projection_service' => $this->create_projection_service( $should_project_queries ) ) ),
+			ServiceFactories::with( $this, array( 'create_price_converter' => $this->create_projection_service( $should_project_queries ) ) ),
 			$request_context ?? wc_get_container()->get( MultiCurrencyRequestContext::class )
 		);
 
@@ -892,10 +892,10 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	 * Create a deterministic price projection service.
 	 *
 	 * @param bool $should_project_queries Whether query price filters should project.
-	 * @return MultiCurrencyPriceProjectionService
+	 * @return MultiCurrencyPriceConverter
 	 */
-	private function create_projection_service( bool $should_project_queries ): MultiCurrencyPriceProjectionService {
-		return new class( $should_project_queries ) extends MultiCurrencyPriceProjectionService {
+	private function create_projection_service( bool $should_project_queries ): MultiCurrencyPriceConverter {
+		return new class( $should_project_queries ) extends MultiCurrencyPriceConverter {
 			/**
 			 * Whether query price filters should project.
 			 *
@@ -970,7 +970,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 			 *
 			 * @return bool
 			 */
-			public function should_project_between_selected_and_default_currency(): bool {
+			public function should_convert_between_selected_and_default_currency(): bool {
 				return $this->should_project_queries;
 			}
 

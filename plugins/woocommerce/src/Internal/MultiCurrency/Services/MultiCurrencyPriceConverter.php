@@ -1,6 +1,6 @@
 <?php
 /**
- * MultiCurrencyPriceProjectionService class file.
+ * MultiCurrencyPriceConverter class file.
  */
 
 declare( strict_types = 1 );
@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
  * @since 11.0.0
  * @internal Transitional internal component for the native multi-currency runtime.
  */
-class MultiCurrencyPriceProjectionService {
+class MultiCurrencyPriceConverter {
 
 	public const META_KEY_ORDER_EXCHANGE_RATE    = '_wcpay_multi_currency_order_exchange_rate';
 	public const META_KEY_ORDER_DEFAULT_CURRENCY = '_wcpay_multi_currency_order_default_currency';
@@ -137,7 +137,7 @@ class MultiCurrencyPriceProjectionService {
 	 *
 	 * @return bool
 	 */
-	public function should_project_between_selected_and_default_currency(): bool {
+	public function should_convert_between_selected_and_default_currency(): bool {
 		$state = $this->state_builder->build();
 
 		return $state->get_default_currency()->get_code() !== $state->get_selected_currency()->get_code();

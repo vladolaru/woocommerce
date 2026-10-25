@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
@@ -127,9 +127,9 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	/**
 	 * Price projection service.
 	 *
-	 * @var MultiCurrencyPriceProjectionService|null
+	 * @var MultiCurrencyPriceConverter|null
 	 */
-	private ?MultiCurrencyPriceProjectionService $price_projection_service = null;
+	private ?MultiCurrencyPriceConverter $price_converter = null;
 
 	/**
 	 * State builder.
@@ -432,7 +432,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 			return $price;
 		}
 
-		return $this->get_price_projection_service()->get_price( $price, 'product' );
+		return $this->get_price_converter()->get_price( $price, 'product' );
 	}
 
 	/**
@@ -450,7 +450,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	public function get_stored_price_for_active_price( $price, $product ) {
 		if (
 			! $product instanceof \WC_Product
-			|| ! $this->get_price_projection_service()->should_project_between_selected_and_default_currency()
+			|| ! $this->get_price_converter()->should_convert_between_selected_and_default_currency()
 			|| ! MultiCurrencyRequestContext::is_call_in_backtrace( self::SUBSCRIPTION_PRODUCT_ACTIVE_PRICE_CALLS )
 		) {
 			return $price;
@@ -492,7 +492,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 			return $price;
 		}
 
-		return $this->get_price_projection_service()->get_price( $price, 'product' );
+		return $this->get_price_converter()->get_price( $price, 'product' );
 	}
 
 	/**
@@ -904,14 +904,14 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	/**
 	 * Get the price projection service.
 	 *
-	 * @return MultiCurrencyPriceProjectionService
+	 * @return MultiCurrencyPriceConverter
 	 */
-	private function get_price_projection_service(): MultiCurrencyPriceProjectionService {
-		if ( null === $this->price_projection_service ) {
-			$this->price_projection_service = $this->service_factory->create_price_projection_service();
+	private function get_price_converter(): MultiCurrencyPriceConverter {
+		if ( null === $this->price_converter ) {
+			$this->price_converter = $this->service_factory->create_price_converter();
 		}
 
-		return $this->price_projection_service;
+		return $this->price_converter;
 	}
 
 	/**

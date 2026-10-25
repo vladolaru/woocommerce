@@ -23,7 +23,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvide
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
@@ -910,9 +910,9 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_currency', 'USD' );
 		$order = WC_Helper_Order::create_order();
 		$order->set_currency( 'EUR' );
-		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE, '0.5' );
-		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
-		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_STRIPE_EXCHANGE_RATE, '0.49' );
+		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, '0.5' );
+		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_STRIPE_EXCHANGE_RATE, '0.49' );
 		$order->save();
 		$this->enable_core_multi_currency( $configured );
 		$sut = new MultiCurrencyBootstrap( static fn(): array => array() );
@@ -937,9 +937,9 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		);
 
 		$refund = wc_get_order( $refund_id );
-		$this->assertSame( '0.5', $refund->get_meta( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE ) );
-		$this->assertSame( 'USD', $refund->get_meta( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY ) );
-		$this->assertSame( '0.49', $refund->get_meta( MultiCurrencyPriceProjectionService::META_KEY_STRIPE_EXCHANGE_RATE ) );
+		$this->assertSame( '0.5', $refund->get_meta( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE ) );
+		$this->assertSame( 'USD', $refund->get_meta( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY ) );
+		$this->assertSame( '0.49', $refund->get_meta( MultiCurrencyPriceConverter::META_KEY_STRIPE_EXCHANGE_RATE ) );
 	}
 
 	/** @return array<string,array{string,bool,string}> */
@@ -1005,8 +1005,8 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_currency', 'USD' );
 		$order = WC_Helper_Order::create_order();
 		$order->set_currency( 'EUR' );
-		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE, '0.5' );
-		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, '0.5' );
+		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
 		$order->save();
 		$order_id  = $order->get_id();
 		$net_total = static function () use ( $wpdb, $order_id ): float {
@@ -1031,8 +1031,8 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		add_filter( 'pre_http_request', static fn() => new \WP_Error( 'blocked', 'Outbound HTTP is blocked in this test.' ) );
 		update_option( 'woocommerce_currency', 'USD' );
 		$order = WC_Helper_Order::create_order();
-		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE, '0.5' );
-		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, '0.5' );
+		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
 		$order->save();
 		$this->enable_core_multi_currency( true );
 		$sut       = new MultiCurrencyBootstrap( static fn(): array => array() );
@@ -1053,8 +1053,8 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		);
 		$refund = wc_get_order( $refund_id );
 
-		$this->assertSame( '', $refund->get_meta( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE ) );
-		$this->assertSame( '', $refund->get_meta( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY ) );
+		$this->assertSame( '', $refund->get_meta( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE ) );
+		$this->assertSame( '', $refund->get_meta( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY ) );
 	}
 
 	/** @testdox Adds no order listeners when the plugin or nobody owns Multi-Currency. */
@@ -1085,8 +1085,8 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_currency', 'USD' );
 		$order = WC_Helper_Order::create_order();
 		$order->set_currency( 'EUR' );
-		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE, '0.5' );
-		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, '0.5' );
+		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
 		$order->save();
 		$order_id  = $order->get_id();
 		$net_total = static function () use ( $wpdb, $order_id ): float {

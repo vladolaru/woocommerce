@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
@@ -51,9 +51,9 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	/**
 	 * Price projection service.
 	 *
-	 * @var MultiCurrencyPriceProjectionService|null
+	 * @var MultiCurrencyPriceConverter|null
 	 */
-	private ?MultiCurrencyPriceProjectionService $price_projection_service = null;
+	private ?MultiCurrencyPriceConverter $price_converter = null;
 
 	/**
 	 * Frontend projection service.
@@ -133,7 +133,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 			return $costs;
 		}
 
-		return $this->get_price_projection_service()->adjust_amount_for_selected_currency( $costs );
+		return $this->get_price_converter()->adjust_amount_for_selected_currency( $costs );
 	}
 
 	/**
@@ -153,7 +153,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 			return $price;
 		}
 
-		return $this->get_price_projection_service()->get_price(
+		return $this->get_price_converter()->get_price(
 			$price,
 			MultiCurrencyRequestContext::is_call_in_backtrace( self::BOOKING_PRICE_HTML_CALLS ) ? 'product' : 'exchange_rate'
 		);
@@ -232,14 +232,14 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	/**
 	 * Get the price projection service.
 	 *
-	 * @return MultiCurrencyPriceProjectionService
+	 * @return MultiCurrencyPriceConverter
 	 */
-	private function get_price_projection_service(): MultiCurrencyPriceProjectionService {
-		if ( null === $this->price_projection_service ) {
-			$this->price_projection_service = $this->service_factory->create_price_projection_service();
+	private function get_price_converter(): MultiCurrencyPriceConverter {
+		if ( null === $this->price_converter ) {
+			$this->price_converter = $this->service_factory->create_price_converter();
 		}
 
-		return $this->price_projection_service;
+		return $this->price_converter;
 	}
 
 	/**

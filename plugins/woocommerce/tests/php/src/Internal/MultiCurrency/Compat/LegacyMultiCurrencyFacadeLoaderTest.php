@@ -9,7 +9,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyDepositsCompatibilityController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
@@ -38,7 +38,7 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 	 * @preserveGlobalState disabled
 	 */
 	public function test_core_owned_facade_preserves_grounded_extension_calls(): void {
-		$failed_projection = $this->createMock( MultiCurrencyPriceProjectionService::class );
+		$failed_projection = $this->createMock( MultiCurrencyPriceConverter::class );
 		$failed_projection->method( 'get_price' )->willThrowException( new \RuntimeException( 'Projection failed.' ) );
 		$loader   = $this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $failed_projection );
 		$consumer = new LegacyMultiCurrencyConsumerFixture();
@@ -98,7 +98,7 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 		$facade_projected_amount = $consumer->get_woopayments_multicurrency_price( 10.0 );
 
 		$controller = new MultiCurrencyDepositsCompatibilityController();
-		$controller->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), ServiceFactories::with( $this, array( 'create_price_projection_service' => $projection_service ) ) );
+		$controller->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), ServiceFactories::with( $this, array( 'create_price_converter' => $projection_service ) ) );
 		$cart_contents = $controller->modify_cart_item_deposit_amounts(
 			array(
 				'deposit' => array(
@@ -138,7 +138,7 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 			}
 		);
 		$state_builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create();
-		$this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, wc_get_container()->get( MultiCurrencyServiceFactory::class )->create_price_projection_service(), $state_builder );
+		$this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, wc_get_container()->get( MultiCurrencyServiceFactory::class )->create_price_converter(), $state_builder );
 		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::instance' );
 		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_selected_currency' );
 		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_default_currency' );
@@ -172,17 +172,17 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 	 * The facade reads the container's loader, and the loader reads its factories from the container on first use, so
 	 * the container hands out a fresh runtime loader and factories that return the given services.
 	 *
-	 * @param string                              $owner              Runtime owner.
-	 * @param MultiCurrencyPriceProjectionService $projection_service Price projection service.
-	 * @param MultiCurrencyStateBuilder|null      $state_builder      State builder; the request's shared builder by default.
+	 * @param string                         $owner              Runtime owner.
+	 * @param MultiCurrencyPriceConverter    $projection_service Price projection service.
+	 * @param MultiCurrencyStateBuilder|null $state_builder      State builder; the request's shared builder by default.
 	 * @return LegacyMultiCurrencyFacadeLoader
 	 */
-	private function create_loader( string $owner, MultiCurrencyPriceProjectionService $projection_service, ?MultiCurrencyStateBuilder $state_builder = null ): LegacyMultiCurrencyFacadeLoader {
+	private function create_loader( string $owner, MultiCurrencyPriceConverter $projection_service, ?MultiCurrencyStateBuilder $state_builder = null ): LegacyMultiCurrencyFacadeLoader {
 		$declaration_loader = new LegacyMultiCurrencyFacadeLoader();
 		$declaration_loader->init( $this->create_arbiter( $owner ) );
 		$declaration_loader->register();
 
-		wc_get_container()->replace( MultiCurrencyServiceFactory::class, ServiceFactories::with( $this, array( 'create_price_projection_service' => $projection_service ) ) );
+		wc_get_container()->replace( MultiCurrencyServiceFactory::class, ServiceFactories::with( $this, array( 'create_price_converter' => $projection_service ) ) );
 		if ( null !== $state_builder ) {
 			wc_get_container()->replace( MultiCurrencyStateBuilderFactory::class, ServiceFactories::state_builder( $this, $state_builder ) );
 		}
@@ -229,10 +229,10 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 	 *
 	 * @param float $price_rate           Product price conversion rate.
 	 * @param float $raw_conversion_value Raw conversion result.
-	 * @return MultiCurrencyPriceProjectionService
+	 * @return MultiCurrencyPriceConverter
 	 */
-	private function create_projection_service( float $price_rate, float $raw_conversion_value = 0.0 ): MultiCurrencyPriceProjectionService {
-		$service = $this->createMock( MultiCurrencyPriceProjectionService::class );
+	private function create_projection_service( float $price_rate, float $raw_conversion_value = 0.0 ): MultiCurrencyPriceConverter {
+		$service = $this->createMock( MultiCurrencyPriceConverter::class );
 		$service->method( 'get_price' )->willReturnCallback(
 			static function ( $amount, string $type ) use ( $price_rate ): float {
 				return 'product' === $type ? (float) $amount * $price_rate : (float) $amount;

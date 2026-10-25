@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Shadow;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceCalculator;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -58,9 +58,9 @@ class MultiCurrencyShadowMode implements RegisterHooksInterface {
 	 * @var string[]
 	 */
 	private const MULTI_CURRENCY_META_KEYS = array(
-		MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE,
-		MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY,
-		MultiCurrencyPriceProjectionService::META_KEY_STRIPE_EXCHANGE_RATE,
+		MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE,
+		MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY,
+		MultiCurrencyPriceConverter::META_KEY_STRIPE_EXCHANGE_RATE,
 	);
 
 	/**
@@ -80,9 +80,9 @@ class MultiCurrencyShadowMode implements RegisterHooksInterface {
 	/**
 	 * Native price/meta projection service.
 	 *
-	 * @var MultiCurrencyPriceProjectionService|null
+	 * @var MultiCurrencyPriceConverter|null
 	 */
-	private ?MultiCurrencyPriceProjectionService $projection_service = null;
+	private ?MultiCurrencyPriceConverter $projection_service = null;
 
 	/**
 	 * Multi-currency surface differ.
@@ -121,9 +121,9 @@ class MultiCurrencyShadowMode implements RegisterHooksInterface {
 	 * @internal Used by tests and future explicit bootstrap definitions. Production
 	 * code lazily builds the default read-only projection graph.
 	 *
-	 * @param MultiCurrencyPriceProjectionService $projection_service Native price/meta projection service.
+	 * @param MultiCurrencyPriceConverter $projection_service Native price/meta projection service.
 	 */
-	public function set_projection_service( MultiCurrencyPriceProjectionService $projection_service ): void {
+	public function set_projection_service( MultiCurrencyPriceConverter $projection_service ): void {
 		$this->projection_service = $projection_service;
 	}
 
@@ -299,12 +299,12 @@ class MultiCurrencyShadowMode implements RegisterHooksInterface {
 	/**
 	 * Get the native projection service.
 	 *
-	 * @return MultiCurrencyPriceProjectionService
+	 * @return MultiCurrencyPriceConverter
 	 */
-	private function get_projection_service(): MultiCurrencyPriceProjectionService {
+	private function get_projection_service(): MultiCurrencyPriceConverter {
 		if ( null === $this->projection_service ) {
 			$localization_service     = $this->create_read_only_localization_service();
-			$this->projection_service = new MultiCurrencyPriceProjectionService(
+			$this->projection_service = new MultiCurrencyPriceConverter(
 				$this->state_builder_factory->create_separate( $localization_service ),
 				new MultiCurrencyPriceCalculator( $localization_service )
 			);

@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\Admin\Notes\NewSalesRecord;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -235,12 +235,12 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 				continue;
 			}
 
-			$exchange_rate = $order->get_meta( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE, true );
+			$exchange_rate = $order->get_meta( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, true );
 			if (
 				$default_currency_code === $order->get_currency() ||
 				! is_numeric( $exchange_rate ) ||
 				0 >= (float) $exchange_rate ||
-				$order->get_meta( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY, true ) !== $default_currency_code
+				$order->get_meta( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, true ) !== $default_currency_code
 			) {
 				continue;
 			}

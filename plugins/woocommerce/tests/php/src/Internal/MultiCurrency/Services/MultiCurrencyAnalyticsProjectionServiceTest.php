@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocali
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsProjectionService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use WC_Unit_Test_Case;
 
@@ -189,15 +189,15 @@ class MultiCurrencyAnalyticsProjectionServiceTest extends WC_Unit_Test_Case {
 		$order->set_currency( $currency );
 
 		if ( null !== $order_exchange_rate ) {
-			$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE, $order_exchange_rate );
+			$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, $order_exchange_rate );
 		}
 
 		if ( null !== $default_currency ) {
-			$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY, $default_currency );
+			$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, $default_currency );
 		}
 
 		if ( null !== $stripe_exchange_rate ) {
-			$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_STRIPE_EXCHANGE_RATE, $stripe_exchange_rate );
+			$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_STRIPE_EXCHANGE_RATE, $stripe_exchange_rate );
 		}
 
 		$order->save();

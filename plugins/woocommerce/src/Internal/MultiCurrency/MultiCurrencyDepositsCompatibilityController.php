@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Compat\LegacyMultiCurrencyFacadeLoader;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
@@ -47,9 +47,9 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 	/**
 	 * Price projection service.
 	 *
-	 * @var MultiCurrencyPriceProjectionService|null
+	 * @var MultiCurrencyPriceConverter|null
 	 */
-	private ?MultiCurrencyPriceProjectionService $price_projection_service = null;
+	private ?MultiCurrencyPriceConverter $price_converter = null;
 
 	/**
 	 * Initialize the class instance.
@@ -117,7 +117,7 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 
 		foreach ( $cart_contents as $cart_item_key => $cart_item ) {
 			if ( is_array( $cart_item ) && ! empty( $cart_item['is_deposit'] ) && array_key_exists( 'deposit_amount', $cart_item ) ) {
-				$cart_contents[ $cart_item_key ]['deposit_amount'] = $this->get_price_projection_service()->get_price(
+				$cart_contents[ $cart_item_key ]['deposit_amount'] = $this->get_price_converter()->get_price(
 					(float) $cart_item['deposit_amount'],
 					'product'
 				);
@@ -142,7 +142,7 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 			return $amount;
 		}
 
-		return $this->get_price_projection_service()->get_price( (float) $amount, 'product' );
+		return $this->get_price_converter()->get_price( (float) $amount, 'product' );
 	}
 
 	/**
@@ -247,13 +247,13 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 	/**
 	 * Get the price projection service.
 	 *
-	 * @return MultiCurrencyPriceProjectionService
+	 * @return MultiCurrencyPriceConverter
 	 */
-	private function get_price_projection_service(): MultiCurrencyPriceProjectionService {
-		if ( null === $this->price_projection_service ) {
-			$this->price_projection_service = $this->service_factory->create_price_projection_service();
+	private function get_price_converter(): MultiCurrencyPriceConverter {
+		if ( null === $this->price_converter ) {
+			$this->price_converter = $this->service_factory->create_price_converter();
 		}
 
-		return $this->price_projection_service;
+		return $this->price_converter;
 	}
 }

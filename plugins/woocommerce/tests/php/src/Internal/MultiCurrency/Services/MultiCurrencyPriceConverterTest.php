@@ -7,14 +7,14 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocali
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceCalculator;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the MultiCurrencyPriceProjectionService class.
+ * Tests for the MultiCurrencyPriceConverter class.
  */
-class MultiCurrencyPriceProjectionServiceTest extends WC_Unit_Test_Case {
+class MultiCurrencyPriceConverterTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should project selected-currency product prices.
@@ -108,8 +108,8 @@ class MultiCurrencyPriceProjectionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should report whether selected and default currencies differ.
 	 */
 	public function test_reports_whether_selected_currency_differs_from_default(): void {
-		$this->assertTrue( $this->create_service( $this->create_state( 'GBP' ) )->should_project_between_selected_and_default_currency() );
-		$this->assertFalse( $this->create_service( $this->create_state( 'USD' ) )->should_project_between_selected_and_default_currency() );
+		$this->assertTrue( $this->create_service( $this->create_state( 'GBP' ) )->should_convert_between_selected_and_default_currency() );
+		$this->assertFalse( $this->create_service( $this->create_state( 'USD' ) )->should_convert_between_selected_and_default_currency() );
 	}
 
 	/**
@@ -174,10 +174,10 @@ class MultiCurrencyPriceProjectionServiceTest extends WC_Unit_Test_Case {
 	 * Create the projection service.
 	 *
 	 * @param MultiCurrencyState $state Multi-currency state.
-	 * @return MultiCurrencyPriceProjectionService
+	 * @return MultiCurrencyPriceConverter
 	 */
-	private function create_service( MultiCurrencyState $state ): MultiCurrencyPriceProjectionService {
-		return new MultiCurrencyPriceProjectionService(
+	private function create_service( MultiCurrencyState $state ): MultiCurrencyPriceConverter {
+		return new MultiCurrencyPriceConverter(
 			$this->create_state_builder( $state ),
 			new MultiCurrencyPriceCalculator( $this->create_localization() )
 		);

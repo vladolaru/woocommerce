@@ -9,7 +9,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyDepositsCompatibi
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceCalculator;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use WC_Unit_Test_Case;
 
@@ -377,7 +377,7 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			ServiceFactories::with( $this, array( 'create_price_projection_service' => $this->create_price_projection_service() ) )
+			ServiceFactories::with( $this, array( 'create_price_converter' => $this->create_price_converter() ) )
 		);
 
 		return $controller;
@@ -421,12 +421,12 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 	/**
 	 * Create a price projection service.
 	 *
-	 * @return MultiCurrencyPriceProjectionService
+	 * @return MultiCurrencyPriceConverter
 	 */
-	private function create_price_projection_service(): MultiCurrencyPriceProjectionService {
+	private function create_price_converter(): MultiCurrencyPriceConverter {
 		$localization = $this->create_localization();
 
-		return new MultiCurrencyPriceProjectionService(
+		return new MultiCurrencyPriceConverter(
 			$this->create_state_builder( $this->create_state() ),
 			new MultiCurrencyPriceCalculator( $localization )
 		);

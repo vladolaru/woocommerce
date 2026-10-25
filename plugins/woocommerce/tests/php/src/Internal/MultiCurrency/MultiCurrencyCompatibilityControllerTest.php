@@ -10,7 +10,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityCont
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use WC_Unit_Test_Case;
 
@@ -144,8 +144,8 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 		$order = wc_create_order();
 		$order->set_currency( 'GBP' );
 		$order->set_total( 1000 );
-		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE, 0.5 );
-		$order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, 0.5 );
+		$order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
 		$order->save();
 
 		add_filter( 'woocommerce_order_query', array( $sut, 'convert_order_prices' ) );
@@ -216,8 +216,8 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 		$pound_order->set_currency( 'GBP' );
 		$pound_order->set_total( 20 );
 		$pound_order->set_date_created( $yesterday );
-		$pound_order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE, 0.5 );
-		$pound_order->update_meta_data( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
+		$pound_order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, 0.5 );
+		$pound_order->update_meta_data( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, 'USD' );
 		$pound_order->save();
 		wc_create_refund(
 			array(

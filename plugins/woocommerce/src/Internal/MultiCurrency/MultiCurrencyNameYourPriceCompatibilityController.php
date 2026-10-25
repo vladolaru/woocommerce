@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyRateException;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
@@ -35,9 +35,9 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	/**
 	 * Price projection service.
 	 *
-	 * @var MultiCurrencyPriceProjectionService|null
+	 * @var MultiCurrencyPriceConverter|null
 	 */
-	private ?MultiCurrencyPriceProjectionService $price_projection_service = null;
+	private ?MultiCurrencyPriceConverter $price_converter = null;
 
 	/**
 	 * State builder.
@@ -123,7 +123,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 			return $price;
 		}
 
-		return $this->get_price_projection_service()->get_price( $price, 'product' );
+		return $this->get_price_converter()->get_price( $price, 'product' );
 	}
 
 	/**
@@ -171,7 +171,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 		if ( $cart_item['nyp_currency'] === $selected_currency_code ) {
 			$cart_item['nyp'] = $cart_item['nyp_original'];
 		} else {
-			$cart_item['nyp'] = $this->get_price_projection_service()->get_raw_conversion(
+			$cart_item['nyp'] = $this->get_price_converter()->get_raw_conversion(
 				(float) $cart_item['nyp_original'],
 				$selected_currency_code,
 				(string) $cart_item['nyp_currency']
@@ -209,7 +209,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 		}
 
 		try {
-			$this->get_price_projection_service()->get_raw_conversion( (float) $values['nyp_original'], $selected_currency_code, (string) $values['nyp_currency'] );
+			$this->get_price_converter()->get_raw_conversion( (float) $values['nyp_original'], $selected_currency_code, (string) $values['nyp_currency'] );
 			return $remove;
 		} catch ( InvalidCurrencyException | InvalidCurrencyRateException $e ) {
 			// Notice functions load with the front-end includes or wc_load_cart(), not when code calls WC()->initialize_cart() directly.
@@ -283,7 +283,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 
 		$raw_price = (float) $this->get_sanitized_request_value( $raw_price_key );
 
-		return $this->get_price_projection_service()->get_raw_conversion( $raw_price, $selected_currency, $source_currency );
+		return $this->get_price_converter()->get_raw_conversion( $raw_price, $selected_currency, $source_currency );
 	}
 
 	/**
@@ -391,14 +391,14 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	/**
 	 * Get the price projection service.
 	 *
-	 * @return MultiCurrencyPriceProjectionService
+	 * @return MultiCurrencyPriceConverter
 	 */
-	private function get_price_projection_service(): MultiCurrencyPriceProjectionService {
-		if ( null === $this->price_projection_service ) {
-			$this->price_projection_service = $this->service_factory->create_price_projection_service();
+	private function get_price_converter(): MultiCurrencyPriceConverter {
+		if ( null === $this->price_converter ) {
+			$this->price_converter = $this->service_factory->create_price_converter();
 		}
 
-		return $this->price_projection_service;
+		return $this->price_converter;
 	}
 
 	/**

@@ -7,10 +7,10 @@ This folder is the removable boundary for the plugin-owned `WCPay\MultiCurrency\
 | Facade method | Native behavior | Known Woo-owned consumers |
 |---|---|---|
 | `instance(): self` | Returns one compatibility facade instance for the request. | WooCommerce Deposits, WooCommerce Table Rate Shipping |
-| `get_price( $amount, string $type ): float` | Delegates to `MultiCurrencyPriceProjectionService`. A successful `product` projection records request-local provenance so Deposits does not project the same fixed amount again. | WooCommerce Deposits |
+| `get_price( $amount, string $type ): float` | Delegates to `MultiCurrencyPriceConverter`. A successful `product` projection records request-local provenance so Deposits does not project the same fixed amount again. | WooCommerce Deposits |
 | `get_selected_currency(): MultiCurrencyCurrency` | Reads the selected currency from the native request state. | WooCommerce Table Rate Shipping |
 | `get_default_currency(): MultiCurrencyCurrency` | Reads the store currency from the native request state. | WooCommerce Table Rate Shipping |
-| `get_raw_conversion( float $amount, string $to_currency, string $from_currency = '' ): float` | Delegates to `MultiCurrencyPriceProjectionService`; an omitted source currency means the native store currency. | WooCommerce Table Rate Shipping |
+| `get_raw_conversion( float $amount, string $to_currency, string $from_currency = '' ): float` | Delegates to `MultiCurrencyPriceConverter`; an omitted source currency means the native store currency. | WooCommerce Table Rate Shipping |
 
 Every facade method emits a deprecation notice introduced in WooCommerce 11.0.0. Native services own all state and conversion math; this boundary only preserves observed extension call shapes.
 

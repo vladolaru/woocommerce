@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
@@ -36,9 +36,9 @@ class MultiCurrencyPreOrdersCompatibilityController implements RegisterHooksInte
 	/**
 	 * Price projection service.
 	 *
-	 * @var MultiCurrencyPriceProjectionService|null
+	 * @var MultiCurrencyPriceConverter|null
 	 */
-	private ?MultiCurrencyPriceProjectionService $price_projection_service = null;
+	private ?MultiCurrencyPriceConverter $price_converter = null;
 
 	/**
 	 * Initialize the class instance.
@@ -93,7 +93,7 @@ class MultiCurrencyPreOrdersCompatibilityController implements RegisterHooksInte
 			return $args;
 		}
 
-		$args['amount'] = $this->get_price_projection_service()->get_price( $args['amount'], 'product' );
+		$args['amount'] = $this->get_price_converter()->get_price( $args['amount'], 'product' );
 
 		return $args;
 	}
@@ -110,13 +110,13 @@ class MultiCurrencyPreOrdersCompatibilityController implements RegisterHooksInte
 	/**
 	 * Get the price projection service.
 	 *
-	 * @return MultiCurrencyPriceProjectionService
+	 * @return MultiCurrencyPriceConverter
 	 */
-	private function get_price_projection_service(): MultiCurrencyPriceProjectionService {
-		if ( null === $this->price_projection_service ) {
-			$this->price_projection_service = $this->service_factory->create_price_projection_service();
+	private function get_price_converter(): MultiCurrencyPriceConverter {
+		if ( null === $this->price_converter ) {
+			$this->price_converter = $this->service_factory->create_price_converter();
 		}
 
-		return $this->price_projection_service;
+		return $this->price_converter;
 	}
 }

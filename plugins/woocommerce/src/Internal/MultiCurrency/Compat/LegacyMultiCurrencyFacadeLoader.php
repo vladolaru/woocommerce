@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Compat;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
@@ -33,9 +33,9 @@ class LegacyMultiCurrencyFacadeLoader implements RegisterHooksInterface {
 	/**
 	 * Request-local price projection service.
 	 *
-	 * @var MultiCurrencyPriceProjectionService|null
+	 * @var MultiCurrencyPriceConverter|null
 	 */
-	private ?MultiCurrencyPriceProjectionService $price_projection_service = null;
+	private ?MultiCurrencyPriceConverter $price_converter = null;
 
 	/**
 	 * Request-local state builder shared by facade projections and state reads.
@@ -96,7 +96,7 @@ class LegacyMultiCurrencyFacadeLoader implements RegisterHooksInterface {
 	 * @return float
 	 */
 	public function get_price( $amount, string $type ): float {
-		$projected_amount = $this->get_price_projection_service()->get_price( $amount, $type );
+		$projected_amount = $this->get_price_converter()->get_price( $amount, $type );
 
 		if ( 'product' === $type ) {
 			$this->projected_product_price = true;
@@ -118,7 +118,7 @@ class LegacyMultiCurrencyFacadeLoader implements RegisterHooksInterface {
 			$from_currency = $this->get_default_currency()->get_code();
 		}
 
-		return $this->get_price_projection_service()->get_raw_conversion( $amount, $to_currency, $from_currency );
+		return $this->get_price_converter()->get_raw_conversion( $amount, $to_currency, $from_currency );
 	}
 
 	/**
@@ -151,14 +151,14 @@ class LegacyMultiCurrencyFacadeLoader implements RegisterHooksInterface {
 	/**
 	 * Get the request-local price projection service.
 	 *
-	 * @return MultiCurrencyPriceProjectionService
+	 * @return MultiCurrencyPriceConverter
 	 */
-	private function get_price_projection_service(): MultiCurrencyPriceProjectionService {
-		if ( null === $this->price_projection_service ) {
-			$this->price_projection_service = wc_get_container()->get( MultiCurrencyServiceFactory::class )->create_price_projection_service();
+	private function get_price_converter(): MultiCurrencyPriceConverter {
+		if ( null === $this->price_converter ) {
+			$this->price_converter = wc_get_container()->get( MultiCurrencyServiceFactory::class )->create_price_converter();
 		}
 
-		return $this->price_projection_service;
+		return $this->price_converter;
 	}
 
 	/**

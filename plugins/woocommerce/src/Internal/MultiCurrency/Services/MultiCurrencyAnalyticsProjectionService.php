@@ -45,12 +45,12 @@ class MultiCurrencyAnalyticsProjectionService {
 			return $args;
 		}
 
-		$order_exchange_rate = (float) $order->get_meta( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE, true );
+		$order_exchange_rate = (float) $order->get_meta( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, true );
 		if ( 0.0 >= $order_exchange_rate ) {
 			return $args;
 		}
 
-		$stripe_exchange_rate = $order->get_meta( MultiCurrencyPriceProjectionService::META_KEY_STRIPE_EXCHANGE_RATE, true );
+		$stripe_exchange_rate = $order->get_meta( MultiCurrencyPriceConverter::META_KEY_STRIPE_EXCHANGE_RATE, true );
 		$exchange_rate        = $stripe_exchange_rate ? (float) $stripe_exchange_rate : 1 / $order_exchange_rate;
 		$decimals             = wc_get_price_decimals();
 
@@ -172,8 +172,8 @@ class MultiCurrencyAnalyticsProjectionService {
 	 */
 	private function should_convert_order_stats( \WC_Abstract_Order $order, string $default_currency_code ): bool {
 		return $order->get_currency() !== $default_currency_code
-			&& (bool) $order->get_meta( MultiCurrencyPriceProjectionService::META_KEY_ORDER_EXCHANGE_RATE, true )
-			&& $order->get_meta( MultiCurrencyPriceProjectionService::META_KEY_ORDER_DEFAULT_CURRENCY, true ) === $default_currency_code;
+			&& (bool) $order->get_meta( MultiCurrencyPriceConverter::META_KEY_ORDER_EXCHANGE_RATE, true )
+			&& $order->get_meta( MultiCurrencyPriceConverter::META_KEY_ORDER_DEFAULT_CURRENCY, true ) === $default_currency_code;
 	}
 
 	/**

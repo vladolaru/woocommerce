@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -39,9 +39,9 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 	/**
 	 * Price projection service.
 	 *
-	 * @var MultiCurrencyPriceProjectionService|null
+	 * @var MultiCurrencyPriceConverter|null
 	 */
-	private ?MultiCurrencyPriceProjectionService $price_projection_service = null;
+	private ?MultiCurrencyPriceConverter $price_converter = null;
 
 	/**
 	 * Initialize the class instance.
@@ -127,7 +127,7 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 			return $price;
 		}
 
-		return $this->get_price_projection_service()->get_price( $price, 'product' );
+		return $this->get_price_converter()->get_price( $price, 'product' );
 	}
 
 	/**
@@ -181,7 +181,7 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 		} elseif ( 'percentage_based' === $addon_price_type && $addon_price && $add_price_to_value ) {
 			$product = $this->get_product_by_id( (int) ( $cart_item['product_id'] ?? 0 ) );
 			if ( null !== $product ) {
-				$converted_price = $this->get_price_projection_service()->get_price( $price, 'product' );
+				$converted_price = $this->get_price_converter()->get_price( $price, 'product' );
 				// @phpstan-ignore argument.type (set_price() formats a float price itself, through wc_format_decimal())
 				$product->set_price( $converted_price * ( (float) $addon_price / 100 ) );
 				// @phpstan-ignore argument.type (the extension writes the integer 1, client WooCommerceProductAddOns.php:163; meta keeps any scalar)
@@ -212,9 +212,9 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 	public function update_product_price( $updated_prices, $cart_item, $prices, $product = null ): array {
 		unset( $updated_prices, $product );
 
-		$price                       = $this->get_price_projection_service()->get_price( $prices['price'] ?? 0, 'product' );
-		$regular_price               = $this->get_price_projection_service()->get_price( $prices['regular_price'] ?? 0, 'product' );
-		$sale_price                  = $this->get_price_projection_service()->get_price( $prices['sale_price'] ?? 0, 'product' );
+		$price                       = $this->get_price_converter()->get_price( $prices['price'] ?? 0, 'product' );
+		$regular_price               = $this->get_price_converter()->get_price( $prices['regular_price'] ?? 0, 'product' );
+		$sale_price                  = $this->get_price_converter()->get_price( $prices['sale_price'] ?? 0, 'product' );
 		$flat_fees                   = 0.0;
 		$quantity                    = (float) ( $cart_item['quantity'] ?? 0 );
 		$price_before_addons         = $price;
@@ -309,7 +309,7 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 				$value = sprintf( _x( ' (%1$s)', 'custom addon price in order', 'woocommerce' ), $formatted_price );
 			}
 
-			$meta_data['raw_price'] = $this->get_price_projection_service()->get_price( $addon_price, 'product' );
+			$meta_data['raw_price'] = $this->get_price_converter()->get_price( $addon_price, 'product' );
 		}
 
 		$meta_data['value'] = $value;
@@ -332,7 +332,7 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 			return $price;
 		}
 
-		return $this->get_price_projection_service()->get_price( $price / $quantity, 'product' ) * $quantity;
+		return $this->get_price_converter()->get_price( $price / $quantity, 'product' ) * $quantity;
 	}
 
 	/**
@@ -423,10 +423,10 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 		$value = (float) ( $addon['value'] ?? 0 );
 
 		if ( 'input_multiplier' === (string) ( $addon['field_type'] ?? '' ) && 0.0 !== $value ) {
-			return $this->get_price_projection_service()->get_price( $price / $value, 'product' ) * $value;
+			return $this->get_price_converter()->get_price( $price / $value, 'product' ) * $value;
 		}
 
-		return $this->get_price_projection_service()->get_price( $price, 'product' );
+		return $this->get_price_converter()->get_price( $price, 'product' );
 	}
 
 	/**
@@ -510,13 +510,13 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 	/**
 	 * Get the price projection service.
 	 *
-	 * @return MultiCurrencyPriceProjectionService
+	 * @return MultiCurrencyPriceConverter
 	 */
-	private function get_price_projection_service(): MultiCurrencyPriceProjectionService {
-		if ( null === $this->price_projection_service ) {
-			$this->price_projection_service = $this->service_factory->create_price_projection_service();
+	private function get_price_converter(): MultiCurrencyPriceConverter {
+		if ( null === $this->price_converter ) {
+			$this->price_converter = $this->service_factory->create_price_converter();
 		}
 
-		return $this->price_projection_service;
+		return $this->price_converter;
 	}
 }
