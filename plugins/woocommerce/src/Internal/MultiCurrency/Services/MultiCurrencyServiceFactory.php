@@ -109,6 +109,19 @@ class MultiCurrencyServiceFactory {
 	}
 
 	/**
+	 * Create the settings currency catalog, over the rate service that holds the automatic-rate provider.
+	 *
+	 * @return MultiCurrencySettingsCurrencyCatalog
+	 */
+	public function create_settings_currency_catalog(): MultiCurrencySettingsCurrencyCatalog {
+		return new MultiCurrencySettingsCurrencyCatalog(
+			new MultiCurrencyLocalizationService(),
+			$this->state_builder_factory->create(),
+			wc_get_container()->get( MultiCurrencyRateService::class )
+		);
+	}
+
+	/**
 	 * Create a store-currency lifecycle service.
 	 *
 	 * @return MultiCurrencyStoreCurrencyLifecycleService

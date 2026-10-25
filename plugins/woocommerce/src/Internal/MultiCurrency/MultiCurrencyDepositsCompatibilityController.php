@@ -65,17 +65,6 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 	}
 
 	/**
-	 * Set the price projection service.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyPriceProjectionService $price_projection_service Price projection service.
-	 */
-	public function set_price_projection_service( MultiCurrencyPriceProjectionService $price_projection_service ): void {
-		$this->price_projection_service = $price_projection_service;
-	}
-
-	/**
 	 * Register Deposits compatibility hooks.
 	 */
 	public function register() {

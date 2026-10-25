@@ -11,9 +11,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyExce
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyRateException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySettingsCurrencyCatalog;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
@@ -102,39 +100,6 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 		$this->cache_rendering_service = $cache_rendering_service ?? wc_get_container()->get( MultiCurrencyCacheRenderingService::class );
 		$this->namespace               = self::REST_NAMESPACE;
 		$this->rest_base               = self::REST_BASE;
-	}
-
-	/**
-	 * Set the state builder.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyStateBuilder $state_builder State builder.
-	 */
-	public function set_state_builder( MultiCurrencyStateBuilder $state_builder ): void {
-		$this->state_builder = $state_builder;
-	}
-
-	/**
-	 * Set the frontend projection service.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyFrontendProjectionService $frontend_projection_service Frontend projection service.
-	 */
-	public function set_frontend_projection_service( MultiCurrencyFrontendProjectionService $frontend_projection_service ): void {
-		$this->frontend_projection_service = $frontend_projection_service;
-	}
-
-	/**
-	 * Set the settings currency catalog.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencySettingsCurrencyCatalog $settings_currency_catalog Settings currency catalog.
-	 */
-	public function set_settings_currency_catalog( MultiCurrencySettingsCurrencyCatalog $settings_currency_catalog ): void {
-		$this->settings_currency_catalog = $settings_currency_catalog;
 	}
 
 	/**
@@ -616,11 +581,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	 */
 	private function get_settings_currency_catalog(): MultiCurrencySettingsCurrencyCatalog {
 		if ( null === $this->settings_currency_catalog ) {
-			$this->settings_currency_catalog = new MultiCurrencySettingsCurrencyCatalog(
-				new MultiCurrencyLocalizationService(),
-				$this->get_state_builder(),
-				wc_get_container()->get( MultiCurrencyRateService::class )
-			);
+			$this->settings_currency_catalog = $this->service_factory->create_settings_currency_catalog();
 		}
 
 		return $this->settings_currency_catalog;

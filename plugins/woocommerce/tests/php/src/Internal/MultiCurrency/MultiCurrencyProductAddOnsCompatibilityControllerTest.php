@@ -10,7 +10,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceCalculator;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use WC_Unit_Test_Case;
 
@@ -640,9 +639,8 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			wc_get_container()->get( MultiCurrencyServiceFactory::class )
+			ServiceFactories::with( $this, array( 'create_price_projection_service' => $this->create_price_projection_service() ) )
 		);
-		$controller->set_price_projection_service( $this->create_price_projection_service() );
 
 		return $controller;
 	}

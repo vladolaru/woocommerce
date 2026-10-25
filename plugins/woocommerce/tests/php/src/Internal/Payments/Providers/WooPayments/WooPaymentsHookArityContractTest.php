@@ -11,12 +11,15 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAnalyticsControll
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAsyncPriceRendererController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySelectedCurrencyController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyStorefrontIntegrationController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelectedCurrencyPersistenceService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsTransportLog;
@@ -1016,8 +1019,18 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 		$fixture     = $this->build_multi_currency_fixture();
 		$controller  = new MultiCurrencySelectedCurrencyController();
 		$persistence = new MultiCurrencySelectedCurrencyPersistenceService( $fixture['builder'] );
-		$controller->set_persistence_service( $persistence );
-		$controller->set_geolocation_service( $fixture['geolocation'] );
+		$controller->init(
+			wc_get_container()->get( MultiCurrencyRuntimeArbiter::class ),
+			ServiceFactories::with(
+				$this,
+				array(
+					'create_selected_currency_persistence_service' => $persistence,
+					'create_geolocation_service' => $fixture['geolocation'],
+				)
+			),
+			wc_get_container()->get( MultiCurrencyCompatibilityController::class ),
+			wc_get_container()->get( MultiCurrencyRequestContext::class )
+		);
 		$controller->handle_wp_footer();
 	}
 

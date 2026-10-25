@@ -837,13 +837,9 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$controller = new MultiCurrencyFrontendPricesController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
-			wc_get_container()->get( MultiCurrencyRequestContext::class )
+			ServiceFactories::with( $this, array( 'create_price_projection_service' => $this->create_projection_service( $should_project_queries ) ) ),
+			$request_context ?? wc_get_container()->get( MultiCurrencyRequestContext::class )
 		);
-		$controller->set_price_projection_service( $this->create_projection_service( $should_project_queries ) );
-		if ( null !== $request_context && method_exists( $controller, 'set_request_context' ) ) {
-			$controller->set_request_context( $request_context );
-		}
 
 		return $controller;
 	}

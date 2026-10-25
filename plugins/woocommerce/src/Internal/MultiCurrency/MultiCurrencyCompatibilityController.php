@@ -68,17 +68,6 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Set the state builder.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyStateBuilder $state_builder State builder.
-	 */
-	public function set_state_builder( MultiCurrencyStateBuilder $state_builder ): void {
-		$this->state_builder = $state_builder;
-	}
-
-	/**
 	 * Register compatibility hooks.
 	 */
 	public function register() {

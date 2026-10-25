@@ -64,17 +64,6 @@ class MultiCurrencyTrackingController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Set the tracking projection service.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyTrackingProjectionService $tracking_projection_service Tracking projection service.
-	 */
-	public function set_tracking_projection_service( MultiCurrencyTrackingProjectionService $tracking_projection_service ): void {
-		$this->tracking_projection_service = $tracking_projection_service;
-	}
-
-	/**
 	 * Set the HPOS enabled resolver.
 	 *
 	 * @internal Used by tests and future explicit bootstrap definitions.

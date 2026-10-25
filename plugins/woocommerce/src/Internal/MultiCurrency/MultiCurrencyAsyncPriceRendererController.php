@@ -98,28 +98,6 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Set the frontend projection service.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyFrontendProjectionService $frontend_projection_service Frontend projection service.
-	 */
-	public function set_frontend_projection_service( MultiCurrencyFrontendProjectionService $frontend_projection_service ): void {
-		$this->frontend_projection_service = $frontend_projection_service;
-	}
-
-	/**
-	 * Set the request context.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyRequestContext $request_context Request context.
-	 */
-	public function set_request_context( MultiCurrencyRequestContext $request_context ): void {
-		$this->request_context = $request_context;
-	}
-
-	/**
 	 * Set the active session resolver.
 	 *
 	 * @internal Used by tests.

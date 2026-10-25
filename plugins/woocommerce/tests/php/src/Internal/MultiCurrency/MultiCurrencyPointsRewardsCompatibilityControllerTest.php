@@ -9,7 +9,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyPointsRewardsComp
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use WC_Unit_Test_Case;
 
 /**
@@ -109,8 +108,7 @@ class MultiCurrencyPointsRewardsCompatibilityControllerTest extends WC_Unit_Test
 	 * @testdox Should preserve ratios when selected currency is default currency.
 	 */
 	public function test_preserves_ratios_when_selected_currency_is_default_currency(): void {
-		$sut = $this->create_controller();
-		$sut->set_state_builder( $this->create_state_builder( $this->create_state( true ) ) );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false, true, true );
 
 		$this->assertSame( '10:2', $sut->convert_points_ratio( '10:2' ) );
 	}
@@ -142,13 +140,15 @@ class MultiCurrencyPointsRewardsCompatibilityControllerTest extends WC_Unit_Test
 	 * @param bool   $points_rewards_available Whether Points and Rewards runtime is available.
 	 * @param bool   $is_admin                 Whether this is an admin request.
 	 * @param bool   $plugins_loaded           Whether plugins have loaded.
+	 * @param bool   $selected_is_default      Whether the selected currency is the store currency.
 	 * @return MultiCurrencyPointsRewardsCompatibilityController
 	 */
 	private function create_controller(
 		string $owner = MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 		bool $points_rewards_available = true,
 		bool $is_admin = false,
-		bool $plugins_loaded = true
+		bool $plugins_loaded = true,
+		bool $selected_is_default = false
 	): MultiCurrencyPointsRewardsCompatibilityController {
 		$controller = new class( $points_rewards_available, $is_admin, $plugins_loaded ) extends MultiCurrencyPointsRewardsCompatibilityController {
 			/**
@@ -223,9 +223,8 @@ class MultiCurrencyPointsRewardsCompatibilityControllerTest extends WC_Unit_Test
 
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )
+			ServiceFactories::state_builder( $this, $this->create_state_builder( $this->create_state( $selected_is_default ) ) )
 		);
-		$controller->set_state_builder( $this->create_state_builder( $this->create_state() ) );
 
 		return $controller;
 	}

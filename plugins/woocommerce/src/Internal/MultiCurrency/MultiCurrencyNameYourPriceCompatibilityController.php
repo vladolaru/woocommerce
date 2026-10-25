@@ -76,28 +76,6 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	}
 
 	/**
-	 * Set the price projection service.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyPriceProjectionService $price_projection_service Price projection service.
-	 */
-	public function set_price_projection_service( MultiCurrencyPriceProjectionService $price_projection_service ): void {
-		$this->price_projection_service = $price_projection_service;
-	}
-
-	/**
-	 * Set the state builder.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyStateBuilder $state_builder State builder.
-	 */
-	public function set_state_builder( MultiCurrencyStateBuilder $state_builder ): void {
-		$this->state_builder = $state_builder;
-	}
-
-	/**
 	 * Register Name Your Price compatibility hooks.
 	 */
 	public function register() {

@@ -11,7 +11,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyOrderContextService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
@@ -38,6 +37,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAc
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsPaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\ProviderTextLogAssertions;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\RecordingWcLogger;
@@ -362,12 +362,10 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		$controller = new MultiCurrencyFrontendCurrenciesController();
 		$controller->init(
 			wc_get_container()->get( MultiCurrencyRuntimeArbiter::class ),
-			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
-			wc_get_container()->get( MultiCurrencyRequestContext::class ),
-			wc_get_container()->get( MultiCurrencyOrderContextService::class )
-		);
-		$controller->set_frontend_projection_service( new MultiCurrencyFrontendProjectionService( $builder, $localization, new MultiCurrencyGeolocationService( $localization, static fn() => 'US' ) ) );
-		$controller->set_request_context(
+			ServiceFactories::with(
+				$this,
+				array( 'create_frontend_projection_service' => new MultiCurrencyFrontendProjectionService( $builder, $localization, new MultiCurrencyGeolocationService( $localization, static fn() => 'US' ) ) )
+			),
 			new class() extends MultiCurrencyRequestContext {
 				/**
 				 * The webhook request registers the frontend price hooks.
@@ -377,7 +375,8 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 				public function should_register_frontend_hooks(): bool {
 					return true;
 				}
-			}
+			},
+			wc_get_container()->get( MultiCurrencyOrderContextService::class )
 		);
 		wc_get_container()->replace( MultiCurrencyFrontendCurrenciesController::class, $controller );
 		$controller->register();

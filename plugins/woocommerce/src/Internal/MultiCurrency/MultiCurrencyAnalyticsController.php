@@ -176,28 +176,6 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Set the analytics projection service.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyAnalyticsProjectionService $service Analytics projection service.
-	 */
-	public function set_analytics_projection_service( MultiCurrencyAnalyticsProjectionService $service ): void {
-		$this->analytics_projection_service = $service;
-	}
-
-	/**
-	 * Set the analytics SQL projection service.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyAnalyticsSqlProjectionService $service Analytics SQL projection service.
-	 */
-	public function set_sql_projection_service( MultiCurrencyAnalyticsSqlProjectionService $service ): void {
-		$this->sql_projection_service = $service;
-	}
-
-	/**
 	 * Register analytics hooks.
 	 */
 	public function register() {

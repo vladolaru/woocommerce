@@ -94,39 +94,6 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Set the frontend projection service.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyFrontendProjectionService $frontend_projection_service Frontend projection service.
-	 */
-	public function set_frontend_projection_service( MultiCurrencyFrontendProjectionService $frontend_projection_service ): void {
-		$this->frontend_projection_service = $frontend_projection_service;
-	}
-
-	/**
-	 * Set the request context.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyRequestContext $request_context Request context.
-	 */
-	public function set_request_context( MultiCurrencyRequestContext $request_context ): void {
-		$this->request_context = $request_context;
-	}
-
-	/**
-	 * Set the order context service.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyOrderContextService $order_context_service Order context service.
-	 */
-	public function set_order_context_service( MultiCurrencyOrderContextService $order_context_service ): void {
-		$this->order_context_service = $order_context_service;
-	}
-
-	/**
 	 * Register frontend currency hooks.
 	 */
 	public function register() {

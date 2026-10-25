@@ -351,10 +351,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', 2 );
 		$order->update_meta_data( '_wcpay_multi_currency_order_default_currency', 'USD' );
 		$order->save();
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		$sut->set_analytics_projection_service(
-			new MultiCurrencyAnalyticsProjectionService( $this->create_state_builder() )
-		);
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, new MultiCurrencyAnalyticsProjectionService( $this->create_state_builder() ) );
 
 		$result = $sut->convert_order_stats_data(
 			array(
@@ -381,10 +378,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$refund->set_currency( 'EUR' );
 		$refund->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', 2 );
 		$refund->update_meta_data( '_wcpay_multi_currency_order_default_currency', 'USD' );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		$sut->set_analytics_projection_service(
-			new MultiCurrencyAnalyticsProjectionService( $this->create_state_builder() )
-		);
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, new MultiCurrencyAnalyticsProjectionService( $this->create_state_builder() ) );
 
 		$result = $sut->convert_order_stats_data(
 			array(
@@ -645,15 +639,16 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an analytics controller.
 	 *
-	 * @param string $owner                     Runtime owner.
-	 * @param bool   $set_rest_request_resolver Whether to set the default REST request resolver.
+	 * @param string                                       $owner                     Runtime owner.
+	 * @param bool                                         $set_rest_request_resolver Whether to set the default REST request resolver.
+	 * @param MultiCurrencyAnalyticsProjectionService|null $analytics_service Analytics projection service; the factory's by default.
 	 * @return MultiCurrencyAnalyticsController
 	 */
-	private function create_controller( string $owner, bool $set_rest_request_resolver = true ): MultiCurrencyAnalyticsController {
+	private function create_controller( string $owner, bool $set_rest_request_resolver = true, ?MultiCurrencyAnalyticsProjectionService $analytics_service = null ): MultiCurrencyAnalyticsController {
 		$controller = new MultiCurrencyAnalyticsController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
+			ServiceFactories::with( $this, array( 'create_analytics_projection_service' => $analytics_service ) ),
 			new MultiCurrencyUsageDetector(),
 			wc_get_container()->get( MultiCurrencyRequestContext::class ),
 			wc_get_container()->get( MultiCurrencyAnalyticsSqlProjectionService::class )

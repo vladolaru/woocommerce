@@ -13,6 +13,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPricePro
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 use WC_Unit_Test_Case;
 
 require_once __DIR__ . '/Fixtures/legacy-multi-currency-consumers.inc';
@@ -21,6 +22,15 @@ require_once __DIR__ . '/Fixtures/legacy-multi-currency-consumers.inc';
  * Tests the native MultiCurrency legacy facade compatibility boundary.
  */
 class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
+
+	/**
+	 * Tear down test fixtures.
+	 */
+	public function tearDown(): void {
+		$this->reset_container_replacements();
+
+		parent::tearDown();
+	}
 
 	/**
 	 * @testdox The core-owned facade preserves grounded extension calls and converts Deposits exactly once.
@@ -64,8 +74,7 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 		$this->assertFalse( $loader->did_project_product_price(), 'A failed facade call must not suppress the native Deposits conversion fallback.' );
 
 		$projection_service = $this->create_projection_service( 2.0, 5.0 );
-		$loader->set_price_projection_service( $projection_service );
-		$loader->set_state_builder( $this->create_state_builder( $this->create_state() ) );
+		$this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $projection_service, $this->create_state_builder( $this->create_state() ) );
 
 		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::instance' );
 		$first_instance = \WCPay\MultiCurrency\MultiCurrency::instance();
@@ -89,8 +98,7 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 		$facade_projected_amount = $consumer->get_woopayments_multicurrency_price( 10.0 );
 
 		$controller = new MultiCurrencyDepositsCompatibilityController();
-		$controller->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), $this->createMock( MultiCurrencyServiceFactory::class ) );
-		$controller->set_price_projection_service( $projection_service );
+		$controller->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), ServiceFactories::with( $this, array( 'create_price_projection_service' => $projection_service ) ) );
 		$cart_contents = $controller->modify_cart_item_deposit_amounts(
 			array(
 				'deposit' => array(
@@ -130,8 +138,7 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 			}
 		);
 		$state_builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create();
-		$loader        = $this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, wc_get_container()->get( MultiCurrencyServiceFactory::class )->create_price_projection_service() );
-		$loader->set_state_builder( $state_builder );
+		$this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, wc_get_container()->get( MultiCurrencyServiceFactory::class )->create_price_projection_service(), $state_builder );
 		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::instance' );
 		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_selected_currency' );
 		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_default_currency' );
@@ -162,17 +169,26 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 	/**
 	 * Create and register the facade loader under a controlled ownership decision.
 	 *
+	 * The facade reads the container's loader, and the loader reads its factories from the container on first use, so
+	 * the container hands out a fresh runtime loader and factories that return the given services.
+	 *
 	 * @param string                              $owner              Runtime owner.
 	 * @param MultiCurrencyPriceProjectionService $projection_service Price projection service.
+	 * @param MultiCurrencyStateBuilder|null      $state_builder      State builder; the request's shared builder by default.
 	 * @return LegacyMultiCurrencyFacadeLoader
 	 */
-	private function create_loader( string $owner, MultiCurrencyPriceProjectionService $projection_service ): LegacyMultiCurrencyFacadeLoader {
+	private function create_loader( string $owner, MultiCurrencyPriceProjectionService $projection_service, ?MultiCurrencyStateBuilder $state_builder = null ): LegacyMultiCurrencyFacadeLoader {
 		$declaration_loader = new LegacyMultiCurrencyFacadeLoader();
 		$declaration_loader->init( $this->create_arbiter( $owner ) );
 		$declaration_loader->register();
 
-		$runtime_loader = wc_get_container()->get( LegacyMultiCurrencyFacadeLoader::class );
-		$runtime_loader->set_price_projection_service( $projection_service );
+		wc_get_container()->replace( MultiCurrencyServiceFactory::class, ServiceFactories::with( $this, array( 'create_price_projection_service' => $projection_service ) ) );
+		if ( null !== $state_builder ) {
+			wc_get_container()->replace( MultiCurrencyStateBuilderFactory::class, ServiceFactories::state_builder( $this, $state_builder ) );
+		}
+		$runtime_loader = new LegacyMultiCurrencyFacadeLoader();
+		$runtime_loader->init( wc_get_container()->get( MultiCurrencyRuntimeArbiter::class ) );
+		wc_get_container()->replace( LegacyMultiCurrencyFacadeLoader::class, $runtime_loader );
 
 		return $runtime_loader;
 	}

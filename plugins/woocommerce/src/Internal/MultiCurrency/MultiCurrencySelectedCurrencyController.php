@@ -104,39 +104,6 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	}
 
 	/**
-	 * Set the selected-currency persistence service.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencySelectedCurrencyPersistenceService $persistence_service Persistence service.
-	 */
-	public function set_persistence_service( MultiCurrencySelectedCurrencyPersistenceService $persistence_service ): void {
-		$this->persistence_service = $persistence_service;
-	}
-
-	/**
-	 * Set the request context.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyRequestContext $request_context Request context.
-	 */
-	public function set_request_context( MultiCurrencyRequestContext $request_context ): void {
-		$this->request_context = $request_context;
-	}
-
-	/**
-	 * Set the geolocation service.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyGeolocationService $geolocation_service Geolocation service.
-	 */
-	public function set_geolocation_service( MultiCurrencyGeolocationService $geolocation_service ): void {
-		$this->geolocation_service = $geolocation_service;
-	}
-
-	/**
 	 * Register selected-currency hooks.
 	 */
 	public function register() {

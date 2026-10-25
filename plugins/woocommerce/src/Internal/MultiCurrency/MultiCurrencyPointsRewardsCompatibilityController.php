@@ -59,17 +59,6 @@ class MultiCurrencyPointsRewardsCompatibilityController implements RegisterHooks
 	}
 
 	/**
-	 * Set the state builder.
-	 *
-	 * @internal
-	 *
-	 * @param MultiCurrencyStateBuilder $state_builder State builder.
-	 */
-	public function set_state_builder( MultiCurrencyStateBuilder $state_builder ): void {
-		$this->state_builder = $state_builder;
-	}
-
-	/**
 	 * Register Points and Rewards compatibility hooks.
 	 */
 	public function register() {

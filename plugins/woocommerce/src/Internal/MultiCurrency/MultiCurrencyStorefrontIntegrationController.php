@@ -106,28 +106,6 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	}
 
 	/**
-	 * Set the state builder.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyStateBuilder $state_builder State builder.
-	 */
-	public function set_state_builder( MultiCurrencyStateBuilder $state_builder ): void {
-		$this->state_builder = $state_builder;
-	}
-
-	/**
-	 * Set the switcher projection service.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencySwitcherProjectionService $switcher_projection_service Switcher projection service.
-	 */
-	public function set_switcher_projection_service( MultiCurrencySwitcherProjectionService $switcher_projection_service ): void {
-		$this->switcher_projection_service = $switcher_projection_service;
-	}
-
-	/**
 	 * Set the theme resolver.
 	 *
 	 * @internal Used by tests and future explicit bootstrap definitions.

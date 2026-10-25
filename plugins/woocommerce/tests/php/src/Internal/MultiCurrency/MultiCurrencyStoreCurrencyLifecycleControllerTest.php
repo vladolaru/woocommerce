@@ -5,7 +5,6 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyStoreCurrencyLifecycleController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStoreCurrencyLifecycleService;
 use WC_Unit_Test_Case;
 
@@ -86,9 +85,8 @@ class MultiCurrencyStoreCurrencyLifecycleControllerTest extends WC_Unit_Test_Cas
 		$controller = new MultiCurrencyStoreCurrencyLifecycleController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			wc_get_container()->get( MultiCurrencyServiceFactory::class )
+			ServiceFactories::with( $this, array( 'create_store_currency_lifecycle_service' => $service ) )
 		);
-		$controller->set_lifecycle_service( $service );
 
 		return $controller;
 	}

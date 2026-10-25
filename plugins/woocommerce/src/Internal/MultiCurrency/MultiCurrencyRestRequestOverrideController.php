@@ -49,17 +49,6 @@ class MultiCurrencyRestRequestOverrideController implements RegisterHooksInterfa
 	}
 
 	/**
-	 * Set the request context.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyRequestContext $request_context Request context.
-	 */
-	public function set_request_context( MultiCurrencyRequestContext $request_context ): void {
-		$this->request_context = $request_context;
-	}
-
-	/**
 	 * Register non-Store REST request-local override filters.
 	 */
 	public function register() {

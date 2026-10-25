@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocat
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelectedCurrencyPersistenceService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySettingsCurrencyCatalog;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStoreCurrencyLifecycleService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyTrackingProjectionService;
@@ -34,6 +35,7 @@ class MultiCurrencyServiceFactoryTest extends WC_Unit_Test_Case {
 			'analytics projection'          => array( 'create_analytics_projection_service', MultiCurrencyAnalyticsProjectionService::class ),
 			'tracking projection'           => array( 'create_tracking_projection_service', MultiCurrencyTrackingProjectionService::class ),
 			'store-currency lifecycle'      => array( 'create_store_currency_lifecycle_service', MultiCurrencyStoreCurrencyLifecycleService::class ),
+			'settings currency catalog'     => array( 'create_settings_currency_catalog', MultiCurrencySettingsCurrencyCatalog::class ),
 		);
 	}
 

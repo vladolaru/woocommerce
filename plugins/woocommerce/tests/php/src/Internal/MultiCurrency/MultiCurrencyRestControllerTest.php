@@ -735,17 +735,20 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 		?MultiCurrencyCacheRenderingService $cache_rendering_service = null,
 		array $supported_currencies = array()
 	): MultiCurrencyRestController {
-		$controller = new MultiCurrencyRestController();
+		$state_builder = $state_builder ?? $this->create_state_builder();
+		$controller    = new MultiCurrencyRestController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ),
-			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
+			ServiceFactories::state_builder( $this, $state_builder ),
+			ServiceFactories::with(
+				$this,
+				array(
+					'create_settings_currency_catalog'   => $this->create_settings_currency_catalog( $state_builder, $provider_available, $supported_currencies ),
+					'create_frontend_projection_service' => $this->create_frontend_projection_service( $cache_optimized_mode ),
+				)
+			),
 			$cache_rendering_service
 		);
-		$state_builder = $state_builder ?? $this->create_state_builder();
-		$controller->set_state_builder( $state_builder );
-		$controller->set_settings_currency_catalog( $this->create_settings_currency_catalog( $state_builder, $provider_available, $supported_currencies ) );
-		$controller->set_frontend_projection_service( $this->create_frontend_projection_service( $cache_optimized_mode ) );
 
 		$this->controllers[] = $controller;
 

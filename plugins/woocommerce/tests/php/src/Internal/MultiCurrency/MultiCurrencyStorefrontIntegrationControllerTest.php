@@ -9,9 +9,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyStorefrontIntegrationController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherProjectionService;
 use WC_Unit_Test_Case;
 
@@ -75,10 +73,9 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	 */
 	public function test_register_defers_the_storefront_decision_to_init(): void {
 		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
-		$sut           = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$state_builder = $this->create_state_builder( 2 );
+		$sut           = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 2, 'storefront', 'storefront', null, $state_builder );
 		$theme_reads   = 0;
-		$sut->set_state_builder( $state_builder );
 		$sut->set_theme_resolver(
 			static function () use ( &$theme_reads ): array {
 				++$theme_reads;
@@ -362,6 +359,7 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	 * @param string                                      $stylesheet             Theme stylesheet.
 	 * @param string                                      $template               Theme template.
 	 * @param MultiCurrencySwitcherProjectionService|null $switcher_service       Switcher service.
+	 * @param MultiCurrencyStateBuilder|null              $state_builder          State builder; one with the enabled currency count by default.
 	 * @return MultiCurrencyStorefrontIntegrationController
 	 */
 	private function create_controller(
@@ -369,16 +367,16 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 		int $enabled_currency_count = 2,
 		string $stylesheet = 'storefront',
 		string $template = 'storefront',
-		?MultiCurrencySwitcherProjectionService $switcher_service = null
+		?MultiCurrencySwitcherProjectionService $switcher_service = null,
+		?MultiCurrencyStateBuilder $state_builder = null
 	): MultiCurrencyStorefrontIntegrationController {
 		$controller = new MultiCurrencyStorefrontIntegrationController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ),
-			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
+			ServiceFactories::state_builder( $this, $state_builder ?? $this->create_state_builder( $enabled_currency_count ) ),
+			ServiceFactories::with( $this, array( 'create_switcher_projection_service' => $switcher_service ) ),
 			wc_get_container()->get( MultiCurrencyCompatibilityController::class )
 		);
-		$controller->set_state_builder( $this->create_state_builder( $enabled_currency_count ) );
 		$controller->set_theme_resolver(
 			static function () use ( $stylesheet, $template ) {
 				return array(
@@ -387,10 +385,6 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 				);
 			}
 		);
-
-		if ( null !== $switcher_service ) {
-			$controller->set_switcher_projection_service( $switcher_service );
-		}
 
 		return $controller;
 	}

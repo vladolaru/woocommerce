@@ -14,12 +14,12 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySelectedCurrencyController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelectedCurrencyPersistenceService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyProviderBootstrap;
+use Automattic\WooCommerce\Tests\Internal\MultiCurrency\ServiceFactories;
 use WC_Session;
 use WC_Unit_Test_Case;
 
@@ -452,12 +452,10 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 		$controller = new MultiCurrencySelectedCurrencyController();
 		$controller->init(
 			$this->create_core_owning_arbiter(),
-			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
+			ServiceFactories::with( $this, array( 'create_selected_currency_persistence_service' => $persistence ) ),
 			wc_get_container()->get( MultiCurrencyCompatibilityController::class ),
-			wc_get_container()->get( MultiCurrencyRequestContext::class )
+			$this->create_store_api_request_context()
 		);
-		$controller->set_persistence_service( $persistence );
-		$controller->set_request_context( $this->create_store_api_request_context() );
 
 		return $controller;
 	}

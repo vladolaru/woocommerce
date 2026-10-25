@@ -45,6 +45,7 @@ class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
 		update_option( self::SETTINGS_OPTION, $this->original_settings );
 		remove_all_actions( 'admin_head' );
 		unset( $GLOBALS['current_tab'], $GLOBALS['current_screen'] );
+		$this->reset_container_replacements();
 
 		parent::tear_down();
 	}
@@ -303,9 +304,10 @@ class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
 		$database_cache->init( new LegacyProxy() );
 		$account->init( new LegacyProxy(), $database_cache );
 
+		// The map resolves the account service from the container when the settings page needs it.
+		wc_get_container()->replace( WooPaymentsAccountService::class, $account );
 		$sut = new WooPaymentsMultiCurrencyPaymentMethodsMap();
 		$sut->init( $arbiter );
-		$sut->set_account_service( $account );
 
 		return $sut;
 	}

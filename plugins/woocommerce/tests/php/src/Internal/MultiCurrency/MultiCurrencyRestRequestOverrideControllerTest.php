@@ -165,9 +165,8 @@ class MultiCurrencyRestRequestOverrideControllerTest extends WC_Unit_Test_Case {
 		$controller = new MultiCurrencyRestRequestOverrideController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			wc_get_container()->get( MultiCurrencyRequestContext::class )
+			$this->create_request_context( $should_register_request_overrides )
 		);
-		$controller->set_request_context( $this->create_request_context( $should_register_request_overrides ) );
 
 		return $controller;
 	}

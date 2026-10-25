@@ -54,17 +54,6 @@ class MultiCurrencyStoreCurrencyLifecycleController implements RegisterHooksInte
 	}
 
 	/**
-	 * Set the lifecycle service.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyStoreCurrencyLifecycleService $lifecycle_service Lifecycle service.
-	 */
-	public function set_lifecycle_service( MultiCurrencyStoreCurrencyLifecycleService $lifecycle_service ): void {
-		$this->lifecycle_service = $lifecycle_service;
-	}
-
-	/**
 	 * Register store-currency lifecycle hooks.
 	 */
 	public function register() {

@@ -12,7 +12,6 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceProjectionService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use WC_Unit_Test_Case;
 
 /**
@@ -279,9 +278,8 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 		};
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )
+			ServiceFactories::state_builder( $this, $this->create_state_builder( $enabled_count ) )
 		);
-		$controller->set_state_builder( $this->create_state_builder( $enabled_count ) );
 
 		return $controller;
 	}

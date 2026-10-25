@@ -451,8 +451,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_updates_currency_from_geolocation_when_auto_currency_is_enabled(): void {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
 		$service = $this->create_persistence_service();
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
-		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD' ) );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( 'CAD' ) );
 
 		$sut->handle_geolocation_init();
 
@@ -465,8 +464,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_update_geolocation_currency_when_auto_currency_is_disabled(): void {
 		$service = $this->create_persistence_service();
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
-		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD' ) );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( 'CAD' ) );
 
 		$sut->handle_geolocation_init();
 
@@ -479,9 +477,8 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_does_not_update_geolocation_currency_when_switching_is_disabled(): void {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
 		$service               = $this->create_persistence_service();
-		$sut                   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
+		$sut                   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( 'CAD' ) );
 		$_GET['pay_for_order'] = '1';
-		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD' ) );
 
 		$sut->handle_geolocation_init();
 
@@ -498,9 +495,8 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
 		$_GET['pay_for_order'] = 'true';
 		$service               = $this->create_persistence_service();
-		$sut                   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
-		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD' ) );
-		$seen = array();
+		$sut                   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( 'CAD' ) );
+		$seen                  = array();
 		add_filter(
 			'wcpay_multi_currency_should_disable_currency_switching',
 			static function ( $should_disable ) use ( &$seen ) {
@@ -521,8 +517,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_does_not_overwrite_stored_currency_with_geolocation_currency(): void {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
 		$service = $this->create_persistence_service( true, 'GBP', true );
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
-		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD' ) );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( 'CAD' ) );
 
 		$sut->handle_geolocation_init();
 
@@ -540,9 +535,9 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		$sut          = $this->create_controller(
 			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$service,
-			$this->create_request_context( true, false )
+			$this->create_request_context( true, false ),
+			$this->create_geolocation_service( 'CAD' )
 		);
-		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD' ) );
 
 		$sut->handle_geolocation_init();
 
@@ -560,9 +555,9 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		$sut          = $this->create_controller(
 			MultiCurrencyRuntimeArbiter::OWNER_BUILTIN,
 			$service,
-			$this->create_request_context( true, true )
+			$this->create_request_context( true, true ),
+			$this->create_geolocation_service( 'CAD' )
 		);
-		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD' ) );
 
 		$sut->handle_geolocation_init();
 
@@ -618,8 +613,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 			WC()->initialize_session();
 		}
 		$service = wc_get_container()->get( MultiCurrencyServiceFactory::class )->create_selected_currency_persistence_service();
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, $this->create_request_context( true, true ) );
-		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD' ) );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, $this->create_request_context( true, true ), $this->create_geolocation_service( 'CAD' ) );
 
 		$sut->handle_init();
 		$sut->handle_geolocation_init();
@@ -647,8 +641,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_registers_geolocation_notice_when_auto_currency_passes_guards(): void {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
 		$service = $this->create_persistence_service();
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
-		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD', 'CA' ) );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( 'CAD', 'CA' ) );
 
 		$sut->handle_geolocation_init();
 		$sut->handle_geolocation_init();
@@ -662,9 +655,8 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_does_not_register_geolocation_notice_when_switching_is_disabled(): void {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
 		$service               = $this->create_persistence_service();
-		$sut                   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
+		$sut                   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( 'CAD', 'CA' ) );
 		$_GET['pay_for_order'] = '1';
-		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD', 'CA' ) );
 
 		$sut->handle_geolocation_init();
 
@@ -676,8 +668,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_renders_geolocation_currency_update_notice(): void {
 		$service = $this->create_persistence_service( true, 'CAD' );
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
-		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD', 'CA' ) );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( 'CAD', 'CA' ) );
 
 		ob_start();
 		$sut->handle_wp_footer();
@@ -705,8 +696,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 			return 'CAD';
 		};
 		add_filter( 'woocommerce_currency', $converted_currency, 900 );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service( true, 'CAD' ) );
-		$sut->set_geolocation_service( $this->create_geolocation_service( 'CAD', 'CA' ) );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service( true, 'CAD' ), null, $this->create_geolocation_service( 'CAD', 'CA' ) );
 
 		ob_start();
 		$sut->handle_wp_footer();
@@ -724,8 +714,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	public function test_does_not_render_geolocation_notice_for_store_default_currency(): void {
 		$store_currency = get_woocommerce_currency();
 		$service        = $this->create_persistence_service( true, $store_currency );
-		$sut            = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
-		$sut->set_geolocation_service( $this->create_geolocation_service( $store_currency, 'US' ) );
+		$sut            = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( $store_currency, 'US' ) );
 
 		ob_start();
 		$sut->handle_wp_footer();
@@ -739,8 +728,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_render_geolocation_notice_for_other_selected_currency(): void {
 		$service = $this->create_persistence_service( true, 'CAD' );
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service );
-		$sut->set_geolocation_service( $this->create_geolocation_service( 'EUR', 'FR' ) );
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $service, null, $this->create_geolocation_service( 'EUR', 'FR' ) );
 
 		ob_start();
 		$sut->handle_wp_footer();
@@ -763,8 +751,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		$_GET['is_mc_onboarding_simulation'] = '1';
 		$_GET['enable_storefront_switcher']  = 'false';
 		$_GET['enable_auto_currency']        = 'true';
-		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service( true, 'USD' ) );
-		$sut->set_geolocation_service( $this->create_geolocation_service( 'USD', 'US' ) );
+		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service( true, 'USD' ), null, $this->create_geolocation_service( 'USD', 'US' ) );
 
 		$sut->handle_simulation_init();
 
@@ -785,8 +772,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 		update_option( 'woocommerce_currency', 'EUR' );
 		$_GET['is_mc_onboarding_simulation'] = '1';
 		$_GET['enable_auto_currency']        = 'true';
-		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service( true, 'EUR' ) );
-		$sut->set_geolocation_service( $this->create_geolocation_service( 'EUR', 'FR' ) );
+		$sut                                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $this->create_persistence_service( true, 'EUR' ), null, $this->create_geolocation_service( 'EUR', 'FR' ) );
 
 		$sut->handle_simulation_init();
 		ob_start();
@@ -1047,27 +1033,31 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a selected currency controller with a static runtime owner.
 	 *
-	 * @param string                           $owner           Runtime owner.
-	 * @param object                           $service         Persistence service test double.
-	 * @param MultiCurrencyRequestContext|null $request_context Request context.
+	 * @param string                                          $owner           Runtime owner.
+	 * @param MultiCurrencySelectedCurrencyPersistenceService $service Persistence service.
+	 * @param MultiCurrencyRequestContext|null                $request_context Request context.
+	 * @param MultiCurrencyGeolocationService|null            $geolocation Geolocation service; the factory's by default.
 	 * @return MultiCurrencySelectedCurrencyController
 	 */
 	private function create_controller(
 		string $owner,
-		object $service,
-		?MultiCurrencyRequestContext $request_context = null
+		MultiCurrencySelectedCurrencyPersistenceService $service,
+		?MultiCurrencyRequestContext $request_context = null,
+		?MultiCurrencyGeolocationService $geolocation = null
 	): MultiCurrencySelectedCurrencyController {
 		$controller = new MultiCurrencySelectedCurrencyController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
+			ServiceFactories::with(
+				$this,
+				array(
+					'create_selected_currency_persistence_service' => $service,
+					'create_geolocation_service' => $geolocation,
+				)
+			),
 			wc_get_container()->get( MultiCurrencyCompatibilityController::class ),
-			wc_get_container()->get( MultiCurrencyRequestContext::class )
+			$request_context ?? wc_get_container()->get( MultiCurrencyRequestContext::class )
 		);
-		$controller->set_persistence_service( $service );
-		if ( null !== $request_context && method_exists( $controller, 'set_request_context' ) ) {
-			$controller->set_request_context( $request_context );
-		}
 
 		return $controller;
 	}

@@ -82,28 +82,6 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Set the price projection service.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyPriceProjectionService $price_projection_service Price projection service.
-	 */
-	public function set_price_projection_service( MultiCurrencyPriceProjectionService $price_projection_service ): void {
-		$this->price_projection_service = $price_projection_service;
-	}
-
-	/**
-	 * Set the request context.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param MultiCurrencyRequestContext $request_context Request context.
-	 */
-	public function set_request_context( MultiCurrencyRequestContext $request_context ): void {
-		$this->request_context = $request_context;
-	}
-
-	/**
 	 * Register frontend price hooks.
 	 */
 	public function register() {

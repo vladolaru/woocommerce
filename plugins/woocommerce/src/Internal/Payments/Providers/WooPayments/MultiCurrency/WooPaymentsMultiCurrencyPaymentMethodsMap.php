@@ -56,17 +56,6 @@ class WooPaymentsMultiCurrencyPaymentMethodsMap implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Set the account service.
-	 *
-	 * @internal Used by tests.
-	 *
-	 * @param WooPaymentsAccountService $account_service Account service.
-	 */
-	public function set_account_service( WooPaymentsAccountService $account_service ): void {
-		$this->account_service = $account_service;
-	}
-
-	/**
 	 * Hook the settings page script in admin requests while native WooPayments owns the runtime.
 	 */
 	public function register(): void {

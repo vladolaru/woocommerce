@@ -743,8 +743,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * @param string $plugin_sale        Sale price a pricing plugin supplies through the product getter, if any.
 	 */
 	public function test_converts_an_on_sale_subscription_price_once( float $rate, string $subscription_price, string $sale, float $expected, string $plugin_sale = '' ): void {
-		$sut = $this->create_controller();
-		$sut->set_price_projection_service( $this->create_price_projection_service( $rate ) );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false, false, true, $rate );
 		$sut->register();
 		$this->register_frontend_prices( $rate );
 		$product = new \WC_Product_Simple();
@@ -1019,11 +1018,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		$frontend_prices = new MultiCurrencyFrontendPricesController();
 		$frontend_prices->init(
 			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
-			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
-			wc_get_container()->get( MultiCurrencyRequestContext::class )
-		);
-		$frontend_prices->set_price_projection_service( $this->create_price_projection_service( $rate ) );
-		$frontend_prices->set_request_context(
+			ServiceFactories::with( $this, array( 'create_price_projection_service' => $this->create_price_projection_service( $rate ) ) ),
 			new class() extends MultiCurrencyRequestContext {
 				/**
 				 * Register the storefront hooks.
@@ -1096,6 +1091,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	 * @param bool   $is_admin                Whether this is an admin request.
 	 * @param bool   $is_cron                 Whether this is a cron request.
 	 * @param bool   $has_additional_currencies_enabled Whether additional currencies are enabled.
+	 * @param float  $rate                    Rate the projection service converts by.
 	 * @return MultiCurrencySubscriptionsCompatibilityController
 	 */
 	private function create_controller(
@@ -1103,7 +1099,8 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		bool $subscriptions_available = true,
 		bool $is_admin = false,
 		bool $is_cron = false,
-		bool $has_additional_currencies_enabled = true
+		bool $has_additional_currencies_enabled = true,
+		float $rate = 2.0
 	): MultiCurrencySubscriptionsCompatibilityController {
 		$controller = new class( $subscriptions_available, $is_admin, $is_cron ) extends MultiCurrencySubscriptionsCompatibilityController {
 			/**
@@ -1286,11 +1283,9 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		$controller->init(
 			$this->create_arbiter( $owner ),
 			new LegacyProxy(),
-			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ),
-			wc_get_container()->get( MultiCurrencyServiceFactory::class )
+			ServiceFactories::state_builder( $this, $this->create_state_builder( $has_additional_currencies_enabled ) ),
+			ServiceFactories::with( $this, array( 'create_price_projection_service' => $this->create_price_projection_service( $rate ) ) )
 		);
-		$controller->set_price_projection_service( $this->create_price_projection_service() );
-		$controller->set_state_builder( $this->create_state_builder( $has_additional_currencies_enabled ) );
 
 		return $controller;
 	}
