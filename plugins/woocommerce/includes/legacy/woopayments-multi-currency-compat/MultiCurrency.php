@@ -125,7 +125,7 @@ class MultiCurrency {
 	 * @return self
 	 */
 	public static function instance(): self {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::instance', '11.0.0', "WooCommerce's native multi-currency APIs" );
+		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::instance', '11.0.0', '' );
 
 		if ( null === self::$instance ) {
 			self::$instance = new self();
@@ -147,7 +147,7 @@ class MultiCurrency {
 	 * @return float
 	 */
 	public function get_price( $amount, string $type ): float {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_price', '11.0.0', "WooCommerce's native multi-currency APIs" );
+		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_price', '11.0.0', '' );
 
 		return $this->get_loader()->get_price( $amount, $type );
 	}
@@ -167,7 +167,7 @@ class MultiCurrency {
 	 * @return float
 	 */
 	public function get_raw_conversion( float $amount, string $to_currency, string $from_currency = '' ): float {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_raw_conversion', '11.0.0', "WooCommerce's native multi-currency APIs" );
+		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_raw_conversion', '11.0.0', '' );
 
 		if ( '' === $from_currency ) {
 			$from_currency = $this->get_state()->get_default_currency()->get_code();
@@ -187,7 +187,7 @@ class MultiCurrency {
 	 * @return MultiCurrencyCurrency
 	 */
 	public function get_selected_currency(): MultiCurrencyCurrency {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_selected_currency', '11.0.0', "WooCommerce's native multi-currency APIs" );
+		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_selected_currency', '11.0.0', '' );
 
 		return $this->get_state()->get_selected_currency();
 	}
@@ -223,7 +223,7 @@ class MultiCurrency {
 	 * @return MultiCurrencyCurrency
 	 */
 	public function get_default_currency(): MultiCurrencyCurrency {
-		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_default_currency', '11.0.0', "WooCommerce's native multi-currency APIs" );
+		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_default_currency', '11.0.0', '' );
 
 		return $this->get_state()->get_default_currency();
 	}

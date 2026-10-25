@@ -452,6 +452,40 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 	}
 
 	/**
+	 * @testdox Every facade member's deprecation notice names WooCommerce 11.0.0 and no replacement.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_deprecation_notices_name_no_replacement(): void {
+		$this->declare_facade();
+		$notices = array();
+		add_action(
+			'deprecated_function_run',
+			static function ( $function_name, $replacement, $version ) use ( &$notices ) {
+				$notices[ $function_name ] = array( $replacement, $version );
+			},
+			10,
+			3
+		);
+		$this->expect_facade_deprecations( 'get_price', 'get_raw_conversion', 'get_selected_currency', 'get_default_currency', 'get_enabled_currencies', 'get_compatibility', 'remove_woo_admin_notes' );
+		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\Compatibility::should_convert_shipping_amount' );
+
+		$facade = $this->get_facade();
+		$facade->get_price( 10.0, 'product' );
+		$facade->get_raw_conversion( 10.0, 'EUR' );
+		$facade->get_selected_currency();
+		$facade->get_default_currency();
+		$facade->get_enabled_currencies();
+		$facade->get_compatibility()->should_convert_shipping_amount();
+		\WCPay\MultiCurrency\MultiCurrency::remove_woo_admin_notes();
+
+		$this->assertCount( 9, $notices );
+		foreach ( $notices as $function_name => $notice ) {
+			$this->assertSame( array( '', '11.0.0' ), $notice, $function_name );
+		}
+	}
+
+	/**
 	 * Turn WooCommerce's Multi-Currency on for a USD store with EUR and GBP enabled at manual rates, and declare the
 	 * facade as the loader does at `plugins_loaded`.
 	 */
