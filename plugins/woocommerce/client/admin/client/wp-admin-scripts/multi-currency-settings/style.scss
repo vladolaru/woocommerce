@@ -6,7 +6,7 @@
 		margin: 0 0 24px;
 	}
 
-	// The shell's section spacing, plus the client's 32px under the enabled currencies.
+	// The shell's section spacing, plus 32px under the enabled currencies.
 	.settings-section {
 		margin-bottom: 32px;
 	}
@@ -174,7 +174,7 @@
 		}
 	}
 
-	// The actions stay in view at the bottom of a long dialog, like the client's dialog footers.
+	// The actions stay in view at the bottom of a long dialog.
 	&__modal-actions {
 		position: sticky;
 		bottom: -32px;
@@ -272,7 +272,7 @@
 	border: 0;
 }
 
-// Core's settings shell leaves a narrower card than the client's page on a phone: tighter cells and a wider actions column.
+// The settings shell leaves a narrow card on a phone: tighter cells and a wider actions column.
 @media screen and (max-width: 600px) {
 	.woocommerce-multi-currency-settings__currencies.widefat {
 		th,

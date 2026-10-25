@@ -263,11 +263,11 @@ export function CurrencySettingsModal( {
 		[ currency.is_zero_decimal ]
 	);
 
-	// Closing the dialog is the client's breadcrumb back to the list, which asks first when there are unsaved edits.
+	// Closing the dialog returns to the currency list, and asks first when there are unsaved edits.
 	const requestClose = () => {
 		if (
 			isDirty &&
-			// eslint-disable-next-line no-alert -- The client asks with the browser's confirm dialog.
+			// eslint-disable-next-line no-alert -- Unsaved edits are confirmed with the browser's confirm dialog.
 			! window.confirm(
 				__(
 					'There are unsaved changes on this page. Are you sure you want to leave and discard the unsaved changes?',

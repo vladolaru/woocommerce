@@ -24,7 +24,7 @@ const ShellSection = Settings.Section as unknown as (
 ) => ReactElement;
 
 /**
- * A settings-payments shell section with its controls in a card, like the client's settings sections.
+ * A settings-payments shell section with its controls in a card.
  */
 export function SettingsSection( {
 	title,

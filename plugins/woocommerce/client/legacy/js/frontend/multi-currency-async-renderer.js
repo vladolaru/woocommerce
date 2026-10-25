@@ -12,7 +12,7 @@
 			: undefined;
 	}
 
-	// Prices are worked out on exact decimals, as the client's decimal.js-light renderer does, so a half cent rounds up as the
+	// Prices are worked out on exact decimals, so a half cent rounds up as the
 	// server's round() does. A decimal is a BigInt of units and a scale: 12.345 is 12345n at 3.
 	function toDecimal( value ) {
 		var match = /^\s*([+-]?)(\d*)(?:\.(\d*))?(?:e([+-]?\d+))?\s*$/i.exec(

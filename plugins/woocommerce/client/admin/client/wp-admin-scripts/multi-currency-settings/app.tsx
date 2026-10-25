@@ -117,7 +117,7 @@ const formatExchangeRate = (
 	}`;
 };
 
-// Only the outage and no-provider states get a notice: the client shows no rate-source notice (owner ruling N-251 R1).
+// Only the outage and no-provider states get a notice; a working rate source needs none.
 const getAutomaticRatesNotice = (
 	automaticRates: AutomaticRatesDescriptor
 ): string | null => {
