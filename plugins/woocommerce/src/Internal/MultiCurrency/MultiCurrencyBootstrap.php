@@ -178,7 +178,7 @@ final class MultiCurrencyBootstrap {
 	public function register( $container, string $request_type ): void {
 		$arbiter = $container->get( MultiCurrencyRuntimeArbiter::class );
 		// Before the arbiter reads the feature option, so the first request after the extension stops owning payments runs on the handed-over value.
-		MultiCurrencyFeatureController::track_payments_owner( $arbiter->is_payments_extension_owner(), $arbiter->is_payments_builtin_owner() );
+		MultiCurrencyFeatureController::sync_payments_owner( $arbiter->is_payments_extension_owner(), $arbiter->is_payments_builtin_owner() );
 		// Whenever the Features page decides Multi-Currency, also while it is off, so an enable reaches the extension's flag too.
 		if ( ! $arbiter->is_payments_extension_owner() ) {
 			add_action( FeaturesController::FEATURE_ENABLED_CHANGED_ACTION, array( MultiCurrencyFeatureController::class, 'mirror_extension_flag' ), 10, 2 );

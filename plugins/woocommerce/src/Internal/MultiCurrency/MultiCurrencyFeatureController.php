@@ -84,12 +84,12 @@ class MultiCurrencyFeatureController {
 	 * Turn the feature on for a store that used the WooPayments plugin's Multi-Currency, unless a choice is already stored.
 	 *
 	 * Runs at upgrade. Without prior use the option stays unset, so the feature stays off; the WooPayments cutover later
-	 * hands the plugin's state over with hand_over_plugin_state().
+	 * hands the plugin's state over with hand_over_extension_state().
 	 *
 	 * @since 11.2.0
 	 */
 	public static function seed_from_prior_use(): void {
-		if ( self::is_plugin_multi_currency_in_use() ) {
+		if ( self::has_stored_multi_currency_setup() ) {
 			self::add_option_if_absent( self::FEATURE_ENABLE_OPTION, 'yes' );
 		}
 	}
@@ -134,7 +134,7 @@ class MultiCurrencyFeatureController {
 	 * @param bool $extension_owns_payments Whether the WooPayments extension owns payments on this request.
 	 * @param bool $builtin_owns_payments   Whether the built-in WooPayments owns payments on this request.
 	 */
-	public static function track_payments_owner( bool $extension_owns_payments, bool $builtin_owns_payments ): void {
+	public static function sync_payments_owner( bool $extension_owns_payments, bool $builtin_owns_payments ): void {
 		$last_owner = get_option( self::LAST_PAYMENTS_OWNER_OPTION );
 		if ( $extension_owns_payments ) {
 			if ( self::LAST_PAYMENTS_OWNER_EXTENSION !== $last_owner ) {
@@ -155,7 +155,7 @@ class MultiCurrencyFeatureController {
 			return;
 		}
 		if ( self::LAST_PAYMENTS_OWNER_EXTENSION === $last_owner && self::claim_handover() ) {
-			self::hand_over_plugin_state();
+			self::hand_over_extension_state();
 		}
 	}
 
@@ -193,8 +193,8 @@ class MultiCurrencyFeatureController {
 	 *
 	 * @since 11.2.0
 	 */
-	public static function hand_over_plugin_state(): void {
-		if ( self::is_plugin_multi_currency_in_use() ) {
+	public static function hand_over_extension_state(): void {
+		if ( self::has_stored_multi_currency_setup() ) {
 			update_option( self::FEATURE_ENABLE_OPTION, 'yes', true );
 		} elseif ( 'yes' === get_option( self::FEATURE_ENABLE_OPTION ) ) {
 			update_option( self::FEATURE_ENABLE_OPTION, 'no', true );
@@ -206,7 +206,7 @@ class MultiCurrencyFeatureController {
 	 *
 	 * @return bool
 	 */
-	private static function is_plugin_multi_currency_in_use(): bool {
+	private static function has_stored_multi_currency_setup(): bool {
 		$enabled_currencies = get_option( MultiCurrencyStateBuilder::ENABLED_CURRENCIES_OPTION, array() );
 		$has_prior_use      = ( is_array( $enabled_currencies ) && ! empty( $enabled_currencies ) )
 			|| filter_var( get_option( self::SETUP_COMPLETED_OPTION, false ), FILTER_VALIDATE_BOOLEAN );

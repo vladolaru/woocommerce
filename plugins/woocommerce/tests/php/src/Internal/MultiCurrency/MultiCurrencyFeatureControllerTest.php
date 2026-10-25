@@ -86,20 +86,20 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	public function test_hand_over_plugin_state_mirrors_the_plugin(): void {
 		$option = MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION;
 
-		MultiCurrencyFeatureController::hand_over_plugin_state();
+		MultiCurrencyFeatureController::hand_over_extension_state();
 		$this->assertFalse( get_option( $option, false ), 'Without plugin use an unset option stays unset, which is off, and no feature change fires.' );
 
 		update_option( $option, 'yes' );
-		MultiCurrencyFeatureController::hand_over_plugin_state();
+		MultiCurrencyFeatureController::hand_over_extension_state();
 		$this->assertSame( 'no', get_option( $option ), 'Without plugin use, Multi-Currency is off after the handover.' );
 
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
-		MultiCurrencyFeatureController::hand_over_plugin_state();
+		MultiCurrencyFeatureController::hand_over_extension_state();
 		$this->assertSame( 'yes', get_option( $option ), 'Plugin use turns the feature on even after a Features page save stored "no".' );
 
 		// The plugin's own feature flag, which the merchant can turn off (client 11.1.0 `includes/class-wc-payments-features.php:67-69`).
 		update_option( '_wcpay_feature_customer_multi_currency', '0' );
-		MultiCurrencyFeatureController::hand_over_plugin_state();
+		MultiCurrencyFeatureController::hand_over_extension_state();
 		$this->assertSame( 'no', get_option( $option ), 'Multi-Currency turned off in the plugin stays off.' );
 	}
 
@@ -114,7 +114,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 
 		// Request A hands over; the merchant then turns Multi-Currency off.
-		MultiCurrencyFeatureController::track_payments_owner( false, true );
+		MultiCurrencyFeatureController::sync_payments_owner( false, true );
 		$this->assertSame( 'yes', get_option( $option ) );
 		update_option( $option, 'no' );
 
@@ -122,7 +122,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		$stale_read = static fn() => MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_EXTENSION;
 		add_filter( 'pre_option_' . $marker, $stale_read );
 		try {
-			MultiCurrencyFeatureController::track_payments_owner( false, true );
+			MultiCurrencyFeatureController::sync_payments_owner( false, true );
 		} finally {
 			remove_filter( 'pre_option_' . $marker, $stale_read );
 		}
@@ -140,7 +140,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		// `includes/admin/class-wc-payments-admin.php:1037`).
 		update_option( 'wcpay_multi_currency_setup_completed', '1' );
 
-		MultiCurrencyFeatureController::hand_over_plugin_state();
+		MultiCurrencyFeatureController::hand_over_extension_state();
 
 		$this->assertSame( 'yes', get_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION ) );
 	}
