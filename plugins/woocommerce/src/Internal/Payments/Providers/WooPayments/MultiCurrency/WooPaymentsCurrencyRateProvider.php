@@ -12,10 +12,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyAccoun
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyApiClientInterface;
 
 /**
- * WooPayments-backed automatic FX rate provider.
+ * The WooPayments automatic-rate provider: currency rates from the WooPayments API, available while the API client
+ * reaches its server and the account is connected and not rejected.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class WooPaymentsCurrencyRateProvider implements CurrencyRateProviderInterface {
 

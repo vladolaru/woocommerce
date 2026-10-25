@@ -15,10 +15,13 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Configures WooPayments-owned native multi-currency provider boundaries.
+ * Connects WooPayments to Multi-Currency: flags Multi-Currency in the payment fields config, and sets the WooPayments
+ * rate provider on the Multi-Currency rate service, over the built-in WooPayments account service and API client while
+ * it owns payments (when it also turns the Analytics report cache off in dev mode), or over the WooPayments extension's
+ * while the extension does.
  *
  * @since 11.0.0
- * @internal Transitional bootstrap while WooPayments multi-currency runtime is absorbed into core.
+ * @internal
  */
 class WooPaymentsMultiCurrencyController implements RegisterHooksInterface {
 
@@ -30,14 +33,14 @@ class WooPaymentsMultiCurrencyController implements RegisterHooksInterface {
 	private WooPaymentsRuntimeArbiter $arbiter;
 
 	/**
-	 * Legacy WooPayments account adapter.
+	 * Adapter over the WooPayments extension's account service.
 	 *
 	 * @var WooPaymentsLegacyAccountAdapter
 	 */
 	private WooPaymentsLegacyAccountAdapter $legacy_account_adapter;
 
 	/**
-	 * Legacy WooPayments API client adapter.
+	 * Adapter over the WooPayments extension's API client.
 	 *
 	 * @var WooPaymentsLegacyApiClientAdapter
 	 */
@@ -51,13 +54,13 @@ class WooPaymentsMultiCurrencyController implements RegisterHooksInterface {
 	private MultiCurrencyRateService $rate_service;
 
 	/**
-	 * Initialize the bootstrap.
+	 * Initialize the controller.
 	 *
 	 * @internal
 	 *
 	 * @param WooPaymentsRuntimeArbiter         $arbiter                   Runtime ownership arbiter.
-	 * @param WooPaymentsLegacyAccountAdapter   $legacy_account_adapter    Legacy WooPayments account adapter.
-	 * @param WooPaymentsLegacyApiClientAdapter $legacy_api_client_adapter Legacy WooPayments API client adapter.
+	 * @param WooPaymentsLegacyAccountAdapter   $legacy_account_adapter    Adapter over the WooPayments extension's account service.
+	 * @param WooPaymentsLegacyApiClientAdapter $legacy_api_client_adapter Adapter over the WooPayments extension's API client.
 	 * @param MultiCurrencyRateService          $rate_service              Multi-Currency rate service.
 	 */
 	final public function init(
@@ -73,7 +76,7 @@ class WooPaymentsMultiCurrencyController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Register WooPayments multi-currency provider boundaries.
+	 * Add the payment fields flag, and set the rate provider for the current payments owner.
 	 *
 	 * @since 11.0.0
 	 */
@@ -117,7 +120,7 @@ class WooPaymentsMultiCurrencyController implements RegisterHooksInterface {
 	/**
 	 * Serve uncached Analytics reports in WooPayments dev mode (client 11.1.0 `includes/multi-currency/Analytics.php:75-77`, `:176-178`).
 	 *
-	 * Dev mode is read when a report runs, after every plugin has loaded, as the client reads it on `init`.
+	 * Dev mode is read when a report runs, which is after every plugin has loaded and `init` has fired.
 	 *
 	 * @internal
 	 *

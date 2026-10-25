@@ -26,12 +26,12 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 class WooPaymentsMultiCurrencyPaymentMethodsMap implements RegisterHooksInterface {
 
 	/**
-	 * Methods the client never lists: they take any currency.
+	 * Methods the map never lists: they take any currency.
 	 */
 	private const METHODS_WITHOUT_CURRENCY_NEEDS = array( 'card', 'card_present', 'link' );
 
 	/**
-	 * Native Payments runtime arbiter.
+	 * Payments runtime owner arbiter.
 	 *
 	 * @var WooPaymentsRuntimeArbiter
 	 */
@@ -49,14 +49,14 @@ class WooPaymentsMultiCurrencyPaymentMethodsMap implements RegisterHooksInterfac
 	 *
 	 * @internal
 	 *
-	 * @param WooPaymentsRuntimeArbiter $arbiter Native Payments runtime arbiter.
+	 * @param WooPaymentsRuntimeArbiter $arbiter Payments runtime owner arbiter.
 	 */
 	final public function init( WooPaymentsRuntimeArbiter $arbiter ): void {
 		$this->arbiter = $arbiter;
 	}
 
 	/**
-	 * Hook the settings page script in admin requests while native WooPayments owns the runtime.
+	 * Hook the settings page script into admin requests while the built-in WooPayments owns payments.
 	 */
 	public function register(): void {
 		if ( ! is_admin() || ! $this->arbiter->is_builtin_owner() ) {
@@ -69,7 +69,7 @@ class WooPaymentsMultiCurrencyPaymentMethodsMap implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Print the client's window.multiCurrencyPaymentMethodsMap on the Multi-Currency settings page.
+	 * Print window.multiCurrencyPaymentMethodsMap and window.multiCurrencyPaymentMethodIcons on the Multi-Currency settings page.
 	 *
 	 * @internal
 	 */
@@ -117,7 +117,7 @@ class WooPaymentsMultiCurrencyPaymentMethodsMap implements RegisterHooksInterfac
 	 *
 	 * A domestic-only method needs the account country's currency, as the client's currency manager maps it (client 11.1.0
 	 * `includes/compat/multi-currency/class-wc-payments-currency-manager.php:67-90`); others need their supported currencies.
-	 * Like the client, titles follow the account country else US, while supported currencies read no country when the
+	 * Titles follow the account country else US, while supported currencies read no country when the
 	 * account has none (`includes/payment-methods/Configs/Definitions/AlipayDefinition.php:106-108`).
 	 *
 	 * @return array<string,array<string,string>> Method titles keyed by method ID, keyed by currency code.
