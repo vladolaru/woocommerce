@@ -7,9 +7,11 @@ declare( strict_types = 1 );
 
 namespace WCPay\MultiCurrency;
 
+use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionMultiCurrencyFacadeLoader;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoteController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySettingsController;
@@ -531,6 +533,22 @@ class MultiCurrency {
 		$screen_base = is_object( $current_screen ) && isset( $current_screen->base ) && is_string( $current_screen->base ) ? $current_screen->base : null;
 
 		return is_admin() && MultiCurrencySettingsController::is_multi_currency_settings_page( is_string( $current_tab ) ? $current_tab : null, $screen_base );
+	}
+
+	/**
+	 * Delete the Multi-Currency inbox note, "Sell worldwide in multiple currencies".
+	 *
+	 * Removed in WooCommerce 12.0.0.
+	 *
+	 * @since 11.0.0
+	 * @deprecated 11.0.0 No public replacement.
+	 *
+	 * @return void
+	 */
+	public static function remove_woo_admin_notes() {
+		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::remove_woo_admin_notes', '11.0.0', '' );
+
+		Notes::delete_notes_with_name( MultiCurrencyAdminNoteController::NOTE_NAME );
 	}
 
 	/**

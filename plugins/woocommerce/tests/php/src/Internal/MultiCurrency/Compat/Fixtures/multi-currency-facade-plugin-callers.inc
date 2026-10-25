@@ -68,4 +68,20 @@ class MultiCurrencyFacadePluginCallersFixture {
 
 		return $return_false;
 	}
+
+	/**
+	 * Clear the Multi-Currency inbox notes, as WooPayments Dev Tools does on its "clear notes" action
+	 * (`woocommerce-payments-dev-tools.php:1219-1222`).
+	 *
+	 * @return bool Whether a notes class answered.
+	 */
+	public function dev_tools_clear_notes(): bool {
+		$notes_cleared = false;
+		if ( class_exists( 'WCPay\MultiCurrency\MultiCurrency' ) ) {
+			\WCPay\MultiCurrency\MultiCurrency::remove_woo_admin_notes();
+			$notes_cleared = true;
+		}
+
+		return $notes_cleared;
+	}
 }

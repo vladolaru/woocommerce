@@ -3,6 +3,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Compat;
 
+use Automattic\WooCommerce\Admin\Notes\Note;
+use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionMultiCurrencyFacadeLoader;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
@@ -265,6 +267,31 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( 10.99, $facade->adjust_amount_for_selected_currency( 10.2 ) );
 		$this->assertSame( 11.0, $facade->adjust_amount_for_selected_currency( 10.2, false ) );
+	}
+
+	/**
+	 * @testdox Dev Tools' clear notes action deletes the Multi-Currency inbox note through the facade and leaves other notes.
+	 *
+	 * Client 11.1.0 `includes/multi-currency/MultiCurrency.php:1152-1156` deletes the notes named
+	 * `wc-payments-notes-multi-currency-available` (`Notes/NoteMultiCurrencyAvailable.php:25`).
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_dev_tools_clears_the_multi_currency_note(): void {
+		$this->declare_facade();
+		$this->expect_facade_deprecations( 'remove_woo_admin_notes' );
+		foreach ( array( 'wc-payments-notes-multi-currency-available', 'wc-admin-another-note' ) as $name ) {
+			$note = new Note();
+			$note->set_name( $name );
+			$note->set_title( 'Title' );
+			$note->set_content( 'Content' );
+			$note->save();
+		}
+
+		$this->assertTrue( ( new MultiCurrencyFacadePluginCallersFixture() )->dev_tools_clear_notes() );
+
+		$this->assertFalse( Notes::get_note_by_name( 'wc-payments-notes-multi-currency-available' ) );
+		$this->assertInstanceOf( Note::class, Notes::get_note_by_name( 'wc-admin-another-note' ) );
 	}
 
 	/**

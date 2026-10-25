@@ -21,8 +21,12 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  */
 class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 
+	/**
+	 * The stored name of the note, the WooPayments extension's.
+	 */
+	public const NOTE_NAME = 'wc-payments-notes-multi-currency-available';
+
 	private const ADMIN_INIT_HOOK = 'admin_init';
-	private const NOTE_NAME       = 'wc-payments-notes-multi-currency-available';
 	private const NOTE_SOURCE     = 'woocommerce-payments';
 
 	/**
