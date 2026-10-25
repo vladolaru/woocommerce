@@ -315,6 +315,11 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 			),
 		);
 
+		// A status-change capture or cancel retry queued while the built-in WooPayments owned payments can fall due after the
+		// extension is activated; its listener notes it on the order (other request types register it when Action Scheduler
+		// runs, PaymentsBootstrap). WooPaymentsSetupTier lists it for a disabled tier.
+		$matrix[ WooPaymentsSetupTier::AVAILABLE ][ RequestTypeUtil::CRON ][] = WooPaymentsStatusChangeRetryListener::class;
+
 		// WP-CLI runs Action Scheduler queues and cron on many hosts, so it gets the cron roots. Client 11.1.0 attaches its
 		// scheduled-action handlers whenever it loads (`includes/class-wc-payments.php:603,657`).
 		foreach ( array( WooPaymentsSetupTier::AVAILABLE, WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {

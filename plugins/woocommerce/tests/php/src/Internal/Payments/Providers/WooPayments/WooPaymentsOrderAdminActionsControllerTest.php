@@ -32,6 +32,10 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudRulesetService;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusChangeRetryListener;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeWooPaymentsHttpClient;
 use Automattic\WooCommerce\Tests\Internal\Payments\RecordingProvider;
@@ -59,9 +63,23 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 	private $sut;
 
 	/**
+	 * The retry listener a test registered.
+	 *
+	 * @var WooPaymentsStatusChangeRetryListener|null
+	 */
+	private $retry_listener;
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tearDown(): void {
+		if ( $this->retry_listener instanceof WooPaymentsStatusChangeRetryListener ) {
+			remove_action( self::RETRY_HOOK, array( $this->retry_listener, 'handle_retry_status_change_operation' ) );
+		}
+		// The ownership tests write the options these memoize; the next test reads them again.
+		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+
 		if ( $this->sut instanceof WooPaymentsOrderAdminActionsController ) {
 			remove_filter( 'woocommerce_order_actions', array( $this->sut, 'handle_woocommerce_order_actions' ) );
 			remove_action( 'woocommerce_order_action_capture_charge', array( $this->sut, 'handle_woocommerce_order_action_capture_charge' ) );
@@ -872,6 +890,148 @@ class WooPaymentsOrderAdminActionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertCount( 0, $calls );
 		$this->assertCount( $notes_before, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
 		$this->assertSame( array(), $this->get_pending_retries( $order ) );
+	}
+
+	/**
+	 * @testdox A retry that falls due once $_dataName completes with client 11.1.0's failure note and changes nothing else.
+	 *
+	 * The built-in WooPayments queued the retry while it owned payments; the retry then runs where it no longer does. Client
+	 * 11.1.0 writes this note when a status-change capture or cancel fails (class-wc-payments-order-service.php:1827-1831,
+	 * :1880-1884) and captures only on the change to Completed, hiding Capture on paid orders.
+	 *
+	 * @dataProvider retry_after_ownership_loss_data
+	 *
+	 * @param string $ownership    How the built-in WooPayments stopped owning payments.
+	 * @param string $operation    Capture or cancel.
+	 * @param string $order_status Status the order changed to.
+	 */
+	public function test_retry_after_the_built_in_stops_owning_completes_with_the_failure_note( string $ownership, string $operation, string $order_status ): void {
+		$this->set_ownership( $ownership );
+		$order = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'requires_capture', $order_status );
+		$order->add_order_note( $this->pending_note( $operation ) );
+		$http_requests = 0;
+		add_filter(
+			'pre_http_request',
+			static function ( $response ) use ( &$http_requests ) {
+				++$http_requests;
+				return $response;
+			}
+		);
+
+		$cron_classes = wc_get_container()->get( WooPaymentsSetupTier::class )->get_classes_for_request( 'cron' );
+		$this->assertContains( WooPaymentsStatusChangeRetryListener::class, $cron_classes, 'A cron request registers the retry listener.' );
+		$this->assertNotContains( WooPaymentsOrderAdminActionsController::class, $cron_classes, 'The built-in capture path is not loaded.' );
+		$this->register_retry_listener();
+		$action_id = as_schedule_single_action( time() - 1, self::RETRY_HOOK, $this->retry_args( $order, $operation, 1 ), 'woocommerce_payments' );
+
+		\ActionScheduler::runner()->process_action( $action_id );
+
+		$this->assertSame( \ActionScheduler_Store::STATUS_COMPLETE, \ActionScheduler::store()->get_status( (string) $action_id ) );
+		$this->assertSame( 1, $this->count_notes( $order, $this->failure_note( $operation ) ) );
+		$order = wc_get_order( $order->get_id() );
+		$this->assertSame( $order_status, $order->get_status() );
+		$this->assertSame( 'requires_capture', $order->get_meta( '_intention_status', true ) );
+		$this->assertSame( 0, $http_requests, 'No platform call.' );
+	}
+
+	/**
+	 * Ways the built-in WooPayments stops owning payments, with each status-change operation.
+	 *
+	 * @return array<string,array{string,string,string}>
+	 */
+	public function retry_after_ownership_loss_data(): array {
+		return array(
+			'the extension is active, capture' => array( 'extension', PaymentProcessingService::OPERATION_CAPTURE, OrderStatus::COMPLETED ),
+			'the extension is active, cancel'  => array( 'extension', PaymentProcessingService::OPERATION_CANCEL, OrderStatus::CANCELLED ),
+			'the feature is off, capture'      => array( 'feature_off', PaymentProcessingService::OPERATION_CAPTURE, OrderStatus::COMPLETED ),
+			'the feature is off, cancel'       => array( 'feature_off', PaymentProcessingService::OPERATION_CANCEL, OrderStatus::CANCELLED ),
+		);
+	}
+
+	/**
+	 * @testdox A retry after the extension took over payments notes nothing once the order changed: $_dataName.
+	 *
+	 * @dataProvider changed_order_after_ownership_loss_data
+	 *
+	 * @param string $operation     Capture or cancel.
+	 * @param string $gateway_id    Order payment method.
+	 * @param string $order_status  Order status when the retry runs.
+	 * @param string $intent_status `_intention_status` when the retry runs.
+	 */
+	public function test_retry_after_the_built_in_stops_owning_leaves_a_changed_order_alone( string $operation, string $gateway_id, string $order_status, string $intent_status ): void {
+		$this->set_ownership( 'extension' );
+		$order        = $this->create_authorized_order( $gateway_id, $intent_status, $order_status );
+		$notes_before = count( wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+		$this->register_retry_listener();
+
+		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Runs the Action Scheduler job the controller scheduled.
+		do_action( self::RETRY_HOOK, $order->get_id(), $operation, 1 );
+
+		$this->assertCount( $notes_before, wc_get_order_notes( array( 'order_id' => $order->get_id() ) ) );
+	}
+
+	/**
+	 * Orders a retry finds changed after the extension took over payments.
+	 *
+	 * @return array<string,array{string,string,string,string}>
+	 */
+	public function changed_order_after_ownership_loss_data(): array {
+		$gateway = WooPaymentsPersistenceVocabulary::GATEWAY_ID;
+
+		return array(
+			'capture, the order is no longer completed' => array( PaymentProcessingService::OPERATION_CAPTURE, $gateway, OrderStatus::PROCESSING, 'requires_capture' ),
+			'capture, the extension captured it'        => array( PaymentProcessingService::OPERATION_CAPTURE, $gateway, OrderStatus::COMPLETED, 'succeeded' ),
+			'cancel, the order is no longer cancelled'  => array( PaymentProcessingService::OPERATION_CANCEL, $gateway, OrderStatus::ON_HOLD, 'requires_capture' ),
+			'capture, the order is paid by another gateway' => array( PaymentProcessingService::OPERATION_CAPTURE, 'cod', OrderStatus::COMPLETED, 'requires_capture' ),
+		);
+	}
+
+	/**
+	 * @testdox While the built-in WooPayments owns payments, a $operation retry runs the operation and the retry listener adds nothing.
+	 *
+	 * @dataProvider status_change_operation_data
+	 *
+	 * @param string $operation    Capture or cancel.
+	 * @param string $order_status Status the order changed to.
+	 */
+	public function test_retry_while_the_built_in_owns_payments_runs_the_operation_alone( string $operation, string $order_status ): void {
+		$this->set_ownership( 'builtin' );
+		$order = $this->create_authorized_order( WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'requires_capture', $order_status );
+		$calls = new \ArrayObject();
+		$this->register_controller_with_provider( $operation, $calls );
+		$this->register_retry_listener();
+		$action_id = as_schedule_single_action( time() - 1, self::RETRY_HOOK, $this->retry_args( $order, $operation, 1 ), 'woocommerce_payments' );
+
+		\ActionScheduler::runner()->process_action( $action_id );
+
+		$this->assertCount( 1, $calls, 'The retry runs the operation once.' );
+		$this->assertSame( 1, $this->count_notes( $order, 'Provider ' . $operation . ' success note.' ) );
+		$this->assertSame( 0, $this->count_notes( $order, $this->failure_note( $operation ) ) );
+	}
+
+	/**
+	 * Put the store in an ownership state after the built-in WooPayments was connected and active.
+	 *
+	 * @param string $ownership builtin (it still owns payments), extension (the extension is active) or feature_off.
+	 */
+	private function set_ownership( string $ownership ): void {
+		update_option( WooPaymentsSetupTier::OPTION_NAME, WooPaymentsSetupTier::ACTIVE );
+		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'feature_off' === $ownership ? 'no' : 'yes' );
+		if ( 'extension' === $ownership ) {
+			update_option( 'active_plugins', array( WooPaymentsRuntimeArbiter::PLUGIN_FILE ) );
+		}
+		$arbiter = wc_get_container()->get( WooPaymentsRuntimeArbiter::class );
+		$arbiter->invalidate();
+		wc_get_container()->get( WooPaymentsSetupTier::class )->invalidate();
+		$this->assertSame( 'builtin' === $ownership, $arbiter->is_builtin_owner() );
+	}
+
+	/**
+	 * Register the retry listener from the container.
+	 */
+	private function register_retry_listener(): void {
+		$this->retry_listener = wc_get_container()->get( WooPaymentsStatusChangeRetryListener::class );
+		$this->retry_listener->register();
 	}
 
 	/**

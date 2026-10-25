@@ -23,6 +23,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPa
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverReconciliationJob;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusChangeRetryListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsWooCommerceUpdateListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayPreflightGuard;
@@ -84,11 +85,11 @@ class WooPaymentsClassesBySetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox A store without an account, an extension-owned store included, loads only the cutover classes on every request.
+	 * @testdox A store without an account, an extension-owned store included, loads only the cutover classes and the status-change retry listener on every request.
 	 */
 	public function test_available_tier_loads_only_the_cutover_classes(): void {
 		$matrix  = WooPaymentsProvider::get_classes_by_setup_tier();
-		$allowed = array( WooPaymentsCutoverController::class, WooPaymentsCutoverReconciliationJob::class, WooPaymentsCutoverPluginLifecycleListener::class );
+		$allowed = array( WooPaymentsCutoverController::class, WooPaymentsCutoverReconciliationJob::class, WooPaymentsCutoverPluginLifecycleListener::class, WooPaymentsStatusChangeRetryListener::class );
 
 		foreach ( $matrix[ WooPaymentsSetupTier::AVAILABLE ] as $request => $classes ) {
 			$this->assertSame( array(), array_values( array_diff( $classes, $allowed ) ), "A $request request of a store without an account must load no payment class." );

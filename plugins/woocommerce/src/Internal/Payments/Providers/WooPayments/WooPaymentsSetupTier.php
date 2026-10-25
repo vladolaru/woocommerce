@@ -102,7 +102,9 @@ final class WooPaymentsSetupTier {
 	/**
 	 * Get the classes a request type registers for WooPayments, in registration order.
 	 *
-	 * A `disabled` tier lists nothing and reads no provider class list.
+	 * A `disabled` tier reads no provider class list. It lists nothing, except on a store whose stored tier shows the built-in
+	 * WooPayments was set up: there cron and WP-CLI requests list the listener that notes a status-change capture or cancel
+	 * retry queued before the WooPayments feature was turned off.
 	 *
 	 * @since 11.2.0
 	 *
@@ -112,7 +114,9 @@ final class WooPaymentsSetupTier {
 	public function get_classes_for_request( string $request_type ): array {
 		$tier = $this->get_effective_tier();
 		if ( self::DISABLED === $tier ) {
-			return array();
+			return in_array( $request_type, array( RequestTypeUtil::CRON, RequestTypeUtil::CLI ), true ) && self::DISABLED !== $this->get_stored_tier()
+				? array( WooPaymentsStatusChangeRetryListener::class )
+				: array();
 		}
 
 		if ( null === $this->classes_by_setup_tier ) {

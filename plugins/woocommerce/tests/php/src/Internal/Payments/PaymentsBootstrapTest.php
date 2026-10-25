@@ -21,6 +21,7 @@ use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeatureController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusChangeRetryListener;
 use Automattic\WooCommerce\Internal\Payments\PaymentGatewayProviderInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverPluginLifecycleListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\WooPaymentsCutoverReconciliationJob;
@@ -180,7 +181,8 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** @return array<string,array{string,string,array<int,string>}> */
 	public static function page_request_cron_class_gaps(): array {
 		return array(
-			'available front' => array( WooPaymentsSetupTier::AVAILABLE, 'front', array( WooPaymentsCutoverReconciliationJob::class ) ),
+			'available front' => array( WooPaymentsSetupTier::AVAILABLE, 'front', array( WooPaymentsCutoverReconciliationJob::class, WooPaymentsStatusChangeRetryListener::class ) ),
+			'available admin' => array( WooPaymentsSetupTier::AVAILABLE, 'admin', array( WooPaymentsStatusChangeRetryListener::class ) ),
 			'active front'    => array(
 				WooPaymentsSetupTier::ACTIVE,
 				'front',
@@ -207,9 +209,8 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 	/** @testdox Adds no Action Scheduler listener on a disabled store, on cron and WP-CLI requests, or when the request already has every cron class. */
 	public function test_adds_no_action_scheduler_listener_when_no_cron_class_is_missing(): void {
 		$cases = array(
-			'disabled front'  => array( WooPaymentsSetupTier::DISABLED, 'front' ),
-			'available admin' => array( WooPaymentsSetupTier::AVAILABLE, 'admin' ),
-			'active cron'     => array( WooPaymentsSetupTier::ACTIVE, 'cron' ),
+			'disabled front' => array( WooPaymentsSetupTier::DISABLED, 'front' ),
+			'active cron'    => array( WooPaymentsSetupTier::ACTIVE, 'cron' ),
 		);
 		foreach ( $cases as $label => list( $state, $request ) ) {
 			$sut = $this->make_bootstrap();

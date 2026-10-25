@@ -324,7 +324,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 			}
 
 			if ( $this->operation_failed_without_note( $outcome, $operation ) ) {
-				$this->add_operation_failure_note( $order, $operation );
+				self::add_operation_failure_note( $order, $operation );
 			}
 
 			// Client 11.1.0 schedules the Fee details job after this capture even when its capture note already exists
@@ -335,7 +335,7 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 			}
 		} catch ( Throwable $exception ) {
 			unset( $exception );
-			$this->add_operation_failure_note( $order, $operation );
+			self::add_operation_failure_note( $order, $operation );
 		}
 	}
 
@@ -417,10 +417,12 @@ class WooPaymentsOrderAdminActionsController implements RegisterHooksInterface {
 	/**
 	 * Add the generic capture or cancel failure note.
 	 *
+	 * @since 11.2.0
+	 *
 	 * @param WC_Order $order     Order.
 	 * @param string   $operation Capture or cancel.
 	 */
-	private function add_operation_failure_note( WC_Order $order, string $operation ): void {
+	public static function add_operation_failure_note( WC_Order $order, string $operation ): void {
 		$note = PaymentProcessingService::OPERATION_CAPTURE === $operation
 			? __( 'Capture authorization <strong>failed</strong> to complete.', 'woocommerce' )
 			: __( 'Canceling authorization <strong>failed</strong> to complete.', 'woocommerce' );

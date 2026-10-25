@@ -16,6 +16,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSetupTier;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsStatusChangeRetryListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use WC_Unit_Test_Case;
@@ -119,7 +120,10 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox The effective tier reads disabled and lists no class for any request type, leaving the stored tier as it was ($_dataName).
+	 * A store whose stored tier shows the built-in WooPayments was set up lists the status-change retry listener on cron and
+	 * WP-CLI requests, where Action Scheduler runs a retry queued before the feature was turned off.
+	 *
+	 * @testdox The effective tier reads disabled and lists no class, or only the retry listener on cron and WP-CLI once the built-in was set up, leaving the stored tier as it was ($_dataName).
 	 * @dataProvider provide_disabled_tier_states
 	 *
 	 * @param string $stored_state     Stored tier.
@@ -135,8 +139,12 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 		$this->state->invalidate();
 
 		$this->assertSame( WooPaymentsSetupTier::DISABLED, $this->state->get_effective_tier() );
-		foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request_type ) {
+		foreach ( array( 'front', 'admin', 'ajax', 'rest' ) as $request_type ) {
 			$this->assertSame( array(), $this->state->get_classes_for_request( $request_type ), $request_type );
+		}
+		$scheduled_classes = WooPaymentsSetupTier::DISABLED === $stored_state ? array() : array( WooPaymentsStatusChangeRetryListener::class );
+		foreach ( array( 'cron', 'cli' ) as $request_type ) {
+			$this->assertSame( $scheduled_classes, $this->state->get_classes_for_request( $request_type ), $request_type );
 		}
 		$this->assertSame( $stored_state, get_option( WooPaymentsSetupTier::OPTION_NAME ) );
 	}
@@ -363,8 +371,12 @@ class WooPaymentsSetupTierTest extends WC_Unit_Test_Case {
 		$this->assertSame( WooPaymentsRuntimeArbiter::OWNER_BUILTIN === $owner, in_array( WooPaymentsProvider::class, $this->state->get_classes_for_request( 'front' ), true ), 'A WooPayments gateway at checkout only while the built-in owns payments.' );
 		$this->assertSame( WooPaymentsSetupTier::DISABLED !== $tier, in_array( WooPaymentsCutoverController::class, $this->state->get_classes_for_request( 'admin' ), true ), 'The switch controller loads in admin wherever a tier is on.' );
 		if ( WooPaymentsSetupTier::DISABLED === $tier ) {
-			foreach ( array( 'front', 'admin', 'ajax', 'rest', 'cron', 'cli' ) as $request_type ) {
+			foreach ( array( 'front', 'admin', 'ajax', 'rest' ) as $request_type ) {
 				$this->assertSame( array(), $this->state->get_classes_for_request( $request_type ), $request_type );
+			}
+			// The built-in WooPayments was active here, so a retry it queued may still fall due.
+			foreach ( array( 'cron', 'cli' ) as $request_type ) {
+				$this->assertSame( array( WooPaymentsStatusChangeRetryListener::class ), $this->state->get_classes_for_request( $request_type ), $request_type );
 			}
 		}
 	}
