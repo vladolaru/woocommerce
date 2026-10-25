@@ -1,6 +1,6 @@
 <?php
 /**
- * MultiCurrencyTrackingProjectionService class file.
+ * MultiCurrencyTrackerDataBuilder class file.
  */
 
 declare( strict_types = 1 );
@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
  * @since 11.0.0
  * @internal Transitional internal component for the native multi-currency runtime.
  */
-class MultiCurrencyTrackingProjectionService {
+class MultiCurrencyTrackerDataBuilder {
 
 	public const TRACKER_KEY = 'wcpay_multi_currency';
 
@@ -43,7 +43,7 @@ class MultiCurrencyTrackingProjectionService {
 	 * @param bool                $is_hpos_enabled Whether HPOS order storage is enabled.
 	 * @return array<string,mixed>
 	 */
-	public function project_tracker_data( array $data, bool $is_hpos_enabled ): array {
+	public function build( array $data, bool $is_hpos_enabled ): array {
 		$state = $this->state_builder->build();
 
 		$data[ self::TRACKER_KEY ] = array(
@@ -64,7 +64,7 @@ class MultiCurrencyTrackingProjectionService {
 	private function get_order_counts( bool $is_hpos_enabled ): array {
 		global $wpdb;
 
-		$query = $is_hpos_enabled ? $this->get_hpos_order_count_query() : $this->get_legacy_order_count_query();
+		$query = $is_hpos_enabled ? $this->get_hpos_order_count_query() : $this->get_posts_order_count_query();
 		$rows  = $wpdb->get_results( $query ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 
 		$currencies  = array();
@@ -126,7 +126,7 @@ class MultiCurrencyTrackingProjectionService {
 	 *
 	 * @return string
 	 */
-	private function get_legacy_order_count_query(): string {
+	private function get_posts_order_count_query(): string {
 		global $wpdb;
 
 		return "

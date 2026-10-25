@@ -5,14 +5,14 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyTrackingController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyTrackingProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyTrackerController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyTrackerDataBuilder;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the MultiCurrencyTrackingController class.
+ * Tests for the MultiCurrencyTrackerController class.
  */
-class MultiCurrencyTrackingControllerTest extends WC_Unit_Test_Case {
+class MultiCurrencyTrackerControllerTest extends WC_Unit_Test_Case {
 
 	private const TRACKER_HOOK = 'woocommerce_tracker_data';
 
@@ -83,18 +83,18 @@ class MultiCurrencyTrackingControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a tracking controller.
 	 *
-	 * @param string                                      $owner              Runtime owner.
-	 * @param MultiCurrencyTrackingProjectionService|null $projection_service Projection service.
-	 * @return MultiCurrencyTrackingController
+	 * @param string                               $owner              Runtime owner.
+	 * @param MultiCurrencyTrackerDataBuilder|null $projection_service Projection service.
+	 * @return MultiCurrencyTrackerController
 	 */
 	private function create_controller(
 		string $owner,
-		?MultiCurrencyTrackingProjectionService $projection_service = null
-	): MultiCurrencyTrackingController {
-		$controller = new MultiCurrencyTrackingController();
+		?MultiCurrencyTrackerDataBuilder $projection_service = null
+	): MultiCurrencyTrackerController {
+		$controller = new MultiCurrencyTrackerController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			ServiceFactories::with( $this, array( 'create_tracking_projection_service' => $projection_service ) )
+			ServiceFactories::with( $this, array( 'create_tracker_data_builder' => $projection_service ) )
 		);
 
 		return $controller;
@@ -103,10 +103,10 @@ class MultiCurrencyTrackingControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a projection service test double.
 	 *
-	 * @return MultiCurrencyTrackingProjectionService&object{last_data: array<string,mixed>, last_is_hpos_enabled: bool|null}
+	 * @return MultiCurrencyTrackerDataBuilder&object{last_data: array<string,mixed>, last_is_hpos_enabled: bool|null}
 	 */
-	private function create_projection_service(): MultiCurrencyTrackingProjectionService {
-		return new class() extends MultiCurrencyTrackingProjectionService {
+	private function create_projection_service(): MultiCurrencyTrackerDataBuilder {
+		return new class() extends MultiCurrencyTrackerDataBuilder {
 			/**
 			 * Last tracker data received by the projection.
 			 *
@@ -133,7 +133,7 @@ class MultiCurrencyTrackingControllerTest extends WC_Unit_Test_Case {
 			 * @param bool                $is_hpos_enabled Whether HPOS order storage is enabled.
 			 * @return array<string,mixed>
 			 */
-			public function project_tracker_data( array $data, bool $is_hpos_enabled ): array {
+			public function build( array $data, bool $is_hpos_enabled ): array {
 				$this->last_data            = $data;
 				$this->last_is_hpos_enabled = $is_hpos_enabled;
 

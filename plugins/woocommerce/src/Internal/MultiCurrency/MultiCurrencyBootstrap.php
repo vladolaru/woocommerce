@@ -104,7 +104,7 @@ final class MultiCurrencyBootstrap {
 	/** Historical analytics classes. @var array<int,class-string> */
 	private const HISTORY = array(
 		MultiCurrencyAnalyticsController::class,
-		MultiCurrencyTrackingController::class,
+		MultiCurrencyTrackerController::class,
 	);
 
 	/**
@@ -493,13 +493,13 @@ final class MultiCurrencyBootstrap {
 				RequestTypeUtil::FRONT => array_merge( self::BASE, self::PRICE, self::COMPAT, self::STOREFRONT ),
 				RequestTypeUtil::AJAX  => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencyStorefrontIntegrationController::class, MultiCurrencyAsyncPriceRendererController::class ), self::HISTORY ),
 				RequestTypeUtil::REST  => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencySwitcherBlockController::class, MultiCurrencyStorefrontIntegrationController::class, MultiCurrencyAsyncPriceRendererController::class ), self::HISTORY, array( MultiCurrencyRestController::class, MultiCurrencyRestRequestOverrideController::class ) ),
-				RequestTypeUtil::ADMIN => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencyAnalyticsController::class, MultiCurrencySwitcherBlockController::class, MultiCurrencySettingsController::class, MultiCurrencyTrackingController::class ), self::ADMIN ),
+				RequestTypeUtil::ADMIN => array_merge( self::BASE, self::PRICE, self::COMPAT, array( MultiCurrencyAnalyticsController::class, MultiCurrencySwitcherBlockController::class, MultiCurrencySettingsController::class, MultiCurrencyTrackerController::class ), self::ADMIN ),
 				RequestTypeUtil::CRON  => array_merge( self::BASE, array( MultiCurrencyFrontendPricesController::class ), self::COMPAT, self::HISTORY ),
 				RequestTypeUtil::CLI   => array_merge( self::BASE, array( MultiCurrencyFrontendPricesController::class ), self::COMPAT, self::HISTORY ),
 			),
 			'historical' => array(
-				RequestTypeUtil::ADMIN => array_merge( self::BASE, array( MultiCurrencyAnalyticsController::class, MultiCurrencySettingsController::class, MultiCurrencyTrackingController::class ), self::ADMIN ),
-				RequestTypeUtil::REST  => array_merge( self::BASE, array( MultiCurrencyAnalyticsController::class, MultiCurrencyRestController::class, MultiCurrencyRestRequestOverrideController::class, MultiCurrencyTrackingController::class ) ),
+				RequestTypeUtil::ADMIN => array_merge( self::BASE, array( MultiCurrencyAnalyticsController::class, MultiCurrencySettingsController::class, MultiCurrencyTrackerController::class ), self::ADMIN ),
+				RequestTypeUtil::REST  => array_merge( self::BASE, array( MultiCurrencyAnalyticsController::class, MultiCurrencyRestController::class, MultiCurrencyRestRequestOverrideController::class, MultiCurrencyTrackerController::class ) ),
 				RequestTypeUtil::CRON  => array_merge( self::BASE, self::HISTORY ),
 			),
 			'empty'      => array(

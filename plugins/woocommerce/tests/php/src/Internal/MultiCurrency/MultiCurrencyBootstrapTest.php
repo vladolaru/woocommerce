@@ -61,7 +61,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyAsyncPriceRendererController',
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyRestController',
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyRestRequestOverrideController',
-		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyTrackingController',
+		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyTrackerController',
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyAdminNoticesController',
 		'Automattic\\WooCommerce\\Internal\\MultiCurrency\\MultiCurrencyAdminNoteController',
 	);

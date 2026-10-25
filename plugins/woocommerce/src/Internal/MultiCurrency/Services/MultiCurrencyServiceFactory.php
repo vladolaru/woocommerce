@@ -102,10 +102,10 @@ class MultiCurrencyServiceFactory {
 	/**
 	 * Create a tracking projection service.
 	 *
-	 * @return MultiCurrencyTrackingProjectionService
+	 * @return MultiCurrencyTrackerDataBuilder
 	 */
-	public function create_tracking_projection_service(): MultiCurrencyTrackingProjectionService {
-		return new MultiCurrencyTrackingProjectionService( $this->state_builder_factory->create() );
+	public function create_tracker_data_builder(): MultiCurrencyTrackerDataBuilder {
+		return new MultiCurrencyTrackerDataBuilder( $this->state_builder_factory->create() );
 	}
 
 	/**

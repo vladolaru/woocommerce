@@ -1,6 +1,6 @@
 <?php
 /**
- * MultiCurrencyTrackingController class file.
+ * MultiCurrencyTrackerController class file.
  */
 
 declare( strict_types = 1 );
@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyTrackingProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyTrackerDataBuilder;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 
@@ -18,7 +18,7 @@ use Automattic\WooCommerce\Utilities\OrderUtil;
  * @since 11.0.0
  * @internal Transitional internal component for the native multi-currency runtime.
  */
-class MultiCurrencyTrackingController implements RegisterHooksInterface {
+class MultiCurrencyTrackerController implements RegisterHooksInterface {
 
 	private const TRACKER_HOOK = 'woocommerce_tracker_data';
 
@@ -32,9 +32,9 @@ class MultiCurrencyTrackingController implements RegisterHooksInterface {
 	/**
 	 * Tracking projection service.
 	 *
-	 * @var MultiCurrencyTrackingProjectionService|null
+	 * @var MultiCurrencyTrackerDataBuilder|null
 	 */
-	private ?MultiCurrencyTrackingProjectionService $tracking_projection_service = null;
+	private ?MultiCurrencyTrackerDataBuilder $tracker_data_builder = null;
 
 	/**
 	 * Multi-Currency service factory.
@@ -76,19 +76,19 @@ class MultiCurrencyTrackingController implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	public function add_tracker_data( array $data ): array {
-		return $this->get_tracking_projection_service()->project_tracker_data( $data, OrderUtil::custom_orders_table_usage_is_enabled() );
+		return $this->get_tracker_data_builder()->build( $data, OrderUtil::custom_orders_table_usage_is_enabled() );
 	}
 
 	/**
 	 * Get the tracking projection service.
 	 *
-	 * @return MultiCurrencyTrackingProjectionService
+	 * @return MultiCurrencyTrackerDataBuilder
 	 */
-	private function get_tracking_projection_service(): MultiCurrencyTrackingProjectionService {
-		if ( null === $this->tracking_projection_service ) {
-			$this->tracking_projection_service = $this->service_factory->create_tracking_projection_service();
+	private function get_tracker_data_builder(): MultiCurrencyTrackerDataBuilder {
+		if ( null === $this->tracker_data_builder ) {
+			$this->tracker_data_builder = $this->service_factory->create_tracker_data_builder();
 		}
 
-		return $this->tracking_projection_service;
+		return $this->tracker_data_builder;
 	}
 }

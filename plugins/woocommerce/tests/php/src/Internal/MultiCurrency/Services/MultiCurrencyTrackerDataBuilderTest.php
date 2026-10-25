@@ -8,15 +8,15 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyTrackingProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyTrackerDataBuilder;
 use Automattic\WooCommerce\RestApi\UnitTests\HPOSToggleTrait;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the MultiCurrencyTrackingProjectionService class.
+ * Tests for the MultiCurrencyTrackerDataBuilder class.
  */
-class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
+class MultiCurrencyTrackerDataBuilderTest extends WC_Unit_Test_Case {
 
 	use HPOSToggleTrait;
 
@@ -75,8 +75,8 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 
 		$sut = $this->create_service( $this->create_state() );
 
-		$result  = $sut->project_tracker_data( array( 'existing' => 'value' ), OrderUtil::custom_orders_table_usage_is_enabled() );
-		$payload = $result[ MultiCurrencyTrackingProjectionService::TRACKER_KEY ];
+		$result  = $sut->build( array( 'existing' => 'value' ), OrderUtil::custom_orders_table_usage_is_enabled() );
+		$payload = $result[ MultiCurrencyTrackerDataBuilder::TRACKER_KEY ];
 
 		$this->assertSame( 'value', $result['existing'] );
 		$this->assertSame(
@@ -99,8 +99,8 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 	public function test_marks_default_rate_rounding_and_charm_values(): void {
 		$sut = $this->create_service( $this->create_state() );
 
-		$result  = $sut->project_tracker_data( array(), OrderUtil::custom_orders_table_usage_is_enabled() );
-		$payload = $result[ MultiCurrencyTrackingProjectionService::TRACKER_KEY ];
+		$result  = $sut->build( array(), OrderUtil::custom_orders_table_usage_is_enabled() );
+		$payload = $result[ MultiCurrencyTrackerDataBuilder::TRACKER_KEY ];
 
 		$this->assertSame( '1.00 (default)', $payload['enabled_currencies']['GBP']['price_rounding'] );
 		$this->assertSame( '100 (default)', $payload['enabled_currencies']['JPY']['price_rounding'] );
@@ -121,8 +121,8 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 		);
 		$sut   = $this->create_service( $state );
 
-		$result  = $sut->project_tracker_data( array(), OrderUtil::custom_orders_table_usage_is_enabled() );
-		$payload = $result[ MultiCurrencyTrackingProjectionService::TRACKER_KEY ];
+		$result  = $sut->build( array(), OrderUtil::custom_orders_table_usage_is_enabled() );
+		$payload = $result[ MultiCurrencyTrackerDataBuilder::TRACKER_KEY ];
 
 		$this->assertSame( '0.50', $payload['enabled_currencies']['GBP']['price_rounding'] );
 		$this->assertSame( -0.01, $payload['enabled_currencies']['GBP']['price_charm'] );
@@ -140,8 +140,8 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 		$this->create_order( 'GBP', 'woocommerce_payments', '10.00', 'completed', false );
 		$sut = $this->create_service( $this->create_state() );
 
-		$result  = $sut->project_tracker_data( array(), $hpos_enabled );
-		$payload = $result[ MultiCurrencyTrackingProjectionService::TRACKER_KEY ];
+		$result  = $sut->build( array(), $hpos_enabled );
+		$payload = $result[ MultiCurrencyTrackerDataBuilder::TRACKER_KEY ];
 
 		$this->assertSame(
 			array(
@@ -182,8 +182,8 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 		$this->create_order( 'GBP', 'woocommerce_payments', '77.00', 'completed', false );
 		$sut = $this->create_service( $this->create_state() );
 
-		$result       = $sut->project_tracker_data( array(), $hpos_enabled );
-		$order_counts = $result[ MultiCurrencyTrackingProjectionService::TRACKER_KEY ]['order_counts'];
+		$result       = $sut->build( array(), $hpos_enabled );
+		$order_counts = $result[ MultiCurrencyTrackerDataBuilder::TRACKER_KEY ]['order_counts'];
 		ksort( $order_counts['currencies'] );
 		ksort( $order_counts['currencies']['GBP']['gateways'] );
 
@@ -275,10 +275,10 @@ class MultiCurrencyTrackingProjectionServiceTest extends WC_Unit_Test_Case {
 	 * Create the tracking projection service.
 	 *
 	 * @param MultiCurrencyState $state Multi-currency state.
-	 * @return MultiCurrencyTrackingProjectionService
+	 * @return MultiCurrencyTrackerDataBuilder
 	 */
-	private function create_service( MultiCurrencyState $state ): MultiCurrencyTrackingProjectionService {
-		return new MultiCurrencyTrackingProjectionService( $this->create_state_builder( $state ) );
+	private function create_service( MultiCurrencyState $state ): MultiCurrencyTrackerDataBuilder {
+		return new MultiCurrencyTrackerDataBuilder( $this->create_state_builder( $state ) );
 	}
 
 	/**
