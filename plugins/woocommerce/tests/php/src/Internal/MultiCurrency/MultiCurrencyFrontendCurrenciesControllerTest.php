@@ -54,10 +54,13 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register frontend currency hooks while plugin multi-currency owns the runtime.
+	 * @testdox Should not register frontend currency hooks while the extension or no runtime owns multi-currency.
+	 * @dataProvider other_owner_provider
+	 *
+	 * @param string $owner Runtime owner.
 	 */
-	public function test_does_not_register_when_extension_multi_currency_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+	public function test_does_not_register_when_another_runtime_owns_multi_currency( string $owner ): void {
+		$sut = $this->create_controller( $owner );
 
 		$sut->register();
 
@@ -65,16 +68,12 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_filter( 'woocommerce_cart_hash', array( $sut, 'add_currency_to_cart_hash' ) ) );
 	}
 
-	/**
-	 * @testdox Should not register frontend currency hooks when no multi-currency runtime owns the site.
-	 */
-	public function test_does_not_register_when_no_multi_currency_runtime_owns_site(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_NONE );
-
-		$sut->register();
-
-		$this->assertFalse( has_filter( 'woocommerce_currency', array( $sut, 'get_woocommerce_currency' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_cart_hash', array( $sut, 'add_currency_to_cart_hash' ) ) );
+	/** @return array<string,array{string}> */
+	public static function other_owner_provider(): array {
+		return array(
+			'extension' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION ),
+			'none'      => array( MultiCurrencyRuntimeArbiter::OWNER_NONE ),
+		);
 	}
 
 	/**

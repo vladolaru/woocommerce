@@ -23,27 +23,26 @@ class MultiCurrencyStoreCurrencyLifecycleControllerTest extends WC_Unit_Test_Cas
 	}
 
 	/**
-	 * @testdox Should not register init hook when plugin owns runtime.
+	 * @testdox Should not register init hook while the extension or no runtime owns multi-currency.
+	 * @dataProvider other_owner_provider
+	 *
+	 * @param string $owner Runtime owner.
 	 */
-	public function test_does_not_register_init_hook_when_extension_owns_runtime(): void {
+	public function test_does_not_register_init_hook_when_another_runtime_owns_multi_currency( string $owner ): void {
 		$service = $this->create_lifecycle_service();
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, $service );
+		$sut     = $this->create_controller( $owner, $service );
 
 		$sut->register();
 
 		$this->assertFalse( has_action( 'init', array( $sut, 'handle_init' ) ) );
 	}
 
-	/**
-	 * @testdox Should not register init hook when no runtime owns site.
-	 */
-	public function test_does_not_register_init_hook_when_no_runtime_owns_site(): void {
-		$service = $this->create_lifecycle_service();
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_NONE, $service );
-
-		$sut->register();
-
-		$this->assertFalse( has_action( 'init', array( $sut, 'handle_init' ) ) );
+	/** @return array<string,array{string}> */
+	public static function other_owner_provider(): array {
+		return array(
+			'extension' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION ),
+			'none'      => array( MultiCurrencyRuntimeArbiter::OWNER_NONE ),
+		);
 	}
 
 	/**

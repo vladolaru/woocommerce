@@ -129,18 +129,18 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 	 * @testdox Should resolve the multi-currency runtime owner and registrations from the payments state.
 	 * @dataProvider runtime_owner_provider
 	 *
-	 * @param bool   $plugin_active         Whether the WooPayments plugin is active.
-	 * @param bool   $extension_multi_currency Whether the plugin's customer multi-currency feature is enabled.
-	 * @param bool   $woopayments_feature   Whether the WooPayments feature is enabled.
-	 * @param bool   $core_multi_currency   Whether the core multi-currency feature is enabled.
-	 * @param string $owner                 Expected runtime owner.
-	 * @param bool   $core_registers        Whether core multi-currency should register.
-	 * @param bool   $extension_registers      Whether plugin multi-currency should register.
-	 * @param bool   $builtin_owner         Whether the built-in WooPayments owns payments.
+	 * @param bool   $extension_active                 Whether the WooPayments plugin is active.
+	 * @param bool   $extension_multi_currency_enabled Whether the plugin's customer multi-currency feature is enabled.
+	 * @param bool   $woopayments_feature              Whether the WooPayments feature is enabled.
+	 * @param bool   $core_multi_currency              Whether the core multi-currency feature is enabled.
+	 * @param string $owner                            Expected runtime owner.
+	 * @param bool   $core_registers                   Whether core multi-currency should register.
+	 * @param bool   $extension_registers              Whether plugin multi-currency should register.
+	 * @param bool   $builtin_owner                    Whether the built-in WooPayments owns payments.
 	 */
-	public function test_runtime_owner_by_state( bool $plugin_active, bool $extension_multi_currency, bool $woopayments_feature, bool $core_multi_currency, string $owner, bool $core_registers, bool $extension_registers, bool $builtin_owner ): void {
+	public function test_runtime_owner_by_state( bool $extension_active, bool $extension_multi_currency_enabled, bool $woopayments_feature, bool $core_multi_currency, string $owner, bool $core_registers, bool $extension_registers, bool $builtin_owner ): void {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, $woopayments_feature ? 'yes' : 'no' );
-		$this->fake_plugin( $plugin_active, false, false, $extension_multi_currency );
+		$this->fake_plugin( $extension_active, false, false, $extension_multi_currency_enabled );
 		if ( $core_multi_currency ) {
 			$this->enable_core_multi_currency();
 		}

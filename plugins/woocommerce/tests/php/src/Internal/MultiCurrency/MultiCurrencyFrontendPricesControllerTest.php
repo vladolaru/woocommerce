@@ -63,10 +63,13 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not register frontend price hooks while plugin multi-currency owns the runtime.
+	 * @testdox Should not register frontend price hooks while the extension or no runtime owns multi-currency.
+	 * @dataProvider other_owner_provider
+	 *
+	 * @param string $owner Runtime owner.
 	 */
-	public function test_does_not_register_when_extension_multi_currency_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+	public function test_does_not_register_when_another_runtime_owns_multi_currency( string $owner ): void {
+		$sut = $this->create_controller( $owner );
 
 		$sut->register();
 
@@ -75,17 +78,12 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_action( 'woocommerce_order_refunded', array( $sut, 'add_refund_meta' ) ) );
 	}
 
-	/**
-	 * @testdox Should not register frontend price hooks when no multi-currency runtime owns the site.
-	 */
-	public function test_does_not_register_when_no_multi_currency_runtime_owns_site(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_NONE );
-
-		$sut->register();
-
-		$this->assertFalse( has_filter( 'woocommerce_product_get_price', array( $sut, 'get_product_price_string' ) ) );
-		$this->assertFalse( has_filter( 'woocommerce_coupon_get_amount', array( $sut, 'get_coupon_amount' ) ) );
-		$this->assertFalse( has_action( 'woocommerce_order_refunded', array( $sut, 'add_refund_meta' ) ) );
+	/** @return array<string,array{string}> */
+	public static function other_owner_provider(): array {
+		return array(
+			'extension' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION ),
+			'none'      => array( MultiCurrencyRuntimeArbiter::OWNER_NONE ),
+		);
 	}
 
 	/**

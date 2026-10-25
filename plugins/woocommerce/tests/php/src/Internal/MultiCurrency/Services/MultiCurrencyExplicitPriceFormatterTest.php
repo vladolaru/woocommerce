@@ -116,7 +116,7 @@ class MultiCurrencyExplicitPriceFormatterTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project explicit wc price args.
 	 */
-	public function test_adds_the_currency_code_to_explicit_wc_price_args(): void {
+	public function test_adds_the_currency_code_to_wc_price_args_once_and_only_when_active(): void {
 		$args = array(
 			'price_format' => '%1$s%2$s',
 			'currency'     => 'USD',

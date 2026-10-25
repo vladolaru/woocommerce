@@ -120,7 +120,7 @@ class MultiCurrencyDisplayServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project public config with preserved keys.
 	 */
-	public function test_builds_public_config_with_its_keys(): void {
+	public function test_public_config_has_the_default_selected_charm_and_per_currency_keys(): void {
 		$sut = $this->create_service( $this->create_state( 'GBP' ) );
 
 		$config = $sut->get_public_config();

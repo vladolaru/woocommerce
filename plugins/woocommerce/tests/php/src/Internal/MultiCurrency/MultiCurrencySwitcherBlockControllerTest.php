@@ -99,7 +99,7 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should register switcher block type with preserved attributes.
 	 */
-	public function test_registers_switcher_block_type_with_its_attributes(): void {
+	public function test_registers_switcher_block_type_with_api_version_render_callback_and_attributes(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$sut->handle_init();

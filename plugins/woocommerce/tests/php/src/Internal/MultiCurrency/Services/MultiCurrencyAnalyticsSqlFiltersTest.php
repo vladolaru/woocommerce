@@ -75,9 +75,13 @@ class MultiCurrencyAnalyticsSqlFiltersTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should project join clauses for legacy order storage.
+	 * @testdox Should project join clauses for each order storage.
+	 * @dataProvider join_clauses_provider
+	 *
+	 * @param bool     $hpos           Whether orders are stored in the HPOS tables.
+	 * @param string[] $expected_joins Joins the result must contain.
 	 */
-	public function test_extends_join_clauses_for_posts_order_storage(): void {
+	public function test_extends_join_clauses_for_order_storage( bool $hpos, array $expected_joins ): void {
 		global $wpdb;
 
 		$sut = new MultiCurrencyAnalyticsSqlFilters();
@@ -85,40 +89,33 @@ class MultiCurrencyAnalyticsSqlFiltersTest extends WC_Unit_Test_Case {
 		$result = $sut->extend_join_clauses(
 			array( "INNER JOIN {$wpdb->prefix}wc_order_stats ON 1 = 1" ),
 			'orders_stats_total',
-			false
+			$hpos
 		);
 
-		$this->assertContains(
-			"LEFT JOIN {$wpdb->postmeta} wcpay_multicurrency_currency_meta ON {$wpdb->prefix}wc_order_stats.order_id = wcpay_multicurrency_currency_meta.post_id AND wcpay_multicurrency_currency_meta.meta_key = '_order_currency'",
-			$result
-		);
-		$this->assertContains(
-			"LEFT JOIN {$wpdb->postmeta} wcpay_multicurrency_exchange_rate_meta ON {$wpdb->prefix}wc_order_stats.order_id = wcpay_multicurrency_exchange_rate_meta.post_id AND wcpay_multicurrency_exchange_rate_meta.meta_key = '_wcpay_multi_currency_order_exchange_rate'",
-			$result
-		);
+		foreach ( $expected_joins as $expected_join ) {
+			$this->assertContains( $expected_join, $result );
+		}
 	}
 
-	/**
-	 * @testdox Should project join clauses for HPOS order storage.
-	 */
-	public function test_extends_join_clauses_for_hpos_order_storage(): void {
+	/** @return array<string,array{bool,string[]}> */
+	public static function join_clauses_provider(): array {
 		global $wpdb;
 
-		$sut = new MultiCurrencyAnalyticsSqlFilters();
-
-		$result = $sut->extend_join_clauses(
-			array( "INNER JOIN {$wpdb->prefix}wc_order_stats ON 1 = 1" ),
-			'orders_stats_total',
-			true
-		);
-
-		$this->assertContains(
-			"LEFT JOIN {$wpdb->prefix}wc_orders wcpay_multicurrency_order_currency ON {$wpdb->prefix}wc_order_stats.order_id = wcpay_multicurrency_order_currency.id",
-			$result
-		);
-		$this->assertContains(
-			"LEFT JOIN {$wpdb->prefix}wc_orders_meta wcpay_multicurrency_default_currency_meta ON {$wpdb->prefix}wc_order_stats.order_id = wcpay_multicurrency_default_currency_meta.order_id AND wcpay_multicurrency_default_currency_meta.meta_key = '_wcpay_multi_currency_order_default_currency'",
-			$result
+		return array(
+			'posts' => array(
+				false,
+				array(
+					"LEFT JOIN {$wpdb->postmeta} wcpay_multicurrency_currency_meta ON {$wpdb->prefix}wc_order_stats.order_id = wcpay_multicurrency_currency_meta.post_id AND wcpay_multicurrency_currency_meta.meta_key = '_order_currency'",
+					"LEFT JOIN {$wpdb->postmeta} wcpay_multicurrency_exchange_rate_meta ON {$wpdb->prefix}wc_order_stats.order_id = wcpay_multicurrency_exchange_rate_meta.post_id AND wcpay_multicurrency_exchange_rate_meta.meta_key = '_wcpay_multi_currency_order_exchange_rate'",
+				),
+			),
+			'hpos'  => array(
+				true,
+				array(
+					"LEFT JOIN {$wpdb->prefix}wc_orders wcpay_multicurrency_order_currency ON {$wpdb->prefix}wc_order_stats.order_id = wcpay_multicurrency_order_currency.id",
+					"LEFT JOIN {$wpdb->prefix}wc_orders_meta wcpay_multicurrency_default_currency_meta ON {$wpdb->prefix}wc_order_stats.order_id = wcpay_multicurrency_default_currency_meta.order_id AND wcpay_multicurrency_default_currency_meta.meta_key = '_wcpay_multi_currency_order_default_currency'",
+				),
+			),
 		);
 	}
 

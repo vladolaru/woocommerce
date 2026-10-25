@@ -181,23 +181,24 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should not render core markup when no runtime owns multi-currency.
+	 * @testdox Should not render core markup while the extension or no runtime owns multi-currency.
+	 * @dataProvider other_owner_provider
+	 *
+	 * @param string $owner Runtime owner.
 	 */
-	public function test_does_not_render_core_markup_when_no_runtime_owns_multi_currency(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_NONE );
+	public function test_does_not_render_core_markup_when_another_runtime_owns_multi_currency( string $owner ): void {
+		$sut = $this->create_controller( $owner );
 		$sut->handle_widgets_init();
 
 		$this->assertSame( '', $sut->get_switcher_widget_markup() );
 	}
 
-	/**
-	 * @testdox Should not render core markup when the plugin owns multi-currency.
-	 */
-	public function test_does_not_render_core_markup_when_extension_owns_multi_currency(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
-		$sut->handle_widgets_init();
-
-		$this->assertSame( '', $sut->get_switcher_widget_markup() );
+	/** @return array<string,array{string}> */
+	public static function other_owner_provider(): array {
+		return array(
+			'extension' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION ),
+			'none'      => array( MultiCurrencyRuntimeArbiter::OWNER_NONE ),
+		);
 	}
 
 	/**
@@ -208,7 +209,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 			// The function stays defined for later tests; returning null without a client makes the controller treat it as absent.
 			eval( 'function WC_Payments_Multi_Currency() { return $GLOBALS["row_86_multi_currency_client"] ?? null; }' ); // phpcs:ignore Squiz.PHP.Eval.Discouraged -- Fixture for the client-first compatibility function.
 		}
-		$extension_multi_currency                = new class() {
+		$extension_facade                        = new class() {
 			/**
 			 * Last client instance settings.
 			 *
@@ -237,15 +238,15 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 				return '<form>Client switcher</form>';
 			}
 		};
-		$GLOBALS['row_86_multi_currency_client'] = $extension_multi_currency;
+		$GLOBALS['row_86_multi_currency_client'] = $extension_facade;
 		$instance                                = array( 'title' => 'Client title' );
 		$args                                    = array( 'before_widget' => '<aside>' );
 		$sut                                     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		try {
 			$this->assertSame( '<form>Client switcher</form>', $sut->get_switcher_widget_markup( $instance, $args ) );
-			$this->assertSame( $instance, $extension_multi_currency->received_instance );
-			$this->assertSame( $args, $extension_multi_currency->received_args );
+			$this->assertSame( $instance, $extension_facade->received_instance );
+			$this->assertSame( $args, $extension_facade->received_args );
 		} finally {
 			unset( $GLOBALS['row_86_multi_currency_client'] );
 		}
@@ -295,7 +296,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should expose preserved widget metadata and sentence case settings.
 	 */
-	public function test_widget_exposes_its_metadata_and_sentence_case_settings(): void {
+	public function test_widget_exposes_id_name_description_and_sentence_case_labels(): void {
 		$widget = $this->create_widget();
 
 		$this->assertSame( 'currency_switcher_widget', $widget->widget_id );
