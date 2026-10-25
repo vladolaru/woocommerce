@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
 use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RateServices;
 use WC_Unit_Test_Case;
 
@@ -202,7 +202,7 @@ class MultiCurrencyRateServiceTest extends WC_Unit_Test_Case {
 		unset( $label );
 		$provider = null;
 		if ( null !== $connected ) {
-			$provider = $this->createMock( CurrencyRateProvider::class );
+			$provider = $this->createMock( CurrencyRateProviderInterface::class );
 			if ( 'throws' === $connected ) {
 				$provider->method( 'is_connected' )->willThrowException( new \RuntimeException( 'Account error' ) );
 			} else {
@@ -265,7 +265,7 @@ class MultiCurrencyRateServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function test_returns_null_for_automatic_rate_when_the_fetch_fails(): void {
 		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'automatic' );
-		$provider = $this->createMock( CurrencyRateProvider::class );
+		$provider = $this->createMock( CurrencyRateProviderInterface::class );
 		$provider->method( 'is_available' )->willReturn( true );
 		$provider->method( 'get_currency_rates' )->willThrowException( new \RuntimeException( 'Server error' ) );
 		$service = RateServices::with( $provider );
@@ -290,10 +290,10 @@ class MultiCurrencyRateServiceTest extends WC_Unit_Test_Case {
 	 * @param array<string,mixed> $rates                Rates to return.
 	 * @param string[]            $supported_currencies Supported currency codes.
 	 * @param string              $id                   Provider identifier.
-	 * @return CurrencyRateProvider
+	 * @return CurrencyRateProviderInterface
 	 */
-	private function create_provider( bool $available, array $rates, array $supported_currencies = array(), string $id = 'fake' ): CurrencyRateProvider {
-		return new class( $available, $rates, $supported_currencies, $id ) implements CurrencyRateProvider {
+	private function create_provider( bool $available, array $rates, array $supported_currencies = array(), string $id = 'fake' ): CurrencyRateProviderInterface {
+		return new class( $available, $rates, $supported_currencies, $id ) implements CurrencyRateProviderInterface {
 			/**
 			 * Whether the provider is available.
 			 *

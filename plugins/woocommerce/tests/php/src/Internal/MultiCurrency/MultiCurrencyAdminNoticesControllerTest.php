@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoticesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
@@ -413,10 +413,10 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an available automatic-rate provider.
 	 *
-	 * @return CurrencyRateProvider
+	 * @return CurrencyRateProviderInterface
 	 */
-	private function create_available_rate_provider(): CurrencyRateProvider {
-		return new class() implements CurrencyRateProvider {
+	private function create_available_rate_provider(): CurrencyRateProviderInterface {
+		return new class() implements CurrencyRateProviderInterface {
 			/**
 			 * Get the provider identifier.
 			 *

@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyAccountInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyApiClientInterface;
 
@@ -17,7 +17,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyApiCli
  * @since 11.0.0
  * @internal Transitional internal component for the native multi-currency runtime.
  */
-class WooPaymentsCurrencyRateProvider implements CurrencyRateProvider {
+class WooPaymentsCurrencyRateProvider implements CurrencyRateProviderInterface {
 
 	const PROVIDER_ID = 'woopayments';
 

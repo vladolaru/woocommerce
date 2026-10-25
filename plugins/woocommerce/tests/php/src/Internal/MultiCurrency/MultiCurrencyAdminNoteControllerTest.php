@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoteController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use WC_Unit_Test_Case;
@@ -198,7 +198,7 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 	 * @return MultiCurrencyAdminNoteController
 	 */
 	private function create_controller( string $owner, bool $is_admin, bool $provider_connected = true ): MultiCurrencyAdminNoteController {
-		$provider = $this->createMock( CurrencyRateProvider::class );
+		$provider = $this->createMock( CurrencyRateProviderInterface::class );
 		$provider->method( 'is_connected' )->willReturn( $provider_connected );
 
 		if ( $is_admin ) {

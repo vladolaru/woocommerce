@@ -1,6 +1,6 @@
 <?php
 /**
- * CurrencyRateProvider interface file.
+ * CurrencyRateProviderInterface interface file.
  */
 
 declare( strict_types = 1 );
@@ -17,7 +17,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Interfaces;
  * @since 11.0.0
  * @internal Transitional internal component for the native multi-currency runtime.
  */
-interface CurrencyRateProvider {
+interface CurrencyRateProviderInterface {
 
 	/**
 	 * Get the provider identifier.

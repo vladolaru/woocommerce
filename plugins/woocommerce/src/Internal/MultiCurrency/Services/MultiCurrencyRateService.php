@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
 
 /**
  * Resolves multi-currency exchange rates for the native runtime.
@@ -27,9 +27,9 @@ class MultiCurrencyRateService {
 	/**
 	 * The automatic-rate provider, or null until one is set.
 	 *
-	 * @var CurrencyRateProvider|null
+	 * @var CurrencyRateProviderInterface|null
 	 */
-	private ?CurrencyRateProvider $provider = null;
+	private ?CurrencyRateProviderInterface $provider = null;
 
 	/**
 	 * Initialize the class instance.
@@ -51,11 +51,11 @@ class MultiCurrencyRateService {
 	 *
 	 * @internal
 	 *
-	 * @param CurrencyRateProvider $provider Automatic-rate provider.
+	 * @param CurrencyRateProviderInterface $provider Automatic-rate provider.
 	 *
 	 * @since 11.2.0
 	 */
-	public function set_provider( CurrencyRateProvider $provider ): void {
+	public function set_provider( CurrencyRateProviderInterface $provider ): void {
 		$this->provider = $provider;
 		$this->state_invalidator->invalidate();
 	}
@@ -208,9 +208,9 @@ class MultiCurrencyRateService {
 	/**
 	 * Get the provider when automatic rates are available from it.
 	 *
-	 * @return CurrencyRateProvider|null
+	 * @return CurrencyRateProviderInterface|null
 	 */
-	private function get_available_provider(): ?CurrencyRateProvider {
+	private function get_available_provider(): ?CurrencyRateProviderInterface {
 		return null !== $this->provider && $this->provider->is_available() ? $this->provider : null;
 	}
 

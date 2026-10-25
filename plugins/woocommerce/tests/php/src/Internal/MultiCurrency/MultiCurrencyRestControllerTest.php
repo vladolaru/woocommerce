@@ -795,10 +795,10 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param bool     $available Whether the provider is available.
 	 * @param string[] $supported Currencies the provider supports; empty means all.
-	 * @return \Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider
+	 * @return \Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface
 	 */
-	private function create_rate_provider( bool $available, array $supported = array() ): \Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider {
-		return new class( $available, $supported ) implements \Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider {
+	private function create_rate_provider( bool $available, array $supported = array() ): \Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface {
+		return new class( $available, $supported ) implements \Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface {
 			/** @var bool */
 			private bool $available;
 

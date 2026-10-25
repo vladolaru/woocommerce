@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAsyncPriceRendererController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
@@ -214,7 +214,7 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 
 		// A provider set after the first build reaches the same builder, whose next build knows it.
 		$state = $shared->build();
-		wc_get_container()->get( MultiCurrencyRateService::class )->set_provider( $this->createMock( CurrencyRateProvider::class ) );
+		wc_get_container()->get( MultiCurrencyRateService::class )->set_provider( $this->createMock( CurrencyRateProviderInterface::class ) );
 		$this->assertSame( $shared, $factory->get_state_builder() );
 		$this->assertNotSame( $state, $shared->build() );
 	}

@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDatabaseCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
@@ -758,11 +758,11 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the state builder.
 	 *
-	 * @param CurrencyRateProvider|null        $provider Automatic-rate provider, or null for none.
-	 * @param MultiCurrencyCacheInterface|null $cache    Multi-currency cache.
+	 * @param CurrencyRateProviderInterface|null $provider Automatic-rate provider, or null for none.
+	 * @param MultiCurrencyCacheInterface|null   $cache    Multi-currency cache.
 	 * @return MultiCurrencyStateBuilder
 	 */
-	private function create_builder( ?CurrencyRateProvider $provider = null, ?MultiCurrencyCacheInterface $cache = null ): MultiCurrencyStateBuilder {
+	private function create_builder( ?CurrencyRateProviderInterface $provider = null, ?MultiCurrencyCacheInterface $cache = null ): MultiCurrencyStateBuilder {
 		return new MultiCurrencyStateBuilder(
 			$this->create_localization(),
 			RateServices::with( $provider ),
@@ -830,10 +830,10 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	 *
 	 * @param array<string,mixed> $rates                Rates to return.
 	 * @param string[]            $supported_currencies Supported currency codes.
-	 * @return CurrencyRateProvider
+	 * @return CurrencyRateProviderInterface
 	 */
-	private function create_available_rate_provider( array $rates = array( 'gbp' => 0.82 ), array $supported_currencies = array() ): CurrencyRateProvider {
-		return new class( $rates, $supported_currencies ) implements CurrencyRateProvider {
+	private function create_available_rate_provider( array $rates = array( 'gbp' => 0.82 ), array $supported_currencies = array() ): CurrencyRateProviderInterface {
+		return new class( $rates, $supported_currencies ) implements CurrencyRateProviderInterface {
 			/**
 			 * Rates to return.
 			 *
@@ -914,10 +914,10 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	 * Create an available rate provider that records its source currency.
 	 *
 	 * @param string[] $currency_from Source currencies captured by reference.
-	 * @return CurrencyRateProvider
+	 * @return CurrencyRateProviderInterface
 	 */
-	private function create_recording_available_rate_provider( array &$currency_from ): CurrencyRateProvider {
-		return new class( $currency_from ) implements CurrencyRateProvider {
+	private function create_recording_available_rate_provider( array &$currency_from ): CurrencyRateProviderInterface {
+		return new class( $currency_from ) implements CurrencyRateProviderInterface {
 			/** @var string[] */
 			private array $currency_from;
 
@@ -985,10 +985,10 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	/**
 	 * Create an unavailable rate provider.
 	 *
-	 * @return CurrencyRateProvider
+	 * @return CurrencyRateProviderInterface
 	 */
-	private function create_unavailable_rate_provider(): CurrencyRateProvider {
-		return new class() implements CurrencyRateProvider {
+	private function create_unavailable_rate_provider(): CurrencyRateProviderInterface {
+		return new class() implements CurrencyRateProviderInterface {
 			/**
 			 * Get the provider identifier.
 			 *

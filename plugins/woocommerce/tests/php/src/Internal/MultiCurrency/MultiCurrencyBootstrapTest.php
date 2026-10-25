@@ -19,7 +19,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySubscriptionsCompatibilityController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -1198,15 +1198,15 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		wc_get_container()->replace(
 			'CachedRateProviderRoot',
 			new class( $this->create_cached_rate_provider() ) {
-				/** @var CurrencyRateProvider */
-				private CurrencyRateProvider $provider;
+				/** @var CurrencyRateProviderInterface */
+				private CurrencyRateProviderInterface $provider;
 
 				/**
 				 * Constructor.
 				 *
-				 * @param CurrencyRateProvider $provider A provider whose cached rates serve.
+				 * @param CurrencyRateProviderInterface $provider A provider whose cached rates serve.
 				 */
-				public function __construct( CurrencyRateProvider $provider ) {
+				public function __construct( CurrencyRateProviderInterface $provider ) {
 					$this->provider = $provider;
 				}
 
@@ -1271,10 +1271,10 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a rate provider that cannot be reached, so the cached rates serve.
 	 *
-	 * @return CurrencyRateProvider
+	 * @return CurrencyRateProviderInterface
 	 */
-	private function create_cached_rate_provider(): CurrencyRateProvider {
-		return new class() implements CurrencyRateProvider {
+	private function create_cached_rate_provider(): CurrencyRateProviderInterface {
+		return new class() implements CurrencyRateProviderInterface {
 			/** @return string */
 			public function get_id(): string {
 				return 'unreachable-provider';

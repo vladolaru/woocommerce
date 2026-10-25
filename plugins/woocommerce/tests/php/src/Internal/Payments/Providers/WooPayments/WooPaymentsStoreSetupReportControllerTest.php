@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use ActionScheduler_Store;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
@@ -712,7 +712,7 @@ class WooPaymentsStoreSetupReportControllerTest extends WC_Unit_Test_Case {
 	 * Register an unavailable automatic-rate provider so the test exercises the production cache-fallback path.
 	 */
 	private function register_unavailable_rate_provider(): void {
-		$provider = $this->createMock( CurrencyRateProvider::class );
+		$provider = $this->createMock( CurrencyRateProviderInterface::class );
 		$provider->method( 'get_id' )->willReturn( 'test-outage' );
 		$provider->method( 'is_available' )->willReturn( false );
 

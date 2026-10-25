@@ -28,7 +28,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSe
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\WooPaymentsStripeBillingModule;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
+use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
@@ -2812,10 +2812,10 @@ class WooPaymentsSettingsServiceTest extends WC_Unit_Test_Case {
 	 * A rate provider that is available and answers one USD rate, as a running Multi-Currency has.
 	 *
 	 * @param float $rate USD rate against the store currency.
-	 * @return CurrencyRateProvider
+	 * @return CurrencyRateProviderInterface
 	 */
-	private function create_usd_rate_provider( float $rate ): CurrencyRateProvider {
-		$provider = $this->createMock( CurrencyRateProvider::class );
+	private function create_usd_rate_provider( float $rate ): CurrencyRateProviderInterface {
+		$provider = $this->createMock( CurrencyRateProviderInterface::class );
 		$provider->method( 'get_id' )->willReturn( 'test-rates' );
 		$provider->method( 'is_available' )->willReturn( true );
 		$provider->method( 'get_supported_currencies' )->willReturn( array( 'USD' ) );
