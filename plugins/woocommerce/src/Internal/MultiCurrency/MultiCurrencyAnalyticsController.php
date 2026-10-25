@@ -11,8 +11,8 @@ use Automattic\WooCommerce\Admin\PageController;
 use Automattic\WooCommerce\Blocks\Assets\AssetDataRegistry;
 use Automattic\WooCommerce\Blocks\Package;
 use Automattic\WooCommerce\Internal\Admin\WCAdminAssets;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsProjectionService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsSqlProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsClauses;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
@@ -67,40 +67,40 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	/**
 	 * Analytics projection service.
 	 *
-	 * @var MultiCurrencyAnalyticsProjectionService|null
+	 * @var MultiCurrencyAnalyticsService|null
 	 */
-	private ?MultiCurrencyAnalyticsProjectionService $analytics_projection_service = null;
+	private ?MultiCurrencyAnalyticsService $analytics_service = null;
 
 	/**
 	 * Analytics SQL projection service.
 	 *
-	 * @var MultiCurrencyAnalyticsSqlProjectionService
+	 * @var MultiCurrencyAnalyticsClauses
 	 */
-	private MultiCurrencyAnalyticsSqlProjectionService $sql_projection_service;
+	private MultiCurrencyAnalyticsClauses $analytics_clauses;
 
 	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter                $arbiter                Runtime owner arbiter.
-	 * @param MultiCurrencyServiceFactory                $service_factory        Multi-Currency service factory.
-	 * @param MultiCurrencyUsageDetector                 $usage_detector         Persisted usage detector.
-	 * @param MultiCurrencyRequestContext                $request_context        Request context.
-	 * @param MultiCurrencyAnalyticsSqlProjectionService $sql_projection_service Analytics SQL projection service.
+	 * @param MultiCurrencyRuntimeArbiter   $arbiter                Runtime owner arbiter.
+	 * @param MultiCurrencyServiceFactory   $service_factory        Multi-Currency service factory.
+	 * @param MultiCurrencyUsageDetector    $usage_detector         Persisted usage detector.
+	 * @param MultiCurrencyRequestContext   $request_context        Request context.
+	 * @param MultiCurrencyAnalyticsClauses $analytics_clauses Analytics SQL projection service.
 	 */
 	final public function init(
 		MultiCurrencyRuntimeArbiter $arbiter,
 		MultiCurrencyServiceFactory $service_factory,
 		MultiCurrencyUsageDetector $usage_detector,
 		MultiCurrencyRequestContext $request_context,
-		MultiCurrencyAnalyticsSqlProjectionService $sql_projection_service
+		MultiCurrencyAnalyticsClauses $analytics_clauses
 	): void {
-		$this->arbiter                = $arbiter;
-		$this->service_factory        = $service_factory;
-		$this->usage_detector         = $usage_detector;
-		$this->request_context        = $request_context;
-		$this->sql_projection_service = $sql_projection_service;
+		$this->arbiter           = $arbiter;
+		$this->service_factory   = $service_factory;
+		$this->usage_detector    = $usage_detector;
+		$this->request_context   = $request_context;
+		$this->analytics_clauses = $analytics_clauses;
 	}
 
 	/**
@@ -157,11 +157,11 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 		// Concrete values, as the client registers them, so a key another plugin already registered, even lazily, is kept.
 		$registry = Package::container()->get( AssetDataRegistry::class );
 		if ( ! $registry->exists( 'customerCurrencies' ) ) {
-			$registry->add( 'customerCurrencies', $this->get_analytics_projection_service()->get_customer_currency_options() );
+			$registry->add( 'customerCurrencies', $this->get_analytics_service()->get_customer_currency_options() );
 		}
 		// Symbols too when another plugin supplied the list, as the client's come from a separate source.
 		if ( ! $registry->exists( 'customerCurrencySymbols' ) ) {
-			$registry->add( 'customerCurrencySymbols', $this->get_analytics_projection_service()->get_currency_symbols() );
+			$registry->add( 'customerCurrencySymbols', $this->get_analytics_service()->get_currency_symbols() );
 		}
 
 		try {
@@ -189,7 +189,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			return;
 		}
 
-		$this->get_analytics_projection_service()->add_customer_currency( strtoupper( $order->get_currency() ) );
+		$this->get_analytics_service()->record_customer_currency( strtoupper( $order->get_currency() ) );
 	}
 
 	/**
@@ -206,7 +206,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			return $args;
 		}
 
-		return $this->get_analytics_projection_service()->update_order_stats_data( $args, $order );
+		return $this->get_analytics_service()->convert_order_stats_data( $args, $order );
 	}
 
 	/**
@@ -218,7 +218,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	public function handle_woocommerce_analytics_orders_query_args( array $args ): array {
-		return $this->get_analytics_projection_service()->apply_customer_currency_args( $args, $this->get_request_args() );
+		return $this->get_analytics_service()->apply_customer_currency_args( $args, $this->get_request_args() );
 	}
 
 	/**
@@ -242,9 +242,9 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			return $clauses;
 		}
 
-		$projected = $this->sql_projection_service->project_select_clauses( $clauses, $context, OrderUtil::custom_orders_table_usage_is_enabled() );
+		$clauses = $this->analytics_clauses->extend_select_clauses( $clauses, $context, OrderUtil::custom_orders_table_usage_is_enabled() );
 
-		return $this->apply_clause_filter( self::EXTEND_SELECT_FILTER, $projected );
+		return $this->apply_clause_filter( self::EXTEND_SELECT_FILTER, $clauses );
 	}
 
 	/**
@@ -261,9 +261,9 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			return $clauses;
 		}
 
-		$projected = $this->sql_projection_service->project_join_clauses( $clauses, $context, OrderUtil::custom_orders_table_usage_is_enabled() );
+		$clauses = $this->analytics_clauses->extend_join_clauses( $clauses, $context, OrderUtil::custom_orders_table_usage_is_enabled() );
 
-		return $this->apply_clause_filter( self::EXTEND_JOIN_FILTER, $projected );
+		return $this->apply_clause_filter( self::EXTEND_JOIN_FILTER, $clauses );
 	}
 
 	/**
@@ -279,9 +279,9 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			return $clauses;
 		}
 
-		$projected = $this->sql_projection_service->project_where_clauses( $clauses, $this->get_request_args(), OrderUtil::custom_orders_table_usage_is_enabled() );
+		$clauses = $this->analytics_clauses->extend_where_clauses( $clauses, $this->get_request_args(), OrderUtil::custom_orders_table_usage_is_enabled() );
 
-		return $this->apply_clause_filter( self::EXTEND_WHERE_FILTER, $projected );
+		return $this->apply_clause_filter( self::EXTEND_WHERE_FILTER, $clauses );
 	}
 
 	/**
@@ -298,22 +298,22 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			return $clauses;
 		}
 
-		$projected = $this->sql_projection_service->project_selected_currency_order_select_clauses( $clauses );
+		$clauses = $this->analytics_clauses->extend_order_select_clauses( $clauses );
 
-		return $this->apply_clause_filter( self::EXTEND_ORDER_SELECT_FILTER, $projected );
+		return $this->apply_clause_filter( self::EXTEND_ORDER_SELECT_FILTER, $clauses );
 	}
 
 	/**
 	 * Get the analytics projection service.
 	 *
-	 * @return MultiCurrencyAnalyticsProjectionService
+	 * @return MultiCurrencyAnalyticsService
 	 */
-	private function get_analytics_projection_service(): MultiCurrencyAnalyticsProjectionService {
-		if ( null === $this->analytics_projection_service ) {
-			$this->analytics_projection_service = $this->service_factory->create_analytics_projection_service();
+	private function get_analytics_service(): MultiCurrencyAnalyticsService {
+		if ( null === $this->analytics_service ) {
+			$this->analytics_service = $this->service_factory->create_analytics_service();
 		}
 
-		return $this->analytics_projection_service;
+		return $this->analytics_service;
 	}
 
 	/**

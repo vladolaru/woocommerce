@@ -1,6 +1,6 @@
 <?php
 /**
- * MultiCurrencyAnalyticsSqlProjectionService class file.
+ * MultiCurrencyAnalyticsClauses class file.
  */
 
 declare( strict_types = 1 );
@@ -13,7 +13,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  * @since 11.0.0
  * @internal Transitional internal component for the native multi-currency runtime.
  */
-class MultiCurrencyAnalyticsSqlProjectionService {
+class MultiCurrencyAnalyticsClauses {
 
 	private const SUPPORTED_CONTEXTS = array( 'orders', 'products', 'variations', 'categories', 'coupons', 'taxes' );
 
@@ -25,7 +25,7 @@ class MultiCurrencyAnalyticsSqlProjectionService {
 	 * @param bool     $is_hpos_enabled Whether HPOS order storage is enabled.
 	 * @return string[]
 	 */
-	public function project_select_clauses( array $clauses, string $context, bool $is_hpos_enabled ): array {
+	public function extend_select_clauses( array $clauses, string $context, bool $is_hpos_enabled ): array {
 		$context_page = explode( '_', $context )[0];
 
 		$new_clauses      = array();
@@ -62,7 +62,7 @@ class MultiCurrencyAnalyticsSqlProjectionService {
 	 * @param bool     $is_hpos_enabled Whether HPOS order storage is enabled.
 	 * @return string[]
 	 */
-	public function project_join_clauses( array $clauses, string $context, bool $is_hpos_enabled ): array {
+	public function extend_join_clauses( array $clauses, string $context, bool $is_hpos_enabled ): array {
 		global $wpdb;
 
 		$context_parts = explode( '_', $context, 2 );
@@ -101,7 +101,7 @@ class MultiCurrencyAnalyticsSqlProjectionService {
 	 * @param bool                $is_hpos_enabled Whether HPOS order storage is enabled.
 	 * @return string[]
 	 */
-	public function project_where_clauses( array $clauses, array $currency_args, bool $is_hpos_enabled ): array {
+	public function extend_where_clauses( array $clauses, array $currency_args, bool $is_hpos_enabled ): array {
 		global $wpdb;
 
 		$currency_field = $is_hpos_enabled
@@ -137,7 +137,7 @@ class MultiCurrencyAnalyticsSqlProjectionService {
 	 * @param string[] $clauses SELECT clauses.
 	 * @return string[]
 	 */
-	public function project_selected_currency_order_select_clauses( array $clauses ): array {
+	public function extend_order_select_clauses( array $clauses ): array {
 		global $wpdb;
 
 		$exchange_rate        = 'wcpay_multicurrency_exchange_rate_meta.meta_value';

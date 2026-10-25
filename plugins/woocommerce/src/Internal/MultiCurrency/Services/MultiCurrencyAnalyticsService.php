@@ -1,6 +1,6 @@
 <?php
 /**
- * MultiCurrencyAnalyticsProjectionService class file.
+ * MultiCurrencyAnalyticsService class file.
  */
 
 declare( strict_types = 1 );
@@ -13,7 +13,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
  * @since 11.0.0
  * @internal Transitional internal component for the native multi-currency runtime.
  */
-class MultiCurrencyAnalyticsProjectionService {
+class MultiCurrencyAnalyticsService {
 
 	/**
 	 * State builder.
@@ -38,7 +38,7 @@ class MultiCurrencyAnalyticsProjectionService {
 	 * @param \WC_Abstract_Order  $order Order or refund.
 	 * @return array<string,mixed>
 	 */
-	public function update_order_stats_data( array $args, \WC_Abstract_Order $order ): array {
+	public function convert_order_stats_data( array $args, \WC_Abstract_Order $order ): array {
 		$default_currency_code = $this->state_builder->build()->get_default_currency()->get_code();
 
 		if ( ! $this->should_convert_order_stats( $order, $default_currency_code ) ) {
@@ -120,7 +120,7 @@ class MultiCurrencyAnalyticsProjectionService {
 	 *
 	 * @param string $currency_code Currency code.
 	 */
-	public function add_customer_currency( string $currency_code ): void {
+	public function record_customer_currency( string $currency_code ): void {
 		$currencies = $this->state_builder->build()->get_customer_currencies();
 		if ( in_array( $currency_code, $currencies, true ) ) {
 			return;

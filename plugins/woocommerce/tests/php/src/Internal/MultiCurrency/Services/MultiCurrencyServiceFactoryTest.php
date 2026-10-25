@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
@@ -32,7 +32,7 @@ class MultiCurrencyServiceFactoryTest extends WC_Unit_Test_Case {
 			'geolocation'                   => array( 'create_geolocation_service', MultiCurrencyGeolocationService::class ),
 			'selected-currency persistence' => array( 'create_selected_currency_persistence_service', MultiCurrencySelectedCurrencyPersistenceService::class ),
 			'switcher projection'           => array( 'create_switcher_renderer', MultiCurrencySwitcherRenderer::class ),
-			'analytics projection'          => array( 'create_analytics_projection_service', MultiCurrencyAnalyticsProjectionService::class ),
+			'analytics projection'          => array( 'create_analytics_service', MultiCurrencyAnalyticsService::class ),
 			'tracking projection'           => array( 'create_tracking_projection_service', MultiCurrencyTrackingProjectionService::class ),
 			'store-currency lifecycle'      => array( 'create_store_currency_lifecycle_service', MultiCurrencyStoreCurrencyLifecycleService::class ),
 			'settings currency catalog'     => array( 'create_settings_currency_catalog', MultiCurrencySettingsCurrencyCatalog::class ),

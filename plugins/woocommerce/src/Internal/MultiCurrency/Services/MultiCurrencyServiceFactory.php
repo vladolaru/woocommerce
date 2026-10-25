@@ -93,10 +93,10 @@ class MultiCurrencyServiceFactory {
 	/**
 	 * Create an analytics projection service.
 	 *
-	 * @return MultiCurrencyAnalyticsProjectionService
+	 * @return MultiCurrencyAnalyticsService
 	 */
-	public function create_analytics_projection_service(): MultiCurrencyAnalyticsProjectionService {
-		return new MultiCurrencyAnalyticsProjectionService( $this->state_builder_factory->create() );
+	public function create_analytics_service(): MultiCurrencyAnalyticsService {
+		return new MultiCurrencyAnalyticsService( $this->state_builder_factory->create() );
 	}
 
 	/**

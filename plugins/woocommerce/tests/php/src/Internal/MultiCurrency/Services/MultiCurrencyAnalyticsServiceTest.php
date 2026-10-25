@@ -6,15 +6,15 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the MultiCurrencyAnalyticsProjectionService class.
+ * Tests for the MultiCurrencyAnalyticsService class.
  */
-class MultiCurrencyAnalyticsProjectionServiceTest extends WC_Unit_Test_Case {
+class MultiCurrencyAnalyticsServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Original store currency.
@@ -56,7 +56,7 @@ class MultiCurrencyAnalyticsProjectionServiceTest extends WC_Unit_Test_Case {
 				'tax_total'      => 4.0,
 				'total_sales'    => 30.0,
 			),
-			$sut->update_order_stats_data( $this->create_order_stats_args(), $order )
+			$sut->convert_order_stats_data( $this->create_order_stats_args(), $order )
 		);
 	}
 
@@ -74,7 +74,7 @@ class MultiCurrencyAnalyticsProjectionServiceTest extends WC_Unit_Test_Case {
 				'tax_total'      => 2.5,
 				'total_sales'    => 18.75,
 			),
-			$sut->update_order_stats_data( $this->create_order_stats_args(), $order )
+			$sut->convert_order_stats_data( $this->create_order_stats_args(), $order )
 		);
 	}
 
@@ -86,7 +86,7 @@ class MultiCurrencyAnalyticsProjectionServiceTest extends WC_Unit_Test_Case {
 		$args  = $this->create_order_stats_args();
 		$sut   = $this->create_service( $this->create_state() );
 
-		$this->assertSame( $args, $sut->update_order_stats_data( $args, $order ) );
+		$this->assertSame( $args, $sut->convert_order_stats_data( $args, $order ) );
 	}
 
 	/**
@@ -99,7 +99,7 @@ class MultiCurrencyAnalyticsProjectionServiceTest extends WC_Unit_Test_Case {
 		$args = $this->create_order_stats_args();
 		$sut  = $this->create_service( $this->create_state() );
 
-		$this->assertSame( $args, $sut->update_order_stats_data( $args, $order ) );
+		$this->assertSame( $args, $sut->convert_order_stats_data( $args, $order ) );
 	}
 
 	/**
@@ -209,10 +209,10 @@ class MultiCurrencyAnalyticsProjectionServiceTest extends WC_Unit_Test_Case {
 	 * Create the analytics projection service.
 	 *
 	 * @param MultiCurrencyState $state Multi-currency state.
-	 * @return MultiCurrencyAnalyticsProjectionService
+	 * @return MultiCurrencyAnalyticsService
 	 */
-	private function create_service( MultiCurrencyState $state ): MultiCurrencyAnalyticsProjectionService {
-		return new MultiCurrencyAnalyticsProjectionService( $this->create_state_builder( $state ) );
+	private function create_service( MultiCurrencyState $state ): MultiCurrencyAnalyticsService {
+		return new MultiCurrencyAnalyticsService( $this->create_state_builder( $state ) );
 	}
 
 	/**

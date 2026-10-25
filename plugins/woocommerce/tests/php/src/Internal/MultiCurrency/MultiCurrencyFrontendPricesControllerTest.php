@@ -676,7 +676,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( $rate, $order->get_meta( '_wcpay_multi_currency_order_exchange_rate', true ) );
 		$this->assertSame( $store_currency, $order->get_meta( '_wcpay_multi_currency_order_default_currency', true ) );
 
-		$stats = wc_get_container()->get( MultiCurrencyServiceFactory::class )->create_analytics_projection_service()->update_order_stats_data(
+		$stats = wc_get_container()->get( MultiCurrencyServiceFactory::class )->create_analytics_service()->convert_order_stats_data(
 			array(
 				'net_total'      => $net_total,
 				'shipping_total' => $shipping_total,

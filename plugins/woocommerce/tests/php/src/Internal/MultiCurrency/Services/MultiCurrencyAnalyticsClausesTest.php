@@ -3,21 +3,21 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsSqlProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsClauses;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the MultiCurrencyAnalyticsSqlProjectionService class.
+ * Tests for the MultiCurrencyAnalyticsClauses class.
  */
-class MultiCurrencyAnalyticsSqlProjectionServiceTest extends WC_Unit_Test_Case {
+class MultiCurrencyAnalyticsClausesTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should project select clauses for legacy order storage.
 	 */
 	public function test_projects_select_clauses_for_legacy_order_storage(): void {
-		$sut = new MultiCurrencyAnalyticsSqlProjectionService();
+		$sut = new MultiCurrencyAnalyticsClauses();
 
-		$result = $sut->project_select_clauses(
+		$result = $sut->extend_select_clauses(
 			array(
 				', SUM(product_net_revenue) AS product_net_revenue',
 				', discount_amount',
@@ -56,9 +56,9 @@ class MultiCurrencyAnalyticsSqlProjectionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should project select clauses for HPOS order storage.
 	 */
 	public function test_projects_select_clauses_for_hpos_order_storage(): void {
-		$sut = new MultiCurrencyAnalyticsSqlProjectionService();
+		$sut = new MultiCurrencyAnalyticsClauses();
 
-		$result = $sut->project_select_clauses(
+		$result = $sut->extend_select_clauses(
 			array( ', SUM(discount_amount) AS discount_amount' ),
 			'orders_stats_total',
 			true
@@ -80,9 +80,9 @@ class MultiCurrencyAnalyticsSqlProjectionServiceTest extends WC_Unit_Test_Case {
 	public function test_projects_join_clauses_for_legacy_order_storage(): void {
 		global $wpdb;
 
-		$sut = new MultiCurrencyAnalyticsSqlProjectionService();
+		$sut = new MultiCurrencyAnalyticsClauses();
 
-		$result = $sut->project_join_clauses(
+		$result = $sut->extend_join_clauses(
 			array( "INNER JOIN {$wpdb->prefix}wc_order_stats ON 1 = 1" ),
 			'orders_stats_total',
 			false
@@ -104,9 +104,9 @@ class MultiCurrencyAnalyticsSqlProjectionServiceTest extends WC_Unit_Test_Case {
 	public function test_projects_join_clauses_for_hpos_order_storage(): void {
 		global $wpdb;
 
-		$sut = new MultiCurrencyAnalyticsSqlProjectionService();
+		$sut = new MultiCurrencyAnalyticsClauses();
 
-		$result = $sut->project_join_clauses(
+		$result = $sut->extend_join_clauses(
 			array( "INNER JOIN {$wpdb->prefix}wc_order_stats ON 1 = 1" ),
 			'orders_stats_total',
 			true
@@ -126,9 +126,9 @@ class MultiCurrencyAnalyticsSqlProjectionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should project currency where clauses for legacy order storage.
 	 */
 	public function test_projects_currency_where_clauses_for_legacy_order_storage(): void {
-		$sut = new MultiCurrencyAnalyticsSqlProjectionService();
+		$sut = new MultiCurrencyAnalyticsClauses();
 
-		$result = $sut->project_where_clauses(
+		$result = $sut->extend_where_clauses(
 			array( 'AND status != "trash"' ),
 			array(
 				'currency_is'     => array( 'GBP', 'JPY' ),
@@ -156,9 +156,9 @@ class MultiCurrencyAnalyticsSqlProjectionServiceTest extends WC_Unit_Test_Case {
 	 * @testdox Should escape currency values in prepared where clauses.
 	 */
 	public function test_escapes_currency_values_in_where_clauses(): void {
-		$sut = new MultiCurrencyAnalyticsSqlProjectionService();
+		$sut = new MultiCurrencyAnalyticsClauses();
 
-		$result = $sut->project_where_clauses(
+		$result = $sut->extend_where_clauses(
 			array(),
 			array(
 				'currency_is' => array( "GBP' OR '1'='1" ),
@@ -181,11 +181,11 @@ class MultiCurrencyAnalyticsSqlProjectionServiceTest extends WC_Unit_Test_Case {
 	public function test_projects_selected_currency_order_select_clauses(): void {
 		global $wpdb;
 
-		$sut       = new MultiCurrencyAnalyticsSqlProjectionService();
+		$sut       = new MultiCurrencyAnalyticsClauses();
 		$net_total = "{$wpdb->prefix}wc_order_stats.net_total";
 		$decimals  = wc_get_price_decimals();
 
-		$result = $sut->project_selected_currency_order_select_clauses(
+		$result = $sut->extend_order_select_clauses(
 			array( "$net_total," )
 		);
 
