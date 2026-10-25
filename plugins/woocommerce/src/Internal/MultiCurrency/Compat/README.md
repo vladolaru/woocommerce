@@ -1,36 +1,36 @@
-# WooPayments MultiCurrency compatibility
+# WooPayments extension Multi-Currency compatibility
 
-This folder is the removable boundary for the plugin-owned `WCPay\MultiCurrency\MultiCurrency` facade that Woo extensions use when the core-native multi-currency runtime owns conversion. `WooPaymentsExtensionMultiCurrencyFacadeLoader` declares the facade only after active plugins have loaded and only when `MultiCurrencyRuntimeArbiter` selects Core. The standalone WooPayments plugin retains the namespace while it owns the runtime. The facade class file lives in `includes/legacy/woopayments-multi-currency-compat/` (see the placement invariant). Other plugin-shaped WooPayments globals live in the separate [payments compatibility boundary](../../Payments/Providers/WooPayments/Compat/README.md).
+This folder holds the WooPayments extension's `WCPay\MultiCurrency\MultiCurrency` class that Woo extensions call, answered by WooCommerce's Multi-Currency while it runs Multi-Currency. `WooPaymentsExtensionMultiCurrencyFacadeLoader` declares the facade only after active plugins have loaded (`plugins_loaded` priority 0) and only when `MultiCurrencyRuntimeArbiter::is_builtin_owner()` is true; while the WooPayments extension runs Multi-Currency, the namespace is the extension's own. The facade class file lives in `includes/legacy/woopayments-multi-currency-compat/` (see the placement rule). The extension's other classes and globals live in the separate [payments compatibility boundary](../../Payments/Providers/WooPayments/Compat/README.md). It is removed in WooCommerce 12.0.0.
 
 ## Contract
 
-| Facade method | Native behavior | Known Woo-owned consumers |
+| Facade method | Behavior | Known Woo-owned consumers |
 |---|---|---|
-| `instance(): self` | Returns one compatibility facade instance for the request. | WooCommerce Deposits, WooCommerce Table Rate Shipping |
-| `get_price( $amount, string $type ): float` | Delegates to `MultiCurrencyPriceConverter`. A successful `product` projection records request-local provenance so Deposits does not project the same fixed amount again. | WooCommerce Deposits |
-| `get_selected_currency(): MultiCurrencyCurrency` | Reads the selected currency from the native request state. | WooCommerce Table Rate Shipping |
-| `get_default_currency(): MultiCurrencyCurrency` | Reads the store currency from the native request state. | WooCommerce Table Rate Shipping |
-| `get_raw_conversion( float $amount, string $to_currency, string $from_currency = '' ): float` | Delegates to `MultiCurrencyPriceConverter`; an omitted source currency means the native store currency. | WooCommerce Table Rate Shipping |
+| `instance(): self` | Returns one facade instance for the request. | WooCommerce Deposits, WooCommerce Table Rate Shipping |
+| `get_price( $amount, string $type ): float` | Converts through `MultiCurrencyPriceConverter`. A converted `product` price is recorded for the request, so the Deposits controller does not convert the same fixed amount again. | WooCommerce Deposits |
+| `get_selected_currency(): MultiCurrencyCurrency` | Reads the selected currency from the request's Multi-Currency state. | WooCommerce Table Rate Shipping |
+| `get_default_currency(): MultiCurrencyCurrency` | Reads the store currency from the request's Multi-Currency state. | WooCommerce Table Rate Shipping |
+| `get_raw_conversion( float $amount, string $to_currency, string $from_currency = '' ): float` | Converts through `MultiCurrencyPriceConverter`; an omitted source currency means the store currency. | WooCommerce Table Rate Shipping |
 
-Every facade method emits a deprecation notice introduced in WooCommerce 11.0.0. Native services own all state and conversion math; this boundary only preserves observed extension call shapes.
+Every facade method emits a deprecation notice with the version 11.0.0. The Multi-Currency services own all state and conversion math; the facade only answers the call shapes extensions are known to use.
 
 ## Deposits conversion provenance
 
-WooCommerce Deposits projects a fixed deposit through `get_price( ..., 'product' )` before WooCommerce's own Deposits compatibility controller sees the cart item. The loader marks that successful projection for the current request. `MultiCurrencyDepositsCompatibilityController` preserves the incoming cart values when the marker is set, ensuring the selected-currency rate is applied once rather than twice. Failed projections do not set the marker, so the native fallback remains available.
+WooCommerce Deposits converts a fixed deposit through `get_price( ..., 'product' )` before the Deposits compatibility controller sees the cart item. The loader records that conversion for the current request. `MultiCurrencyDepositsCompatibilityController` leaves the incoming cart values alone when the record is set, so the selected currency's rate is applied once rather than twice. A conversion that throws records nothing, so the controller still converts the amount.
 
-## Placement invariant
+## Placement rule
 
-`WooPaymentsExtensionFacadePlacementTest` requires every global `WC_Payments*` or namespaced `WCPay\` type declaration to live in `includes/legacy/woopayments-compat/` or `includes/legacy/woopayments-multi-currency-compat/`, outside every tree Composer scans for its classmaps: `src/` and `includes/rest-api/`, and `tests/php/src/` for development installs. The Jetpack autoloader's optimized classmap, built on every `composer install` and for the release zip, maps each class it finds in those trees whatever its namespace, so a facade placed there would be declared on first use on every store, plugin-owned ones included; outside them, only the loaders can declare the facades. Test fixtures that declare plugin-shaped names use the `.fixture` extension, which Composer does not scan. The test also requires exactly one composition-root registration for each compatibility loader and a removal README for each boundary. New plugin-shaped compatibility surfaces belong here only when grounded in an observed consumer contract and must delegate to native services.
+`WooPaymentsExtensionFacadePlacementTest` requires every global `WC_Payments*` or namespaced `WCPay\` type declaration to live in `includes/legacy/woopayments-compat/` or `includes/legacy/woopayments-multi-currency-compat/`, outside every tree Composer scans for its classmaps: `src/` and `includes/rest-api/`, and `tests/php/src/` for development installs. The Jetpack autoloader's optimized classmap, built on every `composer install` and for the release zip, maps each class it finds in those trees whatever its namespace, so a facade placed there would be declared on first use on every store, including stores where the WooPayments extension runs; outside them, only the loaders can declare the facades. Test fixtures that declare the extension's class names use the `.fixture` extension, which Composer does not scan. The test also requires exactly one composition-root registration for each compatibility loader. A new compatibility surface belongs here only for a consumer contract observed in a Woo extension, and it must call the Multi-Currency services.
 
-## Removal
+## Removed in WooCommerce 12.0.0
 
-This facade is scheduled for removal in WooCommerce 12.0.0 after supported extensions no longer call the plugin-owned namespace. Remove these pieces together:
+Remove these pieces together once supported extensions no longer call the `WCPay\MultiCurrency` namespace:
 
-- This production `Compat/` folder and the facade file in `includes/legacy/woopayments-multi-currency-compat/`.
-- The `WooPaymentsExtensionMultiCurrencyFacadeLoader` registration line in `includes/class-woocommerce.php`.
-- The `WooPaymentsExtensionMultiCurrencyFacadeLoader` import and request-provenance check in `MultiCurrencyDepositsCompatibilityController`.
-- The matching `tests/php/src/Internal/MultiCurrency/Compat/` test and fixture.
-- This boundary's expected symbol, loader and README entries in `WooPaymentsExtensionFacadePlacementTest`.
-- The plugin asset handle aliases registered outside this folder: `wcpay-multi-currency-async-renderer` (script and style, `MultiCurrencyAsyncPriceRendererController`) and the switcher block's legacy editor script handle (`MultiCurrencySwitcherBlockController::COMPAT_EDITOR_SCRIPT_HANDLE`).
+- This `Compat/` folder and the facade file in `includes/legacy/woopayments-multi-currency-compat/`.
+- The one registration line, `WooPaymentsExtensionMultiCurrencyFacadeLoader::register()` in `includes/class-woocommerce.php`.
+- The `WooPaymentsExtensionMultiCurrencyFacadeLoader` import and the provenance check in `MultiCurrencyDepositsCompatibilityController`.
+- The test and its fixture in `tests/php/src/Internal/MultiCurrency/Compat/`.
+- This boundary's expected symbol and loader entries in `WooPaymentsExtensionFacadePlacementTest`.
+- The WooPayments extension's asset handles registered as aliases outside this folder: `wcpay-multi-currency-async-renderer` (script and style, `MultiCurrencyAsyncPriceRendererController::COMPAT_SCRIPT_HANDLE`), the switcher block's editor script handle (`MultiCurrencySwitcherBlockController::COMPAT_EDITOR_SCRIPT_HANDLE`) and `WCPAY_MULTI_CURRENCY_ANALYTICS` (`MultiCurrencyAnalyticsController`).
 
-Keep the native projection and state services; they are not compatibility code.
+Keep the Multi-Currency conversion and state services; they are not compatibility code.

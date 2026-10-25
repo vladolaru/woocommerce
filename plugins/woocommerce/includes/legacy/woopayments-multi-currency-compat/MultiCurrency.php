@@ -1,6 +1,6 @@
 <?php
 /**
- * Legacy WooPayments MultiCurrency facade.
+ * WCPay\MultiCurrency\MultiCurrency facade.
  */
 
 declare( strict_types = 1 );
@@ -10,12 +10,15 @@ namespace WCPay\MultiCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionMultiCurrencyFacadeLoader;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 
-// phpcs:disable SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName -- The plugin-owned file and class casing are the compatibility contract.
+// phpcs:disable SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName -- The WooPayments extension's file and class casing are the compatibility contract.
 /**
- * Compatibility facade for Woo extensions that use the WooPayments MultiCurrency class.
+ * Stands in for the WooPayments extension's Multi-Currency class while WooCommerce runs Multi-Currency, so Woo
+ * extensions that call it get WooCommerce's answer.
+ *
+ * Removed in WooCommerce 12.0.0.
  *
  * @since 11.0.0
- * @deprecated 11.0.0 Use WooCommerce's native multi-currency APIs. Scheduled for removal in WooCommerce 12.0.0.
+ * @deprecated 11.0.0 No public replacement. Scheduled for removal in WooCommerce 12.0.0.
  */
 class MultiCurrency {
 	// phpcs:enable SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName
@@ -28,10 +31,12 @@ class MultiCurrency {
 	private static ?self $instance = null;
 
 	/**
-	 * Return the request-local compatibility facade.
+	 * Return the request's facade instance.
+	 *
+	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 Use WooCommerce's native multi-currency APIs.
+	 * @deprecated 11.0.0 No public replacement.
 	 *
 	 * @return self
 	 */
@@ -46,10 +51,12 @@ class MultiCurrency {
 	}
 
 	/**
-	 * Project a price into the selected currency.
+	 * Convert a price to the selected currency; a product price is recorded for the Deposits controller.
+	 *
+	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 Use WooCommerce's native multi-currency APIs.
+	 * @deprecated 11.0.0 No public replacement.
 	 *
 	 * @param mixed  $amount Price amount.
 	 * @param string $type   Price type.
@@ -62,10 +69,12 @@ class MultiCurrency {
 	}
 
 	/**
-	 * Project a raw conversion between two currencies.
+	 * Convert an amount between two currencies at their rates; an empty source currency is the store currency.
+	 *
+	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 Use WooCommerce's native multi-currency APIs.
+	 * @deprecated 11.0.0 No public replacement.
 	 *
 	 * @param float  $amount        Amount.
 	 * @param string $to_currency   Target currency code.
@@ -81,8 +90,10 @@ class MultiCurrency {
 	/**
 	 * Get the selected currency.
 	 *
+	 * Removed in WooCommerce 12.0.0.
+	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 Use WooCommerce's native multi-currency APIs.
+	 * @deprecated 11.0.0 No public replacement.
 	 *
 	 * @return MultiCurrencyCurrency
 	 */
@@ -95,8 +106,10 @@ class MultiCurrency {
 	/**
 	 * Get the store's default currency.
 	 *
+	 * Removed in WooCommerce 12.0.0.
+	 *
 	 * @since 11.0.0
-	 * @deprecated 11.0.0 Use WooCommerce's native multi-currency APIs.
+	 * @deprecated 11.0.0 No public replacement.
 	 *
 	 * @return MultiCurrencyCurrency
 	 */

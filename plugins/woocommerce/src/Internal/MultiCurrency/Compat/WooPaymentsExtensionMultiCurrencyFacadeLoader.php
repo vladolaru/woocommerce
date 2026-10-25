@@ -16,10 +16,14 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBui
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Loads and serves the legacy WooPayments MultiCurrency facade while Core owns the runtime.
+ * While WooCommerce runs Multi-Currency, declares the WooPayments extension's `WCPay\MultiCurrency\MultiCurrency` class
+ * at `plugins_loaded` and answers its members; it records whether the facade converted a product price this request,
+ * which the Deposits compatibility controller reads.
+ *
+ * Removed in WooCommerce 12.0.0.
  *
  * @since 11.0.0
- * @internal Transitional compatibility boundary scheduled for removal in WooCommerce 12.0.0.
+ * @internal
  */
 class WooPaymentsExtensionMultiCurrencyFacadeLoader implements RegisterHooksInterface {
 
@@ -31,21 +35,21 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoader implements RegisterHooksInte
 	private MultiCurrencyRuntimeArbiter $arbiter;
 
 	/**
-	 * Request-local price projection service.
+	 * Price converter, built on first use.
 	 *
 	 * @var MultiCurrencyPriceConverter|null
 	 */
 	private ?MultiCurrencyPriceConverter $price_converter = null;
 
 	/**
-	 * Request-local state builder shared by facade projections and state reads.
+	 * The request's state builder, shared by the facade's conversions and state reads.
 	 *
 	 * @var MultiCurrencyStateBuilder|null
 	 */
 	private ?MultiCurrencyStateBuilder $state_builder = null;
 
 	/**
-	 * Whether a facade call successfully projected a product price during this request.
+	 * Whether a facade call converted a product price during this request.
 	 *
 	 * @var bool
 	 */
@@ -75,7 +79,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoader implements RegisterHooksInte
 	}
 
 	/**
-	 * Load the legacy facade when Core owns MultiCurrency.
+	 * Declare the facade class while WooCommerce runs Multi-Currency.
 	 */
 	public function load(): void {
 		if ( ! $this->arbiter->is_builtin_owner() ) {
@@ -89,7 +93,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoader implements RegisterHooksInte
 	}
 
 	/**
-	 * Project a price through the native runtime and record successful product projections.
+	 * Convert a price to the selected currency, and record a converted product price.
 	 *
 	 * @param mixed  $amount Price amount.
 	 * @param string $type   Price type.
@@ -106,7 +110,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoader implements RegisterHooksInte
 	}
 
 	/**
-	 * Project a raw conversion through the native runtime.
+	 * Convert an amount between two currencies; an empty source currency is the store currency.
 	 *
 	 * @param float  $amount        Amount.
 	 * @param string $to_currency   Target currency code.
@@ -122,7 +126,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoader implements RegisterHooksInte
 	}
 
 	/**
-	 * Get the selected currency from native request state.
+	 * Get the selected currency from the request's Multi-Currency state.
 	 *
 	 * @return MultiCurrencyCurrency
 	 */
@@ -131,7 +135,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoader implements RegisterHooksInte
 	}
 
 	/**
-	 * Get the store's default currency from native request state.
+	 * Get the store's default currency from the request's Multi-Currency state.
 	 *
 	 * @return MultiCurrencyCurrency
 	 */
@@ -140,7 +144,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoader implements RegisterHooksInte
 	}
 
 	/**
-	 * Tell whether the legacy facade already projected a product price in this request.
+	 * Tell whether the facade already converted a product price in this request.
 	 *
 	 * @return bool
 	 */
@@ -149,7 +153,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoader implements RegisterHooksInte
 	}
 
 	/**
-	 * Get the request-local price projection service.
+	 * Get the price converter, building it on first use.
 	 *
 	 * @return MultiCurrencyPriceConverter
 	 */
@@ -162,7 +166,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoader implements RegisterHooksInte
 	}
 
 	/**
-	 * Get the request-local state builder.
+	 * Get the request's state builder.
 	 *
 	 * @return MultiCurrencyStateBuilder
 	 */
