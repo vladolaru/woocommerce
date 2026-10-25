@@ -55,7 +55,7 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should not register hooks when plugin owns runtime.
 	 */
-	public function test_does_not_register_hooks_when_plugin_owns_runtime(): void {
+	public function test_does_not_register_hooks_when_extension_owns_runtime(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true );
 
 		$sut->register();

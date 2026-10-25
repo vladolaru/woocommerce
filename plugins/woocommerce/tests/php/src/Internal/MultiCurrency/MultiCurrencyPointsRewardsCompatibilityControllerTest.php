@@ -62,15 +62,15 @@ class MultiCurrencyPointsRewardsCompatibilityControllerTest extends WC_Unit_Test
 	 * @testdox Should not register Points and Rewards hooks when runtime guards block.
 	 */
 	public function test_does_not_register_points_rewards_hooks_when_guards_block(): void {
-		$plugin_owned           = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+		$extension_owned        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 		$missing_points_rewards = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
 		$admin                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true );
 
-		$plugin_owned->register();
+		$extension_owned->register();
 		$missing_points_rewards->register();
 		$admin->register();
 
-		$this->assert_points_rewards_hooks_not_registered( $plugin_owned );
+		$this->assert_points_rewards_hooks_not_registered( $extension_owned );
 		$this->assert_points_rewards_hooks_not_registered( $missing_points_rewards );
 		$this->assert_points_rewards_hooks_not_registered( $admin );
 	}

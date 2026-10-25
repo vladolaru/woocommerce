@@ -90,15 +90,15 @@ class MultiCurrencyDepositsCompatibilityControllerTest extends WC_Unit_Test_Case
 	 * @testdox Should not register Deposits hooks when runtime guards block.
 	 */
 	public function test_does_not_register_deposits_hooks_when_guards_block(): void {
-		$plugin_owned     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+		$extension_owned  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 		$missing_deposits = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
 		$supported        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, '2.0.1' );
 
-		$plugin_owned->register();
+		$extension_owned->register();
 		$missing_deposits->register();
 		$supported->register();
 
-		$this->assert_deposits_hooks_not_registered( $plugin_owned );
+		$this->assert_deposits_hooks_not_registered( $extension_owned );
 		$this->assert_deposits_hooks_not_registered( $missing_deposits );
 		$this->assert_deposits_hooks_not_registered( $supported );
 	}

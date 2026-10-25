@@ -65,7 +65,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should not register frontend price hooks while plugin multi-currency owns the runtime.
 	 */
-	public function test_does_not_register_when_plugin_multi_currency_owns_runtime(): void {
+	public function test_does_not_register_when_extension_multi_currency_owns_runtime(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		$sut->register();
@@ -139,7 +139,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should pass each price to the projection service with its price type.
 	 */
-	public function test_passes_each_price_to_the_projection_service_with_its_type(): void {
+	public function test_passes_each_price_to_the_price_converter_with_its_type(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assertSame( '20', $sut->get_product_price_string( '10.00', (object) array() ) );
@@ -168,7 +168,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should convert a real product, flat shipping rate and coupons with the client's rounding.
 	 */
-	public function test_converts_real_prices_with_the_client_rounding(): void {
+	public function test_converts_real_prices_with_rounding_and_charm(): void {
 		// EUR at 0.91 with a 0.50 rounding step and a -0.01 charm, as the settings page saves them.
 		update_option( 'woocommerce_currency', 'USD' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'USD', 'EUR' ) );
@@ -721,7 +721,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should persist projected multi-currency refund meta.
 	 */
-	public function test_persists_projected_refund_meta(): void {
+	public function test_persists_exchange_rate_refund_meta(): void {
 		$sut   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$order = wc_create_order();
 		$order->set_currency( 'GBP' );
@@ -751,7 +751,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should skip refund meta when no projected candidates exist.
 	 */
-	public function test_skips_refund_meta_when_no_projected_candidates_exist(): void {
+	public function test_skips_refund_meta_when_no_candidates_exist(): void {
 		$sut   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$order = wc_create_order();
 		$order->set_currency( 'USD' );
@@ -825,19 +825,19 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	 * Create a frontend prices controller with a static runtime owner.
 	 *
 	 * @param string                           $owner                  Runtime owner.
-	 * @param bool                             $should_project_queries Whether query price filters should project.
+	 * @param bool                             $should_convert_queries Whether query price filters should project.
 	 * @param MultiCurrencyRequestContext|null $request_context Request context.
 	 * @return MultiCurrencyFrontendPricesController
 	 */
 	private function create_controller(
 		string $owner,
-		bool $should_project_queries = true,
+		bool $should_convert_queries = true,
 		?MultiCurrencyRequestContext $request_context = null
 	): MultiCurrencyFrontendPricesController {
 		$controller = new MultiCurrencyFrontendPricesController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			ServiceFactories::with( $this, array( 'create_price_converter' => $this->create_projection_service( $should_project_queries ) ) ),
+			ServiceFactories::with( $this, array( 'create_price_converter' => $this->create_price_converter( $should_convert_queries ) ) ),
 			$request_context ?? wc_get_container()->get( MultiCurrencyRequestContext::class )
 		);
 
@@ -891,25 +891,25 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a deterministic price projection service.
 	 *
-	 * @param bool $should_project_queries Whether query price filters should project.
+	 * @param bool $should_convert_queries Whether query price filters should project.
 	 * @return MultiCurrencyPriceConverter
 	 */
-	private function create_projection_service( bool $should_project_queries ): MultiCurrencyPriceConverter {
-		return new class( $should_project_queries ) extends MultiCurrencyPriceConverter {
+	private function create_price_converter( bool $should_convert_queries ): MultiCurrencyPriceConverter {
+		return new class( $should_convert_queries ) extends MultiCurrencyPriceConverter {
 			/**
 			 * Whether query price filters should project.
 			 *
 			 * @var bool
 			 */
-			private bool $should_project_queries;
+			private bool $should_convert_queries;
 
 			/**
 			 * Constructor.
 			 *
-			 * @param bool $should_project_queries Whether query price filters should project.
+			 * @param bool $should_convert_queries Whether query price filters should project.
 			 */
-			public function __construct( bool $should_project_queries ) {
-				$this->should_project_queries = $should_project_queries;
+			public function __construct( bool $should_convert_queries ) {
+				$this->should_convert_queries = $should_convert_queries;
 			}
 
 			/**
@@ -971,7 +971,7 @@ class MultiCurrencyFrontendPricesControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function should_convert_between_selected_and_default_currency(): bool {
-				return $this->should_project_queries;
+				return $this->should_convert_queries;
 			}
 
 			/**

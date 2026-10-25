@@ -53,7 +53,7 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should not register init hook when plugin owns runtime.
 	 */
-	public function test_does_not_register_init_hook_when_plugin_owns_runtime(): void {
+	public function test_does_not_register_init_hook_when_extension_owns_runtime(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		$sut->register();
@@ -99,7 +99,7 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should register switcher block type with preserved attributes.
 	 */
-	public function test_registers_switcher_block_type_with_preserved_attributes(): void {
+	public function test_registers_switcher_block_type_with_its_attributes(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 
 		$sut->handle_init();
@@ -173,11 +173,11 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 		$this->assertNotContains( 'wp-element', $registered_script->deps );
 		$this->assertNotEmpty( $registered_script->ver );
 
-		$legacy_script = wp_scripts()->registered[ self::COMPAT_EDITOR_SCRIPT_HANDLE ] ?? null;
+		$compat_script = wp_scripts()->registered[ self::COMPAT_EDITOR_SCRIPT_HANDLE ] ?? null;
 
-		$this->assertInstanceOf( \_WP_Dependency::class, $legacy_script );
-		$this->assertFalse( $legacy_script->src );
-		$this->assertSame( array( self::EDITOR_SCRIPT_HANDLE ), $legacy_script->deps );
+		$this->assertInstanceOf( \_WP_Dependency::class, $compat_script );
+		$this->assertFalse( $compat_script->src );
+		$this->assertSame( array( self::EDITOR_SCRIPT_HANDLE ), $compat_script->deps );
 	}
 
 	/**
@@ -212,11 +212,11 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should render callback delegate to projection service.
 	 */
-	public function test_render_callback_delegates_to_projection_service(): void {
-		$projection       = $this->create_projection_service();
-		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $projection );
-		$_GET['currency'] = 'EUR';
-		$_GET['orderby']  = 'price';
+	public function test_render_callback_delegates_to_the_switcher_renderer(): void {
+		$switcher_renderer = $this->create_switcher_renderer();
+		$sut               = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $switcher_renderer );
+		$_GET['currency']  = 'EUR';
+		$_GET['orderby']   = 'price';
 
 		$markup = $sut->render_block_widget(
 			array(
@@ -231,64 +231,64 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 				'fontSize' => 18,
 				'symbol'   => false,
 			),
-			$projection->last_block_attributes
+			$switcher_renderer->last_block_attributes
 		);
 		$this->assertSame(
 			array(
 				'currency' => 'EUR',
 				'orderby'  => 'price',
 			),
-			$projection->last_query_args
+			$switcher_renderer->last_query_args
 		);
-		$this->assertFalse( $projection->last_switching_disabled );
+		$this->assertFalse( $switcher_renderer->last_switching_disabled );
 	}
 
 	/**
 	 * @testdox Should render callback pass switching disabled decision.
 	 */
 	public function test_render_callback_passes_switching_disabled_decision(): void {
-		$projection = $this->create_projection_service();
-		$sut        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $projection, true );
+		$switcher_renderer = $this->create_switcher_renderer();
+		$sut               = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $switcher_renderer, true );
 
 		$sut->render_block_widget( array() );
 
-		$this->assertTrue( $projection->last_switching_disabled );
+		$this->assertTrue( $switcher_renderer->last_switching_disabled );
 	}
 
 	/**
 	 * Create a switcher block controller.
 	 *
 	 * @param string                             $owner               Runtime owner.
-	 * @param MultiCurrencySwitcherRenderer|null $projection          Projection service.
+	 * @param MultiCurrencySwitcherRenderer|null $switcher_renderer          Projection service.
 	 * @param bool                               $switching_disabled Whether switching is disabled.
 	 * @return MultiCurrencySwitcherBlockController
 	 */
 	private function create_controller(
 		string $owner,
-		?MultiCurrencySwitcherRenderer $projection = null,
+		?MultiCurrencySwitcherRenderer $switcher_renderer = null,
 		bool $switching_disabled = false
 	): MultiCurrencySwitcherBlockController {
-		return $this->create_controller_with_arbiter( $this->create_arbiter( $owner ), $projection, $switching_disabled );
+		return $this->create_controller_with_arbiter( $this->create_arbiter( $owner ), $switcher_renderer, $switching_disabled );
 	}
 
 	/**
 	 * Create a switcher block controller with an explicit runtime arbiter.
 	 *
 	 * @param MultiCurrencyRuntimeArbiter        $arbiter            Runtime owner arbiter.
-	 * @param MultiCurrencySwitcherRenderer|null $projection         Projection service.
+	 * @param MultiCurrencySwitcherRenderer|null $switcher_renderer         Projection service.
 	 * @param bool                               $switching_disabled Whether switching is disabled.
 	 * @return MultiCurrencySwitcherBlockController
 	 */
 	private function create_controller_with_arbiter(
 		MultiCurrencyRuntimeArbiter $arbiter,
-		?MultiCurrencySwitcherRenderer $projection = null,
+		?MultiCurrencySwitcherRenderer $switcher_renderer = null,
 		bool $switching_disabled = false
 	): MultiCurrencySwitcherBlockController {
 		$controller = new MultiCurrencySwitcherBlockController();
 		$controller->init(
 			$arbiter,
 			$this->create_compatibility_controller( $switching_disabled ),
-			ServiceFactories::with( $this, array( 'create_switcher_renderer' => $projection ?? $this->create_projection_service() ) )
+			ServiceFactories::with( $this, array( 'create_switcher_renderer' => $switcher_renderer ?? $this->create_switcher_renderer() ) )
 		);
 
 		return $controller;
@@ -378,7 +378,7 @@ class MultiCurrencySwitcherBlockControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @return MultiCurrencySwitcherRenderer
 	 */
-	private function create_projection_service(): MultiCurrencySwitcherRenderer {
+	private function create_switcher_renderer(): MultiCurrencySwitcherRenderer {
 		return new class() extends MultiCurrencySwitcherRenderer {
 			/**
 			 * Last block attributes.

@@ -102,7 +102,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should not register analytics hooks when plugin owns runtime.
 	 */
-	public function test_does_not_register_analytics_hooks_when_plugin_owns_runtime(): void {
+	public function test_does_not_register_analytics_hooks_when_extension_owns_runtime(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true );
 
 		$sut->register();
@@ -331,7 +331,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should update order stats data through projection.
 	 */
-	public function test_updates_order_stats_data_through_projection(): void {
+	public function test_converts_order_stats_data_with_the_order_exchange_rate(): void {
 		$order = wc_create_order();
 		$this->assertInstanceOf( \WC_Order::class, $order );
 		$order->set_currency( 'EUR' );

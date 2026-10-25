@@ -85,7 +85,7 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should not register async renderer hooks when plugin owns runtime.
 	 */
-	public function test_does_not_register_hooks_when_plugin_owns_runtime(): void {
+	public function test_does_not_register_hooks_when_extension_owns_runtime(): void {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
@@ -371,9 +371,9 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 		$sut->handle_wp_enqueue_scripts();
 
 		$script        = wp_scripts()->registered[ self::SCRIPT_HANDLE ] ?? null;
-		$legacy_script = wp_scripts()->registered[ self::COMPAT_SCRIPT_HANDLE ] ?? null;
+		$compat_script = wp_scripts()->registered[ self::COMPAT_SCRIPT_HANDLE ] ?? null;
 		$style         = wp_styles()->registered[ self::SCRIPT_HANDLE ] ?? null;
-		$legacy_style  = wp_styles()->registered[ self::COMPAT_SCRIPT_HANDLE ] ?? null;
+		$compat_style  = wp_styles()->registered[ self::COMPAT_SCRIPT_HANDLE ] ?? null;
 		$data          = wp_scripts()->get_data( self::SCRIPT_HANDLE, 'data' );
 
 		$this->assertNotNull( $script );
@@ -399,17 +399,17 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 			),
 			json_decode( substr( $data, strlen( 'var wcpayAsyncPriceConfig = ' ), -1 ), true )
 		);
-		$this->assertInstanceOf( \_WP_Dependency::class, $legacy_script );
-		$this->assertFalse( $legacy_script->src );
-		$this->assertSame( array( self::SCRIPT_HANDLE ), $legacy_script->deps );
+		$this->assertInstanceOf( \_WP_Dependency::class, $compat_script );
+		$this->assertFalse( $compat_script->src );
+		$this->assertSame( array( self::SCRIPT_HANDLE ), $compat_script->deps );
 		$this->assertFalse( wp_script_is( self::COMPAT_SCRIPT_HANDLE, 'enqueued' ) );
 		$this->assertNotNull( $style );
 		$this->assertSame( 'https://example.test/wp-content/plugins/woocommerce/assets/css/multi-currency-async-renderer.css', $style->src );
 		$this->assertSame( '1.2.3', $style->ver );
 		$this->assertTrue( wp_style_is( self::SCRIPT_HANDLE, 'enqueued' ) );
-		$this->assertInstanceOf( \_WP_Dependency::class, $legacy_style );
-		$this->assertFalse( $legacy_style->src );
-		$this->assertSame( array( self::SCRIPT_HANDLE ), $legacy_style->deps );
+		$this->assertInstanceOf( \_WP_Dependency::class, $compat_style );
+		$this->assertFalse( $compat_style->src );
+		$this->assertSame( array( self::SCRIPT_HANDLE ), $compat_style->deps );
 		$this->assertFalse( wp_style_is( self::COMPAT_SCRIPT_HANDLE, 'enqueued' ) );
 	}
 

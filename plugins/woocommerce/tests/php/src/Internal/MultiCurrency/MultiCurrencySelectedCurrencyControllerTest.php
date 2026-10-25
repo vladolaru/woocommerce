@@ -119,7 +119,7 @@ class MultiCurrencySelectedCurrencyControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should not register selected currency hooks when plugin owns runtime.
 	 */
-	public function test_does_not_register_selected_currency_hooks_when_plugin_owns_runtime(): void {
+	public function test_does_not_register_selected_currency_hooks_when_extension_owns_runtime(): void {
 		$service = $this->create_persistence_service();
 		$sut     = $this->create_controller(
 			MultiCurrencyRuntimeArbiter::OWNER_EXTENSION,

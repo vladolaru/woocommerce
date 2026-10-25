@@ -64,7 +64,7 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should not register explicit price hooks when plugin owns runtime.
 	 */
-	public function test_does_not_register_explicit_price_hooks_when_plugin_owns_runtime(): void {
+	public function test_does_not_register_explicit_price_hooks_when_extension_owns_runtime(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true );
 
 		$sut->register();
@@ -177,7 +177,7 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should let the public filter disable every configured explicit-price projection.
 	 */
-	public function test_public_filter_disables_configured_cart_order_and_admin_explicit_price_projections(): void {
+	public function test_public_filter_disables_configured_cart_order_and_admin_explicit_prices(): void {
 		$sut   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 		$order = $this->createMock( \WC_Order::class );
 		$order->method( 'get_currency' )->willReturn( 'BRL' );

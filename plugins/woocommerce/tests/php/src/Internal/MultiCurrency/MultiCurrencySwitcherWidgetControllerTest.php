@@ -44,7 +44,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should not register widget hook when plugin owns runtime.
 	 */
-	public function test_does_not_register_widget_hook_when_plugin_owns_runtime(): void {
+	public function test_does_not_register_widget_hook_when_extension_owns_runtime(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		$sut->register();
@@ -118,12 +118,12 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should use the actual widget factory key and apply legacy theme filters in order.
 	 */
-	public function test_renders_with_actual_factory_key_and_applies_legacy_theme_filters_in_order(): void {
+	public function test_renders_with_actual_factory_key_and_applies_theme_widget_filters_in_order(): void {
 		global $wp_widget_factory;
 
-		$projection = $this->create_projection_service();
-		$sut        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $projection );
-		$before     = $this->get_switcher_widgets();
+		$switcher_renderer = $this->create_switcher_renderer();
+		$sut               = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $switcher_renderer );
+		$before            = $this->get_switcher_widgets();
 		$sut->handle_widgets_init();
 		$widget = current( array_diff_key( $this->get_switcher_widgets(), $before ) );
 		$key    = array_search( $widget, $wp_widget_factory->widgets, true );
@@ -157,27 +157,27 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertSame( '<form>Switcher</form>', $markup );
 		$this->assertSame( array( 'instance', 'args' ), $filter_order );
-		$this->assertSame( array( 'title' => 'Theme currency' ), $projection->last_instance );
-		$this->assertSame( '<section>', $projection->last_args['before_widget'] );
-		$this->assertSame( '</section>', $projection->last_args['after_widget'] );
+		$this->assertSame( array( 'title' => 'Theme currency' ), $switcher_renderer->last_instance );
+		$this->assertSame( '<section>', $switcher_renderer->last_args['before_widget'] );
+		$this->assertSame( '</section>', $switcher_renderer->last_args['after_widget'] );
 	}
 
 	/**
 	 * @testdox Should retain caller arrays when legacy theme filters return malformed values.
 	 */
-	public function test_retains_caller_arrays_when_legacy_theme_filters_return_malformed_values(): void {
-		$projection = $this->create_projection_service();
-		$sut        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $projection );
-		$instance   = array( 'title' => 'Caller title' );
-		$args       = array( 'before_widget' => '<aside>' );
+	public function test_retains_caller_arrays_when_theme_widget_filters_return_malformed_values(): void {
+		$switcher_renderer = $this->create_switcher_renderer();
+		$sut               = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $switcher_renderer );
+		$instance          = array( 'title' => 'Caller title' );
+		$args              = array( 'before_widget' => '<aside>' );
 		$sut->handle_widgets_init();
 		add_filter( 'wcpay_multi_currency_theme_widget_instance', static fn() => 'not an array' );
 		add_filter( 'wcpay_multi_currency_theme_widget_args', static fn() => 'not an array' );
 
 		$sut->get_switcher_widget_markup( $instance, $args );
 
-		$this->assertSame( $instance, $projection->last_instance );
-		$this->assertSame( $args['before_widget'], $projection->last_args['before_widget'] );
+		$this->assertSame( $instance, $switcher_renderer->last_instance );
+		$this->assertSame( $args['before_widget'], $switcher_renderer->last_args['before_widget'] );
 	}
 
 	/**
@@ -193,7 +193,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should not render core markup when the plugin owns multi-currency.
 	 */
-	public function test_does_not_render_core_markup_when_plugin_owns_multi_currency(): void {
+	public function test_does_not_render_core_markup_when_extension_owns_multi_currency(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 		$sut->handle_widgets_init();
 
@@ -203,12 +203,12 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should delegate to the client facade only when the plugin owns multi-currency.
 	 */
-	public function test_delegates_to_client_facade_only_when_plugin_owns_multi_currency(): void {
+	public function test_delegates_to_the_extension_only_when_extension_owns_multi_currency(): void {
 		if ( ! function_exists( 'WC_Payments_Multi_Currency' ) ) {
 			// The function stays defined for later tests; returning null without a client makes the controller treat it as absent.
 			eval( 'function WC_Payments_Multi_Currency() { return $GLOBALS["row_86_multi_currency_client"] ?? null; }' ); // phpcs:ignore Squiz.PHP.Eval.Discouraged -- Fixture for the client-first compatibility function.
 		}
-		$client                                  = new class() {
+		$extension_multi_currency                = new class() {
 			/**
 			 * Last client instance settings.
 			 *
@@ -237,15 +237,15 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 				return '<form>Client switcher</form>';
 			}
 		};
-		$GLOBALS['row_86_multi_currency_client'] = $client;
+		$GLOBALS['row_86_multi_currency_client'] = $extension_multi_currency;
 		$instance                                = array( 'title' => 'Client title' );
 		$args                                    = array( 'before_widget' => '<aside>' );
 		$sut                                     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		try {
 			$this->assertSame( '<form>Client switcher</form>', $sut->get_switcher_widget_markup( $instance, $args ) );
-			$this->assertSame( $instance, $client->received_instance );
-			$this->assertSame( $args, $client->received_args );
+			$this->assertSame( $instance, $extension_multi_currency->received_instance );
+			$this->assertSame( $args, $extension_multi_currency->received_args );
 		} finally {
 			unset( $GLOBALS['row_86_multi_currency_client'] );
 		}
@@ -255,7 +255,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should clean the output buffer when widget rendering throws.
 	 */
 	public function test_cleans_output_buffer_when_widget_rendering_throws(): void {
-		$projection = new class() extends MultiCurrencySwitcherRenderer {
+		$switcher_renderer = new class() extends MultiCurrencySwitcherRenderer {
 			/**
 			 * Constructor.
 			 */
@@ -279,8 +279,8 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 				throw new \RuntimeException( 'Rendering failed.' );
 			}
 		};
-		$sut        = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $projection );
-		$level      = ob_get_level();
+		$sut               = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $switcher_renderer );
+		$level             = ob_get_level();
 		$sut->handle_widgets_init();
 
 		try {
@@ -295,7 +295,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should expose preserved widget metadata and sentence case settings.
 	 */
-	public function test_widget_exposes_preserved_metadata_and_sentence_case_settings(): void {
+	public function test_widget_exposes_its_metadata_and_sentence_case_settings(): void {
 		$widget = $this->create_widget();
 
 		$this->assertSame( 'currency_switcher_widget', $widget->widget_id );
@@ -309,11 +309,11 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should render projection markup with query args.
 	 */
-	public function test_widget_renders_projection_markup_with_query_args(): void {
-		$projection       = $this->create_projection_service();
-		$_GET['currency'] = 'EUR';
-		$_GET['s']        = 'shirts';
-		$widget           = $this->create_widget( $projection );
+	public function test_widget_renders_the_switcher_renderer_markup_with_query_args(): void {
+		$switcher_renderer = $this->create_switcher_renderer();
+		$_GET['currency']  = 'EUR';
+		$_GET['s']         = 'shirts';
+		$widget            = $this->create_widget( $switcher_renderer );
 
 		ob_start();
 		$widget->widget(
@@ -334,37 +334,37 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 				'title'  => 'Shop currency',
 				'symbol' => false,
 			),
-			$projection->last_instance
+			$switcher_renderer->last_instance
 		);
 		$this->assertSame(
 			array(
 				'before_widget' => '<aside>',
 				'after_widget'  => '</aside>',
 			),
-			$projection->last_args
+			$switcher_renderer->last_args
 		);
 		$this->assertSame(
 			array(
 				'currency' => 'EUR',
 				's'        => 'shirts',
 			),
-			$projection->last_query_args
+			$switcher_renderer->last_query_args
 		);
-		$this->assertFalse( $projection->last_switching_disabled );
+		$this->assertFalse( $switcher_renderer->last_switching_disabled );
 	}
 
 	/**
 	 * @testdox Should pass switching disabled decision to projection.
 	 */
-	public function test_widget_passes_switching_disabled_decision_to_projection(): void {
-		$projection = $this->create_projection_service();
-		$widget     = $this->create_widget( $projection, true );
+	public function test_widget_passes_switching_disabled_decision_to_the_switcher_renderer(): void {
+		$switcher_renderer = $this->create_switcher_renderer();
+		$widget            = $this->create_widget( $switcher_renderer, true );
 
 		ob_start();
 		$widget->widget( array(), array() );
 		ob_end_clean();
 
-		$this->assertTrue( $projection->last_switching_disabled );
+		$this->assertTrue( $switcher_renderer->last_switching_disabled );
 	}
 
 	/**
@@ -389,18 +389,18 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	 * Create a switcher widget controller.
 	 *
 	 * @param string                        $owner      Runtime owner.
-	 * @param MultiCurrencySwitcherRenderer $projection Projection service.
+	 * @param MultiCurrencySwitcherRenderer $switcher_renderer Projection service.
 	 * @return MultiCurrencySwitcherWidgetController
 	 */
 	private function create_controller(
 		string $owner,
-		?MultiCurrencySwitcherRenderer $projection = null
+		?MultiCurrencySwitcherRenderer $switcher_renderer = null
 	): MultiCurrencySwitcherWidgetController {
 		$controller = new MultiCurrencySwitcherWidgetController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
 			$this->create_compatibility_controller(),
-			ServiceFactories::with( $this, array( 'create_switcher_renderer' => $projection ?? $this->create_projection_service() ) )
+			ServiceFactories::with( $this, array( 'create_switcher_renderer' => $switcher_renderer ?? $this->create_switcher_renderer() ) )
 		);
 
 		return $controller;
@@ -409,16 +409,16 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a switcher widget.
 	 *
-	 * @param MultiCurrencySwitcherRenderer|null $projection          Projection service.
+	 * @param MultiCurrencySwitcherRenderer|null $switcher_renderer          Projection service.
 	 * @param bool                               $switching_disabled Whether switching is disabled.
 	 * @return MultiCurrencySwitcherWidget
 	 */
 	private function create_widget(
-		?MultiCurrencySwitcherRenderer $projection = null,
+		?MultiCurrencySwitcherRenderer $switcher_renderer = null,
 		bool $switching_disabled = false
 	): MultiCurrencySwitcherWidget {
 		return new MultiCurrencySwitcherWidget(
-			$projection ?? $this->create_projection_service(),
+			$switcher_renderer ?? $this->create_switcher_renderer(),
 			$this->create_compatibility_controller( $switching_disabled )
 		);
 	}
@@ -507,7 +507,7 @@ class MultiCurrencySwitcherWidgetControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @return MultiCurrencySwitcherRenderer
 	 */
-	private function create_projection_service(): MultiCurrencySwitcherRenderer {
+	private function create_switcher_renderer(): MultiCurrencySwitcherRenderer {
 		return new class() extends MultiCurrencySwitcherRenderer {
 			/**
 			 * Last widget instance settings.

@@ -104,13 +104,13 @@ class MultiCurrencyNameYourPriceCompatibilityControllerTest extends WC_Unit_Test
 	 * @testdox Should not register Name Your Price hooks when runtime guards block.
 	 */
 	public function test_does_not_register_name_your_price_hooks_when_guards_block(): void {
-		$plugin_owned = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
-		$missing_nyp  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
+		$extension_owned = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+		$missing_nyp     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
 
-		$plugin_owned->register();
+		$extension_owned->register();
 		$missing_nyp->register();
 
-		$this->assert_name_your_price_hooks_not_registered( $plugin_owned );
+		$this->assert_name_your_price_hooks_not_registered( $extension_owned );
 		$this->assert_name_your_price_hooks_not_registered( $missing_nyp );
 	}
 

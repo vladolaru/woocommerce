@@ -273,7 +273,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 
 
 	/** @testdox Should arm the Multi-Currency handover on a request the WooPayments plugin owns. */
-	public function test_plugin_owned_request_arms_the_handover(): void {
+	public function test_extension_owned_request_arms_the_handover(): void {
 		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_EXTENSION );
 
 		$this->assertSame( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_EXTENSION, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ) );
@@ -281,7 +281,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/** @testdox Should hand the plugin's Multi-Currency state over on the first native-owned request, before the arbiter reads the option. */
-	public function test_first_native_request_hands_over_before_the_arbiter_reads(): void {
+	public function test_first_builtin_request_hands_over_before_the_arbiter_reads(): void {
 		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_EXTENSION );
 		// EUR set up in the plugin (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`); a Features page save stored "no"
 		// while the plugin owned payments.
@@ -296,7 +296,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/** @testdox Should keep a merchant choice made under native ownership on later requests. */
-	public function test_later_native_request_keeps_the_merchant_choice(): void {
+	public function test_later_builtin_request_keeps_the_merchant_choice(): void {
 		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_EXTENSION );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
 		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
@@ -365,7 +365,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/** @testdox Should mark a store native on its first native-owned request without a marker, leaving the option unset without plugin data. */
-	public function test_first_native_request_without_marker_marks_the_store_native(): void {
+	public function test_first_builtin_request_without_marker_marks_the_store_builtin(): void {
 		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_BUILTIN );
 
 		$this->assertSame( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_BUILTIN, get_option( MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION ), 'Later requests then read the marker from the autoloaded options.' );
@@ -374,7 +374,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/** @testdox Should apply the upgrade seed on a first native-owned request without a marker, never over a stored choice. */
-	public function test_first_native_request_without_marker_applies_the_upgrade_seed(): void {
+	public function test_first_builtin_request_without_marker_applies_the_upgrade_seed(): void {
 		// A network site that got no request between the upgrade and a network deactivation: its upgrade seed never ran. The plugin stores
 		// a list of currency codes (client 11.1.0 `includes/multi-currency/MultiCurrency.php:767-783`).
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
@@ -450,7 +450,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 	}
 
 	/** @testdox Should count a completed plugin setup as plugin use at the switch. */
-	public function test_completed_setup_counts_as_plugin_use_at_the_switch(): void {
+	public function test_completed_setup_counts_as_extension_use_at_the_switch(): void {
 		$this->register_for_payments_owner( WooPaymentsRuntimeArbiter::OWNER_EXTENSION );
 		// The plugin saves true when its setup task finishes (client 11.1.0 `includes/multi-currency/client/setup/tasks/setup-complete-task/index.js:32`).
 		update_option( 'wcpay_multi_currency_setup_completed', '1' );

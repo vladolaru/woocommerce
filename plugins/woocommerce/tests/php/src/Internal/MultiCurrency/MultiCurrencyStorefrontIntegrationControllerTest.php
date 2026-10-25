@@ -69,7 +69,7 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	/**
 	 * @testdox Should not register Storefront switcher hooks when plugin owns runtime.
 	 */
-	public function test_does_not_register_hooks_when_plugin_owns_runtime(): void {
+	public function test_does_not_register_hooks_when_extension_owns_runtime(): void {
 		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'yes' );
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 

@@ -105,15 +105,15 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 	 * @testdox Should not register Bookings hooks when runtime or request guards block.
 	 */
 	public function test_does_not_register_bookings_hooks_when_guards_block(): void {
-		$plugin_owned     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+		$extension_owned  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 		$missing_bookings = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
 		$admin            = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, false );
 
-		$plugin_owned->register();
+		$extension_owned->register();
 		$missing_bookings->register();
 		$admin->register();
 
-		$this->assert_bookings_hooks_not_registered( $plugin_owned );
+		$this->assert_bookings_hooks_not_registered( $extension_owned );
 		$this->assert_bookings_hooks_not_registered( $missing_bookings );
 		$this->assert_bookings_hooks_not_registered( $admin );
 	}

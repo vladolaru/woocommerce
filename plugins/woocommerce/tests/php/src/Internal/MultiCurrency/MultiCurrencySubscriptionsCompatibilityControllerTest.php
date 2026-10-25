@@ -149,7 +149,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	/**
 	 * @testdox Should not register subscription filters when plugin owns runtime.
 	 */
-	public function test_does_not_register_when_plugin_owns_runtime(): void {
+	public function test_does_not_register_when_extension_owns_runtime(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		$sut->register();
@@ -515,7 +515,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	/**
 	 * @testdox Should convert direct subscription product prices through the native projection service.
 	 */
-	public function test_converts_direct_subscription_product_prices_through_native_projection_service(): void {
+	public function test_converts_direct_subscription_product_prices_through_the_price_converter(): void {
 		$product = $this->create_product( 10 );
 		$sut     = $this->create_controller();
 
@@ -530,7 +530,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 	/**
 	 * @testdox Should convert subscription sign-up fees through the native projection service.
 	 */
-	public function test_converts_subscription_signup_fees_through_native_projection_service(): void {
+	public function test_converts_subscription_signup_fees_through_the_price_converter(): void {
 		$product = $this->create_product( 10 );
 		$sut     = $this->create_controller();
 

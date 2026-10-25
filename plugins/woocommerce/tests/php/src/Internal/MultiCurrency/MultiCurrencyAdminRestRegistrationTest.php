@@ -105,8 +105,8 @@ class MultiCurrencyAdminRestRegistrationTest extends WC_REST_Unit_Test_Case {
 	/** @return array<string,array{string}> */
 	public static function non_core_owner_provider(): array {
 		return array(
-			'plugin' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION ),
-			'none'   => array( MultiCurrencyRuntimeArbiter::OWNER_NONE ),
+			'extension' => array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION ),
+			'none'      => array( MultiCurrencyRuntimeArbiter::OWNER_NONE ),
 		);
 	}
 
@@ -136,17 +136,17 @@ class MultiCurrencyAdminRestRegistrationTest extends WC_REST_Unit_Test_Case {
 	 * @return MultiCurrencyRestController
 	 */
 	private function create_rest_controller( MultiCurrencyRuntimeArbiter $arbiter ): MultiCurrencyRestController {
-		$frontend_projection = $this->getMockBuilder( MultiCurrencyDisplayService::class )
+		$display_service = $this->getMockBuilder( MultiCurrencyDisplayService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_cache_optimized_mode' ) )
 			->getMock();
-		$frontend_projection->method( 'is_cache_optimized_mode' )->willReturn( false );
+		$display_service->method( 'is_cache_optimized_mode' )->willReturn( false );
 
 		$controller = new MultiCurrencyRestController();
 		$controller->init(
 			$arbiter,
 			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ),
-			ServiceFactories::with( $this, array( 'create_display_service' => $frontend_projection ) )
+			ServiceFactories::with( $this, array( 'create_display_service' => $display_service ) )
 		);
 
 		return $controller;

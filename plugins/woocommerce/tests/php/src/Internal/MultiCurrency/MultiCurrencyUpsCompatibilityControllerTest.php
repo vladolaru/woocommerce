@@ -53,13 +53,13 @@ class MultiCurrencyUpsCompatibilityControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not register UPS hooks when runtime guards block.
 	 */
 	public function test_does_not_register_ups_hooks_when_guards_block(): void {
-		$plugin_owned = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
-		$missing_ups  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
+		$extension_owned = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+		$missing_ups     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
 
-		$plugin_owned->register();
+		$extension_owned->register();
 		$missing_ups->register();
 
-		$this->assert_ups_hooks_not_registered( $plugin_owned );
+		$this->assert_ups_hooks_not_registered( $extension_owned );
 		$this->assert_ups_hooks_not_registered( $missing_ups );
 	}
 

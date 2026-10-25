@@ -126,17 +126,17 @@ class MultiCurrencyProductAddOnsCompatibilityControllerTest extends WC_Unit_Test
 	 * @testdox Should not register Product Add-ons hooks when runtime guards block.
 	 */
 	public function test_does_not_register_product_addons_hooks_when_guards_block(): void {
-		$plugin_owned   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
-		$missing_addons = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
-		$admin_non_ajax = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, true, false, false );
-		$frontend_cron  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, false, false, true );
+		$extension_owned = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
+		$missing_addons  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
+		$admin_non_ajax  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, true, false, false );
+		$frontend_cron   = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, true, false, false, true );
 
-		$plugin_owned->register();
+		$extension_owned->register();
 		$missing_addons->register();
 		$admin_non_ajax->register();
 		$frontend_cron->register();
 
-		$this->assert_product_addons_hooks_not_registered( $plugin_owned );
+		$this->assert_product_addons_hooks_not_registered( $extension_owned );
 		$this->assert_product_addons_hooks_not_registered( $missing_addons );
 		$this->assert_product_addons_hooks_not_registered( $admin_non_ajax );
 		$this->assert_product_addons_hooks_not_registered( $frontend_cron );

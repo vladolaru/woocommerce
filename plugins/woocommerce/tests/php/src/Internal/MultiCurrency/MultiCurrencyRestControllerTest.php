@@ -155,7 +155,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should not register REST hooks when plugin owns runtime.
 	 */
-	public function test_does_not_register_rest_hooks_when_plugin_owns_runtime(): void {
+	public function test_does_not_register_rest_hooks_when_extension_owns_runtime(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		$sut->register();
@@ -629,7 +629,7 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project cache recommendation state and persist an explicit dismissal.
 	 */
-	public function test_projects_cache_recommendation_state_and_persists_an_explicit_dismissal(): void {
+	public function test_returns_cache_recommendation_state_and_persists_an_explicit_dismissal(): void {
 		update_option( 'wcpay_multi_currency_rendering_mode', 'speed' );
 		$cache_rendering_service = $this->getMockBuilder( MultiCurrencyCacheRenderingService::class )
 			->onlyMethods( array( 'maybe_auto_enable_cache_rendering_mode' ) )

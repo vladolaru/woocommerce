@@ -28,7 +28,7 @@ class MultiCurrencyTrackerControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should not register tracker data when plugin owns runtime.
 	 */
-	public function test_does_not_register_tracker_data_when_plugin_owns_runtime(): void {
+	public function test_does_not_register_tracker_data_when_extension_owns_runtime(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		$sut->register();
@@ -52,11 +52,11 @@ class MultiCurrencyTrackerControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should hand the tracker data and the resolved storage mode to the tracking service and return its result.
 	 */
 	public function test_passes_tracker_data_and_storage_mode_to_the_tracking_service(): void {
-		$hpos_service   = $this->create_projection_service();
-		$legacy_service = $this->create_projection_service();
-		$hpos           = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $hpos_service );
-		$legacy         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $legacy_service );
-		$hpos_enabled   = true;
+		$hpos_service  = $this->create_tracker_data_builder();
+		$posts_service = $this->create_tracker_data_builder();
+		$hpos          = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $hpos_service );
+		$posts         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $posts_service );
+		$hpos_enabled  = true;
 		add_filter(
 			'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION,
 			static function () use ( &$hpos_enabled ): string {
@@ -66,7 +66,7 @@ class MultiCurrencyTrackerControllerTest extends WC_Unit_Test_Case {
 
 		$result       = $hpos->add_tracker_data( array( 'existing' => 'value' ) );
 		$hpos_enabled = false;
-		$legacy->add_tracker_data( array() );
+		$posts->add_tracker_data( array() );
 
 		$this->assertSame(
 			array(
@@ -77,24 +77,24 @@ class MultiCurrencyTrackerControllerTest extends WC_Unit_Test_Case {
 		);
 		$this->assertSame( array( 'existing' => 'value' ), $hpos_service->last_data );
 		$this->assertTrue( $hpos_service->last_is_hpos_enabled );
-		$this->assertFalse( $legacy_service->last_is_hpos_enabled );
+		$this->assertFalse( $posts_service->last_is_hpos_enabled );
 	}
 
 	/**
 	 * Create a tracking controller.
 	 *
 	 * @param string                               $owner              Runtime owner.
-	 * @param MultiCurrencyTrackerDataBuilder|null $projection_service Projection service.
+	 * @param MultiCurrencyTrackerDataBuilder|null $tracker_data_builder Projection service.
 	 * @return MultiCurrencyTrackerController
 	 */
 	private function create_controller(
 		string $owner,
-		?MultiCurrencyTrackerDataBuilder $projection_service = null
+		?MultiCurrencyTrackerDataBuilder $tracker_data_builder = null
 	): MultiCurrencyTrackerController {
 		$controller = new MultiCurrencyTrackerController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			ServiceFactories::with( $this, array( 'create_tracker_data_builder' => $projection_service ) )
+			ServiceFactories::with( $this, array( 'create_tracker_data_builder' => $tracker_data_builder ) )
 		);
 
 		return $controller;
@@ -105,7 +105,7 @@ class MultiCurrencyTrackerControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @return MultiCurrencyTrackerDataBuilder&object{last_data: array<string,mixed>, last_is_hpos_enabled: bool|null}
 	 */
-	private function create_projection_service(): MultiCurrencyTrackerDataBuilder {
+	private function create_tracker_data_builder(): MultiCurrencyTrackerDataBuilder {
 		return new class() extends MultiCurrencyTrackerDataBuilder {
 			/**
 			 * Last tracker data received by the projection.

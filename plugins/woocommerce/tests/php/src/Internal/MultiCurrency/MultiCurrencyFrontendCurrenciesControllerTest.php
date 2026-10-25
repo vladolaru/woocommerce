@@ -56,7 +56,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should not register frontend currency hooks while plugin multi-currency owns the runtime.
 	 */
-	public function test_does_not_register_when_plugin_multi_currency_owns_runtime(): void {
+	public function test_does_not_register_when_extension_multi_currency_owns_runtime(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		$sut->register();
@@ -146,7 +146,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should delegate frontend formatting callbacks to the projection service.
 	 */
-	public function test_delegates_frontend_formatting_callbacks_to_projection_service(): void {
+	public function test_delegates_frontend_formatting_callbacks_to_display_service(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$sut->register();
 
@@ -162,7 +162,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should return the original store currency during currency projection re-entry.
 	 */
-	public function test_currency_projection_is_reentry_safe(): void {
+	public function test_currency_conversion_is_reentry_safe(): void {
 		update_option( 'woocommerce_currency', 'USD' );
 		$service = new class() extends MultiCurrencyDisplayService {
 			/**
@@ -491,19 +491,19 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	 * @param string                                $owner                 Runtime owner.
 	 * @param MultiCurrencyRequestContext|null      $request_context       Request context.
 	 * @param MultiCurrencyOrderContextService|null $order_context_service Order context service.
-	 * @param MultiCurrencyDisplayService|null      $projection_service Frontend projection service; the fixture's by default.
+	 * @param MultiCurrencyDisplayService|null      $display_service Frontend projection service; the fixture's by default.
 	 * @return MultiCurrencyFrontendCurrenciesController
 	 */
 	private function create_controller(
 		string $owner,
 		?MultiCurrencyRequestContext $request_context = null,
 		?MultiCurrencyOrderContextService $order_context_service = null,
-		?MultiCurrencyDisplayService $projection_service = null
+		?MultiCurrencyDisplayService $display_service = null
 	): MultiCurrencyFrontendCurrenciesController {
 		$controller = new MultiCurrencyFrontendCurrenciesController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			ServiceFactories::with( $this, array( 'create_display_service' => $projection_service ?? $this->create_projection_service() ) ),
+			ServiceFactories::with( $this, array( 'create_display_service' => $display_service ?? $this->create_display_service() ) ),
 			$request_context ?? wc_get_container()->get( MultiCurrencyRequestContext::class ),
 			$order_context_service ?? wc_get_container()->get( MultiCurrencyOrderContextService::class )
 		);
@@ -616,7 +616,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @return MultiCurrencyDisplayService
 	 */
-	private function create_projection_service(): MultiCurrencyDisplayService {
+	private function create_display_service(): MultiCurrencyDisplayService {
 		return new class() extends MultiCurrencyDisplayService {
 			/**
 			 * Constructor.

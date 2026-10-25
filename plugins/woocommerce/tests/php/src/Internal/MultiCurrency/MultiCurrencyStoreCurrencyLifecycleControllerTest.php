@@ -25,7 +25,7 @@ class MultiCurrencyStoreCurrencyLifecycleControllerTest extends WC_Unit_Test_Cas
 	/**
 	 * @testdox Should not register init hook when plugin owns runtime.
 	 */
-	public function test_does_not_register_init_hook_when_plugin_owns_runtime(): void {
+	public function test_does_not_register_init_hook_when_extension_owns_runtime(): void {
 		$service = $this->create_lifecycle_service();
 		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, $service );
 

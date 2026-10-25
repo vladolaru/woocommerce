@@ -17,9 +17,9 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 
 	private const NOTICE_OPTION                = 'wcpay_multi_currency_show_store_currency_changed_notice';
 	private const CANONICAL_NOTICE_QUERY       = 'wc-multi-currency-hide-notice';
-	private const LEGACY_NOTICE_QUERY          = 'wcpay-multi-currency-hide-notice';
+	private const EXTENSION_NOTICE_QUERY       = 'wcpay-multi-currency-hide-notice';
 	private const CANONICAL_NONCE_QUERY        = 'wc-multi-currency-notice-nonce';
-	private const LEGACY_NONCE_QUERY           = '_wcpay_multi_currency_notice_nonce';
+	private const EXTENSION_NONCE_QUERY        = '_wcpay_multi_currency_notice_nonce';
 	private const NONCE_ACTION                 = 'wcpay_multi_currency_hide_notices_nonce';
 	private const ADMIN_NOTICES                = 'admin_notices';
 	private const WP_LOADED                    = 'wp_loaded';
@@ -41,7 +41,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		delete_option( 'wcpay_multi_currency_exchange_rate_gbp' );
 		delete_option( MultiCurrencyCacheInterface::CURRENCIES_KEY );
-		unset( $_GET[ self::CANONICAL_NOTICE_QUERY ], $_GET[ self::LEGACY_NOTICE_QUERY ], $_GET[ self::CANONICAL_NONCE_QUERY ], $_GET[ self::LEGACY_NONCE_QUERY ] );
+		unset( $_GET[ self::CANONICAL_NOTICE_QUERY ], $_GET[ self::EXTENSION_NOTICE_QUERY ], $_GET[ self::CANONICAL_NONCE_QUERY ], $_GET[ self::EXTENSION_NONCE_QUERY ] );
 		wp_set_current_user( 0 );
 
 		parent::tear_down();
@@ -50,7 +50,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should not register admin notice hooks when plugin owns runtime.
 	 */
-	public function test_does_not_register_admin_notice_hooks_when_plugin_owns_runtime(): void {
+	public function test_does_not_register_admin_notice_hooks_when_extension_owns_runtime(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
 
 		$sut->register();
@@ -89,8 +89,8 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		$this->assertStringContainsString( self::NOTICE_MESSAGE, $markup );
 		$this->assertStringContainsString( self::CANONICAL_NOTICE_QUERY . '=currency_changed', $markup );
 		$this->assertStringContainsString( self::CANONICAL_NONCE_QUERY, $markup );
-		$this->assertStringNotContainsString( self::LEGACY_NOTICE_QUERY, $markup );
-		$this->assertStringNotContainsString( self::LEGACY_NONCE_QUERY, $markup );
+		$this->assertStringNotContainsString( self::EXTENSION_NOTICE_QUERY, $markup );
+		$this->assertStringNotContainsString( self::EXTENSION_NONCE_QUERY, $markup );
 		$this->assertStringContainsString( 'class="notice-dismiss" style="text-decoration:none;"', $markup );
 		$this->assertSame( 1, substr_count( $markup, '<div class=' ), 'One notice.' );
 		// Core's dismiss placement (top right, aligned with the text, room kept on the right) instead of the client's
@@ -283,8 +283,8 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 			'extension query keys'   => array(
 				'extension query keys',
 				array(
-					self::LEGACY_NOTICE_QUERY => 'currency_changed',
-					self::LEGACY_NONCE_QUERY  => 'VALID',
+					self::EXTENSION_NOTICE_QUERY => 'currency_changed',
+					self::EXTENSION_NONCE_QUERY  => 'VALID',
 				),
 			),
 			'empty canonical nonce'  => array(

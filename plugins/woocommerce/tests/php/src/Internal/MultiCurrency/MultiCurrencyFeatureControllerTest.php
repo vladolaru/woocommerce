@@ -83,7 +83,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should hand the plugin's Multi-Currency state over, turning it off only over an existing yes.
 	 */
-	public function test_hand_over_plugin_state_mirrors_the_plugin(): void {
+	public function test_hand_over_extension_state_mirrors_the_extension(): void {
 		$option = MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION;
 
 		MultiCurrencyFeatureController::hand_over_extension_state();
@@ -106,7 +106,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should hand over once when two first native-owned requests both read the plugin marker.
 	 */
-	public function test_concurrent_first_native_requests_hand_over_once(): void {
+	public function test_concurrent_first_builtin_requests_hand_over_once(): void {
 		$marker = MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_OPTION;
 		$option = MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION;
 		update_option( $marker, MultiCurrencyFeatureController::LAST_PAYMENTS_OWNER_EXTENSION );
@@ -134,7 +134,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should count a completed plugin setup as plugin use even without stored currencies.
 	 */
-	public function test_hand_over_plugin_state_counts_a_completed_setup(): void {
+	public function test_hand_over_extension_state_counts_a_completed_setup(): void {
 		// The plugin saves true when its setup task finishes (client 11.1.0 `includes/multi-currency/client/setup/tasks/setup-complete-task/index.js:32`,
 		// typed bool by `includes/admin/class-wc-rest-payments-settings-option-controller.php:22`, read with FILTER_VALIDATE_BOOLEAN at
 		// `includes/admin/class-wc-payments-admin.php:1037`).
