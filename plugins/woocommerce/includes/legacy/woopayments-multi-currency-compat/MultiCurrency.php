@@ -152,7 +152,6 @@ class MultiCurrency {
 		return $this->get_loader()->get_price( $amount, $type );
 	}
 
-
 	/**
 	 * Convert an amount between two currencies at their rates; an empty source currency is the store currency.
 	 *
@@ -317,6 +316,9 @@ class MultiCurrency {
 	/**
 	 * Get the store-level Multi-Currency settings the settings screen reads.
 	 *
+	 * Cache-optimized rendering is always available here, so `is_cache_optimized_feature_enabled` is true; the extension
+	 * reads it from its feature flag, on by default (client 11.1.0 `includes/multi-currency/MultiCurrency.php:1352-1365`).
+	 *
 	 * Removed in WooCommerce 12.0.0.
 	 *
 	 * @since 11.0.0
@@ -327,7 +329,9 @@ class MultiCurrency {
 	public function get_settings(): array {
 		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_settings', '11.0.0', '' );
 
-		return (array) wc_get_container()->get( MultiCurrencyRestController::class )->get_settings()->get_data();
+		$settings = (array) wc_get_container()->get( MultiCurrencyRestController::class )->get_settings()->get_data();
+
+		return array_merge( $settings, array( 'is_cache_optimized_feature_enabled' => true ) );
 	}
 
 	/**

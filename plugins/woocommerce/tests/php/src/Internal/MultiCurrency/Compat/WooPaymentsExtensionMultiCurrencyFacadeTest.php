@@ -164,6 +164,10 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		$this->assertSame( array( 'EUR', 'USD' ), $facade->get_all_customer_currencies(), 'get_all_customer_currencies' );
 
 		$this->assertNull( $facade->get_cached_currencies(), 'get_cached_currencies with nothing cached' );
+		// The minimal shape the extension caches and reads back: the payload's `currencies` and `updated` (client 11.1.0
+		// `includes/multi-currency/MultiCurrency.php:492-516`) inside the cache envelope's `data`, `fetched` and `errored`
+		// (`includes/class-database-cache.php:377-382`, which also writes `consecutive_errors`, not read here); a forced read
+		// returns `data` whatever its age (`:197-207`).
 		$cached = array(
 			'currencies' => array( 'EUR' => 0.91 ),
 			'updated'    => 1761400000,
@@ -205,7 +209,10 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 			'is_multi_currency_settings_page'
 		);
 
-		$this->assertSame( wc_get_container()->get( MultiCurrencyRestController::class )->get_settings()->get_data(), $facade->get_settings(), 'get_settings' );
+		$rest_settings = wc_get_container()->get( MultiCurrencyRestController::class )->get_settings()->get_data();
+		$this->assertArrayNotHasKey( 'is_cache_optimized_feature_enabled', $rest_settings, 'Precondition: the module has no cache-optimized feature flag.' );
+		// The extension's flag defaults on (client 11.1.0 `includes/class-wc-payments-features.php:418-420`).
+		$this->assertSame( array_merge( $rest_settings, array( 'is_cache_optimized_feature_enabled' => true ) ), $facade->get_settings(), 'get_settings' );
 		$this->assertSame( wc_get_container()->get( MultiCurrencyServiceFactory::class )->create_display_service()->get_public_config(), $facade->get_public_config(), 'get_public_config' );
 		$this->assertSame( array( 'USD', 'EUR', 'GBP' ), array_keys( $facade->get_public_config()['currencies'] ), 'get_public_config currencies' );
 
