@@ -67,6 +67,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function set_up(): void {
 		parent::set_up();
+		update_option( 'woocommerce_currency', 'USD' );
 		$this->registry = Package::container()->get( AssetDataRegistry::class );
 		foreach ( array( 'data', 'lazy_data' ) as $property ) {
 			$reflection = new \ReflectionProperty( AssetDataRegistry::class, $property );
@@ -224,7 +225,6 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		global $wpdb;
 
 		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'no' );
-		update_option( 'woocommerce_currency', 'USD' );
 		$detector = new MultiCurrencyUsageDetector();
 		$sut      = new MultiCurrencyAnalyticsController();
 		$sut->init(
@@ -255,7 +255,6 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	public function test_registers_selected_currency_sql_hooks_for_rest_requests_with_multi_currency_orders(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 		set_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT, '1', HOUR_IN_SECONDS );
-		update_option( 'woocommerce_currency', 'USD' );
 		$_GET['currency'] = 'EUR';
 
 		$sut->register();
@@ -290,8 +289,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	public function test_selected_currency_order_select_clauses_are_unchanged_for_default_currency(): void {
 		global $wpdb;
 
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		update_option( 'woocommerce_currency', 'USD' );
+		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$_GET['currency'] = 'USD';
 		$clauses          = array( "{$wpdb->prefix}wc_order_stats.net_total" );
 
@@ -334,7 +332,6 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should update order stats data through projection.
 	 */
 	public function test_updates_order_stats_data_through_projection(): void {
-		update_option( 'woocommerce_currency', 'USD' );
 		$order = wc_create_order();
 		$this->assertInstanceOf( \WC_Order::class, $order );
 		$order->set_currency( 'EUR' );
@@ -362,7 +359,6 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should convert a refund's order stats with the exchange rate copied from its order.
 	 */
 	public function test_converts_refund_order_stats_data(): void {
-		update_option( 'woocommerce_currency', 'USD' );
 		// WooCommerce Analytics passes refunds to this filter too (`Automattic\WooCommerce\Admin\API\Reports\Orders\Stats\DataStore::update()`).
 		$refund = new \WC_Order_Refund();
 		$refund->set_currency( 'EUR' );
@@ -462,8 +458,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 * (`includes/multi-currency/Analytics.php:105-108`), so its disable filter is not applied otherwise (`:425-436`).
 	 */
 	public function test_does_not_apply_the_order_select_disable_filter_for_the_store_currency(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		update_option( 'woocommerce_currency', 'USD' );
+		$sut              = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
 		$_GET['currency'] = 'USD';
 		$disable_calls    = 0;
 		add_filter(
@@ -521,7 +516,6 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should load the customer currency filter on wc-admin pages for store managers, with currency names and symbols.
 	 */
 	public function test_loads_the_customer_currency_filter_on_wc_admin_pages_for_store_managers(): void {
-		update_option( 'woocommerce_currency', 'USD' );
 		// The plugin stores the customer currency list as currency codes and the enabled list and manual rates as these options
 		// (client 11.1.0 `includes/multi-currency/MultiCurrency.php:700-717`, `:767-783`, `:1757-1770`).
 		update_option( 'wcpay_multi_currency_stored_customer_currencies', array( 'EUR' ) );

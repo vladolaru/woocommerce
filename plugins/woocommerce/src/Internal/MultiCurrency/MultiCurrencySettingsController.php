@@ -63,36 +63,18 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	private LegacyProxy $legacy_proxy;
 
 	/**
-	 * Admin asset registrar.
-	 *
-	 * @var callable|null
-	 */
-	private $asset_registrar = null;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
-	 * @param MultiCurrencyRuntimeArbiter             $arbiter                 Runtime owner arbiter.
-	 * @param LegacyProxy                             $legacy_proxy            Proxy for the emoji script printer and the asset-file checks.
-	 * @param MultiCurrencyCacheRenderingService|null $cache_rendering_service Cache rendering service.
+	 * @param MultiCurrencyRuntimeArbiter        $arbiter                 Runtime owner arbiter.
+	 * @param LegacyProxy                        $legacy_proxy            Proxy for the emoji script printer and the asset-file checks.
+	 * @param MultiCurrencyCacheRenderingService $cache_rendering_service Cache rendering service.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, ?MultiCurrencyCacheRenderingService $cache_rendering_service = null ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, MultiCurrencyCacheRenderingService $cache_rendering_service ): void {
 		$this->arbiter                 = $arbiter;
 		$this->legacy_proxy            = $legacy_proxy;
-		$this->cache_rendering_service = $cache_rendering_service ?? wc_get_container()->get( MultiCurrencyCacheRenderingService::class );
-	}
-
-	/**
-	 * Set the admin asset registrar.
-	 *
-	 * @internal Used by tests and future explicit asset bootstrap.
-	 *
-	 * @param callable $asset_registrar Admin asset registrar.
-	 */
-	public function set_asset_registrar( callable $asset_registrar ): void {
-		$this->asset_registrar = $asset_registrar;
+		$this->cache_rendering_service = $cache_rendering_service;
 	}
 
 	/**
@@ -209,7 +191,7 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 			return;
 		}
 
-		$this->register_admin_assets();
+		$this->register_admin_assets( self::ADMIN_ASSETS );
 	}
 
 	/**
@@ -253,18 +235,15 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 
 	/**
 	 * Register the admin script, and register and enqueue the admin stylesheet.
+	 *
+	 * @param array<string,array<string,string>> $assets The script and style entries, files and handles.
 	 */
-	private function register_admin_assets(): void {
-		if ( null !== $this->asset_registrar ) {
-			call_user_func( $this->asset_registrar, self::ADMIN_ASSETS );
-			return;
-		}
+	protected function register_admin_assets( array $assets ): void {
+		WCAdminAssets::register_script( 'wp-admin-scripts', $assets['script']['entry'], true );
 
-		WCAdminAssets::register_script( 'wp-admin-scripts', self::ADMIN_ASSETS['script']['entry'], true );
-
-		$style_entry           = self::ADMIN_ASSETS['style']['entry'];
-		$style_file            = self::ADMIN_ASSETS['style']['file'];
-		$style_handle          = self::ADMIN_ASSETS['style']['handle'];
+		$style_entry           = $assets['style']['entry'];
+		$style_file            = $assets['style']['file'];
+		$style_handle          = $assets['style']['handle'];
 		$style_assets_filename = WCAdminAssets::get_script_asset_filename( $style_entry, $style_file );
 		$style_assets          = require WC_ADMIN_ABSPATH
 			. WC_ADMIN_DIST_CSS_FOLDER

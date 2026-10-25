@@ -366,17 +366,45 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 
-		$controller              = new MultiCurrencySettingsController();
-		$cache_rendering_service = $options['cache_rendering_service'] ?? null;
-		$controller->init( $this->create_arbiter( $owner ), wc_get_container()->get( LegacyProxy::class ), $cache_rendering_service );
-
-		$controller->set_asset_registrar(
+		// The registration reads the built admin bundle, which CI's PHP job lacks, so the double records the manifest instead.
+		$controller = new class(
 			static function ( array $manifest ) use ( &$options ): void {
 				if ( isset( $options['registered_assets'] ) && is_array( $options['registered_assets'] ) ) {
 					$options['registered_assets'][] = $manifest;
 				}
 			}
+		) extends MultiCurrencySettingsController {
+			/**
+			 * Records each asset manifest the controller registers.
+			 *
+			 * @var callable
+			 */
+			private $record;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param callable $record Records each asset manifest the controller registers.
+			 */
+			public function __construct( callable $record ) {
+				$this->record = $record;
+			}
+
+			/**
+			 * Record the asset manifest instead of registering it.
+			 *
+			 * @param array<string,array<string,string>> $assets The script and style entries, files and handles.
+			 */
+			protected function register_admin_assets( array $assets ): void {
+				call_user_func( $this->record, $assets );
+			}
+		};
+		$controller->init(
+			$this->create_arbiter( $owner ),
+			wc_get_container()->get( LegacyProxy::class ),
+			$options['cache_rendering_service'] ?? wc_get_container()->get( MultiCurrencyCacheRenderingService::class )
 		);
+
 		return $controller;
 	}
 
