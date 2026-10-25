@@ -8,10 +8,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
 /**
- * Detects WooCommerce order contexts where order currency should be used.
+ * Tells whether prices are being formatted for an order on its own pages (view order, order received, order pay) or in
+ * the My Account orders list, where the order's currency is used instead of the selected one.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyOrderContextService {
 

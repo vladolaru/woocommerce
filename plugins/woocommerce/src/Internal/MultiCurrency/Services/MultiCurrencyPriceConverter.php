@@ -11,10 +11,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 
 /**
- * Projects multi-currency prices for native shadow comparisons.
+ * Converts prices and amounts between the store currency and the selected currency, and gives the exchange-rate meta
+ * an order or a refund records.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyPriceConverter {
 
@@ -48,7 +49,7 @@ class MultiCurrencyPriceConverter {
 	}
 
 	/**
-	 * Project a converted price for the selected currency.
+	 * Convert a price to the selected currency.
 	 *
 	 * @param mixed  $price Price.
 	 * @param string $type  Price type.
@@ -84,7 +85,7 @@ class MultiCurrencyPriceConverter {
 	}
 
 	/**
-	 * Project a raw conversion between enabled currencies or from or to the selected one.
+	 * Convert an amount between enabled currencies, or from or to the selected one, without rounding or charm.
 	 *
 	 * @param float  $amount        Amount.
 	 * @param string $to_currency   Target currency code.
@@ -144,7 +145,7 @@ class MultiCurrencyPriceConverter {
 	}
 
 	/**
-	 * Project a selected-currency price-filter value to default currency.
+	 * Convert a price-filter bound from the selected currency to the store currency, rounded so the filter does not narrow.
 	 *
 	 * @param mixed  $amount  Price-filter amount.
 	 * @param string $compare Price-filter comparison operator.
@@ -175,7 +176,7 @@ class MultiCurrencyPriceConverter {
 	}
 
 	/**
-	 * Project order meta candidates for a selected-currency order.
+	 * Get the exchange-rate meta to save on an order in a currency other than the store currency.
 	 *
 	 * The selected currency's rate is stored as it is, unrounded: Analytics divides the order's amounts by it.
 	 *
@@ -197,7 +198,7 @@ class MultiCurrencyPriceConverter {
 	}
 
 	/**
-	 * Project refund meta candidates copied from an order.
+	 * Get the exchange-rate meta a refund copies from its order.
 	 *
 	 * @param \WC_Order $order Order.
 	 * @return array<string,mixed>

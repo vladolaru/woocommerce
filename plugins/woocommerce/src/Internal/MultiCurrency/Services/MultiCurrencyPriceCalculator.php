@@ -13,10 +13,10 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocali
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 
 /**
- * Pure price conversion calculator for the native multi-currency runtime.
+ * Converts amounts between currencies by their rates and applies a currency's rounding and charm, without reading state.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyPriceCalculator {
 
@@ -66,7 +66,7 @@ class MultiCurrencyPriceCalculator {
 	}
 
 	/**
-	 * Round an amount already in the given currency and add its charm, as the client's adjusted price.
+	 * Round an amount already in the given currency and add its charm.
 	 *
 	 * @param mixed                 $amount   Amount in the currency.
 	 * @param MultiCurrencyCurrency $currency Currency whose rounding and charm apply.

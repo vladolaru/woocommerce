@@ -8,10 +8,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
 /**
- * Owns cache-rendering auto-detection and recommendation state.
+ * Turns cache-optimized rendering on once for a store with a detected page cache and no rendering mode chosen, and tells
+ * whether the settings recommend that mode or the merchant dismissed the recommendation.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyCacheRenderingService {
 

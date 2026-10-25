@@ -11,10 +11,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 
 /**
- * Projects multi-currency tracking data without registering tracker hooks.
+ * Builds the Multi-Currency part of the WooCommerce tracker payload: the enabled currencies with their rate type,
+ * rounding and charm, and the counts and totals of orders with an exchange rate, by currency and gateway.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyTrackerDataBuilder {
 
@@ -37,7 +38,7 @@ class MultiCurrencyTrackerDataBuilder {
 	}
 
 	/**
-	 * Project multi-currency tracker data, with the counts and totals of Multi-Currency orders by currency and gateway.
+	 * Add the Multi-Currency data to the tracker payload, with the counts and totals of Multi-Currency orders by currency and gateway.
 	 *
 	 * @param array<string,mixed> $data            Existing tracker data.
 	 * @param bool                $is_hpos_enabled Whether HPOS order storage is enabled.
@@ -122,7 +123,7 @@ class MultiCurrencyTrackerDataBuilder {
 	}
 
 	/**
-	 * Build the legacy post table order-count query.
+	 * Build the order-count query for orders stored in the posts table.
 	 *
 	 * @return string
 	 */

@@ -11,10 +11,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 
 /**
- * Projects multi-currency switcher markup without registering runtime surfaces.
+ * Renders the currency switcher markup for the widget, the block and the template tag: a form with a select of the
+ * enabled currencies that keeps the current query arguments.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencySwitcherRenderer {
 
@@ -62,7 +63,7 @@ class MultiCurrencySwitcherRenderer {
 	}
 
 	/**
-	 * Project WooPayments-compatible widget markup.
+	 * Render the currency switcher widget markup.
 	 *
 	 * @param array<string,mixed> $instance           Widget instance settings.
 	 * @param array<string,mixed> $args               Widget wrapper arguments.
@@ -116,7 +117,7 @@ class MultiCurrencySwitcherRenderer {
 	}
 
 	/**
-	 * Project WooPayments-compatible dynamic block markup.
+	 * Render the currency switcher block markup.
 	 *
 	 * @param array<string,mixed> $block_attributes   Block attributes.
 	 * @param array<string,mixed> $query_args         Query arguments to preserve.
@@ -212,7 +213,7 @@ class MultiCurrencySwitcherRenderer {
 		$selected = $selected_code === $code ? ' selected' : '';
 		$label    = $this->get_currency_option_label( $currency, $with_symbol, $with_flag );
 
-		// The plugin escapes block labels but prints widget labels unescaped (CurrencySwitcherBlock.php:178, CurrencySwitcherWidget.php:146).
+		// Block labels are escaped as plain text, widget labels as filtered HTML (client 11.1.0 `CurrencySwitcherBlock.php:178`, `CurrencySwitcherWidget.php:146`).
 		return '<option value="' . esc_attr( $code ) . '"' . $selected . '>' . ( $plain_label ? esc_html( $label ) : wp_kses_post( $label ) ) . '</option>';
 	}
 

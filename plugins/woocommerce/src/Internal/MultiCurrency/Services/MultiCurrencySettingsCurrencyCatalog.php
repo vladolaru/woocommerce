@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocali
  * This catalog keeps configured currencies manageable while they await one.
  *
  * @since 11.2.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 final class MultiCurrencySettingsCurrencyCatalog {
 
@@ -110,8 +110,8 @@ final class MultiCurrencySettingsCurrencyCatalog {
 	/**
 	 * Get the codes that can be enabled, keyed by code.
 	 *
-	 * Mirrors WooPayments 11.1.0 MultiCurrency::get_account_available_currencies(),
-	 * with the module's rate provider standing in for the payments account.
+	 * Without an available rate provider every WooCommerce currency qualifies; with one, its supported currencies
+	 * and the store currency (client 11.1.0 `MultiCurrency::get_account_available_currencies()`, the provider in the account's place).
 	 *
 	 * @return array<string,true>
 	 */

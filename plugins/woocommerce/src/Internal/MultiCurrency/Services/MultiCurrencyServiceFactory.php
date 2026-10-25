@@ -37,7 +37,7 @@ class MultiCurrencyServiceFactory {
 	}
 
 	/**
-	 * Create a price projection service.
+	 * Create a price converter.
 	 *
 	 * @return MultiCurrencyPriceConverter
 	 */
@@ -49,7 +49,7 @@ class MultiCurrencyServiceFactory {
 	}
 
 	/**
-	 * Create a frontend projection service.
+	 * Create a display service.
 	 *
 	 * @return MultiCurrencyDisplayService
 	 */
@@ -82,7 +82,7 @@ class MultiCurrencyServiceFactory {
 	}
 
 	/**
-	 * Create a switcher projection service.
+	 * Create a switcher renderer.
 	 *
 	 * @return MultiCurrencySwitcherRenderer
 	 */
@@ -91,7 +91,7 @@ class MultiCurrencyServiceFactory {
 	}
 
 	/**
-	 * Create an analytics projection service.
+	 * Create an Analytics service.
 	 *
 	 * @return MultiCurrencyAnalyticsService
 	 */
@@ -100,7 +100,7 @@ class MultiCurrencyServiceFactory {
 	}
 
 	/**
-	 * Create a tracking projection service.
+	 * Create a tracker data builder.
 	 *
 	 * @return MultiCurrencyTrackerDataBuilder
 	 */

@@ -8,17 +8,17 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
 /**
- * Projects analytics multi-currency SQL clauses without registering filters.
+ * Rewrites Analytics SQL clauses so reports filter and convert by customer currency.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyAnalyticsSqlFilters {
 
 	private const SUPPORTED_CONTEXTS = array( 'orders', 'products', 'variations', 'categories', 'coupons', 'taxes' );
 
 	/**
-	 * Project analytics SELECT clauses for a stats or subquery context.
+	 * Extend the Analytics SELECT clauses of a stats or subquery context with the store-currency conversion and currency columns.
 	 *
 	 * @param string[] $clauses         SELECT clauses.
 	 * @param string   $context         Analytics context, a stats or subquery one.
@@ -55,7 +55,7 @@ class MultiCurrencyAnalyticsSqlFilters {
 	}
 
 	/**
-	 * Project analytics JOIN clauses.
+	 * Extend the Analytics JOIN clauses with the order currency and exchange-rate meta.
 	 *
 	 * @param string[] $clauses         JOIN clauses.
 	 * @param string   $context         Analytics context.
@@ -94,7 +94,7 @@ class MultiCurrencyAnalyticsSqlFilters {
 	}
 
 	/**
-	 * Project analytics WHERE clauses for customer currencies.
+	 * Extend the Analytics WHERE clauses with the customer-currency filter.
 	 *
 	 * @param string[]            $clauses         WHERE clauses.
 	 * @param array<string,mixed> $currency_args   Sanitized currency args.
@@ -132,7 +132,7 @@ class MultiCurrencyAnalyticsSqlFilters {
 	}
 
 	/**
-	 * Project selected-currency order SELECT clauses.
+	 * Extend the order SELECT clauses so net totals show in each order's currency.
 	 *
 	 * @param string[] $clauses SELECT clauses.
 	 * @return string[]
@@ -169,7 +169,7 @@ class MultiCurrencyAnalyticsSqlFilters {
 	}
 
 	/**
-	 * Tell whether multi-currency columns should be projected.
+	 * Tell whether the Multi-Currency columns are added to this context's clauses.
 	 *
 	 * @param string   $context      Analytics context.
 	 * @param string   $context_page Context page.
@@ -185,7 +185,7 @@ class MultiCurrencyAnalyticsSqlFilters {
 	}
 
 	/**
-	 * Tell whether the context supports multi-currency analytics projection.
+	 * Tell whether the context takes the Multi-Currency columns.
 	 *
 	 * @param string $context Analytics context.
 	 * @return bool

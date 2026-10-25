@@ -8,10 +8,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
 /**
- * Detects request contexts for native multi-currency hook registration.
+ * Tells the request contexts Multi-Currency registers its hooks by: storefront, Store API and its batch route,
+ * admin-originated REST, wp-admin, cron and WooCommerce REST requests.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyRequestContext {
 

@@ -13,10 +13,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 
 /**
- * Projects frontend multi-currency surfaces without registering filters.
+ * Answers the request's currency and how it is shown (decimals, separators, format, position), the cart hash, the store
+ * currencies, the settings and public config the settings screen and the async renderer read, and the rendering mode.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyDisplayService {
 
@@ -64,7 +65,7 @@ class MultiCurrencyDisplayService {
 	}
 
 	/**
-	 * Project the WooCommerce currency code.
+	 * Get the currency code for this request: the order's, the selected one, or the store currency when a filter asks.
 	 *
 	 * @param string|null $order_currency Optional order currency override.
 	 * @return string
@@ -89,7 +90,7 @@ class MultiCurrencyDisplayService {
 	}
 
 	/**
-	 * Project the number of price decimals.
+	 * Get the number of price decimals of this request's currency.
 	 *
 	 * @param int         $decimals       Original decimal count.
 	 * @param string|null $order_currency Optional order currency override.
@@ -107,7 +108,7 @@ class MultiCurrencyDisplayService {
 	}
 
 	/**
-	 * Project the price decimal separator.
+	 * Get the price decimal separator of this request's currency.
 	 *
 	 * @param string      $separator      Original separator.
 	 * @param string|null $order_currency Optional order currency override.
@@ -125,7 +126,7 @@ class MultiCurrencyDisplayService {
 	}
 
 	/**
-	 * Project the price thousand separator.
+	 * Get the price thousand separator of this request's currency.
 	 *
 	 * @param string      $separator      Original separator.
 	 * @param string|null $order_currency Optional order currency override.
@@ -143,7 +144,7 @@ class MultiCurrencyDisplayService {
 	}
 
 	/**
-	 * Project the WooCommerce price format.
+	 * Get the price format of this request's currency.
 	 *
 	 * @param string      $format         Original price format.
 	 * @param string|null $order_currency Optional order currency override.
@@ -163,7 +164,7 @@ class MultiCurrencyDisplayService {
 	}
 
 	/**
-	 * Project the WooCommerce currency position option.
+	 * Get the currency symbol position of this request's currency.
 	 *
 	 * @param string      $position       Original currency position.
 	 * @param string|null $order_currency Optional order currency override.
@@ -181,7 +182,7 @@ class MultiCurrencyDisplayService {
 	}
 
 	/**
-	 * Project a cart hash varied by selected currency and rate.
+	 * Vary the cart hash by the selected currency and its rate.
 	 *
 	 * @param string $hash Original cart hash.
 	 * @return string
@@ -193,7 +194,7 @@ class MultiCurrencyDisplayService {
 	}
 
 	/**
-	 * Project store currencies with WooPayments-compatible keys.
+	 * Get the store currencies (available, enabled, default), keyed as the settings screen reads them.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -208,7 +209,7 @@ class MultiCurrencyDisplayService {
 	}
 
 	/**
-	 * Project stored settings for a single currency.
+	 * Get one currency's stored settings.
 	 *
 	 * @param string $currency_code Currency code.
 	 * @return array<string,mixed>
@@ -232,7 +233,7 @@ class MultiCurrencyDisplayService {
 	}
 
 	/**
-	 * Project store-level multi-currency settings.
+	 * Get the store-level Multi-Currency settings.
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -249,7 +250,7 @@ class MultiCurrencyDisplayService {
 	}
 
 	/**
-	 * Project the public async price renderer config.
+	 * Get the public config the async price renderer reads.
 	 *
 	 * @return array<string,mixed>
 	 */

@@ -15,10 +15,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 
 /**
- * Builds non-mutating state snapshots for native multi-currency shadow work.
+ * Builds the request's Multi-Currency state: the available currencies at their cached or manual rates, the enabled ones
+ * with their rounding and charm, the store currency and the shopper's selection, kept until the state is invalidated.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyStateBuilder {
 
@@ -248,7 +249,7 @@ class MultiCurrencyStateBuilder {
 	}
 
 	/**
-	 * Create an enabled currency clone with preserved rate behavior and its rounding and charm settings.
+	 * Create the enabled copy of an available currency, at its manual rate when it uses one, with its rounding and charm.
 	 *
 	 * @param string                $default_code       Default currency code.
 	 * @param MultiCurrencyCurrency $available_currency Available currency.
@@ -482,7 +483,7 @@ class MultiCurrencyStateBuilder {
 	}
 
 	/**
-	 * Apply preserved per-currency settings.
+	 * Apply the currency's stored rounding and charm settings.
 	 *
 	 * @param MultiCurrencyCurrency $currency Currency.
 	 */
@@ -521,7 +522,7 @@ class MultiCurrencyStateBuilder {
 		try {
 			self::$order_currency_override = null;
 			/**
-			 * Filters the selected native multi-currency code.
+			 * Filters a currency code that overrides the shopper's selected currency.
 			 *
 			 * @param string|false $currency_code Override currency code, or false to use stored state.
 			 *
@@ -565,7 +566,7 @@ class MultiCurrencyStateBuilder {
 	/**
 	 * Build a state with only the store currency, when WooCommerce no longer knows that currency.
 	 *
-	 * A removed custom currency leaves no base the rates or formats can use, so, as the client does, Multi-Currency logs it
+	 * A removed custom currency leaves no base the rates or formats can use, so Multi-Currency logs it
 	 * and offers no other currencies (client 11.1.0 `includes/multi-currency/MultiCurrency.php:302-319`).
 	 *
 	 * @param MultiCurrencyCurrency $store_currency     Store currency.
@@ -625,7 +626,7 @@ class MultiCurrencyStateBuilder {
 	/**
 	 * Find which of the given currencies orders were placed in, sorted by code.
 	 *
-	 * One DISTINCT query instead of the client's EXISTS check per currency, which scans the orders table once for every absent currency.
+	 * One DISTINCT query rather than an EXISTS check per currency, which would scan the orders table once for every absent currency.
 	 *
 	 * @param string[] $currency_codes Currency codes to look for.
 	 * @return string[]

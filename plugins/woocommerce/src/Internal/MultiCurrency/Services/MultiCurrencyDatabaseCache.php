@@ -10,13 +10,14 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 
 /**
- * Database-backed cache for the native multi-currency runtime.
+ * Stores Multi-Currency cache entries, the rates among them, in options with expiry and retry after errors; entries are
+ * not refreshed inside cron, AJAX or Action Scheduler requests.
  *
- * Uses the same option payload shape as WooPayments so cached currency data can
- * survive ownership flips between plugin and native runtimes.
+ * The payload has the WooPayments extension's shape, so the cached rates stay readable when the extension runs
+ * Multi-Currency again.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyDatabaseCache implements MultiCurrencyCacheInterface {
 
@@ -122,10 +123,8 @@ class MultiCurrencyDatabaseCache implements MultiCurrencyCacheInterface {
 		}
 
 		// Never refresh synchronously inside cron, AJAX, or Action Scheduler jobs.
-		// The reference client latches a refresh_disabled flag on
-		// action_scheduler_before_execute; did_action() is the same latch
-		// (set at the first AS execution, never reset within the request)
-		// without threading hook registration through the factories.
+		// did_action() latches at the first Action Scheduler execution and is
+		// never reset within the request, so no hook has to set a flag.
 		/** This action is documented in the Action Scheduler library (ActionScheduler_Abstract_QueueRunner). */
 		if ( defined( 'DOING_CRON' ) || wp_doing_ajax() || did_action( 'action_scheduler_before_execute' ) > 0 ) {
 			return false;

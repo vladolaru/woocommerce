@@ -8,10 +8,10 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
 /**
- * Coordinates request-local invalidation across native multi-currency state builders.
+ * Counts invalidations of the request's Multi-Currency state; a state builder sharing it rebuilds once the count changes.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyStateInvalidator {
 

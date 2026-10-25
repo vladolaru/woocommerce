@@ -10,10 +10,11 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProviderInterface;
 
 /**
- * Resolves multi-currency exchange rates for the native runtime.
+ * Gives exchange rates: a currency's stored manual rate, or the rate from the automatic-rate provider that WooPayments
+ * sets; and tells whether a provider is set, available and connected.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyRateService {
 
@@ -215,7 +216,7 @@ class MultiCurrencyRateService {
 	}
 
 	/**
-	 * Get a manual rate from preserved options.
+	 * Get a currency's stored manual rate.
 	 *
 	 * @param string $to_currency Target currency.
 	 * @return float|null

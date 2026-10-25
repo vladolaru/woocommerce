@@ -10,10 +10,11 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
 
 /**
- * Localization service for the native multi-currency runtime.
+ * Gives each currency's format for the user's locale (symbol position, separators, decimals) and each country's locale
+ * data, from WooCommerce's locale info, kept in transients for a day.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyLocalizationService implements MultiCurrencyLocalizationInterface {
 

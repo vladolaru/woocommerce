@@ -11,10 +11,11 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheI
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
- * Handles store-currency lifecycle mutations for native multi-currency.
+ * Records the store currency, and when it changed clears the rates cache and lists the enabled manual-rate currencies
+ * for the store currency notice.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyStoreCurrencyLifecycleService {
 

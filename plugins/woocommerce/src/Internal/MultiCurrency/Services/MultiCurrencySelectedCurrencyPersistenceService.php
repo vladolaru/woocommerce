@@ -8,10 +8,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
 /**
- * Persists the selected native multi-currency code using WooPayments keys.
+ * Stores the shopper's selected currency, in user meta for a logged-in customer or in the session for a guest, under the
+ * WooPayments extension's `wcpay_currency` key, and recalculates the cart after a change.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencySelectedCurrencyPersistenceService {
 

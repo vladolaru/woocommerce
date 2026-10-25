@@ -10,10 +10,10 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
 
 /**
- * Projects customer geolocation for native multi-currency shadow work.
+ * Gives the customer's country, from WooCommerce IP geolocation or else the default customer location, and its currency.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyGeolocationService {
 
@@ -43,7 +43,7 @@ class MultiCurrencyGeolocationService {
 	}
 
 	/**
-	 * Get the customer's currency based on their projected location.
+	 * Get the currency of the customer's country.
 	 *
 	 * @return string|null
 	 */
@@ -55,7 +55,7 @@ class MultiCurrencyGeolocationService {
 	}
 
 	/**
-	 * Get the customer's country based on projected geolocation.
+	 * Get the customer's country: the geolocated one when the store sells there, else the default customer location.
 	 *
 	 * @return string
 	 */

@@ -8,10 +8,11 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
 /**
- * Projects analytics multi-currency surfaces without registering filters.
+ * Converts Analytics order stats to the store currency, applies the customer-currency query args, and gives the
+ * customer-currency options and currency symbols the Analytics script shows; it records the currencies customers used.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyAnalyticsService {
 
@@ -32,7 +33,7 @@ class MultiCurrencyAnalyticsService {
 	}
 
 	/**
-	 * Project order stats data in the store default currency.
+	 * Convert an order's Analytics stats row to the store currency, by the order's recorded exchange rate.
 	 *
 	 * @param array<string,mixed> $args  Order stats args.
 	 * @param \WC_Abstract_Order  $order Order or refund.
@@ -92,9 +93,9 @@ class MultiCurrencyAnalyticsService {
 	}
 
 	/**
-	 * Project currency symbols for the Analytics report currency.
+	 * Get the currency symbols for the Analytics report currency.
 	 *
-	 * Built as the client's currencyData: for each currency, the short symbol of the first country using it, else WooCommerce's
+	 * For each currency, the short symbol of the first country using it, else WooCommerce's
 	 * symbol (client 11.1.0 `includes/admin/class-wc-payments-admin.php:943-954`, `includes/multi-currency/client/analytics/index.js:142-155`).
 	 *
 	 * @return array<string,string> Symbols keyed by currency code.
@@ -133,7 +134,7 @@ class MultiCurrencyAnalyticsService {
 	}
 
 	/**
-	 * Project customer currency selector options.
+	 * Get the customer-currency filter options: the currencies customers used, and the store currency.
 	 *
 	 * @return array<int,array{label:string,value:string}>
 	 */

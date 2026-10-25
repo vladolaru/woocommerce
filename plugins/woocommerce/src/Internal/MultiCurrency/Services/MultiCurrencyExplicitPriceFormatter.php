@@ -10,10 +10,13 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 
 /**
- * Projects explicit currency suffixes for multi-currency price displays.
+ * Appends the currency code to a formatted price where more than one currency is in use.
+ *
+ * Its methods are static, and WooPayments admin amounts call them too; should_output_explicit_admin_price() reads the
+ * Multi-Currency state through the container.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyExplicitPriceFormatter {
 
@@ -27,7 +30,7 @@ class MultiCurrencyExplicitPriceFormatter {
 	 */
 	public static function should_output_explicit_price( bool $default_should_output ): bool {
 		/**
-		 * Filters whether native Multi-Currency prices should include an explicit currency code.
+		 * Filters whether formatted prices include an explicit currency code.
 		 *
 		 * @since 11.2.0
 		 *
@@ -37,11 +40,11 @@ class MultiCurrencyExplicitPriceFormatter {
 	}
 
 	/**
-	 * Tell whether admin amounts should include an explicit currency code, with the plugin's default rule.
+	 * Tell whether admin amounts should include an explicit currency code: WooCommerce runs Multi-Currency and more than
+	 * one currency is enabled (client 11.1.0 `WC_Payments_Explicit_Price_Formatter::is_explicit_price_required()`).
 	 *
-	 * Plugin 11.1.0 `WC_Payments_Explicit_Price_Formatter::is_explicit_price_required()`: Multi-Currency is on and more
-	 * than one currency is enabled. The enabled-currencies option is checked first, so the Multi-Currency state is only
-	 * built when an additional currency is configured. The filter always runs, as in the plugin.
+	 * The enabled-currencies option is checked first, so the Multi-Currency state is only built when an additional
+	 * currency is configured. The filter always runs.
 	 *
 	 * @since 11.2.0
 	 *
@@ -62,7 +65,7 @@ class MultiCurrencyExplicitPriceFormatter {
 	}
 
 	/**
-	 * Project an explicit price string using either order or store currency.
+	 * Append the order's currency, or the store currency without an order, to a formatted price when explicit output is active.
 	 *
 	 * @param string                  $price                         Formatted price.
 	 * @param \WC_Abstract_Order|null $order                         Order object, when available.
@@ -77,7 +80,7 @@ class MultiCurrencyExplicitPriceFormatter {
 	}
 
 	/**
-	 * Project a formatted price string with currency suffix when needed.
+	 * Append a currency code to a formatted price when explicit output is active and the price does not show the code yet.
 	 *
 	 * @param string      $price                         Formatted price.
 	 * @param string|null $currency_code                 Currency code.
@@ -98,7 +101,7 @@ class MultiCurrencyExplicitPriceFormatter {
 	}
 
 	/**
-	 * Project wc_price() args that render an explicit currency code.
+	 * Add the currency code to the wc_price() price format when explicit output is active.
 	 *
 	 * @param array<string,mixed> $args                         Price formatting args.
 	 * @param bool                $should_output_explicit_price Whether explicit price output is active.

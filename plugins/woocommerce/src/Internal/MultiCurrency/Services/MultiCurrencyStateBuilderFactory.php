@@ -10,10 +10,11 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
 
 /**
- * Creates the Multi-Currency state builders, over the rate service that holds the automatic-rate provider.
+ * Holds the request's shared Multi-Currency state builder, over the rate service that holds the automatic-rate provider,
+ * and invalidates its state when a Multi-Currency option, the store currency or the current user changes.
  *
  * @since 11.0.0
- * @internal Transitional internal component for the native multi-currency runtime.
+ * @internal
  */
 class MultiCurrencyStateBuilderFactory {
 
@@ -52,7 +53,7 @@ class MultiCurrencyStateBuilderFactory {
 	}
 
 	/**
-	 * Get the request's shared state builder.
+	 * Get the request's shared state builder, attaching the option and user listeners that invalidate its state.
 	 *
 	 * Every consumer shares one builder, so the state is built once per request, with one Multi-Currency instance per
 	 * request in client 11.1.0 `includes/compat/multi-currency/wc-payments-multi-currency.php:35-50`. It rebuilds after
