@@ -16,7 +16,7 @@ use WC_Unit_Test_Case;
 class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 
 	private const SCRIPT_HANDLE        = 'wc-multi-currency-async-renderer';
-	private const LEGACY_SCRIPT_HANDLE = 'wcpay-multi-currency-async-renderer';
+	private const COMPAT_SCRIPT_HANDLE = 'wcpay-multi-currency-async-renderer';
 
 	/**
 	 * Store price-format options a test changed, with their values before the change.
@@ -72,12 +72,12 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 
 		wp_dequeue_script( self::SCRIPT_HANDLE );
 		wp_deregister_script( self::SCRIPT_HANDLE );
-		wp_dequeue_script( self::LEGACY_SCRIPT_HANDLE );
-		wp_deregister_script( self::LEGACY_SCRIPT_HANDLE );
+		wp_dequeue_script( self::COMPAT_SCRIPT_HANDLE );
+		wp_deregister_script( self::COMPAT_SCRIPT_HANDLE );
 		wp_dequeue_style( self::SCRIPT_HANDLE );
 		wp_deregister_style( self::SCRIPT_HANDLE );
-		wp_dequeue_style( self::LEGACY_SCRIPT_HANDLE );
-		wp_deregister_style( self::LEGACY_SCRIPT_HANDLE );
+		wp_dequeue_style( self::COMPAT_SCRIPT_HANDLE );
+		wp_deregister_style( self::COMPAT_SCRIPT_HANDLE );
 
 		parent::tear_down();
 	}
@@ -371,9 +371,9 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 		$sut->handle_wp_enqueue_scripts();
 
 		$script        = wp_scripts()->registered[ self::SCRIPT_HANDLE ] ?? null;
-		$legacy_script = wp_scripts()->registered[ self::LEGACY_SCRIPT_HANDLE ] ?? null;
+		$legacy_script = wp_scripts()->registered[ self::COMPAT_SCRIPT_HANDLE ] ?? null;
 		$style         = wp_styles()->registered[ self::SCRIPT_HANDLE ] ?? null;
-		$legacy_style  = wp_styles()->registered[ self::LEGACY_SCRIPT_HANDLE ] ?? null;
+		$legacy_style  = wp_styles()->registered[ self::COMPAT_SCRIPT_HANDLE ] ?? null;
 		$data          = wp_scripts()->get_data( self::SCRIPT_HANDLE, 'data' );
 
 		$this->assertNotNull( $script );
@@ -402,7 +402,7 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( \_WP_Dependency::class, $legacy_script );
 		$this->assertFalse( $legacy_script->src );
 		$this->assertSame( array( self::SCRIPT_HANDLE ), $legacy_script->deps );
-		$this->assertFalse( wp_script_is( self::LEGACY_SCRIPT_HANDLE, 'enqueued' ) );
+		$this->assertFalse( wp_script_is( self::COMPAT_SCRIPT_HANDLE, 'enqueued' ) );
 		$this->assertNotNull( $style );
 		$this->assertSame( 'https://example.test/wp-content/plugins/woocommerce/assets/css/multi-currency-async-renderer.css', $style->src );
 		$this->assertSame( '1.2.3', $style->ver );
@@ -410,7 +410,7 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 		$this->assertInstanceOf( \_WP_Dependency::class, $legacy_style );
 		$this->assertFalse( $legacy_style->src );
 		$this->assertSame( array( self::SCRIPT_HANDLE ), $legacy_style->deps );
-		$this->assertFalse( wp_style_is( self::LEGACY_SCRIPT_HANDLE, 'enqueued' ) );
+		$this->assertFalse( wp_style_is( self::COMPAT_SCRIPT_HANDLE, 'enqueued' ) );
 	}
 
 	/**

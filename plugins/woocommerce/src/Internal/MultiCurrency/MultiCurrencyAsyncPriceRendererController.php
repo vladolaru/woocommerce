@@ -24,7 +24,7 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 
 	private const PRICE_TYPE_FILTER   = 'wcpay_multi_currency_async_price_type';
 	public const SCRIPT_HANDLE        = 'wc-multi-currency-async-renderer';
-	public const LEGACY_SCRIPT_HANDLE = 'wcpay-multi-currency-async-renderer';
+	public const COMPAT_SCRIPT_HANDLE = 'wcpay-multi-currency-async-renderer';
 	private const SCRIPT_PATH         = 'assets/js/frontend/multi-currency-async-renderer';
 	private const STYLE_PATH          = 'assets/css/multi-currency-async-renderer.css';
 	private const LOCALIZED_OBJECT    = 'wcpayAsyncPriceConfig';
@@ -247,7 +247,7 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 			$version,
 			array( 'in_footer' => true )
 		);
-		wp_register_script( self::LEGACY_SCRIPT_HANDLE, false, array( self::SCRIPT_HANDLE ), $version, array( 'in_footer' => true ) );
+		wp_register_script( self::COMPAT_SCRIPT_HANDLE, false, array( self::SCRIPT_HANDLE ), $version, array( 'in_footer' => true ) );
 		wp_localize_script(
 			self::SCRIPT_HANDLE,
 			self::LOCALIZED_OBJECT,
@@ -273,7 +273,7 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 		wp_enqueue_script( self::SCRIPT_HANDLE );
 
 		wp_register_style( self::SCRIPT_HANDLE, plugins_url( self::STYLE_PATH, WC_PLUGIN_FILE ), array(), $version );
-		wp_register_style( self::LEGACY_SCRIPT_HANDLE, false, array( self::SCRIPT_HANDLE ), $version );
+		wp_register_style( self::COMPAT_SCRIPT_HANDLE, false, array( self::SCRIPT_HANDLE ), $version );
 		wp_enqueue_style( self::SCRIPT_HANDLE );
 	}
 

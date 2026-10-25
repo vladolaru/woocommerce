@@ -22,7 +22,7 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 
 	private const BLOCK_NAME                  = 'woocommerce-payments/multi-currency-switcher';
 	private const EDITOR_SCRIPT_HANDLE        = 'wc-multi-currency-switcher';
-	private const LEGACY_EDITOR_SCRIPT_HANDLE = self::BLOCK_NAME;
+	private const COMPAT_EDITOR_SCRIPT_HANDLE = self::BLOCK_NAME;
 	private const EDITOR_SCRIPT_PATH          = 'assets/client/blocks/multi-currency-switcher.js';
 	private const EDITOR_SCRIPT_ASSET_PATH    = 'assets/client/blocks/multi-currency-switcher.asset.php';
 	private const EDITOR_SCRIPT_DEPENDENCIES  = array(
@@ -149,7 +149,7 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 			wp_set_script_translations( self::EDITOR_SCRIPT_HANDLE, 'woocommerce' );
 		}
 
-		wp_register_script( self::LEGACY_EDITOR_SCRIPT_HANDLE, false, array( self::EDITOR_SCRIPT_HANDLE ), WC_VERSION, true );
+		wp_register_script( self::COMPAT_EDITOR_SCRIPT_HANDLE, false, array( self::EDITOR_SCRIPT_HANDLE ), WC_VERSION, true );
 	}
 
 	/**
