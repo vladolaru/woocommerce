@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDatabaseCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCachingEnvironment;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRateService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySettingsCurrencyCatalog;
@@ -743,8 +743,8 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 			ServiceFactories::with(
 				$this,
 				array(
-					'create_settings_currency_catalog'   => $this->create_settings_currency_catalog( $state_builder, $provider_available, $supported_currencies ),
-					'create_frontend_projection_service' => $this->create_frontend_projection_service( $cache_optimized_mode ),
+					'create_settings_currency_catalog' => $this->create_settings_currency_catalog( $state_builder, $provider_available, $supported_currencies ),
+					'create_display_service'           => $this->create_display_service( $cache_optimized_mode ),
 				)
 			),
 			$cache_rendering_service
@@ -978,10 +978,10 @@ class MultiCurrencyRestControllerTest extends WC_Unit_Test_Case {
 	 * Create a frontend projection service test double.
 	 *
 	 * @param bool $cache_optimized_mode Whether cache mode is active.
-	 * @return MultiCurrencyFrontendProjectionService
+	 * @return MultiCurrencyDisplayService
 	 */
-	private function create_frontend_projection_service( bool $cache_optimized_mode ): MultiCurrencyFrontendProjectionService {
-		return new class( $cache_optimized_mode ) extends MultiCurrencyFrontendProjectionService {
+	private function create_display_service( bool $cache_optimized_mode ): MultiCurrencyDisplayService {
+		return new class( $cache_optimized_mode ) extends MultiCurrencyDisplayService {
 			/**
 			 * Whether cache mode is active.
 			 *

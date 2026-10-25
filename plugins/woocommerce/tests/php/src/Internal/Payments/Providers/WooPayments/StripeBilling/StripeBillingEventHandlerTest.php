@@ -8,7 +8,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyOrderContextService;
@@ -364,7 +364,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 			wc_get_container()->get( MultiCurrencyRuntimeArbiter::class ),
 			ServiceFactories::with(
 				$this,
-				array( 'create_frontend_projection_service' => new MultiCurrencyFrontendProjectionService( $builder, $localization, new MultiCurrencyGeolocationService( $localization, static fn() => 'US' ) ) )
+				array( 'create_display_service' => new MultiCurrencyDisplayService( $builder, $localization, new MultiCurrencyGeolocationService( $localization, static fn() => 'US' ) ) )
 			),
 			new class() extends MultiCurrencyRequestContext {
 				/**

@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyRateException;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySettingsCurrencyCatalog;
@@ -65,9 +65,9 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	/**
 	 * Frontend projection service.
 	 *
-	 * @var MultiCurrencyFrontendProjectionService|null
+	 * @var MultiCurrencyDisplayService|null
 	 */
-	private ?MultiCurrencyFrontendProjectionService $frontend_projection_service = null;
+	private ?MultiCurrencyDisplayService $display_service = null;
 
 	/**
 	 * Settings currency catalog.
@@ -123,7 +123,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 		$admin = array( $this, 'check_permission' );
 
 		// The async renderer reads the public config only in cache-optimized rendering mode.
-		if ( $this->get_frontend_projection_service()->is_cache_optimized_mode() ) {
+		if ( $this->get_display_service()->is_cache_optimized_mode() ) {
 			register_rest_route(
 				self::REST_NAMESPACE,
 				$base . '/public/config',
@@ -287,7 +287,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 
 		try {
 			$this->validate_available_currency_codes( array( $currency_code ), __FUNCTION__ );
-			return rest_ensure_response( $this->get_frontend_projection_service()->get_single_currency_settings( $currency_code ) );
+			return rest_ensure_response( $this->get_display_service()->get_single_currency_settings( $currency_code ) );
 		} catch ( InvalidCurrencyException $exception ) {
 			return $this->get_error_response( $exception );
 		}
@@ -330,7 +330,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	public function get_settings(): WP_REST_Response {
 		return rest_ensure_response(
 			array_merge(
-				$this->get_frontend_projection_service()->get_settings(),
+				$this->get_display_service()->get_settings(),
 				array(
 					'should_recommend_cache_mode'    => $this->cache_rendering_service->should_recommend_cache_mode(),
 					'cache_recommendation_dismissed' => $this->cache_rendering_service->is_cache_recommendation_dismissed(),
@@ -367,8 +367,8 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 			$value = sanitize_text_field( (string) $params[ $option_name ] );
 
 			if (
-				MultiCurrencyFrontendProjectionService::RENDERING_MODE_OPTION === $option_name
-				&& ! in_array( $value, array( MultiCurrencyFrontendProjectionService::RENDERING_MODE_SPEED, MultiCurrencyFrontendProjectionService::RENDERING_MODE_CACHE ), true )
+				MultiCurrencyDisplayService::RENDERING_MODE_OPTION === $option_name
+				&& ! in_array( $value, array( MultiCurrencyDisplayService::RENDERING_MODE_SPEED, MultiCurrencyDisplayService::RENDERING_MODE_CACHE ), true )
 			) {
 				continue;
 			}
@@ -385,7 +385,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	 * @return WP_REST_Response
 	 */
 	public function get_public_config(): WP_REST_Response {
-		$response = rest_ensure_response( $this->get_frontend_projection_service()->get_public_config() );
+		$response = rest_ensure_response( $this->get_display_service()->get_public_config() );
 		$response->header( 'Cache-Control', self::PUBLIC_CONFIG_CACHE_CONTROL );
 
 		return $response;
@@ -522,10 +522,10 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 				'format'   => 'text-field',
 				'required' => true,
 			),
-			MultiCurrencyFrontendProjectionService::RENDERING_MODE_OPTION => array(
+			MultiCurrencyDisplayService::RENDERING_MODE_OPTION => array(
 				'type'     => 'string',
 				'required' => false,
-				'enum'     => array( MultiCurrencyFrontendProjectionService::RENDERING_MODE_SPEED, MultiCurrencyFrontendProjectionService::RENDERING_MODE_CACHE ),
+				'enum'     => array( MultiCurrencyDisplayService::RENDERING_MODE_SPEED, MultiCurrencyDisplayService::RENDERING_MODE_CACHE ),
 			),
 			MultiCurrencyCacheRenderingService::DISMISSED_OPTION => array(
 				'type'     => 'string',
@@ -564,14 +564,14 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	/**
 	 * Get the frontend projection service.
 	 *
-	 * @return MultiCurrencyFrontendProjectionService
+	 * @return MultiCurrencyDisplayService
 	 */
-	private function get_frontend_projection_service(): MultiCurrencyFrontendProjectionService {
-		if ( null === $this->frontend_projection_service ) {
-			$this->frontend_projection_service = $this->service_factory->create_frontend_projection_service();
+	private function get_display_service(): MultiCurrencyDisplayService {
+		if ( null === $this->display_service ) {
+			$this->display_service = $this->service_factory->create_display_service();
 		}
 
-		return $this->frontend_projection_service;
+		return $this->display_service;
 	}
 
 	/**

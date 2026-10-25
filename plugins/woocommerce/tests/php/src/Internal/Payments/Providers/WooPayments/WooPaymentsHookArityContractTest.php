@@ -16,7 +16,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySelectedCurrencyController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyStorefrontIntegrationController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
@@ -1040,7 +1040,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 */
 	private function probe_mc_frontend(): void {
 		$fixture = $this->build_multi_currency_fixture();
-		$service = new MultiCurrencyFrontendProjectionService( $fixture['builder'], $fixture['localization'], $fixture['geolocation'] );
+		$service = new MultiCurrencyDisplayService( $fixture['builder'], $fixture['localization'], $fixture['geolocation'] );
 		$service->get_public_config();
 	}
 

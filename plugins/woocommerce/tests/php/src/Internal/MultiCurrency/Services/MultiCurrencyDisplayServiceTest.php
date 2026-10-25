@@ -7,15 +7,15 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyExce
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the MultiCurrencyFrontendProjectionService class.
+ * Tests for the MultiCurrencyDisplayService class.
  */
-class MultiCurrencyFrontendProjectionServiceTest extends WC_Unit_Test_Case {
+class MultiCurrencyDisplayServiceTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Original store currency.
@@ -296,12 +296,12 @@ class MultiCurrencyFrontendProjectionServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @param MultiCurrencyState $state       Multi-currency state.
 	 * @param string             $geo_country Geolocated country code.
-	 * @return MultiCurrencyFrontendProjectionService
+	 * @return MultiCurrencyDisplayService
 	 */
-	private function create_service( MultiCurrencyState $state, string $geo_country = 'US' ): MultiCurrencyFrontendProjectionService {
+	private function create_service( MultiCurrencyState $state, string $geo_country = 'US' ): MultiCurrencyDisplayService {
 		$localization = $this->create_localization();
 
-		return new MultiCurrencyFrontendProjectionService(
+		return new MultiCurrencyDisplayService(
 			$this->create_state_builder( $state ),
 			$localization,
 			new MultiCurrencyGeolocationService( $localization, static fn() => $geo_country )

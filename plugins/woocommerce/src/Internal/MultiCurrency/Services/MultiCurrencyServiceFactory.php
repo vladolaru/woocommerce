@@ -51,12 +51,12 @@ class MultiCurrencyServiceFactory {
 	/**
 	 * Create a frontend projection service.
 	 *
-	 * @return MultiCurrencyFrontendProjectionService
+	 * @return MultiCurrencyDisplayService
 	 */
-	public function create_frontend_projection_service(): MultiCurrencyFrontendProjectionService {
+	public function create_display_service(): MultiCurrencyDisplayService {
 		$localization_service = new MultiCurrencyLocalizationService();
 
-		return new MultiCurrencyFrontendProjectionService(
+		return new MultiCurrencyDisplayService(
 			$this->state_builder_factory->create(),
 			$localization_service,
 			new MultiCurrencyGeolocationService( $localization_service )

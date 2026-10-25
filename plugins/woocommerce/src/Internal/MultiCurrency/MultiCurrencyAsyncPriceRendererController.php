@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -46,9 +46,9 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	/**
 	 * Frontend projection service.
 	 *
-	 * @var MultiCurrencyFrontendProjectionService|null
+	 * @var MultiCurrencyDisplayService|null
 	 */
-	private ?MultiCurrencyFrontendProjectionService $frontend_projection_service = null;
+	private ?MultiCurrencyDisplayService $display_service = null;
 
 	/**
 	 * Request context.
@@ -113,7 +113,7 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 		}
 
 		if (
-			! $this->get_frontend_projection_service()->is_cache_optimized_mode()
+			! $this->get_display_service()->is_cache_optimized_mode()
 			|| is_admin()
 			|| wp_doing_cron()
 			|| $this->request_context->is_admin_api_request()
@@ -290,14 +290,14 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	/**
 	 * Get the frontend projection service.
 	 *
-	 * @return MultiCurrencyFrontendProjectionService
+	 * @return MultiCurrencyDisplayService
 	 */
-	private function get_frontend_projection_service(): MultiCurrencyFrontendProjectionService {
-		if ( null === $this->frontend_projection_service ) {
-			$this->frontend_projection_service = $this->service_factory->create_frontend_projection_service();
+	private function get_display_service(): MultiCurrencyDisplayService {
+		if ( null === $this->display_service ) {
+			$this->display_service = $this->service_factory->create_display_service();
 		}
 
-		return $this->frontend_projection_service;
+		return $this->display_service;
 	}
 
 	/**

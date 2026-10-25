@@ -6,7 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAsyncPriceRendererController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 use WC_Unit_Test_Case;
 
@@ -468,7 +468,7 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 		$controller = new MultiCurrencyAsyncPriceRendererController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			ServiceFactories::with( $this, array( 'create_frontend_projection_service' => $this->create_frontend_projection_service( $cache_optimized_mode ) ) ),
+			ServiceFactories::with( $this, array( 'create_display_service' => $this->create_display_service( $cache_optimized_mode ) ) ),
 			$this->create_request_context( $frontend_request, $store_api_request, $admin_api_request )
 		);
 		$this->use_session(
@@ -553,10 +553,10 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 	 * Create a frontend projection service test double.
 	 *
 	 * @param bool $cache_optimized_mode Whether cache-optimized mode is active.
-	 * @return MultiCurrencyFrontendProjectionService
+	 * @return MultiCurrencyDisplayService
 	 */
-	private function create_frontend_projection_service( bool $cache_optimized_mode ): MultiCurrencyFrontendProjectionService {
-		return new class( $cache_optimized_mode ) extends MultiCurrencyFrontendProjectionService {
+	private function create_display_service( bool $cache_optimized_mode ): MultiCurrencyDisplayService {
+		return new class( $cache_optimized_mode ) extends MultiCurrencyDisplayService {
 			/**
 			 * Whether cache-optimized mode is active.
 			 *

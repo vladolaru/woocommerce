@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
@@ -551,7 +551,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	 * @return bool
 	 */
 	private function is_cache_optimized_mode(): bool {
-		return MultiCurrencyFrontendProjectionService::RENDERING_MODE_CACHE === get_option( MultiCurrencyFrontendProjectionService::RENDERING_MODE_OPTION, MultiCurrencyFrontendProjectionService::RENDERING_MODE_SPEED );
+		return MultiCurrencyDisplayService::RENDERING_MODE_CACHE === get_option( MultiCurrencyDisplayService::RENDERING_MODE_OPTION, MultiCurrencyDisplayService::RENDERING_MODE_SPEED );
 	}
 
 	/**

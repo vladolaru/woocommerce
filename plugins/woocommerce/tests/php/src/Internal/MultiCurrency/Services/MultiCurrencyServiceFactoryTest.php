@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsProjectionService;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySelectedCurrencyPersistenceService;
@@ -28,7 +28,7 @@ class MultiCurrencyServiceFactoryTest extends WC_Unit_Test_Case {
 	public static function creators(): array {
 		return array(
 			'price projection'              => array( 'create_price_converter', MultiCurrencyPriceConverter::class ),
-			'frontend projection'           => array( 'create_frontend_projection_service', MultiCurrencyFrontendProjectionService::class ),
+			'frontend projection'           => array( 'create_display_service', MultiCurrencyDisplayService::class ),
 			'geolocation'                   => array( 'create_geolocation_service', MultiCurrencyGeolocationService::class ),
 			'selected-currency persistence' => array( 'create_selected_currency_persistence_service', MultiCurrencySelectedCurrencyPersistenceService::class ),
 			'switcher projection'           => array( 'create_switcher_projection_service', MultiCurrencySwitcherProjectionService::class ),

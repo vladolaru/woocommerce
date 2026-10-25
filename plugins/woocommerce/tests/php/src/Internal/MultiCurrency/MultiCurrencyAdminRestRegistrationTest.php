@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\DependencyManagement\RuntimeContainer;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyBootstrap;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use WC_REST_Unit_Test_Case;
@@ -136,7 +136,7 @@ class MultiCurrencyAdminRestRegistrationTest extends WC_REST_Unit_Test_Case {
 	 * @return MultiCurrencyRestController
 	 */
 	private function create_rest_controller( MultiCurrencyRuntimeArbiter $arbiter ): MultiCurrencyRestController {
-		$frontend_projection = $this->getMockBuilder( MultiCurrencyFrontendProjectionService::class )
+		$frontend_projection = $this->getMockBuilder( MultiCurrencyDisplayService::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'is_cache_optimized_mode' ) )
 			->getMock();
@@ -146,7 +146,7 @@ class MultiCurrencyAdminRestRegistrationTest extends WC_REST_Unit_Test_Case {
 		$controller->init(
 			$arbiter,
 			wc_get_container()->get( MultiCurrencyStateBuilderFactory::class ),
-			ServiceFactories::with( $this, array( 'create_frontend_projection_service' => $frontend_projection ) )
+			ServiceFactories::with( $this, array( 'create_display_service' => $frontend_projection ) )
 		);
 
 		return $controller;

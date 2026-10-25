@@ -7,7 +7,7 @@ use Automattic\WooCommerce\Caches\OrderCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendPricesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyOrderContextService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
@@ -164,7 +164,7 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_currency_projection_is_reentry_safe(): void {
 		update_option( 'woocommerce_currency', 'USD' );
-		$service = new class() extends MultiCurrencyFrontendProjectionService {
+		$service = new class() extends MultiCurrencyDisplayService {
 			/**
 			 * Number of projection calls.
 			 *
@@ -488,22 +488,22 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a frontend currencies controller with a static runtime owner.
 	 *
-	 * @param string                                      $owner                 Runtime owner.
-	 * @param MultiCurrencyRequestContext|null            $request_context       Request context.
-	 * @param MultiCurrencyOrderContextService|null       $order_context_service Order context service.
-	 * @param MultiCurrencyFrontendProjectionService|null $projection_service Frontend projection service; the fixture's by default.
+	 * @param string                                $owner                 Runtime owner.
+	 * @param MultiCurrencyRequestContext|null      $request_context       Request context.
+	 * @param MultiCurrencyOrderContextService|null $order_context_service Order context service.
+	 * @param MultiCurrencyDisplayService|null      $projection_service Frontend projection service; the fixture's by default.
 	 * @return MultiCurrencyFrontendCurrenciesController
 	 */
 	private function create_controller(
 		string $owner,
 		?MultiCurrencyRequestContext $request_context = null,
 		?MultiCurrencyOrderContextService $order_context_service = null,
-		?MultiCurrencyFrontendProjectionService $projection_service = null
+		?MultiCurrencyDisplayService $projection_service = null
 	): MultiCurrencyFrontendCurrenciesController {
 		$controller = new MultiCurrencyFrontendCurrenciesController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
-			ServiceFactories::with( $this, array( 'create_frontend_projection_service' => $projection_service ?? $this->create_projection_service() ) ),
+			ServiceFactories::with( $this, array( 'create_display_service' => $projection_service ?? $this->create_projection_service() ) ),
 			$request_context ?? wc_get_container()->get( MultiCurrencyRequestContext::class ),
 			$order_context_service ?? wc_get_container()->get( MultiCurrencyOrderContextService::class )
 		);
@@ -614,10 +614,10 @@ class MultiCurrencyFrontendCurrenciesControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a deterministic frontend projection service.
 	 *
-	 * @return MultiCurrencyFrontendProjectionService
+	 * @return MultiCurrencyDisplayService
 	 */
-	private function create_projection_service(): MultiCurrencyFrontendProjectionService {
-		return new class() extends MultiCurrencyFrontendProjectionService {
+	private function create_projection_service(): MultiCurrencyDisplayService {
+		return new class() extends MultiCurrencyDisplayService {
 			/**
 			 * Constructor.
 			 */

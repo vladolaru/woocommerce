@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -58,9 +58,9 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	/**
 	 * Frontend projection service.
 	 *
-	 * @var MultiCurrencyFrontendProjectionService|null
+	 * @var MultiCurrencyDisplayService|null
 	 */
-	private ?MultiCurrencyFrontendProjectionService $frontend_projection_service = null;
+	private ?MultiCurrencyDisplayService $display_service = null;
 
 	/**
 	 * Initialize the class instance.
@@ -206,15 +206,15 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	 * @return array<mixed>
 	 */
 	public function filter_wc_price_args( array $args ): array {
-		$frontend_projection_service = $this->get_frontend_projection_service();
+		$display_service = $this->get_display_service();
 
 		return wp_parse_args(
 			array(
-				'currency'           => $frontend_projection_service->get_woocommerce_currency(),
-				'decimal_separator'  => $frontend_projection_service->get_price_decimal_separator( (string) ( $args['decimal_separator'] ?? wc_get_price_decimal_separator() ) ),
-				'thousand_separator' => $frontend_projection_service->get_price_thousand_separator( (string) ( $args['thousand_separator'] ?? wc_get_price_thousand_separator() ) ),
-				'decimals'           => $frontend_projection_service->get_price_decimals( absint( $args['decimals'] ?? wc_get_price_decimals() ) ),
-				'price_format'       => $frontend_projection_service->get_woocommerce_price_format( (string) ( $args['price_format'] ?? get_woocommerce_price_format() ) ),
+				'currency'           => $display_service->get_woocommerce_currency(),
+				'decimal_separator'  => $display_service->get_price_decimal_separator( (string) ( $args['decimal_separator'] ?? wc_get_price_decimal_separator() ) ),
+				'thousand_separator' => $display_service->get_price_thousand_separator( (string) ( $args['thousand_separator'] ?? wc_get_price_thousand_separator() ) ),
+				'decimals'           => $display_service->get_price_decimals( absint( $args['decimals'] ?? wc_get_price_decimals() ) ),
+				'price_format'       => $display_service->get_woocommerce_price_format( (string) ( $args['price_format'] ?? get_woocommerce_price_format() ) ),
 			),
 			$args
 		);
@@ -245,13 +245,13 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	/**
 	 * Get the frontend projection service.
 	 *
-	 * @return MultiCurrencyFrontendProjectionService
+	 * @return MultiCurrencyDisplayService
 	 */
-	private function get_frontend_projection_service(): MultiCurrencyFrontendProjectionService {
-		if ( null === $this->frontend_projection_service ) {
-			$this->frontend_projection_service = $this->service_factory->create_frontend_projection_service();
+	private function get_display_service(): MultiCurrencyDisplayService {
+		if ( null === $this->display_service ) {
+			$this->display_service = $this->service_factory->create_display_service();
 		}
 
-		return $this->frontend_projection_service;
+		return $this->display_service;
 	}
 }

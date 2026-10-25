@@ -8,7 +8,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyBookingsCompatibi
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyGeolocationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceCalculator;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyPriceConverter;
@@ -363,8 +363,8 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 			ServiceFactories::with(
 				$this,
 				array(
-					'create_price_converter'             => $this->create_price_converter(),
-					'create_frontend_projection_service' => $this->create_frontend_projection_service(),
+					'create_price_converter' => $this->create_price_converter(),
+					'create_display_service' => $this->create_display_service(),
 				)
 			)
 		);
@@ -424,12 +424,12 @@ class MultiCurrencyBookingsCompatibilityControllerTest extends WC_Unit_Test_Case
 	/**
 	 * Create a frontend projection service.
 	 *
-	 * @return MultiCurrencyFrontendProjectionService
+	 * @return MultiCurrencyDisplayService
 	 */
-	private function create_frontend_projection_service(): MultiCurrencyFrontendProjectionService {
+	private function create_display_service(): MultiCurrencyDisplayService {
 		$localization = $this->create_localization();
 
-		return new MultiCurrencyFrontendProjectionService(
+		return new MultiCurrencyDisplayService(
 			$this->create_state_builder( $this->create_state() ),
 			$localization,
 			new MultiCurrencyGeolocationService( $localization )

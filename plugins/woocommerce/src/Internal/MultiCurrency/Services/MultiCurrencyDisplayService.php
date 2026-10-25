@@ -1,6 +1,6 @@
 <?php
 /**
- * MultiCurrencyFrontendProjectionService class file.
+ * MultiCurrencyDisplayService class file.
  */
 
 declare( strict_types = 1 );
@@ -18,7 +18,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
  * @since 11.0.0
  * @internal Transitional internal component for the native multi-currency runtime.
  */
-class MultiCurrencyFrontendProjectionService {
+class MultiCurrencyDisplayService {
 
 	const RENDERING_MODE_SPEED      = 'speed';
 	const RENDERING_MODE_CACHE      = 'cache';

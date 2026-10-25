@@ -67,7 +67,7 @@ class MultiCurrencyPriceConverter {
 			 *
 			 * @since 11.0.0
 			 */
-			$apply_charm_only_to_products = (bool) apply_filters( MultiCurrencyFrontendProjectionService::APPLY_CHARM_PRODUCTS_HOOK, true );
+			$apply_charm_only_to_products = (bool) apply_filters( MultiCurrencyDisplayService::APPLY_CHARM_PRODUCTS_HOOK, true );
 		}
 
 		return $this->price_calculator->get_price( $price, $type, $currency, $apply_charm_only_to_products );

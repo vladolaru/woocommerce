@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyDisplayService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyOrderContextService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
@@ -39,9 +39,9 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	/**
 	 * Frontend projection service.
 	 *
-	 * @var MultiCurrencyFrontendProjectionService|null
+	 * @var MultiCurrencyDisplayService|null
 	 */
-	private ?MultiCurrencyFrontendProjectionService $frontend_projection_service = null;
+	private ?MultiCurrencyDisplayService $display_service = null;
 
 	/**
 	 * Request context.
@@ -155,7 +155,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 		$this->is_projecting_woocommerce_currency = true;
 
 		try {
-			return $this->get_frontend_projection_service()->get_woocommerce_currency( $this->order_currency );
+			return $this->get_display_service()->get_woocommerce_currency( $this->order_currency );
 		} finally {
 			$this->is_projecting_woocommerce_currency = false;
 		}
@@ -168,7 +168,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * @return int
 	 */
 	public function get_price_decimals( $decimals ): int {
-		$projected = $this->get_frontend_projection_service()->get_price_decimals( absint( $decimals ), $this->order_currency );
+		$projected = $this->get_display_service()->get_price_decimals( absint( $decimals ), $this->order_currency );
 
 		// A flat-rate percent fee in store units keeps the store's decimals, or the shopper's currency's when it has more.
 		if ( MultiCurrencyFrontendPricesController::is_computing_store_currency_fee() ) {
@@ -185,7 +185,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * @return string
 	 */
 	public function get_price_decimal_separator( $separator ): string {
-		return $this->get_frontend_projection_service()->get_price_decimal_separator( (string) $separator, $this->order_currency );
+		return $this->get_display_service()->get_price_decimal_separator( (string) $separator, $this->order_currency );
 	}
 
 	/**
@@ -195,7 +195,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * @return string
 	 */
 	public function get_price_thousand_separator( $separator ): string {
-		return $this->get_frontend_projection_service()->get_price_thousand_separator( (string) $separator, $this->order_currency );
+		return $this->get_display_service()->get_price_thousand_separator( (string) $separator, $this->order_currency );
 	}
 
 	/**
@@ -205,7 +205,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * @return string
 	 */
 	public function get_woocommerce_price_format( $format ): string {
-		return $this->get_frontend_projection_service()->get_woocommerce_price_format( (string) $format, $this->order_currency );
+		return $this->get_display_service()->get_woocommerce_price_format( (string) $format, $this->order_currency );
 	}
 
 	/**
@@ -215,7 +215,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * @return string
 	 */
 	public function get_woocommerce_currency_pos( $position ): string {
-		return $this->get_frontend_projection_service()->get_woocommerce_currency_pos( (string) $position, $this->order_currency );
+		return $this->get_display_service()->get_woocommerce_currency_pos( (string) $position, $this->order_currency );
 	}
 
 	/**
@@ -225,7 +225,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * @return string
 	 */
 	public function add_currency_to_cart_hash( $hash ): string {
-		return $this->get_frontend_projection_service()->add_currency_to_cart_hash( (string) $hash );
+		return $this->get_display_service()->add_currency_to_cart_hash( (string) $hash );
 	}
 
 	/**
@@ -304,7 +304,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 			return $order->get_id();
 		}
 
-		$this->order_currency = $this->get_frontend_projection_service()->get_woocommerce_currency();
+		$this->order_currency = $this->get_display_service()->get_woocommerce_currency();
 
 		return $order_id;
 	}
@@ -356,14 +356,14 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	/**
 	 * Get the frontend projection service.
 	 *
-	 * @return MultiCurrencyFrontendProjectionService
+	 * @return MultiCurrencyDisplayService
 	 */
-	private function get_frontend_projection_service(): MultiCurrencyFrontendProjectionService {
-		if ( null === $this->frontend_projection_service ) {
-			$this->frontend_projection_service = $this->service_factory->create_frontend_projection_service();
+	private function get_display_service(): MultiCurrencyDisplayService {
+		if ( null === $this->display_service ) {
+			$this->display_service = $this->service_factory->create_display_service();
 		}
 
-		return $this->frontend_projection_service;
+		return $this->display_service;
 	}
 
 	/**
