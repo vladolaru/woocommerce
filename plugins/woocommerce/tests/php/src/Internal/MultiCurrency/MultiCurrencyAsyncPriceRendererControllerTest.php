@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
+use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAsyncPriceRendererController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyFrontendProjectionService;
@@ -23,6 +24,21 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 	 * @var array<string,mixed>
 	 */
 	private array $store_format_options = array();
+
+	/**
+	 * The WooCommerce session before the test replaced it.
+	 *
+	 * @var object|null
+	 */
+	private $original_session;
+
+	/**
+	 * Keep the WooCommerce session the test replaces.
+	 */
+	public function set_up(): void {
+		parent::set_up();
+		$this->original_session = WC()->session;
+	}
 
 	/**
 	 * Hooks touched by the controller.
@@ -46,6 +62,8 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 		}
 
 		unset( $_GET['currency'] );
+		WC()->session = $this->original_session;
+		Constants::clear_single_constant( 'WC_VERSION' );
 		delete_option( 'wcpay_multi_currency_enable_auto_currency' );
 		foreach ( $this->store_format_options as $option => $value ) {
 			update_option( $option, $value );
@@ -190,7 +208,7 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 
 			return false;
 		};
-		$sut->set_active_session_resolver( $recorder );
+		$this->use_session( $recorder );
 
 		$sut->register();
 
@@ -338,16 +356,17 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 			update_option( $option, $value );
 		}
 		$sut = $this->create_controller();
-		$sut->set_asset_url_resolver(
-			static function ( string $path ): string {
+		add_filter(
+			'plugins_url',
+			static function ( string $url, string $path ): string {
+				unset( $url );
+
 				return 'https://example.test/wp-content/plugins/woocommerce/' . $path;
-			}
+			},
+			10,
+			2
 		);
-		$sut->set_asset_version_resolver(
-			static function (): string {
-				return '1.2.3';
-			}
-		);
+		Constants::set_constant( 'WC_VERSION', '1.2.3' );
 
 		$sut->handle_wp_enqueue_scripts();
 
@@ -452,13 +471,47 @@ class MultiCurrencyAsyncPriceRendererControllerTest extends WC_Unit_Test_Case {
 			ServiceFactories::with( $this, array( 'create_frontend_projection_service' => $this->create_frontend_projection_service( $cache_optimized_mode ) ) ),
 			$this->create_request_context( $frontend_request, $store_api_request, $admin_api_request )
 		);
-		$controller->set_active_session_resolver(
+		$this->use_session(
 			static function () use ( $active_session ): bool {
 				return $active_session;
 			}
 		);
 
 		return $controller;
+	}
+
+	/**
+	 * Replace the WooCommerce session with one that answers has_session() through a callback.
+	 *
+	 * @param callable $has_session Callback telling whether a session cookie exists.
+	 */
+	private function use_session( callable $has_session ): void {
+		WC()->session = new class( $has_session ) extends \WC_Mock_Session_Handler {
+			/**
+			 * Callback telling whether a session cookie exists.
+			 *
+			 * @var callable
+			 */
+			private $has_session;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param callable $has_session Callback telling whether a session cookie exists.
+			 */
+			public function __construct( callable $has_session ) {
+				$this->has_session = $has_session;
+			}
+
+			/**
+			 * Tell whether a session cookie exists.
+			 *
+			 * @return bool
+			 */
+			public function has_session(): bool {
+				return (bool) call_user_func( $this->has_session );
+			}
+		};
 	}
 
 	/**

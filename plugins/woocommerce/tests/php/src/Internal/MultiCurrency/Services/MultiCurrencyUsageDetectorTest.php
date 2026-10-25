@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
+use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController;
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStoreMeta;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use Automattic\WooCommerce\Utilities\OrderUtil;
@@ -82,7 +83,7 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 		$queries      = array();
 		$query_filter = $this->add_existence_query_filter( $queries );
 		$detector     = new MultiCurrencyUsageDetector();
-		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
+		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'no' );
 
 		try {
 			$this->assertTrue( $detector->has_foreign_currency_orders() );
@@ -99,7 +100,7 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 		$queries      = array();
 		$query_filter = $this->add_existence_query_filter( $queries );
 		$detector     = new MultiCurrencyUsageDetector();
-		$detector->set_hpos_enabled_resolver( static fn(): bool => true );
+		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'yes' );
 
 		try {
 			$this->assertTrue( $detector->has_foreign_currency_orders() );
@@ -116,7 +117,7 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 		$order_id = $this->factory->post->create( array( 'post_type' => 'shop_order' ) );
 		add_post_meta( $order_id, '_wcpay_multi_currency_order_exchange_rate', '0.9' );
 		$detector = new MultiCurrencyUsageDetector();
-		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
+		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'no' );
 
 		$this->assertTrue( $detector->has_foreign_currency_orders( true ) );
 	}
@@ -140,7 +141,7 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 			)
 		);
 		$detector = new MultiCurrencyUsageDetector();
-		$detector->set_hpos_enabled_resolver( static fn(): bool => true );
+		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'yes' );
 
 		$this->assertTrue( $detector->has_foreign_currency_orders( true ) );
 	}
@@ -152,7 +153,7 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 		$queries      = array();
 		$query_filter = $this->add_existence_query_filter( $queries );
 		$detector     = new MultiCurrencyUsageDetector();
-		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
+		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'no' );
 
 		try {
 			$this->assertTrue( $detector->has_foreign_currency_orders() );
@@ -164,7 +165,7 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 			$this->assertSame( 2, count( $queries ), 'A fresh check must bypass the request memo and transient.' );
 
 			$cached_detector = new MultiCurrencyUsageDetector();
-			$cached_detector->set_hpos_enabled_resolver( static fn(): bool => false );
+			add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'no' );
 			$this->assertTrue( $cached_detector->has_foreign_currency_orders() );
 			$this->assertSame( 2, count( $queries ), 'A new detector should reuse the one-hour transient.' );
 		} finally {
@@ -179,7 +180,7 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 		global $wpdb;
 
 		$detector = new MultiCurrencyUsageDetector();
-		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
+		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'no' );
 		$original_postmeta = $wpdb->postmeta;
 		$suppress_errors   = $wpdb->suppress_errors( true );
 		$wpdb->postmeta    = "{$wpdb->prefix}missing_multi_currency_order_meta";

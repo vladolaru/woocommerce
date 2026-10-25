@@ -58,27 +58,6 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	private MultiCurrencyRequestContext $request_context;
 
 	/**
-	 * Active session resolver.
-	 *
-	 * @var callable|null
-	 */
-	private $active_session_resolver = null;
-
-	/**
-	 * Asset URL resolver.
-	 *
-	 * @var callable|null
-	 */
-	private $asset_url_resolver = null;
-
-	/**
-	 * Asset version resolver.
-	 *
-	 * @var callable|null
-	 */
-	private $asset_version_resolver = null;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -95,39 +74,6 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 		$this->arbiter         = $arbiter;
 		$this->service_factory = $service_factory;
 		$this->request_context = $request_context;
-	}
-
-	/**
-	 * Set the active session resolver.
-	 *
-	 * @internal Used by tests.
-	 *
-	 * @param callable $active_session_resolver Active session resolver.
-	 */
-	public function set_active_session_resolver( callable $active_session_resolver ): void {
-		$this->active_session_resolver = $active_session_resolver;
-	}
-
-	/**
-	 * Set the asset URL resolver.
-	 *
-	 * @internal Used by tests.
-	 *
-	 * @param callable $asset_url_resolver Asset URL resolver.
-	 */
-	public function set_asset_url_resolver( callable $asset_url_resolver ): void {
-		$this->asset_url_resolver = $asset_url_resolver;
-	}
-
-	/**
-	 * Set the asset version resolver.
-	 *
-	 * @internal Used by tests.
-	 *
-	 * @param callable $asset_version_resolver Asset version resolver.
-	 */
-	public function set_asset_version_resolver( callable $asset_version_resolver ): void {
-		$this->asset_version_resolver = $asset_version_resolver;
 	}
 
 	/**
@@ -292,17 +238,16 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	 * @internal
 	 */
 	public function handle_wp_enqueue_scripts(): void {
-		$script_version = $this->get_asset_version( self::SCRIPT_PATH . '.js' );
-		$style_version  = $this->get_asset_version( self::STYLE_PATH );
+		$version = Constants::get_constant( 'WC_VERSION' );
 
 		wp_register_script(
 			self::SCRIPT_HANDLE,
-			$this->get_asset_url( self::SCRIPT_PATH . $this->get_script_suffix() . '.js' ),
+			plugins_url( self::SCRIPT_PATH . $this->get_script_suffix() . '.js', WC_PLUGIN_FILE ),
 			array( 'wp-polyfill' ),
-			$script_version,
+			$version,
 			array( 'in_footer' => true )
 		);
-		wp_register_script( self::LEGACY_SCRIPT_HANDLE, false, array( self::SCRIPT_HANDLE ), $script_version, array( 'in_footer' => true ) );
+		wp_register_script( self::LEGACY_SCRIPT_HANDLE, false, array( self::SCRIPT_HANDLE ), $version, array( 'in_footer' => true ) );
 		wp_localize_script(
 			self::SCRIPT_HANDLE,
 			self::LOCALIZED_OBJECT,
@@ -327,8 +272,8 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 		);
 		wp_enqueue_script( self::SCRIPT_HANDLE );
 
-		wp_register_style( self::SCRIPT_HANDLE, $this->get_asset_url( self::STYLE_PATH ), array(), $style_version );
-		wp_register_style( self::LEGACY_SCRIPT_HANDLE, false, array( self::SCRIPT_HANDLE ), $style_version );
+		wp_register_style( self::SCRIPT_HANDLE, plugins_url( self::STYLE_PATH, WC_PLUGIN_FILE ), array(), $version );
+		wp_register_style( self::LEGACY_SCRIPT_HANDLE, false, array( self::SCRIPT_HANDLE ), $version );
 		wp_enqueue_style( self::SCRIPT_HANDLE );
 	}
 
@@ -361,10 +306,6 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	 * @return bool
 	 */
 	private function has_active_session(): bool {
-		if ( is_callable( $this->active_session_resolver ) ) {
-			return (bool) call_user_func( $this->active_session_resolver );
-		}
-
 		$session = WC()->session;
 
 		// The session class is swappable (woocommerce_session_handler), and the WC_Session base class has no has_session().
@@ -390,36 +331,6 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	 */
 	private function has_pending_currency_switch(): bool {
 		return isset( $_GET['currency'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-	}
-
-	/**
-	 * Get an asset URL.
-	 *
-	 * @param string $path Asset path relative to the plugin root.
-	 * @return string
-	 */
-	private function get_asset_url( string $path ): string {
-		if ( is_callable( $this->asset_url_resolver ) ) {
-			return (string) call_user_func( $this->asset_url_resolver, $path );
-		}
-
-		return plugins_url( $path, WC_PLUGIN_FILE );
-	}
-
-	/**
-	 * Get an asset version.
-	 *
-	 * @param string $path Asset path relative to the plugin root.
-	 * @return string
-	 */
-	private function get_asset_version( string $path ): string {
-		if ( is_callable( $this->asset_version_resolver ) ) {
-			return (string) call_user_func( $this->asset_version_resolver, $path );
-		}
-
-		unset( $path );
-
-		return Constants::get_constant( 'WC_VERSION' );
 	}
 
 	/**

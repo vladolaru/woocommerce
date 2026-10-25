@@ -37,13 +37,6 @@ class MultiCurrencyTrackingController implements RegisterHooksInterface {
 	private ?MultiCurrencyTrackingProjectionService $tracking_projection_service = null;
 
 	/**
-	 * HPOS enabled resolver.
-	 *
-	 * @var callable|null
-	 */
-	private $hpos_enabled_resolver = null;
-
-	/**
 	 * Multi-Currency service factory.
 	 *
 	 * @var MultiCurrencyServiceFactory
@@ -61,17 +54,6 @@ class MultiCurrencyTrackingController implements RegisterHooksInterface {
 	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyServiceFactory $service_factory ): void {
 		$this->arbiter         = $arbiter;
 		$this->service_factory = $service_factory;
-	}
-
-	/**
-	 * Set the HPOS enabled resolver.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param callable $hpos_enabled_resolver Resolver returning true when HPOS order storage is enabled.
-	 */
-	public function set_hpos_enabled_resolver( callable $hpos_enabled_resolver ): void {
-		$this->hpos_enabled_resolver = $hpos_enabled_resolver;
 	}
 
 	/**
@@ -94,7 +76,7 @@ class MultiCurrencyTrackingController implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	public function add_tracker_data( array $data ): array {
-		return $this->get_tracking_projection_service()->project_tracker_data( $data, $this->is_hpos_enabled() );
+		return $this->get_tracking_projection_service()->project_tracker_data( $data, OrderUtil::custom_orders_table_usage_is_enabled() );
 	}
 
 	/**
@@ -108,18 +90,5 @@ class MultiCurrencyTrackingController implements RegisterHooksInterface {
 		}
 
 		return $this->tracking_projection_service;
-	}
-
-	/**
-	 * Tell whether HPOS order storage is enabled.
-	 *
-	 * @return bool
-	 */
-	private function is_hpos_enabled(): bool {
-		if ( null !== $this->hpos_enabled_resolver ) {
-			return (bool) call_user_func( $this->hpos_enabled_resolver );
-		}
-
-		return OrderUtil::custom_orders_table_usage_is_enabled();
 	}
 }

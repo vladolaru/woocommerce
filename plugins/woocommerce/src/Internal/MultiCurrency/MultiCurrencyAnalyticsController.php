@@ -79,34 +79,6 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	private MultiCurrencyAnalyticsSqlProjectionService $sql_projection_service;
 
 	/**
-	 * REST request resolver.
-	 *
-	 * @var callable|null
-	 */
-	private $rest_request_resolver = null;
-
-	/**
-	 * HPOS enabled resolver.
-	 *
-	 * @var callable|null
-	 */
-	private $hpos_resolver = null;
-
-	/**
-	 * Request args resolver.
-	 *
-	 * @var callable|null
-	 */
-	private $request_args_resolver = null;
-
-	/**
-	 * Default currency resolver.
-	 *
-	 * @var callable|null
-	 */
-	private $default_currency_resolver = null;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -132,50 +104,6 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Set the REST request resolver.
-	 *
-	 * @internal Used by tests.
-	 *
-	 * @param callable $resolver Resolver returning whether the request is REST.
-	 */
-	public function set_rest_request_resolver( callable $resolver ): void {
-		$this->rest_request_resolver = $resolver;
-	}
-
-	/**
-	 * Set the HPOS enabled resolver.
-	 *
-	 * @internal Used by tests.
-	 *
-	 * @param callable $resolver Resolver returning true when HPOS order storage is enabled.
-	 */
-	public function set_hpos_resolver( callable $resolver ): void {
-		$this->hpos_resolver = $resolver;
-	}
-
-	/**
-	 * Set the request args resolver.
-	 *
-	 * @internal Used by tests.
-	 *
-	 * @param callable $resolver Resolver returning request args.
-	 */
-	public function set_request_args_resolver( callable $resolver ): void {
-		$this->request_args_resolver = $resolver;
-	}
-
-	/**
-	 * Set the default currency resolver.
-	 *
-	 * @internal Used by tests.
-	 *
-	 * @param callable $resolver Resolver returning the default currency.
-	 */
-	public function set_default_currency_resolver( callable $resolver ): void {
-		$this->default_currency_resolver = $resolver;
-	}
-
-	/**
 	 * Register analytics hooks.
 	 */
 	public function register() {
@@ -191,7 +119,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 		add_filter( 'woocommerce_analytics_orders_query_args', array( $this, 'handle_woocommerce_analytics_orders_query_args' ) );
 		add_filter( 'woocommerce_analytics_orders_stats_query_args', array( $this, 'handle_woocommerce_analytics_orders_query_args' ) );
 
-		if ( ! $this->is_rest_api_request() ) {
+		if ( ! $this->request_context->is_wc_rest_api_request() ) {
 			return;
 		}
 
@@ -314,7 +242,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			return $clauses;
 		}
 
-		$projected = $this->sql_projection_service->project_select_clauses( $clauses, $context, $this->is_hpos_enabled() );
+		$projected = $this->sql_projection_service->project_select_clauses( $clauses, $context, OrderUtil::custom_orders_table_usage_is_enabled() );
 
 		return $this->apply_clause_filter( self::EXTEND_SELECT_FILTER, $projected );
 	}
@@ -333,7 +261,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			return $clauses;
 		}
 
-		$projected = $this->sql_projection_service->project_join_clauses( $clauses, $context, $this->is_hpos_enabled() );
+		$projected = $this->sql_projection_service->project_join_clauses( $clauses, $context, OrderUtil::custom_orders_table_usage_is_enabled() );
 
 		return $this->apply_clause_filter( self::EXTEND_JOIN_FILTER, $projected );
 	}
@@ -351,7 +279,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			return $clauses;
 		}
 
-		$projected = $this->sql_projection_service->project_where_clauses( $clauses, $this->get_request_args(), $this->is_hpos_enabled() );
+		$projected = $this->sql_projection_service->project_where_clauses( $clauses, $this->get_request_args(), OrderUtil::custom_orders_table_usage_is_enabled() );
 
 		return $this->apply_clause_filter( self::EXTEND_WHERE_FILTER, $projected );
 	}
@@ -389,57 +317,12 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the current request is a REST API request.
-	 *
-	 * @return bool
-	 */
-	private function is_rest_api_request(): bool {
-		if ( null !== $this->rest_request_resolver ) {
-			return (bool) call_user_func( $this->rest_request_resolver );
-		}
-
-		return $this->request_context->is_wc_rest_api_request();
-	}
-
-	/**
-	 * Tell whether HPOS order storage is enabled.
-	 *
-	 * @return bool
-	 */
-	private function is_hpos_enabled(): bool {
-		if ( null !== $this->hpos_resolver ) {
-			return (bool) call_user_func( $this->hpos_resolver );
-		}
-
-		return OrderUtil::custom_orders_table_usage_is_enabled();
-	}
-
-	/**
 	 * Get request args.
 	 *
 	 * @return array<string,mixed>
 	 */
 	private function get_request_args(): array {
-		if ( null !== $this->request_args_resolver ) {
-			$args = call_user_func( $this->request_args_resolver );
-
-			return is_array( $args ) ? $args : array();
-		}
-
 		return $_GET; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-	}
-
-	/**
-	 * Get the default store currency.
-	 *
-	 * @return string
-	 */
-	private function get_default_currency(): string {
-		if ( null !== $this->default_currency_resolver ) {
-			return strtoupper( trim( (string) call_user_func( $this->default_currency_resolver ) ) );
-		}
-
-		return strtoupper( get_woocommerce_currency() );
 	}
 
 	/**
@@ -455,7 +338,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 
 		$currency = strtoupper( trim( (string) $currency ) );
 
-		return '' !== $currency && $currency !== $this->get_default_currency();
+		return '' !== $currency && strtoupper( get_woocommerce_currency() ) !== $currency;
 	}
 
 	/**

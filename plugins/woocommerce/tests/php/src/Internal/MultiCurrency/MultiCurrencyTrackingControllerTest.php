@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyTrackingController;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyTrackingProjectionService;
@@ -53,10 +54,18 @@ class MultiCurrencyTrackingControllerTest extends WC_Unit_Test_Case {
 	public function test_passes_tracker_data_and_storage_mode_to_the_tracking_service(): void {
 		$hpos_service   = $this->create_projection_service();
 		$legacy_service = $this->create_projection_service();
-		$hpos           = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $hpos_service, static fn(): bool => true );
-		$legacy         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $legacy_service, static fn(): bool => false );
+		$hpos           = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $hpos_service );
+		$legacy         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $legacy_service );
+		$hpos_enabled   = true;
+		add_filter(
+			'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION,
+			static function () use ( &$hpos_enabled ): string {
+				return $hpos_enabled ? 'yes' : 'no';
+			}
+		);
 
-		$result = $hpos->add_tracker_data( array( 'existing' => 'value' ) );
+		$result       = $hpos->add_tracker_data( array( 'existing' => 'value' ) );
+		$hpos_enabled = false;
 		$legacy->add_tracker_data( array() );
 
 		$this->assertSame(
@@ -76,23 +85,17 @@ class MultiCurrencyTrackingControllerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param string                                      $owner              Runtime owner.
 	 * @param MultiCurrencyTrackingProjectionService|null $projection_service Projection service.
-	 * @param callable|null                               $storage_resolver   Storage mode resolver.
 	 * @return MultiCurrencyTrackingController
 	 */
 	private function create_controller(
 		string $owner,
-		?MultiCurrencyTrackingProjectionService $projection_service = null,
-		?callable $storage_resolver = null
+		?MultiCurrencyTrackingProjectionService $projection_service = null
 	): MultiCurrencyTrackingController {
 		$controller = new MultiCurrencyTrackingController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
 			ServiceFactories::with( $this, array( 'create_tracking_projection_service' => $projection_service ) )
 		);
-
-		if ( null !== $storage_resolver ) {
-			$controller->set_hpos_enabled_resolver( $storage_resolver );
-		}
 
 		return $controller;
 	}

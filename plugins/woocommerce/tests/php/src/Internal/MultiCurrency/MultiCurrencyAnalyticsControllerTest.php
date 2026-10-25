@@ -6,6 +6,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 use Automattic\WooCommerce\Blocks\Assets\AssetDataRegistry;
 use Automattic\WooCommerce\Blocks\Package;
 use Automattic\WooCommerce\Internal\Admin\WCAdminAssets;
+use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAnalyticsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyAnalyticsProjectionService;
@@ -88,7 +89,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 			$reflection->setAccessible( true );
 			$reflection->setValue( $this->registry, $value );
 		}
-		unset( $_GET['page'] );
+		unset( $_GET['page'], $_GET['currency'], $_GET['currency_is'] );
 		set_current_screen( 'front' );
 		wp_dequeue_script( 'wc-admin-multi-currency-analytics' );
 		wp_deregister_script( 'wc-admin-multi-currency-analytics' );
@@ -101,8 +102,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not register analytics hooks when plugin owns runtime.
 	 */
 	public function test_does_not_register_analytics_hooks_when_plugin_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION );
-		$sut->set_rest_request_resolver( static fn(): bool => true );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, true );
 
 		$sut->register();
 
@@ -114,8 +114,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register baseline analytics hooks when core owns runtime.
 	 */
 	public function test_registers_baseline_analytics_hooks_when_core_owns_runtime(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		$sut->set_rest_request_resolver( static fn(): bool => false );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
 
 		$sut->register();
 		$sut->register();
@@ -136,7 +135,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$_GET['rest_route']     = '/wc-analytics/reports/orders';
 
 		try {
-			$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
+			$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, null );
 			$sut->register();
 		} finally {
 			unset( $_GET['rest_route'] );
@@ -189,7 +188,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$_SERVER['REQUEST_URI'] = '/wp-json/wc-analytics/reports/orders';
 
 		try {
-			$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false );
+			$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, null );
 			$sut->register();
 		} finally {
 			$instance->setValue( $previous_instance );
@@ -208,8 +207,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register SQL hooks only for REST requests with multi-currency orders.
 	 */
 	public function test_registers_sql_hooks_only_for_rest_requests_with_multi_currency_orders(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		$sut->set_rest_request_resolver( static fn(): bool => true );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 		set_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT, '1', HOUR_IN_SECONDS );
 
 		$sut->register();
@@ -225,20 +223,17 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	public function test_omits_optional_sql_hooks_when_historical_order_query_fails(): void {
 		global $wpdb;
 
+		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'no' );
+		update_option( 'woocommerce_currency', 'USD' );
 		$detector = new MultiCurrencyUsageDetector();
-		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
-		$sut = new MultiCurrencyAnalyticsController();
+		$sut      = new MultiCurrencyAnalyticsController();
 		$sut->init(
 			$this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ),
 			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
 			$detector,
-			wc_get_container()->get( MultiCurrencyRequestContext::class ),
+			$this->create_request_context( true ),
 			wc_get_container()->get( MultiCurrencyAnalyticsSqlProjectionService::class )
 		);
-		$sut->set_rest_request_resolver( static fn(): bool => true );
-		$sut->set_hpos_resolver( static fn(): bool => false );
-		$sut->set_default_currency_resolver( static fn(): string => 'USD' );
-		$sut->set_request_args_resolver( static fn(): array => array() );
 		$original_postmeta = $wpdb->postmeta;
 		$suppress_errors   = $wpdb->suppress_errors( true );
 		$wpdb->postmeta    = "{$wpdb->prefix}missing_multi_currency_order_meta";
@@ -258,11 +253,10 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should register selected-currency SQL hooks for REST requests with multi-currency orders.
 	 */
 	public function test_registers_selected_currency_sql_hooks_for_rest_requests_with_multi_currency_orders(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		$sut->set_rest_request_resolver( static fn(): bool => true );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 		set_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT, '1', HOUR_IN_SECONDS );
-		$sut->set_default_currency_resolver( static fn(): string => 'USD' );
-		$sut->set_request_args_resolver( static fn(): array => array( 'currency' => 'EUR' ) );
+		update_option( 'woocommerce_currency', 'USD' );
+		$_GET['currency'] = 'EUR';
 
 		$sut->register();
 
@@ -274,11 +268,11 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should not resolve the default currency while registering selected-currency SQL hooks.
 	 */
 	public function test_register_does_not_resolve_default_currency_for_selected_currency_sql_hooks(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		$sut->set_rest_request_resolver( static fn(): bool => true );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
 		set_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT, '1', HOUR_IN_SECONDS );
-		$sut->set_request_args_resolver( static fn(): array => array( 'currency' => 'EUR' ) );
-		$sut->set_default_currency_resolver(
+		$_GET['currency'] = 'EUR';
+		add_filter(
+			'woocommerce_currency',
 			static function (): string {
 				throw new \RuntimeException( 'Default currency should not be resolved during analytics registration.' );
 			}
@@ -297,9 +291,9 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		global $wpdb;
 
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		$sut->set_default_currency_resolver( static fn(): string => 'USD' );
-		$sut->set_request_args_resolver( static fn(): array => array( 'currency' => 'USD' ) );
-		$clauses = array( "{$wpdb->prefix}wc_order_stats.net_total" );
+		update_option( 'woocommerce_currency', 'USD' );
+		$_GET['currency'] = 'USD';
+		$clauses          = array( "{$wpdb->prefix}wc_order_stats.net_total" );
 
 		$result = $sut->handle_woocommerce_analytics_clauses_select_orders( $clauses );
 
@@ -324,13 +318,9 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should apply customer currency request args.
 	 */
 	public function test_applies_customer_currency_request_args(): void {
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		$sut->set_request_args_resolver(
-			static fn(): array => array(
-				'currency_is' => array( ' EUR ', 'GBP' ),
-				'currency'    => ' CAD ',
-			)
-		);
+		$sut                 = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
+		$_GET['currency_is'] = array( ' EUR ', 'GBP' );
+		$_GET['currency']    = ' CAD ';
 
 		$result = $sut->handle_woocommerce_analytics_orders_query_args( array( 'status' => 'completed' ) );
 
@@ -351,7 +341,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$order->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', 2 );
 		$order->update_meta_data( '_wcpay_multi_currency_order_default_currency', 'USD' );
 		$order->save();
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, new MultiCurrencyAnalyticsProjectionService( $this->create_state_builder() ) );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, new MultiCurrencyAnalyticsProjectionService( $this->create_state_builder() ) );
 
 		$result = $sut->convert_order_stats_data(
 			array(
@@ -378,7 +368,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 		$refund->set_currency( 'EUR' );
 		$refund->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', 2 );
 		$refund->update_meta_data( '_wcpay_multi_currency_order_default_currency', 'USD' );
-		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, new MultiCurrencyAnalyticsProjectionService( $this->create_state_builder() ) );
+		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, false, new MultiCurrencyAnalyticsProjectionService( $this->create_state_builder() ) );
 
 		$result = $sut->convert_order_stats_data(
 			array(
@@ -400,7 +390,7 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_respects_sql_clause_disable_and_extension_filters(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		$sut->set_hpos_resolver( static fn(): bool => false );
+		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'no' );
 		$clauses = array( 'discount_amount' );
 		add_filter( 'wcpay_multi_currency_disable_filter_select_clauses', '__return_true' );
 
@@ -473,9 +463,9 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_apply_the_order_select_disable_filter_for_the_store_currency(): void {
 		$sut = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		$sut->set_default_currency_resolver( static fn(): string => 'USD' );
-		$sut->set_request_args_resolver( static fn(): array => array( 'currency' => 'USD' ) );
-		$disable_calls = 0;
+		update_option( 'woocommerce_currency', 'USD' );
+		$_GET['currency'] = 'USD';
+		$disable_calls    = 0;
 		add_filter(
 			'wcpay_multi_currency_disable_filter_select_orders_clauses',
 			static function ( $disable ) use ( &$disable_calls ) {
@@ -640,27 +630,56 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 	 * Create an analytics controller.
 	 *
 	 * @param string                                       $owner                     Runtime owner.
-	 * @param bool                                         $set_rest_request_resolver Whether to set the default REST request resolver.
+	 * @param bool|null                                    $rest_request Whether the request is a WooCommerce REST request; null reads the real request.
 	 * @param MultiCurrencyAnalyticsProjectionService|null $analytics_service Analytics projection service; the factory's by default.
 	 * @return MultiCurrencyAnalyticsController
 	 */
-	private function create_controller( string $owner, bool $set_rest_request_resolver = true, ?MultiCurrencyAnalyticsProjectionService $analytics_service = null ): MultiCurrencyAnalyticsController {
+	private function create_controller( string $owner, ?bool $rest_request = false, ?MultiCurrencyAnalyticsProjectionService $analytics_service = null ): MultiCurrencyAnalyticsController {
 		$controller = new MultiCurrencyAnalyticsController();
 		$controller->init(
 			$this->create_arbiter( $owner ),
 			ServiceFactories::with( $this, array( 'create_analytics_projection_service' => $analytics_service ) ),
 			new MultiCurrencyUsageDetector(),
-			wc_get_container()->get( MultiCurrencyRequestContext::class ),
+			null === $rest_request ? wc_get_container()->get( MultiCurrencyRequestContext::class ) : $this->create_request_context( $rest_request ),
 			wc_get_container()->get( MultiCurrencyAnalyticsSqlProjectionService::class )
 		);
-		if ( $set_rest_request_resolver ) {
-			$controller->set_rest_request_resolver( static fn(): bool => false );
-		}
-		$controller->set_hpos_resolver( static fn(): bool => false );
-		$controller->set_default_currency_resolver( static fn(): string => 'USD' );
-		$controller->set_request_args_resolver( static fn(): array => array() );
 
 		return $controller;
+	}
+
+	/**
+	 * Create a request context that answers whether the request is a WooCommerce REST request.
+	 *
+	 * @param bool $rest_request Whether the request is a WooCommerce REST request.
+	 * @return MultiCurrencyRequestContext
+	 */
+	private function create_request_context( bool $rest_request ): MultiCurrencyRequestContext {
+		return new class( $rest_request ) extends MultiCurrencyRequestContext {
+			/**
+			 * Whether the request is a WooCommerce REST request.
+			 *
+			 * @var bool
+			 */
+			private bool $rest_request;
+
+			/**
+			 * Constructor.
+			 *
+			 * @param bool $rest_request Whether the request is a WooCommerce REST request.
+			 */
+			public function __construct( bool $rest_request ) {
+				$this->rest_request = $rest_request;
+			}
+
+			/**
+			 * Tell whether the request is a WooCommerce REST request.
+			 *
+			 * @return bool
+			 */
+			public function is_wc_rest_api_request(): bool {
+				return $this->rest_request;
+			}
+		};
 	}
 
 	/**
@@ -678,13 +697,9 @@ class MultiCurrencyAnalyticsControllerTest extends WC_Unit_Test_Case {
 			$this->create_arbiter( $owner ),
 			wc_get_container()->get( MultiCurrencyServiceFactory::class ),
 			new MultiCurrencyUsageDetector(),
-			wc_get_container()->get( MultiCurrencyRequestContext::class ),
+			$this->create_request_context( true ),
 			wc_get_container()->get( MultiCurrencyAnalyticsSqlProjectionService::class )
 		);
-		$controller->set_rest_request_resolver( static fn(): bool => true );
-		$controller->set_hpos_resolver( static fn(): bool => false );
-		$controller->set_default_currency_resolver( static fn(): string => 'USD' );
-		$controller->set_request_args_resolver( static fn(): array => array() );
 
 		return $controller;
 	}

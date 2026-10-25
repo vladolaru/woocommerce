@@ -8,6 +8,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySettingsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySettingsPage;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
 /**
@@ -36,7 +37,8 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 			remove_all_filters( $hook );
 		}
 
-		unset( $GLOBALS['hide_save_button'] );
+		unset( $GLOBALS['hide_save_button'], $GLOBALS['current_tab'] );
+		$this->reset_legacy_proxy_mocks();
 		Constants::clear_single_constant( 'WP_CLI' );
 		Constants::clear_single_constant( 'WPCOM_JOBS' );
 		global $wp_actions;
@@ -228,10 +230,12 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 				'screen_base' => 'woocommerce_page_wc-settings',
 			)
 		);
-		$sut->set_emoji_detection_script_printer(
-			static function (): void {
-				echo '<script>wpemojiSettings</script>';
-			}
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'print_emoji_detection_script' => static function (): void {
+					echo '<script>wpemojiSettings</script>';
+				},
+			)
 		);
 
 		ob_start();
@@ -246,10 +250,12 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 				'screen_base' => 'woocommerce_page_wc-settings',
 			)
 		);
-		$sut->set_emoji_detection_script_printer(
-			static function (): void {
-				echo '<script>wpemojiSettings</script>';
-			}
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'print_emoji_detection_script' => static function (): void {
+					echo '<script>wpemojiSettings</script>';
+				},
+			)
 		);
 
 		ob_start();
@@ -344,21 +350,25 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 	 * @return MultiCurrencySettingsController
 	 */
 	private function create_controller( string $owner, array $options = array() ): MultiCurrencySettingsController {
+		// An admin request on the given screen; outside admin no screen is set.
+		if ( (bool) ( $options['is_admin'] ?? true ) ) {
+			set_current_screen( (string) ( $options['screen_base'] ?? 'woocommerce_page_wc-settings' ) );
+		}
+		$GLOBALS['current_tab'] = (string) ( $options['current_tab'] ?? 'wcpay_multi_currency' ); // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- The settings tab WooCommerce sets; unset in tearDown().
+		$asset_available        = (bool) ( $options['asset_available'] ?? false );
+		$this->register_legacy_proxy_function_mocks(
+			array(
+				'file_exists' => static function ( string $path ) use ( $asset_available ): bool {
+					unset( $path );
+
+					return $asset_available;
+				},
+			)
+		);
+
 		$controller              = new MultiCurrencySettingsController();
 		$cache_rendering_service = $options['cache_rendering_service'] ?? null;
-		$controller->init( $this->create_arbiter( $owner ), $cache_rendering_service );
-		$controller->set_admin_request_resolver(
-			static fn(): bool => (bool) ( $options['is_admin'] ?? true )
-		);
-		$controller->set_current_tab_resolver(
-			static fn(): string => (string) ( $options['current_tab'] ?? 'wcpay_multi_currency' )
-		);
-		$controller->set_current_screen_base_resolver(
-			static fn(): string => (string) ( $options['screen_base'] ?? 'woocommerce_page_wc-settings' )
-		);
-		$controller->set_asset_available_resolver(
-			static fn(): bool => (bool) ( $options['asset_available'] ?? false )
-		);
+		$controller->init( $this->create_arbiter( $owner ), wc_get_container()->get( LegacyProxy::class ), $cache_rendering_service );
 
 		$controller->set_asset_registrar(
 			static function ( array $manifest ) use ( &$options ): void {

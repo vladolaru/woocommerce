@@ -254,7 +254,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		}
 		$messages = array();
 		$sut      = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		$sut->set_die_handler( $this->create_die_handler( $messages ) );
+		$this->intercept_wp_die( $messages );
 
 		$sut->handle_wp_loaded();
 
@@ -337,7 +337,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		$_GET[ self::CANONICAL_NONCE_QUERY ]  = 'invalid';
 		$messages                             = array();
 		$sut                                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		$sut->set_die_handler( $this->create_die_handler( $messages ) );
+		$this->intercept_wp_die( $messages );
 
 		$this->expectException( \RuntimeException::class );
 
@@ -359,7 +359,7 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 		$_GET[ self::CANONICAL_NONCE_QUERY ]  = wp_create_nonce( self::NONCE_ACTION );
 		$messages                             = array();
 		$sut                                  = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN );
-		$sut->set_die_handler( $this->create_die_handler( $messages ) );
+		$this->intercept_wp_die( $messages );
 
 		$this->expectException( \RuntimeException::class );
 
@@ -469,17 +469,17 @@ class MultiCurrencyAdminNoticesControllerTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Create a die handler test double.
+	 * Catch wp_die(): record its message and stop the request with an exception.
 	 *
 	 * @param array<int,string> $messages Captured die messages.
-	 * @return callable
 	 */
-	private function create_die_handler( array &$messages ): callable {
-		return static function ( $message ) use ( &$messages ): void {
+	private function intercept_wp_die( array &$messages ): void {
+		$handler = static function ( $message ) use ( &$messages ): void {
 			$messages[] = wp_strip_all_tags( (string) $message );
 
 			throw new \RuntimeException( 'wp_die intercepted' );
 		};
+		add_filter( 'wp_die_handler', static fn() => $handler, PHP_INT_MAX );
 	}
 
 	/**

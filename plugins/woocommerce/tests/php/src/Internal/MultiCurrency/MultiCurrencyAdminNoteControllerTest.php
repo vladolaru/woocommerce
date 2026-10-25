@@ -4,6 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
 use Automattic\WooCommerce\Admin\Notes\Note;
+use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CurrencyRateProvider;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoteController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
@@ -74,15 +75,14 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 		bool $can_be_added
 	): void {
 		$saved_notes = array();
-		$sut         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
-		$sut->set_ajax_request_resolver( static fn(): bool => $is_ajax );
-		$sut->set_provider_connected_resolver( static fn(): bool => $provider_connected );
-		$sut->set_note_can_be_added_resolver( static fn(): bool => $can_be_added );
-		$sut->set_note_saver(
-			static function ( Note $note ) use ( &$saved_notes ): void {
-				$saved_notes[] = $note;
-			}
-		);
+		$sut         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, $provider_connected );
+		if ( $is_ajax ) {
+			add_filter( 'wp_doing_ajax', '__return_true' );
+		}
+		if ( ! $can_be_added ) {
+			$this->store_availability_note();
+		}
+		$this->record_saved_notes( $saved_notes );
 
 		$sut->handle_admin_init();
 
@@ -95,13 +95,7 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 	public function test_saves_multi_currency_availability_note_when_eligible(): void {
 		$saved_notes = array();
 		$sut         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
-		$sut->set_ajax_request_resolver( static fn(): bool => false );
-		$sut->set_note_can_be_added_resolver( static fn(): bool => true );
-		$sut->set_note_saver(
-			static function ( Note $note ) use ( &$saved_notes ): void {
-				$saved_notes[] = $note;
-			}
-		);
+		$this->record_saved_notes( $saved_notes );
 
 		$sut->handle_admin_init();
 
@@ -152,13 +146,15 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_does_not_look_up_stored_note_when_provider_is_disconnected(): void {
 		$lookups = 0;
-		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true );
-		$sut->set_ajax_request_resolver( static fn(): bool => false );
-		$sut->set_provider_connected_resolver( static fn(): bool => false );
-		$sut->set_note_can_be_added_resolver(
-			static function () use ( &$lookups ): bool {
-				++$lookups;
-				return true;
+		$sut     = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false );
+		add_filter(
+			'query',
+			static function ( $query ) use ( &$lookups ) {
+				if ( is_string( $query ) && false !== strpos( $query, 'wc_admin_notes WHERE name =' ) ) {
+					++$lookups;
+				}
+
+				return $query;
 			}
 		);
 
@@ -173,13 +169,7 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 	public function test_uses_provider_account_resolver_when_no_override_is_set(): void {
 		$saved_notes = array();
 		$sut         = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, true, false );
-		$sut->set_ajax_request_resolver( static fn(): bool => false );
-		$sut->set_note_can_be_added_resolver( static fn(): bool => true );
-		$sut->set_note_saver(
-			static function ( Note $note ) use ( &$saved_notes ): void {
-				$saved_notes[] = $note;
-			}
-		);
+		$this->record_saved_notes( $saved_notes );
 
 		$sut->handle_admin_init();
 
@@ -211,11 +201,40 @@ class MultiCurrencyAdminNoteControllerTest extends WC_Unit_Test_Case {
 		$provider = $this->createMock( CurrencyRateProvider::class );
 		$provider->method( 'is_connected' )->willReturn( $provider_connected );
 
+		if ( $is_admin ) {
+			set_current_screen( 'dashboard' );
+		}
+
 		$controller = new MultiCurrencyAdminNoteController();
 		$controller->init( $this->create_arbiter( $owner ), RateServices::with( $provider ) );
-		$controller->set_admin_request_resolver( static fn(): bool => $is_admin );
 
 		return $controller;
+	}
+
+	/**
+	 * Record each admin note the controller saves, as read back from the store.
+	 *
+	 * @param Note[] $saved_notes Saved notes, collected by reference.
+	 */
+	private function record_saved_notes( array &$saved_notes ): void {
+		add_action(
+			'woocommerce_note_created',
+			static function ( $note_id ) use ( &$saved_notes ): void {
+				$saved_notes[] = Notes::get_note( $note_id );
+			}
+		);
+	}
+
+	/**
+	 * Store the multi-currency availability note, as an earlier admin request would have.
+	 */
+	private function store_availability_note(): void {
+		$note = new Note();
+		$note->set_name( 'wc-payments-notes-multi-currency-available' );
+		$note->set_title( 'Sell worldwide in multiple currencies' );
+		$note->set_content( 'Boost your international sales by allowing your customers to shop and pay in their local currency.' );
+		$note->set_source( 'woocommerce-payments' );
+		$note->save();
 	}
 
 	/**

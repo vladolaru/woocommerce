@@ -33,6 +33,13 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 	);
 
 	/**
+	 * The theme directories before a test registered the fixture themes, or null when none did.
+	 *
+	 * @var array<int,string>|null
+	 */
+	private ?array $theme_directories = null;
+
+	/**
 	 * Tear down test fixtures.
 	 */
 	public function tear_down(): void {
@@ -50,6 +57,11 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 		delete_option( 'wcpay_multi_currency_enable_storefront_switcher' );
 		wp_dequeue_style( 'storefront-style' );
 		wp_deregister_style( 'storefront-style' );
+		if ( null !== $this->theme_directories ) {
+			$GLOBALS['wp_theme_directories'] = $this->theme_directories; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- Restoring the directories taken in use_theme().
+			search_theme_directories( true );
+			$this->theme_directories = null;
+		}
 
 		parent::tear_down();
 	}
@@ -76,13 +88,11 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 		$state_builder = $this->create_state_builder( 2 );
 		$sut           = $this->create_controller( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, 2, 'storefront', 'storefront', null, $state_builder );
 		$theme_reads   = 0;
-		$sut->set_theme_resolver(
-			static function () use ( &$theme_reads ): array {
+		add_filter(
+			'stylesheet',
+			static function () use ( &$theme_reads ): string {
 				++$theme_reads;
-				return array(
-					'stylesheet' => 'storefront',
-					'template'   => 'storefront',
-				);
+				return 'storefront';
 			}
 		);
 
@@ -377,16 +387,32 @@ class MultiCurrencyStorefrontIntegrationControllerTest extends WC_Unit_Test_Case
 			ServiceFactories::with( $this, array( 'create_switcher_projection_service' => $switcher_service ) ),
 			wc_get_container()->get( MultiCurrencyCompatibilityController::class )
 		);
-		$controller->set_theme_resolver(
-			static function () use ( $stylesheet, $template ) {
-				return array(
-					'stylesheet' => $stylesheet,
-					'template'   => $template,
-				);
-			}
-		);
+		$this->use_theme( $stylesheet, $template );
 
 		return $controller;
+	}
+
+	/**
+	 * Make the given theme the active one, through the stylesheet filter.
+	 *
+	 * A theme that is not installed reads as its own template; the fixture child theme names Storefront as its template.
+	 *
+	 * @param string $stylesheet Theme stylesheet.
+	 * @param string $template   Theme template the stylesheet has.
+	 */
+	private function use_theme( string $stylesheet, string $template ): void {
+		global $wp_theme_directories;
+
+		if ( null === $this->theme_directories ) {
+			$this->theme_directories = (array) $wp_theme_directories;
+		}
+		register_theme_directory( __DIR__ . '/Fixtures/themes' );
+		search_theme_directories( true );
+		add_filter( 'stylesheet', static fn(): string => $stylesheet );
+
+		if ( wp_get_theme()->get_template() !== $template ) {
+			throw new \LogicException( 'The active theme does not have the template the case names.' );
+		}
 	}
 
 	/**

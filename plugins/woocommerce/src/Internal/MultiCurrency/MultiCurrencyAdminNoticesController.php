@@ -45,13 +45,6 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	private MultiCurrencyRateService $rate_service;
 
 	/**
-	 * Optional die handler used by tests.
-	 *
-	 * @var callable|null
-	 */
-	private $die_handler = null;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -62,17 +55,6 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	final public function init( MultiCurrencyRuntimeArbiter $arbiter, MultiCurrencyRateService $rate_service ): void {
 		$this->arbiter      = $arbiter;
 		$this->rate_service = $rate_service;
-	}
-
-	/**
-	 * Set the die handler.
-	 *
-	 * @internal Used by tests.
-	 *
-	 * @param callable $die_handler Die handler.
-	 */
-	public function set_die_handler( callable $die_handler ): void {
-		$this->die_handler = $die_handler;
 	}
 
 	/**
@@ -123,13 +105,11 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 		}
 
 		if ( ! wp_verify_nonce( $nonce, self::NONCE_ACTION ) ) {
-			$this->die_with_message( __( 'Action failed. Please refresh the page and retry.', 'woocommerce' ) );
-			return;
+			wp_die( esc_html__( 'Action failed. Please refresh the page and retry.', 'woocommerce' ) );
 		}
 
 		if ( ! current_user_can( 'manage_woocommerce' ) ) {
-			$this->die_with_message( __( 'Sorry, you are not allowed to do that.', 'woocommerce' ) );
-			return;
+			wp_die( esc_html__( 'Sorry, you are not allowed to do that.', 'woocommerce' ) );
 		}
 
 		if ( self::CURRENCY_CHANGED_NOTICE_KEY === $notice_key ) {
@@ -316,19 +296,5 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 		}
 
 		return date_i18n( wc_date_format() . ' ' . wc_time_format(), (int) $updated );
-	}
-
-	/**
-	 * End the request with a user-facing error message.
-	 *
-	 * @param string $message Error message.
-	 */
-	private function die_with_message( string $message ): void {
-		if ( null !== $this->die_handler ) {
-			call_user_func( $this->die_handler, $message );
-			return;
-		}
-
-		wp_die( esc_html( $message ) );
 	}
 }

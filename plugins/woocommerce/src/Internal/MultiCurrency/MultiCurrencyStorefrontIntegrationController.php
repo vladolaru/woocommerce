@@ -77,13 +77,6 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	private ?MultiCurrencySwitcherProjectionService $switcher_projection_service = null;
 
 	/**
-	 * Theme resolver.
-	 *
-	 * @var callable|null
-	 */
-	private $theme_resolver = null;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
@@ -106,17 +99,6 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	}
 
 	/**
-	 * Set the theme resolver.
-	 *
-	 * @internal Used by tests and future explicit bootstrap definitions.
-	 *
-	 * @param callable $theme_resolver Theme resolver.
-	 */
-	public function set_theme_resolver( callable $theme_resolver ): void {
-		$this->theme_resolver = $theme_resolver;
-	}
-
-	/**
 	 * Defer the Storefront switcher decision to `init`, as the client does (client 11.1.0 `MultiCurrency.php:258,374-376`).
 	 *
 	 * This runs inside the WooCommerce constructor, where building currency state calls WC() and constructs WooCommerce again.
@@ -135,8 +117,8 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	 * @internal
 	 */
 	public function handle_init(): void {
-		$theme = $this->get_theme_data();
-		if ( self::THEME_STOREFRONT !== $theme['stylesheet'] && self::THEME_STOREFRONT !== $theme['template'] ) {
+		$theme = wp_get_theme();
+		if ( self::THEME_STOREFRONT !== $theme->get_stylesheet() && self::THEME_STOREFRONT !== $theme->get_template() ) {
 			return;
 		}
 
@@ -249,34 +231,6 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 		}
 
 		return $this->switcher_projection_service;
-	}
-
-	/**
-	 * Get active theme data.
-	 *
-	 * @return array{stylesheet:string,template:string}
-	 */
-	private function get_theme_data(): array {
-		$theme = is_callable( $this->theme_resolver ) ? call_user_func( $this->theme_resolver ) : wp_get_theme();
-
-		if ( $theme instanceof \WP_Theme ) {
-			return array(
-				'stylesheet' => $theme->get_stylesheet(),
-				'template'   => $theme->get_template(),
-			);
-		}
-
-		if ( is_array( $theme ) ) {
-			return array(
-				'stylesheet' => (string) ( $theme['stylesheet'] ?? '' ),
-				'template'   => (string) ( $theme['template'] ?? '' ),
-			);
-		}
-
-		return array(
-			'stylesheet' => '',
-			'template'   => '',
-		);
 	}
 
 	/**

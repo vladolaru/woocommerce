@@ -28,13 +28,6 @@ final class MultiCurrencyUsageDetector {
 	private ?bool $has_foreign_currency_orders_memo = null;
 
 	/**
-	 * HPOS enabled resolver.
-	 *
-	 * @var callable|null
-	 */
-	private $hpos_enabled_resolver = null;
-
-	/**
 	 * Tell whether non-default currencies are configured.
 	 *
 	 * @since 11.2.0
@@ -88,7 +81,7 @@ final class MultiCurrencyUsageDetector {
 
 		global $wpdb;
 
-		if ( $this->is_hpos_enabled() ) {
+		if ( OrderUtil::custom_orders_table_usage_is_enabled() ) {
 			$result = $wpdb->get_var(
 				"SELECT EXISTS(
 					SELECT 1
@@ -118,29 +111,5 @@ final class MultiCurrencyUsageDetector {
 		}
 
 		return $this->has_foreign_currency_orders_memo;
-	}
-
-	/**
-	 * Set the HPOS enabled resolver.
-	 *
-	 * @internal Used by tests.
-	 *
-	 * @param callable $resolver Resolver returning true when HPOS is enabled.
-	 */
-	public function set_hpos_enabled_resolver( callable $resolver ): void {
-		$this->hpos_enabled_resolver = $resolver;
-	}
-
-	/**
-	 * Tell whether HPOS order storage is enabled.
-	 *
-	 * @return bool True when HPOS is enabled.
-	 */
-	private function is_hpos_enabled(): bool {
-		if ( null !== $this->hpos_enabled_resolver ) {
-			return (bool) call_user_func( $this->hpos_enabled_resolver );
-		}
-
-		return OrderUtil::custom_orders_table_usage_is_enabled();
 	}
 }

@@ -7,6 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
+use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAnalyticsController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAsyncPriceRendererController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
@@ -1079,14 +1080,18 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 	 */
 	private function probe_mc_analytics(): void {
 		$controller = wc_get_container()->get( MultiCurrencyAnalyticsController::class );
-		$controller->set_hpos_resolver( static fn(): bool => false );
-		$controller->set_request_args_resolver( static fn(): array => array( 'currency' => 'EUR' ) );
-		$controller->set_default_currency_resolver( static fn(): string => 'USD' );
+		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'no' );
+		update_option( 'woocommerce_currency', 'USD' );
+		$_GET['currency'] = 'EUR';
 
-		$controller->handle_woocommerce_analytics_clauses_select( array( 'hook_shape_clause' ), 'orders_stats' );
-		$controller->handle_woocommerce_analytics_clauses_join( array( 'hook_shape_clause' ), 'orders_stats' );
-		$controller->handle_woocommerce_analytics_clauses_where( array( 'hook_shape_clause' ) );
-		$controller->handle_woocommerce_analytics_clauses_select_orders( array( 'hook_shape_clause' ) );
+		try {
+			$controller->handle_woocommerce_analytics_clauses_select( array( 'hook_shape_clause' ), 'orders_stats' );
+			$controller->handle_woocommerce_analytics_clauses_join( array( 'hook_shape_clause' ), 'orders_stats' );
+			$controller->handle_woocommerce_analytics_clauses_where( array( 'hook_shape_clause' ) );
+			$controller->handle_woocommerce_analytics_clauses_select_orders( array( 'hook_shape_clause' ) );
+		} finally {
+			unset( $_GET['currency'] );
+		}
 	}
 
 	/**

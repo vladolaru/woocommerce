@@ -11,6 +11,7 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Admin\WCAdminAssets;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyCacheRenderingService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
+use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
  * Registers native multi-currency settings hooks when core owns multi-currency.
@@ -55,32 +56,11 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	private MultiCurrencyCacheRenderingService $cache_rendering_service;
 
 	/**
-	 * Admin request resolver.
+	 * Proxy for the emoji script printer and the asset-file checks.
 	 *
-	 * @var callable|null
+	 * @var LegacyProxy
 	 */
-	private $admin_request_resolver = null;
-
-	/**
-	 * Current WooCommerce settings tab resolver.
-	 *
-	 * @var callable|null
-	 */
-	private $current_tab_resolver = null;
-
-	/**
-	 * Current admin screen base resolver.
-	 *
-	 * @var callable|null
-	 */
-	private $current_screen_base_resolver = null;
-
-	/**
-	 * Admin asset availability resolver.
-	 *
-	 * @var callable|null
-	 */
-	private $asset_available_resolver = null;
+	private LegacyProxy $legacy_proxy;
 
 	/**
 	 * Admin asset registrar.
@@ -90,67 +70,18 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	private $asset_registrar = null;
 
 	/**
-	 * Emoji detection script printer.
-	 *
-	 * @var callable|null
-	 */
-	private $emoji_detection_script_printer = null;
-
-	/**
 	 * Initialize the class instance.
 	 *
 	 * @internal
 	 *
 	 * @param MultiCurrencyRuntimeArbiter             $arbiter                 Runtime owner arbiter.
+	 * @param LegacyProxy                             $legacy_proxy            Proxy for the emoji script printer and the asset-file checks.
 	 * @param MultiCurrencyCacheRenderingService|null $cache_rendering_service Cache rendering service.
 	 */
-	final public function init( MultiCurrencyRuntimeArbiter $arbiter, ?MultiCurrencyCacheRenderingService $cache_rendering_service = null ): void {
+	final public function init( MultiCurrencyRuntimeArbiter $arbiter, LegacyProxy $legacy_proxy, ?MultiCurrencyCacheRenderingService $cache_rendering_service = null ): void {
 		$this->arbiter                 = $arbiter;
+		$this->legacy_proxy            = $legacy_proxy;
 		$this->cache_rendering_service = $cache_rendering_service ?? wc_get_container()->get( MultiCurrencyCacheRenderingService::class );
-	}
-
-	/**
-	 * Set the admin request resolver.
-	 *
-	 * @internal Used by tests.
-	 *
-	 * @param callable $admin_request_resolver Admin request resolver.
-	 */
-	public function set_admin_request_resolver( callable $admin_request_resolver ): void {
-		$this->admin_request_resolver = $admin_request_resolver;
-	}
-
-	/**
-	 * Set the current settings tab resolver.
-	 *
-	 * @internal Used by tests.
-	 *
-	 * @param callable $current_tab_resolver Current settings tab resolver.
-	 */
-	public function set_current_tab_resolver( callable $current_tab_resolver ): void {
-		$this->current_tab_resolver = $current_tab_resolver;
-	}
-
-	/**
-	 * Set the current screen base resolver.
-	 *
-	 * @internal Used by tests.
-	 *
-	 * @param callable $current_screen_base_resolver Current screen base resolver.
-	 */
-	public function set_current_screen_base_resolver( callable $current_screen_base_resolver ): void {
-		$this->current_screen_base_resolver = $current_screen_base_resolver;
-	}
-
-	/**
-	 * Set the admin asset availability resolver.
-	 *
-	 * @internal Used by tests and future explicit asset bootstrap.
-	 *
-	 * @param callable $asset_available_resolver Admin asset availability resolver.
-	 */
-	public function set_asset_available_resolver( callable $asset_available_resolver ): void {
-		$this->asset_available_resolver = $asset_available_resolver;
 	}
 
 	/**
@@ -162,17 +93,6 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	 */
 	public function set_asset_registrar( callable $asset_registrar ): void {
 		$this->asset_registrar = $asset_registrar;
-	}
-
-	/**
-	 * Set the emoji detection script printer.
-	 *
-	 * @internal Used by tests.
-	 *
-	 * @param callable $emoji_detection_script_printer Emoji detection script printer.
-	 */
-	public function set_emoji_detection_script_printer( callable $emoji_detection_script_printer ): void {
-		$this->emoji_detection_script_printer = $emoji_detection_script_printer;
 	}
 
 	/**
@@ -217,7 +137,7 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function handle_admin_init(): void {
-		if ( ! $this->is_admin_request() || ! current_user_can( 'manage_woocommerce' ) ) {
+		if ( ! is_admin() || ! current_user_can( 'manage_woocommerce' ) ) {
 			return;
 		}
 
@@ -276,12 +196,7 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 			return;
 		}
 
-		if ( null !== $this->emoji_detection_script_printer ) {
-			call_user_func( $this->emoji_detection_script_printer );
-			return;
-		}
-
-		print_emoji_detection_script();
+		$this->legacy_proxy->call_function( 'print_emoji_detection_script' );
 	}
 
 	/**
@@ -298,30 +213,11 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Tell whether the current request is an admin request.
-	 *
-	 * @return bool
-	 */
-	private function is_admin_request(): bool {
-		if ( null !== $this->admin_request_resolver ) {
-			return (bool) call_user_func( $this->admin_request_resolver );
-		}
-
-		return is_admin();
-	}
-
-	/**
 	 * Get the current WooCommerce settings tab.
 	 *
 	 * @return string|null
 	 */
 	private function get_current_tab(): ?string {
-		if ( null !== $this->current_tab_resolver ) {
-			$current_tab = call_user_func( $this->current_tab_resolver );
-
-			return is_string( $current_tab ) ? $current_tab : null;
-		}
-
 		global $current_tab;
 
 		return is_string( $current_tab ) ? $current_tab : null;
@@ -333,12 +229,6 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	 * @return string|null
 	 */
 	private function get_current_screen_base(): ?string {
-		if ( null !== $this->current_screen_base_resolver ) {
-			$screen_base = call_user_func( $this->current_screen_base_resolver );
-
-			return is_string( $screen_base ) ? $screen_base : null;
-		}
-
 		global $current_screen;
 
 		if ( is_object( $current_screen ) && isset( $current_screen->base ) && is_string( $current_screen->base ) ) {
@@ -354,15 +244,11 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_settings_asset_available(): bool {
-		if ( null !== $this->asset_available_resolver ) {
-			return (bool) call_user_func( $this->asset_available_resolver );
-		}
-
 		$script = self::ADMIN_ASSETS['script'];
 		$style  = self::ADMIN_ASSETS['style'];
 
-		return file_exists( WC_ADMIN_ABSPATH . WC_ADMIN_DIST_JS_FOLDER . 'wp-admin-scripts/' . $script['entry'] . '.asset.php' )
-			&& file_exists( WC_ADMIN_ABSPATH . WC_ADMIN_DIST_CSS_FOLDER . $style['entry'] . '/' . $style['file'] . '.asset.php' );
+		return $this->legacy_proxy->call_function( 'file_exists', WC_ADMIN_ABSPATH . WC_ADMIN_DIST_JS_FOLDER . 'wp-admin-scripts/' . $script['entry'] . '.asset.php' )
+			&& $this->legacy_proxy->call_function( 'file_exists', WC_ADMIN_ABSPATH . WC_ADMIN_DIST_CSS_FOLDER . $style['entry'] . '/' . $style['file'] . '.asset.php' );
 	}
 
 	/**

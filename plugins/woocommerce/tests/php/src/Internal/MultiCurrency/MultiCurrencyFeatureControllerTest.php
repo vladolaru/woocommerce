@@ -3,6 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency;
 
+use Automattic\WooCommerce\Internal\DataStores\Orders\CustomOrdersTableController;
 use Automattic\WooCommerce\Enums\FeaturePluginCompatibility;
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStoreMeta;
 use Automattic\WooCommerce\Internal\Features\FeaturesController;
@@ -288,7 +289,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		$order_id = $this->factory->post->create( array( 'post_type' => 'shop_order' ) );
 		add_post_meta( $order_id, '_wcpay_multi_currency_order_exchange_rate', '0.9' );
 		$detector = new MultiCurrencyUsageDetector();
-		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
+		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'no' );
 		$this->sut = new MultiCurrencyFeatureController();
 		$this->sut->init( $detector, $this->create_runtime_arbiter( false ) );
 		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
@@ -312,7 +313,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 			)
 		);
 		$detector = new MultiCurrencyUsageDetector();
-		$detector->set_hpos_enabled_resolver( static fn(): bool => true );
+		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'yes' );
 		$this->sut = new MultiCurrencyFeatureController();
 		$this->sut->init( $detector, $this->create_runtime_arbiter( false ) );
 		delete_transient( MultiCurrencyUsageDetector::HAS_MC_ORDERS_TRANSIENT );
@@ -328,7 +329,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 
 		update_option( MultiCurrencyFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		$detector = new MultiCurrencyUsageDetector();
-		$detector->set_hpos_enabled_resolver( static fn(): bool => false );
+		add_filter( 'pre_option_' . CustomOrdersTableController::CUSTOM_ORDERS_TABLE_USAGE_ENABLED_OPTION, static fn(): string => 'no' );
 		$this->sut = new MultiCurrencyFeatureController();
 		$this->sut->init( $detector, $this->create_runtime_arbiter( false ) );
 		$original_postmeta = $wpdb->postmeta;
@@ -456,7 +457,7 @@ class MultiCurrencyFeatureControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'preview', get_option( 'wcpay_multi_currency_rendering_mode' ) );
 		$this->assertSame( 'yes', get_option( 'wcpay_multi_currency_setup_completed' ) );
 		$this->assertSame( '0.9', $order->get_meta( '_wcpay_multi_currency_order_exchange_rate', true ) );
-		// N-085: client 11.1.0 class-wc-rest-payments-settings-controller.php's
+		// Client 11.1.0 class-wc-rest-payments-settings-controller.php's
 		// update_is_multi_currency_enabled() (:889-896) flips only the
 		// `_wcpay_feature_customer_multi_currency` option on disable; nothing in the
 		// client's disable path touches the WooPayments gateway settings option. The
