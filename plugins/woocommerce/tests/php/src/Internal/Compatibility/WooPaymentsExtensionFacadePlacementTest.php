@@ -74,7 +74,7 @@ class WooPaymentsExtensionFacadePlacementTest extends WC_Unit_Test_Case {
 
 		$loaders = array(
 			'WooPayments facade loader'   => 'Automattic\\WooCommerce\\Internal\\Payments\\Providers\\WooPayments\\Compat\\WooPaymentsExtensionFacadeLoader',
-			'MultiCurrency facade loader' => 'Automattic\\WooCommerce\\Internal\\MultiCurrency\\Compat\\LegacyMultiCurrencyFacadeLoader',
+			'MultiCurrency facade loader' => 'Automattic\\WooCommerce\\Internal\\MultiCurrency\\Compat\\WooPaymentsExtensionMultiCurrencyFacadeLoader',
 		);
 
 		$registrations = $this->get_composition_root_registrations( $source );

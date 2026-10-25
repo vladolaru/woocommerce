@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace WCPay\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Compat\LegacyMultiCurrencyFacadeLoader;
+use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionMultiCurrencyFacadeLoader;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 
 // phpcs:disable SlevomatCodingStandard.Files.TypeNameMatchesFileName.NoMatchBetweenTypeNameAndFileName -- The plugin-owned file and class casing are the compatibility contract.
@@ -109,9 +109,9 @@ class MultiCurrency {
 	/**
 	 * Get the container-owned compatibility loader.
 	 *
-	 * @return LegacyMultiCurrencyFacadeLoader
+	 * @return WooPaymentsExtensionMultiCurrencyFacadeLoader
 	 */
-	private function get_loader(): LegacyMultiCurrencyFacadeLoader {
-		return wc_get_container()->get( LegacyMultiCurrencyFacadeLoader::class );
+	private function get_loader(): WooPaymentsExtensionMultiCurrencyFacadeLoader {
+		return wc_get_container()->get( WooPaymentsExtensionMultiCurrencyFacadeLoader::class );
 	}
 }

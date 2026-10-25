@@ -1,6 +1,6 @@
 # WooPayments MultiCurrency compatibility
 
-This folder is the removable boundary for the plugin-owned `WCPay\MultiCurrency\MultiCurrency` facade that Woo extensions use when the core-native multi-currency runtime owns conversion. `LegacyMultiCurrencyFacadeLoader` declares the facade only after active plugins have loaded and only when `MultiCurrencyRuntimeArbiter` selects Core. The standalone WooPayments plugin retains the namespace while it owns the runtime. The facade class file lives in `includes/legacy/woopayments-multi-currency-compat/` (see the placement invariant). Other plugin-shaped WooPayments globals live in the separate [payments compatibility boundary](../../Payments/Providers/WooPayments/Compat/README.md).
+This folder is the removable boundary for the plugin-owned `WCPay\MultiCurrency\MultiCurrency` facade that Woo extensions use when the core-native multi-currency runtime owns conversion. `WooPaymentsExtensionMultiCurrencyFacadeLoader` declares the facade only after active plugins have loaded and only when `MultiCurrencyRuntimeArbiter` selects Core. The standalone WooPayments plugin retains the namespace while it owns the runtime. The facade class file lives in `includes/legacy/woopayments-multi-currency-compat/` (see the placement invariant). Other plugin-shaped WooPayments globals live in the separate [payments compatibility boundary](../../Payments/Providers/WooPayments/Compat/README.md).
 
 ## Contract
 
@@ -27,8 +27,8 @@ WooCommerce Deposits projects a fixed deposit through `get_price( ..., 'product'
 This facade is scheduled for removal in WooCommerce 12.0.0 after supported extensions no longer call the plugin-owned namespace. Remove these pieces together:
 
 - This production `Compat/` folder and the facade file in `includes/legacy/woopayments-multi-currency-compat/`.
-- The `LegacyMultiCurrencyFacadeLoader` registration line in `includes/class-woocommerce.php`.
-- The `LegacyMultiCurrencyFacadeLoader` import and request-provenance check in `MultiCurrencyDepositsCompatibilityController`.
+- The `WooPaymentsExtensionMultiCurrencyFacadeLoader` registration line in `includes/class-woocommerce.php`.
+- The `WooPaymentsExtensionMultiCurrencyFacadeLoader` import and request-provenance check in `MultiCurrencyDepositsCompatibilityController`.
 - The matching `tests/php/src/Internal/MultiCurrency/Compat/` test and fixture.
 - This boundary's expected symbol, loader and README entries in `WooPaymentsExtensionFacadePlacementTest`.
 - The plugin asset handle aliases registered outside this folder: `wcpay-multi-currency-async-renderer` (script and style, `MultiCurrencyAsyncPriceRendererController`) and the switcher block's legacy editor script handle (`MultiCurrencySwitcherBlockController::LEGACY_EDITOR_SCRIPT_HANDLE`).

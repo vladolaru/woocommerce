@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Compat;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Compat\LegacyMultiCurrencyFacadeLoader;
+use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionMultiCurrencyFacadeLoader;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyDepositsCompatibilityController;
@@ -21,7 +21,7 @@ require_once __DIR__ . '/Fixtures/legacy-multi-currency-consumers.inc';
 /**
  * Tests the native MultiCurrency legacy facade compatibility boundary.
  */
-class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
+class WooPaymentsExtensionMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Tear down test fixtures.
@@ -71,7 +71,7 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 		} catch ( \RuntimeException $exception ) {
 			$this->assertSame( 'Projection failed.', $exception->getMessage() );
 		}
-		$this->assertFalse( $loader->did_project_product_price(), 'A failed facade call must not suppress the native Deposits conversion fallback.' );
+		$this->assertFalse( $loader->did_convert_product_price(), 'A failed facade call must not suppress the native Deposits conversion fallback.' );
 
 		$projection_service = $this->create_projection_service( 2.0, 5.0 );
 		$this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, $projection_service, $this->create_state_builder( $this->create_state() ) );
@@ -159,7 +159,7 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 
 		foreach ( array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, MultiCurrencyRuntimeArbiter::OWNER_NONE ) as $owner ) {
 			// Only the declaration loader: the shared runtime loader keeps its projection service across in-process tests.
-			$declaration_loader = new LegacyMultiCurrencyFacadeLoader();
+			$declaration_loader = new WooPaymentsExtensionMultiCurrencyFacadeLoader();
 			$declaration_loader->init( $this->create_arbiter( $owner ) );
 			$declaration_loader->register();
 			$this->assertFalse( class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ), 'The plugin and ownerless runtimes must retain authority over the plugin namespace.' );
@@ -175,10 +175,10 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 	 * @param string                         $owner              Runtime owner.
 	 * @param MultiCurrencyPriceConverter    $projection_service Price projection service.
 	 * @param MultiCurrencyStateBuilder|null $state_builder      State builder; the request's shared builder by default.
-	 * @return LegacyMultiCurrencyFacadeLoader
+	 * @return WooPaymentsExtensionMultiCurrencyFacadeLoader
 	 */
-	private function create_loader( string $owner, MultiCurrencyPriceConverter $projection_service, ?MultiCurrencyStateBuilder $state_builder = null ): LegacyMultiCurrencyFacadeLoader {
-		$declaration_loader = new LegacyMultiCurrencyFacadeLoader();
+	private function create_loader( string $owner, MultiCurrencyPriceConverter $projection_service, ?MultiCurrencyStateBuilder $state_builder = null ): WooPaymentsExtensionMultiCurrencyFacadeLoader {
+		$declaration_loader = new WooPaymentsExtensionMultiCurrencyFacadeLoader();
 		$declaration_loader->init( $this->create_arbiter( $owner ) );
 		$declaration_loader->register();
 
@@ -186,9 +186,9 @@ class LegacyMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Case {
 		if ( null !== $state_builder ) {
 			wc_get_container()->replace( MultiCurrencyStateBuilderFactory::class, ServiceFactories::state_builder( $this, $state_builder ) );
 		}
-		$runtime_loader = new LegacyMultiCurrencyFacadeLoader();
+		$runtime_loader = new WooPaymentsExtensionMultiCurrencyFacadeLoader();
 		$runtime_loader->init( wc_get_container()->get( MultiCurrencyRuntimeArbiter::class ) );
-		wc_get_container()->replace( LegacyMultiCurrencyFacadeLoader::class, $runtime_loader );
+		wc_get_container()->replace( WooPaymentsExtensionMultiCurrencyFacadeLoader::class, $runtime_loader );
 
 		return $runtime_loader;
 	}

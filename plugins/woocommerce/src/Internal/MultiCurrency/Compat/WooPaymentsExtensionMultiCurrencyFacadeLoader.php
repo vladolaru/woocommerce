@@ -1,6 +1,6 @@
 <?php
 /**
- * LegacyMultiCurrencyFacadeLoader class file.
+ * WooPaymentsExtensionMultiCurrencyFacadeLoader class file.
  */
 
 declare( strict_types = 1 );
@@ -21,7 +21,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  * @since 11.0.0
  * @internal Transitional compatibility boundary scheduled for removal in WooCommerce 12.0.0.
  */
-class LegacyMultiCurrencyFacadeLoader implements RegisterHooksInterface {
+class WooPaymentsExtensionMultiCurrencyFacadeLoader implements RegisterHooksInterface {
 
 	/**
 	 * Runtime owner arbiter.
@@ -49,7 +49,7 @@ class LegacyMultiCurrencyFacadeLoader implements RegisterHooksInterface {
 	 *
 	 * @var bool
 	 */
-	private bool $projected_product_price = false;
+	private bool $converted_product_price = false;
 
 	/**
 	 * Initialize the loader.
@@ -96,13 +96,13 @@ class LegacyMultiCurrencyFacadeLoader implements RegisterHooksInterface {
 	 * @return float
 	 */
 	public function get_price( $amount, string $type ): float {
-		$projected_amount = $this->get_price_converter()->get_price( $amount, $type );
+		$converted_amount = $this->get_price_converter()->get_price( $amount, $type );
 
 		if ( 'product' === $type ) {
-			$this->projected_product_price = true;
+			$this->converted_product_price = true;
 		}
 
-		return $projected_amount;
+		return $converted_amount;
 	}
 
 	/**
@@ -144,8 +144,8 @@ class LegacyMultiCurrencyFacadeLoader implements RegisterHooksInterface {
 	 *
 	 * @return bool
 	 */
-	public function did_project_product_price(): bool {
-		return $this->projected_product_price;
+	public function did_convert_product_price(): bool {
+		return $this->converted_product_price;
 	}
 
 	/**
