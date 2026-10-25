@@ -129,7 +129,7 @@ class MultiCurrencyAnalyticsServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project customer currency options with default currency.
 	 */
-	public function test_projects_customer_currency_options_with_default_currency(): void {
+	public function test_lists_customer_currency_options_with_default_currency(): void {
 		$sut = $this->create_service( $this->create_state( 'USD', array( 'GBP', 'AUD', 'GBP' ) ) );
 
 		$options = $sut->get_customer_currency_options();

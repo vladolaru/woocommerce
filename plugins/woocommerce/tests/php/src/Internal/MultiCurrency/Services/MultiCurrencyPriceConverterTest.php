@@ -19,7 +19,7 @@ class MultiCurrencyPriceConverterTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project selected-currency product prices.
 	 */
-	public function test_projects_selected_currency_product_prices(): void {
+	public function test_converts_product_prices_to_the_selected_currency(): void {
 		$state = $this->create_state( 'GBP' );
 		$sut   = $this->create_service( $state );
 
@@ -61,7 +61,7 @@ class MultiCurrencyPriceConverterTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project raw conversions between enabled currencies.
 	 */
-	public function test_projects_raw_conversions_between_enabled_currencies(): void {
+	public function test_converts_raw_amounts_between_enabled_currencies(): void {
 		$state = $this->create_state( 'GBP' );
 		$sut   = $this->create_service( $state );
 
@@ -71,7 +71,7 @@ class MultiCurrencyPriceConverterTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project selected-currency price-filter bounds to default currency.
 	 */
-	public function test_projects_price_filter_bounds_to_default_currency(): void {
+	public function test_converts_price_filter_bounds_to_the_default_currency(): void {
 		$sut = $this->create_service( $this->create_state( 'GBP' ) );
 
 		$this->assertSame( '10', $sut->get_price_filter_query_value( 8.2, '>=' ) );
@@ -115,7 +115,7 @@ class MultiCurrencyPriceConverterTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project order exchange-rate meta for non-default orders.
 	 */
-	public function test_projects_order_exchange_rate_meta_for_non_default_orders(): void {
+	public function test_returns_exchange_rate_meta_for_non_default_currency_orders(): void {
 		$sut = $this->create_service( $this->create_state( 'GBP' ) );
 
 		$this->assertSame(
@@ -130,7 +130,7 @@ class MultiCurrencyPriceConverterTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should not project order meta for default-currency orders.
 	 */
-	public function test_does_not_project_order_meta_for_default_currency_orders(): void {
+	public function test_returns_no_order_meta_for_default_currency_orders(): void {
 		$sut = $this->create_service( $this->create_state( 'USD' ) );
 
 		$this->assertSame( array(), $sut->get_order_meta_candidates( 'USD' ) );
@@ -139,7 +139,7 @@ class MultiCurrencyPriceConverterTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project refund meta copied from non-default orders.
 	 */
-	public function test_projects_refund_meta_from_non_default_orders(): void {
+	public function test_copies_refund_meta_from_non_default_currency_orders(): void {
 		$order = wc_create_order();
 		$order->set_currency( 'GBP' );
 		$order->update_meta_data( '_wcpay_multi_currency_order_exchange_rate', 0.82 );
@@ -161,7 +161,7 @@ class MultiCurrencyPriceConverterTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should not project refund meta for default-currency orders.
 	 */
-	public function test_does_not_project_refund_meta_for_default_currency_orders(): void {
+	public function test_returns_no_refund_meta_for_default_currency_orders(): void {
 		$order = wc_create_order();
 		$order->set_currency( 'USD' );
 		$order->save();

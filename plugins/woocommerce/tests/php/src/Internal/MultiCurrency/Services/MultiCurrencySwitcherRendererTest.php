@@ -18,7 +18,7 @@ class MultiCurrencySwitcherRendererTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project widget markup with preserved query parameters and currency labels.
 	 */
-	public function test_projects_widget_markup_with_preserved_query_parameters_and_currency_labels(): void {
+	public function test_renders_widget_markup_keeping_query_parameters_with_currency_labels(): void {
 		$sut = $this->create_service( $this->create_state( 'GBP' ) );
 
 		$markup = $sut->get_widget_markup(
@@ -59,7 +59,7 @@ class MultiCurrencySwitcherRendererTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project block markup with styles and default accessible label.
 	 */
-	public function test_projects_block_markup_with_styles_and_default_accessible_label(): void {
+	public function test_renders_block_markup_with_styles_and_default_accessible_label(): void {
 		$sut = $this->create_service( $this->create_state( 'JPY' ) );
 
 		$markup = $sut->get_block_markup(
@@ -101,11 +101,11 @@ class MultiCurrencySwitcherRendererTest extends WC_Unit_Test_Case {
 	 * Client 11.1.0 CurrencySwitcherBlock.php:165-178 prefixes the option text with the
 	 * currency symbol when `with_symbol` is true and the symbol differs from the code (USD "$ USD"),
 	 * and :211 renders a "1px solid" select border when the block attribute `border` is true.
-	 * `test_projects_block_markup_with_styles_and_default_accessible_label` only exercises the
+	 * `test_renders_block_markup_with_styles_and_default_accessible_label` only exercises the
 	 * symbol-off, border-off combination, so a projection that stopped honoring either "on" branch
 	 * would still pass every other case in this class.
 	 */
-	public function test_projects_block_markup_with_symbol_and_border_enabled(): void {
+	public function test_renders_block_markup_with_symbol_and_border_enabled(): void {
 		$sut = $this->create_service( $this->create_state( 'USD' ) );
 
 		$markup = $sut->get_block_markup(

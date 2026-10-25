@@ -111,7 +111,7 @@ class MultiCurrencyDatabaseCacheTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should read legacy cache data without error metadata.
 	 */
-	public function test_get_handles_legacy_cache_entry_without_errored_key(): void {
+	public function test_get_reads_a_cache_entry_without_the_errored_key(): void {
 		$cached_data = array(
 			'currencies' => array( 'eur' => 1.2 ),
 			'updated'    => 123,

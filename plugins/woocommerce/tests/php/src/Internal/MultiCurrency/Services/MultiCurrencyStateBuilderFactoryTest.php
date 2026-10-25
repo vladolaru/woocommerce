@@ -308,7 +308,7 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 	 * @testdox Resetting selected-currency state after classic session readiness rebuilds the shared frontend projection.
 	 */
 	public function test_classic_session_readiness_rebuilds_cached_frontend_state(): void {
-		list( $frontend_builder, $persistence ) = $this->create_shared_projection_graph();
+		list( $frontend_builder, $persistence ) = $this->create_shared_state_graph();
 
 		$this->assertSame( 'USD', $frontend_builder->build()->get_selected_currency()->get_code(), 'The first frontend projection should use store currency before session readiness.' );
 
@@ -327,7 +327,7 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 	 * @testdox Store API checkout pre-dispatch invalidates a cached pre-session projection once before cart and order work.
 	 */
 	public function test_store_api_checkout_pre_dispatch_rebuilds_cached_frontend_state_once(): void {
-		list( $frontend_builder, $persistence ) = $this->create_shared_projection_graph();
+		list( $frontend_builder, $persistence ) = $this->create_shared_state_graph();
 		$controller                             = $this->create_selected_currency_controller( $persistence );
 		$initial_state                          = $frontend_builder->build();
 		$post_woocommerce_init_state            = $frontend_builder->build();
@@ -379,7 +379,7 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 	 * @testdox Store API products pre-dispatch rebuilds selected currency without constructing a cart.
 	 */
 	public function test_store_api_products_pre_dispatch_rebuilds_cached_frontend_state_without_cart(): void {
-		list( $frontend_builder, $persistence ) = $this->create_shared_projection_graph();
+		list( $frontend_builder, $persistence ) = $this->create_shared_state_graph();
 		$controller                             = $this->create_selected_currency_controller( $persistence );
 		$result                                 = null;
 		$request                                = new \WP_REST_Request( 'GET', '/wc/store/v1/products' );
@@ -424,7 +424,7 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 	 *
 	 * @return array{MultiCurrencyStateBuilder,MultiCurrencySelectedCurrencyPersistenceService}
 	 */
-	private function create_shared_projection_graph(): array {
+	private function create_shared_state_graph(): array {
 		update_option( 'woocommerce_currency', 'USD' );
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'manual' );

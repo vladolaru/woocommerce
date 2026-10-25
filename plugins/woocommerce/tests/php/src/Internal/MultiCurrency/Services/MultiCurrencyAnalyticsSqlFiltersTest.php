@@ -14,7 +14,7 @@ class MultiCurrencyAnalyticsSqlFiltersTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project select clauses for legacy order storage.
 	 */
-	public function test_projects_select_clauses_for_legacy_order_storage(): void {
+	public function test_extends_select_clauses_for_posts_order_storage(): void {
 		$sut = new MultiCurrencyAnalyticsSqlFilters();
 
 		$result = $sut->extend_select_clauses(
@@ -55,7 +55,7 @@ class MultiCurrencyAnalyticsSqlFiltersTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project select clauses for HPOS order storage.
 	 */
-	public function test_projects_select_clauses_for_hpos_order_storage(): void {
+	public function test_extends_select_clauses_for_hpos_order_storage(): void {
 		$sut = new MultiCurrencyAnalyticsSqlFilters();
 
 		$result = $sut->extend_select_clauses(
@@ -77,7 +77,7 @@ class MultiCurrencyAnalyticsSqlFiltersTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project join clauses for legacy order storage.
 	 */
-	public function test_projects_join_clauses_for_legacy_order_storage(): void {
+	public function test_extends_join_clauses_for_posts_order_storage(): void {
 		global $wpdb;
 
 		$sut = new MultiCurrencyAnalyticsSqlFilters();
@@ -101,7 +101,7 @@ class MultiCurrencyAnalyticsSqlFiltersTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project join clauses for HPOS order storage.
 	 */
-	public function test_projects_join_clauses_for_hpos_order_storage(): void {
+	public function test_extends_join_clauses_for_hpos_order_storage(): void {
 		global $wpdb;
 
 		$sut = new MultiCurrencyAnalyticsSqlFilters();
@@ -125,7 +125,7 @@ class MultiCurrencyAnalyticsSqlFiltersTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project currency where clauses for legacy order storage.
 	 */
-	public function test_projects_currency_where_clauses_for_legacy_order_storage(): void {
+	public function test_extends_currency_where_clauses_for_posts_order_storage(): void {
 		$sut = new MultiCurrencyAnalyticsSqlFilters();
 
 		$result = $sut->extend_where_clauses(
@@ -178,7 +178,7 @@ class MultiCurrencyAnalyticsSqlFiltersTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project selected currency order select clauses.
 	 */
-	public function test_projects_selected_currency_order_select_clauses(): void {
+	public function test_extends_order_select_clauses_with_exchange_rates(): void {
 		global $wpdb;
 
 		$sut       = new MultiCurrencyAnalyticsSqlFilters();

@@ -63,7 +63,7 @@ class MultiCurrencyDisplayServiceTest extends WC_Unit_Test_Case {
 		$this->original_currency_pos = get_option( 'woocommerce_currency_pos', 'left' );
 		$this->original_session      = WC()->session;
 
-		$this->delete_projection_options();
+		$this->delete_test_options();
 		update_option( 'woocommerce_currency', 'USD' );
 		update_option( 'woocommerce_currency_pos', 'left' );
 	}
@@ -72,7 +72,7 @@ class MultiCurrencyDisplayServiceTest extends WC_Unit_Test_Case {
 	 * Tear down test fixtures.
 	 */
 	public function tear_down(): void {
-		$this->delete_projection_options();
+		$this->delete_test_options();
 		update_option( 'woocommerce_currency', $this->original_currency );
 		update_option( 'woocommerce_currency_pos', $this->original_currency_pos );
 		WC()->session = $this->original_session;
@@ -83,7 +83,7 @@ class MultiCurrencyDisplayServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project selected currency formatting.
 	 */
-	public function test_projects_selected_currency_formatting(): void {
+	public function test_returns_selected_currency_formatting(): void {
 		$sut = $this->create_service( $this->create_state( 'GBP' ) );
 
 		$this->assertSame( 'GBP', $sut->get_woocommerce_currency() );
@@ -120,7 +120,7 @@ class MultiCurrencyDisplayServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project public config with preserved keys.
 	 */
-	public function test_projects_public_config_with_preserved_keys(): void {
+	public function test_builds_public_config_with_its_keys(): void {
 		$sut = $this->create_service( $this->create_state( 'GBP' ) );
 
 		$config = $sut->get_public_config();
@@ -180,7 +180,7 @@ class MultiCurrencyDisplayServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project store currencies and settings.
 	 */
-	public function test_projects_store_currencies_and_settings(): void {
+	public function test_returns_store_currencies_and_settings(): void {
 		update_option( 'wcpay_multi_currency_enable_auto_currency', 'yes' );
 		update_option( 'wcpay_multi_currency_enable_storefront_switcher', 'no' );
 		update_option( 'wcpay_multi_currency_rendering_mode', 'cache' );
@@ -511,7 +511,7 @@ class MultiCurrencyDisplayServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Delete options touched by these tests.
 	 */
-	private function delete_projection_options(): void {
+	private function delete_test_options(): void {
 		foreach ( $this->option_keys as $option_key ) {
 			delete_option( $option_key );
 		}

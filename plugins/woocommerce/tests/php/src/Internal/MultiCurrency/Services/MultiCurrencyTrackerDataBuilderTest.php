@@ -69,7 +69,7 @@ class MultiCurrencyTrackerDataBuilderTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should project tracker data with enabled non-default currencies.
 	 */
-	public function test_projects_tracker_data_with_enabled_non_default_currencies(): void {
+	public function test_builds_tracker_data_with_enabled_non_default_currencies(): void {
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
 		update_option( 'wcpay_multi_currency_exchange_rate_jpy', 'manual' );
 

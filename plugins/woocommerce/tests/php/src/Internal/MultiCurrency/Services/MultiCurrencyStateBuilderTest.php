@@ -265,7 +265,7 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should ignore preserved automatic currencies when no provider is registered.
 	 */
-	public function test_ignores_preserved_automatic_currencies_when_no_provider_is_registered(): void {
+	public function test_ignores_cached_automatic_rates_when_no_provider_is_registered(): void {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
 		update_option(
@@ -294,7 +294,7 @@ class MultiCurrencyStateBuilderTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should retain preserved automatic currencies when a registered provider is unavailable.
 	 */
-	public function test_retains_preserved_automatic_currencies_when_a_registered_provider_is_unavailable(): void {
+	public function test_uses_cached_automatic_rates_when_a_registered_provider_is_unavailable(): void {
 		$provider = $this->create_unavailable_rate_provider();
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'GBP' ) );
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
