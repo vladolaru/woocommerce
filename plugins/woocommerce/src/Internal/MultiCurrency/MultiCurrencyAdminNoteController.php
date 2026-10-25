@@ -55,7 +55,7 @@ class MultiCurrencyAdminNoteController implements RegisterHooksInterface {
 	 * Register admin note hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() || ! is_admin() ) {
+		if ( ! $this->arbiter->is_builtin_owner() || ! is_admin() ) {
 			return;
 		}
 

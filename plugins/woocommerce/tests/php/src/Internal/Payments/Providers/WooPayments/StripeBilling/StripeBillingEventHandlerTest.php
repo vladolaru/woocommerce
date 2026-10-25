@@ -331,7 +331,7 @@ class StripeBillingEventHandlerTest extends WC_Unit_Test_Case {
 		update_option( WooPaymentsFeatureController::FEATURE_ENABLE_OPTION, 'yes' );
 		update_option( 'active_plugins', array() );
 		wc_get_container()->get( WooPaymentsRuntimeArbiter::class )->invalidate();
-		$this->assertTrue( wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->should_core_register() );
+		$this->assertTrue( wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->is_builtin_owner() );
 
 		$localization = wc_get_container()->get( MultiCurrencyLocalizationService::class );
 		$usd          = new MultiCurrencyCurrency( $localization, 'USD', 1.0, true );

@@ -79,7 +79,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	 * Register Name Your Price compatibility hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -97,7 +97,7 @@ class MultiCurrencyNameYourPriceCompatibilityController implements RegisterHooks
 	 * @internal
 	 */
 	public function register_name_your_price_hooks(): void {
-		if ( ! $this->arbiter->should_core_register() || ! $this->is_name_your_price_runtime_available() ) {
+		if ( ! $this->arbiter->is_builtin_owner() || ! $this->is_name_your_price_runtime_available() ) {
 			return;
 		}
 

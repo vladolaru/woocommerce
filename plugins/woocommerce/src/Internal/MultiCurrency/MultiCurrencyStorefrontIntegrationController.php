@@ -104,7 +104,7 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	 * This runs inside the WooCommerce constructor, where building currency state calls WC() and constructs WooCommerce again.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

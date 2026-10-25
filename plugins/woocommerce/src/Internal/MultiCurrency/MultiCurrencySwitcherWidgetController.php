@@ -77,7 +77,7 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 	 * Register switcher widget hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -123,7 +123,7 @@ class MultiCurrencySwitcherWidgetController implements RegisterHooksInterface {
 			}
 		}
 
-		if ( ! $this->arbiter->should_core_register() || ! is_object( $this->widget ) || ! is_object( $wp_widget_factory ) || ! isset( $wp_widget_factory->widgets ) || ! is_array( $wp_widget_factory->widgets ) ) {
+		if ( ! $this->arbiter->is_builtin_owner() || ! is_object( $this->widget ) || ! is_object( $wp_widget_factory ) || ! isset( $wp_widget_factory->widgets ) || ! is_array( $wp_widget_factory->widgets ) ) {
 			return '';
 		}
 

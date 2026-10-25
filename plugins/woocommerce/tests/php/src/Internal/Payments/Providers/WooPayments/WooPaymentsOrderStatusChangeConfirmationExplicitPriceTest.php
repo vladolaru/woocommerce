@@ -58,9 +58,9 @@ class WooPaymentsOrderStatusChangeConfirmationExplicitPriceTest extends WC_Unit_
 	public function test_projects_the_explicit_price_flag( bool $multi_currency_enabled, bool $expected ): void {
 		$arbiter = $this->getMockBuilder( MultiCurrencyRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_core_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'should_core_register' )->willReturn( $multi_currency_enabled );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $multi_currency_enabled );
 		wc_get_container()->replace( MultiCurrencyRuntimeArbiter::class, $arbiter );
 
 		$order = wc_create_order();

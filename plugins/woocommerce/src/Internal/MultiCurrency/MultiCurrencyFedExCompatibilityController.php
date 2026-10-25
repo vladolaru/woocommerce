@@ -50,7 +50,7 @@ class MultiCurrencyFedExCompatibilityController implements RegisterHooksInterfac
 	 * Register FedEx compatibility hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -68,7 +68,7 @@ class MultiCurrencyFedExCompatibilityController implements RegisterHooksInterfac
 	 * @internal
 	 */
 	public function register_fedex_filters(): void {
-		if ( ! $this->arbiter->should_core_register() || ! $this->is_fedex_runtime_available() ) {
+		if ( ! $this->arbiter->is_builtin_owner() || ! $this->is_fedex_runtime_available() ) {
 			return;
 		}
 

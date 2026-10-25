@@ -288,7 +288,7 @@ class WooPaymentsSettingsService {
 			'is_test_mode_enabled'                       => $this->account_service->is_test_mode_enabled(),
 			'is_test_mode_onboarding'                    => $this->account_service->is_test_mode_onboarding_enabled(),
 			'is_dev_mode_enabled'                        => $this->account_service->is_dev_mode_enabled(),
-			'is_multi_currency_enabled'                  => wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->should_core_register(),
+			'is_multi_currency_enabled'                  => wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->is_builtin_owner(),
 			'is_wcpay_subscriptions_enabled'             => $this->stripe_billing_module->is_bundled_subscriptions_flag_on(),
 			'is_wcpay_subscriptions_eligible'            => $this->stripe_billing_module->is_bundled_subscriptions_eligible(),
 			'is_subscriptions_plugin_active'             => WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active(),

@@ -103,7 +103,7 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	 */
 	public function maybe_register_async_hooks(): void {
 		if (
-			! $this->arbiter->should_core_register()
+			! $this->arbiter->is_builtin_owner()
 			|| ! $this->request_context->should_register_frontend_hooks()
 			|| $this->request_context->is_store_api_request()
 			|| ! $this->is_using_auto_currency_switching()

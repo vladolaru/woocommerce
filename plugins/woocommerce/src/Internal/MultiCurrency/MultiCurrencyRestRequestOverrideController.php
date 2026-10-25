@@ -52,7 +52,7 @@ class MultiCurrencyRestRequestOverrideController implements RegisterHooksInterfa
 	 * Register non-Store REST request-local override filters.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() || ! $this->request_context->should_register_rest_request_overrides() ) {
+		if ( ! $this->arbiter->is_builtin_owner() || ! $this->request_context->should_register_rest_request_overrides() ) {
 			return;
 		}
 

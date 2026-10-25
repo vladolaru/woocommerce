@@ -61,7 +61,7 @@ class MultiCurrencyAdminNoticesController implements RegisterHooksInterface {
 	 * Register admin notice hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

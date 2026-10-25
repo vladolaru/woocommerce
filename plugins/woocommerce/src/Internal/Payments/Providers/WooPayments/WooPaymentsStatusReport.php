@@ -673,7 +673,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	private function is_multi_currency_running(): bool {
-		return wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->should_core_register();
+		return wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->is_builtin_owner();
 	}
 
 	/**

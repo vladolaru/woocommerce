@@ -101,7 +101,7 @@ class MultiCurrencySettingsController implements RegisterHooksInterface {
 	 * Register multi-currency settings hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

@@ -57,7 +57,7 @@ class MultiCurrencyPreOrdersCompatibilityController implements RegisterHooksInte
 	 * Register Pre-Orders compatibility hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -75,7 +75,7 @@ class MultiCurrencyPreOrdersCompatibilityController implements RegisterHooksInte
 	 * @internal
 	 */
 	public function register_pre_orders_filters(): void {
-		if ( ! $this->arbiter->should_core_register() || ! $this->is_pre_orders_runtime_available() ) {
+		if ( ! $this->arbiter->is_builtin_owner() || ! $this->is_pre_orders_runtime_available() ) {
 			return;
 		}
 

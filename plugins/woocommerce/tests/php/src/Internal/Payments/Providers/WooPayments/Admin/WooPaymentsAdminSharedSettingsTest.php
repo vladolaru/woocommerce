@@ -906,9 +906,9 @@ class WooPaymentsAdminSharedSettingsTest extends WC_Unit_Test_Case {
 		);
 		$arbiter      = $this->getMockBuilder( MultiCurrencyRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_core_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'should_core_register' )->willReturn( $multi_currency );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $multi_currency );
 		wc_get_container()->replace( MultiCurrencyRuntimeArbiter::class, $arbiter );
 		$filter_calls = array();
 

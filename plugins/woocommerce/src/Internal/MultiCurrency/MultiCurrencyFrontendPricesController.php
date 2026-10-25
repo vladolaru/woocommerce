@@ -85,7 +85,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	 * Register frontend price hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() || ! $this->request_context->should_register_frontend_hooks() ) {
+		if ( ! $this->arbiter->is_builtin_owner() || ! $this->request_context->should_register_frontend_hooks() ) {
 			return;
 		}
 

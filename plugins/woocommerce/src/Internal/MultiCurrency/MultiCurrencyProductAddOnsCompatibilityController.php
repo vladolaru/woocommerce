@@ -60,7 +60,7 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 	 * Register Product Add-ons compatibility hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -80,7 +80,7 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 	 * @internal
 	 */
 	public function register_product_addons_hooks(): void {
-		if ( ! $this->arbiter->should_core_register() || ! $this->is_product_addons_runtime_available() ) {
+		if ( ! $this->arbiter->is_builtin_owner() || ! $this->is_product_addons_runtime_available() ) {
 			return;
 		}
 

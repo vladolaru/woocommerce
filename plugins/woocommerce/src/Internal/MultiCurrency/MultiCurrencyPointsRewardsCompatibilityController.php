@@ -62,7 +62,7 @@ class MultiCurrencyPointsRewardsCompatibilityController implements RegisterHooks
 	 * Register Points and Rewards compatibility hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -82,7 +82,7 @@ class MultiCurrencyPointsRewardsCompatibilityController implements RegisterHooks
 	 * @internal
 	 */
 	public function register_points_rewards_filters(): void {
-		if ( ! $this->arbiter->should_core_register() || ! $this->is_points_rewards_runtime_available() || is_admin() ) {
+		if ( ! $this->arbiter->is_builtin_owner() || ! $this->is_points_rewards_runtime_available() || is_admin() ) {
 			return;
 		}
 

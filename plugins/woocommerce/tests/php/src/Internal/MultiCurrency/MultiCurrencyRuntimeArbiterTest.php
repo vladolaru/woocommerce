@@ -146,8 +146,8 @@ class MultiCurrencyRuntimeArbiterTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( $owner, $this->sut->get_runtime_owner(), 'Runtime owner.' );
-		$this->assertSame( $core_registers, $this->sut->should_core_register(), 'Core registration.' );
-		$this->assertSame( $plugin_registers, $this->sut->should_plugin_register(), 'Plugin registration.' );
+		$this->assertSame( $core_registers, $this->sut->is_builtin_owner(), 'Core registration.' );
+		$this->assertSame( $plugin_registers, $this->sut->is_extension_owner(), 'Plugin registration.' );
 		$this->assertSame( $builtin_owner, $this->sut->is_payments_builtin_owner(), 'Built-in payments owner.' );
 	}
 

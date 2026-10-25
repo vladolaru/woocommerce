@@ -143,7 +143,7 @@ final class WooPaymentsCurrencyUtils {
 		$format           = static fn(): string => wc_price( $amount, $args );
 
 		$container = wc_get_container();
-		if ( ! $container->get( MultiCurrencyRuntimeArbiter::class )->should_core_register() ) {
+		if ( ! $container->get( MultiCurrencyRuntimeArbiter::class )->is_builtin_owner() ) {
 			return $format();
 		}
 

@@ -206,7 +206,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	 */
 	public function register() {
 		if (
-			! $this->arbiter->should_core_register()
+			! $this->arbiter->is_builtin_owner()
 			|| is_admin()
 			|| Constants::is_defined( 'DOING_CRON' )
 		) {
@@ -231,7 +231,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	 */
 	public function register_subscription_filters(): void {
 		if (
-			! $this->arbiter->should_core_register()
+			! $this->arbiter->is_builtin_owner()
 			|| is_admin()
 			|| Constants::is_defined( 'DOING_CRON' )
 			|| ! $this->is_subscriptions_runtime_available()

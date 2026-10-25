@@ -107,7 +107,7 @@ class MultiCurrencySelectedCurrencyController implements RegisterHooksInterface 
 	 * Register selected-currency hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

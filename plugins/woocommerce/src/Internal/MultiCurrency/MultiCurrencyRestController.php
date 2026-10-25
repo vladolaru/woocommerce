@@ -106,7 +106,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	 * Register REST route hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

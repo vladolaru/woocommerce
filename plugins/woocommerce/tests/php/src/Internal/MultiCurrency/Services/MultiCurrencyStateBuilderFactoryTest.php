@@ -529,7 +529,7 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 			 *
 			 * @return bool
 			 */
-			public function should_core_register(): bool {
+			public function is_builtin_owner(): bool {
 				return true;
 			}
 		};

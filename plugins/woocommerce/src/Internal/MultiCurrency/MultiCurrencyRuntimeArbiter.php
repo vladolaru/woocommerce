@@ -110,7 +110,7 @@ class MultiCurrencyRuntimeArbiter {
 	 */
 	public function get_runtime_owner(): string {
 		if ( $this->is_payments_extension_owner() ) {
-			return $this->is_plugin_multi_currency_enabled() ? self::OWNER_EXTENSION : self::OWNER_NONE;
+			return $this->is_extension_multi_currency_enabled() ? self::OWNER_EXTENSION : self::OWNER_NONE;
 		}
 
 		return $this->feature_is_enabled() ? self::OWNER_BUILTIN : self::OWNER_NONE;
@@ -121,7 +121,7 @@ class MultiCurrencyRuntimeArbiter {
 	 *
 	 * @return bool True when core owns multi-currency.
 	 */
-	public function should_core_register(): bool {
+	public function is_builtin_owner(): bool {
 		return self::OWNER_BUILTIN === $this->get_runtime_owner();
 	}
 
@@ -130,7 +130,7 @@ class MultiCurrencyRuntimeArbiter {
 	 *
 	 * @return bool True when plugin multi-currency owns the price/currency pipeline.
 	 */
-	public function should_plugin_register(): bool {
+	public function is_extension_owner(): bool {
 		return self::OWNER_EXTENSION === $this->get_runtime_owner();
 	}
 
@@ -143,7 +143,7 @@ class MultiCurrencyRuntimeArbiter {
 	 *
 	 * @return bool True when the multi-currency runtime may take ownership.
 	 */
-	private function is_plugin_multi_currency_enabled(): bool {
+	private function is_extension_multi_currency_enabled(): bool {
 		return '1' === (string) $this->legacy_proxy->call_function( 'get_option', MultiCurrencyFeatureController::WOOPAYMENTS_MULTI_CURRENCY_FLAG_OPTION, '1' );
 	}
 }

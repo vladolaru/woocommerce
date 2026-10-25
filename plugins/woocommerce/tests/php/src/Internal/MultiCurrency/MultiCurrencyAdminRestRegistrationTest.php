@@ -119,12 +119,12 @@ class MultiCurrencyAdminRestRegistrationTest extends WC_REST_Unit_Test_Case {
 	private function create_arbiter( string $owner ): MultiCurrencyRuntimeArbiter {
 		$arbiter = $this->getMockBuilder( MultiCurrencyRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'get_runtime_owner', 'is_payments_extension_owner', 'is_payments_builtin_owner', 'should_core_register' ) )
+			->onlyMethods( array( 'get_runtime_owner', 'is_payments_extension_owner', 'is_payments_builtin_owner', 'is_builtin_owner' ) )
 			->getMock();
 		$arbiter->method( 'get_runtime_owner' )->willReturn( $owner );
 		$arbiter->method( 'is_payments_extension_owner' )->willReturn( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION === $owner );
 		$arbiter->method( 'is_payments_builtin_owner' )->willReturn( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $owner );
-		$arbiter->method( 'should_core_register' )->willReturn( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $owner );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $owner );
 
 		return $arbiter;
 	}

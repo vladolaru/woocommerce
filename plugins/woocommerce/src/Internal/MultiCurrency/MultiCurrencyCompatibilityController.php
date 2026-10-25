@@ -71,7 +71,7 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 	 * Register compatibility hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

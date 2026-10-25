@@ -79,7 +79,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	 * Register Bookings compatibility hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -100,7 +100,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	 */
 	public function register_bookings_filters(): void {
 		if (
-			! $this->arbiter->should_core_register()
+			! $this->arbiter->is_builtin_owner()
 			|| ! $this->is_bookings_runtime_available()
 			|| ( is_admin() && ! wp_doing_ajax() )
 		) {

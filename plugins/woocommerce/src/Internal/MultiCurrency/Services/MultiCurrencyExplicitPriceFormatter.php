@@ -52,7 +52,7 @@ class MultiCurrencyExplicitPriceFormatter {
 		$default   = false;
 
 		if (
-			$container->get( MultiCurrencyRuntimeArbiter::class )->should_core_register()
+			$container->get( MultiCurrencyRuntimeArbiter::class )->is_builtin_owner()
 			&& $container->get( MultiCurrencyUsageDetector::class )->has_additional_enabled_currencies()
 		) {
 			$default = $container->get( MultiCurrencyStateBuilderFactory::class )->create()->build()->has_additional_currencies_enabled();

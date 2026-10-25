@@ -159,9 +159,9 @@ class WooPaymentsAdminSharedSettingsExplicitPriceTest extends WC_Unit_Test_Case 
 	private function set_multi_currency_enabled( bool $enabled ): void {
 		$arbiter = $this->getMockBuilder( MultiCurrencyRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_core_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
-		$arbiter->method( 'should_core_register' )->willReturn( $enabled );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $enabled );
 		wc_get_container()->replace( MultiCurrencyRuntimeArbiter::class, $arbiter );
 	}
 

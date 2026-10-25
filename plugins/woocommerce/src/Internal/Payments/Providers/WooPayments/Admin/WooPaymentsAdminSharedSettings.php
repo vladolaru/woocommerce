@@ -228,7 +228,7 @@ class WooPaymentsAdminSharedSettings implements RegisterHooksInterface {
 		// While WooCommerce runs Multi-Currency, the pages' data carries its flag, as the WooPayments extension's admin data does
 		// (class-wc-payments-admin.php:1039).
 		$multi_currency_arbiter = wc_get_container()->get( MultiCurrencyRuntimeArbiter::class );
-		if ( $multi_currency_arbiter->should_core_register() ) {
+		if ( $multi_currency_arbiter->is_builtin_owner() ) {
 			$provider_settings['isMultiCurrencyEnabled'] = true;
 		}
 

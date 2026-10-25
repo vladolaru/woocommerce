@@ -446,7 +446,7 @@ class MultiCurrencySettingsControllerTest extends WC_Unit_Test_Case {
 			 *
 			 * @return bool
 			 */
-			public function should_core_register(): bool {
+			public function is_builtin_owner(): bool {
 				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 		};

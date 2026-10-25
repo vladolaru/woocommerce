@@ -78,7 +78,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoader implements RegisterHooksInte
 	 * Load the legacy facade when Core owns MultiCurrency.
 	 */
 	public function load(): void {
-		if ( ! $this->arbiter->should_core_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

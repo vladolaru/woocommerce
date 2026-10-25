@@ -97,7 +97,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	 * Register frontend currency hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

@@ -173,12 +173,12 @@ class WooPaymentsOrderNoteServiceTest extends WC_Unit_Test_Case {
 	private function set_core_multi_currency( bool $enabled ): void {
 		$arbiter   = $this->getMockBuilder( MultiCurrencyRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_core_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
 		$container = wc_get_container();
 		// Keep the real feature definition working if FeaturesController registers it while the mock is in place.
 		$arbiter->init( $container->get( WooPaymentsRuntimeArbiter::class ), $container->get( LegacyProxy::class ), $container->get( MultiCurrencyFeatureController::class ) );
-		$arbiter->method( 'should_core_register' )->willReturn( $enabled );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $enabled );
 		wc_get_container()->replace( MultiCurrencyRuntimeArbiter::class, $arbiter );
 	}
 

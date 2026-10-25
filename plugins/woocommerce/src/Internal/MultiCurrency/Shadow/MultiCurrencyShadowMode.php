@@ -145,7 +145,7 @@ class MultiCurrencyShadowMode implements RegisterHooksInterface {
 	 * @return bool
 	 */
 	public function should_register_shadow_hooks(): bool {
-		return $this->is_shadow_mode_enabled() && $this->arbiter->should_plugin_register();
+		return $this->is_shadow_mode_enabled() && $this->arbiter->is_extension_owner();
 	}
 
 	/**

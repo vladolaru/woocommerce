@@ -57,7 +57,7 @@ class MultiCurrencyStoreCurrencyLifecycleController implements RegisterHooksInte
 	 * Register store-currency lifecycle hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

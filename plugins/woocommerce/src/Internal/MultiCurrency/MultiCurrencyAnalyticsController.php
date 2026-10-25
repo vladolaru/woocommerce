@@ -107,7 +107,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	 * Register analytics hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

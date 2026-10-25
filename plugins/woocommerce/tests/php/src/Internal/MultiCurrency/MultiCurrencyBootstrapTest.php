@@ -1397,7 +1397,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 			}
 
 			/** Tell whether core may register the configured owner. @return bool Whether core owns the runtime. */
-			public function should_core_register(): bool {
+			public function is_builtin_owner(): bool {
 				return MultiCurrencyRuntimeArbiter::OWNER_BUILTIN === $this->owner;
 			}
 		};
@@ -1566,7 +1566,7 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$controller->init(
 			new class() extends MultiCurrencyRuntimeArbiter {
 				/** Tell whether core may register. @return bool */
-				public function should_core_register(): bool {
+				public function is_builtin_owner(): bool {
 					return true;
 				}
 			},

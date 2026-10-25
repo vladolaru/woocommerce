@@ -60,7 +60,7 @@ class MultiCurrencyTrackerController implements RegisterHooksInterface {
 	 * Register tracker data hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 

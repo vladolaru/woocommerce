@@ -380,7 +380,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 				'invalid_extension_found' => (bool) get_option( 'woopay_invalid_extension_found', false ),
 			),
 			// Whether Multi-Currency runs, as client 11.1.0 sends its own module's state (class-wc-payments-account.php:2976).
-			'multi_currency_enabled'                      => wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->should_core_register(),
+			'multi_currency_enabled'                      => wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->is_builtin_owner(),
 			'stripe_billing_enabled'                      => wc_get_container()->get( WooPaymentsStripeBillingModule::class )->is_stripe_billing_enabled(),
 			// Client 11.1.0 sends its own version (class-wc-payments-account.php:2981): the version the user agent reports too.
 			'plugin'                                      => array(

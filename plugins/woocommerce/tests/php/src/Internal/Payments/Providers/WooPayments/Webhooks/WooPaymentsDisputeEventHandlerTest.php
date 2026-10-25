@@ -193,12 +193,12 @@ class WooPaymentsDisputeEventHandlerTest extends WC_Unit_Test_Case {
 		null === $plugin_flag ? delete_option( '_wcpay_feature_customer_multi_currency' ) : update_option( '_wcpay_feature_customer_multi_currency', $plugin_flag );
 		$arbiter   = $this->getMockBuilder( MultiCurrencyRuntimeArbiter::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'should_core_register' ) )
+			->onlyMethods( array( 'is_builtin_owner' ) )
 			->getMock();
 		$container = wc_get_container();
 		// Keep the real feature definition working if FeaturesController registers it while the mock is in place.
 		$arbiter->init( $container->get( WooPaymentsRuntimeArbiter::class ), $container->get( LegacyProxy::class ), $container->get( MultiCurrencyFeatureController::class ) );
-		$arbiter->method( 'should_core_register' )->willReturn( $core_multi_currency );
+		$arbiter->method( 'is_builtin_owner' )->willReturn( $core_multi_currency );
 		wc_get_container()->replace( MultiCurrencyRuntimeArbiter::class, $arbiter );
 		$defaults = array();
 		add_filter(

@@ -47,7 +47,7 @@ class MultiCurrencyUpsCompatibilityController implements RegisterHooksInterface 
 	 * Register UPS compatibility hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -65,7 +65,7 @@ class MultiCurrencyUpsCompatibilityController implements RegisterHooksInterface 
 	 * @internal
 	 */
 	public function register_ups_filters(): void {
-		if ( ! $this->arbiter->should_core_register() || ! $this->is_ups_runtime_available() ) {
+		if ( ! $this->arbiter->is_builtin_owner() || ! $this->is_ups_runtime_available() ) {
 			return;
 		}
 

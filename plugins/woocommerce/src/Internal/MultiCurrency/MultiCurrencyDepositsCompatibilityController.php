@@ -68,7 +68,7 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 	 * Register Deposits compatibility hooks.
 	 */
 	public function register() {
-		if ( ! $this->arbiter->should_core_register() ) {
+		if ( ! $this->arbiter->is_builtin_owner() ) {
 			return;
 		}
 
@@ -91,7 +91,7 @@ class MultiCurrencyDepositsCompatibilityController implements RegisterHooksInter
 		$deposits_version = $this->get_deposits_version();
 
 		if (
-			! $this->arbiter->should_core_register()
+			! $this->arbiter->is_builtin_owner()
 			|| ! $this->is_deposits_runtime_available()
 			|| ( null !== $deposits_version && version_compare( $deposits_version, '2.0.1', '>=' ) )
 		) {
