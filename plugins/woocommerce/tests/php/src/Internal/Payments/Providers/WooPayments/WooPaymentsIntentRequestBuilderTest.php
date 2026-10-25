@@ -7,6 +7,7 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\WooPaymentsApiException;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIntentRequestBuilder;
@@ -1089,8 +1090,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	 * keeps a method under manual capture only when it allows manual capture or is Link); any other method charges through its own
 	 * gateway, whose `manual_capture` no writer stores, so it captures automatically (`includes/class-wc-payment-gateway-wcpay.php:3122-3124`, `:3229-3231`).
 	 * Its definitions give the capture-later capability to card, Apple Pay, Google Pay and Amazon Pay only
-	 * (`includes/payment-methods/Configs/Definitions/`). The recorded refusal of manual capture for iDEAL and the other single-use
-	 * redirect methods is Stripe's "capture_method=manual is not supported by payment method type" error.
+	 * (`includes/payment-methods/Configs/Definitions/`).
 	 *
 	 * @testdox The charge asks for $expected_capture capture for $_dataName.
 	 * @dataProvider capture_method_data
@@ -1103,6 +1103,87 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 	 * @param string              $expected_capture Expected capture_method.
 	 */
 	public function test_charge_asks_for_manual_capture_only_when_every_declared_method_can_capture_later( string $gateway_id, array $provider_data, array $enabled_methods, string $manual_capture, array $expected_types, string $expected_capture ): void {
+		$request = $this->build_capture_request( $gateway_id, $provider_data, $enabled_methods, $manual_capture, new WooPaymentsPaymentMethodRegistry() );
+
+		$this->assertSame( $expected_types, $request['payment_method_types'] );
+		$this->assertSame( $expected_capture, $request['capture_method'] );
+	}
+
+	/**
+	 * The rule keys on the registry's capability, not on a list of method ids: a registry that moves the capability moves
+	 * the capture method with it.
+	 *
+	 * @testdox With the registry's capture-later capability flipped on $payment_method_id, the charge asks for $expected_capture capture.
+	 * @testWith ["ideal", ["ideal"], "manual"]
+	 *           ["card", ["card"], "automatic"]
+	 *
+	 * @param string            $payment_method_id Payment method whose capability the registry double flips.
+	 * @param array<int,string> $expected_types    Expected payment_method_types.
+	 * @param string            $expected_capture  Expected capture_method.
+	 */
+	public function test_charge_capture_method_follows_the_registry_capability( string $payment_method_id, array $expected_types, string $expected_capture ): void {
+		$registry   = new class( $payment_method_id ) extends WooPaymentsPaymentMethodRegistry {
+			/**
+			 * Payment method whose capture-later capability is flipped.
+			 *
+			 * @var string
+			 */
+			private string $flipped;
+
+			/**
+			 * Create the double.
+			 *
+			 * @param string $flipped Payment method whose capture-later capability is flipped.
+			 */
+			public function __construct( string $flipped ) {
+				$this->flipped = $flipped;
+			}
+
+			/**
+			 * Return the real definition, with the capture-later capability added to or removed from the flipped method.
+			 *
+			 * @param string $payment_method_id Payment method ID.
+			 * @return WooPaymentsPaymentMethodDefinition|null
+			 */
+			public function get( string $payment_method_id ): ?WooPaymentsPaymentMethodDefinition {
+				$definition = parent::get( $payment_method_id );
+				if ( null === $definition || $this->flipped !== $payment_method_id ) {
+					return $definition;
+				}
+
+				$capabilities = $definition->get_capabilities();
+				$capabilities = in_array( self::CAPTURE_LATER, $capabilities, true )
+					? array_values( array_diff( $capabilities, array( self::CAPTURE_LATER ) ) )
+					: array_merge( $capabilities, array( self::CAPTURE_LATER ) );
+
+				return new WooPaymentsPaymentMethodDefinition(
+					array(
+						'id'                         => $definition->get_id(),
+						'stripe_payment_method_type' => $definition->get_stripe_payment_method_type(),
+						'capabilities'               => $capabilities,
+					)
+				);
+			}
+		};
+		$gateway_id = 'card' === $payment_method_id ? WooPaymentsPersistenceVocabulary::GATEWAY_ID : WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . $payment_method_id;
+
+		$request = $this->build_capture_request( $gateway_id, array(), array( 'card', $payment_method_id ), 'yes', $registry );
+
+		$this->assertSame( $expected_types, $request['payment_method_types'] );
+		$this->assertSame( $expected_capture, $request['capture_method'] );
+	}
+
+	/**
+	 * Build a USD checkout charge request for a US account with the given gateway settings and registry.
+	 *
+	 * @param string                           $gateway_id      Checkout gateway ID.
+	 * @param array<string,mixed>              $provider_data   Checkout provider data.
+	 * @param array<int,string>                $enabled_methods Enabled payment method IDs.
+	 * @param string                           $manual_capture  The manual capture setting.
+	 * @param WooPaymentsPaymentMethodRegistry $registry        Payment method registry.
+	 * @return array<string,mixed>
+	 */
+	private function build_capture_request( string $gateway_id, array $provider_data, array $enabled_methods, string $manual_capture, WooPaymentsPaymentMethodRegistry $registry ): array {
 		$order = wc_create_order();
 		$order->set_currency( 'USD' );
 		$order->set_total( '30.00' );
@@ -1119,6 +1200,9 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 		$account_service->method( 'get_gateway_setting' )->willReturnCallback(
 			static fn( string $key, $fallback = null ) => $settings[ $key ] ?? $fallback
 		);
+		// Reduced from the recorded account in Fixtures/platform-test-drive-account.json (`account.status`, `payments_enabled`,
+		// `country`, `capabilities`, `fees` keyed by method). Synthetic override: `link_payments` is `unrequested` there and
+		// `active` here, so Link folds into card; the `fees.link` entry is emptied.
 		$account_service->method( 'get_cached_account_data' )->willReturn(
 			array(
 				'status'           => 'complete',
@@ -1141,18 +1225,15 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 			$account_service,
 			new WooPaymentsOrderDataService(),
 			$this->createStub( WooPaymentsTokenService::class ),
-			new WooPaymentsPaymentMethodRegistry()
+			$registry
 		);
 
-		$request = $request_builder->charge_request_data(
+		return $request_builder->charge_request_data(
 			PaymentOperationContext::for_checkout( $order, $gateway_id, 'pm_capture', array(), $provider_data ),
 			'pm_capture',
 			'cus_native',
 			false
 		);
-
-		$this->assertSame( $expected_types, $request['payment_method_types'] );
-		$this->assertSame( $expected_capture, $request['capture_method'] );
 	}
 
 	/**
@@ -1174,6 +1255,7 @@ class WooPaymentsIntentRequestBuilderTest extends WC_Unit_Test_Case {
 			'card under manual capture'                => array( $card, array(), array( 'card' ), 'yes', array( 'card' ), 'manual' ),
 			'card with Link under manual capture'      => array( $card, array(), array( 'card', 'link' ), 'yes', array( 'card', 'link' ), 'manual' ),
 			'the express methods under manual capture' => array( $card, $express, array( 'card', 'amazon_pay' ), 'yes', array( 'card', 'amazon_pay' ), 'manual' ),
+			'Amazon Pay under manual capture'          => array( $prefix . 'amazon_pay', array(), array( 'card', 'amazon_pay' ), 'yes', array( 'amazon_pay' ), 'manual' ),
 			'card with manual capture off'             => array( $card, array(), array( 'card' ), 'no', array( 'card' ), 'automatic' ),
 		);
 	}
