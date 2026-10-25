@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
 /**
  * The request's Multi-Currency state: the available, enabled, default and selected currencies, and the currencies
- * customers have used, a list it can rebuild from orders and store on first read.
+ * customers have used.
  *
  * Read-only by contract: MultiCurrencyStateBuilder::build() memoizes a single
  * instance per request and hands it to every caller. Callers MUST NOT mutate this

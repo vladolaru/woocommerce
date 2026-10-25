@@ -137,7 +137,7 @@ export const applyReportCurrencySymbol = (
 	return symbol ? { ...config, symbol } : config;
 };
 
-// The WooPayments extension's namespace, kept so code that removes these callbacks by namespace still can (client 11.1.0 `analytics/index.js:18`).
+// The `woocommerce-payments` namespace, kept so code that removes these callbacks by namespace still can (client 11.1.0 `analytics/index.js:18`).
 addFilter(
 	'woocommerce_admin_orders_report_advanced_filters',
 	'woocommerce-payments',

@@ -13,8 +13,8 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 
 /**
- * Registers the currency switcher block under the WooPayments extension's block name, with its editor script and the
- * server-side render of the switcher.
+ * Registers the `woocommerce-payments/multi-currency-switcher` block, with its editor script and the server-side render
+ * of the switcher.
  *
  * @since 11.0.0
  * @internal
@@ -191,7 +191,7 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the switcher block attributes, with the defaults that blocks saved under the WooPayments extension rely on.
+	 * Get the switcher block attributes and their defaults, which saved blocks rely on.
 	 *
 	 * @return array<string,array<string,mixed>>
 	 */
@@ -237,7 +237,7 @@ class MultiCurrencySwitcherBlockController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the switcher renderer, building it on first use.
+	 * Get the switcher renderer.
 	 *
 	 * @return MultiCurrencySwitcherRenderer
 	 */

@@ -80,7 +80,7 @@ class MultiCurrencyTrackerController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the tracker data builder, building it on first use.
+	 * Get the tracker data builder.
 	 *
 	 * @return MultiCurrencyTrackerDataBuilder
 	 */

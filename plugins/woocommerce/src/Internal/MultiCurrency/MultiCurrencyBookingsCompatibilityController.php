@@ -15,8 +15,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestC
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 
 /**
- * Converts WooCommerce Bookings costs to the selected currency on the storefront and in Ajax requests: block, base,
- * person-type and resource costs, cost rules, calculated booking costs and the prices its cost Ajax formats.
+ * Converts WooCommerce Bookings costs, and the prices its cost Ajax formats, to the selected currency.
  *
  * @since 11.0.0
  * @internal
@@ -231,7 +230,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	}
 
 	/**
-	 * Get the price converter, building it on first use.
+	 * Get the price converter.
 	 *
 	 * @return MultiCurrencyPriceConverter
 	 */
@@ -244,7 +243,7 @@ class MultiCurrencyBookingsCompatibilityController implements RegisterHooksInter
 	}
 
 	/**
-	 * Get the display service, building it on first use.
+	 * Get the display service.
 	 *
 	 * @return MultiCurrencyDisplayService
 	 */

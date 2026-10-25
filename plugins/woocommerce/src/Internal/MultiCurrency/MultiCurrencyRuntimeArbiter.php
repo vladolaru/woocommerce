@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 
 /**
- * Tells who runs Multi-Currency on this site, the Multi-Currency owner: WooCommerce, the WooPayments extension, or neither.
+ * Tells who runs Multi-Currency on this site: WooCommerce, the WooPayments extension, or neither.
  *
  * The extension carries its own Multi-Currency module, whose classes share names with the facades WooCommerce declares,
  * so the two never run together: while the extension is active its own flag decides, and otherwise the Multi-currency

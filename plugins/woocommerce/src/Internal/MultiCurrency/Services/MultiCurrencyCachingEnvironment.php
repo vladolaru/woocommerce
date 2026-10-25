@@ -8,8 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
 /**
- * Detects a page cache from high-confidence signals (an advanced-cache drop-in with WP_CACHE, LiteSpeed, WP Fastest Cache,
- * WordPress.com Atomic, Pressable), with a filter for other environments.
+ * Detects a page cache from high-confidence signals, with a filter for other environments.
  *
  * @since 11.2.0
  * @internal

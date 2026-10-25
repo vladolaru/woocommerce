@@ -15,11 +15,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestC
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Answers the currency and its format (code, decimals, separators, price format, symbol position) on storefront requests:
- * the selected currency, or an order's currency on the order-pay, order-received and view-order pages.
- *
- * It also varies the cart hash by currency and rate, rounds shipping rates to their currency's decimals and loads the
- * script that shows the currency code after the Cart and Checkout block totals.
+ * Answers the currency and its format on storefront requests: the selected currency, or an order's on the order pages.
  *
  * @since 11.0.0
  * @internal
@@ -358,7 +354,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Get the display service, building it on first use.
+	 * Get the display service.
 	 *
 	 * @return MultiCurrencyDisplayService
 	 */

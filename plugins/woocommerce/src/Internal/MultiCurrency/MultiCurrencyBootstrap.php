@@ -16,11 +16,11 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\Utilities\RequestTypeUtil;
 
 /**
- * Starts Multi-Currency for the request: syncs the payments owner, and while WooCommerce runs Multi-Currency registers the
- * refund, customer-currency and Analytics order listeners and the module's classes for the request type and usage.
+ * Starts Multi-Currency for the request: syncs the payments owner and, while WooCommerce runs Multi-Currency, registers
+ * the order listeners and the module's classes for the request type.
  *
- * A class the request lacks registers when it is needed: the cron classes when Action Scheduler runs an action, and the
- * Subscriptions currency classes once a cart holds a subscription in another currency.
+ * A class the request lacks registers when it is needed: cron classes under Action Scheduler, Subscriptions classes once
+ * a cart holds a subscription in another currency.
  *
  * @since 11.2.0
  * @internal

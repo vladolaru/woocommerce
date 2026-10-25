@@ -13,8 +13,8 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 
 /**
- * Answers the request's currency and how it is shown (decimals, separators, format, position), the cart hash, the store
- * currencies, the settings and public config the settings screen and the async renderer read, and the rendering mode.
+ * Gives the request's currency and display format, the store currencies, and the settings and public config the settings
+ * screen and the async renderer read.
  *
  * @since 11.0.0
  * @internal

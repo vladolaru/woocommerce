@@ -222,7 +222,7 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	}
 
 	/**
-	 * Get the switcher renderer, building it on first use.
+	 * Get the switcher renderer.
 	 *
 	 * @return MultiCurrencySwitcherRenderer
 	 */

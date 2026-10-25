@@ -13,6 +13,6 @@
 		module.exports = { getTotalValue: getTotalValue };
 	}
 
-	// The WooPayments extension's namespace, so code that targets the extension's filter still finds it.
+	// The `woocommerce-payments` namespace, so code that targets the filter by that namespace still finds it.
 	window.wc.blocksCheckout.registerCheckoutFilters( 'woocommerce-payments', { totalValue: getTotalValue } );
 }() );

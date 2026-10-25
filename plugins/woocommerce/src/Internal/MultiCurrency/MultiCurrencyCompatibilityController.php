@@ -16,10 +16,7 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 
 /**
- * Answers the compatibility questions other Multi-Currency classes ask through the `wcpay_multi_currency_*` filters:
- * the selected-currency override, disabled switching, coupon and product conversion, and the store currency.
- *
- * On cron it also converts the best sales day note's order totals back to the store currency.
+ * Answers the compatibility questions other Multi-Currency classes ask through the `wcpay_multi_currency_*` filters.
  *
  * @since 11.0.0
  * @internal

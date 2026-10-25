@@ -10,8 +10,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
 
 /**
- * Gives each currency's format for the user's locale (symbol position, separators, decimals) and each country's locale
- * data, from WooCommerce's locale info, kept in transients for a day.
+ * Gives each currency's format for the user's locale and each country's locale data, from WooCommerce's locale info.
  *
  * @since 11.0.0
  * @internal

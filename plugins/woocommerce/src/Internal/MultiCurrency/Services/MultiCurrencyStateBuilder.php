@@ -15,8 +15,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 
 /**
- * Builds the request's Multi-Currency state: the available currencies at their cached or manual rates, the enabled ones
- * with their rounding and charm, the store currency and the shopper's selection, kept until the state is invalidated.
+ * Builds the request's Multi-Currency state and keeps it until the state is invalidated.
  *
  * @since 11.0.0
  * @internal

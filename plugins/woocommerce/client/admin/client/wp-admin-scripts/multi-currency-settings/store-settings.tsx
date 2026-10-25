@@ -59,7 +59,7 @@ const normalizeStoreSettings = (
 } );
 
 // Client 11.1.0 components/preview-modal/index.js:37-44 opens the shop page in the simulation that shows the switch banner.
-// That URL starts at the domain root; this one starts at the home URL, so subdirectory installs work.
+// Start at the home URL so subdirectory installs work.
 const getPreviewUrl = ( storeUrl: string ): string =>
 	`${ String( getSetting( 'homeUrl', '' ) ).replace(
 		/\/$/,

@@ -8,8 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Interfaces;
 
 /**
- * The automatic-rate source the rate service holds: its ID, availability, account connection, supported currencies
- * and rates.
+ * The automatic-rate source the rate service holds.
  *
  * Manual rates need no provider. The WooPayments provider implements it.
  *

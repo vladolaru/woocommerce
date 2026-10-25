@@ -22,9 +22,8 @@ use WP_REST_Request;
 use WP_REST_Response;
 
 /**
- * Serves the Multi-Currency REST routes under `wc/v3/payments/multi-currency`: the store currencies, the enabled
- * currencies, and the per-currency and store settings for store managers, plus the public config the async renderer
- * reads in cache-optimized mode.
+ * Serves the Multi-Currency REST routes under `wc/v3/payments/multi-currency`, including the public config the async
+ * renderer reads.
  *
  * @since 11.0.0
  * @internal
@@ -564,7 +563,7 @@ class MultiCurrencyRestController extends WP_REST_Controller implements Register
 	}
 
 	/**
-	 * Get the display service, building it on first use.
+	 * Get the display service.
 	 *
 	 * @return MultiCurrencyDisplayService
 	 */

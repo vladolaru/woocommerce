@@ -213,7 +213,8 @@ class MultiCurrencySwitcherRenderer {
 		$selected = $selected_code === $code ? ' selected' : '';
 		$label    = $this->get_currency_option_label( $currency, $with_symbol, $with_flag );
 
-		// Block labels are escaped as plain text, widget labels as filtered HTML (client 11.1.0 `CurrencySwitcherBlock.php:178`, `CurrencySwitcherWidget.php:146`).
+		// Widget labels are filtered through wp_kses_post(), block labels escaped with esc_html().
+		// The client widget prints its label raw (client 11.1.0 `CurrencySwitcherWidget.php:146`); its block uses esc_html() (`CurrencySwitcherBlock.php:178`).
 		return '<option value="' . esc_attr( $code ) . '"' . $selected . '>' . ( $plain_label ? esc_html( $label ) : wp_kses_post( $label ) ) . '</option>';
 	}
 

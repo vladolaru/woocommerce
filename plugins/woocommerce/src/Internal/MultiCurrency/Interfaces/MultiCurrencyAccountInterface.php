@@ -8,8 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Interfaces;
 
 /**
- * The payments account the WooPayments rate provider reads: its connection, rejection, cached data and supported
- * customer currencies.
+ * The payments account the WooPayments rate provider reads.
  *
  * @since 11.0.0
  * @internal

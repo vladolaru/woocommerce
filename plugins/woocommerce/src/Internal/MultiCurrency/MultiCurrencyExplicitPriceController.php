@@ -13,8 +13,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDet
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Appends the currency code to the cart total, formatted order totals and the admin order totals when more than one
- * currency is in use, or when the explicit-price filter asks for it.
+ * Appends the currency code to cart and order totals when more than one currency is in use.
  *
  * @since 11.0.0
  * @internal

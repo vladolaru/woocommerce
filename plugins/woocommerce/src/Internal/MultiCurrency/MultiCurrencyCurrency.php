@@ -11,8 +11,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocali
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencySwitcherRenderer;
 
 /**
- * A Multi-Currency currency: its code, conversion rate, rounding, charm and last rate update, and its JSON form with
- * name, symbol and flag.
+ * A Multi-Currency currency: its code, rate, rounding and charm, and its JSON form.
  *
  * @since 11.0.0
  * @internal

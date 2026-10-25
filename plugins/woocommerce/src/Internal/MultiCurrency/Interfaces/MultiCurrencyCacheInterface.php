@@ -8,8 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Interfaces;
 
 /**
- * A Multi-Currency cache: entries read with or without their expiry, regenerated when missing or stale, and deleted;
- * CURRENCIES_KEY holds the cached rates.
+ * A Multi-Currency cache; CURRENCIES_KEY holds the cached rates.
  *
  * @since 11.0.0
  * @internal

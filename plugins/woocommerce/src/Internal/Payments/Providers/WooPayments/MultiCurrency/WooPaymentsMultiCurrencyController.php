@@ -15,10 +15,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRu
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Connects WooPayments to Multi-Currency: flags Multi-Currency in the payment fields config, and sets the WooPayments
- * rate provider on the Multi-Currency rate service, over the built-in WooPayments account service and API client while
- * it owns payments (when it also turns the Analytics report cache off in dev mode), or over the WooPayments extension's
- * while the extension does.
+ * Connects WooPayments to Multi-Currency: flags it in the payment fields config and sets the WooPayments rate provider on
+ * the rate service, over the account service and API client of whichever WooPayments owns payments.
  *
  * @since 11.0.0
  * @internal

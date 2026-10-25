@@ -289,7 +289,7 @@ class MultiCurrencyAsyncPriceRendererController implements RegisterHooksInterfac
 	}
 
 	/**
-	 * Get the display service, building it on first use.
+	 * Get the display service.
 	 *
 	 * @return MultiCurrencyDisplayService
 	 */

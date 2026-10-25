@@ -10,8 +10,7 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyLocalizationInterface;
 
 /**
- * Holds the request's shared Multi-Currency state builder, over the rate service that holds the automatic-rate provider,
- * and invalidates its state when a Multi-Currency option, the store currency or the current user changes.
+ * Holds the request's shared Multi-Currency state builder, over the rate service that holds the automatic-rate provider.
  *
  * @since 11.0.0
  * @internal

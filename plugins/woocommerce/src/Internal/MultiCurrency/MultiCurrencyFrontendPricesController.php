@@ -13,10 +13,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestC
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Converts storefront prices to the selected currency: product and variation prices, shipping rates and free-shipping
- * minimums, fixed coupon amounts and limits, the Store API price range and the query-loop price filter.
- *
- * It records the exchange-rate meta on new orders, and on refunds through the bootstrap's refund listener.
+ * Converts storefront prices to the selected currency, and records the exchange-rate meta on new orders and their refunds.
  *
  * @since 11.0.0
  * @internal
@@ -291,7 +288,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Save the exchange-rate meta of the order's currency on a new order.
+	 * Save the selected currency's exchange-rate meta on a new order.
 	 *
 	 * @param mixed $order_id Order ID.
 	 * @param mixed $order    Order object.
@@ -408,7 +405,7 @@ class MultiCurrencyFrontendPricesController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the price converter, building it on first use.
+	 * Get the price converter.
 	 *
 	 * @return MultiCurrencyPriceConverter
 	 */

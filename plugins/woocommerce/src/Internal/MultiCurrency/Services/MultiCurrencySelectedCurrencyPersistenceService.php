@@ -8,8 +8,8 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
 /**
- * Stores the shopper's selected currency, in user meta for a logged-in customer or in the session for a guest, under the
- * WooPayments extension's `wcpay_currency` key, and recalculates the cart after a change.
+ * Stores the shopper's selected currency under the `wcpay_currency` key, in user meta for a logged-in customer or in the
+ * session for a guest, and recalculates the cart after a change.
  *
  * @since 11.0.0
  * @internal

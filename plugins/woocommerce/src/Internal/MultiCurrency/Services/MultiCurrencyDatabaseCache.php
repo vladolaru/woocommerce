@@ -10,11 +10,9 @@ namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyCacheInterface;
 
 /**
- * Stores Multi-Currency cache entries, the rates among them, in options with expiry and retry after errors; entries are
- * not refreshed inside cron, AJAX or Action Scheduler requests.
+ * Stores Multi-Currency cache entries, the rates among them, in options with expiry and retry after errors.
  *
- * The payload has the WooPayments extension's shape, so the cached rates stay readable when the extension runs
- * Multi-Currency again.
+ * Each option holds `data`, `fetched`, `errored` and `consecutive_errors`, the shape every reader of the stored rates parses.
  *
  * @since 11.0.0
  * @internal

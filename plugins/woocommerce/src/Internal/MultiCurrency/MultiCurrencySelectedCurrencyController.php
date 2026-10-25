@@ -16,10 +16,8 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 
 /**
- * Sets the shopper's selected currency: from the `currency` URL argument, by geolocation under automatic switching (with
- * its store notice), from the My Account currency field, and on a customer created at checkout.
- *
- * It also runs the settings Preview simulation and leaves the customer's stored currency out of customer REST responses.
+ * Sets the shopper's selected currency from the URL, geolocation, the My Account field or checkout, and runs the settings
+ * Preview simulation.
  *
  * @since 11.0.0
  * @internal

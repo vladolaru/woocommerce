@@ -8,8 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
 /**
- * Tells whether prices are being formatted for an order on its own pages (view order, order received, order pay) or in
- * the My Account orders list, where the order's currency is used instead of the selected one.
+ * Tells whether prices are formatted for an order in My Account or at checkout, where the order's currency replaces the selected one.
  *
  * @since 11.0.0
  * @internal

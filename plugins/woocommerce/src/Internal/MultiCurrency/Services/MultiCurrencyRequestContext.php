@@ -8,8 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\MultiCurrency\Services;
 
 /**
- * Tells the request contexts Multi-Currency registers its hooks by: storefront, Store API and its batch route,
- * admin-originated REST, wp-admin, cron and WooCommerce REST requests.
+ * Tells the request contexts Multi-Currency registers its hooks by.
  *
  * @since 11.0.0
  * @internal

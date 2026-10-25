@@ -108,7 +108,7 @@ class MultiCurrencyPreOrdersCompatibilityController implements RegisterHooksInte
 	}
 
 	/**
-	 * Get the price converter, building it on first use.
+	 * Get the price converter.
 	 *
 	 * @return MultiCurrencyPriceConverter
 	 */

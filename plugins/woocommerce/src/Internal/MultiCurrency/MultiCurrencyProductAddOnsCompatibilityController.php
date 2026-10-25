@@ -13,10 +13,8 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBui
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * Converts WooCommerce Product Add-Ons prices to the selected currency on the storefront: add-on prices, the script's
- * price format, the cart's add-on labels and product prices, order line item meta, and the product page's Ajax calculation.
- *
- * A product whose add-ons already converted its price is marked so its price is not converted twice.
+ * Converts WooCommerce Product Add-Ons prices to the selected currency, and marks a product whose add-ons already
+ * converted its price so it is not converted twice.
  *
  * @since 11.0.0
  * @internal
@@ -511,7 +509,7 @@ class MultiCurrencyProductAddOnsCompatibilityController implements RegisterHooks
 	}
 
 	/**
-	 * Get the price converter, building it on first use.
+	 * Get the price converter.
 	 *
 	 * @return MultiCurrencyPriceConverter
 	 */

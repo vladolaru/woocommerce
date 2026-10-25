@@ -20,10 +20,8 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Utilities\OrderUtil;
 
 /**
- * Adds Multi-Currency to WooCommerce Analytics: the customer-currency filter on wc-admin pages, its query args, and, on
- * REST requests of a store with foreign-currency orders, the SQL clauses that filter and convert reports by currency.
- *
- * The bootstrap's order listeners also call it to record the currencies customers used and to convert order stats.
+ * Adds Multi-Currency to WooCommerce Analytics: the customer-currency filter and the SQL clauses that filter and convert
+ * reports by currency. The bootstrap's order listeners also call it to record customer currencies and convert order stats.
  *
  * @since 11.0.0
  * @internal
@@ -175,7 +173,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 			return;
 		}
 
-		// The WooPayments extension's handle, kept as an alias for scripts that list it as a dependency (client 11.1.0 `Analytics.php:27`).
+		// The `WCPAY_MULTI_CURRENCY_ANALYTICS` handle, kept as an alias for scripts that list it as a dependency (client 11.1.0 `Analytics.php:27`).
 		wp_register_script( 'WCPAY_MULTI_CURRENCY_ANALYTICS', false, array( 'wc-admin-multi-currency-analytics' ), WC_VERSION, true );
 	}
 
@@ -307,7 +305,7 @@ class MultiCurrencyAnalyticsController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Get the Analytics service, building it on first use.
+	 * Get the Analytics service.
 	 *
 	 * @return MultiCurrencyAnalyticsService
 	 */

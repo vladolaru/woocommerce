@@ -17,9 +17,8 @@ use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyRequestContext;
 
 /**
- * Keeps WooCommerce Subscriptions carts in the subscription's currency: renewal, resubscribe and switch carts select it
- * and disable currency switching, and prices, sign-up fees and coupons convert only where Subscriptions has not already
- * stored converted amounts. My Account subscription totals get the explicit currency code.
+ * Keeps WooCommerce Subscriptions renewal, resubscribe and switch carts in the subscription's currency, converting only
+ * the amounts Subscriptions has not already stored in it.
  *
  * @since 11.0.0
  * @internal
@@ -904,7 +903,7 @@ class MultiCurrencySubscriptionsCompatibilityController implements RegisterHooks
 	}
 
 	/**
-	 * Get the price converter, building it on first use.
+	 * Get the price converter.
 	 *
 	 * @return MultiCurrencyPriceConverter
 	 */

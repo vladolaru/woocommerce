@@ -13,11 +13,8 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBui
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 
 /**
- * Declares the Multi-currency feature and asks for confirmation before it is turned off while currencies or
- * foreign-currency orders exist.
- *
- * It keeps the feature in step with the WooPayments extension: it seeds the option from stored Multi-Currency setup, hands
- * the extension's state over when the extension stops owning payments, and writes the extension's flag when the feature changes.
+ * Declares the Multi-currency feature, asks for confirmation before it is turned off while currencies or
+ * foreign-currency orders exist, and keeps the feature in step with the WooPayments extension.
  *
  * @since 11.2.0
  * @internal
