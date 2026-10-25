@@ -142,7 +142,7 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_exchange_rate_gbp', 'automatic' );
 		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'automatic' );
 
-		$state = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create()->build();
+		$state = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->get_state_builder()->build();
 
 		$this->assertSame( array( 'USD', 'GBP' ), array_keys( $state->get_enabled_currencies() ) );
 		$this->assertSame( 0.82, $state->get_enabled_currencies()['GBP']->get_rate() );
@@ -209,13 +209,13 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 		$factory = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class );
 
 		// The client keeps one Multi-Currency instance per request (client 11.1.0 `includes/compat/multi-currency/wc-payments-multi-currency.php:35-50`).
-		$shared = $factory->create();
-		$this->assertSame( $shared, $factory->create() );
+		$shared = $factory->get_state_builder();
+		$this->assertSame( $shared, $factory->get_state_builder() );
 
 		// A provider set after the first build reaches the same builder, whose next build knows it.
 		$state = $shared->build();
 		wc_get_container()->get( MultiCurrencyRateService::class )->set_provider( $this->createMock( CurrencyRateProvider::class ) );
-		$this->assertSame( $shared, $factory->create() );
+		$this->assertSame( $shared, $factory->get_state_builder() );
 		$this->assertNotSame( $state, $shared->build() );
 	}
 
@@ -223,7 +223,7 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 	 * @testdox Should rebuild the shared state after a Multi-Currency option, the store currency or the user changes.
 	 */
 	public function test_shared_builder_rebuilds_after_its_inputs_change(): void {
-		$builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create();
+		$builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->get_state_builder();
 		update_option( 'wcpay_multi_currency_enabled_currencies', array() );
 		$this->assertSame( array( 'USD' ), array_keys( $builder->build()->get_enabled_currencies() ) );
 
@@ -246,7 +246,7 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 	 * @testdox Should rebuild the shared state after another cache instance clears the rates, as the store currency lifecycle does.
 	 */
 	public function test_shared_builder_rebuilds_after_the_rate_cache_changes(): void {
-		$builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create();
+		$builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->get_state_builder();
 		$state   = $builder->build();
 
 		// The client clears its rate cache before rebuilding after a store currency change (client 11.1.0 `MultiCurrency.php:321-331`);
@@ -273,11 +273,11 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 	 */
 	public function test_restores_each_missing_invalidation_listener(): void {
 		$factory = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class );
-		$factory->create();
+		$factory->get_state_builder();
 		remove_all_actions( 'set_current_user' );
 		remove_all_actions( 'deleted_option' );
 
-		$factory->create();
+		$factory->get_state_builder();
 
 		$this->assertNotFalse( has_action( 'set_current_user' ) );
 		$this->assertSame( 10, has_action( 'deleted_option', array( $factory, 'handle_option_change' ) ) );
@@ -295,8 +295,8 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 		wp_set_current_user( $user_id );
 
 		$factory             = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class );
-		$frontend_builder    = $factory->create();
-		$persistence_builder = $factory->create();
+		$frontend_builder    = $factory->get_state_builder();
+		$persistence_builder = $factory->get_state_builder();
 		$persistence         = new MultiCurrencySelectedCurrencyPersistenceService( $persistence_builder );
 
 		$this->assertSame( 'USD', $frontend_builder->build()->get_selected_currency()->get_code() );
@@ -433,8 +433,8 @@ class MultiCurrencyStateBuilderFactoryTest extends WC_Unit_Test_Case {
 		WC()->session = null;
 
 		$factory             = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class );
-		$frontend_builder    = $factory->create();
-		$persistence_builder = $factory->create();
+		$frontend_builder    = $factory->get_state_builder();
+		$persistence_builder = $factory->get_state_builder();
 
 		return array(
 			$frontend_builder,

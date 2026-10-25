@@ -39,8 +39,8 @@ final class ServiceFactories {
 	 * @return MultiCurrencyStateBuilderFactory
 	 */
 	public static function state_builder( TestCase $test, MultiCurrencyStateBuilder $state_builder ): MultiCurrencyStateBuilderFactory {
-		$factory = $test->getMockBuilder( MultiCurrencyStateBuilderFactory::class )->onlyMethods( array( 'create' ) )->getMock();
-		$factory->method( 'create' )->willReturn( $state_builder );
+		$factory = $test->getMockBuilder( MultiCurrencyStateBuilderFactory::class )->onlyMethods( array( 'get_state_builder' ) )->getMock();
+		$factory->method( 'get_state_builder' )->willReturn( $state_builder );
 
 		return $factory;
 	}

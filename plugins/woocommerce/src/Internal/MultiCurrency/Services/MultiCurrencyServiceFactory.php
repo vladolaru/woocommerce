@@ -43,7 +43,7 @@ class MultiCurrencyServiceFactory {
 	 */
 	public function create_price_converter(): MultiCurrencyPriceConverter {
 		return new MultiCurrencyPriceConverter(
-			$this->state_builder_factory->create(),
+			$this->state_builder_factory->get_state_builder(),
 			new MultiCurrencyPriceCalculator( new MultiCurrencyLocalizationService() )
 		);
 	}
@@ -57,7 +57,7 @@ class MultiCurrencyServiceFactory {
 		$localization_service = new MultiCurrencyLocalizationService();
 
 		return new MultiCurrencyDisplayService(
-			$this->state_builder_factory->create(),
+			$this->state_builder_factory->get_state_builder(),
 			$localization_service,
 			new MultiCurrencyGeolocationService( $localization_service )
 		);
@@ -78,7 +78,7 @@ class MultiCurrencyServiceFactory {
 	 * @return MultiCurrencySelectedCurrencyPersistenceService
 	 */
 	public function create_selected_currency_persistence_service(): MultiCurrencySelectedCurrencyPersistenceService {
-		return new MultiCurrencySelectedCurrencyPersistenceService( $this->state_builder_factory->create() );
+		return new MultiCurrencySelectedCurrencyPersistenceService( $this->state_builder_factory->get_state_builder() );
 	}
 
 	/**
@@ -87,7 +87,7 @@ class MultiCurrencyServiceFactory {
 	 * @return MultiCurrencySwitcherRenderer
 	 */
 	public function create_switcher_renderer(): MultiCurrencySwitcherRenderer {
-		return new MultiCurrencySwitcherRenderer( $this->state_builder_factory->create() );
+		return new MultiCurrencySwitcherRenderer( $this->state_builder_factory->get_state_builder() );
 	}
 
 	/**
@@ -96,7 +96,7 @@ class MultiCurrencyServiceFactory {
 	 * @return MultiCurrencyAnalyticsService
 	 */
 	public function create_analytics_service(): MultiCurrencyAnalyticsService {
-		return new MultiCurrencyAnalyticsService( $this->state_builder_factory->create() );
+		return new MultiCurrencyAnalyticsService( $this->state_builder_factory->get_state_builder() );
 	}
 
 	/**
@@ -105,7 +105,7 @@ class MultiCurrencyServiceFactory {
 	 * @return MultiCurrencyTrackerDataBuilder
 	 */
 	public function create_tracker_data_builder(): MultiCurrencyTrackerDataBuilder {
-		return new MultiCurrencyTrackerDataBuilder( $this->state_builder_factory->create() );
+		return new MultiCurrencyTrackerDataBuilder( $this->state_builder_factory->get_state_builder() );
 	}
 
 	/**
@@ -116,7 +116,7 @@ class MultiCurrencyServiceFactory {
 	public function create_settings_currency_catalog(): MultiCurrencySettingsCurrencyCatalog {
 		return new MultiCurrencySettingsCurrencyCatalog(
 			new MultiCurrencyLocalizationService(),
-			$this->state_builder_factory->create(),
+			$this->state_builder_factory->get_state_builder(),
 			wc_get_container()->get( MultiCurrencyRateService::class )
 		);
 	}
@@ -129,7 +129,7 @@ class MultiCurrencyServiceFactory {
 	public function create_store_currency_lifecycle_service(): MultiCurrencyStoreCurrencyLifecycleService {
 		return new MultiCurrencyStoreCurrencyLifecycleService(
 			new MultiCurrencyDatabaseCache(),
-			$this->state_builder_factory->create()
+			$this->state_builder_factory->get_state_builder()
 		);
 	}
 }

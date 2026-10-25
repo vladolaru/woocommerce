@@ -147,7 +147,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 			return;
 		}
 
-		$state_builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create();
+		$state_builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->get_state_builder();
 		$state         = $state_builder->build();
 		$available     = $state->get_available_currencies();
 		$enabled       = $state->get_enabled_currencies();

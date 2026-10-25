@@ -241,7 +241,7 @@ class MultiCurrencySubscriptionsCompatibilityControllerTest extends WC_Unit_Test
 		$sut->set_subscription_cart_item( 'renewal', $this->create_subscription( 'GBP' ) );
 		$sut->register();
 
-		$selected = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create()->build()->get_selected_currency();
+		$selected = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->get_state_builder()->build()->get_selected_currency();
 
 		$this->assertSame( array( 'GBP', 0.73 ), array( $selected->get_code(), $selected->get_rate() ) );
 	}

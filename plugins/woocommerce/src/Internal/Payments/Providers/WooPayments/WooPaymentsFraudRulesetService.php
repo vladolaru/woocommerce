@@ -388,7 +388,7 @@ class WooPaymentsFraudRulesetService {
 			// deletes the rates cache and asks the merchant to review manual rates when the store currency changes
 			// (includes/multi-currency/MultiCurrency.php:321-336, :1832-1844); nothing does while Multi-Currency is off.
 			if ( strtoupper( (string) get_option( MultiCurrencyStoreCurrencyLifecycleService::STORE_CURRENCY_OPTION, '' ) ) === $store_currency ) {
-				$enabled_currencies = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create()->build()->get_enabled_currencies();
+				$enabled_currencies = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->get_state_builder()->build()->get_enabled_currencies();
 				// With Multi-Currency off no rate provider runs, so an automatic rate is the one the rates cache still holds.
 				$usd_rate = isset( $enabled_currencies['USD'] )
 					? $enabled_currencies['USD']->get_rate()

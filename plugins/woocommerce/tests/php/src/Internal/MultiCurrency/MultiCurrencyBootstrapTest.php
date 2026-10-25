@@ -1559,9 +1559,9 @@ class MultiCurrencyBootstrapTest extends WC_Unit_Test_Case {
 		$builder->method( 'build' )->willReturn( $state );
 		$factory = $this->getMockBuilder( MultiCurrencyStateBuilderFactory::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'create' ) )
+			->onlyMethods( array( 'get_state_builder' ) )
 			->getMock();
-		$factory->method( 'create' )->willReturn( $builder );
+		$factory->method( 'get_state_builder' )->willReturn( $builder );
 		$controller = new MultiCurrencyExplicitPriceController();
 		$controller->init(
 			new class() extends MultiCurrencyRuntimeArbiter {

@@ -137,7 +137,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Cas
 				return 'GBP';
 			}
 		);
-		$state_builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create();
+		$state_builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->get_state_builder();
 		$this->create_loader( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN, wc_get_container()->get( MultiCurrencyServiceFactory::class )->create_price_converter(), $state_builder );
 		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::instance' );
 		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_selected_currency' );

@@ -60,7 +60,7 @@ class MultiCurrencyStateBuilderFactory {
 	 *
 	 * @return MultiCurrencyStateBuilder
 	 */
-	public function create(): MultiCurrencyStateBuilder {
+	public function get_state_builder(): MultiCurrencyStateBuilder {
 		if ( null === $this->shared_builder ) {
 			$this->shared_builder = $this->build_state_builder( new MultiCurrencyLocalizationService() );
 		}

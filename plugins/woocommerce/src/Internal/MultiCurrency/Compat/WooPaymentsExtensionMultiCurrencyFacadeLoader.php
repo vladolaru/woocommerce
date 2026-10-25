@@ -168,7 +168,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoader implements RegisterHooksInte
 	 */
 	private function get_state_builder(): MultiCurrencyStateBuilder {
 		if ( null === $this->state_builder ) {
-			$this->state_builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->create();
+			$this->state_builder = wc_get_container()->get( MultiCurrencyStateBuilderFactory::class )->get_state_builder();
 		}
 
 		return $this->state_builder;

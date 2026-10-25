@@ -214,7 +214,7 @@ class MultiCurrencyStorefrontIntegrationController implements RegisterHooksInter
 	 */
 	private function get_state_builder(): MultiCurrencyStateBuilder {
 		if ( null === $this->state_builder ) {
-			$this->state_builder = $this->state_builder_factory->create();
+			$this->state_builder = $this->state_builder_factory->get_state_builder();
 		}
 
 		return $this->state_builder;

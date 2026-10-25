@@ -97,9 +97,9 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 		delete_option( 'wcpay_multi_currency_enabled_currencies' );
 		$factory = $this->getMockBuilder( MultiCurrencyStateBuilderFactory::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'create' ) )
+			->onlyMethods( array( 'get_state_builder' ) )
 			->getMock();
-		$factory->expects( $this->never() )->method( 'create' );
+		$factory->expects( $this->never() )->method( 'get_state_builder' );
 		$sut = new MultiCurrencyExplicitPriceController();
 		$sut->init( $this->create_arbiter( MultiCurrencyRuntimeArbiter::OWNER_BUILTIN ), $factory, new MultiCurrencyUsageDetector() );
 
@@ -262,9 +262,9 @@ class MultiCurrencyExplicitPriceControllerTest extends WC_Unit_Test_Case {
 
 		$factory = $this->getMockBuilder( MultiCurrencyStateBuilderFactory::class )
 			->disableOriginalConstructor()
-			->onlyMethods( array( 'create' ) )
+			->onlyMethods( array( 'get_state_builder' ) )
 			->getMock();
-		$factory->method( 'create' )->willReturn( $builder );
+		$factory->method( 'get_state_builder' )->willReturn( $builder );
 
 		return $factory;
 	}
