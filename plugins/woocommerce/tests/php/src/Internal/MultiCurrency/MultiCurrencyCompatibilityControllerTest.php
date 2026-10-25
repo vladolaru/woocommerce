@@ -119,10 +119,6 @@ class MultiCurrencyCompatibilityControllerTest extends WC_Unit_Test_Case {
 		add_filter( 'wcpay_multi_currency_should_disable_currency_switching', '__return_true' );
 
 		$this->assertTrue( $sut->should_disable_currency_switching() );
-
-		$this->setExpectedDeprecated( 'should_hide_widgets' );
-
-		$this->assertTrue( $sut->should_hide_widgets() );
 	}
 
 	/**

@@ -1064,7 +1064,6 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 		$controller->should_convert_product_price( $product );
 		$controller->should_convert_coupon_amount( $coupon );
 		$controller->should_disable_currency_switching();
-		$controller->should_hide_widgets();
 	}
 
 	/**

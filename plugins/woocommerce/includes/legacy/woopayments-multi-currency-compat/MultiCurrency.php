@@ -108,6 +108,13 @@ class MultiCurrency {
 	private static ?self $instance = null;
 
 	/**
+	 * The compatibility facade get_compatibility() returns, built on first use.
+	 *
+	 * @var Compatibility|null
+	 */
+	private ?Compatibility $compatibility = null;
+
+	/**
 	 * Return the request's facade instance.
 	 *
 	 * Removed in WooCommerce 12.0.0.
@@ -183,6 +190,26 @@ class MultiCurrency {
 		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_selected_currency', '11.0.0', "WooCommerce's native multi-currency APIs" );
 
 		return $this->get_state()->get_selected_currency();
+	}
+
+	/**
+	 * Get the compatibility facade, whose predicates answer the questions other plugins ask Multi-Currency.
+	 *
+	 * Removed in WooCommerce 12.0.0.
+	 *
+	 * @since 11.0.0
+	 * @deprecated 11.0.0 No public replacement.
+	 *
+	 * @return Compatibility
+	 */
+	public function get_compatibility(): Compatibility {
+		_deprecated_function( 'WCPay\\MultiCurrency\\MultiCurrency::get_compatibility', '11.0.0', '' );
+
+		if ( null === $this->compatibility ) {
+			$this->compatibility = new Compatibility();
+		}
+
+		return $this->compatibility;
 	}
 
 	/**

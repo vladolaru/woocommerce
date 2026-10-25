@@ -19,6 +19,7 @@ class WooPaymentsExtensionFacadePlacementTest extends WC_Unit_Test_Case {
 			$plugin_directory . '/includes/legacy/woopayments-compat/class-wc-payments.php'                => array( 'WC_Payments' ),
 			$plugin_directory . '/includes/legacy/woopayments-compat/class-wc-payments-features.php'       => array( 'WC_Payments_Features' ),
 			$plugin_directory . '/includes/legacy/woopayments-multi-currency-compat/MultiCurrency.php'     => array( 'WCPay\\MultiCurrency\\MultiCurrency' ),
+			$plugin_directory . '/includes/legacy/woopayments-multi-currency-compat/Compatibility.php'     => array( 'WCPay\\MultiCurrency\\Compatibility' ),
 		);
 
 		foreach ( $expected_symbols as $file => $symbols ) {

@@ -44,6 +44,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Cas
 		$consumer = new MultiCurrencyFacadeConsumerFixture();
 
 		$this->assertTrue( class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ), 'Core ownership should declare the namespaced compatibility facade.' );
+		$this->assertTrue( class_exists( 'WCPay\\MultiCurrency\\Compatibility', false ), 'Core ownership declares the compatibility facade with it.' );
 		if ( ! class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ) ) {
 			return;
 		}
@@ -163,6 +164,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoaderTest extends WC_Unit_Test_Cas
 			$declaration_loader->init( $this->create_arbiter( $owner ) );
 			$declaration_loader->register();
 			$this->assertFalse( class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ), 'The plugin and ownerless runtimes must retain authority over the plugin namespace.' );
+			$this->assertFalse( class_exists( 'WCPay\\MultiCurrency\\Compatibility', false ), 'The compatibility facade stays absent with the facade.' );
 		}
 	}
 

@@ -8,10 +8,12 @@ use Automattic\WooCommerce\Admin\Notes\Notes;
 use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionMultiCurrencyFacadeLoader;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
+use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRestController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencySwitcherWidgetController;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use WC_Unit_Test_Case;
@@ -292,6 +294,161 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 
 		$this->assertFalse( Notes::get_note_by_name( 'wc-payments-notes-multi-currency-available' ) );
 		$this->assertInstanceOf( Note::class, Notes::get_note_by_name( 'wc-admin-another-note' ) );
+	}
+
+	/**
+	 * @testdox Themify Product Filter converts its price range only while currency switching is on and another currency is enabled.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_themify_reads_the_compatibility_predicate_and_converts_its_price_range(): void {
+		$this->declare_facade();
+		$customer_id = self::factory()->user->create();
+		wp_set_current_user( $customer_id );
+		update_user_meta( $customer_id, 'wcpay_currency', 'EUR' );
+		$this->expect_facade_deprecations( 'instance', 'get_compatibility', 'get_enabled_currencies', 'get_selected_currency', 'get_default_currency', 'get_raw_conversion' );
+		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\Compatibility::should_disable_currency_switching' );
+		$fixture = new MultiCurrencyFacadePluginCallersFixture();
+
+		$this->assertTrue( $fixture->themify_multi_price_enabled() );
+		$price = $fixture->themify_filter_by_price(
+			array(
+				'from' => 90.0,
+				'to'   => 180.0,
+			)
+		);
+		$this->assertEqualsWithDelta( 100.0, $price['from'], 0.000001, 'EUR 90 at the 0.9 rate is USD 100.' );
+		$this->assertEqualsWithDelta( 200.0, $price['to'], 0.000001 );
+
+		$_GET['pay_for_order'] = 'true';
+		$this->assertFalse( $fixture->themify_multi_price_enabled(), 'Currency switching is off on the order-pay page.' );
+		unset( $_GET['pay_for_order'] );
+	}
+
+	/**
+	 * @testdox get_compatibility() returns one Compatibility facade whose seven predicates answer by the module's rules.
+	 *
+	 * Client 11.1.0 `includes/multi-currency/Compatibility.php:82-237`: each predicate's default and the filter that changes it.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_compatibility_predicates_answer_by_the_module_rules(): void {
+		$this->declare_facade();
+		$this->expect_facade_deprecations( 'get_compatibility' );
+		foreach ( array( 'override_selected_currency', 'should_disable_currency_switching', 'should_convert_coupon_amount', 'should_convert_product_price', 'should_convert_shipping_amount', 'should_return_store_currency' ) as $predicate ) {
+			$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\Compatibility::' . $predicate );
+		}
+		$this->setExpectedDeprecated( 'should_hide_widgets' );
+		$facade        = $this->get_facade();
+		$compatibility = $facade->get_compatibility();
+		$product       = \WC_Helper_Product::create_simple_product();
+		$coupon        = new \WC_Coupon();
+		$shipping      = new \WC_Shipping_Flat_Rate();
+
+		$this->assertInstanceOf( 'WCPay\\MultiCurrency\\Compatibility', $compatibility );
+		$this->assertSame( $compatibility, $facade->get_compatibility(), 'One instance per request.' );
+
+		$this->assertFalse( $compatibility->override_selected_currency(), 'override_selected_currency' );
+		$this->assertFalse( $compatibility->should_disable_currency_switching(), 'should_disable_currency_switching' );
+		$this->assertFalse( $compatibility->should_hide_widgets(), 'should_hide_widgets' );
+		$this->assertTrue( $compatibility->should_convert_coupon_amount(), 'should_convert_coupon_amount without a coupon' );
+		$this->assertTrue( $compatibility->should_convert_coupon_amount( $coupon ), 'should_convert_coupon_amount' );
+		$this->assertTrue( $compatibility->should_convert_product_price(), 'should_convert_product_price without a product' );
+		$this->assertTrue( $compatibility->should_convert_product_price( $product ), 'should_convert_product_price' );
+		$this->assertTrue( $compatibility->should_convert_shipping_amount(), 'should_convert_shipping_amount without a method' );
+		$this->assertTrue( $compatibility->should_convert_shipping_amount( $shipping ), 'should_convert_shipping_amount' );
+		$this->assertFalse( $compatibility->should_return_store_currency(), 'should_return_store_currency' );
+
+		$filtered_shipping_method = null;
+		add_filter( 'wcpay_multi_currency_override_selected_currency', static fn() => 'EUR' );
+		add_filter( 'wcpay_multi_currency_should_disable_currency_switching', '__return_true' );
+		add_filter( 'wcpay_multi_currency_should_convert_coupon_amount', '__return_false' );
+		add_filter( 'wcpay_multi_currency_should_convert_product_price', '__return_false' );
+		add_filter(
+			'wcpay_multi_currency_should_convert_shipping_amount',
+			static function ( $convert, $shipping_method ) use ( &$filtered_shipping_method ) {
+				unset( $convert );
+				$filtered_shipping_method = $shipping_method;
+
+				return false;
+			},
+			10,
+			2
+		);
+		add_filter( 'wcpay_multi_currency_should_return_store_currency', '__return_true' );
+
+		$this->assertSame( 'EUR', $compatibility->override_selected_currency(), 'override_selected_currency filtered' );
+		$this->assertTrue( $compatibility->should_disable_currency_switching(), 'should_disable_currency_switching filtered' );
+		$this->assertTrue( $compatibility->should_hide_widgets(), 'should_hide_widgets filtered' );
+		$this->assertFalse( $compatibility->should_convert_coupon_amount( $coupon ), 'should_convert_coupon_amount filtered' );
+		$this->assertTrue( $compatibility->should_convert_coupon_amount(), 'should_convert_coupon_amount without a coupon ignores the filter' );
+		$this->assertFalse( $compatibility->should_convert_product_price( $product ), 'should_convert_product_price filtered' );
+		$this->assertFalse( $compatibility->should_convert_shipping_amount( $shipping ), 'should_convert_shipping_amount filtered' );
+		$this->assertSame( $shipping, $filtered_shipping_method, 'The shipping filter receives the method.' );
+		$this->assertTrue( $compatibility->should_convert_shipping_amount(), 'should_convert_shipping_amount without a method ignores the filter' );
+		$this->assertTrue( $compatibility->should_return_store_currency(), 'should_return_store_currency filtered' );
+	}
+
+	/**
+	 * @testdox The currencies the facade returns answer every member of the extension's Currency class it reads.
+	 *
+	 * Client 11.1.0 `includes/multi-currency/Currency.php:115-272`; the EUR flag from `CountryFlags.php:87` and `:287-300`.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_returned_currencies_answer_the_extension_currency_members(): void {
+		$this->declare_facade();
+		$this->expect_facade_deprecations( 'get_enabled_currencies' );
+		$eur = $this->get_facade()->get_enabled_currencies()['EUR'];
+
+		$this->assertSame( 'EUR', $eur->get_code(), 'get_code' );
+		$this->assertSame( 'eur', $eur->get_id(), 'get_id' );
+		$this->assertSame( '🇪🇺', $eur->get_flag(), 'get_flag' );
+		$this->assertFalse( $eur->get_is_default(), 'get_is_default' );
+		$this->assertSame( 'Euro', $eur->get_name(), 'get_name' );
+		$this->assertSame( 0.9, $eur->get_rate(), 'get_rate' );
+		$this->assertSame( 0.0, $eur->get_charm(), 'get_charm' );
+		$this->assertSame( '1.00', $eur->get_rounding(), 'get_rounding' );
+		$this->assertSame( '&euro;', $eur->get_symbol(), 'get_symbol' );
+		$this->assertSame( ( new MultiCurrencyLocalizationService() )->get_currency_format( 'EUR' )['currency_pos'], $eur->get_symbol_position(), 'get_symbol_position' );
+		$this->assertFalse( $eur->get_is_zero_decimal(), 'get_is_zero_decimal' );
+		$this->assertNull( $eur->get_last_updated(), 'get_last_updated' );
+		$this->assertSame( '🇪🇺', $eur->jsonSerialize()['flag'], 'jsonSerialize' );
+		$this->assertSame( '€', $eur->jsonSerialize()['symbol'], 'jsonSerialize decodes the symbol' );
+
+		$eur->set_charm( -0.01 );
+		$eur->set_rate( 0.95 );
+		$eur->set_rounding( '0.50' );
+		$eur->set_last_updated( 1761400000 );
+		$this->assertSame( -0.01, $eur->get_charm(), 'set_charm' );
+		$this->assertSame( 0.95, $eur->get_rate(), 'set_rate' );
+		$this->assertSame( '0.50', $eur->get_rounding(), 'set_rounding' );
+		$this->assertSame( 1761400000, $eur->get_last_updated(), 'set_last_updated' );
+	}
+
+	/**
+	 * @testdox The facades declare none of the members the PR's compatibility notes list as not answered.
+	 *
+	 * Calling one is the undefined-method error a caller of the extension's internals gets; the list is the contract.
+	 * @runInSeparateProcess
+	 * @preserveGlobalState disabled
+	 */
+	public function test_facades_leave_the_listed_members_undeclared(): void {
+		$this->declare_facade();
+		$not_declared = array(
+			'WCPay\\MultiCurrency\\MultiCurrency' => array( '__construct', 'init_hooks', 'init', 'init_rest_api', 'init_widgets', 'init_settings_pages', 'enqueue_admin_scripts', 'add_props_to_wcpay_js_config', 'add_woo_admin_notes', 'maybe_update_customer_currencies_option', 'update_selected_currency_by_url', 'update_selected_currency_by_geolocation', 'maybe_auto_enable_cache_rendering_mode', 'display_geolocation_currency_update_notice', 'set_new_customer_currency_meta', 'add_order_meta_on_refund', 'recalculate_cart', 'possible_simulation_activation', 'register_script_with_dependencies', 'get_file_version', 'get_frontend_prices', 'get_frontend_currencies', 'get_storefront_integration', 'get_currency_switcher_widget', 'set_enabled_currencies', 'update_selected_currency', 'update_single_currency_settings', 'update_settings', 'is_simulation_enabled', 'get_multi_currency_onboarding_simulation_variables', 'get_backend_formatted_wc_price', 'is_initialized' ),
+			'WCPay\\MultiCurrency\\Compatibility' => array( 'init', 'init_compatibility_classes', 'get_compatibility_classes', 'attach_order_modifier', 'convert_order_prices' ),
+			MultiCurrencyCurrency::class          => array( 'get_currency_name_from_code' ),
+		);
+
+		$this->assertCount( 32, $not_declared['WCPay\\MultiCurrency\\MultiCurrency'] );
+		foreach ( $not_declared as $class => $members ) {
+			foreach ( $members as $member ) {
+				$this->assertFalse( method_exists( $class, $member ), $class . '::' . $member );
+			}
+		}
+		$this->assertFalse( class_exists( 'WCPay\\MultiCurrency\\Compatibility\\BaseCompatibility' ), 'The compatibility facade has no extension base class.' );
+		$this->assertFalse( function_exists( 'WC_Payments_Multi_Currency' ), 'WC_Payments_Multi_Currency() stays undefined.' );
 	}
 
 	/**

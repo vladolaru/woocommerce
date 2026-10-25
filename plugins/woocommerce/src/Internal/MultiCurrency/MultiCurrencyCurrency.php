@@ -258,6 +258,15 @@ class MultiCurrencyCurrency implements \JsonSerializable {
 	}
 
 	/**
+	 * Get the currency's flag emoji, or an empty string for a currency no single country issues.
+	 *
+	 * @return string
+	 */
+	public function get_flag(): string {
+		return MultiCurrencySwitcherRenderer::get_flag_by_currency( $this->code );
+	}
+
+	/**
 	 * Get the currency symbol.
 	 *
 	 * @return string
@@ -292,7 +301,7 @@ class MultiCurrencyCurrency implements \JsonSerializable {
 			'symbol_position' => $this->get_symbol_position(),
 			'is_zero_decimal' => $this->get_is_zero_decimal(),
 			'is_default'      => $this->get_is_default(),
-			'flag'            => MultiCurrencySwitcherRenderer::get_flag_by_currency( $this->get_code() ),
+			'flag'            => $this->get_flag(),
 			'charm'           => $this->get_charm(),
 			'rounding'        => $this->get_rounding(),
 			'last_updated'    => $this->get_last_updated(),

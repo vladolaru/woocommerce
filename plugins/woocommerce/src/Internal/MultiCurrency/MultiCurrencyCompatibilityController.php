@@ -97,17 +97,6 @@ class MultiCurrencyCompatibilityController implements RegisterHooksInterface {
 	}
 
 	/**
-	 * Deprecated widget-hiding compatibility method.
-	 *
-	 * @return bool Whether currency switchers should be hidden.
-	 */
-	public function should_hide_widgets(): bool {
-		wc_deprecated_function( __FUNCTION__, '6.5.0', 'MultiCurrencyCompatibilityController::should_disable_currency_switching' );
-
-		return $this->should_disable_currency_switching();
-	}
-
-	/**
 	 * Tell whether currency switching should be disabled.
 	 *
 	 * @return bool

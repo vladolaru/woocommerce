@@ -13,8 +13,8 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyServiceF
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
- * While WooCommerce runs Multi-Currency, declares the WooPayments extension's `WCPay\MultiCurrency\MultiCurrency` class
- * at `plugins_loaded`, and converts the facade's prices; it records whether the facade converted a product price this
+ * While WooCommerce runs Multi-Currency, declares the WooPayments extension's `WCPay\MultiCurrency\MultiCurrency` and
+ * `WCPay\MultiCurrency\Compatibility` classes at `plugins_loaded`, and converts the facade's prices; it records whether the facade converted a product price this
  * request, which the Deposits compatibility controller reads.
  *
  * Removed in WooCommerce 12.0.0.
@@ -76,9 +76,13 @@ class WooPaymentsExtensionMultiCurrencyFacadeLoader implements RegisterHooksInte
 			return;
 		}
 
+		// The facades live outside every Composer-scanned tree, so only this loader can declare them.
 		if ( ! class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ) ) {
-			// The facade lives outside every Composer-scanned tree, so only this loader can declare it.
 			require_once WC_ABSPATH . 'includes/legacy/woopayments-multi-currency-compat/MultiCurrency.php';
+		}
+
+		if ( ! class_exists( 'WCPay\\MultiCurrency\\Compatibility', false ) ) {
+			require_once WC_ABSPATH . 'includes/legacy/woopayments-multi-currency-compat/Compatibility.php';
 		}
 	}
 

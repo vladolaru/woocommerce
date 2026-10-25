@@ -37,6 +37,45 @@ class MultiCurrencyFacadePluginCallersFixture {
 	}
 
 	/**
+	 * Tell whether shoppers can see converted prices, as Themify Product Filter 1.5.8 does before it converts its price
+	 * range (`includes/plugin-compat/wooPayments.php:44-53`).
+	 *
+	 * @return bool
+	 */
+	public function themify_multi_price_enabled(): bool {
+		$multi_currency = \WCPay\MultiCurrency\MultiCurrency::instance();
+		if ( ! $multi_currency->get_compatibility()->should_disable_currency_switching() ) {
+			$enabled_currencies = $multi_currency->get_enabled_currencies();
+			if ( count( $enabled_currencies ) > 1 ) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Convert a price range in the selected currency back to the store currency for the price query, as Themify Product
+	 * Filter 1.5.8 does (`includes/plugin-compat/wooPayments.php:26-38`).
+	 *
+	 * @param array{from:float,to:float} $price Price range in the selected currency.
+	 * @return array{from:float,to:float}
+	 */
+	public function themify_filter_by_price( array $price ): array {
+		if ( $this->themify_multi_price_enabled() ) {
+			$multi_currency        = \WCPay\MultiCurrency\MultiCurrency::instance();
+			$current_currency_code = $multi_currency->get_selected_currency()->get_code();
+			$default_currency_code = $multi_currency->get_default_currency()->get_code();
+			if ( $current_currency_code !== $default_currency_code ) {
+				$price['from'] = $multi_currency->get_raw_conversion( $price['from'], $default_currency_code, $current_currency_code );
+				$price['to']   = $multi_currency->get_raw_conversion( $price['to'], $default_currency_code, $current_currency_code );
+			}
+		}
+
+		return $price;
+	}
+
+	/**
 	 * Name the WooPayments Multi-Currency as incompatible unless it enables only FOX's default currency, as FOX Currency
 	 * Switcher 1.5.4 does after its guard (`classes/woocs.php`, `notice_incompatibility_plugin()`).
 	 *
