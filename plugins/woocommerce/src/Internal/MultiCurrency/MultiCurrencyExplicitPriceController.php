@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\MultiCurrency;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceFormatter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilderFactory;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyUsageDetector;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
@@ -80,7 +80,7 @@ class MultiCurrencyExplicitPriceController implements RegisterHooksInterface {
 	 * @return string
 	 */
 	public function get_explicit_price( string $price, ?\WC_Abstract_Order $order = null ): string {
-		return MultiCurrencyExplicitPriceProjectionService::get_explicit_price(
+		return MultiCurrencyExplicitPriceFormatter::get_explicit_price(
 			$price,
 			$order,
 			$this->should_output_explicit_price(),
@@ -123,7 +123,7 @@ class MultiCurrencyExplicitPriceController implements RegisterHooksInterface {
 	 * @return array<string,mixed>
 	 */
 	public function get_explicit_price_args( array $args ): array {
-		return MultiCurrencyExplicitPriceProjectionService::get_explicit_price_args(
+		return MultiCurrencyExplicitPriceFormatter::get_explicit_price_args(
 			$args,
 			$this->should_output_explicit_price()
 		);
@@ -141,6 +141,6 @@ class MultiCurrencyExplicitPriceController implements RegisterHooksInterface {
 			$default = $this->state_builder_factory->create()->build()->has_additional_currencies_enabled();
 		}
 
-		return MultiCurrencyExplicitPriceProjectionService::should_output_explicit_price( $default );
+		return MultiCurrencyExplicitPriceFormatter::should_output_explicit_price( $default );
 	}
 }

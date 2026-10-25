@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks;
 
 use Automattic\WooCommerce\Enums\OrderStatus;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceFormatter;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLockRefusedException;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
@@ -515,10 +515,10 @@ class WooPaymentsDisputeEventHandler {
 			strtoupper( $currency )
 		);
 
-		return MultiCurrencyExplicitPriceProjectionService::get_explicit_price_with_currency(
+		return MultiCurrencyExplicitPriceFormatter::get_explicit_price_with_currency(
 			$price,
 			strtoupper( $currency ),
-			MultiCurrencyExplicitPriceProjectionService::should_output_explicit_admin_price()
+			MultiCurrencyExplicitPriceFormatter::should_output_explicit_admin_price()
 		);
 	}
 

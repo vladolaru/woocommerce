@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceFormatter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsIppReceiptEmail;
 use WC_Emails;
 use WC_Order;
@@ -119,7 +119,7 @@ class WooPaymentsIppReceiptEmailTest extends WC_Unit_Test_Case {
 			function (): void {
 				list( $order, $product ) = $this->create_oracle_receipt_order();
 				$explicit_price_filter   = static function ( string $price, ?\WC_Abstract_Order $filtered_order ): string {
-					return MultiCurrencyExplicitPriceProjectionService::get_explicit_price( $price, $filtered_order, true, 'USD' );
+					return MultiCurrencyExplicitPriceFormatter::get_explicit_price( $price, $filtered_order, true, 'USD' );
 				};
 				add_filter( 'woocommerce_get_formatted_order_total', $explicit_price_filter, 100, 2 );
 				new WC_Emails();

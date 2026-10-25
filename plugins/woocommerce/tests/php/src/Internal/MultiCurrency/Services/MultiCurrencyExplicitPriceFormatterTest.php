@@ -3,13 +3,13 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Services;
 
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceFormatter;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the MultiCurrencyExplicitPriceProjectionService class.
+ * Tests for the MultiCurrencyExplicitPriceFormatter class.
  */
-class MultiCurrencyExplicitPriceProjectionServiceTest extends WC_Unit_Test_Case {
+class MultiCurrencyExplicitPriceFormatterTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should coerce raw public filter values after applying the default.
@@ -29,7 +29,7 @@ class MultiCurrencyExplicitPriceProjectionServiceTest extends WC_Unit_Test_Case 
 			}
 		);
 
-		$this->assertSame( $expected, MultiCurrencyExplicitPriceProjectionService::should_output_explicit_price( true ) );
+		$this->assertSame( $expected, MultiCurrencyExplicitPriceFormatter::should_output_explicit_price( true ) );
 		$this->assertSame( array( true ), $defaults );
 	}
 
@@ -59,7 +59,7 @@ class MultiCurrencyExplicitPriceProjectionServiceTest extends WC_Unit_Test_Case 
 		$this->expectException( \RuntimeException::class );
 		$this->expectExceptionMessage( 'Callback failed.' );
 
-		MultiCurrencyExplicitPriceProjectionService::should_output_explicit_price( false );
+		MultiCurrencyExplicitPriceFormatter::should_output_explicit_price( false );
 	}
 
 	/**
@@ -71,11 +71,11 @@ class MultiCurrencyExplicitPriceProjectionServiceTest extends WC_Unit_Test_Case 
 
 		$this->assertSame(
 			'R$ 5,90 BRL',
-			MultiCurrencyExplicitPriceProjectionService::get_explicit_price( 'R$ 5,90', $order, true, 'USD' )
+			MultiCurrencyExplicitPriceFormatter::get_explicit_price( 'R$ 5,90', $order, true, 'USD' )
 		);
 		$this->assertSame(
 			'$10.30 USD',
-			MultiCurrencyExplicitPriceProjectionService::get_explicit_price( '$10.30', null, true, 'USD' )
+			MultiCurrencyExplicitPriceFormatter::get_explicit_price( '$10.30', null, true, 'USD' )
 		);
 	}
 
@@ -88,11 +88,11 @@ class MultiCurrencyExplicitPriceProjectionServiceTest extends WC_Unit_Test_Case 
 
 		$this->assertSame(
 			'R$ 5,90',
-			MultiCurrencyExplicitPriceProjectionService::get_explicit_price( 'R$ 5,90', $order, false, 'USD' )
+			MultiCurrencyExplicitPriceFormatter::get_explicit_price( 'R$ 5,90', $order, false, 'USD' )
 		);
 		$this->assertSame(
 			'$10.30',
-			MultiCurrencyExplicitPriceProjectionService::get_explicit_price( '$10.30', null, false, 'USD' )
+			MultiCurrencyExplicitPriceFormatter::get_explicit_price( '$10.30', null, false, 'USD' )
 		);
 	}
 
@@ -105,11 +105,11 @@ class MultiCurrencyExplicitPriceProjectionServiceTest extends WC_Unit_Test_Case 
 
 		$this->assertSame(
 			'CHF 10.30',
-			MultiCurrencyExplicitPriceProjectionService::get_explicit_price( 'CHF 10.30', $order, true, 'USD' )
+			MultiCurrencyExplicitPriceFormatter::get_explicit_price( 'CHF 10.30', $order, true, 'USD' )
 		);
 		$this->assertSame(
 			'<span>$10.30&nbsp;USD</span>',
-			MultiCurrencyExplicitPriceProjectionService::get_explicit_price( '<span>$10.30&nbsp;USD</span>', null, true, 'USD' )
+			MultiCurrencyExplicitPriceFormatter::get_explicit_price( '<span>$10.30&nbsp;USD</span>', null, true, 'USD' )
 		);
 	}
 
@@ -127,14 +127,14 @@ class MultiCurrencyExplicitPriceProjectionServiceTest extends WC_Unit_Test_Case 
 				'price_format' => '%1$s%2$s&nbsp;USD',
 				'currency'     => 'USD',
 			),
-			MultiCurrencyExplicitPriceProjectionService::get_explicit_price_args( $args, true )
+			MultiCurrencyExplicitPriceFormatter::get_explicit_price_args( $args, true )
 		);
 		$this->assertSame(
 			array(
 				'price_format' => '%1$s%2$s&nbsp;USD',
 				'currency'     => 'USD',
 			),
-			MultiCurrencyExplicitPriceProjectionService::get_explicit_price_args(
+			MultiCurrencyExplicitPriceFormatter::get_explicit_price_args(
 				array(
 					'price_format' => '%1$s%2$s&nbsp;USD',
 					'currency'     => 'USD',
@@ -142,6 +142,6 @@ class MultiCurrencyExplicitPriceProjectionServiceTest extends WC_Unit_Test_Case 
 				true
 			)
 		);
-		$this->assertSame( $args, MultiCurrencyExplicitPriceProjectionService::get_explicit_price_args( $args, false ) );
+		$this->assertSame( $args, MultiCurrencyExplicitPriceFormatter::get_explicit_price_args( $args, false ) );
 	}
 }

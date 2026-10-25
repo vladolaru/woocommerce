@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFeatureController;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceFormatter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyStateBuilder;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentNotes;
 use WC_Order;
@@ -1757,7 +1757,7 @@ class WooPaymentsOrderNoteService {
 			array_unique(
 				array(
 					$formatted_price,
-					MultiCurrencyExplicitPriceProjectionService::get_explicit_price_with_currency( $formatted_price, strtoupper( $order->get_currency() ), true ),
+					MultiCurrencyExplicitPriceFormatter::get_explicit_price_with_currency( $formatted_price, strtoupper( $order->get_currency() ), true ),
 				)
 			)
 		);

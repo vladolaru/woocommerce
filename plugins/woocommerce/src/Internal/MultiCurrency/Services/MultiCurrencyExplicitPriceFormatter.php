@@ -1,6 +1,6 @@
 <?php
 /**
- * MultiCurrencyExplicitPriceProjectionService class file.
+ * MultiCurrencyExplicitPriceFormatter class file.
  */
 
 declare( strict_types = 1 );
@@ -15,7 +15,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
  * @since 11.0.0
  * @internal Transitional internal component for the native multi-currency runtime.
  */
-class MultiCurrencyExplicitPriceProjectionService {
+class MultiCurrencyExplicitPriceFormatter {
 
 	/**
 	 * Determine whether formatted prices should include an explicit currency code.

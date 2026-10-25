@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyFrontendCurrenciesController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyRuntimeArbiter;
-use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceProjectionService;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyExplicitPriceFormatter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\MultiCurrencyLocalizationService;
 use WC_Order;
 
@@ -166,10 +166,10 @@ final class WooPaymentsCurrencyUtils {
 		$currency        = strtoupper( '' !== $currency ? $currency : $order->get_currency() );
 		$formatted_price = self::format_price_in_currency( $amount, $currency );
 
-		return MultiCurrencyExplicitPriceProjectionService::get_explicit_price_with_currency(
+		return MultiCurrencyExplicitPriceFormatter::get_explicit_price_with_currency(
 			$formatted_price,
 			strtoupper( $order->get_currency() ),
-			MultiCurrencyExplicitPriceProjectionService::should_output_explicit_admin_price()
+			MultiCurrencyExplicitPriceFormatter::should_output_explicit_admin_price()
 		);
 	}
 
