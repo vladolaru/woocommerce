@@ -137,7 +137,7 @@ class MultiCurrencyExplicitPriceController implements RegisterHooksInterface {
 	private function should_output_explicit_price(): bool {
 		// The enabled-currencies option is read first, so a store without additional currencies builds no state per price.
 		$default = false;
-		if ( $this->usage_detector->has_additional_enabled_currencies() ) {
+		if ( $this->usage_detector->has_configured_additional_currencies() ) {
 			$default = $this->state_builder_factory->get_state_builder()->build()->has_additional_currencies_enabled();
 		}
 

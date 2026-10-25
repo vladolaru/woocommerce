@@ -449,7 +449,7 @@ final class MultiCurrencyBootstrap {
 	private function get_module_classes_for_request( $container, string $request_type ): array {
 		/** Resolve persisted Multi-Currency usage. @var MultiCurrencyUsageDetector $usage_detector */
 		$usage_detector = $container->get( MultiCurrencyUsageDetector::class );
-		if ( $usage_detector->has_additional_enabled_currencies() ) {
+		if ( $usage_detector->has_configured_additional_currencies() ) {
 			$this->usage = 'configured';
 			return $this->get_classes_for_usage( 'configured', $request_type );
 		}

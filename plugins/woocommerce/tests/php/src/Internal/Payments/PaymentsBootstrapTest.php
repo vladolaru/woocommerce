@@ -632,7 +632,7 @@ class PaymentsBootstrapTest extends WC_Unit_Test_Case {
 						}
 
 						/** Return the configured-currency signal. */
-						public function has_additional_enabled_currencies(): bool {
+						public function has_configured_additional_currencies(): bool {
 							return $this->configured;
 						}
 

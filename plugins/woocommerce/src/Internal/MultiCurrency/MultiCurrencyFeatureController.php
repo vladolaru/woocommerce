@@ -286,7 +286,7 @@ class MultiCurrencyFeatureController {
 			return false;
 		}
 
-		if ( $this->usage_detector->has_additional_enabled_currencies() ) {
+		if ( $this->usage_detector->has_configured_additional_currencies() ) {
 			return true;
 		}
 

@@ -40,7 +40,7 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( ' eur ', '', 'USD', 'OLD', array( 'GBP' ) ) );
 
 		$this->assertTrue(
-			( new MultiCurrencyUsageDetector() )->has_additional_enabled_currencies(),
+			( new MultiCurrencyUsageDetector() )->has_configured_additional_currencies(),
 			'A non-default scalar currency must protect merchant data even when it is no longer in the currency catalog.'
 		);
 	}
@@ -52,7 +52,7 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_enabled_currencies', array( '', ' ', ' usd ', null, array( 'EUR' ) ) );
 
 		$this->assertFalse(
-			( new MultiCurrencyUsageDetector() )->has_additional_enabled_currencies(),
+			( new MultiCurrencyUsageDetector() )->has_configured_additional_currencies(),
 			'Empty, non-scalar, and store-currency entries must not make the feature look used.'
 		);
 	}
@@ -70,7 +70,7 @@ class MultiCurrencyUsageDetectorTest extends WC_Unit_Test_Case {
 		add_filter( 'woocommerce_currency', $currency_filter, 1 );
 
 		try {
-			$this->assertTrue( ( new MultiCurrencyUsageDetector() )->has_additional_enabled_currencies() );
+			$this->assertTrue( ( new MultiCurrencyUsageDetector() )->has_configured_additional_currencies() );
 		} finally {
 			remove_filter( 'woocommerce_currency', $currency_filter, 1 );
 		}
