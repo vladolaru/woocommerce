@@ -31,7 +31,7 @@ class MultiCurrencyStateBuilder {
 	 * Option holding the enabled currency codes.
 	 *
 	 * A writer calls reset() on its state builder. The state builder factory's option listener also invalidates the state
-	 * on every write, but only once a create() call in the request has attached it.
+	 * on every write, but only once a get_state_builder() call in the request has attached it.
 	 */
 	public const ENABLED_CURRENCIES_OPTION = 'wcpay_multi_currency_enabled_currencies';
 

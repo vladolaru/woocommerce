@@ -65,7 +65,7 @@ class MultiCurrencyFrontendCurrenciesController implements RegisterHooksInterfac
 	private ?string $order_currency = null;
 
 	/**
-	 * Whether the WooCommerce currency filter is currently being currency_decimals.
+	 * Whether the WooCommerce currency filter is currently being projected.
 	 *
 	 * @var bool
 	 */
