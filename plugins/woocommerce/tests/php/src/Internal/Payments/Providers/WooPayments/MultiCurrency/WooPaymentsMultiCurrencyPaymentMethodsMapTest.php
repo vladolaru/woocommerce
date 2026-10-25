@@ -177,16 +177,16 @@ class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
 	/**
 	 * @testdox Should hook the admin head only in admin requests while native WooPayments owns the runtime.
 	 */
-	public function test_registers_admin_head_only_for_the_native_runtime_in_admin(): void {
+	public function test_registers_admin_head_only_for_the_builtin_runtime_in_admin(): void {
 		set_current_screen( 'woocommerce_page_wc-settings' );
 
-		$native = $this->create_sut( true );
-		$native->register();
-		$this->assertSame( 10, has_action( 'admin_head', array( $native, 'handle_admin_head' ) ) );
+		$builtin = $this->create_sut( true );
+		$builtin->register();
+		$this->assertSame( 10, has_action( 'admin_head', array( $builtin, 'handle_admin_head' ) ) );
 
-		$plugin = $this->create_sut( false );
-		$plugin->register();
-		$this->assertFalse( has_action( 'admin_head', array( $plugin, 'handle_admin_head' ) ) );
+		$not_builtin = $this->create_sut( false );
+		$not_builtin->register();
+		$this->assertFalse( has_action( 'admin_head', array( $not_builtin, 'handle_admin_head' ) ) );
 	}
 
 	/**
@@ -218,26 +218,26 @@ class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
 	/**
 	 * Create the system under test with an account paid out in US dollars.
 	 *
-	 * @param bool   $native_owner    Whether native WooPayments owns the runtime.
+	 * @param bool   $builtin_owner    Whether native WooPayments owns the runtime.
 	 * @param string $account_country Account country.
 	 * @return WooPaymentsMultiCurrencyPaymentMethodsMap
 	 */
-	private function create_sut( bool $native_owner = true, string $account_country = 'US' ): WooPaymentsMultiCurrencyPaymentMethodsMap {
-		$arbiter = new class( $native_owner ) extends WooPaymentsRuntimeArbiter {
+	private function create_sut( bool $builtin_owner = true, string $account_country = 'US' ): WooPaymentsMultiCurrencyPaymentMethodsMap {
+		$arbiter = new class( $builtin_owner ) extends WooPaymentsRuntimeArbiter {
 			/**
 			 * Whether native owns runtime.
 			 *
 			 * @var bool
 			 */
-			private bool $native_owner;
+			private bool $builtin_owner;
 
 			/**
 			 * Constructor.
 			 *
-			 * @param bool $native_owner Whether native owns runtime.
+			 * @param bool $builtin_owner Whether native owns runtime.
 			 */
-			public function __construct( bool $native_owner ) {
-				$this->native_owner = $native_owner;
+			public function __construct( bool $builtin_owner ) {
+				$this->builtin_owner = $builtin_owner;
 			}
 
 			/**
@@ -246,7 +246,7 @@ class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function is_builtin_owner(): bool {
-				return $this->native_owner;
+				return $this->builtin_owner;
 			}
 		};
 

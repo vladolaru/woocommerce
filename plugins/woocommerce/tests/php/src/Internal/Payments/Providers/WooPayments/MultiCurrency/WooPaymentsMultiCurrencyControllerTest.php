@@ -103,13 +103,13 @@ class WooPaymentsMultiCurrencyControllerTest extends WC_Unit_Test_Case {
 	 * @testdox Should turn the Analytics report cache off only while the built-in WooPayments owns payments in dev mode, read when the report runs.
 	 * @dataProvider provide_analytics_report_cache_cases
 	 *
-	 * @param bool $native_owner Whether the built-in WooPayments owns payments.
+	 * @param bool $builtin_owner Whether the built-in WooPayments owns payments.
 	 * @param bool $dev_mode     Whether WooPayments reports dev mode once every plugin has loaded.
 	 * @param bool $earlier_veto Whether an earlier listener already turned the cache off.
 	 * @param bool $expected     Whether Analytics reports use the cache.
 	 */
-	public function test_analytics_report_cache_follows_dev_mode_while_the_builtin_owns_payments( bool $native_owner, bool $dev_mode, bool $earlier_veto, bool $expected ): void {
-		wc_get_container()->replace( WooPaymentsRuntimeArbiter::class, $this->create_arbiter( $native_owner, false ) );
+	public function test_analytics_report_cache_follows_dev_mode_while_the_builtin_owns_payments( bool $builtin_owner, bool $dev_mode, bool $earlier_veto, bool $expected ): void {
+		wc_get_container()->replace( WooPaymentsRuntimeArbiter::class, $this->create_arbiter( $builtin_owner, false ) );
 		wc_get_container()->reset_all_resolved();
 		$load_time_reads    = 0;
 		$load_time_listener = static function () use ( &$load_time_reads ): bool {
@@ -150,12 +150,12 @@ class WooPaymentsMultiCurrencyControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a bootstrap test context.
 	 *
-	 * @param bool $native_owner Whether native owns runtime.
-	 * @param bool $plugin_owner Whether the plugin owns runtime.
+	 * @param bool $builtin_owner Whether native owns runtime.
+	 * @param bool $extension_owner Whether the plugin owns runtime.
 	 * @return array<string,mixed>
 	 */
-	private function create_bootstrap_context( bool $native_owner, bool $plugin_owner ): array {
-		$arbiter           = $this->create_arbiter( $native_owner, $plugin_owner );
+	private function create_bootstrap_context( bool $builtin_owner, bool $extension_owner ): array {
+		$arbiter           = $this->create_arbiter( $builtin_owner, $extension_owner );
 		$extension_runtime = new WooPaymentsExtensionRuntime();
 		$legacy_account    = $this->create_legacy_account();
 		$legacy_api_client = $this->create_legacy_api_client();
@@ -207,35 +207,35 @@ class WooPaymentsMultiCurrencyControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Create a payments owner arbiter with fixed answers.
 	 *
-	 * @param bool $native_owner Whether native owns runtime.
-	 * @param bool $plugin_owner Whether the plugin owns runtime.
+	 * @param bool $builtin_owner Whether native owns runtime.
+	 * @param bool $extension_owner Whether the plugin owns runtime.
 	 * @return WooPaymentsRuntimeArbiter
 	 */
-	private function create_arbiter( bool $native_owner, bool $plugin_owner ): WooPaymentsRuntimeArbiter {
-		return new class( $native_owner, $plugin_owner ) extends WooPaymentsRuntimeArbiter {
+	private function create_arbiter( bool $builtin_owner, bool $extension_owner ): WooPaymentsRuntimeArbiter {
+		return new class( $builtin_owner, $extension_owner ) extends WooPaymentsRuntimeArbiter {
 			/**
 			 * Whether native owns runtime.
 			 *
 			 * @var bool
 			 */
-			private bool $native_owner;
+			private bool $builtin_owner;
 
 			/**
 			 * Whether the plugin owns runtime.
 			 *
 			 * @var bool
 			 */
-			private bool $plugin_owner;
+			private bool $extension_owner;
 
 			/**
 			 * Constructor.
 			 *
-			 * @param bool $native_owner Whether native owns runtime.
-			 * @param bool $plugin_owner Whether the plugin owns runtime.
+			 * @param bool $builtin_owner Whether native owns runtime.
+			 * @param bool $extension_owner Whether the plugin owns runtime.
 			 */
-			public function __construct( bool $native_owner, bool $plugin_owner ) {
-				$this->native_owner = $native_owner;
-				$this->plugin_owner = $plugin_owner;
+			public function __construct( bool $builtin_owner, bool $extension_owner ) {
+				$this->builtin_owner   = $builtin_owner;
+				$this->extension_owner = $extension_owner;
 			}
 
 			/**
@@ -244,7 +244,7 @@ class WooPaymentsMultiCurrencyControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function is_builtin_owner(): bool {
-				return $this->native_owner;
+				return $this->builtin_owner;
 			}
 
 			/**
@@ -253,7 +253,7 @@ class WooPaymentsMultiCurrencyControllerTest extends WC_Unit_Test_Case {
 			 * @return bool
 			 */
 			public function is_extension_owner(): bool {
-				return $this->plugin_owner;
+				return $this->extension_owner;
 			}
 		};
 	}
