@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Compat;
 /**
  * Reproduces the guarded WooCommerce Deposits and Table Rate Shipping call shapes.
  */
-class LegacyMultiCurrencyConsumerFixture {
+class MultiCurrencyFacadeConsumerFixture {
 
 	/**
 	 * Convert a fixed deposit through the WooPayments MultiCurrency facade.
