@@ -2215,6 +2215,164 @@ class WC_REST_Order_Refunds_Computed_Totals_Test extends WC_REST_Unit_Test_Case 
 	}
 
 	/**
+	 * @testdox A refund with explicit sub-cent taxes is counted at the taxes it paid back, in the next refund's preview, amount and gateway call.
+	 *
+	 * Line A is 50.00 with a tax on each of two rates, quantity 1, beside an untaxed line B; the order paid 60.00. A first
+	 * refund of A sends 5.00 and an explicit tax of 0.054 (or 0.056) per rate, pays back 5.11 and stores those taxes as
+	 * sent. The next refund of A counts that refund at 5.108 (or 5.112), as the line's own taxes were charged at 0.54 (or
+	 * 0.56) each: one unit leaves 51.08 - 5.108 = 45.97, and a close of 51.12 - 5.112 = 46.01 is accepted. Store-currency
+	 * controls keep today's results, where core stores the refund taxes rounded: 45.98, and the 46.01 close refused.
+	 *
+	 * @testWith ["JPY", 0, "USD", 0.54, 8.92, "0.054", {"quantity": 1}, 201, "45.97"]
+	 *           ["USD", 2, "USD", 0.54, 8.92, "0.054", {"quantity": 1}, 201, "45.98"]
+	 *           ["JPY", 0, "USD", 0.56, 8.88, "0.056", {"refund_total": "46.01"}, 201, "46.01"]
+	 *           ["USD", 2, "USD", 0.56, 8.88, "0.056", {"refund_total": "46.01"}, 422, "woocommerce_rest_refund_total_exceeds_remaining"]
+	 *
+	 * @param string $store_currency  Store currency.
+	 * @param int    $store_decimals  Store price decimals.
+	 * @param string $order_currency  Order currency.
+	 * @param float  $tax             Tax of line A on each of its two rates.
+	 * @param float  $other           Net total of line B.
+	 * @param string $refund_tax      Explicit tax per rate of the first refund, beside its 5.00.
+	 * @param array  $line            Fields of the second request's line besides its id.
+	 * @param int    $expected_status Expected status of the second refund.
+	 * @param string $expected        Expected preview total, refund amount and gateway amount, or the refusal's code.
+	 */
+	public function test_explicit_tax_refund_is_counted_at_the_tax_it_paid_back( string $store_currency, int $store_decimals, string $order_currency, float $tax, float $other, string $refund_tax, array $line, int $expected_status, string $expected ): void {
+		update_option( 'woocommerce_currency', $store_currency );
+		update_option( 'woocommerce_price_num_decimals', $store_decimals );
+		// Per-line tax rounding (the default): each rate is charged rounded.
+		update_option( 'woocommerce_tax_round_at_subtotal', 'no' );
+		$rate_ids   = array( $this->create_tax_rate( 1.08 ), $this->create_tax_rate( 1.081 ) );
+		$rate_taxes = array_fill_keys( $rate_ids, $tax );
+
+		$gateway                   = new class() extends WC_Payment_Gateway {
+			/**
+			 * Amounts the refunds asked the gateway for.
+			 *
+			 * @var array<int, float>
+			 */
+			public array $refunded_amounts = array();
+
+			/**
+			 * Constructor.
+			 */
+			public function __construct() {
+				$this->id       = 'computed_totals_explicit_tax_gateway';
+				$this->supports = array( 'refunds' );
+			}
+
+			/**
+			 * Record the refund amount.
+			 *
+			 * @param int        $order_id Order ID.
+			 * @param float|null $amount   Refund amount.
+			 * @param string     $reason   Refund reason.
+			 * @return bool
+			 */
+			public function process_refund( $order_id, $amount = null, $reason = '' ) {
+				unset( $order_id, $reason ); // Avoid parameter not used PHPCS errors.
+				$this->refunded_amounts[] = (float) $amount;
+				return true;
+			}
+		};
+		$payment_gateway_registry  = WC_Payment_Gateways::instance();
+		$original_payment_gateways = $payment_gateway_registry->payment_gateways;
+
+		try {
+			$payment_gateway_registry->payment_gateways[] = $gateway;
+
+			$order  = wc_create_order();
+			$line_a = new WC_Order_Item_Product();
+			$line_a->set_props(
+				array(
+					'name'     => 'Line A',
+					'quantity' => 1,
+					'subtotal' => 50,
+					'total'    => 50,
+				)
+			);
+			$line_a->set_taxes(
+				array(
+					'total'    => $rate_taxes,
+					'subtotal' => $rate_taxes,
+				)
+			);
+			$order->add_item( $line_a );
+			$line_b = new WC_Order_Item_Product();
+			$line_b->set_props(
+				array(
+					'name'     => 'Line B',
+					'quantity' => 1,
+					'subtotal' => $other,
+					'total'    => $other,
+				)
+			);
+			$order->add_item( $line_b );
+			$order->set_currency( $order_currency );
+			$order->set_payment_method( $gateway->id );
+			$order->set_total( '60.00' );
+			$order->set_status( OrderStatus::COMPLETED );
+			$order->save();
+
+			$first = $this->do_create_request(
+				$order->get_id(),
+				array(
+					'compute_totals' => true,
+					'line_items'     => array(
+						array(
+							'id'           => $line_a->get_id(),
+							'refund_total' => '5.00',
+							'refund_tax'   => array(
+								array(
+									'id'           => $rate_ids[0],
+									'refund_total' => $refund_tax,
+								),
+								array(
+									'id'           => $rate_ids[1],
+									'refund_total' => $refund_tax,
+								),
+							),
+						),
+					),
+				)
+			);
+			$this->assertSame( 201, $first->get_status(), 'The first refund should be created.' );
+			$this->assertSame( 5.11, (float) wc_get_order( $first->get_data()['id'] )->get_amount(), 'The first refund should pay back 5.11.' );
+
+			$preview = new WP_REST_Request( 'POST', '/wc/v3/orders/' . $order->get_id() . '/refunds/preview' );
+			$preview->set_body_params( array( 'line_items' => array( array_merge( array( 'line_item_id' => $line_a->get_id() ), $line ) ) ) );
+			$preview_response = $this->server->dispatch( $preview );
+
+			$second = $this->do_create_request(
+				$order->get_id(),
+				array(
+					'compute_totals' => true,
+					'api_refund'     => true,
+					'line_items'     => array( array_merge( array( 'id' => $line_a->get_id() ), $line ) ),
+				)
+			);
+
+			if ( 201 !== $expected_status ) {
+				$this->assertSame( $expected_status, $preview_response->get_status() );
+				$this->assertSame( $expected, $preview_response->get_data()['code'] );
+				$this->assertSame( $expected_status, $second->get_status() );
+				$this->assertSame( $expected, $second->get_data()['code'] );
+				$this->assertSame( array(), $gateway->refunded_amounts, 'The gateway should not be called for a refused refund.' );
+				return;
+			}
+
+			$this->assertSame( 200, $preview_response->get_status() );
+			$this->assertSame( $expected, $preview_response->get_data()['total'], 'The preview should show what is left of line A.' );
+			$this->assertSame( 201, $second->get_status(), 'The second refund should be created.' );
+			$this->assertSame( (float) $expected, (float) wc_get_order( $second->get_data()['id'] )->get_amount(), 'The second refund should record what is left of line A.' );
+			$this->assertSame( array( (float) $expected ), $gateway->refunded_amounts, 'The gateway should be asked for what is left of line A.' );
+		} finally {
+			$payment_gateway_registry->payment_gateways = $original_payment_gateways;
+		}
+	}
+
+	/**
 	 * Create a completed order with a single product line item.
 	 *
 	 * @param float $unit_price Unit price.
