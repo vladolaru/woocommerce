@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Order;
@@ -73,7 +73,7 @@ class StripeBillingModule implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function handle_plugins_loaded(): void {
-		if ( ! WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active() ) {
+		if ( ! SubscriptionMethodPolicy::is_woocommerce_subscriptions_active() ) {
 			return;
 		}
 
@@ -84,7 +84,7 @@ class StripeBillingModule implements RegisterHooksInterface {
 		add_filter( 'woocommerce_admin_shared_settings', array( $this, 'add_admin_settings' ), 20 );
 
 		// A staging copy must never change anything at Stripe for the live store.
-		if ( WooPaymentsSubscriptionMethodPolicy::is_duplicate_site() ) {
+		if ( SubscriptionMethodPolicy::is_duplicate_site() ) {
 			return;
 		}
 

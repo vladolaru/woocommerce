@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use WP_Error;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayAppearanceStore;
@@ -291,7 +291,7 @@ class WooPaymentsSettingsService {
 			'is_multi_currency_enabled'                  => wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->is_builtin_owner(),
 			'is_wcpay_subscriptions_enabled'             => $this->stripe_billing_module->is_bundled_subscriptions_flag_on(),
 			'is_wcpay_subscriptions_eligible'            => $this->stripe_billing_module->is_bundled_subscriptions_eligible(),
-			'is_subscriptions_plugin_active'             => WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active(),
+			'is_subscriptions_plugin_active'             => SubscriptionMethodPolicy::is_woocommerce_subscriptions_active(),
 			'feature_flags'                              => $this->get_feature_flags(),
 			'account_country'                            => $account_fields['account_country'],
 			'account_statement_descriptor'               => $account_fields['account_statement_descriptor'],

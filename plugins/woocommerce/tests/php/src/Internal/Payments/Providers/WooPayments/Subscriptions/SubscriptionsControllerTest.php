@@ -15,8 +15,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiExcept
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionAdminPaymentMethodHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsEventIngestor;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
@@ -53,7 +53,7 @@ use WC_Unit_Test_Case;
  * the process. The legacy facade case and the staging case run in their own process, as they declare WC_Payments or
  * alias WCS_Staging.
  */
-class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
+class SubscriptionsControllerTest extends WC_Unit_Test_Case {
 
 	use ProviderTextLogAssertions;
 
@@ -106,12 +106,12 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 
 		// The controller's own methods at priority 10, as client 11.1.0 attaches them
 		// (trait-wc-payment-gateway-wcpay-subscriptions.php:296-297).
-		$controller = wc_get_container()->get( WooPaymentsSubscriptionsController::class );
+		$controller = wc_get_container()->get( SubscriptionsController::class );
 		foreach ( array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay' ) as $gateway_id ) {
 			$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_' . $gateway_id, array( $controller, 'scheduled_subscription_payment' ) ), "The $gateway_id renewal handler must be attached." );
 			$this->assertSame( 10, has_action( 'woocommerce_subscription_failing_payment_method_updated_' . $gateway_id, array( $controller, 'update_failing_payment_method' ) ), "The $gateway_id failing-method handler must be attached." );
 		}
-		$this->assertSame( 20, has_filter( 'woocommerce_email_classes', array( WooPaymentsSubscriptionsController::class, 'add_subscription_emails' ) ), 'The failed-renewal email must be registered.' );
+		$this->assertSame( 20, has_filter( 'woocommerce_email_classes', array( SubscriptionsController::class, 'add_subscription_emails' ) ), 'The failed-renewal email must be registered.' );
 
 		$this->use_order_mode( 'prod' );
 		$this->assertSame( array( 'line_item_a' ), apply_filters( 'wcs_renewal_order_items', array( 'line_item_a' ), new WC_Order(), $this->create_subscription_paid_in_mode( 'test', 'ppcp-gateway' ) ), 'A subscription that moved to another gateway gets its renewal order.' );
@@ -131,11 +131,11 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 
 		// Attaching also registers the admin payment method handler, which needs the token service; what it resolves is allowed.
 		wc_get_container()->reset_all_resolved();
-		wc_get_container()->get( WooPaymentsSubscriptionAdminPaymentMethodHandler::class );
+		wc_get_container()->get( SubscriptionAdminPaymentMethodHandler::class );
 		$resolved_by_admin_handler = $this->get_resolved_class_names();
 
 		wc_get_container()->reset_all_resolved();
-		$root             = wc_get_container()->get( WooPaymentsSubscriptionsController::class );
+		$root             = wc_get_container()->get( SubscriptionsController::class );
 		$resolved_by_init = $this->get_resolved_class_names();
 		$root->register();
 		$resolved_by_attach = array_diff( $this->get_resolved_class_names(), $resolved_by_init, $resolved_by_admin_handler );
@@ -168,7 +168,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		foreach ( array( WooPaymentsPersistenceVocabulary::GATEWAY_ID, WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay' ) as $gateway_id ) {
 			$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_' . $gateway_id ), "No native $gateway_id renewal handler may be attached." );
 		}
-		$this->assertFalse( has_filter( 'woocommerce_email_classes', array( WooPaymentsSubscriptionsController::class, 'add_subscription_emails' ) ), 'The failed-renewal email must not be registered.' );
+		$this->assertFalse( has_filter( 'woocommerce_email_classes', array( SubscriptionsController::class, 'add_subscription_emails' ) ), 'The failed-renewal email must not be registered.' );
 	}
 
 	/**
@@ -228,7 +228,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 
 		$this->load_subscriptions();
 		$this->arrange_ownership( false, true, WooPaymentsSetupTier::CONNECTED );
-		$root = wc_get_container()->get( WooPaymentsSubscriptionsController::class );
+		$root = wc_get_container()->get( SubscriptionsController::class );
 		unset( $wp_actions['plugins_loaded'] );
 
 		$root->register();
@@ -237,19 +237,19 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$this->assertFalse( has_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID ), 'Nothing may attach before Subscriptions has loaded.' );
 		$root->handle_plugins_loaded();
 		$this->assertSame( 10, has_action( 'woocommerce_scheduled_subscription_payment_' . WooPaymentsPersistenceVocabulary::GATEWAY_ID, array( $root, 'scheduled_subscription_payment' ) ) );
-		$this->assertSame( 20, has_filter( 'woocommerce_email_classes', array( WooPaymentsSubscriptionsController::class, 'add_subscription_emails' ) ) );
+		$this->assertSame( 20, has_filter( 'woocommerce_email_classes', array( SubscriptionsController::class, 'add_subscription_emails' ) ) );
 	}
 
 	/**
 	 * @testdox The renewal root attaches its checkout handler and registers the admin payment method handler when Subscriptions is available.
 	 *
 	 * The renewal and failing-method hooks are pinned by test_builtin_owned_store_has_renewal_handlers_after_init; every admin
-	 * hook by WooPaymentsSubscriptionAdminPaymentMethodHandlerTest::test_register_hooks_registers_subscription_admin_callbacks.
+	 * hook by SubscriptionAdminPaymentMethodHandlerTest::test_register_hooks_registers_subscription_admin_callbacks.
 	 */
 	public function test_renewal_root_attaches_the_renewal_and_admin_payment_method_handlers(): void {
 		$this->load_subscriptions();
-		$controller = wc_get_container()->get( WooPaymentsSubscriptionsController::class );
-		$admin      = wc_get_container()->get( WooPaymentsSubscriptionAdminPaymentMethodHandler::class );
+		$controller = wc_get_container()->get( SubscriptionsController::class );
+		$admin      = wc_get_container()->get( SubscriptionAdminPaymentMethodHandler::class );
 
 		$controller->handle_plugins_loaded();
 
@@ -262,7 +262,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	 */
 	public function test_renewal_root_registers_failed_renewal_authentication_emails(): void {
 		$this->load_subscriptions();
-		wc_get_container()->get( WooPaymentsSubscriptionsController::class )->handle_plugins_loaded();
+		wc_get_container()->get( SubscriptionsController::class )->handle_plugins_loaded();
 
 		/**
 		 * Filters the registered WooCommerce email classes.
@@ -296,7 +296,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 		$this->load_subscriptions();
 		$this->arrange_ownership( false, true, WooPaymentsSetupTier::CONNECTED );
 		unset( $wp_actions['plugins_loaded'] );
-		wc_get_container()->get( WooPaymentsSubscriptionsController::class )->register();
+		wc_get_container()->get( SubscriptionsController::class )->register();
 		$mailer = new \ReflectionProperty( \WC_Emails::class, 'instance' );
 		$mailer->setAccessible( true );
 		$original_mailer = $mailer->getValue();
@@ -356,7 +356,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 				$this->expectExceptionMessage( $expected_error );
 			}
 
-			$result = WooPaymentsSubscriptionsController::check_renewal_mode( $items, new WC_Order(), $this->create_subscription_paid_in_mode( $subscription_mode, $payment_method ) );
+			$result = SubscriptionsController::check_renewal_mode( $items, new WC_Order(), $this->create_subscription_paid_in_mode( $subscription_mode, $payment_method ) );
 
 			$this->assertSame( $items, $result );
 		} finally {
@@ -422,7 +422,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 
 			$this->assertSame( array( '_payment_method_id' => 'pm_saved' ), $copied, "A $copy_type copy must leave out only the charge key and the charge and refund ambiguity records." );
 		}
-		$this->assertFalse( has_filter( 'wcs_renewal_order_meta_query', array( WooPaymentsSubscriptionsController::class, 'exclude_charge_idempotency_key_from_meta_query' ) ), 'The deprecated meta query filter must stay unhooked, or Subscriptions logs a deprecation.' );
+		$this->assertFalse( has_filter( 'wcs_renewal_order_meta_query', array( SubscriptionsController::class, 'exclude_charge_idempotency_key_from_meta_query' ) ), 'The deprecated meta query filter must stay unhooked, or Subscriptions logs a deprecation.' );
 	}
 
 	/**
@@ -445,7 +445,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 			$this->assertStringStartsWith( $query, $filtered );
 			$this->assertStringContainsString( " AND `meta_key` NOT IN ('_wcpay_charge_idempotency_key', '_wcpay_charge_ambiguity', '_wcpay_refund_ambiguity')", $filtered, "The $copy_type meta query must leave out the charge key and the charge and refund ambiguity records." );
 		}
-		$this->assertFalse( has_filter( 'wc_subscriptions_object_data', array( WooPaymentsSubscriptionsController::class, 'exclude_charge_idempotency_key' ) ) );
+		$this->assertFalse( has_filter( 'wc_subscriptions_object_data', array( SubscriptionsController::class, 'exclude_charge_idempotency_key' ) ) );
 	}
 
 	/**
@@ -1566,10 +1566,10 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	/**
 	 * Put a renewal handler that records its calls in the container, where the bootstrap and the gateways find it.
 	 *
-	 * @return WooPaymentsSubscriptionsController&object{calls:array<int,array<int,mixed>>}
+	 * @return SubscriptionsController&object{calls:array<int,array<int,mixed>>}
 	 */
-	private function install_spy_controller(): WooPaymentsSubscriptionsController {
-		$controller = new class() extends WooPaymentsSubscriptionsController {
+	private function install_spy_controller(): SubscriptionsController {
+		$controller = new class() extends SubscriptionsController {
 			/** @var array<int,array<int,mixed>> */
 			public array $calls = array();
 
@@ -1603,7 +1603,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 				$this->calls[] = array( __FUNCTION__, $subscription->get_id() );
 			}
 		};
-		wc_get_container()->replace( WooPaymentsSubscriptionsController::class, $controller );
+		wc_get_container()->replace( SubscriptionsController::class, $controller );
 
 		return $controller;
 	}
@@ -1736,9 +1736,9 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 	 * @param PaymentProcessingService     $processing_service Payment processing service.
 	 * @param WooPaymentsProvider|null     $provider           WooPayments provider, or null for the container's.
 	 * @param WooPaymentsTokenService|null $token_service      Token service, or null for the container's.
-	 * @return WooPaymentsSubscriptionsController
+	 * @return SubscriptionsController
 	 */
-	private function create_sut( PaymentProcessingService $processing_service, ?WooPaymentsProvider $provider = null, ?WooPaymentsTokenService $token_service = null ): WooPaymentsSubscriptionsController {
+	private function create_sut( PaymentProcessingService $processing_service, ?WooPaymentsProvider $provider = null, ?WooPaymentsTokenService $token_service = null ): SubscriptionsController {
 		wc_get_container()->replace( PaymentProcessingService::class, $processing_service );
 		if ( null !== $provider ) {
 			wc_get_container()->replace( WooPaymentsProvider::class, $provider );
@@ -1747,7 +1747,7 @@ class WooPaymentsSubscriptionsControllerTest extends WC_Unit_Test_Case {
 			wc_get_container()->replace( WooPaymentsTokenService::class, $token_service );
 		}
 
-		return new WooPaymentsSubscriptionsController();
+		return new SubscriptionsController();
 	}
 
 	/**

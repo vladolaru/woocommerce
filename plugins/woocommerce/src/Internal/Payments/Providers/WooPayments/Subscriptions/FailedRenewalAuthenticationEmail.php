@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsFailedRenewalAuthenticationEmail class file.
+ * FailedRenewalAuthenticationEmail class file.
  */
 
 declare( strict_types = 1 );
@@ -17,7 +17,7 @@ use WC_Order;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsFailedRenewalAuthenticationEmail extends WC_Email {
+class FailedRenewalAuthenticationEmail extends WC_Email {
 
 	/**
 	 * The original WooCommerce Subscriptions renewal invoice email.
@@ -234,7 +234,7 @@ class WooPaymentsFailedRenewalAuthenticationEmail extends WC_Email {
 
 		if ( $this->is_current_order_id( absint( $order_id ) ) && '' !== (string) ( $rule_array['email_template_admin'] ?? '' ) ) {
 			// Subscriptions instantiates this class by its global name; make it resolvable.
-			ClassAliases::register_compat_class_alias( WooPaymentsFailedAuthenticationRetryEmail::class );
+			ClassAliases::register_compat_class_alias( FailedAuthenticationRetryEmail::class );
 			$rule_array['email_template_admin'] = 'WC_Payments_Email_Failed_Authentication_Retry';
 		}
 

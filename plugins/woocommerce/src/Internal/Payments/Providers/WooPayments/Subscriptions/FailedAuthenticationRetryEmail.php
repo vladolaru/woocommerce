@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsFailedAuthenticationRetryEmail class file.
+ * FailedAuthenticationRetryEmail class file.
  */
 
 declare( strict_types = 1 );
@@ -19,7 +19,7 @@ use WC_Order;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsFailedAuthenticationRetryEmail extends WC_Email_Failed_Order {
+class FailedAuthenticationRetryEmail extends WC_Email_Failed_Order {
 
 	/**
 	 * Last retry object for the order.

@@ -8,8 +8,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsActionSchedulerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionAdminPaymentMethodHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAddressProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerDataEraser;
@@ -140,11 +140,11 @@ class WooPaymentsForeignHookValuesTest extends WC_Unit_Test_Case {
 				add_filter( 'wp_privacy_personal_data_erasers', array( WooPaymentsCustomerDataEraser::class, 'add_eraser' ) );
 				break;
 			case 'user_has_cap':
-				wc_get_container()->get( WooPaymentsSubscriptionAdminPaymentMethodHandler::class )->register_hooks();
+				wc_get_container()->get( SubscriptionAdminPaymentMethodHandler::class )->register_hooks();
 				break;
 			case 'woocommerce_email_classes':
-				// WooPaymentsSubscriptionsController attaches it at this priority when Subscriptions is active.
-				add_filter( 'woocommerce_email_classes', array( WooPaymentsSubscriptionsController::class, 'add_subscription_emails' ), 20 );
+				// SubscriptionsController attaches it at this priority when Subscriptions is active.
+				add_filter( 'woocommerce_email_classes', array( SubscriptionsController::class, 'add_subscription_emails' ), 20 );
 				break;
 		}
 

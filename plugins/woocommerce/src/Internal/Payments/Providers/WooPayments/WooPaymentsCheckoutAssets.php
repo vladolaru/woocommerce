@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
 use Automattic\WooCommerce\Enums\PaymentGatewayFeature;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
@@ -404,7 +404,7 @@ class WooPaymentsCheckoutAssets {
 			'currency'                                 => $payment_context['currency'],
 			'cartTotal'                                => $payment_context['total'],
 			'storeCountry'                             => WC()->countries->get_base_country(),
-			'cartContainsSubscription'                 => WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal(),
+			'cartContainsSubscription'                 => SubscriptionMethodPolicy::cart_contains_subscription_or_renewal(),
 			'stylesCacheVersion'                       => $this->get_frontend_styles_service()->get_or_create_styles_cache_version(),
 			'forceNetworkSavedCards'                   => $force_network_saved_cards,
 			'isSavedCardsEnabled'                      => $saved_cards_enabled,
@@ -548,7 +548,7 @@ class WooPaymentsCheckoutAssets {
 			array(
 				array_values( $supports ),
 				$payment_context,
-				WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal(),
+				SubscriptionMethodPolicy::cart_contains_subscription_or_renewal(),
 				get_current_user_id(),
 			)
 		);
@@ -1278,7 +1278,7 @@ class WooPaymentsCheckoutAssets {
 	private function is_changing_payment_method_for_subscription(): bool {
 		if (
 			! is_wc_endpoint_url( 'order-pay' ) ||
-			! WooPaymentsSubscriptionMethodPolicy::is_subscriptions_available() ||
+			! SubscriptionMethodPolicy::is_subscriptions_available() ||
 			! isset( $_GET['change_payment_method'] ) || // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only request context matching WooCommerce Subscriptions.
 			! function_exists( 'wcs_is_subscription' )
 		) {
@@ -1401,7 +1401,7 @@ class WooPaymentsCheckoutAssets {
 	 * @return bool
 	 */
 	private function should_show_save_option( bool $saved_cards_enabled ): bool {
-		return $saved_cards_enabled && ! WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal();
+		return $saved_cards_enabled && ! SubscriptionMethodPolicy::cart_contains_subscription_or_renewal();
 	}
 
 	/**

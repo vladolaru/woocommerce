@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeB
 
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLock;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCurrencyUtils;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
@@ -159,7 +159,7 @@ class StripeBillingSubscriptionService {
 	 * @return bool
 	 */
 	public function is_wcpay_subscription( WC_Order $subscription ): bool {
-		return ! WooPaymentsSubscriptionMethodPolicy::is_duplicate_site()
+		return ! SubscriptionMethodPolicy::is_duplicate_site()
 			&& WooPaymentsPersistenceVocabulary::GATEWAY_ID === $subscription->get_payment_method()
 			&& (bool) $this->get_wcpay_subscription_id( $subscription );
 	}

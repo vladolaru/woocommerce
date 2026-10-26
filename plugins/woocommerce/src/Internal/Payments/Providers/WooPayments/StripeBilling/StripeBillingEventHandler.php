@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Enums\OrderStatus;
 use Automattic\WooCommerce\Internal\Payments\OrderPaymentLifecycleService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsPaymentIntentEventHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
@@ -155,7 +155,7 @@ class StripeBillingEventHandler {
 		$event_object          = $this->get_event_array( $event, array( 'data', 'object' ) );
 		$wcpay_subscription_id = (string) $this->get_event_property( $event_object, array( 'subscription' ) );
 
-		if ( WooPaymentsSubscriptionMethodPolicy::is_duplicate_site() ) {
+		if ( SubscriptionMethodPolicy::is_duplicate_site() ) {
 			$this->log_skipped_webhook_due_to_staging( 'invoice.upcoming', $wcpay_subscription_id );
 			return;
 		}
@@ -222,7 +222,7 @@ class StripeBillingEventHandler {
 		$event_object          = $this->get_event_array( $event, array( 'data', 'object' ) );
 		$wcpay_subscription_id = (string) $this->get_event_property( $event_object, array( 'subscription' ) );
 
-		if ( WooPaymentsSubscriptionMethodPolicy::is_duplicate_site() ) {
+		if ( SubscriptionMethodPolicy::is_duplicate_site() ) {
 			$this->log_skipped_webhook_due_to_staging( 'invoice.paid', $wcpay_subscription_id );
 			return;
 		}
@@ -330,7 +330,7 @@ class StripeBillingEventHandler {
 		$event_object          = $this->get_event_array( $event, array( 'data', 'object' ) );
 		$wcpay_subscription_id = (string) $this->get_event_property( $event_object, array( 'subscription' ) );
 
-		if ( WooPaymentsSubscriptionMethodPolicy::is_duplicate_site() ) {
+		if ( SubscriptionMethodPolicy::is_duplicate_site() ) {
 			$this->log_skipped_webhook_due_to_staging( 'invoice.payment_failed', $wcpay_subscription_id );
 			return;
 		}

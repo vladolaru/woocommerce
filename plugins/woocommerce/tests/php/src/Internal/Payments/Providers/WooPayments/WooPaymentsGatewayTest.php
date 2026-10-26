@@ -40,7 +40,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderSuccessPage;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\StoreApi\Exceptions\RouteException;
 use Automattic\WooCommerce\StoreApi\Legacy as StoreApiLegacy;
@@ -4503,7 +4503,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 		$gateway->init( $service, new WooPaymentsProvider() );
 
 		$GLOBALS['wcpay_test_subscription_ids'] = array( $order->get_id() );
-		add_filter( 'woocommerce_subscriptions_update_payment_via_pay_shortcode', array( wc_get_container()->get( WooPaymentsSubscriptionAdminPaymentMethodHandler::class ), 'update_payment_method_for_subscriptions' ), 10, 3 );
+		add_filter( 'woocommerce_subscriptions_update_payment_via_pay_shortcode', array( wc_get_container()->get( SubscriptionAdminPaymentMethodHandler::class ), 'update_payment_method_for_subscriptions' ), 10, 3 );
 		$_POST['_wcsnonce'] = wp_create_nonce( 'wcs_change_payment_method' );
 
 		$_POST['woocommerce_change_payment'] = (string) $order->get_id();
@@ -4542,7 +4542,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 			),
 			\WC_Subscriptions_Change_Payment_Gateway::$updated_payment_methods
 		);
-		$this->assertFalse( has_filter( 'woocommerce_subscriptions_update_payment_via_pay_shortcode', array( wc_get_container()->get( WooPaymentsSubscriptionAdminPaymentMethodHandler::class ), 'update_payment_method_for_subscriptions' ) ) );
+		$this->assertFalse( has_filter( 'woocommerce_subscriptions_update_payment_via_pay_shortcode', array( wc_get_container()->get( SubscriptionAdminPaymentMethodHandler::class ), 'update_payment_method_for_subscriptions' ) ) );
 	}
 
 	/**

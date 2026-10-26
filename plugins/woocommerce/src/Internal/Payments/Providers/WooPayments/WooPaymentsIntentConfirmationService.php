@@ -14,7 +14,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Throwable;
 use WC_Order;
 
@@ -112,7 +112,7 @@ class WooPaymentsIntentConfirmationService {
 
 		// Client 11.1.0 gw:4337-4345: a payment method change does not take stock for the renewal it completes.
 		$confirm = function () use ( $order, $intent, $save_payment_method ): void {
-			WooPaymentsSubscriptionMethodPolicy::run_without_stock_reduction(
+			SubscriptionMethodPolicy::run_without_stock_reduction(
 				function () use ( $order, $intent, $save_payment_method ): void {
 					$this->confirm_fetched_intent_for_order( $order, $intent, $save_payment_method, false, false );
 				}
@@ -470,7 +470,7 @@ class WooPaymentsIntentConfirmationService {
 	 * @return array{error:array<string,mixed>|null,token:\WC_Payment_Token|null,payment_method_details:array<string,mixed>} Token result and any blocking error response.
 	 */
 	private function maybe_save_payment_method_for_order( WC_Order $order, array $intent, bool $save_payment_method ): array {
-		$is_recurring = WooPaymentsSubscriptionMethodPolicy::is_recurring_order( $order );
+		$is_recurring = SubscriptionMethodPolicy::is_recurring_order( $order );
 		if ( ! $is_recurring && ! $save_payment_method ) {
 			return array(
 				'error'                  => null,

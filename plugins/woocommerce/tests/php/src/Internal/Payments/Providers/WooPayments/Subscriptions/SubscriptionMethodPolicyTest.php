@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Subscriptions;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Unit_Test_Case;
@@ -11,7 +11,7 @@ use WC_Unit_Test_Case;
 /**
  * Tests for the native WooPayments subscription payment-method policy.
  */
-class WooPaymentsSubscriptionMethodPolicyTest extends WC_Unit_Test_Case {
+class SubscriptionMethodPolicyTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Clear the cart state the tests set.
@@ -30,7 +30,7 @@ class WooPaymentsSubscriptionMethodPolicyTest extends WC_Unit_Test_Case {
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'amazon_pay',
 			),
-			WooPaymentsSubscriptionMethodPolicy::get_reusable_gateway_ids()
+			SubscriptionMethodPolicy::get_reusable_gateway_ids()
 		);
 	}
 
@@ -42,7 +42,7 @@ class WooPaymentsSubscriptionMethodPolicyTest extends WC_Unit_Test_Case {
 	 * @param bool   $is_reusable Whether the gateway is reusable.
 	 */
 	public function test_is_reusable_gateway_id_classifies_subscription_methods( string $gateway_id, bool $is_reusable ): void {
-		$this->assertSame( $is_reusable, WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $gateway_id ) );
+		$this->assertSame( $is_reusable, SubscriptionMethodPolicy::is_reusable_gateway_id( $gateway_id ) );
 	}
 
 	/**
@@ -77,8 +77,8 @@ class WooPaymentsSubscriptionMethodPolicyTest extends WC_Unit_Test_Case {
 			$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_RENEWAL ] = true;
 		}
 
-		$this->assertSame( $available, WooPaymentsSubscriptionMethodPolicy::is_subscriptions_available() );
-		$this->assertSame( $expected, WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal() );
+		$this->assertSame( $available, SubscriptionMethodPolicy::is_subscriptions_available() );
+		$this->assertSame( $expected, SubscriptionMethodPolicy::cart_contains_subscription_or_renewal() );
 	}
 
 	/**

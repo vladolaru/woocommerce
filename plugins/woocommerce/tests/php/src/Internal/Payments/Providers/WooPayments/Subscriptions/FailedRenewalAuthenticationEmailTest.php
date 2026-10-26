@@ -3,16 +3,16 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Subscriptions;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsFailedAuthenticationRetryEmail;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsFailedRenewalAuthenticationEmail;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\FailedAuthenticationRetryEmail;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\FailedRenewalAuthenticationEmail;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\StripeBilling\Fixtures\WooCommerceSubscriptionsDoubles;
 use WC_Order;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsFailedRenewalAuthenticationEmail class.
+ * Tests for the FailedRenewalAuthenticationEmail class.
  */
-class WooPaymentsFailedRenewalAuthenticationEmailTest extends WC_Unit_Test_Case {
+class FailedRenewalAuthenticationEmailTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Mail the emails sent, as wp_mail() received it.
@@ -55,7 +55,7 @@ class WooPaymentsFailedRenewalAuthenticationEmailTest extends WC_Unit_Test_Case 
 	 */
 	public function test_renewal_needing_authentication_emails_the_shopper_with_the_authorization_link(): void {
 		$order = $this->create_renewal_order();
-		$email = new WooPaymentsFailedRenewalAuthenticationEmail();
+		$email = new FailedRenewalAuthenticationEmail();
 
 		$email->trigger( $order );
 
@@ -81,7 +81,7 @@ class WooPaymentsFailedRenewalAuthenticationEmailTest extends WC_Unit_Test_Case 
 		unset( $label );
 		update_option( 'woocommerce_failed_renewal_authentication_settings', array( 'enabled' => $enabled ) );
 		$order = $is_subscription ? $this->create_subscription_order() : $this->create_order();
-		$email = new WooPaymentsFailedRenewalAuthenticationEmail();
+		$email = new FailedRenewalAuthenticationEmail();
 
 		$email->trigger( $order );
 
@@ -97,7 +97,7 @@ class WooPaymentsFailedRenewalAuthenticationEmailTest extends WC_Unit_Test_Case 
 	public function test_retry_email_goes_to_the_admin_with_the_retry_time(): void {
 		$this->load_retry_doubles();
 		$order = $this->create_order();
-		$email = new WooPaymentsFailedAuthenticationRetryEmail();
+		$email = new FailedAuthenticationRetryEmail();
 
 		$email->trigger( $order->get_id(), $order );
 		$this->assertSame( array(), $this->sent, 'Nothing is sent without a retry store.' );
@@ -221,7 +221,7 @@ class WooPaymentsFailedRenewalAuthenticationEmailTest extends WC_Unit_Test_Case 
 		// The retry flow runs with the mailer initialized; the email parent classes load with it.
 		WC()->mailer();
 		$order = wc_create_order();
-		$email = new WooPaymentsFailedRenewalAuthenticationEmail();
+		$email = new FailedRenewalAuthenticationEmail();
 		// The filter only applies to the email's current order.
 		$email->object = $order;
 
@@ -236,7 +236,7 @@ class WooPaymentsFailedRenewalAuthenticationEmailTest extends WC_Unit_Test_Case 
 			class_exists( $rule['email_template_admin'] ),
 			'Subscriptions instantiates the retry email by this global name; an unresolvable class silently skips the email.'
 		);
-		$this->assertInstanceOf( WooPaymentsFailedAuthenticationRetryEmail::class, new \WC_Payments_Email_Failed_Authentication_Retry() );
+		$this->assertInstanceOf( FailedAuthenticationRetryEmail::class, new \WC_Payments_Email_Failed_Authentication_Retry() );
 	}
 
 	/**
@@ -244,7 +244,7 @@ class WooPaymentsFailedRenewalAuthenticationEmailTest extends WC_Unit_Test_Case 
 	 */
 	public function test_set_store_owner_custom_email_ignores_unrelated_orders(): void {
 		$order         = wc_create_order();
-		$email         = new WooPaymentsFailedRenewalAuthenticationEmail();
+		$email         = new FailedRenewalAuthenticationEmail();
 		$email->object = $order;
 
 		$rule = $email->set_store_owner_custom_email(

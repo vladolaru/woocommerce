@@ -18,7 +18,7 @@ class StripeBillingPlacementTest extends WC_Unit_Test_Case {
 	private const SEAM_FILES = array(
 		'src/Internal/Payments/Providers/WooPayments/WooPaymentsProvider.php',
 		'src/Internal/Payments/Providers/WooPayments/WooPaymentsGateway.php',
-		'src/Internal/Payments/Providers/WooPayments/Subscriptions/WooPaymentsSubscriptionsController.php',
+		'src/Internal/Payments/Providers/WooPayments/Subscriptions/SubscriptionsController.php',
 		'src/Internal/Payments/Providers/WooPayments/Webhooks/WooPaymentsEventIngestor.php',
 		'src/Internal/Payments/Providers/WooPayments/WooPaymentsStoreSetupReportController.php',
 		'src/Internal/Payments/Providers/WooPayments/WooPaymentsSettingsService.php',

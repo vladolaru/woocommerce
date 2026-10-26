@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use WC_Order;
 use WC_Payment_Token;
@@ -123,7 +123,7 @@ class WooPaymentsFraudOrderTrackingService implements RegisterHooksInterface {
 	 * @param WC_Order $order Order being updated.
 	 */
 	private function maybe_repair_subscription_order_tracking_meta( WC_Order $order ): void {
-		if ( ! WooPaymentsSubscriptionMethodPolicy::is_subscriptions_available() ) {
+		if ( ! SubscriptionMethodPolicy::is_subscriptions_available() ) {
 			return;
 		}
 

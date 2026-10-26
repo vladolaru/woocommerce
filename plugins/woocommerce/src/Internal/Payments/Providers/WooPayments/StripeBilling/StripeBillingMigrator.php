@@ -10,7 +10,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeB
 use ActionScheduler_Store;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use RuntimeException;
@@ -249,7 +249,7 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 	 * @return mixed
 	 */
 	public function add_manual_migration_tool( $tools ) {
-		if ( ! is_array( $tools ) || wc_get_container()->get( StripeBillingModule::class )->is_bundled_subscriptions_flag_on() || ! WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active() ) {
+		if ( ! is_array( $tools ) || wc_get_container()->get( StripeBillingModule::class )->is_bundled_subscriptions_flag_on() || ! SubscriptionMethodPolicy::is_woocommerce_subscriptions_active() ) {
 			return $tools;
 		}
 
@@ -423,11 +423,11 @@ class StripeBillingMigrator extends \WCS_Background_Repairer {
 	 */
 	private function validate_subscription_to_migrate( int $subscription_id ): WC_Order {
 		// phpcs:disable WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Messages go to the migration log, not to output.
-		if ( ! WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active() || ! function_exists( 'wcs_get_subscription' ) ) {
+		if ( ! SubscriptionMethodPolicy::is_woocommerce_subscriptions_active() || ! function_exists( 'wcs_get_subscription' ) ) {
 			throw new RuntimeException( sprintf( '---- Skipping migration of subscription #%d. The WooCommerce Subscriptions extension is not active.', $subscription_id ) );
 		}
 
-		if ( WooPaymentsSubscriptionMethodPolicy::is_duplicate_site() ) {
+		if ( SubscriptionMethodPolicy::is_duplicate_site() ) {
 			throw new RuntimeException( sprintf( '---- Skipping migration of subscription #%d. Site is in staging mode.', $subscription_id ) );
 		}
 

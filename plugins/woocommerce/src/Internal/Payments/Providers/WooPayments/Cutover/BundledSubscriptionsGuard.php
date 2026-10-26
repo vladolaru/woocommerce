@@ -9,7 +9,7 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover
 
 use Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 
 /**
  * Tells whether a store runs the bundled WooPayments subscriptions, which the cutover excludes.
@@ -58,7 +58,7 @@ class BundledSubscriptionsGuard {
 			return $this->is_bundled_store[ $blog_id ];
 		}
 
-		$this->is_bundled_store[ $blog_id ] = ! WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active()
+		$this->is_bundled_store[ $blog_id ] = ! SubscriptionMethodPolicy::is_woocommerce_subscriptions_active()
 			&& ( '1' === get_option( StripeBillingModule::BUNDLED_SUBSCRIPTIONS_FLAG_OPTION, '0' ) || $this->query_stripe_billed_subscription_exists() );
 
 		return $this->is_bundled_store[ $blog_id ];

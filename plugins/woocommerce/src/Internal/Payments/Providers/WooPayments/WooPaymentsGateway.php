@@ -20,9 +20,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Onboarding\On
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionAdminPaymentMethodHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
@@ -995,7 +995,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	public function is_subscriptions_enabled(): bool {
-		return WooPaymentsSubscriptionMethodPolicy::is_subscriptions_available();
+		return SubscriptionMethodPolicy::is_subscriptions_available();
 	}
 
 	/**
@@ -1004,7 +1004,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	public function is_subscriptions_plugin_active(): bool {
-		return WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active();
+		return SubscriptionMethodPolicy::is_woocommerce_subscriptions_active();
 	}
 
 	/**
@@ -1218,7 +1218,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return bool
 	 */
 	private function is_available_for_current_subscription_context(): bool {
-		$is_subscription_context = WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal();
+		$is_subscription_context = SubscriptionMethodPolicy::cart_contains_subscription_or_renewal();
 
 		if ( ! $is_subscription_context && isset( $_GET['change_payment_method'] ) && function_exists( 'wcs_is_subscription' ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 			$is_subscription_context = (bool) wcs_is_subscription( absint( $_GET['change_payment_method'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
@@ -1244,7 +1244,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	private function is_available_for_subscription_context( bool $is_subscription_context, bool $manual_renewals_enabled ): bool {
 		return ! $is_subscription_context
 			|| $manual_renewals_enabled
-			|| WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $this->id );
+			|| SubscriptionMethodPolicy::is_reusable_gateway_id( $this->id );
 	}
 
 	/**
@@ -1525,7 +1525,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 		$this->checkout_payment_started = true;
 		$outcome                        = $is_subscription_payment_method_change
 			// Client 11.1.0 gw:2197-2205: a payment method change does not take stock for the renewal it completes.
-			? WooPaymentsSubscriptionMethodPolicy::run_without_stock_reduction(
+			? SubscriptionMethodPolicy::run_without_stock_reduction(
 				fn() => $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() )
 			)
 			: $this->get_processing_service()->process_checkout_outcome( $context, $this->get_provider() );
@@ -1948,10 +1948,10 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	/**
 	 * Get the subscriptions controller, which charges renewals for every WooPayments gateway.
 	 *
-	 * @return WooPaymentsSubscriptionsController
+	 * @return SubscriptionsController
 	 */
-	private function get_subscriptions_controller(): WooPaymentsSubscriptionsController {
-		return wc_get_container()->get( WooPaymentsSubscriptionsController::class );
+	private function get_subscriptions_controller(): SubscriptionsController {
+		return wc_get_container()->get( SubscriptionsController::class );
 	}
 
 	/**
@@ -2193,7 +2193,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 			$order->save();
 		}
 
-		remove_filter( 'woocommerce_subscriptions_update_payment_via_pay_shortcode', array( wc_get_container()->get( WooPaymentsSubscriptionAdminPaymentMethodHandler::class ), 'update_payment_method_for_subscriptions' ), 10 );
+		remove_filter( 'woocommerce_subscriptions_update_payment_via_pay_shortcode', array( wc_get_container()->get( SubscriptionAdminPaymentMethodHandler::class ), 'update_payment_method_for_subscriptions' ), 10 );
 	}
 
 	/**
@@ -2333,7 +2333,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 *
 	 * Only the classic save checkbox asks, and a renewal-only cart still shows it unchecked, as in client 11.1.0
 	 * `display_save_payment_method_checkbox()`; the save is forced server-side either way. The surfaces that count renewals
-	 * ask WooPaymentsSubscriptionMethodPolicy::cart_contains_subscription_or_renewal().
+	 * ask SubscriptionMethodPolicy::cart_contains_subscription_or_renewal().
 	 *
 	 * @return bool
 	 */

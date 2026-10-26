@@ -261,7 +261,7 @@ class WooPaymentsRestRoutesContractTest extends WC_REST_Unit_Test_Case {
 	 * exact callback is owned by each site's own class: `WooPaymentsWooPaySessionControllerTest`
 	 * (10 WooPay actions), `WooPaymentsFrontendTrackingControllerTest` (4),
 	 * `WooPaymentsCheckoutAjaxControllerTest` (3), `WooPaymentsPaymentMethodMessagingTest` (2),
-	 * `WooPaymentsSubscriptionAdminPaymentMethodHandlerTest` (1) and
+	 * `SubscriptionAdminPaymentMethodHandlerTest` (1) and
 	 * `WooCommerceBookingsTest` (2).
 	 */
 	public function test_builtin_names_every_woopayments_extension_ajax_action(): void {

@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\Jetpack\Constants;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressCheckoutService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsExpressPaymentMethodTypes;
@@ -700,7 +700,7 @@ class WooPaymentsExpressCheckoutServiceTest extends WC_Unit_Test_Case {
 		WooCommerceSubscriptionsDoubles::load_cart();
 		$GLOBALS[ WooCommerceSubscriptionsDoubles::CART_CONTAINS_SUBSCRIPTION ] = true;
 
-		$this->assertFalse( WooPaymentsSubscriptionMethodPolicy::is_subscriptions_available(), 'Neither WooCommerce Subscriptions 2.2.0+ nor its core library is reported loaded.' );
+		$this->assertFalse( SubscriptionMethodPolicy::is_subscriptions_available(), 'Neither WooCommerce Subscriptions 2.2.0+ nor its core library is reported loaded.' );
 		$this->assertTrue( $this->create_service()->get_express_checkout_params( 'checkout' )['has_subscription'] );
 	}
 

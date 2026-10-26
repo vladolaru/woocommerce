@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsSubscriptionMethodPolicy class file.
+ * SubscriptionMethodPolicy class file.
  */
 
 declare( strict_types = 1 );
@@ -18,7 +18,7 @@ use WC_Order;
  * @since 11.0.0
  * @internal
  */
-final class WooPaymentsSubscriptionMethodPolicy {
+final class SubscriptionMethodPolicy {
 
 	/**
 	 * Tell whether the current cart contains a subscription or a subscription renewal.

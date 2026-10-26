@@ -15,7 +15,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethod
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\ApiException;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Automattic\WooCommerce\Utilities\PluginUtil;
@@ -402,7 +402,7 @@ class WooPaymentsStoreSetupReportController implements RegisterHooksInterface {
 				'tracking_enabled'            => \WC_Site_Tracking::is_tracking_enabled(),
 				'registered_payment_gateways' => $this->get_store_registered_gateway_ids(),
 				'enabled_payment_gateways'    => $this->get_store_enabled_gateway_ids(),
-				'wc_subscriptions_active'     => WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active(),
+				'wc_subscriptions_active'     => SubscriptionMethodPolicy::is_woocommerce_subscriptions_active(),
 				'wc_subscriptions_version'    => $this->get_subscriptions_version(),
 			),
 		);

@@ -36,7 +36,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\GetAccoun
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\GetPmPromotionsRequest;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayEligibility;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPayOrderStatusSync;
@@ -963,7 +963,7 @@ class WooPaymentsHookArityContractTest extends WC_Unit_Test_Case {
 		$order->set_status( 'failed' );
 		$order->set_currency( 'USD' );
 
-		$controller = new WooPaymentsSubscriptionsController();
+		$controller = new SubscriptionsController();
 		$outcome    = new PaymentOutcome( PaymentOutcome::STATUS_REQUIRES_CUSTOMER_ACTION );
 
 		$this->builtin_invoke( $controller, 'maybe_handle_subscription_customer_action_required', array( $order, $outcome ) );

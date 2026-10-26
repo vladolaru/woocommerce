@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -175,7 +175,7 @@ class WooPaymentsDisabledMethodTokenSurfacesTest extends WC_Unit_Test_Case {
 	 * `trait-wc-payment-gateway-wcpay-subscriptions.php:646-666`), so a SEPA subscription has no token field in the admin.
 	 */
 	public function test_admin_subscription_select_lists_disabled_tokens_only_under_their_own_gateway(): void {
-		$handler = new WooPaymentsSubscriptionAdminPaymentMethodHandler();
+		$handler = new SubscriptionAdminPaymentMethodHandler();
 		$handler->init( $this->create_service( array( 'card' ) ) );
 		$subscription = wc_create_order( array( 'customer_id' => $this->user_id ) );
 
@@ -334,11 +334,11 @@ class WooPaymentsDisabledMethodTokenSurfacesTest extends WC_Unit_Test_Case {
 	/**
 	 * Get the payment-meta fields WooCommerce Subscriptions shows in the subscription admin, keyed by gateway ID.
 	 *
-	 * @param WooPaymentsSubscriptionAdminPaymentMethodHandler $handler      Admin handler.
-	 * @param WC_Order                                         $subscription Subscription.
+	 * @param SubscriptionAdminPaymentMethodHandler $handler      Admin handler.
+	 * @param WC_Order                              $subscription Subscription.
 	 * @return array<string,mixed>
 	 */
-	private function get_admin_payment_meta_fields( WooPaymentsSubscriptionAdminPaymentMethodHandler $handler, WC_Order $subscription ): array {
+	private function get_admin_payment_meta_fields( SubscriptionAdminPaymentMethodHandler $handler, WC_Order $subscription ): array {
 		remove_all_filters( 'woocommerce_subscription_payment_meta' );
 		add_filter( 'woocommerce_subscription_payment_meta', array( $handler, 'add_subscription_payment_meta' ), 10, 2 );
 		try {

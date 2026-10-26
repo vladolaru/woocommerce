@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingProductService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingSubscriptionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsLogger;
@@ -82,7 +82,7 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 	/**
 	 * Subscriptions controller stand-in that records the payment method copied to a subscription.
 	 *
-	 * @var WooPaymentsSubscriptionsController&MockObject
+	 * @var SubscriptionsController&MockObject
 	 */
 	private $subscriptions_controller;
 
@@ -117,11 +117,11 @@ class StripeBillingInvoiceServiceTest extends WC_Unit_Test_Case {
 		$module = $this->createMock( StripeBillingModule::class );
 		$module->method( 'is_stripe_billing_enabled' )->willReturnCallback( fn() => $this->stripe_billing_enabled );
 
-		$this->subscriptions_controller = $this->getMockBuilder( WooPaymentsSubscriptionsController::class )
+		$this->subscriptions_controller = $this->getMockBuilder( SubscriptionsController::class )
 			->disableOriginalConstructor()
 			->onlyMethods( array( 'update_failing_payment_method' ) )
 			->getMock();
-		wc_get_container()->replace( WooPaymentsSubscriptionsController::class, $this->subscriptions_controller );
+		wc_get_container()->replace( SubscriptionsController::class, $this->subscriptions_controller );
 
 		$this->sut = new StripeBillingInvoiceService();
 		$this->sut->init( $api, $api_client, $module, $logger );

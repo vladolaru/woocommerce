@@ -7,7 +7,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsFailedAuthenticationRetryEmail;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\FailedAuthenticationRetryEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType;
 
 /**
@@ -26,8 +26,8 @@ final class ClassAliases {
 	 * Each class, with the WooPayments extension class name declared as its alias.
 	 */
 	private const ALIASES = array(
-		WooPaymentsPaymentType::class                    => 'WCPay\Constants\Payment_Type',
-		WooPaymentsFailedAuthenticationRetryEmail::class => 'WC_Payments_Email_Failed_Authentication_Retry',
+		WooPaymentsPaymentType::class         => 'WCPay\Constants\Payment_Type',
+		FailedAuthenticationRetryEmail::class => 'WC_Payments_Email_Failed_Authentication_Retry',
 	);
 
 	/**

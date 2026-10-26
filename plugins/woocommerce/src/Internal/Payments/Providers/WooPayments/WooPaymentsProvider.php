@@ -11,7 +11,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\Cutov
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\DataMigration;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PluginLifecycleListener;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\ReconciliationJob;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionsController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NavigationController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\NoticesPassthrough;
@@ -335,7 +335,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 		// without the gateway enabled, as in the client (client 11.1.0 `includes/class-wc-payments.php:611,649`).
 		foreach ( array( WooPaymentsSetupTier::CONNECTED, WooPaymentsSetupTier::ACTIVE ) as $state ) {
 			foreach ( array( RequestTypeUtil::FRONT, RequestTypeUtil::ADMIN, RequestTypeUtil::AJAX, RequestTypeUtil::REST, RequestTypeUtil::CRON, RequestTypeUtil::CLI ) as $request ) {
-				$matrix[ $state ][ $request ][] = WooPaymentsSubscriptionsController::class;
+				$matrix[ $state ][ $request ][] = SubscriptionsController::class;
 				// Every request that can write a WooPayments log line numbers it under one request id, as client 11.1.0's logger
 				// context does on every request (`includes/class-wc-payments.php:552`, `src/Internal/LoggerContext.php:73-79`).
 				$matrix[ $state ][ $request ][] = WooPaymentsLogEntryFormat::class;

@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Compat;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Compat\ClassAliases;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsFailedAuthenticationRetryEmail;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\FailedAuthenticationRetryEmail;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentType;
 use WC_Unit_Test_Case;
 
@@ -73,7 +73,7 @@ class ClassAliasesTest extends WC_Unit_Test_Case {
 	public function alias_provider(): array {
 		return array(
 			'payment type'                      => array( WooPaymentsPaymentType::class, 'WCPay\Constants\Payment_Type', WooPaymentsPaymentType::class ),
-			'failed authentication retry email' => array( WooPaymentsFailedAuthenticationRetryEmail::class, 'WC_Payments_Email_Failed_Authentication_Retry', WooPaymentsFailedAuthenticationRetryEmail::class ),
+			'failed authentication retry email' => array( FailedAuthenticationRetryEmail::class, 'WC_Payments_Email_Failed_Authentication_Retry', FailedAuthenticationRetryEmail::class ),
 		);
 	}
 }

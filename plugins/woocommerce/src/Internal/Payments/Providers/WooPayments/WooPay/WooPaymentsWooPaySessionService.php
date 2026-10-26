@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay;
 
 use Automattic\Jetpack\Connection\Client as Jetpack_Connection_Client;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionMethodPolicy;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\StoreApi\RoutesController;
 use Automattic\WooCommerce\StoreApi\StoreApi;
 use Automattic\WooCommerce\StoreApi\Utilities\CartTokenUtils;
@@ -1019,7 +1019,7 @@ class WooPaymentsWooPaySessionService {
 			'account_id'                     => $this->account_service->get_account_id(),
 			'test_mode'                      => $this->account_service->is_test_mode_enabled(),
 			'capture_method'                 => $manual_capture ? 'manual' : 'automatic',
-			'is_subscriptions_plugin_active' => WooPaymentsSubscriptionMethodPolicy::is_woocommerce_subscriptions_active(),
+			'is_subscriptions_plugin_active' => SubscriptionMethodPolicy::is_woocommerce_subscriptions_active(),
 			'woocommerce_tax_display_cart'   => get_option( 'woocommerce_tax_display_cart' ),
 			'ship_to_billing_address_only'   => wc_ship_to_billing_address_only(),
 			'return_url'                     => $order instanceof \WC_Order ? $checkout_url : wc_get_cart_url(),

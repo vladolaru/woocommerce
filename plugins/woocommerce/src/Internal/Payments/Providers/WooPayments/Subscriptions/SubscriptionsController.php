@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsSubscriptionsController class file.
+ * SubscriptionsController class file.
  */
 
 declare( strict_types = 1 );
@@ -43,7 +43,7 @@ defined( 'ABSPATH' ) || exit;
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
+class SubscriptionsController implements RegisterHooksInterface {
 
 	/**
 	 * Attach the renewal hooks on `plugins_loaded` priority 11.
@@ -68,7 +68,7 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 	 * @internal
 	 */
 	public function handle_plugins_loaded(): void {
-		if ( ! WooPaymentsSubscriptionMethodPolicy::is_subscriptions_available() ) {
+		if ( ! SubscriptionMethodPolicy::is_subscriptions_available() ) {
 			return;
 		}
 
@@ -76,14 +76,14 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 
 		add_action( 'woocommerce_checkout_subscription_created', array( $this, 'maybe_force_subscription_to_manual' ), 10, 1 );
 
-		foreach ( WooPaymentsSubscriptionMethodPolicy::get_reusable_gateway_ids() as $gateway_id ) {
+		foreach ( SubscriptionMethodPolicy::get_reusable_gateway_ids() as $gateway_id ) {
 			add_action( 'woocommerce_scheduled_subscription_payment_' . $gateway_id, array( $this, 'scheduled_subscription_payment' ), 10, 2 );
 			add_action( 'woocommerce_subscription_failing_payment_method_updated_' . $gateway_id, array( $this, 'update_failing_payment_method' ), 10, 2 );
 		}
 
-		wc_get_container()->get( WooPaymentsSubscriptionAdminPaymentMethodHandler::class )->register_hooks();
+		wc_get_container()->get( SubscriptionAdminPaymentMethodHandler::class )->register_hooks();
 
-		if ( ! WooPaymentsSubscriptionMethodPolicy::is_duplicate_site() ) {
+		if ( ! SubscriptionMethodPolicy::is_duplicate_site() ) {
 			add_filter( 'wcs_renewal_order_items', array( self::class, 'check_renewal_mode' ), 10, 3 );
 		}
 
@@ -119,11 +119,11 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 			require_once WC_ABSPATH . 'includes/emails/class-wc-email-failed-order.php';
 		}
 
-		$failed_renewal_authentication = new WooPaymentsFailedRenewalAuthenticationEmail( $email_classes );
+		$failed_renewal_authentication = new FailedRenewalAuthenticationEmail( $email_classes );
 		$failed_renewal_authentication->init_hooks();
 		$email_classes['WC_Payments_Email_Failed_Renewal_Authentication'] = $failed_renewal_authentication;
 
-		$failed_authentication_retry = new WooPaymentsFailedAuthenticationRetryEmail();
+		$failed_authentication_retry = new FailedAuthenticationRetryEmail();
 		$failed_authentication_retry->init_hooks();
 		$email_classes['WC_Payments_Email_Failed_Authentication_Retry'] = $failed_authentication_retry;
 
@@ -625,7 +625,7 @@ class WooPaymentsSubscriptionsController implements RegisterHooksInterface {
 		}
 
 		$gateway_id = $subscription->get_payment_method();
-		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $gateway_id ) || WooPaymentsSubscriptionMethodPolicy::is_reusable_gateway_id( $gateway_id ) ) {
+		if ( ! WooPaymentsPersistenceVocabulary::is_woopayments_gateway_id( $gateway_id ) || SubscriptionMethodPolicy::is_reusable_gateway_id( $gateway_id ) ) {
 			return;
 		}
 

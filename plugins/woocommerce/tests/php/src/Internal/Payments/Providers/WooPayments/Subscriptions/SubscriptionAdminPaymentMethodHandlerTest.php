@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Subscriptions;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\WooPaymentsSubscriptionAdminPaymentMethodHandler;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
@@ -15,7 +15,7 @@ use WC_Unit_Test_Case;
 /**
  * Tests for the native WooPayments subscription admin payment-method handler.
  */
-class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_Case {
+class SubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Preserved Amazon Pay gateway ID.
@@ -25,7 +25,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 	/**
 	 * The System Under Test.
 	 *
-	 * @var WooPaymentsSubscriptionAdminPaymentMethodHandler
+	 * @var SubscriptionAdminPaymentMethodHandler
 	 */
 	private $sut;
 
@@ -43,7 +43,7 @@ class WooPaymentsSubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_
 		parent::setUp();
 		$this->token_class_map = new WooPaymentsTokenClassMapController();
 		$this->token_class_map->register();
-		$this->sut = new WooPaymentsSubscriptionAdminPaymentMethodHandler();
+		$this->sut = new SubscriptionAdminPaymentMethodHandler();
 		$this->sut->init( wc_get_container()->get( WooPaymentsTokenService::class ) );
 	}
 
