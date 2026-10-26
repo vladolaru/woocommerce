@@ -1079,11 +1079,9 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 		changeDateFilter( getBalanceDateFilterForPreset( nextPreset, now ) );
 	};
 
-	const { data: balanceData, listRef: balanceListRef } =
-		useDataViewsReloadState< BalanceRow, HTMLElement >(
-			tableRows,
-			state.isLoading
-		);
+	const balanceListRef = useDataViewsReloadState< HTMLElement >(
+		state.isLoading
+	);
 
 	if ( isInitialLoading ) {
 		return (
@@ -1242,7 +1240,7 @@ const BalanceReport = ( { now }: { now: Date } ) => {
 				{ exportStatus }
 			</div>
 			<DataViews
-				data={ balanceData }
+				data={ tableRows }
 				fields={ fields }
 				view={ view }
 				onChangeView={ handleChangeView }
@@ -1746,10 +1744,7 @@ const FeesReport = ( { now }: { now: Date } ) => {
 		setIsExporting( false );
 	};
 
-	const { data: feesData, listRef: feesListRef } = useDataViewsReloadState<
-		ReportsFee,
-		HTMLElement
-	>( rows, isLoading );
+	const feesListRef = useDataViewsReloadState< HTMLElement >( isLoading );
 
 	if ( isInitialLoading ) {
 		return (
@@ -1806,7 +1801,7 @@ const FeesReport = ( { now }: { now: Date } ) => {
 			className="woocommerce-woopayments-reports-fees"
 		>
 			<DataViews
-				data={ feesData }
+				data={ rows }
 				fields={ fields }
 				view={ view }
 				onChangeView={ handleChangeView }

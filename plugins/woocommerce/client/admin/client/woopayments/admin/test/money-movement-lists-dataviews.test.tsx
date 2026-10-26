@@ -32,6 +32,7 @@ import {
 	getWooPaymentsDepositsSummary,
 } from '../overview/data';
 import { setMockUserPreferences } from './helpers/user-preferences';
+import { SettingsShellHistoryBridge } from './helpers/settings-shell-history';
 
 // The real DataViews, from its CommonJS build: these tests read its View options menu.
 jest.mock( '@wordpress/dataviews/wp', () =>
@@ -59,7 +60,8 @@ jest.mock( '@wordpress/data', () => {
 
 jest.mock( '@woocommerce/navigation', () => ( {
 	...jest.requireActual( '@woocommerce/navigation' ),
-	getHistory: () => ( { push: jest.fn() } ),
+	getHistory: () =>
+		jest.requireActual( './helpers/settings-shell-history' ).shellHistory,
 } ) );
 
 jest.mock( '@woocommerce/data', () => ( {
@@ -106,16 +108,21 @@ const mocked = < T extends ( ...args: never[] ) => unknown >( fn: T ) =>
 
 const renderAt = ( route: string, element: ReactElement ) =>
 	render(
-		<MemoryRouter initialEntries={ [ route ] }>{ element }</MemoryRouter>
+		<MemoryRouter initialEntries={ [ route ] }>
+			<SettingsShellHistoryBridge />
+			{ element }
+		</MemoryRouter>
 	);
 
 const openViewOptions = async () => {
-	fireEvent.click(
-		await screen.findByRole( 'button', { name: 'View options' } )
-	);
+	const toggle = await screen.findByRole( 'button', {
+		name: 'View options',
+	} );
+	fireEvent.click( toggle );
+	await screen.findByText( 'Properties' );
 
-	return ( await screen.findByText( 'Properties' ) ).closest(
-		'.components-popover'
+	return document.getElementById(
+		toggle.getAttribute( 'aria-controls' ) || ''
 	) as HTMLElement;
 };
 
@@ -199,17 +206,20 @@ describe( 'WooPayments list View options', () => {
 		}
 	);
 
+	// DataViews 10.3.0 (Gutenberg #73064) lists only the columns a merchant can show or hide, as the
+	// client's `TableCard` column menu leaves out its `required` columns (`table/index.tsx:154-156`).
 	it.each( LISTS )(
-		'lists each column of the %s list once in the properties',
+		'lists each column of the %s list at most once and leaves out the columns it always shows',
 		async ( _name, route, element, column ) => {
 			renderAt( route, element() );
 			const dialog = await openViewOptions();
+			const properties = within( dialog )
+				.getAllByRole( 'listitem' )
+				.map( ( property ) => property.textContent );
 
-			expect(
-				Array.from(
-					dialog.querySelectorAll( '.dataviews-field-control__label' )
-				).filter( ( label ) => label.textContent === column )
-			).toHaveLength( 1 );
+			expect( properties.length ).toBeGreaterThan( 0 );
+			expect( new Set( properties ).size ).toBe( properties.length );
+			expect( properties ).not.toContain( column );
 		}
 	);
 } );
@@ -347,28 +357,57 @@ describe( 'WooPayments list load errors', () => {
 	);
 } );
 
-describe( 'WooPayments uncaptured list while loading', () => {
+describe( 'WooPayments uncaptured list while a new page loads', () => {
 	beforeEach( () => {
 		setEmptyLists();
-		mocked( getWooPaymentsAuthorizations ).mockReturnValue(
-			new Promise( () => {} )
-		);
-		mocked( getWooPaymentsAuthorizationsSummary ).mockReturnValue(
-			new Promise( () => {} )
-		);
+		mocked( getWooPaymentsAuthorizations )
+			.mockResolvedValueOnce( {
+				data: [
+					{
+						created: '2020-01-02 17:46:02',
+						captured: false,
+						order_id: 24,
+						risk_level: 2,
+						amount: 1455,
+						payment_intent_id: 'pi_4242',
+						charge_id: 'ch_mock',
+						currency: 'usd',
+					},
+				],
+				total_count: 30,
+			} as never )
+			.mockReturnValue( new Promise( () => {} ) );
+		mocked( getWooPaymentsAuthorizationsSummary ).mockResolvedValue( {
+			count: 30,
+			total: 43650,
+		} as never );
 	} );
 
-	it( 'labels its column headers before the rows load', async () => {
+	// The list once passed no fields while it loaded, which blanked its header. DataViews 13.0.0
+	// (Gutenberg #74572, #76486) renders no table before the first rows, so a reload shows the header.
+	it( 'keeps its column headers labelled while the next page loads', async () => {
 		renderAt(
 			'/woopayments/transactions?view=uncaptured',
 			<WooPaymentsTransactionsPage />
 		);
+		await screen.findByText( 'Uncaptured transactions loaded.' );
 
+		fireEvent.click( screen.getByRole( 'button', { name: 'Next page' } ) );
+
+		await waitFor( () =>
+			expect( getWooPaymentsAuthorizations ).toHaveBeenLastCalledWith(
+				expect.objectContaining( { page: 2 } )
+			)
+		);
+		expect( screen.getByRole( 'table' ) ).toHaveAttribute(
+			'aria-busy',
+			'true'
+		);
 		expect(
-			await screen.findByRole( 'columnheader', { name: 'Authorized on' } )
+			screen.getByRole( 'columnheader', { name: /^Authorized on/ } )
 		).toBeInTheDocument();
 		expect(
-			screen.getByRole( 'columnheader', { name: 'Capture by' } )
+			screen.getByRole( 'columnheader', { name: /^Capture by/ } )
 		).toBeInTheDocument();
 	} );
 } );

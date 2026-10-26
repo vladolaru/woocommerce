@@ -87,30 +87,23 @@ const lastQuery = ( mock: unknown ) => {
 };
 
 /**
- * Get the applied filter chip whose name starts the given text, and its remove button.
+ * Get the applied filter chip, a button named by its field, rule and value, and the remove button beside it.
  *
- * @param name The chip's field and rule, as DataViews shows them ("Loan is:").
+ * @param name The chip's field and rule, as DataViews shows them ("Loan is").
  */
 const getChip = ( name: string ) => {
-	const chip = Array.from(
-		document.querySelectorAll(
-			'.dataviews-filters__summary-chip-container'
-		)
-	).find(
-		( container ) =>
-			container
-				.querySelector( '.dataviews-filters__summary-filter-text-name' )
-				?.textContent?.startsWith( name )
-	) as HTMLElement | undefined;
+	const chip = screen.queryByRole( 'button', {
+		name: ( accessibleName ) => accessibleName.startsWith( `${ name }:` ),
+	} );
 
 	return {
 		chip,
-		value: chip?.querySelector(
-			'.dataviews-filters__summary-filter-text-value'
-		)?.textContent,
-		remove: chip?.querySelector(
-			'.dataviews-filters__summary-chip-remove'
-		) as HTMLElement | null,
+		// A primary filter's button reads "Reset", any other "Remove".
+		remove: chip?.parentElement
+			? within( chip.parentElement ).getByRole( 'button', {
+					name: /^(Remove|Reset)$/,
+				} )
+			: null,
 	};
 };
 
@@ -170,7 +163,9 @@ describe( 'WooPayments list filters in the real DataViews', () => {
 		await screen.findByText( 'No transactions found.' );
 
 		const loan = getChip( 'Loan is' );
-		expect( loan.value ).toBe( 'ID: flxln_paid | Paid in Full' );
+		expect( loan.chip ).toHaveAccessibleName(
+			'Loan is: ID: flxln_paid | Paid in Full'
+		);
 		expect( lastQuery( getWooPaymentsTransactions ) ).toMatchObject( {
 			loan_id_is: 'flxln_paid',
 		} );
@@ -182,7 +177,7 @@ describe( 'WooPayments list filters in the real DataViews', () => {
 				lastQuery( getWooPaymentsTransactions )
 			).not.toHaveProperty( 'loan_id_is' )
 		);
-		expect( getChip( 'Loan is' ).chip ).toBeUndefined();
+		expect( getChip( 'Loan is' ).chip ).not.toBeInTheDocument();
 	} );
 
 	it( 'shows the disputes status filter as a chip and drops it from the next request when removed', async () => {
@@ -203,7 +198,7 @@ describe( 'WooPayments list filters in the real DataViews', () => {
 		);
 
 		const status = getChip( 'Status is' );
-		expect( status.chip ).toBeDefined();
+		expect( status.chip ).toBeInTheDocument();
 
 		fireEvent.click( status.remove as HTMLElement );
 
@@ -280,7 +275,7 @@ describe( 'WooPayments list filters in the real DataViews', () => {
 		);
 
 		const date = getChip( 'Date is before' );
-		expect( date.chip ).toBeDefined();
+		expect( date.chip ).toBeInTheDocument();
 
 		fireEvent.click( date.remove as HTMLElement );
 

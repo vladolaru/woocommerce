@@ -93,10 +93,7 @@ export function WooPaymentsMoneyMovementDataViews<
 		) : undefined;
 	const resolvedGetItemId =
 		getItemId || ( ( item: Item ) => String( item.id || '' ) );
-	const { data, listRef } = useDataViewsReloadState< Item, HTMLDivElement >(
-		rows,
-		isLoading
-	);
+	const listRef = useDataViewsReloadState< HTMLDivElement >( isLoading );
 	return (
 		<Card
 			ref={ listRef }
@@ -118,7 +115,7 @@ export function WooPaymentsMoneyMovementDataViews<
 					view={ tableView }
 					onChangeView={ onChangeView }
 					fields={ fields }
-					data={ data }
+					data={ rows }
 					isLoading={ isLoading }
 					// The lists that search do it with their own field (`transaction-search.tsx`), not DataViews' text search.
 					search={ false }

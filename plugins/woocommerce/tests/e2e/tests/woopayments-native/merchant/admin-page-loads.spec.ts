@@ -193,14 +193,15 @@ test(
 );
 
 test(
-	'A merchant opens native uncaptured and blocked transactions and sees their client columns',
+	'A merchant opens empty native uncaptured and blocked transactions lists and sees the empty row, toolbar and summary',
 	{ tag: [ tags.WOOPAYMENTS_NATIVE ] },
 	async ( { page, baseURL } ) => {
 		test.skip( ! FIXTURE, RECORDED_ONLY );
 		const health = trackPageHealth( page, baseURL );
 
-		// Client 11.1.0 `transactions/uncaptured/index.tsx:44-107`, Email and
-		// Country hidden by default. The fixture holds no authorizations.
+		// The fixture holds no authorizations. DataViews renders no table for
+		// an empty list (13.0.0, Gutenberg #74572); Jest reads the client's
+		// column set (`uncaptured-list.test.tsx`).
 		await page.goto(
 			adminPath( '/woopayments/transactions', { view: 'uncaptured' } )
 		);
@@ -210,34 +211,32 @@ test(
 		await expect( page.getByRole( 'status' ) ).toHaveText(
 			'No uncaptured transactions found.'
 		);
-		await expect( page.getByRole( 'columnheader' ) ).toHaveText( [
-			/^Authorized on[↑↓]?$/,
-			'Capture by',
-			'Order',
-			'Risk level',
-			'Amount',
-			'Action',
-		] );
+		await expect(
+			page.getByText( 'No data to display', { exact: true } )
+		).toBeVisible();
+		await expect(
+			page.getByRole( 'button', { name: 'View options' } )
+		).toBeVisible();
 		await expect(
 			page
 				.getByRole( 'listitem' )
 				.filter( { hasText: 'authorization(s)' } )
 		).toHaveText( /^0\s*authorization\(s\)$/ );
 
-		// Client 11.1.0 `transactions/blocked/columns.tsx:28-60`. The recorded
-		// store had no blocked payments.
+		// The recorded store had no blocked payments; Jest reads the client's
+		// column set (`blocked-transactions.test.tsx`).
 		await page.goto(
 			adminPath( '/woopayments/transactions', { view: 'blocked' } )
 		);
 		await expect(
 			page.getByRole( 'heading', { name: 'Blocked transactions' } )
 		).toBeVisible();
-		await expect( page.getByRole( 'columnheader' ) ).toHaveText( [
-			/^Date \/ Time[↑↓]?$/,
-			'Amount',
-			'Customer',
-			'Status',
-		] );
+		await expect(
+			page.getByText( 'No data to display', { exact: true } )
+		).toBeVisible();
+		await expect(
+			page.getByRole( 'button', { name: 'View options' } )
+		).toBeVisible();
 		// The client's own label, `blocked/index.tsx:80`.
 		await expect(
 			page

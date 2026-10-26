@@ -26,22 +26,15 @@ const scrollListTopIntoView = ( list: HTMLElement | null ) => {
 };
 
 /**
- * DataViews' loading state for a list whose rows reload on a view change, like Gutenberg's
- * post list: no rows while loading, so the table shows its centered spinner rather than the
- * infinite-scroll spinner under the old rows. Each reload after the first also scrolls the
- * list's top into view.
+ * Scrolls a DataViews list's top into view on each reload after the first, when it sits above
+ * the viewport. DataViews keeps the previous rows, dimmed, while the new ones load.
  *
- * @param rows      The loaded rows.
  * @param isLoading Whether the rows are loading.
- * @return The rows to pass to DataViews and the ref for the list's outer element.
+ * @return The ref for the list's outer element.
  */
-export function useDataViewsReloadState<
-	Item,
-	ListElement extends HTMLElement,
->(
-	rows: Item[],
+export function useDataViewsReloadState< ListElement extends HTMLElement >(
 	isLoading: boolean
-): { data: Item[]; listRef: RefObject< ListElement > } {
+): RefObject< ListElement > {
 	const listRef = useRef< ListElement >( null );
 	const hasLoadedRef = useRef( false );
 	const isAnchoringOffRef = useRef( false );
@@ -52,9 +45,8 @@ export function useDataViewsReloadState<
 		if ( isLoading ) {
 			if ( hasLoadedRef.current ) {
 				scrollListTopIntoView( listRef.current );
-				// Without the old rows the page shrinks around the focused pager button, and
-				// the browser's scroll anchoring would follow it back down once the new rows
-				// render; it stays off until they have.
+				// The browser's scroll anchoring could pull the page back toward the pager
+				// when the new rows render; it stays off until they have.
 				root.style.overflowAnchor = 'none';
 				isAnchoringOffRef.current = true;
 			}
@@ -83,5 +75,5 @@ export function useDataViewsReloadState<
 		[]
 	);
 
-	return { data: isLoading ? [] : rows, listRef };
+	return listRef;
 }

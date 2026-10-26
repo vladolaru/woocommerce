@@ -65,27 +65,25 @@ describe( 'WooPaymentsMoneyMovementDataViews loading a new page', () => {
 		getBoundingClientRect.mockRestore();
 	} );
 
-	it( 'replaces the previous rows with the spinner while the new page loads', () => {
-		const { container, rerender } = render(
-			renderList( 1, firstPageRows, false )
-		);
+	// DataViews 13.0.0 (Gutenberg #74572): a reloading table keeps its previous rows, marked busy.
+	it( 'keeps the previous rows, marked busy, while the new page loads', () => {
+		const { rerender } = render( renderList( 1, firstPageRows, false ) );
 
-		expect( screen.getByText( 'First page row' ) ).toBeInTheDocument();
+		expect( screen.getByRole( 'table' ) ).toHaveAttribute(
+			'aria-busy',
+			'false'
+		);
 
 		rerender( renderList( 2, firstPageRows, true ) );
 
-		expect(
-			screen.queryByText( 'First page row' )
-		).not.toBeInTheDocument();
+		expect( screen.getByText( 'First page row' ) ).toBeInTheDocument();
+		expect( screen.getByRole( 'table' ) ).toHaveAttribute(
+			'aria-busy',
+			'true'
+		);
 		expect(
 			screen.getByRole( 'heading', { name: 'Transactions' } )
 		).toBeInTheDocument();
-		expect(
-			container.querySelector( '.dataviews-loading .components-spinner' )
-		).toBeInTheDocument();
-		expect(
-			container.querySelector( '.dataviews-loading-more' )
-		).not.toBeInTheDocument();
 	} );
 
 	// Client 11.1.0 `@woocommerce/components` TableCard: while loading, the footer shows
