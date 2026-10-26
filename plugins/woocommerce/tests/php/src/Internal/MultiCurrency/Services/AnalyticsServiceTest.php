@@ -9,6 +9,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyState;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\AnalyticsService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\PriceConverter;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
+use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilderFactory;
 use WC_Unit_Test_Case;
 
 /**
@@ -38,6 +39,7 @@ class AnalyticsServiceTest extends WC_Unit_Test_Case {
 	 */
 	public function tear_down(): void {
 		update_option( 'woocommerce_currency', $this->original_currency );
+		wc_get_container()->get( StateBuilderFactory::class )->get_state_builder()->reset();
 
 		parent::tear_down();
 	}
@@ -134,19 +136,52 @@ class AnalyticsServiceTest extends WC_Unit_Test_Case {
 
 		$options = $sut->get_customer_currency_options();
 
-		$this->assertSame( array( 'GBP', 'USD' ), array_column( $options, 'value' ) );
+		$this->assertSame( array( 'GBP', 'AUD', 'USD' ), array_column( $options, 'value' ) );
 		$this->assertSame( html_entity_decode( get_woocommerce_currencies()['GBP'] ), $options[0]['label'] );
-		$this->assertSame( html_entity_decode( get_woocommerce_currencies()['USD'] ), $options[1]['label'] );
+		$this->assertSame( html_entity_decode( get_woocommerce_currencies()['AUD'] ), $options[1]['label'] );
+		$this->assertSame( html_entity_decode( get_woocommerce_currencies()['USD'] ), $options[2]['label'] );
 	}
 
 	/**
-	 * @testdox Should skip customer currency options not available in state.
+	 * @testdox Should skip customer currency options WooCommerce does not know.
 	 */
-	public function test_skips_customer_currency_options_not_available_in_state(): void {
-		$sut = $this->create_service( $this->create_state( 'USD', array( 'AUD' ) ) );
+	public function test_skips_customer_currency_options_woocommerce_does_not_know(): void {
+		$sut = $this->create_service( $this->create_state( 'USD', array( 'ZZZ' ) ) );
 
 		$this->assertSame(
 			array(
+				array(
+					'label' => html_entity_decode( get_woocommerce_currencies()['USD'] ),
+					'value' => 'USD',
+				),
+			),
+			$sut->get_customer_currency_options()
+		);
+	}
+
+	/**
+	 * @testdox Should keep a customer currency option after the merchant stops offering the currency.
+	 */
+	public function test_keeps_customer_currency_option_after_the_currency_is_removed(): void {
+		update_option( 'wcpay_multi_currency_enabled_currencies', array( 'EUR' ) );
+		update_option( 'wcpay_multi_currency_exchange_rate_eur', 'manual' );
+		update_option( 'wcpay_multi_currency_manual_rate_eur', '0.9' );
+		$state_builder = wc_get_container()->get( StateBuilderFactory::class )->get_state_builder();
+		$state_builder->reset();
+		$sut = new AnalyticsService( $state_builder );
+		$this->create_order( 'EUR', '0.9', 'USD' );
+		$sut->record_customer_currency( 'EUR' );
+
+		update_option( 'wcpay_multi_currency_enabled_currencies', array() );
+		$state_builder->reset();
+
+		$this->assertArrayNotHasKey( 'EUR', $state_builder->build()->get_available_currencies(), 'Without a rate provider, a removed manual currency is not available.' );
+		$this->assertSame(
+			array(
+				array(
+					'label' => html_entity_decode( get_woocommerce_currencies()['EUR'] ),
+					'value' => 'EUR',
+				),
 				array(
 					'label' => html_entity_decode( get_woocommerce_currencies()['USD'] ),
 					'value' => 'USD',

@@ -139,25 +139,25 @@ class AnalyticsService {
 	 * @return array<int,array{label:string,value:string}>
 	 */
 	public function get_customer_currency_options(): array {
-		$state                = $this->state_builder->build();
-		$available_currencies = $state->get_available_currencies();
-		$currencies           = $state->get_customer_currencies();
-		$default_currency     = $state->get_default_currency();
+		$state            = $this->state_builder->build();
+		$currencies       = $state->get_customer_currencies();
+		$default_currency = $state->get_default_currency();
 
 		if ( ! in_array( $default_currency->get_code(), $currencies, true ) ) {
 			$currencies[] = $default_currency->get_code();
 		}
 
+		// A currency the merchant stopped offering keeps its option, because its orders stay in the reports.
+		$names   = get_woocommerce_currencies();
 		$options = array();
 		foreach ( $currencies as $currency_code ) {
-			if ( ! isset( $available_currencies[ $currency_code ] ) ) {
+			if ( ! isset( $names[ $currency_code ] ) ) {
 				continue;
 			}
 
-			$currency  = $available_currencies[ $currency_code ];
 			$options[] = array(
-				'label' => html_entity_decode( $currency->get_name(), ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401 ),
-				'value' => $currency->get_code(),
+				'label' => html_entity_decode( $names[ $currency_code ], ENT_QUOTES | ENT_SUBSTITUTE | ENT_HTML401 ),
+				'value' => $currency_code,
 			);
 		}
 
