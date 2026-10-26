@@ -94,9 +94,8 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 
 		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::instance' );
 		$this->setExpectedDeprecated( 'WCPay\\MultiCurrency\\MultiCurrency::get_price' );
-		$facade_converted_amount = $consumer->get_woopayments_multicurrency_price( 10.0 );
 
-		$this->assertSame( 20.0, $facade_converted_amount, 'The Deposits facade call should apply the selected-currency rate once.' );
+		$this->assertSame( 20.0, $consumer->get_woopayments_multicurrency_price( 10.0 ), 'The Deposits call shape converts once: 10.0 at rate 2.0 is 20.0, two conversions would give 40.0.' );
 	}
 
 	/**
@@ -145,10 +144,9 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 		$this->assertFalse( class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ), 'Precondition: an earlier in-process test declared the facade.' );
 
 		foreach ( array( MultiCurrencyRuntimeArbiter::OWNER_EXTENSION, MultiCurrencyRuntimeArbiter::OWNER_NONE ) as $owner ) {
-			// Only the declaration loader: the shared runtime loader keeps its projection service across in-process tests.
-			$declaration_loader = new WooPaymentsExtensionFacadeLoader();
-			$declaration_loader->init( $this->create_arbiter( $owner ) );
-			$declaration_loader->register();
+			$loader = new WooPaymentsExtensionFacadeLoader();
+			$loader->init( $this->create_arbiter( $owner ) );
+			$loader->register();
 			$this->assertFalse( class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ), 'The plugin and ownerless runtimes must retain authority over the plugin namespace.' );
 			$this->assertFalse( class_exists( 'WCPay\\MultiCurrency\\Compatibility', false ), 'The compatibility facade stays absent with the facade.' );
 		}
@@ -165,9 +163,9 @@ class WooPaymentsExtensionFacadeLoaderTest extends WC_Unit_Test_Case {
 	 * @param StateBuilder|null $state_builder   State builder; the request's shared builder by default.
 	 */
 	private function create_loader( string $owner, PriceConverter $price_converter, ?StateBuilder $state_builder = null ): void {
-		$declaration_loader = new WooPaymentsExtensionFacadeLoader();
-		$declaration_loader->init( $this->create_arbiter( $owner ) );
-		$declaration_loader->register();
+		$loader = new WooPaymentsExtensionFacadeLoader();
+		$loader->init( $this->create_arbiter( $owner ) );
+		$loader->register();
 
 		wc_get_container()->replace( ServiceFactory::class, ServiceFactories::with( $this, array( 'create_price_converter' => $price_converter ) ) );
 		if ( null !== $state_builder ) {

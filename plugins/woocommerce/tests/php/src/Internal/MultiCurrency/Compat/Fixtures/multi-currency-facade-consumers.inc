@@ -15,6 +15,8 @@ class MultiCurrencyFacadeConsumerFixture {
 	/**
 	 * Convert a fixed deposit through the WooPayments MultiCurrency facade.
 	 *
+	 * As WooCommerce Deposits 2.4.8 does (`includes/class-wc-deposits.php:312-319`).
+	 *
 	 * @param float $amount Fixed deposit amount.
 	 * @return float
 	 */

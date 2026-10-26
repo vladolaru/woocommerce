@@ -812,15 +812,6 @@ class StateBuilderTest extends WC_Unit_Test_Case {
 
 				return null;
 			}
-
-			/**
-			 * Delete a cache value.
-			 *
-			 * @param string $key Cache key.
-			 */
-			public function delete( string $key ): void {
-				unset( $key );
-			}
 		};
 	}
 

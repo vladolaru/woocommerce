@@ -129,33 +129,36 @@ class AnalyticsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * @testdox Should project customer currency options with default currency.
+	 * @testdox Should list customer currency options from the recorded currencies.
+	 * @dataProvider customer_currency_options_provider
+	 *
+	 * @param string[] $customer_currencies Recorded customer currencies.
+	 * @param string[] $expected_codes      Expected option values, in order.
 	 */
-	public function test_lists_customer_currency_options_with_default_currency(): void {
-		$sut = $this->create_service( $this->create_state( 'USD', array( 'GBP', 'AUD', 'GBP' ) ) );
+	public function test_lists_customer_currency_options( array $customer_currencies, array $expected_codes ): void {
+		$sut = $this->create_service( $this->create_state( 'USD', $customer_currencies ) );
 
-		$options = $sut->get_customer_currency_options();
-
-		$this->assertSame( array( 'GBP', 'AUD', 'USD' ), array_column( $options, 'value' ) );
-		$this->assertSame( html_entity_decode( get_woocommerce_currencies()['GBP'] ), $options[0]['label'] );
-		$this->assertSame( html_entity_decode( get_woocommerce_currencies()['AUD'] ), $options[1]['label'] );
-		$this->assertSame( html_entity_decode( get_woocommerce_currencies()['USD'] ), $options[2]['label'] );
+		$this->assertSame(
+			array_map(
+				static fn( string $code ): array => array(
+					'label' => html_entity_decode( get_woocommerce_currencies()[ $code ] ),
+					'value' => $code,
+				),
+				$expected_codes
+			),
+			$sut->get_customer_currency_options()
+		);
 	}
 
 	/**
-	 * @testdox Should skip customer currency options WooCommerce does not know.
+	 * Recorded customer currencies and the options they give. AUD is known to WooCommerce but not offered by the state.
+	 *
+	 * @return array<string,array{0:string[],1:string[]}>
 	 */
-	public function test_skips_customer_currency_options_woocommerce_does_not_know(): void {
-		$sut = $this->create_service( $this->create_state( 'USD', array( 'ZZZ' ) ) );
-
-		$this->assertSame(
-			array(
-				array(
-					'label' => html_entity_decode( get_woocommerce_currencies()['USD'] ),
-					'value' => 'USD',
-				),
-			),
-			$sut->get_customer_currency_options()
+	public function customer_currency_options_provider(): array {
+		return array(
+			'default appended, repeat dropped, known but unoffered currency kept' => array( array( 'GBP', 'AUD', 'GBP' ), array( 'GBP', 'AUD', 'USD' ) ),
+			'code WooCommerce does not know skipped' => array( array( 'ZZZ' ), array( 'USD' ) ),
 		);
 	}
 
@@ -169,7 +172,6 @@ class AnalyticsServiceTest extends WC_Unit_Test_Case {
 		$state_builder = wc_get_container()->get( StateBuilderFactory::class )->get_state_builder();
 		$state_builder->reset();
 		$sut = new AnalyticsService( $state_builder );
-		$this->create_order( 'EUR', '0.9', 'USD' );
 		$sut->record_customer_currency( 'EUR' );
 
 		update_option( 'wcpay_multi_currency_enabled_currencies', array() );
