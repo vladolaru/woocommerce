@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsMultiCurrencyController class file.
+ * MultiCurrencyController class file.
  */
 
 declare( strict_types = 1 );
@@ -21,7 +21,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsMultiCurrencyController implements RegisterHooksInterface {
+class MultiCurrencyController implements RegisterHooksInterface {
 
 	/**
 	 * Runtime ownership arbiter.
@@ -136,6 +136,6 @@ class WooPaymentsMultiCurrencyController implements RegisterHooksInterface {
 	 * @param MultiCurrencyApiClientInterface $api_client_adapter Selected API client adapter.
 	 */
 	private function set_rate_provider( MultiCurrencyAccountInterface $account_adapter, MultiCurrencyApiClientInterface $api_client_adapter ): void {
-		$this->rate_service->set_provider( new WooPaymentsCurrencyRateProvider( $account_adapter, $api_client_adapter ) );
+		$this->rate_service->set_provider( new CurrencyRateProvider( $account_adapter, $api_client_adapter ) );
 	}
 }

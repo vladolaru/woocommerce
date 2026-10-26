@@ -655,7 +655,7 @@ Per the T.1 provider-family audit, `M1`, `M2` and `M3` are retired from this fil
 
 ### Core-side proof
 
-- `plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/MultiCurrency/WooPaymentsCurrencyRateProviderTest.php`: usable-account availability, provider rate delegation, and supported-currency responses.
+- `plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/MultiCurrency/CurrencyRateProviderTest.php`: usable-account availability, provider rate delegation, and supported-currency responses.
 - `plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsPaymentOperationServiceTest.php`: settlement exchange-rate effect planning and order-currency method validation.
 - `plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsCheckoutAjaxControllerTest.php::test_update_order_status_persists_settlement_exchange_rate_meta_for_converted_currency_charge`.
 - `plugins/woocommerce/tests/php/src/Internal/Payments/Providers/WooPayments/WooPaymentsMoneyMovementRestControllerTest.php` and `plugins/woocommerce/client/admin/client/woopayments/admin/test/money-movement-pages.test.tsx`: shopper and settlement money remain distinct through REST projection and formatted transaction details.

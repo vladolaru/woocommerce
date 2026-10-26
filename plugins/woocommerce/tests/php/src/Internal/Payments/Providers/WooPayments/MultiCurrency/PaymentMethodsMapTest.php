@@ -5,20 +5,20 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\M
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDatabaseCache;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyPaymentMethodsMap;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\PaymentMethodsMap;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsMultiCurrencyPaymentMethodsMap class.
+ * Tests for the PaymentMethodsMap class.
  *
  * Expected values follow client 11.1.0 `includes/compat/multi-currency/class-wc-payments-currency-manager.php`:
  * `get_enabled_payment_method_currencies()` (:66-91) skips card, card_present and link, maps a domestic-only method to
  * the account currency, and `add_payment_method_currency_dependencies_script()` (:145-176) prints
  * `window.multiCurrencyPaymentMethodsMap` (currency => method => title) on the Multi-Currency settings page only.
  */
-class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
+class PaymentMethodsMapTest extends WC_Unit_Test_Case {
 
 	private const SETTINGS_OPTION = 'woocommerce_woocommerce_payments_settings';
 
@@ -201,11 +201,11 @@ class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
 	/**
 	 * Run the admin head callback on a settings tab and capture its output.
 	 *
-	 * @param WooPaymentsMultiCurrencyPaymentMethodsMap $sut System under test.
-	 * @param string                                    $tab Settings tab.
+	 * @param PaymentMethodsMap $sut System under test.
+	 * @param string            $tab Settings tab.
 	 * @return string
 	 */
-	private function capture_admin_head( WooPaymentsMultiCurrencyPaymentMethodsMap $sut, string $tab ): string {
+	private function capture_admin_head( PaymentMethodsMap $sut, string $tab ): string {
 		set_current_screen( 'woocommerce_page_wc-settings' );
 		$GLOBALS['current_tab'] = $tab; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 
@@ -220,9 +220,9 @@ class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
 	 *
 	 * @param bool   $builtin_owner    Whether native WooPayments owns the runtime.
 	 * @param string $account_country Account country.
-	 * @return WooPaymentsMultiCurrencyPaymentMethodsMap
+	 * @return PaymentMethodsMap
 	 */
-	private function create_sut( bool $builtin_owner = true, string $account_country = 'US' ): WooPaymentsMultiCurrencyPaymentMethodsMap {
+	private function create_sut( bool $builtin_owner = true, string $account_country = 'US' ): PaymentMethodsMap {
 		$arbiter = new class( $builtin_owner ) extends WooPaymentsRuntimeArbiter {
 			/**
 			 * Whether native owns runtime.
@@ -306,7 +306,7 @@ class WooPaymentsMultiCurrencyPaymentMethodsMapTest extends WC_Unit_Test_Case {
 
 		// The map resolves the account service from the container when the settings page needs it.
 		wc_get_container()->replace( WooPaymentsAccountService::class, $account );
-		$sut = new WooPaymentsMultiCurrencyPaymentMethodsMap();
+		$sut = new PaymentMethodsMap();
 		$sut->init( $arbiter );
 
 		return $sut;

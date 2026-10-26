@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsCurrencyRateProvider class file.
+ * CurrencyRateProvider class file.
  */
 
 declare( strict_types = 1 );
@@ -18,7 +18,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyApiCli
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsCurrencyRateProvider implements CurrencyRateProviderInterface {
+class CurrencyRateProvider implements CurrencyRateProviderInterface {
 
 	const PROVIDER_ID = 'woopayments';
 

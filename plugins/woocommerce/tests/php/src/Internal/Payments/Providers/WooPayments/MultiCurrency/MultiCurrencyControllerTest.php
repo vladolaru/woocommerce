@@ -5,10 +5,10 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\M
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsRuntimeArbiter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\CurrencyRateProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsLegacyApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsLegacyAccountAdapter;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\MultiCurrencyController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeAccountAdapter;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
@@ -18,9 +18,9 @@ use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RateServices;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsMultiCurrencyController class.
+ * Tests for the MultiCurrencyController class.
  */
-class WooPaymentsMultiCurrencyControllerTest extends WC_Unit_Test_Case {
+class MultiCurrencyControllerTest extends WC_Unit_Test_Case {
 
 	/**
 	 * Drop the container replacements and the services resolved with them.
@@ -43,7 +43,7 @@ class WooPaymentsMultiCurrencyControllerTest extends WC_Unit_Test_Case {
 		$context['bootstrap']->register();
 
 		$this->assertTrue( $context['rate_service']->is_provider_connected(), 'The rate service should delegate plugin-owned connection checks to the legacy adapter.' );
-		$this->assertSame( WooPaymentsCurrencyRateProvider::PROVIDER_ID, $context['rate_service']->get_automatic_rate_source_id() );
+		$this->assertSame( CurrencyRateProvider::PROVIDER_ID, $context['rate_service']->get_automatic_rate_source_id() );
 		$this->assertSame(
 			array( 'EUR' => 0.82 ),
 			$context['rate_service']->get_rates( 'usd', array( 'eur' ) ),
@@ -60,7 +60,7 @@ class WooPaymentsMultiCurrencyControllerTest extends WC_Unit_Test_Case {
 		$context['bootstrap']->register();
 
 		$this->assertTrue( $context['rate_service']->is_provider_connected(), 'The rate service should delegate native-owned connection checks to the native adapter.' );
-		$this->assertSame( WooPaymentsCurrencyRateProvider::PROVIDER_ID, $context['rate_service']->get_automatic_rate_source_id() );
+		$this->assertSame( CurrencyRateProvider::PROVIDER_ID, $context['rate_service']->get_automatic_rate_source_id() );
 		$this->assertSame(
 			array( 'EUR' => 0.91 ),
 			$context['rate_service']->get_rates( 'usd', array( 'eur' ) ),
@@ -118,7 +118,7 @@ class WooPaymentsMultiCurrencyControllerTest extends WC_Unit_Test_Case {
 		};
 		add_filter( 'wcpay_dev_mode', $load_time_listener );
 
-		wc_get_container()->get( WooPaymentsMultiCurrencyController::class )->register();
+		wc_get_container()->get( MultiCurrencyController::class )->register();
 
 		// A plugin that loads after WooCommerce decides dev mode, so registration must not read it.
 		$this->assertSame( 0, $load_time_reads, 'Registration should not read WooPayments dev mode.' );
@@ -190,7 +190,7 @@ class WooPaymentsMultiCurrencyControllerTest extends WC_Unit_Test_Case {
 
 		$rate_service = RateServices::with();
 
-		$bootstrap = new WooPaymentsMultiCurrencyController();
+		$bootstrap = new MultiCurrencyController();
 		$bootstrap->init(
 			$arbiter,
 			$legacy_account_adapter,

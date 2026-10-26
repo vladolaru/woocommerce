@@ -13,7 +13,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\DebugTo
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\HttpClient;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\PreflightService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Cutover\StateStore;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\CurrencyRateProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Throwable;
@@ -251,7 +251,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 			),
 			'multi_currency'          => array(
 				'enabled'                 => $multi_currency_enabled,
-				'rate_provider'           => WooPaymentsCurrencyRateProvider::PROVIDER_ID,
+				'rate_provider'           => CurrencyRateProvider::PROVIDER_ID,
 				'rate_provider_available' => $multi_currency_enabled && $this->is_rate_provider_available(),
 			),
 			'last_webhook_fetch'      => (int) get_option( WooPaymentsWebhookReliabilityService::LAST_FETCH_OPTION_KEY, 0 ),
@@ -685,7 +685,7 @@ class WooPaymentsStatusReport implements RegisterHooksInterface {
 		try {
 			$rate_service = wc_get_container()->get( RateService::class );
 
-			return WooPaymentsCurrencyRateProvider::PROVIDER_ID === $rate_service->get_automatic_rate_source_id() && $rate_service->has_available_provider();
+			return CurrencyRateProvider::PROVIDER_ID === $rate_service->get_automatic_rate_source_id() && $rate_service->has_available_provider();
 		} catch ( Throwable $exception ) {
 			return false;
 		}

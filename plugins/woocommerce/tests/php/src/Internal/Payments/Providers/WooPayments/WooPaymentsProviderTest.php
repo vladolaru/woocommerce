@@ -13,8 +13,8 @@ use Automattic\WooCommerce\Internal\Payments\ProviderOperationEffectApplierInter
 use Automattic\WooCommerce\Internal\Payments\ProviderPostLifecycleEffectApplierInterface;
 use Automattic\WooCommerce\Internal\Payments\ProviderPersistenceVocabularyInterface;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyPaymentMethodsMap;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\PaymentMethodsMap;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\MultiCurrencyController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGateway;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFeeDetailsNoteController;
@@ -66,7 +66,7 @@ class WooPaymentsProviderTest extends WC_Unit_Test_Case {
 	/** @testdox Provider exposes its Multi-Currency bootstrap root without knowing how core composes it. */
 	public function test_provider_exposes_its_multi_currency_bootstrap_root(): void {
 		$this->assertSame(
-			array( WooPaymentsMultiCurrencyController::class, WooPaymentsMultiCurrencyPaymentMethodsMap::class ),
+			array( MultiCurrencyController::class, PaymentMethodsMap::class ),
 			WooPaymentsProvider::get_multi_currency_classes()
 		);
 	}

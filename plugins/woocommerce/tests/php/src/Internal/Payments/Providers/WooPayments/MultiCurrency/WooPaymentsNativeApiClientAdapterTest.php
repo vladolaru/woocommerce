@@ -9,7 +9,7 @@ use Automattic\WooCommerce\Internal\MultiCurrency\Services\DatabaseCache;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\LocalizationService;
 use Automattic\WooCommerce\Internal\MultiCurrency\Services\StateBuilder;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\CurrencyRateProvider;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsNativeApiClientAdapter;
 use WC_Unit_Test_Case;
 use Automattic\WooCommerce\Tests\Internal\MultiCurrency\RateServices;
@@ -69,7 +69,7 @@ class WooPaymentsNativeApiClientAdapterTest extends WC_Unit_Test_Case {
 		);
 		$adapter = new WooPaymentsNativeApiClientAdapter();
 		$adapter->init( new FailingRatesNativeApiClient() );
-		$provider = new WooPaymentsCurrencyRateProvider( new ConnectedMultiCurrencyAccount(), $adapter );
+		$provider = new CurrencyRateProvider( new ConnectedMultiCurrencyAccount(), $adapter );
 		$builder  = new StateBuilder( new LocalizationService(), RateServices::with( $provider ), new DatabaseCache() );
 
 		$enabled = $builder->build()->get_enabled_currencies();

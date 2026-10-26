@@ -21,8 +21,8 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\PaymentProcessingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Admin\LinkController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyPaymentMethodsMap;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsMultiCurrencyController;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\PaymentMethodsMap;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\MultiCurrencyController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodDefinition;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\WooPaymentsPaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Webhooks\WooPaymentsWebhookReliabilityService;
@@ -388,7 +388,7 @@ class WooPaymentsProvider implements ProviderInterface, ProviderOperationEffectA
 	 * @return array<int,class-string> Class names in registration order.
 	 */
 	public static function get_multi_currency_classes(): array {
-		return array( WooPaymentsMultiCurrencyController::class, WooPaymentsMultiCurrencyPaymentMethodsMap::class );
+		return array( MultiCurrencyController::class, PaymentMethodsMap::class );
 	}
 
 	/**

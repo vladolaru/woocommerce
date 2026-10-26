@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsMultiCurrencyPaymentMethodsMap class file.
+ * PaymentMethodsMap class file.
  */
 
 declare( strict_types = 1 );
@@ -23,7 +23,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  * @since 11.2.0
  * @internal
  */
-class WooPaymentsMultiCurrencyPaymentMethodsMap implements RegisterHooksInterface {
+class PaymentMethodsMap implements RegisterHooksInterface {
 
 	/**
 	 * Methods the map never lists: they take any currency.

@@ -5,19 +5,19 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\M
 
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyAccountInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\MultiCurrencyApiClientInterface;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\WooPaymentsCurrencyRateProvider;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\MultiCurrency\CurrencyRateProvider;
 use WC_Unit_Test_Case;
 
 /**
- * Tests for the WooPaymentsCurrencyRateProvider class.
+ * Tests for the CurrencyRateProvider class.
  */
-class WooPaymentsCurrencyRateProviderTest extends WC_Unit_Test_Case {
+class CurrencyRateProviderTest extends WC_Unit_Test_Case {
 
 	/**
 	 * @testdox Should expose the WooPayments provider identifier.
 	 */
 	public function test_exposes_provider_identifier(): void {
-		$provider = new WooPaymentsCurrencyRateProvider(
+		$provider = new CurrencyRateProvider(
 			$this->create_account( true, false ),
 			$this->create_api_client( true )
 		);
@@ -36,7 +36,7 @@ class WooPaymentsCurrencyRateProviderTest extends WC_Unit_Test_Case {
 	 * @param bool $expected Expected availability.
 	 */
 	public function test_availability_requires_usable_api_and_account( bool $server_connected, bool $account_connected, bool $account_rejected, bool $expected ): void {
-		$provider = new WooPaymentsCurrencyRateProvider(
+		$provider = new CurrencyRateProvider(
 			$this->create_account( $account_connected, $account_rejected ),
 			$this->create_api_client( $server_connected )
 		);
@@ -70,7 +70,7 @@ class WooPaymentsCurrencyRateProviderTest extends WC_Unit_Test_Case {
 	 */
 	public function test_is_connected_follows_the_account( string $label, bool $server_connected, bool $account_connected, bool $account_rejected ): void {
 		unset( $label );
-		$provider = new WooPaymentsCurrencyRateProvider(
+		$provider = new CurrencyRateProvider(
 			$this->create_account( $account_connected, $account_rejected ),
 			$this->create_api_client( $server_connected )
 		);
@@ -97,7 +97,7 @@ class WooPaymentsCurrencyRateProviderTest extends WC_Unit_Test_Case {
 	 */
 	public function test_delegates_currency_rate_requests_to_api_client(): void {
 		$api_client = $this->create_api_client( true, array( 'eur' => 1.2 ) );
-		$provider   = new WooPaymentsCurrencyRateProvider(
+		$provider   = new CurrencyRateProvider(
 			$this->create_account( true, false ),
 			$api_client
 		);
@@ -111,7 +111,7 @@ class WooPaymentsCurrencyRateProviderTest extends WC_Unit_Test_Case {
 	 * @testdox Should return account-supported customer currencies.
 	 */
 	public function test_returns_account_supported_customer_currencies(): void {
-		$provider = new WooPaymentsCurrencyRateProvider(
+		$provider = new CurrencyRateProvider(
 			$this->create_account(
 				true,
 				false,
@@ -128,7 +128,7 @@ class WooPaymentsCurrencyRateProviderTest extends WC_Unit_Test_Case {
 	 * @testdox Should return all WooCommerce currencies without account-supported customer currencies.
 	 */
 	public function test_returns_all_woocommerce_currencies_without_account_supported_customer_currencies(): void {
-		$provider = new WooPaymentsCurrencyRateProvider(
+		$provider = new CurrencyRateProvider(
 			$this->create_account( true, false, array(), array() ),
 			$this->create_api_client( true )
 		);
