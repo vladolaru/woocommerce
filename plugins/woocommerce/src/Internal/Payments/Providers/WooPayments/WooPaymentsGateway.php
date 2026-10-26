@@ -23,7 +23,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionAdminPaymentMethodHandler;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionMethodPolicy;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionsController;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\LinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPay\WooPaymentsWooPaySessionService;
 use Automattic\WooCommerce\Internal\Payments\RefundRowCapture;
 use Exception;
@@ -2238,7 +2238,7 @@ class WooPaymentsGateway extends WC_Payment_Gateway_CC {
 	 * @return string
 	 */
 	private static function get_payment_method_changed_note( WC_Payment_Token $token ): string {
-		if ( $token instanceof WooPaymentsLinkToken ) {
+		if ( $token instanceof LinkToken ) {
 			return sprintf(
 				/* translators: %1$s: redacted email address for Link payment method */
 				__( 'Payment method is changed to: <strong>Link ending in %1$s</strong>.', 'woocommerce' ),

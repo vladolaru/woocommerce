@@ -54,8 +54,8 @@ use WC_Unit_Test_Case;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\TransportLog;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingApi;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\StripeBilling\StripeBillingModule;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\LinkToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\SepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
@@ -1759,7 +1759,7 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 				)
 			);
 
-		$token = new WooPaymentsSepaToken();
+		$token = new SepaToken();
 		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit' );
 		$token->set_user_id( $user_id );
 		$token->set_token( 'pm_sepa' );
@@ -7679,13 +7679,13 @@ class WooPaymentsGatewayTest extends WC_Unit_Test_Case {
 	 * Create a saved Link payment method for a customer, with Link enabled on the store.
 	 *
 	 * @param int $user_id Customer user ID.
-	 * @return WooPaymentsLinkToken
+	 * @return LinkToken
 	 */
-	private function create_link_token( int $user_id ): WooPaymentsLinkToken {
+	private function create_link_token( int $user_id ): LinkToken {
 		update_option( 'woocommerce_woocommerce_payments_settings', array( 'upe_enabled_payment_method_ids' => array( 'card', 'link' ) ) );
 		add_filter( 'woocommerce_payment_token_class', array( new WooPaymentsTokenClassMapController(), 'handle_woocommerce_payment_token_class' ), 10, 2 );
 
-		$token = new WooPaymentsLinkToken();
+		$token = new LinkToken();
 		$token->set_gateway_id( 'woocommerce_payments' );
 		$token->set_user_id( $user_id );
 		$token->set_token( 'pm_1UJhOFBzWlxcwgpPLinkT63' );

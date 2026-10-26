@@ -3,7 +3,7 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\SepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use WC_Payment_Tokens;
 use WC_Unit_Test_Case;
@@ -41,7 +41,7 @@ class WooPaymentsTokenClassMapControllerTest extends WC_Unit_Test_Case {
 
 		$token = WC_Payment_Tokens::get( $token_id );
 
-		$this->assertInstanceOf( WooPaymentsSepaToken::class, $token );
+		$this->assertInstanceOf( SepaToken::class, $token );
 		$this->assertSame( '6789', $token->get_last4() );
 		$this->assertSame( 'pm_sepa_saved', $token->get_token() );
 		$this->assertSame( 'woocommerce_payments_sepa_debit', $token->get_gateway_id() );
@@ -56,7 +56,7 @@ class WooPaymentsTokenClassMapControllerTest extends WC_Unit_Test_Case {
 		$sut->register();
 
 		// phpcs:ignore WooCommerce.Commenting.CommentHooks.MissingHookComment -- Test exercises the token class map filter directly.
-		$this->assertSame( WooPaymentsSepaToken::class, apply_filters( 'woocommerce_payment_token_class', 'WC_Payment_Token_WCPay_SEPA', 'legacy-sepa' ) );
+		$this->assertSame( SepaToken::class, apply_filters( 'woocommerce_payment_token_class', 'WC_Payment_Token_WCPay_SEPA', 'legacy-sepa' ) );
 	}
 
 	/**

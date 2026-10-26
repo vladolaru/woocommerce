@@ -9,9 +9,9 @@ namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\AmazonPayToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\LinkToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\SepaToken;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 use Exception;
 use RuntimeException;
@@ -73,9 +73,9 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	);
 
 	private const PAYMENT_METHOD_TYPES_BY_TOKEN_TYPE = array(
-		WooPaymentsSepaToken::TYPE      => self::PAYMENT_METHOD_TYPE_SEPA,
-		WooPaymentsLinkToken::TYPE      => self::PAYMENT_METHOD_TYPE_LINK,
-		WooPaymentsAmazonPayToken::TYPE => self::PAYMENT_METHOD_TYPE_AMAZON_PAY,
+		SepaToken::TYPE      => self::PAYMENT_METHOD_TYPE_SEPA,
+		LinkToken::TYPE      => self::PAYMENT_METHOD_TYPE_LINK,
+		AmazonPayToken::TYPE => self::PAYMENT_METHOD_TYPE_AMAZON_PAY,
 	);
 
 	/**
@@ -394,21 +394,21 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 		}
 
 		if ( $this->is_supported_woopayments_token( $payment_token ) ) {
-			if ( $payment_token instanceof WooPaymentsSepaToken ) {
+			if ( $payment_token instanceof SepaToken ) {
 				$item['method']['last4'] = $payment_token->get_last4();
 				$item['method']['brand'] = esc_html__( 'SEPA IBAN', 'woocommerce' );
 
 				return $item;
 			}
 
-			if ( $payment_token instanceof WooPaymentsLinkToken ) {
+			if ( $payment_token instanceof LinkToken ) {
 				$item['method']['last4'] = $payment_token->get_redacted_email();
 				$item['method']['brand'] = esc_html__( 'Stripe Link email', 'woocommerce' );
 
 				return $item;
 			}
 
-			if ( $payment_token instanceof WooPaymentsAmazonPayToken ) {
+			if ( $payment_token instanceof AmazonPayToken ) {
 				$item['method']['last4'] = $payment_token->get_email();
 				$item['method']['brand'] = esc_html__( 'Amazon Pay', 'woocommerce' );
 
@@ -758,16 +758,16 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * @param string              $provider_token Provider payment method ID.
 	 * @param int                 $user_id        User ID.
 	 * @param array<string,mixed> $payment_method Payment method details.
-	 * @return WooPaymentsSepaToken|null
+	 * @return SepaToken|null
 	 */
-	private function create_sepa_token_for_user( string $provider_token, int $user_id, array $payment_method ): ?WooPaymentsSepaToken {
+	private function create_sepa_token_for_user( string $provider_token, int $user_id, array $payment_method ): ?SepaToken {
 		$sepa_details = isset( $payment_method['sepa_debit'] ) && is_array( $payment_method['sepa_debit'] ) ? $payment_method['sepa_debit'] : array();
 		$last4        = isset( $sepa_details['last4'] ) ? (string) $sepa_details['last4'] : '';
 		if ( '' === $last4 ) {
 			return null;
 		}
 
-		$token = new WooPaymentsSepaToken();
+		$token = new SepaToken();
 		$token->set_gateway_id( self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE[ self::PAYMENT_METHOD_TYPE_SEPA ] );
 		$token->set_user_id( $user_id );
 		$token->set_token( $provider_token );
@@ -783,16 +783,16 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * @param string              $provider_token Provider payment method ID.
 	 * @param int                 $user_id        User ID.
 	 * @param array<string,mixed> $payment_method Payment method details.
-	 * @return WooPaymentsLinkToken|null
+	 * @return LinkToken|null
 	 */
-	private function create_link_token_for_user( string $provider_token, int $user_id, array $payment_method ): ?WooPaymentsLinkToken {
+	private function create_link_token_for_user( string $provider_token, int $user_id, array $payment_method ): ?LinkToken {
 		$link_details = isset( $payment_method['link'] ) && is_array( $payment_method['link'] ) ? $payment_method['link'] : array();
 		$email        = isset( $link_details['email'] ) ? (string) $link_details['email'] : '';
 		if ( '' === $email ) {
 			return null;
 		}
 
-		$token = new WooPaymentsLinkToken();
+		$token = new LinkToken();
 		$token->set_gateway_id( self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE[ self::PAYMENT_METHOD_TYPE_LINK ] );
 		$token->set_user_id( $user_id );
 		$token->set_token( $provider_token );
@@ -808,12 +808,12 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 	 * @param string              $provider_token Provider payment method ID.
 	 * @param int                 $user_id        User ID.
 	 * @param array<string,mixed> $payment_method Payment method details.
-	 * @return WooPaymentsAmazonPayToken
+	 * @return AmazonPayToken
 	 */
-	private function create_amazon_pay_token_for_user( string $provider_token, int $user_id, array $payment_method ): WooPaymentsAmazonPayToken {
+	private function create_amazon_pay_token_for_user( string $provider_token, int $user_id, array $payment_method ): AmazonPayToken {
 		$billing_details = isset( $payment_method['billing_details'] ) && is_array( $payment_method['billing_details'] ) ? $payment_method['billing_details'] : array();
 		$email           = isset( $billing_details['email'] ) ? (string) $billing_details['email'] : '';
-		$token           = new WooPaymentsAmazonPayToken();
+		$token           = new AmazonPayToken();
 		$token->set_gateway_id( self::GATEWAY_IDS_BY_PAYMENT_METHOD_TYPE[ self::PAYMENT_METHOD_TYPE_AMAZON_PAY ] );
 		$token->set_user_id( $user_id );
 		$token->set_token( $provider_token );
@@ -1233,9 +1233,9 @@ class WooPaymentsTokenService implements RegisterHooksInterface {
 			return false;
 		}
 
-		return $token instanceof WooPaymentsSepaToken
-			|| $token instanceof WooPaymentsLinkToken
-			|| $token instanceof WooPaymentsAmazonPayToken;
+		return $token instanceof SepaToken
+			|| $token instanceof LinkToken
+			|| $token instanceof AmazonPayToken;
 	}
 
 	/**

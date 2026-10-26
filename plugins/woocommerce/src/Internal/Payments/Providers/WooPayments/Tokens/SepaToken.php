@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsSepaToken class file.
+ * SepaToken class file.
  */
 
 declare( strict_types = 1 );
@@ -15,7 +15,7 @@ use WC_Payment_Token;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsSepaToken extends WC_Payment_Token {
+class SepaToken extends WC_Payment_Token {
 
 	/**
 	 * Token type; client 11.1.0 stores the same value (class-wc-payment-token-wcpay-sepa.php:26), so tokens saved before

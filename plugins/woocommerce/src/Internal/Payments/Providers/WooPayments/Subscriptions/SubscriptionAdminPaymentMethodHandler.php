@@ -7,8 +7,8 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\AmazonPayToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\LinkToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use WC_Order;
@@ -638,7 +638,7 @@ class SubscriptionAdminPaymentMethodHandler {
 			}
 		}
 
-		if ( $token instanceof WooPaymentsAmazonPayToken ) {
+		if ( $token instanceof AmazonPayToken ) {
 			$email = $token->get_email();
 			if ( '' !== $email && false === strpos( $fallback, $email ) ) {
 				/* translators: 1: payment method (Amazon Pay), 2: redacted customer email. */
@@ -646,7 +646,7 @@ class SubscriptionAdminPaymentMethodHandler {
 			}
 		}
 
-		if ( $token instanceof WooPaymentsLinkToken ) {
+		if ( $token instanceof LinkToken ) {
 			$email = $token->get_redacted_email();
 			if ( '' !== $email && false === strpos( $fallback, $email ) ) {
 				/* translators: 1: payment method (Stripe Link), 2: redacted customer email. */
@@ -671,11 +671,11 @@ class SubscriptionAdminPaymentMethodHandler {
 			/* translators: 1: payment method likely credit card, 2: last 4 digit. */
 			return sprintf( __( '%1$s ending in %2$s', 'woocommerce' ), $fallback, $token->get_last4() );
 		}
-		if ( $token instanceof WooPaymentsAmazonPayToken && '' !== $token->get_email() ) {
+		if ( $token instanceof AmazonPayToken && '' !== $token->get_email() ) {
 			/* translators: 1: payment method (Amazon Pay), 2: redacted customer email. */
 			return sprintf( __( '%1$s (%2$s)', 'woocommerce' ), $fallback, $token->get_email() );
 		}
-		if ( $token instanceof WooPaymentsLinkToken && '' !== $token->get_email() ) {
+		if ( $token instanceof LinkToken && '' !== $token->get_email() ) {
 			/* translators: 1: payment method (Stripe Link), 2: customer email. */
 			return sprintf( __( '%1$s (%2$s)', 'woocommerce' ), __( 'Stripe Link', 'woocommerce' ), $token->get_email() );
 		}

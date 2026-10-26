@@ -4,7 +4,7 @@ declare( strict_types = 1 );
 namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Subscriptions;
 
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionAdminPaymentMethodHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\AmazonPayToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPersistenceVocabulary;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
@@ -508,10 +508,10 @@ class SubscriptionAdminPaymentMethodHandlerTest extends WC_Unit_Test_Case {
 	 *
 	 * @param int    $user_id           User ID.
 	 * @param string $payment_method_id Provider payment method ID.
-	 * @return WooPaymentsAmazonPayToken
+	 * @return AmazonPayToken
 	 */
-	private function create_amazon_pay_token( int $user_id, string $payment_method_id ): WooPaymentsAmazonPayToken {
-		$token = new WooPaymentsAmazonPayToken();
+	private function create_amazon_pay_token( int $user_id, string $payment_method_id ): AmazonPayToken {
+		$token = new AmazonPayToken();
 		$token->set_gateway_id( self::AMAZON_PAY_GATEWAY_ID );
 		$token->set_user_id( $user_id );
 		$token->set_token( $payment_method_id );

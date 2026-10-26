@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsAmazonPayToken class file.
+ * AmazonPayToken class file.
  */
 
 declare( strict_types = 1 );
@@ -15,7 +15,7 @@ use WC_Payment_Token;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsAmazonPayToken extends WC_Payment_Token {
+class AmazonPayToken extends WC_Payment_Token {
 
 	/**
 	 * Token type; client 11.1.0 stores the same value (class-wc-payment-token-wcpay-amazon-pay.php:26), so tokens saved before

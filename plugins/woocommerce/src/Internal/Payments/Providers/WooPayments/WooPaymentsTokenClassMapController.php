@@ -7,9 +7,9 @@ declare( strict_types = 1 );
 
 namespace Automattic\WooCommerce\Internal\Payments\Providers\WooPayments;
 
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\AmazonPayToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\LinkToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\SepaToken;
 use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 
 /**
@@ -22,15 +22,15 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
 class WooPaymentsTokenClassMapController implements RegisterHooksInterface {
 
 	private const TYPE_CLASS_MAP = array(
-		WooPaymentsSepaToken::TYPE      => WooPaymentsSepaToken::class,
-		WooPaymentsLinkToken::TYPE      => WooPaymentsLinkToken::class,
-		WooPaymentsAmazonPayToken::TYPE => WooPaymentsAmazonPayToken::class,
+		SepaToken::TYPE      => SepaToken::class,
+		LinkToken::TYPE      => LinkToken::class,
+		AmazonPayToken::TYPE => AmazonPayToken::class,
 	);
 
 	private const COMPAT_TOKEN_CLASS_MAP = array(
-		'WC_Payment_Token_WCPay_SEPA'       => WooPaymentsSepaToken::class,
-		'WC_Payment_Token_WCPay_Link'       => WooPaymentsLinkToken::class,
-		'WC_Payment_Token_WCPay_Amazon_Pay' => WooPaymentsAmazonPayToken::class,
+		'WC_Payment_Token_WCPay_SEPA'       => SepaToken::class,
+		'WC_Payment_Token_WCPay_Link'       => LinkToken::class,
+		'WC_Payment_Token_WCPay_Amazon_Pay' => AmazonPayToken::class,
 	);
 
 	/**

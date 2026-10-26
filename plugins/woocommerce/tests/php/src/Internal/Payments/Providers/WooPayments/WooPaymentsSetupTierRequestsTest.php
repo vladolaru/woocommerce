@@ -31,7 +31,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsGatewaySettingsSynchronizer;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudOrderTrackingService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsProvider;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\SepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -253,7 +253,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 	 */
 	public function test_saved_sepa_token_loads_on_every_request_of_a_set_up_store( string $label, string $tier, string $request ): void {
 		unset( $label );
-		$token = new WooPaymentsSepaToken();
+		$token = new SepaToken();
 		$token->set_token( 'pm_test_sepa' );
 		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$token->set_user_id( 1 );
@@ -271,7 +271,7 @@ class WooPaymentsSetupTierRequestsTest extends WC_Unit_Test_Case {
 		$this->run_bootstrap( '__return_false' );
 
 		// The client loads its SEPA token class on every request (client 11.1.0 `includes/class-wc-payments.php:468`).
-		$this->assertInstanceOf( WooPaymentsSepaToken::class, WC_Payment_Tokens::get( $token->get_id() ), 'A renewal or subscription view must find the saved SEPA credential.' );
+		$this->assertInstanceOf( SepaToken::class, WC_Payment_Tokens::get( $token->get_id() ), 'A renewal or subscription view must find the saved SEPA credential.' );
 	}
 
 	/**

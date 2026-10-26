@@ -12,9 +12,9 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCu
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderDataService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\AmazonPayToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\LinkToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\SepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Proxies\LegacyProxy;
@@ -379,7 +379,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 						'last4' => '6789',
 					),
 				),
-				WooPaymentsSepaToken::class,
+				SepaToken::class,
 				'woocommerce_payments_sepa_debit',
 				'wcpay_sepa',
 				'get_last4',
@@ -394,7 +394,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 						'email' => 'buyer@example.com',
 					),
 				),
-				WooPaymentsLinkToken::class,
+				LinkToken::class,
 				WooPaymentsPersistenceVocabulary::GATEWAY_ID,
 				'wcpay_link',
 				'get_email',
@@ -409,7 +409,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 						'email' => 'buyer@example.com',
 					),
 				),
-				WooPaymentsAmazonPayToken::class,
+				AmazonPayToken::class,
 				'woocommerce_payments_amazon_pay',
 				'wcpay_amazon_pay',
 				'get_email',
@@ -840,7 +840,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		}
 
 		$this->assertSame( WC_Payment_Token_CC::class, $token_ids['pm_remote_card'] ?? null, 'A provider card with no local token must gain one.' );
-		$this->assertSame( WooPaymentsSepaToken::class, $token_ids['pm_remote_sepa'] ?? null, 'A provider SEPA method with no local token must gain one.' );
+		$this->assertSame( SepaToken::class, $token_ids['pm_remote_sepa'] ?? null, 'A provider SEPA method with no local token must gain one.' );
 	}
 
 	/**
@@ -938,7 +938,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$stored_token = \WC_Payment_Tokens::get( $sepa_token->get_id() );
 
 		$this->assertArrayNotHasKey( $sepa_token->get_id(), $tokens, 'Disabled SEPA tokens must not be returned for My Account or all-gateway checkout listings.' );
-		$this->assertInstanceOf( WooPaymentsSepaToken::class, $stored_token, 'Disabled SEPA tokens must remain stored locally.' );
+		$this->assertInstanceOf( SepaToken::class, $stored_token, 'Disabled SEPA tokens must remain stored locally.' );
 		$this->assertSame( array(), $updated_token_ids, 'Listing a disabled token must not write to it.' );
 		$this->assertSame( array( 'card' => 1 ), $customer_service->fetch_counts, 'Disabled SEPA must not be fetched during all-gateway reconciliation.' );
 		$this->assertSame( array(), $api_client->detached_payment_method_ids, 'Preserving a disabled token must not trigger a remote detach.' );
@@ -1026,7 +1026,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 
 		$this->assertArrayNotHasKey( $sepa_token->get_id(), $skipped_tokens, 'Settings-disabled tokens must stay hidden when reconciliation is skipped.' );
 		$this->assertArrayNotHasKey( $sepa_token->get_id(), $failed_tokens, 'Settings-disabled tokens must stay hidden when the provider fetch fails.' );
-		$this->assertInstanceOf( WooPaymentsSepaToken::class, $stored_token, 'A provider outage must not delete settings-disabled tokens.' );
+		$this->assertInstanceOf( SepaToken::class, $stored_token, 'A provider outage must not delete settings-disabled tokens.' );
 	}
 
 	/**
@@ -1085,7 +1085,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $disabled_cache['payment_method_card'] ?? null, 'Disabling SEPA must retain unrelated cached card data.' );
 		$this->assertSame( array( $sepa_data ), $disabled_cache['payment_method_sepa_debit'] ?? null, 'Disabled-state filtering must not mutate the existing provider cache.' );
 		$this->assertArrayHasKey( $sepa_token->get_id(), $enabled_tokens, 'Changing the enabled-method setting must immediately restore the token to listings.' );
-		$this->assertInstanceOf( WooPaymentsSepaToken::class, $stored_token, 'A re-enabled token must remain stored.' );
+		$this->assertInstanceOf( SepaToken::class, $stored_token, 'A re-enabled token must remain stored.' );
 		$this->assertSame( array(), $updated_token_ids, 'Disable and re-enable listing reads must not write to the payment token.' );
 		$this->assertSame( array(), $customer_service->fetch_counts, 'The unchanged provider cache may satisfy reconciliation after re-enable.' );
 
@@ -1142,7 +1142,7 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 		$this->assertSame( array(), $failed_cache['payment_method_card'] ?? null, 'A failed provider fetch must retain unrelated cached card data.' );
 		$this->assertSame( array( $sepa_data ), $failed_cache['payment_method_sepa_debit'] ?? null, 'Settings-derived filtering must not change cached SEPA data.' );
 		$this->assertArrayHasKey( $sepa_token->get_id(), $enabled_tokens, 'The matching token must return after re-enable and provider recovery.' );
-		$this->assertInstanceOf( WooPaymentsSepaToken::class, $stored_token, 'The recovered token must remain stored.' );
+		$this->assertInstanceOf( SepaToken::class, $stored_token, 'The recovered token must remain stored.' );
 		$this->assertSame(
 			array(
 				'link' => 1,
@@ -1701,9 +1701,9 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	public function test_keeps_only_supported_woopayments_tokens_in_customer_token_lists(): void {
 		$user_id    = $this->factory()->user->create();
 		$card_token = $this->create_card_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_card' );
-		$link_token = new WooPaymentsLinkToken();
+		$link_token = new LinkToken();
 		$bank_token = $this->create_echeck_token( $user_id, WooPaymentsPersistenceVocabulary::GATEWAY_ID, 'pm_bank' );
-		$sepa_token = new WooPaymentsSepaToken();
+		$sepa_token = new SepaToken();
 
 		$link_token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$link_token->set_user_id( $user_id );
@@ -1778,8 +1778,8 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	public function provider_card_gateway_read_hides_disabled_type_tokens(): array {
 		return array(
 			'Link token under the card gateway' => array(
-				static function ( int $user_id ): WooPaymentsLinkToken {
-					$token = new WooPaymentsLinkToken();
+				static function ( int $user_id ): LinkToken {
+					$token = new LinkToken();
 					$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 					$token->set_user_id( $user_id );
 					$token->set_token( 'pm_link' );
@@ -1790,8 +1790,8 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 				},
 			),
 			'SEPA token under the card gateway' => array(
-				static function ( int $user_id ): WooPaymentsSepaToken {
-					$token = new WooPaymentsSepaToken();
+				static function ( int $user_id ): SepaToken {
+					$token = new SepaToken();
 					$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 					$token->set_user_id( $user_id );
 					$token->set_token( 'pm_sepa_under_card' );
@@ -2645,10 +2645,10 @@ class WooPaymentsTokenServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @param int    $user_id  User ID.
 	 * @param string $token_id Provider token ID.
-	 * @return WooPaymentsSepaToken
+	 * @return SepaToken
 	 */
-	private function create_sepa_token( int $user_id, string $token_id ): WooPaymentsSepaToken {
-		$token = new WooPaymentsSepaToken();
+	private function create_sepa_token( int $user_id, string $token_id ): SepaToken {
+		$token = new SepaToken();
 		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID_PREFIX . 'sepa_debit' );
 		$token->set_user_id( $user_id );
 		$token->set_token( $token_id );

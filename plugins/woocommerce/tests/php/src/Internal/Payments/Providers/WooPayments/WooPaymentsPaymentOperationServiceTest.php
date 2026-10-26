@@ -44,8 +44,8 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsSessionService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\LinkToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\SepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentOperationService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsDuplicateGatewayMethodsService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsFraudRulesetService;
@@ -10659,10 +10659,10 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @param int    $user_id           User ID.
 	 * @param string $payment_method_id Provider payment method ID.
-	 * @return WooPaymentsLinkToken
+	 * @return LinkToken
 	 */
-	private function create_link_token( int $user_id, string $payment_method_id ): WooPaymentsLinkToken {
-		$token = new WooPaymentsLinkToken();
+	private function create_link_token( int $user_id, string $payment_method_id ): LinkToken {
+		$token = new LinkToken();
 		$token->set_gateway_id( WooPaymentsPersistenceVocabulary::GATEWAY_ID );
 		$token->set_user_id( $user_id );
 		$token->set_token( $payment_method_id );
@@ -10677,10 +10677,10 @@ class WooPaymentsPaymentOperationServiceTest extends WC_Unit_Test_Case {
 	 *
 	 * @param int    $user_id           User ID.
 	 * @param string $payment_method_id Provider payment method ID.
-	 * @return WooPaymentsSepaToken
+	 * @return SepaToken
 	 */
-	private function create_sepa_token( int $user_id, string $payment_method_id ): WooPaymentsSepaToken {
-		$token = new WooPaymentsSepaToken();
+	private function create_sepa_token( int $user_id, string $payment_method_id ): SepaToken {
+		$token = new SepaToken();
 		$token->set_gateway_id( 'woocommerce_payments_sepa_debit' );
 		$token->set_user_id( $user_id );
 		$token->set_token( $payment_method_id );

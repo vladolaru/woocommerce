@@ -12,7 +12,7 @@ use Automattic\WooCommerce\Internal\Payments\PaymentOperationContext;
 use Automattic\WooCommerce\Internal\Payments\PaymentLifecycleEvent;
 use Automattic\WooCommerce\Internal\Payments\PaymentOutcome;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsLinkToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\LinkToken;
 use Throwable;
 use WC_Order;
 use WC_Payment_Token;
@@ -1032,7 +1032,7 @@ class WooPaymentsOrderEffectApplier {
 		$token_id = (int) ( $plan->get_provider_result()['token_id'] ?? 0 );
 		$token    = 0 < $token_id ? WC_Payment_Tokens::get( $token_id ) : null;
 		// The client skips the payment method fetch for Link tokens (gw:1693-1696).
-		$details = $token instanceof WooPaymentsLinkToken ? array() : $this->token_service->get_payment_method_details_for_display( $payment_method_id );
+		$details = $token instanceof LinkToken ? array() : $this->token_service->get_payment_method_details_for_display( $payment_method_id );
 		$this->apply_setup_intent_payment_method_display_details( $order, $details );
 
 		if ( ! $token instanceof WC_Payment_Token ) {

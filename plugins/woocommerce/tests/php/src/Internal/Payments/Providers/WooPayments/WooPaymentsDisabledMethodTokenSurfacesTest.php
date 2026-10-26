@@ -6,8 +6,8 @@ namespace Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Api\Client;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\PaymentMethods\PaymentMethodRegistry;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Subscriptions\SubscriptionAdminPaymentMethodHandler;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsAmazonPayToken;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\AmazonPayToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\SepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsAccountService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsCustomerService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
@@ -65,16 +65,16 @@ class WooPaymentsDisabledMethodTokenSurfacesTest extends WC_Unit_Test_Case {
 	/**
 	 * Saved SEPA token.
 	 *
-	 * @var WooPaymentsSepaToken
+	 * @var SepaToken
 	 */
-	private WooPaymentsSepaToken $sepa_token;
+	private SepaToken $sepa_token;
 
 	/**
 	 * Saved Amazon Pay token.
 	 *
-	 * @var WooPaymentsAmazonPayToken
+	 * @var AmazonPayToken
 	 */
-	private WooPaymentsAmazonPayToken $amazon_pay_token;
+	private AmazonPayToken $amazon_pay_token;
 
 	/**
 	 * Register the three WooPayments gateways and save one token of each type for a shopper.
@@ -97,14 +97,14 @@ class WooPaymentsDisabledMethodTokenSurfacesTest extends WC_Unit_Test_Case {
 		$this->card_token->set_expiry_year( '2030' );
 		$this->card_token->save();
 
-		$this->sepa_token = new WooPaymentsSepaToken();
+		$this->sepa_token = new SepaToken();
 		$this->sepa_token->set_gateway_id( self::SEPA_GATEWAY_ID );
 		$this->sepa_token->set_user_id( $this->user_id );
 		$this->sepa_token->set_token( 'pm_sepa' );
 		$this->sepa_token->set_last4( '3000' );
 		$this->sepa_token->save();
 
-		$this->amazon_pay_token = new WooPaymentsAmazonPayToken();
+		$this->amazon_pay_token = new AmazonPayToken();
 		$this->amazon_pay_token->set_gateway_id( self::AMAZON_PAY_GATEWAY_ID );
 		$this->amazon_pay_token->set_user_id( $this->user_id );
 		$this->amazon_pay_token->set_token( 'pm_amazon_pay' );
@@ -218,7 +218,7 @@ class WooPaymentsDisabledMethodTokenSurfacesTest extends WC_Unit_Test_Case {
 		$subscription = wc_get_order( $subscription->get_id() );
 		$this->assertNotContains( $this->sepa_token->get_id(), $hidden, 'The SEPA token is hidden while SEPA is disabled.' );
 		$this->assertContains( $this->sepa_token->get_id(), $shown, 'The same SEPA token is listed again after SEPA is re-enabled.' );
-		$this->assertInstanceOf( WooPaymentsSepaToken::class, WC_Payment_Tokens::get( $this->sepa_token->get_id() ), 'The SEPA token row survives.' );
+		$this->assertInstanceOf( SepaToken::class, WC_Payment_Tokens::get( $this->sepa_token->get_id() ), 'The SEPA token row survives.' );
 		$this->assertSame( array( $this->sepa_token->get_id() ), array_map( 'absint', $subscription->get_payment_tokens() ) );
 		$this->assertSame( 'pm_sepa', $enabled->resolve_payment_method_id_from_order_token_id( (string) $this->sepa_token->get_id(), $subscription ), 'The subscription token still resolves to the provider payment method.' );
 	}

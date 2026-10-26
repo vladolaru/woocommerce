@@ -25,7 +25,7 @@ use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOr
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderEffectApplier;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsOrderNoteService;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsPaymentMethodDetailsService;
-use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\WooPaymentsSepaToken;
+use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\Tokens\SepaToken;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenClassMapController;
 use Automattic\WooCommerce\Internal\Payments\Providers\WooPayments\WooPaymentsTokenService;
 use Automattic\WooCommerce\Tests\Internal\Payments\Providers\WooPayments\Api\FakeHttpClient;
@@ -227,7 +227,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 		$this->assertSame( 'SEPA Direct Debit', $order->get_payment_method_title() );
 		$this->assertSame( 'pm_sepa', $order->get_meta( '_payment_method_id', true ) );
 		$this->assertCount( 1, $tokens );
-		$this->assertInstanceOf( WooPaymentsSepaToken::class, $tokens[0] );
+		$this->assertInstanceOf( SepaToken::class, $tokens[0] );
 		$this->assertSame( 'pm_sepa', $tokens[0]->get_token() );
 		$this->assertSame( array( $tokens[0]->get_id() ), array_values( $order->get_payment_tokens() ) );
 	}
@@ -2579,7 +2579,7 @@ class WooPaymentsCheckoutAjaxControllerTest extends WC_Unit_Test_Case {
 
 		$this->assertInstanceOf( WC_Order::class, $order );
 		$this->assertSame( 200, $response['status_code'] );
-		$this->assertInstanceOf( WooPaymentsSepaToken::class, $token );
+		$this->assertInstanceOf( SepaToken::class, $token );
 		$this->assertSame( 'pm_sepa', $token->get_token() );
 		$this->assertContains( $token->get_id(), $order->get_payment_tokens() );
 	}
