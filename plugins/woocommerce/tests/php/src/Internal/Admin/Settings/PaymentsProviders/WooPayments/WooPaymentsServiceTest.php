@@ -241,9 +241,10 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 	}
 
 	/**
-	 * Tear down test.
+	 * Tear down test, clearing the version constant setUp() sets, which would otherwise outlive the class.
 	 */
 	public function tearDown(): void {
+		Constants::clear_single_constant( 'WCPAY_VERSION_NUMBER' );
 		$this->reset_container_replacements();
 		delete_transient( self::TEST_DRIVE_SETTINGS_FOR_LIVE_ACCOUNT_TRANSIENT );
 		delete_transient( 'woopayments_referral_code' );
@@ -296,17 +297,6 @@ class WooPaymentsServiceTest extends WC_Unit_Test_Case {
 			$reflection = new \ReflectionProperty( WooPaymentsService::class, $property );
 			$reflection->setAccessible( true );
 			$reflection->setValue( $this->sut, $collaborator );
-		}
-	}
-
-	/**
-	 * Clear the version constant setUp() sets, which would otherwise outlive the class.
-	 */
-	public function tearDown(): void {
-		try {
-			Constants::clear_single_constant( 'WCPAY_VERSION_NUMBER' );
-		} finally {
-			parent::tearDown();
 		}
 	}
 
