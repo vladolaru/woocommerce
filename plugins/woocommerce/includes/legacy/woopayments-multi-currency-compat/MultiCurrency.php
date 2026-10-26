@@ -8,7 +8,7 @@ declare( strict_types = 1 );
 namespace WCPay\MultiCurrency;
 
 use Automattic\WooCommerce\Admin\Notes\Notes;
-use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionMultiCurrencyFacadeLoader;
+use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionFacadeLoader;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\Interfaces\CacheInterface;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyAdminNoteController;
@@ -612,9 +612,9 @@ class MultiCurrency {
 	/**
 	 * Get the container-owned compatibility loader.
 	 *
-	 * @return WooPaymentsExtensionMultiCurrencyFacadeLoader
+	 * @return WooPaymentsExtensionFacadeLoader
 	 */
-	private function get_loader(): WooPaymentsExtensionMultiCurrencyFacadeLoader {
-		return wc_get_container()->get( WooPaymentsExtensionMultiCurrencyFacadeLoader::class );
+	private function get_loader(): WooPaymentsExtensionFacadeLoader {
+		return wc_get_container()->get( WooPaymentsExtensionFacadeLoader::class );
 	}
 }

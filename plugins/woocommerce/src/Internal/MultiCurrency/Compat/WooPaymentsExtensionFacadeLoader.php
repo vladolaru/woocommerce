@@ -1,6 +1,6 @@
 <?php
 /**
- * WooPaymentsExtensionMultiCurrencyFacadeLoader class file.
+ * WooPaymentsExtensionFacadeLoader class file.
  */
 
 declare( strict_types = 1 );
@@ -22,7 +22,7 @@ use Automattic\WooCommerce\Internal\RegisterHooksInterface;
  * @since 11.0.0
  * @internal
  */
-class WooPaymentsExtensionMultiCurrencyFacadeLoader implements RegisterHooksInterface {
+class WooPaymentsExtensionFacadeLoader implements RegisterHooksInterface {
 
 	/**
 	 * Runtime owner arbiter.

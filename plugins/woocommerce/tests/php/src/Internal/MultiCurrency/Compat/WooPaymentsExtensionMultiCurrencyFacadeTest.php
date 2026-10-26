@@ -5,7 +5,7 @@ namespace Automattic\WooCommerce\Tests\Internal\MultiCurrency\Compat;
 
 use Automattic\WooCommerce\Admin\Notes\Note;
 use Automattic\WooCommerce\Admin\Notes\Notes;
-use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionMultiCurrencyFacadeLoader;
+use Automattic\WooCommerce\Internal\MultiCurrency\Compat\WooPaymentsExtensionFacadeLoader;
 use Automattic\WooCommerce\Internal\MultiCurrency\Exceptions\InvalidCurrencyException;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCompatibilityController;
 use Automattic\WooCommerce\Internal\MultiCurrency\MultiCurrencyCurrency;
@@ -506,7 +506,7 @@ class WooPaymentsExtensionMultiCurrencyFacadeTest extends WC_Unit_Test_Case {
 		update_option( 'wcpay_multi_currency_manual_rate_gbp', '0.73' );
 
 		$this->assertTrue( wc_get_container()->get( MultiCurrencyRuntimeArbiter::class )->is_builtin_owner(), 'Precondition: WooCommerce runs Multi-Currency.' );
-		wc_get_container()->get( WooPaymentsExtensionMultiCurrencyFacadeLoader::class )->load();
+		wc_get_container()->get( WooPaymentsExtensionFacadeLoader::class )->load();
 		$this->assertTrue( class_exists( 'WCPay\\MultiCurrency\\MultiCurrency', false ), 'Precondition: the facade is declared.' );
 	}
 

@@ -1,6 +1,6 @@
 # WooPayments extension Multi-Currency compatibility
 
-This folder holds what plugins written for the WooPayments extension call in its `WCPay\MultiCurrency` namespace, answered by WooCommerce's Multi-Currency while it runs Multi-Currency: the `MultiCurrency` class and the `Compatibility` class its `get_compatibility()` returns. `WooPaymentsExtensionMultiCurrencyFacadeLoader` declares both only after active plugins have loaded (`plugins_loaded` priority 0) and only when `MultiCurrencyRuntimeArbiter::is_builtin_owner()` is true; while the WooPayments extension runs Multi-Currency, the namespace is the extension's own. The facade class files live in `includes/legacy/woopayments-multi-currency-compat/` (see the placement rule). The extension's other classes and globals live in the separate [payments compatibility boundary](../../Payments/Providers/WooPayments/Compat/README.md). It is removed in WooCommerce 12.0.0.
+This folder holds what plugins written for the WooPayments extension call in its `WCPay\MultiCurrency` namespace, answered by WooCommerce's Multi-Currency while it runs Multi-Currency: the `MultiCurrency` class and the `Compatibility` class its `get_compatibility()` returns. `WooPaymentsExtensionFacadeLoader` declares both only after active plugins have loaded (`plugins_loaded` priority 0) and only when `MultiCurrencyRuntimeArbiter::is_builtin_owner()` is true; while the WooPayments extension runs Multi-Currency, the namespace is the extension's own. The facade class files live in `includes/legacy/woopayments-multi-currency-compat/` (see the placement rule). The extension's other classes and globals live in the separate [payments compatibility boundary](../../Payments/Providers/WooPayments/Compat/README.md). It is removed in WooCommerce 12.0.0.
 
 The facades exist to spare these plugins a fatal error, not to emulate the extension: they answer every member the Multi-Currency module has a real answer for, from the module's own state, services and rules, and declare nothing else.
 
@@ -59,8 +59,8 @@ WooCommerce Deposits converts a fixed deposit through `get_price( ..., 'product'
 Remove these pieces together once supported extensions no longer call the `WCPay\MultiCurrency` namespace:
 
 - This `Compat/` folder and the facade files in `includes/legacy/woopayments-multi-currency-compat/`.
-- The one registration line, `WooPaymentsExtensionMultiCurrencyFacadeLoader::register()` in `includes/class-woocommerce.php`.
-- The `WooPaymentsExtensionMultiCurrencyFacadeLoader` import and the provenance check in `MultiCurrencyDepositsCompatibilityController`.
+- The one registration line, `WooPaymentsExtensionFacadeLoader::register()` in `includes/class-woocommerce.php`.
+- The `WooPaymentsExtensionFacadeLoader` import and the provenance check in `MultiCurrencyDepositsCompatibilityController`.
 - The tests and their fixtures in `tests/php/src/Internal/MultiCurrency/Compat/`.
 - This boundary's expected symbols and loader entries in `WooPaymentsExtensionFacadePlacementTest`.
 - The `$apply_charm_pricing` argument of `PriceConverter::adjust_amount_for_selected_currency()` and `PriceCalculator::get_adjusted_amount()`, which only the facade passes as false.
